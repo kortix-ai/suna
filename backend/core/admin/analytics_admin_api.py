@@ -18,6 +18,7 @@ import io
 import httpx
 import json
 import os
+import time
 from urllib.parse import quote
 from core.auth import require_admin, require_super_admin
 from core.services.supabase import DBConnection
@@ -3324,55 +3325,110 @@ def _infer_tier_from_amount(amount_cents: int) -> str:
 
 
 # Semaphore to limit concurrent Stripe API calls (avoid rate limiting)
-_stripe_semaphore = asyncio.Semaphore(10)
+_stripe_semaphore = asyncio.Semaphore(15)
+
+# Short-lived cache to avoid duplicate Stripe calls for identical ranges
+_STRIPE_REVENUE_CACHE_TTL_SECONDS = 120
+_STRIPE_REVENUE_MAX_CACHE_ENTRIES = 64
+_stripe_revenue_cache: Dict[tuple[int, int], Dict[str, Any]] = {}
+_stripe_revenue_inflight: Dict[tuple[int, int], asyncio.Task] = {}
 
 
-async def _fetch_stripe_revenue_for_day(day_start_ts: int, day_end_ts: int) -> Dict[str, Any]:
+def _new_stripe_revenue_results() -> Dict[str, Any]:
+    return {
+        'total_revenue': 0.0,
+        'payment_count': 0,
+        'by_tier': {},
+        'user_revenue': {},
+        'user_tiers': {},
+        'user_emails': {},  # customer_id -> email
+    }
+
+
+def _merge_stripe_revenue_results(target: Dict[str, Any], source: Dict[str, Any]) -> None:
+    target['total_revenue'] += source['total_revenue']
+    target['payment_count'] += source['payment_count']
+
+    for tier, data in source['by_tier'].items():
+        if tier not in target['by_tier']:
+            target['by_tier'][tier] = {'revenue': 0.0, 'count': 0, 'users': set()}
+        target['by_tier'][tier]['revenue'] += data['revenue']
+        target['by_tier'][tier]['count'] += data['count']
+        target['by_tier'][tier]['users'].update(data['users'])
+
+    for customer_id, revenue in source['user_revenue'].items():
+        target['user_revenue'][customer_id] = target['user_revenue'].get(customer_id, 0) + revenue
+
+    target['user_tiers'].update(source['user_tiers'])
+    target['user_emails'].update(source.get('user_emails', {}))
+
+
+def _prune_stripe_revenue_cache(now: float) -> None:
+    expired_keys = [
+        key for key, entry in _stripe_revenue_cache.items()
+        if entry.get('expires_at', 0) <= now
+    ]
+    for key in expired_keys:
+        _stripe_revenue_cache.pop(key, None)
+
+    if len(_stripe_revenue_cache) <= _STRIPE_REVENUE_MAX_CACHE_ENTRIES:
+        return
+
+    keys_by_expiry = sorted(
+        _stripe_revenue_cache.keys(),
+        key=lambda key: _stripe_revenue_cache[key].get('expires_at', 0),
+    )
+    excess = len(_stripe_revenue_cache) - _STRIPE_REVENUE_MAX_CACHE_ENTRIES
+    for key in keys_by_expiry[:excess]:
+        _stripe_revenue_cache.pop(key, None)
+
+
+async def _fetch_stripe_revenue_for_window(window_start_ts: int, window_end_ts: int) -> Dict[str, Any]:
     """
-    Fetch Stripe charges for a single day.
-    Helper function for parallel fetching.
+    Fetch Stripe charges for one time window.
+    Uses only fields available from the list response (with expansions) to avoid
+    expensive per-charge follow-up API calls.
     """
+    window_started = time.perf_counter()
+
     async with _stripe_semaphore:
-        day_results: Dict[str, Any] = {
-            'total_revenue': 0.0,
-            'payment_count': 0,
-            'by_tier': {},
-            'user_revenue': {},
-            'user_tiers': {},
-            'user_emails': {},  # customer_id -> email
-        }
+        window_results = _new_stripe_revenue_results()
+        fetched_charges = 0
+        processed_payments = 0
+        metadata_tier_hits = 0
+        subscription_tier_hits = 0
+        inferred_tier_hits = 0
+        unknown_tier_hits = 0
 
         try:
-            # Fetch charges for this day - single API call with limit
-            # Most days won't have more than 100 charges
-            # expand customer to get email, invoice.subscription to get tier metadata
+            # Expand customer to get email and invoice.subscription to infer tiers.
             charges = await stripe.Charge.list_async(
-                created={'gte': day_start_ts, 'lt': day_end_ts},
+                created={'gte': window_start_ts, 'lt': window_end_ts},
                 limit=100,
                 expand=['data.customer', 'data.invoice.subscription'],
             )
 
-            # Process all charges from the response
             all_charges = list(charges.data)
 
-            # If there's more data, fetch additional pages (rare for single day)
-            while charges.has_more and len(all_charges) < 500:
+            while charges.has_more:
                 charges = await stripe.Charge.list_async(
-                    created={'gte': day_start_ts, 'lt': day_end_ts},
+                    created={'gte': window_start_ts, 'lt': window_end_ts},
                     limit=100,
                     starting_after=all_charges[-1].id,
                     expand=['data.customer', 'data.invoice.subscription'],
                 )
                 all_charges.extend(charges.data)
 
-            # Helper to get tier from subscription via price_id
+            fetched_charges = len(all_charges)
+
             def _get_tier_from_subscription(subscription) -> tuple[str, bool]:
                 """Returns (tier_name, is_yearly) from subscription price_id."""
                 from core.billing.shared.config import get_tier_by_price_id, get_price_type
-                if not subscription:
+
+                if not subscription or isinstance(subscription, str):
                     return ('unknown', False)
+
                 try:
-                    # Use dict-style access for Stripe objects (subscription['items'] not subscription.items)
                     items = subscription['items'] if 'items' in subscription else None
                     if items:
                         items_data = items.get('data', []) if hasattr(items, 'get') else items['data']
@@ -3394,19 +3450,27 @@ async def _fetch_stripe_revenue_for_day(day_start_ts: int, day_end_ts: int) -> D
                 if not charge.paid or charge.refunded or charge.amount <= 0:
                     continue
 
+                processed_payments += 1
+
                 amount = charge.amount / 100
                 customer = charge.customer
-                customer_id = 'unknown'
+                customer_id = f"charge:{getattr(charge, 'id', 'unknown')}"
                 customer_email = None
 
                 if customer:
                     if hasattr(customer, 'id'):
-                        # Expanded customer object
                         customer_id = customer.id
                         customer_email = getattr(customer, 'email', None)
                     else:
-                        # Just the customer ID string
                         customer_id = customer
+
+                if not customer_email:
+                    billing_details = getattr(charge, 'billing_details', None)
+                    if billing_details:
+                        if hasattr(billing_details, 'get'):
+                            customer_email = billing_details.get('email')
+                        else:
+                            customer_email = getattr(billing_details, 'email', None)
 
                 tier = 'unknown'
                 is_yearly = False
@@ -3414,75 +3478,71 @@ async def _fetch_stripe_revenue_for_day(day_start_ts: int, day_end_ts: int) -> D
 
                 if metadata.get('type') == 'credit_purchase':
                     tier = 'credit_purchase'
+                    metadata_tier_hits += 1
                 else:
                     tier = metadata.get('tier', 'unknown')
+                    if tier != 'unknown':
+                        metadata_tier_hits += 1
 
-                    # Try to get tier from subscription via invoice (if expanded)
                     if tier == 'unknown':
                         invoice = getattr(charge, 'invoice', None)
+                        subscription = None
                         if invoice and hasattr(invoice, 'subscription'):
                             subscription = invoice.subscription
+                        elif invoice and hasattr(invoice, 'get'):
+                            subscription = invoice.get('subscription')
+
+                        if subscription:
                             tier, is_yearly = _get_tier_from_subscription(subscription)
+                            if tier != 'unknown':
+                                subscription_tier_hits += 1
 
-                    # If still unknown, try via checkout session lookup
-                    if tier == 'unknown':
-                        payment_intent_id = getattr(charge, 'payment_intent', None)
-                        if payment_intent_id:
-                            try:
-                                sessions = await stripe.checkout.Session.list_async(
-                                    payment_intent=payment_intent_id, limit=1
-                                )
-                                if sessions.data:
-                                    session = sessions.data[0]
-                                    sub_id = getattr(session, 'subscription', None)
-                                    if sub_id:
-                                        subscription = await stripe.Subscription.retrieve_async(sub_id)
-                                        tier, is_yearly = _get_tier_from_subscription(subscription)
-                            except Exception as e:
-                                logger.debug(f"Error looking up checkout session: {e}")
-
-                    # If still unknown and we have an invoice ID, fetch it directly
-                    if tier == 'unknown':
-                        invoice = getattr(charge, 'invoice', None)
-                        if invoice and isinstance(invoice, str):
-                            try:
-                                invoice_obj = await stripe.Invoice.retrieve_async(invoice, expand=['subscription'])
-                                if invoice_obj.subscription:
-                                    tier, is_yearly = _get_tier_from_subscription(invoice_obj.subscription)
-                            except Exception as e:
-                                logger.debug(f"Error fetching invoice: {e}")
-
-                    # Append _yearly if determined
                     if tier != 'unknown' and is_yearly and not tier.endswith('_yearly'):
                         tier = tier + '_yearly'
 
-                    # Fallback to amount inference
                     if tier == 'unknown':
                         tier = _infer_tier_from_amount(charge.amount)
+                        if tier != 'unknown':
+                            inferred_tier_hits += 1
+                        else:
+                            unknown_tier_hits += 1
 
                 if tier == 'free':
                     continue
 
-                day_results['total_revenue'] += amount
-                day_results['payment_count'] += 1
+                window_results['total_revenue'] += amount
+                window_results['payment_count'] += 1
 
-                if tier not in day_results['by_tier']:
-                    day_results['by_tier'][tier] = {'revenue': 0.0, 'count': 0, 'users': set()}
-                day_results['by_tier'][tier]['revenue'] += amount
-                day_results['by_tier'][tier]['count'] += 1
-                day_results['by_tier'][tier]['users'].add(customer_id)
+                if tier not in window_results['by_tier']:
+                    window_results['by_tier'][tier] = {'revenue': 0.0, 'count': 0, 'users': set()}
+                window_results['by_tier'][tier]['revenue'] += amount
+                window_results['by_tier'][tier]['count'] += 1
+                window_results['by_tier'][tier]['users'].add(customer_id)
 
-                day_results['user_revenue'][customer_id] = day_results['user_revenue'].get(customer_id, 0) + amount
-                day_results['user_tiers'][customer_id] = tier
+                window_results['user_revenue'][customer_id] = window_results['user_revenue'].get(customer_id, 0) + amount
+                window_results['user_tiers'][customer_id] = tier
                 if customer_email:
-                    day_results['user_emails'][customer_id] = customer_email
+                    window_results['user_emails'][customer_id] = customer_email
 
         except stripe.StripeError as e:
-            logger.error(f"Stripe API error fetching revenue for day (ts {day_start_ts}-{day_end_ts}): {e}")
-            # Re-raise so asyncio.gather can track it as a failure
+            logger.error(f"Stripe API error fetching revenue for window (ts {window_start_ts}-{window_end_ts}): {e}")
             raise
 
-        return day_results
+        duration = time.perf_counter() - window_started
+        logger.info(
+            "Stripe window %s-%s fetched=%s processed=%s metadata=%s subscription=%s inferred=%s unknown=%s duration=%.2fs",
+            window_start_ts,
+            window_end_ts,
+            fetched_charges,
+            processed_payments,
+            metadata_tier_hits,
+            subscription_tier_hits,
+            inferred_tier_hits,
+            unknown_tier_hits,
+            duration,
+        )
+
+        return window_results
 
 
 async def _fetch_stripe_revenue(start_ts: int, end_ts: int) -> Dict[str, Any]:
@@ -3491,98 +3551,128 @@ async def _fetch_stripe_revenue(start_ts: int, end_ts: int) -> Dict[str, Any]:
     Uses Charges (not Invoices) because they represent actual money collected after coupons/discounts.
     Returns revenue by tier with customer mapping.
 
-    Optimized: Fetches daily chunks in parallel for faster performance on large date ranges.
+    Uses short windows for parallel Stripe listing and deduplicates concurrent requests
+    for the same date range with a short in-memory cache.
     """
     stripe.api_key = config.STRIPE_SECRET_KEY
 
-    results: Dict[str, Any] = {
-        'total_revenue': 0.0,
-        'payment_count': 0,
-        'by_tier': {},
-        'user_revenue': {},
-        'user_tiers': {},
-        'user_emails': {},  # customer_id -> email
-    }
+    if end_ts <= start_ts:
+        return _new_stripe_revenue_results()
 
-    # Split into daily chunks for parallel fetching
-    day_seconds = 86400  # 24 * 60 * 60
-    daily_tasks = []
-    day_timestamps = []  # Track timestamps for logging
-    current_ts = start_ts
+    cache_key = (start_ts, end_ts)
+    now = time.monotonic()
 
-    while current_ts < end_ts:
-        day_end = min(current_ts + day_seconds, end_ts)
-        daily_tasks.append(_fetch_stripe_revenue_for_day(current_ts, day_end))
-        day_timestamps.append((current_ts, day_end))
-        current_ts = day_end
+    cache_entry = _stripe_revenue_cache.get(cache_key)
+    if cache_entry and cache_entry.get('expires_at', 0) > now:
+        logger.info(f"Stripe revenue cache hit for range {start_ts}-{end_ts}")
+        return cache_entry['result']
 
-    logger.info(f"Stripe revenue: fetching {len(daily_tasks)} days in parallel (ts range: {start_ts} to {end_ts})")
+    if cache_entry:
+        _stripe_revenue_cache.pop(cache_key, None)
 
-    # Fetch all days in parallel
-    if daily_tasks:
-        day_results_list = await asyncio.gather(*daily_tasks, return_exceptions=True)
+    inflight_task = _stripe_revenue_inflight.get(cache_key)
+    if inflight_task:
+        logger.info(f"Stripe revenue awaiting in-flight request for range {start_ts}-{end_ts}")
+        return await inflight_task
 
-        # Retry failed days (up to 2 retries each)
-        failed_indices = []
-        for idx, day_results in enumerate(day_results_list):
-            if isinstance(day_results, Exception):
-                failed_indices.append(idx)
+    async def _compute_revenue() -> Dict[str, Any]:
+        started = time.perf_counter()
+        results = _new_stripe_revenue_results()
+
+        day_seconds = 86400
+        total_days = max(1, (end_ts - start_ts + day_seconds - 1) // day_seconds)
+        window_days = 1
+        window_seconds = window_days * day_seconds
+
+        window_tasks = []
+        window_ranges: List[tuple[int, int]] = []
+        current_ts = start_ts
+        while current_ts < end_ts:
+            window_end = min(current_ts + window_seconds, end_ts)
+            window_tasks.append(_fetch_stripe_revenue_for_window(current_ts, window_end))
+            window_ranges.append((current_ts, window_end))
+            current_ts = window_end
+
+        logger.info(
+            "Stripe revenue: fetching %s windows (window_days=%s, ts range=%s-%s)",
+            len(window_tasks),
+            window_days,
+            start_ts,
+            end_ts,
+        )
+
+        if not window_tasks:
+            return results
+
+        window_results_list = await asyncio.gather(*window_tasks, return_exceptions=True)
+
+        failed_indices = [
+            idx for idx, window_results in enumerate(window_results_list)
+            if isinstance(window_results, Exception)
+        ]
 
         if failed_indices:
-            logger.warning(f"Stripe revenue: {len(failed_indices)} days failed, retrying...")
-            for retry in range(2):  # Up to 2 retries
+            logger.warning(f"Stripe revenue: {len(failed_indices)} windows failed, retrying...")
+            for retry in range(2):
                 if not failed_indices:
                     break
-                retry_tasks = [_fetch_stripe_revenue_for_day(*day_timestamps[idx]) for idx in failed_indices]
+
+                retry_tasks = [
+                    _fetch_stripe_revenue_for_window(*window_ranges[idx])
+                    for idx in failed_indices
+                ]
                 retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
 
                 still_failed = []
-                for i, (idx, result) in enumerate(zip(failed_indices, retry_results)):
+                for idx, result in zip(failed_indices, retry_results):
                     if isinstance(result, Exception):
                         still_failed.append(idx)
                     else:
-                        day_results_list[idx] = result
-                        logger.info(f"Stripe revenue: day {idx} succeeded on retry {retry + 1}")
+                        window_results_list[idx] = result
+                        logger.info(f"Stripe revenue: window {idx} succeeded on retry {retry + 1}")
 
                 failed_indices = still_failed
                 if failed_indices:
-                    await asyncio.sleep(1)  # Brief pause before next retry
+                    await asyncio.sleep(1)
 
-        # Merge results from all days
-        successful_days = 0
-        failed_days = 0
-        for idx, day_results in enumerate(day_results_list):
-            if isinstance(day_results, Exception):
-                failed_days += 1
-                ts_start, ts_end = day_timestamps[idx] if idx < len(day_timestamps) else (0, 0)
-                logger.error(f"Error fetching day {idx} revenue (ts {ts_start}-{ts_end}): {day_results}")
+        successful_windows = 0
+        failed_windows = 0
+        for idx, window_results in enumerate(window_results_list):
+            if isinstance(window_results, Exception):
+                failed_windows += 1
+                ts_start, ts_end = window_ranges[idx] if idx < len(window_ranges) else (0, 0)
+                logger.error(f"Error fetching Stripe window {idx} (ts {ts_start}-{ts_end}): {window_results}")
                 continue
 
-            successful_days += 1
-            results['total_revenue'] += day_results['total_revenue']
-            results['payment_count'] += day_results['payment_count']
+            successful_windows += 1
+            _merge_stripe_revenue_results(results, window_results)
 
-            # Merge by_tier
-            for tier, data in day_results['by_tier'].items():
-                if tier not in results['by_tier']:
-                    results['by_tier'][tier] = {'revenue': 0.0, 'count': 0, 'users': set()}
-                results['by_tier'][tier]['revenue'] += data['revenue']
-                results['by_tier'][tier]['count'] += data['count']
-                results['by_tier'][tier]['users'].update(data['users'])
+        duration = time.perf_counter() - started
+        logger.info(
+            "Stripe revenue fetch complete: windows_ok=%s windows_failed=%s payments=%s total=$%.2f duration=%.2fs",
+            successful_windows,
+            failed_windows,
+            results['payment_count'],
+            results['total_revenue'],
+            duration,
+        )
 
-            # Merge user_revenue
-            for customer_id, revenue in day_results['user_revenue'].items():
-                results['user_revenue'][customer_id] = results['user_revenue'].get(customer_id, 0) + revenue
+        return results
 
-            # Merge user_tiers (last tier wins for a user across days)
-            results['user_tiers'].update(day_results['user_tiers'])
+    task = asyncio.create_task(_compute_revenue())
+    _stripe_revenue_inflight[cache_key] = task
 
-            # Merge user_emails
-            results['user_emails'].update(day_results.get('user_emails', {}))
-
-        logger.info(f"Stripe revenue fetch complete: {successful_days} days succeeded, {failed_days} days failed, total=${results['total_revenue']:.2f}")
-
-    return results
+    try:
+        results = await task
+        cache_now = time.monotonic()
+        _stripe_revenue_cache[cache_key] = {
+            'expires_at': cache_now + _STRIPE_REVENUE_CACHE_TTL_SECONDS,
+            'result': results,
+        }
+        _prune_stripe_revenue_cache(cache_now)
+        return results
+    finally:
+        _stripe_revenue_inflight.pop(cache_key, None)
 
 
 async def _fetch_revenuecat_active_subscriptions() -> int:
