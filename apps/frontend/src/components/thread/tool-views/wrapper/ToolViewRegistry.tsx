@@ -87,6 +87,7 @@ import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefende
 import { ApifyToolView } from '../apify-tool/ToolView';
 import { FileReaderToolView } from '../file-reader-tool/FileReaderToolView';
 import { InitializeToolsToolView } from '../initialize-tools/InitializeToolsToolView';
+import { CodebaseSearchToolView } from '../codebase-search-tool/CodebaseSearchToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -97,6 +98,9 @@ const defaultRegistry: ToolViewRegistryType = {
   // Initialization tools
   'initialize-tools': InitializeToolsToolView,
   'initialize_tools': InitializeToolsToolView,
+
+  'codebase-search': CodebaseSearchToolView,
+  'codebase_search': CodebaseSearchToolView,
 
   'browser-navigate-to': BrowserToolView,
   'browser-act': BrowserToolView,
