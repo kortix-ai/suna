@@ -58,7 +58,7 @@ class Configuration:
     #   - anthropic: anthropic/claude-haiku-4-5-20251001
     #   - grok: openrouter/x-ai/grok-4.1-fast
     #   - openai: openrouter/openai/gpt-4o-mini
-    #   - minimax: openrouter/minimax/minimax-m2.1
+    #   - minimax: openrouter/minimax/minimax-m2.5
     MAIN_LLM_MODEL: Optional[str] = None
     # ============================================
     

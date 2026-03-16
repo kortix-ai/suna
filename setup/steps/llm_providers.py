@@ -76,7 +76,7 @@ class LLMProvidersStep(BaseStep):
             "MiniMax via OpenRouter",
             "minimax",
             "OPENROUTER_API_KEY",
-            "openrouter/minimax/minimax-m2.1",
+            "openrouter/minimax/minimax-m2.5",
         ),
     }
 
