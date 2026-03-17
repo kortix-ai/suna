@@ -5,6 +5,7 @@ from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.composio_integration.composio_service import get_integration_service
 from core.composio_integration.composio_profile_service import ComposioProfileService
+from core.credentials.profile_service import get_profile_service
 from core.mcp_module.mcp_service import mcp_service
 from .mcp_search_tool import MCPSearchTool
 from core.utils.logger import logger
@@ -312,13 +313,16 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                 )
                 await mcp_wrapper_instance.initialize_and_register_tools()
                 updated_schemas = mcp_wrapper_instance.get_schemas()
-                
-                for method_name, schema_list in updated_schemas.items():
-                    for schema in schema_list:
-                        self.thread_manager.tool_registry.tools[method_name] = {
-                            "instance": mcp_wrapper_instance,
-                            "schema": schema
-                        }
+
+                tool_registry = getattr(self.thread_manager, "tool_registry", None)
+                tools_map = getattr(tool_registry, "tools", None) if tool_registry is not None else None
+                if isinstance(tools_map, dict):
+                    for method_name, schema_list in updated_schemas.items():
+                        for schema in schema_list:
+                            tools_map[method_name] = {
+                                "instance": mcp_wrapper_instance,
+                                "schema": schema
+                            }
                 
             except Exception as e:
                 logger.warning(f"Could not dynamically register MCP tools in current runtime: {str(e)}. Tools will be available on next agent run.")
@@ -412,7 +416,10 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                             return self.fail_response("Failed to update agent config")
             
             # Delete the profile
-            await profile_service.delete_profile(normalized_profile_id)
+            generic_profile_service = get_profile_service(self.db)
+            deleted = await generic_profile_service.delete_profile(account_id, normalized_profile_id)
+            if not deleted:
+                return self.fail_response("Credential profile not found")
             
             return self.success_response({
                 "message": f"Successfully deleted credential profile '{profile.display_name}' for {profile.toolkit_name}",
