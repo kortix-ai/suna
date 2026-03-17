@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, cast
 from pydantic import BaseModel, validator
 import urllib.parse
 
@@ -113,13 +113,99 @@ def initialize(database: DBConnection):
     db = database
 
 
+def _get_db() -> DBConnection:
+    if db is None:
+        raise RuntimeError("Credentials API database is not initialized")
+    return cast(DBConnection, db)
+
+
+def _extract_profile_id_from_mcp(mcp: Any) -> Optional[str]:
+    if not isinstance(mcp, dict):
+        return None
+    config = mcp.get("config")
+    if not isinstance(config, dict):
+        return None
+    profile_id = config.get("profile_id")
+    return str(profile_id) if profile_id is not None else None
+
+
+async def _remove_profile_references_from_agent_configs(account_id: str, profile_id: str) -> int:
+    """Remove a deleted credential profile reference from current agent custom_mcps."""
+    client = await _get_db().client
+    agents_result = await client.table("agents").select("agent_id,current_version_id").eq("account_id", account_id).execute()
+    agent_rows = agents_result.data or []
+    if not agent_rows:
+        return 0
+
+    from core.versioning.version_service import get_version_service
+
+    version_service = await get_version_service()
+    updated_agents = 0
+
+    for agent_row in agent_rows:
+        agent_id = agent_row.get("agent_id")
+        current_version_id = agent_row.get("current_version_id")
+        if not agent_id or not current_version_id:
+            continue
+
+        version_result = await client.table("agent_versions").select("config").eq("version_id", current_version_id).maybe_single().execute()
+        version_result_data: Dict[str, Any] = {}
+        if version_result is not None and isinstance(getattr(version_result, "data", None), dict):
+            version_result_data = cast(Dict[str, Any], getattr(version_result, "data"))
+        version_config: Dict[str, Any] = {}
+        raw_config = version_result_data.get("config")
+        if isinstance(raw_config, dict):
+            version_config = raw_config
+
+        tools_config: Dict[str, Any] = {}
+        raw_tools = version_config.get("tools")
+        if isinstance(raw_tools, dict):
+            tools_config = raw_tools
+
+        current_custom_mcps_raw = tools_config.get("custom_mcp")
+        if not isinstance(current_custom_mcps_raw, list) or not current_custom_mcps_raw:
+            continue
+
+        current_custom_mcps = cast(List[Dict[str, Any]], current_custom_mcps_raw)
+
+        filtered_custom_mcps = [
+            mcp for mcp in current_custom_mcps
+            if _extract_profile_id_from_mcp(mcp) != profile_id
+        ]
+
+        if len(filtered_custom_mcps) == len(current_custom_mcps):
+            continue
+
+        configured_mcps_raw = tools_config.get("mcp")
+        configured_mcps = configured_mcps_raw if isinstance(configured_mcps_raw, list) else []
+        agentpress_tools_raw = tools_config.get("agentpress")
+        agentpress_tools = agentpress_tools_raw if isinstance(agentpress_tools_raw, dict) else {}
+        system_prompt_raw = version_config.get("system_prompt") if isinstance(version_config, dict) else ""
+        system_prompt = system_prompt_raw if isinstance(system_prompt_raw, str) else ""
+        model = version_config.get("model")
+
+        await version_service.create_version(
+            agent_id=cast(str, agent_id),
+            user_id=account_id,
+            system_prompt=cast(str, system_prompt),
+            model=model,
+            configured_mcps=cast(List[Dict[str, Any]], configured_mcps),
+            custom_mcps=cast(List[Dict[str, Any]], filtered_custom_mcps),
+            agentpress_tools=cast(Dict[str, Any], agentpress_tools),
+            change_description=f"Removed deleted credential profile {profile_id}",
+        )
+        updated_agents += 1
+
+    return updated_agents
+
+
 @router.post("/credentials", response_model=CredentialResponse)
 async def store_credential(
     request: StoreCredentialRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        credential_service = get_credential_service(db)
+        credential_service = get_credential_service(_get_db())
         
         credential_id = await credential_service.store_credential(
             account_id=user_id,
@@ -154,7 +240,7 @@ async def get_user_credentials(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        credential_service = get_credential_service(db)
+        credential_service = get_credential_service(_get_db())
         credentials = await credential_service.get_user_credentials(user_id)
         
         return [
@@ -183,7 +269,7 @@ async def delete_credential(
     try:
         decoded_name = decode_mcp_qualified_name(mcp_qualified_name)
         
-        credential_service = get_credential_service(db)
+        credential_service = get_credential_service(_get_db())
         success = await credential_service.delete_credential(user_id, decoded_name)
         
         if not success:
@@ -204,7 +290,7 @@ async def store_credential_profile(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service(_get_db())
         
         profile_id = await profile_service.store_profile(
             account_id=user_id,
@@ -243,7 +329,7 @@ async def get_user_credential_profiles(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service(_get_db())
         profiles = await profile_service.get_all_user_profiles(user_id)
         
         return [
@@ -274,7 +360,7 @@ async def get_credential_profiles_for_mcp(
     try:
         decoded_name = decode_mcp_qualified_name(mcp_qualified_name)
         
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service(_get_db())
         profiles = await profile_service.get_profiles(user_id, decoded_name)
         
         return [
@@ -303,7 +389,7 @@ async def get_credential_profile(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service(_get_db())
         profile = await profile_service.get_profile(user_id, profile_id)
         
         if not profile:
@@ -334,7 +420,7 @@ async def set_default_credential_profile(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service(_get_db())
         success = await profile_service.set_default_profile(user_id, profile_id)
         
         if not success:
@@ -353,13 +439,17 @@ async def delete_credential_profile(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service(_get_db())
+        updated_agents = await _remove_profile_references_from_agent_configs(user_id, profile_id)
         success = await profile_service.delete_profile(user_id, profile_id)
         
         if not success:
             raise HTTPException(status_code=404, detail="Profile not found")
         
-        return {"message": "Profile deleted successfully"}
+        return {
+            "message": "Profile deleted successfully",
+            "updated_agents": updated_agents,
+        }
         
     except Exception as e:
         logger.error(f"Error deleting profile: {e}")
@@ -372,11 +462,12 @@ async def bulk_delete_credential_profiles(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service(_get_db())
         deleted_count = 0
         failed_profiles = []
         for profile_id in request.profile_ids:
             try:
+                await _remove_profile_references_from_agent_configs(user_id, profile_id)
                 success = await profile_service.delete_profile(user_id, profile_id)
                 if success:
                     deleted_count += 1
@@ -402,9 +493,9 @@ async def get_composio_profiles(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service(_get_db())
         from core.composio_integration.composio_profile_service import ComposioProfileService
-        composio_service = ComposioProfileService(db)
+        composio_service = ComposioProfileService(_get_db())
         
         all_profiles = await profile_service.get_all_user_profiles(user_id)
         
@@ -486,9 +577,9 @@ async def get_composio_mcp_url(
 ):
     try:
         from core.composio_integration.composio_profile_service import ComposioProfileService
-        composio_service = ComposioProfileService(db)
+        composio_service = ComposioProfileService(_get_db())
 
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service(_get_db())
         profile = await profile_service.get_profile(user_id, profile_id)
         
         if not profile:
