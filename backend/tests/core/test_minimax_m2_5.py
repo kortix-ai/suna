@@ -160,7 +160,7 @@ class TestMiniMaxM25Provider:
 
     def test_provider_default_model_id(self):
         p = MiniMaxProvider(use_openrouter=True)
-        assert p.get_model_id() == "openrouter/minimax/minimax-m2.5"
+        assert p.get_model_id() == "openrouter/minimax/minimax-m2.7"
 
     def test_provider_custom_model_id(self):
         p = MiniMaxProvider(use_openrouter=True)
@@ -168,7 +168,7 @@ class TestMiniMaxM25Provider:
 
     def test_provider_direct_default_model_id(self):
         p = MiniMaxProvider(use_openrouter=False)
-        assert p.get_model_id() == "minimax/minimax-m2.5"
+        assert p.get_model_id() == "minimax/minimax-m2.7"
 
 
 class TestMiniMaxM25LiteLLMParams:
@@ -189,23 +189,23 @@ class TestMiniMaxM25LiteLLMParams:
 
 
 class TestMiniMaxBasicPowerDefaults:
-    """Tests that basic/power models default to M2.5 when minimax is selected."""
+    """Tests that basic/power models default to M2.7 when minimax is selected."""
 
-    def test_basic_model_minimax_uses_m2_5(self):
+    def test_basic_model_minimax_uses_m2_7(self):
         model = ModelFactory.create_basic_model("minimax")
-        assert "minimax-m2.5" in model.litellm_model_id
+        assert "minimax-m2.7" in model.litellm_model_id
 
-    def test_power_model_minimax_uses_m2_5(self):
+    def test_power_model_minimax_uses_m2_7(self):
         model = ModelFactory.create_power_model("minimax")
-        assert "minimax-m2.5" in model.litellm_model_id
+        assert "minimax-m2.7" in model.litellm_model_id
 
     def test_basic_model_minimax_pricing(self):
         model = ModelFactory.create_basic_model("minimax")
-        assert model.pricing == PricingPresets.MINIMAX_M2_5
+        assert model.pricing == PricingPresets.MINIMAX_M2_7
 
     def test_power_model_minimax_pricing(self):
         model = ModelFactory.create_power_model("minimax")
-        assert model.pricing == PricingPresets.MINIMAX_M2_5
+        assert model.pricing == PricingPresets.MINIMAX_M2_7
 
     def test_basic_model_minimax_context(self):
         model = ModelFactory.create_basic_model("minimax")

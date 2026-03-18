@@ -58,7 +58,7 @@ class MiniMaxProvider(ProviderConfig):
             split_param_name="reasoning_split",
         )
     
-    def get_model_id(self, model_name: str = "minimax-m2.5") -> str:
+    def get_model_id(self, model_name: str = "minimax-m2.7") -> str:
         if self._use_openrouter:
             return f"openrouter/minimax/{model_name}"
         return f"minimax/{model_name}"

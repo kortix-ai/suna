@@ -51,6 +51,12 @@ class PricingPresets:
         output_cost_per_million_tokens=1.20,
         cached_read_cost_per_million_tokens=0.025,
     )
+
+    MINIMAX_M2_7 = ModelPricing(
+        input_cost_per_million_tokens=0.25,
+        output_cost_per_million_tokens=1.20,
+        cached_read_cost_per_million_tokens=0.025,
+    )
     
     GROK_4_1_FAST = ModelPricing(
         input_cost_per_million_tokens=0.20,
@@ -226,6 +232,66 @@ class ModelFactory:
         )
 
     @staticmethod
+    def create_minimax_m2_7(use_openrouter: bool = True) -> Model:
+        if use_openrouter:
+            litellm_id = "openrouter/minimax/minimax-m2.7"
+            provider = ModelProvider.OPENROUTER
+        else:
+            litellm_id = "minimax/MiniMax-M2.7"
+            provider = ModelProvider.MINIMAX
+
+        return Model(
+            id="kortix/minimax-m2.7",
+            name="MiniMax M2.7",
+            litellm_model_id=litellm_id,
+            provider=provider,
+            aliases=["minimax-m2.7", "minimax-m2-7", "MiniMax-M2.7"],
+            context_window=196_608,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.THINKING,
+                ModelCapability.PROMPT_CACHING,
+            ],
+            pricing=PricingPresets.MINIMAX_M2_7,
+            tier_availability=["free", "paid"],
+            priority=108,
+            recommended=True,
+            enabled=True,
+            config=_create_minimax_model_config(),
+        )
+
+    @staticmethod
+    def create_minimax_m2_7_highspeed(use_openrouter: bool = True) -> Model:
+        if use_openrouter:
+            litellm_id = "openrouter/minimax/minimax-m2.7-highspeed"
+            provider = ModelProvider.OPENROUTER
+        else:
+            litellm_id = "minimax/MiniMax-M2.7-highspeed"
+            provider = ModelProvider.MINIMAX
+
+        return Model(
+            id="kortix/minimax-m2.7-highspeed",
+            name="MiniMax M2.7 Highspeed",
+            litellm_model_id=litellm_id,
+            provider=provider,
+            aliases=["minimax-m2.7-highspeed", "minimax-m2-7-highspeed", "MiniMax-M2.7-highspeed"],
+            context_window=196_608,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.THINKING,
+                ModelCapability.PROMPT_CACHING,
+            ],
+            pricing=PricingPresets.MINIMAX_M2_7,
+            tier_availability=["free", "paid"],
+            priority=107,
+            recommended=False,
+            enabled=True,
+            config=_create_minimax_model_config(),
+        )
+
+    @staticmethod
     def create_basic_model(main_llm: str, custom_model: Optional[str] = None) -> Model:
         # Default models per provider
         default_models = {
@@ -233,7 +299,7 @@ class ModelFactory:
             "anthropic": "anthropic/claude-haiku-4-5-20251001",
             "grok": "openrouter/x-ai/grok-4.1-fast",
             "openai": "openrouter/openai/gpt-4o-mini",
-            "minimax": "openrouter/minimax/minimax-m2.5",
+            "minimax": "openrouter/minimax/minimax-m2.7",
             "kimi": "openrouter/moonshotai/kimi-k2.5",
         }
 
@@ -373,7 +439,7 @@ class ModelFactory:
                     ModelCapability.THINKING,
                     ModelCapability.PROMPT_CACHING,
                 ],
-                pricing=PricingPresets.MINIMAX_M2_5,
+                pricing=PricingPresets.MINIMAX_M2_7,
                 tier_availability=["free", "paid"],
                 priority=102,
                 recommended=True,
@@ -389,7 +455,7 @@ class ModelFactory:
             "anthropic": "anthropic/claude-haiku-4-5-20251001",
             "grok": "openrouter/x-ai/grok-4.1-fast",
             "openai": "openrouter/openai/gpt-4o-mini",
-            "minimax": "openrouter/minimax/minimax-m2.5",
+            "minimax": "openrouter/minimax/minimax-m2.7",
             "kimi": "openrouter/moonshotai/kimi-k2.5",
         }
 
@@ -532,7 +598,7 @@ class ModelFactory:
                     ModelCapability.THINKING,
                     ModelCapability.PROMPT_CACHING,
                 ],
-                pricing=PricingPresets.MINIMAX_M2_5,
+                pricing=PricingPresets.MINIMAX_M2_7,
                 tier_availability=["paid"],
                 priority=101,
                 recommended=True,
@@ -545,7 +611,7 @@ class ModelFactory:
         return Model(
             id="kortix/test",
             name="Kortix Test",
-            litellm_model_id="openrouter/minimax/minimax-m2.5",
+            litellm_model_id="openrouter/minimax/minimax-m2.7",
             provider=ModelProvider.OPENROUTER,
             aliases=["kortix-test", "Kortix Test"],
             context_window=196_608,
@@ -555,7 +621,7 @@ class ModelFactory:
                 ModelCapability.THINKING,
                 ModelCapability.PROMPT_CACHING,
             ],
-            pricing=PricingPresets.MINIMAX_M2_5,
+            pricing=PricingPresets.MINIMAX_M2_7,
             tier_availability=["free", "paid"],
             priority=100,
             recommended=False,
@@ -769,6 +835,8 @@ class ModelRegistry:
         self.register(ModelFactory.create_mimo_v2_flash())
         self.register(ModelFactory.create_kimi_k2())
         self.register(ModelFactory.create_kimi_k2_5())
+        self.register(ModelFactory.create_minimax_m2_7())
+        self.register(ModelFactory.create_minimax_m2_7_highspeed())
         self.register(ModelFactory.create_minimax_m2())
         self.register(ModelFactory.create_minimax_m2_5())
         self.register(ModelFactory.create_haiku_3_5())
@@ -783,6 +851,10 @@ class ModelRegistry:
         self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.1"] = PricingPresets.MINIMAX_M2
         self._litellm_id_to_pricing["minimax/MiniMax-M2.5"] = PricingPresets.MINIMAX_M2_5
         self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.5"] = PricingPresets.MINIMAX_M2_5
+        self._litellm_id_to_pricing["minimax/MiniMax-M2.7"] = PricingPresets.MINIMAX_M2_7
+        self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.7"] = PricingPresets.MINIMAX_M2_7
+        self._litellm_id_to_pricing["minimax/MiniMax-M2.7-highspeed"] = PricingPresets.MINIMAX_M2_7
+        self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.7-highspeed"] = PricingPresets.MINIMAX_M2_7
         self._litellm_id_to_pricing["openrouter/x-ai/grok-4.1-fast"] = PricingPresets.GROK_4_1_FAST
         self._litellm_id_to_pricing["openrouter/openai/gpt-4o-mini"] = PricingPresets.GPT_4O_MINI
         self._litellm_id_to_pricing["openrouter/xiaomi/mimo-v2-flash"] = PricingPresets.MIMO_V2_FLASH

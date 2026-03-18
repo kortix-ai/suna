@@ -84,7 +84,7 @@ class LLMConfig(BaseModel):
     #   - anthropic: anthropic/claude-haiku-4-5-20251001
     #   - grok: openrouter/x-ai/grok-4.1-fast (requires OPENROUTER_API_KEY)
     #   - openai: openrouter/openai/gpt-4o-mini (requires OPENROUTER_API_KEY)
-    #   - minimax: openrouter/minimax/minimax-m2.5 (requires OPENROUTER_API_KEY)
+    #   - minimax: openrouter/minimax/minimax-m2.7 (requires OPENROUTER_API_KEY)
     MAIN_LLM_MODEL: str = ""
 
     OPENAI_API_KEY: str = ""
