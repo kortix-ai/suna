@@ -96,6 +96,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   'submodel': 'Submodel',
   'synthetic': 'Synthetic',
   'xiaomi': 'Xiaomi',
+  'avian': 'Avian',
   'zenmux': 'Zenmux',
 };
 
@@ -112,6 +113,7 @@ export const PROVIDER_NOTES: Record<string, string> = {
   'github-copilot': 'Reuse your existing Copilot plan',
   google: 'Gemini models from Google AI Studio',
   openrouter: 'Route across many providers',
+  avian: 'OpenAI-compatible API with DeepSeek, Kimi, GLM, and MiniMax models',
   vercel: 'Use Vercel AI Gateway credentials',
 };
 
@@ -146,6 +148,7 @@ const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   lmstudio: { src: '/provider-icons/lmstudio.svg', fallback: 'LM' },
   v0: { src: '/provider-icons/v0.svg', fallback: 'V0' },
   wandb: { src: '/provider-icons/wandb.svg', fallback: 'WB' },
+  avian: { src: '/provider-icons/avian.svg', fallback: 'AV' },
   baseten: { src: '/provider-icons/baseten.svg', fallback: 'BT' },
   // Add all other icons - they fallback to initials if not mapped
 };

@@ -46,6 +46,44 @@
           "limit": { "context": 196608, "output": 65536 }
         }
       }
+    },
+    "avian": {
+      "npm": "@ai-sdk/openai-compatible",
+      "env": ["AVIAN_API_KEY"],
+      "options": {
+        "baseURL": "https://api.avian.io/v1",
+        "apiKey": "{env:AVIAN_API_KEY}"
+      },
+      "models": {
+        "deepseek-v3.2": {
+          "name": "DeepSeek V3.2",
+          "id": "deepseek-v3.2",
+          "family": "avian",
+          "cost": { "input": 0.14, "output": 0.28 },
+          "limit": { "context": 163840, "output": 16384 }
+        },
+        "kimi-k2.5": {
+          "name": "Kimi K2.5",
+          "id": "kimi-k2.5",
+          "family": "avian",
+          "cost": { "input": 0.14, "output": 0.28 },
+          "limit": { "context": 131072, "output": 16384 }
+        },
+        "glm-5": {
+          "name": "GLM-5",
+          "id": "glm-5",
+          "family": "avian",
+          "cost": { "input": 0.25, "output": 0.50 },
+          "limit": { "context": 131072, "output": 16384 }
+        },
+        "minimax-m2.5": {
+          "name": "MiniMax M2.5",
+          "id": "minimax-m2.5",
+          "family": "avian",
+          "cost": { "input": 0.15, "output": 0.30 },
+          "limit": { "context": 1048576, "output": 16384 }
+        }
+      }
     }
   },
   "plugin": [
