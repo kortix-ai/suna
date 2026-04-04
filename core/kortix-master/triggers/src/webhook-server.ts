@@ -102,21 +102,26 @@ export class WebhookTriggerServer {
         return
       }
 
-      const body = await readBody(req)
-      const headers = extractHeaders(req)
+      try {
+        const body = await readBody(req)
+        const headers = extractHeaders(req)
 
-      if (route.trigger.source.secret) {
-        const supplied = headers["x-kortix-opencode-trigger-secret"] ?? headers["x-kortix-trigger-secret"] ?? ""
-        if (supplied !== route.trigger.source.secret) {
-          res.writeHead(401, { "Content-Type": "application/json" })
-          res.end(JSON.stringify({ ok: false, error: "invalid_secret" }))
-          return
+        if (route.trigger.source.secret) {
+          const supplied = headers["x-kortix-opencode-trigger-secret"] ?? headers["x-kortix-trigger-secret"] ?? ""
+          if (supplied !== route.trigger.source.secret) {
+            res.writeHead(401, { "Content-Type": "application/json" })
+            res.end(JSON.stringify({ ok: false, error: "invalid_secret" }))
+            return
+          }
         }
-      }
 
-      const result = await this.dispatch(route, { body, headers, method, path: pathname })
-      res.writeHead(202, { "Content-Type": "application/json" })
-      res.end(JSON.stringify({ ok: true, sessionId: result.sessionId }))
+        const result = await this.dispatch(route, { body, headers, method, path: pathname })
+        res.writeHead(202, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ ok: true, sessionId: result.sessionId }))
+      } catch (err) {
+        res.writeHead(500, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }))
+      }
     })
 
     await new Promise<void>((resolve, reject) => {
