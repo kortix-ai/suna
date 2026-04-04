@@ -126,12 +126,13 @@ async function platformFetch<T>(
     headers,
   });
 
-  const body = await res.json();
-
   if (!res.ok) {
-    throw new Error(body?.error || body?.message || `Platform API error ${res.status}`);
+    let errorBody: any = null;
+    try { errorBody = await res.json(); } catch { /* non-JSON error response */ }
+    throw new Error(errorBody?.error || errorBody?.message || `Platform API error ${res.status}`);
   }
 
+  const body = await res.json();
   return body as PlatformResponse<T>;
 }
 
@@ -272,10 +273,12 @@ export async function createSandbox(opts?: {
       }),
     });
 
-    const initData = await initRes.json();
     if (!initRes.ok) {
-      throw new Error(initData?.error || initData?.message || `Platform API error ${initRes.status}`);
+      let errorBody: any = null;
+      try { errorBody = await initRes.json(); } catch { /* non-JSON error response */ }
+      throw new Error(errorBody?.error || errorBody?.message || `Platform API error ${initRes.status}`);
     }
+    const initData = await initRes.json();
 
     if (initData.status === 'ready' && initData.data) {
       return { sandbox: initData.data as SandboxInfo };
@@ -302,11 +305,12 @@ export async function createSandbox(opts?: {
         const statusRes = await authenticatedFetch(`${getPlatformUrl()}/platform/init/local/status`, {
           method: 'GET',
         });
-        const statusData = await statusRes.json();
-
         if (!statusRes.ok) {
-          throw new Error(statusData?.error || statusData?.message || `Platform API error ${statusRes.status}`);
+          let errorBody: any = null;
+          try { errorBody = await statusRes.json(); } catch { /* non-JSON error response */ }
+          throw new Error(errorBody?.error || errorBody?.message || `Platform API error ${statusRes.status}`);
         }
+        const statusData = await statusRes.json();
 
         if (statusData.status === 'ready' && statusData.data) {
           return { sandbox: statusData.data as SandboxInfo };

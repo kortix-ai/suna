@@ -71,12 +71,13 @@ shareApp.post('/',
         signal: AbortSignal.timeout(10_000),
       })
 
-      const result = await resp.json() as Record<string, unknown>
-
       if (!resp.ok) {
-        return c.json(result, resp.status as any)
+        let errorBody: Record<string, unknown> = { error: `Sandbox returned ${resp.status}` }
+        try { errorBody = await resp.json() as Record<string, unknown> } catch { /* non-JSON error */ }
+        return c.json(errorBody, resp.status as any)
       }
 
+      const result = await resp.json() as Record<string, unknown>
       return c.json(result)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
