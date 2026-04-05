@@ -606,6 +606,7 @@ async function ensureLocalSandboxRegistered() {
   const { db } = await import('./shared/db');
   const { sandboxes } = await import('@kortix/db');
   const { eq, and } = await import('drizzle-orm');
+  const { execSync } = await import('child_process');
 
   // Use a well-known account ID for the self-hosted single-owner case.
   // When Supabase auth is active, the real user ID will be used via POST /init.
@@ -614,6 +615,23 @@ async function ensureLocalSandboxRegistered() {
   const portBase = config.SANDBOX_PORT_BASE;
   const baseUrl = `http://localhost:${portBase}`;
 
+  // Helper: check if the Docker container actually exists and is running
+  const isContainerRunning = (): boolean => {
+    try {
+      const rawDockerHost = config.DOCKER_HOST || process.env.DOCKER_HOST || '';
+      const dockerHost = rawDockerHost.startsWith('/') ? `unix://${rawDockerHost}` : rawDockerHost;
+      const env = { ...process.env, DOCKER_HOST: dockerHost.startsWith('/') ? `unix://${dockerHost}` : dockerHost };
+      const out = execSync(`docker inspect -f '{{.State.Running}}' ${CONTAINER_NAME}`, {
+        encoding: 'utf-8',
+        timeout: 5000,
+        env,
+      }).trim();
+      return out === 'true';
+    } catch {
+      return false;
+    }
+  };
+
   // Check if already registered
   const [existing] = await db
     .select()
@@ -621,7 +639,16 @@ async function ensureLocalSandboxRegistered() {
     .where(eq(sandboxes.externalId, CONTAINER_NAME));
 
   if (existing) {
-    // Ensure it's active with current baseUrl
+    const containerRunning = isContainerRunning();
+
+    if (!containerRunning) {
+      // Container doesn't exist or isn't running — don't promote to active.
+      // Leave current status as-is (provisioning flow or /init will handle it).
+      console.log(`[startup] Container ${CONTAINER_NAME} not running — skipping (sandbox ${existing.sandboxId} status: ${existing.status})`);
+      return;
+    }
+
+    // Container is running — ensure DB reflects active status
     if (existing.status !== 'active' || existing.baseUrl !== baseUrl) {
       await db
         .update(sandboxes)
@@ -639,10 +666,17 @@ async function ensureLocalSandboxRegistered() {
   }
 
   // No existing sandbox — auto-provision for local single-user setup.
+  // Only create if the container is actually running (image pulled, container started).
   const { accounts } = await import('@kortix/db');
   const [account] = await db.select().from(accounts).limit(1);
   if (!account) {
     console.log('[startup] No account yet — sandbox will be created on first login via POST /init');
+    return;
+  }
+
+  const containerRunning = isContainerRunning();
+  if (!containerRunning) {
+    console.log(`[startup] Container ${CONTAINER_NAME} not running — skipping auto-provision (will be created via /init)`);
     return;
   }
 

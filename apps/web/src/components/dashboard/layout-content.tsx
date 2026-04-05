@@ -584,7 +584,17 @@ export default function DashboardLayoutContent({
 			try {
 				const f = await import("@/lib/auth-token").then((m) => m.authenticatedFetch);
 				const res = await f(`${instanceUrl}/env/ONBOARDING_COMPLETE`, undefined, { retryOnAuthError: false });
-				if (!res.ok) { setOnboardingChecked(true); return; }
+				if (!res.ok) {
+					// If sandbox is unreachable (403/500/502), don't skip onboarding —
+					// assume setup hasn't been done and enter onboarding mode with setup wizard.
+					// This prevents going straight to an unusable dashboard.
+					if (res.status === 403 || res.status >= 500) {
+						console.warn(`[onboarding] /env/ONBOARDING_COMPLETE returned ${res.status} — entering setup mode`);
+						ob.enter({ skipBoot: true, skipSetup: false });
+					}
+					setOnboardingChecked(true);
+					return;
+				}
 				const data = await res.json();
 				if (data?.ONBOARDING_COMPLETE === 'true') {
 					setOnboardingChecked(true);
@@ -594,7 +604,12 @@ export default function DashboardLayoutContent({
 				ob.enter({ skipBoot: !!existing, skipSetup: !!existing });
 					setOnboardingChecked(true);
 				}
-			} catch { setOnboardingChecked(true); }
+			} catch {
+				// Network error — sandbox likely not ready. Enter setup mode.
+				console.warn('[onboarding] Failed to check ONBOARDING_COMPLETE — entering setup mode');
+				ob.enter({ skipBoot: true, skipSetup: false });
+				setOnboardingChecked(true);
+			}
 		};
 		check();
 	// eslint-disable-next-line react-hooks/exhaustive-deps

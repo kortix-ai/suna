@@ -1324,6 +1324,37 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  packages/opencode-channels:
+    dependencies:
+      '@chat-adapter/discord':
+        specifier: ^4.15.0
+        version: 4.23.0
+      '@chat-adapter/slack':
+        specifier: ^4.14.0
+        version: 4.23.0
+      '@chat-adapter/state-memory':
+        specifier: ^4.14.0
+        version: 4.23.0
+      '@hono/node-server':
+        specifier: ^1.13.0
+        version: 1.19.10(hono@4.12.3)
+      chat:
+        specifier: ^4.14.0
+        version: 4.23.0
+      hono:
+        specifier: ^4.12.0
+        version: 4.12.3
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.13
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/shared:
     devDependencies:
       typescript:

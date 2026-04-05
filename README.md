@@ -46,6 +46,7 @@ kortix uninstall   Remove Kortix completely
 - `pnpm dev:web` — start web app only
 - `pnpm dev:frontend` — alias for `pnpm dev:web`
 - `pnpm dev:api` — start API only
+- `pnpm dev:mobile` — start mobile app (Expo dev server)
 - `pnpm dev:core` — start core runtime with dev bind mounts (hot reload, from `core/`)
 - `pnpm dev:core:build` — rebuild and start the core runtime
 - `pnpm dev:sandbox` — alias for `pnpm dev:core`

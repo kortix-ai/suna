@@ -202,14 +202,35 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
         const d = data?.data ?? data;
 
         // Map local docker status to our StatusResponse shape
-        if (d.status === 'ready' || d.status === 'running') {
+        if (d.status === 'ready' || d.status === 'running' || d.status === 'active') {
           return { status: 'active', stage: null, stageProgress: 100, stageMessage: 'Ready', machineInfo: null, stages: null, startedAt: null };
         }
         if (d.status === 'error') {
           return { status: 'error', stage: null, stageProgress: 0, stageMessage: d.message, machineInfo: null, stages: null, error: d.message || 'Provisioning failed', startedAt: null };
         }
-        // Map to provisioning stages the UI understands
+        // If progress reached 100 but status hasn't flipped yet, treat as active
+        if ((d.progress ?? 0) >= 100) {
+          return { status: 'active', stage: null, stageProgress: 100, stageMessage: 'Ready', machineInfo: null, stages: null, startedAt: null };
+        }
+        // When progress is high (≥90), also check the DB sandbox status as fallback
+        // The local init endpoint can lag behind the actual DB state
         const progress = d.progress ?? 0;
+        if (progress >= 90) {
+          try {
+            const dbRes = await fetch(`${API_URL}/platform/sandbox/${sandboxId}/status`, {
+              headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            });
+            if (dbRes.ok) {
+              const dbData = await dbRes.json();
+              const dbStatus = dbData?.data ?? dbData;
+              if (dbStatus?.status === 'active') {
+                return { status: 'active', stage: null, stageProgress: 100, stageMessage: 'Ready', machineInfo: null, stages: null, startedAt: null };
+              }
+            }
+          } catch { /* fallback — continue with local status */ }
+        }
+
+        // Map to provisioning stages the UI understands
         const message = d.status === 'creating' ? 'Creating container...' : d.message || 'Pulling sandbox image...';
         let stage = 'cloud_init_running'; // generic provisioning stage
         if (progress < 10) stage = 'server_creating';

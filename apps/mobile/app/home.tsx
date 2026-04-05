@@ -286,6 +286,10 @@ export default function HomeScreen() {
       log.log('[Home] Setup check: no sandboxUrl yet');
       return;
     }
+    if (isProvisioning) {
+      log.log('[Home] Setup check: sandbox still provisioning, waiting...');
+      return;
+    }
     log.log('[Home] Setup check: starting with sandboxUrl:', sandboxUrl);
     let cancelled = false;
 
@@ -314,7 +318,14 @@ export default function HomeScreen() {
             signal: controller.signal,
           });
           clearTimeout(timeout);
-          // Any HTTP response (even 404 for missing key) means sandbox is up
+          // 403 means the proxy is rejecting us (sandbox not authorized / not ready yet)
+          // — don't treat as reachable, keep polling
+          if (res.status === 403) {
+            log.log('[Home] Setup check: got 403 (sandbox not authorized yet), keep polling...');
+            await new Promise((r) => setTimeout(r, pollMs));
+            continue;
+          }
+          // Any other HTTP response (even 404 for missing key) means sandbox is up
           reachable = true;
           if (cancelled) return;
           log.log('[Home] Setup check: sandbox reachable, INSTANCE_SETUP_COMPLETE response:', res.status);
@@ -392,7 +403,7 @@ export default function HomeScreen() {
     })();
 
     return () => { cancelled = true; };
-  }, [sandboxUrl]);
+  }, [sandboxUrl, isProvisioning]);
 
   const handleSetupComplete = useCallback(() => {
     // Persist that setup completed so we don't show wizard on next boot

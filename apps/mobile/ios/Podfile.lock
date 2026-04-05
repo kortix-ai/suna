@@ -1741,6 +1741,51 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - react-native-slider (5.1.2):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - react-native-slider/common (= 5.1.2)
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
+  - react-native-slider/common (5.1.2):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - react-native-view-shot (4.0.3):
     - hermes-engine
     - RCTRequired
@@ -2601,6 +2646,7 @@ DEPENDENCIES:
   - "react-native-context-menu-view (from `../../../node_modules/.pnpm/react-native-context-menu-view@1.21.0_react-native@0.81.5_react@19.1.0/node_modules/react-native-context-menu-view`)"
   - "react-native-keyboard-controller (from `../../../node_modules/.pnpm/react-native-keyboard-controller@1.20.7_react-native-reanimated@4.1.6_react-native@0.81.5_react@19.1.0/node_modules/react-native-keyboard-controller`)"
   - "react-native-safe-area-context (from `../../../node_modules/.pnpm/react-native-safe-area-context@5.6.2_react-native@0.81.5_react@19.1.0/node_modules/react-native-safe-area-context`)"
+  - "react-native-slider (from `../../../node_modules/.pnpm/@react-native-community+slider@5.1.2/node_modules/@react-native-community/slider`)"
   - "react-native-view-shot (from `../../../node_modules/.pnpm/react-native-view-shot@4.0.3_react-native@0.81.5_react@19.1.0/node_modules/react-native-view-shot`)"
   - "react-native-webview (from `../../../node_modules/.pnpm/react-native-webview@13.16.1_react-native@0.81.5_react@19.1.0/node_modules/react-native-webview`)"
   - "React-NativeModulesApple (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.29.0_@types+react@18.3.28_react@19.1.0/node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)"
@@ -2816,6 +2862,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/react-native-keyboard-controller@1.20.7_react-native-reanimated@4.1.6_react-native@0.81.5_react@19.1.0/node_modules/react-native-keyboard-controller"
   react-native-safe-area-context:
     :path: "../../../node_modules/.pnpm/react-native-safe-area-context@5.6.2_react-native@0.81.5_react@19.1.0/node_modules/react-native-safe-area-context"
+  react-native-slider:
+    :path: "../../../node_modules/.pnpm/@react-native-community+slider@5.1.2/node_modules/@react-native-community/slider"
   react-native-view-shot:
     :path: "../../../node_modules/.pnpm/react-native-view-shot@4.0.3_react-native@0.81.5_react@19.1.0/node_modules/react-native-view-shot"
   react-native-webview:
@@ -2994,6 +3042,7 @@ SPEC CHECKSUMS:
   react-native-context-menu-view: da39a4612c1294d651907162529cfba8421e9b89
   react-native-keyboard-controller: d8883e2d24952e3f50241d481e7729193d0e8a17
   react-native-safe-area-context: c5d42c4294aa175415947e23c2ac956253abfc7d
+  react-native-slider: 93063b5034e5c8ae011aeb2d96d57866191e6d6b
   react-native-view-shot: 8853a6bacbf77899d550773a84986f251f509ffc
   react-native-webview: b8dbc288f28a87766d7b1158ef185619768e3339
   React-NativeModulesApple: 8969913947d5b576de4ed371a939455a8daf28aa

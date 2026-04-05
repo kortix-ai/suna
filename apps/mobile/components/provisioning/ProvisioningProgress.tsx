@@ -197,34 +197,7 @@ export function ProvisioningProgress({
         {/* Circular progress */}
         <CircularProgress progress={progress} />
 
-        {/* Stage list or fallback label */}
-        {stages && stages.length > 0 ? (
-          <View className="mt-6 w-full items-center" style={{ maxWidth: 300 }}>
-            {stages.map((ps, i) => {
-              const isDone = i < completedCount;
-              const isActive = i === completedCount;
-              // Only show a window of stages around the active one
-              if (i < completedCount - 1 || i > completedCount + 2) return null;
-
-              return (
-                <StageItem
-                  key={ps.id}
-                  stage={ps}
-                  isDone={isDone}
-                  isActive={isActive}
-                />
-              );
-            })}
-          </View>
-        ) : (
-          <View className="mt-6 items-center">
-            <Text className="text-base font-roobert text-foreground/70 text-center">
-              {stageDisplayText}
-            </Text>
-          </View>
-        )}
-
-        {/* Progress bar (linear, below stages) */}
+        {/* Progress bar (linear, below circle) */}
         <View className="mt-6 w-full" style={{ maxWidth: 280 }}>
           <View
             className="h-[3px] rounded-full overflow-hidden"
@@ -239,7 +212,7 @@ export function ProvisioningProgress({
             />
           </View>
           <Text className="text-xs font-roobert text-foreground/30 text-center mt-2">
-            {stageDisplayText}... {Math.round(progress)}%
+            {stageMessage ? stageDisplayText : `${stageDisplayText}... ${Math.round(progress)}%`}
           </Text>
         </View>
 
