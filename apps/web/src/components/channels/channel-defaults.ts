@@ -1,6 +1,6 @@
 export const DEFAULT_CHANNEL_AGENT = 'kortix';
 
-export function buildDefaultChannelInstructions(platform: 'telegram' | 'slack', channelName?: string) {
+export function buildDefaultChannelInstructions(platform: 'telegram' | 'slack' | 'whatsapp', channelName?: string) {
   const label = channelName?.trim() || platform;
   return [
     `You are an AI agent responding via ${label}.`,

@@ -11,7 +11,8 @@
     "test:e2e": "bun test tests/e2e/",
     "test:coverage": "bun test --coverage",
     "channels:telegram": "bun run channels/telegram.ts",
-    "channels:slack": "bun run channels/slack.ts"
+    "channels:slack": "bun run channels/slack.ts",
+    "channels:whatsapp": "bun run channels/whatsapp-service.ts"
   },
   "dependencies": {
     "@hono/standard-validator": "^0.2.2",
@@ -39,7 +40,9 @@
     "opencode-pty": "*",
     "@mendable/firecrawl-js": "*",
     "@tavily/core": "*",
-    "replicate": "*"
+    "replicate": "*",
+    "@whiskeysockets/baileys": "^6.7.16",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "bun-types": "^1.0.0",
