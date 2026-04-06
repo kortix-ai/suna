@@ -96,7 +96,7 @@ export function getDb(): Database {
 
 export interface ChannelConfig {
   id: string
-  platform: "telegram" | "slack"
+  platform: "telegram" | "slack" | "whatsapp"
   name: string
   enabled: boolean
   bot_token: string
@@ -140,7 +140,7 @@ export function generateChannelName(createdBy?: string): string {
 // ─── CRUD ────────────────────────────────────────────────────────────────────
 
 export function createChannel(opts: {
-  platform: "telegram" | "slack"
+  platform: "telegram" | "slack" | "whatsapp"
   name?: string
   bot_token: string
   signing_secret?: string
@@ -189,7 +189,7 @@ export function getChannelByPath(webhookPath: string): ChannelConfig | null {
   return { ...row, enabled: !!row.enabled }
 }
 
-export function listChannelsByBot(platform: "telegram" | "slack", botId: string, botUsername?: string): ChannelConfig[] {
+export function listChannelsByBot(platform: "telegram" | "slack" | "whatsapp", botId: string, botUsername?: string): ChannelConfig[] {
   const db = getDb()
   const rows = botUsername
     ? db.query(
@@ -202,7 +202,7 @@ export function listChannelsByBot(platform: "telegram" | "slack", botId: string,
 }
 
 export function upsertChannelByBot(opts: {
-  platform: "telegram" | "slack"
+  platform: "telegram" | "slack" | "whatsapp"
   name?: string
   bot_token: string
   signing_secret?: string

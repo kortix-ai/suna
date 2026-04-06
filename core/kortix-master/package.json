@@ -11,7 +11,8 @@
     "test:e2e": "bun test tests/e2e/",
     "test:coverage": "bun test --coverage",
     "channels:telegram": "bun run channels/telegram.ts",
-    "channels:slack": "bun run channels/slack.ts"
+    "channels:slack": "bun run channels/slack.ts",
+    "channels:whatsapp": "bun run channels/whatsapp.ts"
   },
   "dependencies": {
     "@hono/standard-validator": "^0.2.2",

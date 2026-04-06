@@ -185,8 +185,8 @@ app.use('*', async (c, next) => {
   if (pathname === '/kortix/health') return next()
   // Skip docs endpoints — API docs should be accessible without auth
   if (pathname === '/docs' || pathname === '/docs/openapi.json') return next()
-  // [channels v2] Channel webhooks now use /hooks/telegram/<id> and /hooks/slack/<id>
-  // which are already covered by the /hooks/* bypass below.
+  // [channels v2] Channel webhooks now use /hooks/telegram/<id>, /hooks/slack/<id>,
+  // and /hooks/whatsapp/<id> — all covered by the /hooks/* bypass below.
   // Skip auth for Pipedream event delivery — Pipedream POSTs events to
   // /events/pipedream/:listenerId. The listener ID acts as a secret token
   // (UUID, not guessable). Events are forwarded to the triggers webhook server.
@@ -356,7 +356,7 @@ app.route('/kortix/triggers', triggersRouter)
 // Legacy compat: /kortix/cron/* → forwards to /kortix/triggers/*
 app.route('/kortix/cron', triggersRouter)
 
-// Channels — SQLite-backed channel management (Telegram, Slack)
+// Channels — SQLite-backed channel management (Telegram, Slack, WhatsApp)
 import { channelsRouter } from './routes/channels'
 app.route('/kortix/channels', channelsRouter)
 
@@ -390,7 +390,7 @@ app.route('/kortix/connectors', connectorsRouter)
 // Pipedream integration proxy — forwards to kortix-api
 app.route('/api/pipedream', pipedreamRouter)
 
-// [channels v2] Channel webhooks — handles /hooks/telegram/<id> and /hooks/slack/<id>
+// [channels v2] Channel webhooks — handles /hooks/telegram/<id>, /hooks/slack/<id>, and /hooks/whatsapp/<id>
 // directly in kortix-master. These are looked up in the channels SQLite DB,
 // verified, parsed, and dispatched to OpenCode sessions.
 // Must be mounted BEFORE the generic /hooks/* proxy to port 8099.

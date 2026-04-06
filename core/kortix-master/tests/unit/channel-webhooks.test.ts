@@ -15,6 +15,8 @@ import {
   parseTelegramUpdate,
   parseSlackEvent,
   verifySlackSignature,
+  parseWhatsAppWebhook,
+  verifyWhatsAppSignature,
   type NormalizedChannelEvent,
 } from '../../triggers/src/channel-webhooks'
 
@@ -389,6 +391,145 @@ describe('verifySlackSignature', () => {
       .update(`v0:${oldTimestamp}:${body}`).digest('hex')
 
     const result = verifySlackSignature(body, oldTimestamp, sig, SLACK_SIGNING_SECRET)
+    expect(result).toBe(false)
+  })
+})
+
+// ─── WhatsApp ──────────────────────────────────────────────────────────────
+
+const TEST_PHONE_NUMBER_ID = '123456789'
+
+describe('parseWhatsAppWebhook', () => {
+  describe('text message parsing', () => {
+    it('extracts phone, user_name, text from standard message', () => {
+      const payload = fixture('whatsapp-message-text.json')
+      const result = parseWhatsAppWebhook(payload, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      expect(result.dispatch_event).not.toBeUndefined()
+      const ev = result.dispatch_event!
+      expect(ev.platform).toBe('whatsapp')
+      expect(ev.user_id).toBe('5511999887766')
+      expect(ev.user_name).toBe('Alice')
+      expect(ev.chat_id).toBe('5511999887766')
+      expect(ev.text).toBe('hey can you check the CI?')
+      expect(ev.message_id).toBe('wamid.HBgLNTUxMQ==')
+      expect(ev.event_type).toBe('message')
+      expect(ev.is_dm).toBe(true)
+    })
+  })
+
+  describe('media messages', () => {
+    it('extracts image with caption', () => {
+      const payload = fixture('whatsapp-message-image.json')
+      const result = parseWhatsAppWebhook(payload, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      const ev = result.dispatch_event!
+      expect(ev.text).toContain('image')
+      expect(ev.text).toContain('screenshot of the error')
+    })
+
+    it('extracts document filename', () => {
+      const payload = fixture('whatsapp-message-document.json')
+      const result = parseWhatsAppWebhook(payload, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      const ev = result.dispatch_event!
+      expect(ev.text).toContain('document')
+      expect(ev.text).toContain('report.pdf')
+    })
+
+    it('extracts reaction emoji', () => {
+      const payload = fixture('whatsapp-message-reaction.json')
+      const result = parseWhatsAppWebhook(payload, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      const ev = result.dispatch_event!
+      expect(ev.event_type).toBe('reaction')
+      expect(ev.text).toContain('👍')
+    })
+  })
+
+  describe('status updates (should be skipped)', () => {
+    it('returns no dispatch event for delivery status', () => {
+      const payload = fixture('whatsapp-status-update.json')
+      const result = parseWhatsAppWebhook(payload, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      expect(result.dispatch_event).toBeUndefined()
+    })
+  })
+
+  describe('session key', () => {
+    it('produces "whatsapp:<config>:user:<phone>"', () => {
+      const payload = fixture('whatsapp-message-text.json')
+      const result = parseWhatsAppWebhook(payload, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      expect(result.dispatch_event!.session_key).toBe(`whatsapp:${TEST_CONFIG_ID}:user:5511999887766`)
+    })
+
+    it('same user produces same key across messages', () => {
+      const p1 = fixture('whatsapp-message-text.json')
+      const p2 = fixture('whatsapp-message-image.json')
+      const r1 = parseWhatsAppWebhook(p1, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      const r2 = parseWhatsAppWebhook(p2, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      expect(r1.dispatch_event!.session_key).toBe(r2.dispatch_event!.session_key)
+    })
+  })
+
+  describe('prompt building', () => {
+    it('includes platform, user info, phone, message text', () => {
+      const payload = fixture('whatsapp-message-text.json')
+      const result = parseWhatsAppWebhook(payload, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      const prompt = result.dispatch_event!.prompt
+      expect(prompt).toContain('WhatsApp')
+      expect(prompt).toContain('Alice')
+      expect(prompt).toContain('5511999887766')
+      expect(prompt).toContain('hey can you check the CI?')
+    })
+
+    it('includes CLI send instructions', () => {
+      const payload = fixture('whatsapp-message-text.json')
+      const result = parseWhatsAppWebhook(payload, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      const prompt = result.dispatch_event!.prompt
+      expect(prompt).toContain('whatsapp')
+      expect(prompt).toContain('send')
+      expect(prompt).toContain('--phone')
+    })
+  })
+
+  describe('edge cases', () => {
+    it('returns no dispatch for null payload', () => {
+      const result = parseWhatsAppWebhook(null, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      expect(result.dispatch_event).toBeUndefined()
+    })
+
+    it('returns no dispatch for empty entry', () => {
+      const result = parseWhatsAppWebhook({ entry: [] }, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      expect(result.dispatch_event).toBeUndefined()
+    })
+
+    it('returns no dispatch for non-messages field', () => {
+      const result = parseWhatsAppWebhook({
+        entry: [{ changes: [{ field: 'account_update', value: {} }] }]
+      }, TEST_CONFIG_ID, TEST_PHONE_NUMBER_ID)
+      expect(result.dispatch_event).toBeUndefined()
+    })
+  })
+})
+
+// ─── WhatsApp Signature Verification ────────────────────────────────────────
+
+describe('verifyWhatsAppSignature', () => {
+  const WHATSAPP_APP_SECRET = 'test_whatsapp_app_secret'
+
+  it('accepts valid HMAC-SHA256 signature', () => {
+    const body = '{"test":"data"}'
+    const crypto = require('crypto')
+    const signature = 'sha256=' + crypto.createHmac('sha256', WHATSAPP_APP_SECRET)
+      .update(body).digest('hex')
+
+    const result = verifyWhatsAppSignature(body, signature, WHATSAPP_APP_SECRET)
+    expect(result).toBe(true)
+  })
+
+  it('rejects invalid signature', () => {
+    const result = verifyWhatsAppSignature('body', 'sha256=invalid', WHATSAPP_APP_SECRET)
+    expect(result).toBe(false)
+  })
+
+  it('rejects empty signature', () => {
+    const result = verifyWhatsAppSignature('body', '', WHATSAPP_APP_SECRET)
     expect(result).toBe(false)
   })
 })

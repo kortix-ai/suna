@@ -189,6 +189,95 @@ channelsRouter.post('/setup/telegram', async (c) => {
   }
 })
 
+// ── WhatsApp setup ──────────────────────────────────────────────────────────
+
+channelsRouter.post('/verify-whatsapp', async (c) => {
+  const { accessToken, phoneNumberId } = await c.req.json()
+  if (!accessToken || !phoneNumberId) return c.json({ ok: false, error: 'accessToken and phoneNumberId required' }, 400)
+
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) },
+    )
+    const data = await res.json() as any
+    if (data.error) {
+      return c.json({ ok: false, error: data.error.message || 'Invalid credentials' })
+    }
+    return c.json({
+      ok: true,
+      phone: {
+        id: phoneNumberId,
+        display_phone_number: data.display_phone_number,
+        verified_name: data.verified_name,
+        quality_rating: data.quality_rating,
+      },
+    })
+  } catch {
+    return c.json({ ok: false, error: 'Failed to reach WhatsApp Cloud API' }, 500)
+  }
+})
+
+channelsRouter.post('/setup/whatsapp', async (c) => {
+  try {
+    const { accessToken, phoneNumberId, publicUrl, createdBy, defaultAgent, defaultModel, webhookVerifyToken } = await c.req.json()
+    if (!accessToken || !phoneNumberId) return c.json({ ok: false, error: 'accessToken and phoneNumberId required' }, 400)
+
+    // 1. Verify credentials
+    const meRes = await fetch(
+      `https://graph.facebook.com/v21.0/${phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) },
+    )
+    const meData = await meRes.json() as any
+    if (meData.error) {
+      return c.json({ ok: false, error: meData.error.message || 'Invalid credentials' })
+    }
+
+    // 2. Store as "ACCESS_TOKEN|PHONE_NUMBER_ID" in bot_token field
+    const combinedToken = `${accessToken}|${phoneNumberId}`
+
+    const { upsertChannelByBot } = await loadDb()
+    const { channel, created, deduped } = upsertChannelByBot({
+      platform: 'whatsapp',
+      bot_token: combinedToken,
+      bot_id: phoneNumberId,
+      bot_username: meData.verified_name || meData.display_phone_number,
+      created_by: createdBy,
+      default_agent: defaultAgent || undefined,
+      default_model: defaultModel || undefined,
+    })
+
+    // If user provides a custom webhook verify token, store in signing_secret field
+    if (webhookVerifyToken) {
+      const { updateChannel } = await loadDb()
+      updateChannel(channel.id, { signing_secret: webhookVerifyToken } as any)
+    }
+
+    const resolvedPublicUrl = publicUrl || getChannelPublicBaseUrl() || ''
+    const webhookUrl = resolvedPublicUrl ? joinPublicBaseUrl(resolvedPublicUrl, channel.webhook_path) : null
+
+    return c.json({
+      ok: true,
+      channel: {
+        id: channel.id,
+        name: channel.name,
+        phone: meData.display_phone_number,
+        verifiedName: meData.verified_name,
+        webhookPath: channel.webhook_path,
+        webhookUrl,
+        webhookVerifyToken: channel.webhook_secret,
+      },
+      message: `WhatsApp ${meData.verified_name || meData.display_phone_number} ${created ? 'set up' : 'updated'} as "${channel.name}"`,
+      next_step: webhookUrl
+        ? `Set your Meta App webhook URL to: ${webhookUrl} — use verify token: ${channel.webhook_secret}`
+        : 'Set PUBLIC_BASE_URL or provide publicUrl to get your webhook URL',
+      deduped,
+    })
+  } catch (e) {
+    return c.json({ ok: false, error: String(e) }, 500)
+  }
+})
+
 // ── Random bot name generation ────────────────────────────────────────────────
 const FIRST_NAMES = [
   'Atlas', 'Nova', 'Sage', 'Echo', 'Bolt', 'Iris', 'Dash', 'Cleo',
@@ -446,6 +535,10 @@ channelsRouter.delete('/:id', async (c) => {
       // from a bot token at runtime. We can still remove all local secrets/tokens and connector state.
       cleanup.provider = {
         note: 'Slack local config removed. Event Subscriptions URL in Slack app should be removed manually if desired.',
+      }
+    } else if (ch.platform === 'whatsapp') {
+      cleanup.provider = {
+        note: 'WhatsApp local config removed. Webhook URL in Meta App Dashboard should be removed manually if desired.',
       }
     }
 

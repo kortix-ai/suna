@@ -11,17 +11,19 @@ import {
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { TelegramIcon } from '@/components/ui/icons/telegram';
 import { SlackIcon } from '@/components/ui/icons/slack';
+import { WhatsAppIcon } from '@/components/ui/icons/whatsapp';
 import { TelegramSetupWizard } from './telegram-setup-wizard';
 import { SlackSetupWizard } from './slack-setup-wizard';
+import { WhatsAppSetupWizard } from './whatsapp-setup-wizard';
 
-type Platform = 'telegram' | 'slack' | null;
+type Platform = 'telegram' | 'slack' | 'whatsapp' | null;
 
 interface ChannelConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
   /** Pre-select a platform when opening (bypasses the picker) */
-  initialPlatform?: 'telegram' | 'slack';
+  initialPlatform?: 'telegram' | 'slack' | 'whatsapp';
 }
 
 export function ChannelConfigDialog({ open, onOpenChange, onCreated, initialPlatform }: ChannelConfigDialogProps) {
@@ -82,6 +84,15 @@ export function ChannelConfigDialog({ open, onOpenChange, onCreated, initialPlat
                 </div>
                 <p className="text-sm font-medium">Slack</p>
               </button>
+              <button
+                onClick={() => setPlatform('whatsapp')}
+                className="flex flex-col items-center gap-3 p-6 rounded-2xl border border-border/50 bg-card hover:bg-muted/50 transition-colors cursor-pointer group"
+              >
+                <div className="w-12 h-12 rounded-xl bg-muted border border-border/50 flex items-center justify-center group-hover:border-primary/30 transition-colors">
+                  <WhatsAppIcon className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-medium">WhatsApp</p>
+              </button>
             </div>
           </>
         ) : platform === 'telegram' ? (
@@ -89,10 +100,15 @@ export function ChannelConfigDialog({ open, onOpenChange, onCreated, initialPlat
             <VisuallyHidden><DialogTitle>Telegram Setup</DialogTitle></VisuallyHidden>
             <TelegramSetupWizard onCreated={handleCreated} onBack={handleBack} />
           </>
-        ) : (
+        ) : platform === 'slack' ? (
           <>
             <VisuallyHidden><DialogTitle>Slack Setup</DialogTitle></VisuallyHidden>
             <SlackSetupWizard onCreated={handleCreated} onBack={handleBack} />
+          </>
+        ) : (
+          <>
+            <VisuallyHidden><DialogTitle>WhatsApp Setup</DialogTitle></VisuallyHidden>
+            <WhatsAppSetupWizard onCreated={handleCreated} onBack={handleBack} />
           </>
         )}
       </DialogContent>

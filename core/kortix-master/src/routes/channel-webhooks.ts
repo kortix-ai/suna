@@ -12,6 +12,8 @@ import {
   parseTelegramUpdate,
   parseSlackEvent,
   verifySlackSignature,
+  parseWhatsAppWebhook,
+  verifyWhatsAppSignature,
   type NormalizedChannelEvent,
 } from '../../triggers/src/channel-webhooks'
 
@@ -485,6 +487,114 @@ channelWebhooksRouter.post('/hooks/slack/:channelId', async (c) => {
     return c.json({ ok: true, sessionId: dispatch.sessionId }, 202)
   } catch (err) {
     console.error(`[Channel Webhook] Slack dispatch error:`, err)
+    return c.json({ ok: false, error: 'dispatch_failed' }, 500)
+  }
+})
+
+// ── WhatsApp webhook handlers ──────────────────────────────────────────────
+
+function parseWhatsAppToken(botToken: string): { accessToken: string; phoneNumberId: string } {
+  const parts = botToken.split('|')
+  return { accessToken: parts[0] || '', phoneNumberId: parts[1] || '' }
+}
+
+async function sendWhatsAppText(channel: ChannelConfig, phone: string, text: string): Promise<void> {
+  const { accessToken, phoneNumberId } = parseWhatsAppToken(channel.bot_token)
+  if (!accessToken || !phoneNumberId) return
+
+  await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'text',
+      text: { body: text },
+    }),
+    signal: AbortSignal.timeout(15_000),
+  })
+}
+
+// WhatsApp webhook verification (GET) — Meta sends this when you register the webhook URL
+channelWebhooksRouter.get('/hooks/whatsapp/:channelId', async (c) => {
+  const channelId = c.req.param('channelId')
+  const webhookPath = `/hooks/whatsapp/${channelId}`
+
+  const channel = getChannelByPath(webhookPath)
+  if (!channel) {
+    return c.text('Not found', 404)
+  }
+
+  // Meta sends: hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=<challenge>
+  const mode = c.req.query('hub.mode')
+  const token = c.req.query('hub.verify_token')
+  const challenge = c.req.query('hub.challenge')
+
+  if (mode === 'subscribe' && token === channel.webhook_secret) {
+    console.log(`[Channel Webhook] WhatsApp webhook verified for ${channel.name} (${channelId})`)
+    return c.text(challenge || '', 200)
+  }
+
+  console.warn(`[Channel Webhook] WhatsApp verification failed for ${channel.name} (${channelId})`)
+  return c.text('Forbidden', 403)
+})
+
+// WhatsApp webhook events (POST)
+channelWebhooksRouter.post('/hooks/whatsapp/:channelId', async (c) => {
+  const channelId = c.req.param('channelId')
+  const webhookPath = `/hooks/whatsapp/${channelId}`
+
+  let channel = getChannelByPath(webhookPath)
+  if (!channel) {
+    return c.json({ ok: false, error: 'not_found' }, 404)
+  }
+
+  const rawBody = await c.req.text()
+  let body: unknown
+  try {
+    body = JSON.parse(rawBody)
+  } catch {
+    return c.json({ ok: false, error: 'invalid_json' }, 400)
+  }
+
+  // Verify signature if signing_secret (app secret) is configured
+  if (channel.signing_secret) {
+    const signature = c.req.header('x-hub-signature-256') || ''
+    if (!verifyWhatsAppSignature(rawBody, signature, channel.signing_secret)) {
+      console.warn(`[Channel Webhook] WhatsApp signature mismatch for ${channel.name} (${channelId})`)
+      return c.json({ ok: false, error: 'unauthorized' }, 401)
+    }
+  }
+
+  const { accessToken, phoneNumberId } = parseWhatsAppToken(channel.bot_token)
+
+  const result = parseWhatsAppWebhook(body, channelId, phoneNumberId)
+  if (!result.dispatch_event) {
+    return c.json({ ok: true, skipped: true })
+  }
+
+  // Handle commands BEFORE the enabled check
+  const command = await handleChannelCommand(channel, result.dispatch_event)
+  if (command.handled) {
+    if (command.text) await sendWhatsAppText(channel, result.dispatch_event.chat_id, command.text)
+    channel = getChannelByPath(webhookPath)!
+    return c.json({ ok: true, command: true })
+  }
+
+  if (!channel.enabled) {
+    return c.json({ ok: false, error: 'channel_disabled' }, 403)
+  }
+
+  // Dispatch to OpenCode
+  try {
+    const dispatch = await dispatchToOpenCode(channel, result.dispatch_event)
+    console.log(`[Channel Webhook] WhatsApp ${result.dispatch_event.event_type} from ${result.dispatch_event.username} → session ${dispatch.sessionId}`)
+    return c.json({ ok: true, sessionId: dispatch.sessionId }, 202)
+  } catch (err) {
+    console.error(`[Channel Webhook] WhatsApp dispatch error:`, err)
     return c.json({ ok: false, error: 'dispatch_failed' }, 500)
   }
 })

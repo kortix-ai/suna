@@ -12,7 +12,7 @@ import { createHmac, timingSafeEqual } from "node:crypto"
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface NormalizedChannelEvent {
-  platform: "telegram" | "slack"
+  platform: "telegram" | "slack" | "whatsapp"
   event_type: string
   user_id: string
   user_name: string
@@ -622,6 +622,166 @@ export function parseSlackEvent(payload: any, configId: string, botUserId: strin
 
   // Unrecognized event type
   return { is_challenge: false }
+}
+
+// ─── WhatsApp ───────────────────────────────────────────────────────────────
+
+function whatsappInstructions(configId: string, phone: string, messageId?: string): string[] {
+  const cfg = `--config-id ${configId}`
+  return [
+    "── WhatsApp instructions ──",
+    "CRITICAL: The user can ONLY see messages you send via kwhatsapp. Your internal thoughts, tool calls, and session text are INVISIBLE to them. You MUST send every reply, result, and output through kwhatsapp. If you don't call kwhatsapp send, the user sees nothing.",
+    "",
+    `Send text: kwhatsapp send ${cfg} --phone ${phone} --text "your reply"`,
+    `Complex text (code/backticks): write to /tmp/reply.txt, then: kwhatsapp send ${cfg} --phone ${phone} --text-file /tmp/reply.txt`,
+    `Send file: kwhatsapp send ${cfg} --phone ${phone} --file /tmp/example.py --text "caption"`,
+    ...(messageId ? [`React: kwhatsapp react ${cfg} --phone ${phone} --message-id ${messageId} --emoji "👍"`] : []),
+    "",
+    "Rules:",
+    "- EVERY response must be sent via kwhatsapp send. No exceptions.",
+    "- When delegating to workers, ALWAYS use async: true. Immediately acknowledge to the user via kwhatsapp send (e.g. 'Working on it...'), then send the result when the worker completes.",
+    "- NEVER block silently. The user sees nothing until you call kwhatsapp send.",
+    "- Code/files: write to /tmp/ and attach via --file. NEVER paste file contents into text.",
+    "- Use --text-file for anything with backticks, quotes, or code blocks.",
+    "- Do NOT use the question or show tools — they don't render in WhatsApp.",
+    "- Do NOT send localhost URLs — screenshot and send via --file instead.",
+    "- WhatsApp does NOT support Markdown. Use plain text formatting.",
+    "- Bridge commands (/new /reset /status /help /model /agent) are handled automatically, not by you.",
+    "- Keep replies concise. Short paragraphs, no walls of text.",
+  ]
+}
+
+export interface WhatsAppParseResult {
+  is_verification: boolean
+  hub_challenge?: string
+  dispatch_event?: NormalizedChannelEvent
+}
+
+export function parseWhatsAppWebhook(payload: any, configId: string, phoneNumberId: string): WhatsAppParseResult {
+  if (!payload || typeof payload !== "object") {
+    return { is_verification: false }
+  }
+
+  // WhatsApp webhook events come wrapped in entry[].changes[].value
+  const entry = payload.entry?.[0]
+  if (!entry) return { is_verification: false }
+
+  const change = entry.changes?.[0]
+  if (!change || change.field !== "messages") return { is_verification: false }
+
+  const value = change.value
+  if (!value) return { is_verification: false }
+
+  // Skip status updates (delivered, read, sent)
+  if (value.statuses && !value.messages) return { is_verification: false }
+
+  const messages = value.messages
+  if (!messages || messages.length === 0) return { is_verification: false }
+
+  const msg = messages[0]
+  const contact = value.contacts?.[0] || {}
+  const from = msg.from || ""       // sender phone number
+  const msgId = msg.id || ""
+  const timestamp = msg.timestamp || ""
+
+  // Skip messages from our own phone number (prevents loops)
+  const metadata = value.metadata || {}
+  if (metadata.phone_number_id && metadata.phone_number_id !== phoneNumberId) {
+    return { is_verification: false }
+  }
+
+  // Build text based on message type
+  let text = ""
+  const msgType = msg.type || "unknown"
+
+  switch (msgType) {
+    case "text":
+      text = msg.text?.body || ""
+      break
+    case "image":
+      text = msg.image?.caption ? `[image] ${msg.image.caption}` : "[image received]"
+      break
+    case "video":
+      text = msg.video?.caption ? `[video] ${msg.video.caption}` : "[video received]"
+      break
+    case "audio":
+      text = "[audio message]"
+      break
+    case "document":
+      text = msg.document?.filename
+        ? `[document: ${msg.document.filename}]`
+        : "[document received]"
+      break
+    case "sticker":
+      text = `[sticker: ${msg.sticker?.emoji || ""}]`
+      break
+    case "location":
+      text = `[location: ${msg.location?.latitude}, ${msg.location?.longitude}]`
+      break
+    case "contacts":
+      text = "[contact shared]"
+      break
+    case "reaction":
+      text = `[reaction: ${msg.reaction?.emoji || ""}]`
+      break
+    default:
+      text = `[${msgType} message]`
+  }
+
+  const userName = contact.profile?.name || from
+  const sessionKey = `whatsapp:${configId}:user:${from}`
+
+  const prompt = buildWhatsAppPrompt(msgType, userName, from, text, msgId, configId)
+
+  return {
+    is_verification: false,
+    dispatch_event: {
+      platform: "whatsapp",
+      event_type: msgType === "reaction" ? "reaction" : "message",
+      user_id: from,
+      user_name: userName,
+      username: from,
+      chat_id: from,
+      text,
+      message_id: msgId,
+      is_dm: true,  // WhatsApp is always DM-style
+      session_key: sessionKey,
+      prompt,
+      raw: payload,
+    },
+  }
+}
+
+function buildWhatsAppPrompt(
+  msgType: string, userName: string, phone: string,
+  text: string, messageId: string, configId: string,
+): string {
+  const lines = [
+    `[WhatsApp · DM · ${msgType} from ${userName} (${phone})]`,
+    text,
+    "",
+    `Phone: ${phone}${messageId ? ` | Message ID: ${messageId}` : ""}`,
+    ...whatsappInstructions(configId, phone, messageId),
+  ]
+  return lines.join("\n")
+}
+
+export function verifyWhatsAppSignature(
+  body: string,
+  signature: string,
+  appSecret: string,
+): boolean {
+  if (!signature || !appSecret) return false
+
+  // WhatsApp sends X-Hub-Signature-256: sha256=<hex>
+  const expected = signature.replace("sha256=", "")
+  const computed = createHmac("sha256", appSecret).update(body).digest("hex")
+
+  try {
+    return timingSafeEqual(Buffer.from(computed), Buffer.from(expected))
+  } catch {
+    return false
+  }
 }
 
 // ─── Slack Signature Verification ────────────────────────────────────────────

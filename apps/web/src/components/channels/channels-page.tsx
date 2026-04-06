@@ -19,6 +19,7 @@ import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { PageHeader } from '@/components/ui/page-header';
 import { SlackIcon } from '@/components/ui/icons/slack';
 import { TelegramIcon } from '@/components/ui/icons/telegram';
+import { WhatsAppIcon } from '@/components/ui/icons/whatsapp';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { useServerStore, getActiveOpenCodeUrl } from '@/stores/server-store';
@@ -30,7 +31,7 @@ import { ChannelSettingsDialog } from './channel-settings-dialog';
 
 interface Channel {
   id: string;
-  platform: 'telegram' | 'slack';
+  platform: 'telegram' | 'slack' | 'whatsapp';
   name: string;
   enabled: boolean;
   bot_username: string | null;
@@ -71,7 +72,7 @@ function ChannelCard({
   onRemove: (id: string) => void;
   onSettings: (channel: Channel) => void;
 }) {
-  const Icon = channel.platform === 'telegram' ? TelegramIcon : SlackIcon;
+  const Icon = channel.platform === 'telegram' ? TelegramIcon : channel.platform === 'whatsapp' ? WhatsAppIcon : SlackIcon;
   const modelShort = channel.default_model ? channel.default_model.split('/').pop() : null;
 
   return (
@@ -189,13 +190,14 @@ export function ChannelsPage() {
     }
   };
 
-  const openSetupDialog = (platform?: 'telegram' | 'slack') => {
+  const openSetupDialog = (platform?: 'telegram' | 'slack' | 'whatsapp') => {
     setConfigDialogPlatform(platform);
     setConfigDialogOpen(true);
   };
 
   const telegramChannels = channels.filter(c => c.platform === 'telegram');
   const slackChannels = channels.filter(c => c.platform === 'slack');
+  const whatsappChannels = channels.filter(c => c.platform === 'whatsapp');
 
   return (
     <div className="min-h-[100dvh]">
@@ -279,6 +281,18 @@ export function ChannelsPage() {
                   <p className="text-[11px] text-muted-foreground">Connect a Slack app</p>
                 </div>
               </button>
+              <button
+                onClick={() => openSetupDialog('whatsapp')}
+                className="flex items-center gap-3 p-4 rounded-2xl border border-border/50 bg-card hover:bg-muted/50 transition-colors cursor-pointer text-left group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-muted border border-border/50 flex items-center justify-center shrink-0 group-hover:border-primary/30 transition-colors">
+                  <WhatsAppIcon className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">WhatsApp</p>
+                  <p className="text-[11px] text-muted-foreground">Connect a WhatsApp Business number</p>
+                </div>
+              </button>
             </div>
           </div>
         ) : (
@@ -311,6 +325,23 @@ export function ChannelsPage() {
                 <div className="space-y-2">
                   <AnimatePresence mode="popLayout">
                     {slackChannels.map((ch, i) => (
+                      <ChannelCard key={ch.id} channel={ch} index={i} onToggle={handleToggle} onRemove={handleRemove} onSettings={(ch) => { setSettingsChannel(ch); setSettingsOpen(true); }} />
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </div>
+            )}
+
+            {whatsappChannels.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 px-1">
+                  <WhatsAppIcon className="h-3.5 w-3.5" />
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">WhatsApp</span>
+                  <Badge variant="secondary" className="text-[10px] tabular-nums">{whatsappChannels.length}</Badge>
+                </div>
+                <div className="space-y-2">
+                  <AnimatePresence mode="popLayout">
+                    {whatsappChannels.map((ch, i) => (
                       <ChannelCard key={ch.id} channel={ch} index={i} onToggle={handleToggle} onRemove={handleRemove} onSettings={(ch) => { setSettingsChannel(ch); setSettingsOpen(true); }} />
                     ))}
                   </AnimatePresence>
