@@ -445,7 +445,9 @@ export const useTabStore = create<TabState>()(
       // On rehydration, ensure dashboard tab is always present
       onRehydrateStorage: () => (state) => {
         if (state) {
-          const ensured = ensureDashboardTab(state.tabs, state.tabOrder);
+          const tabs = state.tabs && typeof state.tabs === 'object' ? state.tabs : {};
+          const tabOrder = Array.isArray(state.tabOrder) ? state.tabOrder : [];
+          const ensured = ensureDashboardTab(tabs, tabOrder);
           state.tabs = ensured.tabs;
           state.tabOrder = ensured.tabOrder;
           if (!state.activeTabId) {
