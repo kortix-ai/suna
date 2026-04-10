@@ -132,7 +132,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     return models
       .filter((m) => {
         if (!q && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })) return false;
-        return !q || m.modelName.toLowerCase().includes(q) || m.modelID.toLowerCase().includes(q) || m.providerName.toLowerCase().includes(q);
+        return !q || (m.modelName || '').toLowerCase().includes(q) || (m.modelID || '').toLowerCase().includes(q) || (m.providerName || '').toLowerCase().includes(q);
       })
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
   }, [models, search, modelStore]);

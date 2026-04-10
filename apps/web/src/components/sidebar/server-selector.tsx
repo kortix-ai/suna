@@ -631,7 +631,7 @@ export function InstanceManagerDialog({
   const filtered = React.useMemo(() => {
     if (!search.trim()) return servers;
     const q = search.toLowerCase();
-    return servers.filter((s) => s.label.toLowerCase().includes(q) || s.url.toLowerCase().includes(q));
+    return servers.filter((s) => (s.label || '').toLowerCase().includes(q) || (s.url || '').toLowerCase().includes(q));
   }, [servers, search]);
 
   // Reset state when dialog opens

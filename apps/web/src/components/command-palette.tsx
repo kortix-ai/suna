@@ -300,7 +300,7 @@ function MessagesPage({
   const filtered = useMemo(() => {
     if (!query.trim()) return items;
     const q = query.trim().toLowerCase();
-    return items.filter((item) => item.text.toLowerCase().includes(q));
+    return items.filter((item) => (item.text || '').toLowerCase().includes(q));
   }, [items, query]);
 
   if (isLoading) {

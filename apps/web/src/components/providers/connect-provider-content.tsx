@@ -137,7 +137,7 @@ export function ConnectProviderContent({
   const filteredProviders = useMemo(() => {
     const q = search.toLowerCase();
     return allProviders
-      .filter((p) => !q || p.id.toLowerCase().includes(q) || p.name.toLowerCase().includes(q))
+      .filter((p) => !q || (p.id || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q))
       .sort((a, b) => {
         const ai = POPULAR_PROVIDER_IDS.indexOf(a.id);
         const bi = POPULAR_PROVIDER_IDS.indexOf(b.id);

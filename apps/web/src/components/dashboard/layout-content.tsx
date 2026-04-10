@@ -274,8 +274,8 @@ function DashboardSkeleton() {
 // switching between tabs is instant (no re-mount, no loading spinner).
 // ============================================================================
 function SessionTabsContainer({ children }: { children: React.ReactNode }) {
-	const tabs = useTabStore((s) => s.tabs);
-	const tabOrder = useTabStore((s) => s.tabOrder);
+	const tabs = useTabStore((s) => s.tabs) || {};
+	const tabOrder = useTabStore((s) => s.tabOrder) || [];
 	const activeTabId = useTabStore((s) => s.activeTabId);
 	const obActive = useOnboardingModeStore((s) => s.active);
 	const obSessionId = useOnboardingModeStore((s) => s.sessionId);

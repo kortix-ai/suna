@@ -189,7 +189,7 @@ export function useOpenCodeEventStream() {
 			client.permission
 				.list()
 				.then((res) => {
-					if (res.data) (res.data as any[]).forEach(addPermission);
+					if (Array.isArray(res.data)) res.data.forEach(addPermission);
 				})
 				.catch((err) => {
 					logger.error("Failed to hydrate pending permissions", {
@@ -200,7 +200,7 @@ export function useOpenCodeEventStream() {
 			client.question
 				.list()
 				.then((res) => {
-					if (res.data) (res.data as any[]).forEach(addQuestion);
+					if (Array.isArray(res.data)) res.data.forEach(addQuestion);
 				})
 				.catch((err) => {
 					logger.error("Failed to hydrate pending questions", {

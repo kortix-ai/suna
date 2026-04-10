@@ -984,8 +984,8 @@ function SlashCommandPopover({
     const q = filter.toLowerCase();
     return commands.filter(
       (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.description && c.description.toLowerCase().includes(q)),
+        (c.name || '').toLowerCase().includes(q) ||
+        (c.description || '').toLowerCase().includes(q),
     );
   }, [commands, filter]);
 
@@ -1654,8 +1654,8 @@ export function SessionChatInput({
     const q = slashFilter.toLowerCase();
     return commands.filter(
       (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.description && c.description.toLowerCase().includes(q)),
+        (c.name || '').toLowerCase().includes(q) ||
+        (c.description || '').toLowerCase().includes(q),
     );
   }, [commands, slashFilter]);
 
@@ -1726,8 +1726,8 @@ export function SessionChatInput({
     if (!mentionQuery) return [];
     const q = mentionQuery.query.toLowerCase();
     const agentItems: MentionItem[] = agents
-      .filter((a) => a.name.toLowerCase().includes(q))
-      .map((a) => ({ kind: 'agent' as const, label: a.name, value: a.name }));
+      .filter((a) => (a.name || '').toLowerCase().includes(q))
+      .map((a) => ({ kind: 'agent' as const, label: a.name || '', value: a.name || '' }));
 
     // Session items: filter by title, session ID, or changed file paths, exclude current/child/archived
     const sessionItems: MentionItem[] = (allSessions ?? [])
