@@ -82,7 +82,12 @@ export function ConnectingScreen() {
       <div className="flex flex-col items-center gap-6 max-w-md w-full px-8 text-center">
 
         {status === 'connecting' && (
-          <FirstConnectContent label={serverLabel} url={serverUrl} />
+          <FirstConnectContent
+            label={serverLabel}
+            url={serverUrl}
+            onRestart={isCloudProvider ? handleRestart : undefined}
+            restarting={restarting}
+          />
         )}
         {status === 'unreachable' && (
           <UnreachableContent
@@ -155,7 +160,17 @@ type SandboxConnectionStatus = 'connecting' | 'connected' | 'unreachable';
 // ============================================================================
 
 /** Connecting state — spinner + server label */
-function FirstConnectContent({ label, url }: { label: string; url: string }) {
+function FirstConnectContent({
+  label,
+  url,
+  onRestart,
+  restarting,
+}: {
+  label: string;
+  url: string;
+  onRestart?: () => void;
+  restarting?: boolean;
+}) {
   return (
     <>
       {/* Icon ring */}
@@ -178,6 +193,20 @@ function FirstConnectContent({ label, url }: { label: string; url: string }) {
       </div>
 
       <KortixLoader size="small" />
+
+      {onRestart && (
+        <Button
+          type="button"
+          onClick={onRestart}
+          disabled={restarting}
+          variant="muted"
+          size="sm"
+          className="rounded-full"
+        >
+          <RotateCw className={`h-3.5 w-3.5 ${restarting ? 'animate-spin' : ''}`} />
+          {restarting ? 'Restarting…' : 'Restart'}
+        </Button>
+      )}
     </>
   );
 }
