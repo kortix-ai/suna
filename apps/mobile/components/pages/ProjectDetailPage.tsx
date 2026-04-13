@@ -26,6 +26,7 @@ import {
   BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetView,
+  BottomSheetScrollView,
   BottomSheetTextInput,
   TouchableOpacity as BottomSheetTouchable,
 } from '@gorhom/bottom-sheet';
@@ -822,10 +823,11 @@ export function ProjectDetailPage({
         />
       )}
 
-      {/* Task detail sheet — view & edit task status */}
+      {/* Task detail sheet — scrollable for long content (ported from web 54fd0e3) */}
       <BottomSheetModal
         ref={taskSheetRef}
-        enableDynamicSizing
+        snapPoints={['85%']}
+        enableDynamicSizing={false}
         enablePanDownToClose
         backdropComponent={renderBackdrop}
         onDismiss={() => setSelectedTask(null)}
@@ -840,8 +842,8 @@ export function ProjectDetailPage({
           height: 5,
           borderRadius: 3,
         }}>
-        <BottomSheetView
-          style={{
+        <BottomSheetScrollView
+          contentContainerStyle={{
             paddingHorizontal: 20,
             paddingTop: 8,
             paddingBottom: sheetPadding,
@@ -1271,7 +1273,7 @@ export function ProjectDetailPage({
                 </>
               );
             })()}
-        </BottomSheetView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* Edit sheet — matches FilesPage rename sheet pattern */}
