@@ -37,9 +37,9 @@ export const config = {
   KORTIX_DEPLOYMENTS_ENABLED: process.env.KORTIX_DEPLOYMENTS_ENABLED === 'true',
 
   // Secret storage
-  SECRET_FILE_PATH: process.env.SECRET_FILE_PATH || '/workspace/.secrets/.secrets.json',
-  SALT_FILE_PATH: process.env.SALT_FILE_PATH || '/workspace/.secrets/.salt',
-  ENCRYPTION_KEY_PATH: process.env.ENCRYPTION_KEY_PATH || '/workspace/.secrets/.encryption-key',
+  SECRET_FILE_PATH: process.env.SECRET_FILE_PATH || `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/secrets/.secrets.json`,
+  SALT_FILE_PATH: process.env.SALT_FILE_PATH || `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/secrets/.salt`,
+  ENCRYPTION_KEY_PATH: process.env.ENCRYPTION_KEY_PATH || `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/secrets/.encryption-key`,
 
   // Sandbox metadata
   SANDBOX_ID: process.env.SANDBOX_ID || '',
@@ -70,15 +70,16 @@ export const config = {
       // file not present yet — fall through
     }
 
+    const tokenAlias = getEnv('KORTIX_TOKEN') || process.env.KORTIX_TOKEN || ''
+    if (tokenAlias) {
+      process.env.INTERNAL_SERVICE_KEY = tokenAlias
+      return tokenAlias
+    }
+
     if (!process.env.INTERNAL_SERVICE_KEY) {
-      const { randomBytes } = require('crypto')
-      const generated = randomBytes(32).toString('hex')
-      process.env.INTERNAL_SERVICE_KEY = generated
       console.warn(
-        '[Kortix Master] WARNING: No INTERNAL_SERVICE_KEY provided, auto-generated one.\n' +
-        '  This sandbox is auth-protected. External callers must use this key:\n' +
-        `  ${generated}\n` +
-        '  Set INTERNAL_SERVICE_KEY env var to avoid this warning.'
+        '[Kortix Master] WARNING: No INTERNAL_SERVICE_KEY or KORTIX_TOKEN available.\n' +
+        '  Sandbox auth will fail until the canonical sandbox token is synced.'
       )
     }
     return process.env.INTERNAL_SERVICE_KEY || ''

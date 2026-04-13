@@ -20,6 +20,10 @@ import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useOpenCodeLocal, formatModelString } from '@/hooks/opencode/use-opencode-local';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
+import { ProjectSelector } from '@/components/dashboard/project-selector';
+import { useSelectedProjectStore } from '@/stores/selected-project-store';
+import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
+import { appendProjectRef } from '@/lib/project-preamble';
 import { Menu } from 'lucide-react';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import { playSound } from '@/lib/sounds';
@@ -29,10 +33,12 @@ import { cn } from '@/lib/utils';
 // Dashboard Content
 // ============================================================================
 
+// Wallpaper fade-out duration on send. Short enough to feel snappy, long
+// enough for the motion to be perceived rather than read as a cut.
+const SEND_FADE_MS = 150;
+
 export function DashboardContent() {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isFadingOutWelcome, setIsFadingOutWelcome] = useState(false);
-  const DASHBOARD_WELCOME_FADE_MS = 700;
+  const [isSending, setIsSending] = useState(false);
 
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -49,40 +55,57 @@ export function DashboardContent() {
   // Unified model/agent/variant state
   const local = useOpenCodeLocal({ agents, providers, config });
 
+  // Project selection — persisted across reloads
+  const selectedProjectId = useSelectedProjectStore((s) => s.projectId);
+  const setSelectedProjectId = useSelectedProjectStore((s) => s.setProjectId);
+  const { data: kortixProjects } = useKortixProjects();
+  const selectedProject = React.useMemo(
+    () => kortixProjects?.find((p) => p.id === selectedProjectId) ?? null,
+    [kortixProjects, selectedProjectId],
+  );
+  // If the persisted project id no longer exists, clear it transparently
+  React.useEffect(() => {
+    if (selectedProjectId && kortixProjects && !selectedProject) {
+      setSelectedProjectId(null);
+    }
+  }, [selectedProjectId, kortixProjects, selectedProject, setSelectedProjectId]);
+
   const handleSend = useCallback(
     async (text: string, files?: AttachedFile[]) => {
-      if ((!text.trim() && (!files || files.length === 0)) || isSubmitting) return;
+      if ((!text.trim() && !files?.length) || isSending) return;
+
       playSound('send');
-      setIsSubmitting(true);
-      setIsFadingOutWelcome(true);
-      let createdSessionId: string | null = null;
+      setIsSending(true);
+
       try {
-        const fadeDelay = new Promise<void>((resolve) => {
-          setTimeout(resolve, DASHBOARD_WELCOME_FADE_MS);
-        });
+        // Session create + fade-out run in parallel. Handoff waits for
+        // whichever finishes last — no longer.
+        const [session] = await Promise.all([
+          createSession.mutateAsync(),
+          new Promise<void>((r) => setTimeout(r, SEND_FADE_MS)),
+        ]);
+
+        // Stash everything the session page needs BEFORE navigating — its
+        // pending-prompt effect runs on the first render after pushState,
+        // so sessionStorage must be populated first.
+        const finalText = appendProjectRef(text, selectedProject);
+        sessionStorage.setItem(`opencode_pending_prompt:${session.id}`, finalText);
+
+        if (files?.length) {
+          usePendingFilesStore.getState().setPendingFiles(files);
+        }
 
         const options: Record<string, unknown> = {};
         if (local.agent.current) options.agent = local.agent.current.name;
         if (local.model.currentKey) options.model = local.model.currentKey;
         if (local.model.variant.current) options.variant = local.model.variant.current;
-
-        const session = await createSession.mutateAsync();
-        await fadeDelay;
-        createdSessionId = session.id;
-
-        // Store the prompt text BEFORE navigating so the session page can
-        // read it immediately when its useEffect fires. Placing this after
-        // openTabAndNavigate caused a race where sessionStorage was empty
-        // when the session page's pending-prompt useEffect ran.
-        sessionStorage.setItem(`opencode_pending_prompt:${session.id}`, text);
-        if (files && files.length > 0) {
-          usePendingFilesStore.getState().setPendingFiles(files);
-        }
         if (Object.keys(options).length > 0) {
-          sessionStorage.setItem(`opencode_pending_options:${session.id}`, JSON.stringify(options));
+          sessionStorage.setItem(
+            `opencode_pending_options:${session.id}`,
+            JSON.stringify(options),
+          );
         }
 
-        // Step 2: Open tab and navigate (optimistic) — AFTER sessionStorage is set
         openTabAndNavigate({
           id: session.id,
           title: 'New session',
@@ -90,25 +113,21 @@ export function DashboardContent() {
           href: `/sessions/${session.id}`,
           serverId: useServerStore.getState().activeServerId,
         });
-        // Reset submitting since the dashboard stays mounted (hidden) with pushState
-        setIsSubmitting(false);
-        setTimeout(() => setIsFadingOutWelcome(false), 0);
+
         requestAnimationFrame(() => {
           window.dispatchEvent(new CustomEvent('focus-session-textarea'));
         });
       } catch {
-        if (createdSessionId) {
-          sessionStorage.removeItem(`opencode_pending_prompt:${createdSessionId}`);
-          sessionStorage.removeItem(`opencode_pending_options:${createdSessionId}`);
-        }
         usePendingFilesStore.getState().setPendingFiles([]);
-        setIsFadingOutWelcome(false);
-        setIsSubmitting(false);
         toast.warning('Failed to create session');
+      } finally {
+        // On success the dashboard is already hidden (pushState + setActiveTab),
+        // so the fade-in transition runs off-screen — no visible flicker.
+        // On failure we stay on the dashboard, so this brings the wallpaper back.
+        setIsSending(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isSubmitting, createSession, sendMessage, local.agent.current, local.model.currentKey, local.model.variant.current],
+    [isSending, createSession, local.agent.current, local.model.currentKey, local.model.variant.current, selectedProject],
   );
 
   const handleCommand = useCallback(
@@ -159,22 +178,32 @@ export function DashboardContent() {
         </div>
       )}
 
-      {/* Wallpaper background with brandmark */}
+      {/* Wallpaper area — flex-1 above input, same structure as session-chat.
+          Emphasized-exit curve accelerates the content away on send, so it
+          reads as "yanked" rather than "faded". */}
       <div
         className={cn(
-          "flex-1 relative overflow-hidden transition-[opacity,transform] ease-out",
-          isFadingOutWelcome
-            ? "opacity-0 scale-[0.995] duration-700"
-            : "opacity-100 scale-100 duration-300",
+          "relative flex-1 min-h-0 transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.3,0,0.8,0.15)]",
+          isSending ? "opacity-0 -translate-y-1" : "opacity-100 translate-y-0",
         )}
       >
-        <WallpaperBackground />
+        <div className="absolute inset-0">
+          <div className="relative w-full h-full overflow-hidden">
+            <WallpaperBackground />
+          </div>
+        </div>
       </div>
+
+      {/* Project selector — sits above the chat input, pill style */}
+      <ProjectSelector
+        selectedProjectId={selectedProjectId}
+        onSelect={setSelectedProjectId}
+      />
 
       {/* Chat Input — pinned to bottom */}
       <SessionChatInput
         onSend={handleSend}
-        disabled={isSubmitting}
+        disabled={isSending}
         placeholder="Ask anything..."
         agents={local.agent.list}
         selectedAgent={local.agent.current?.name ?? null}

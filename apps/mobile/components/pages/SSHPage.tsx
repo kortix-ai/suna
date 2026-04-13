@@ -21,7 +21,7 @@ import {
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { setupSSH, type SSHSetupResult } from '@/lib/platform/client';
+import { getSSHConnection, setupSSH, type SSHConnectionInfo, type SSHSetupResult } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
 import { useThemeColors } from '@/lib/theme-colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -32,9 +32,15 @@ const SSH_META_KEY = 'kortix:ssh-access-meta:v1';
 
 interface SSHMeta {
   ssh_command: string;
+  reconnect_command: string;
+  ssh_config_entry: string;
+  ssh_config_command: string;
   host: string;
   port: number;
   username: string;
+  provider: string;
+  key_name: string;
+  host_alias: string;
   updatedAt: number;
 }
 
@@ -47,10 +53,7 @@ async function loadSSHMeta(): Promise<SSHMeta | null> {
 
 async function saveSSHMeta(result: SSHSetupResult): Promise<void> {
   const meta: SSHMeta = {
-    ssh_command: `ssh -i ~/.ssh/kortix_sandbox -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p ${result.port} ${result.username}@${result.host}`,
-    host: result.host,
-    port: result.port,
-    username: result.username,
+    ...result,
     updatedAt: Date.now(),
   };
   await AsyncStorage.setItem(SSH_META_KEY, JSON.stringify(meta));
@@ -79,6 +82,13 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: SSHPa
   // Load cached SSH meta on mount
   useEffect(() => {
     loadSSHMeta().then(setCachedMeta);
+    getSSHConnection().then((connection: SSHConnectionInfo) => {
+      setCachedMeta((prev) => ({
+        ...(prev || {} as SSHMeta),
+        ...connection,
+        updatedAt: prev?.updatedAt || Date.now(),
+      }));
+    }).catch(() => {});
   }, []);
 
   // Scroll state persistence
@@ -138,12 +148,11 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: SSHPa
     if (!sshResult) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      const keyName = `kortix_${sshResult.host.replace(/\./g, '-')}`;
       // Copy key to clipboard and let user save it manually
       await Clipboard.setStringAsync(sshResult.private_key);
       Alert.alert(
         'Key Copied',
-        `Private key copied to clipboard.\n\nSave it as ~/.ssh/${keyName}.pem and run:\nchmod 600 ~/.ssh/${keyName}.pem`,
+        `Private key copied to clipboard.\n\nSave it as ~/.ssh/${sshResult.key_name} and run:\nchmod 600 ~/.ssh/${sshResult.key_name}`,
       );
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to save key file');
@@ -152,23 +161,23 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: SSHPa
 
   // Build derived commands
   const agentPrompt = sshResult
-    ? `I need you to connect to my remote machine via SSH. Here are the details:\n\nHost: ${sshResult.host}\nPort: ${sshResult.port}\nUsername: ${sshResult.username}\n\nSSH Private Key (save to ~/.ssh/kortix_sandbox with chmod 600):\n${sshResult.private_key}\nConnect with: ssh -i ~/.ssh/kortix_sandbox -o StrictHostKeyChecking=no -p ${sshResult.port} ${sshResult.username}@${sshResult.host}`
+    ? sshResult.agent_prompt
     : '';
 
   const oneLiner = sshResult
-    ? `mkdir -p ~/.ssh && cat > ~/.ssh/kortix_sandbox << 'KORTIX_KEY'\n${sshResult.private_key}KORTIX_KEY\nchmod 600 ~/.ssh/kortix_sandbox && ssh -i ~/.ssh/kortix_sandbox -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p ${sshResult.port} ${sshResult.username}@${sshResult.host}`
+    ? sshResult.setup_command
     : '';
 
   const reconnectCmd = sshResult
-    ? `ssh -i ~/.ssh/kortix_sandbox -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p ${sshResult.port} ${sshResult.username}@${sshResult.host}`
+    ? sshResult.reconnect_command
     : '';
 
   const sshConfig = sshResult
-    ? `Host kortix-sandbox\n  HostName ${sshResult.host}\n  Port ${sshResult.port}\n  User ${sshResult.username}\n  IdentityFile ~/.ssh/kortix_sandbox\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n  ServerAliveInterval 15\n  ServerAliveCountMax 4`
+    ? sshResult.ssh_config_entry
     : '';
 
   const configCmd = sshResult
-    ? `mkdir -p ~/.ssh && touch ~/.ssh/config && chmod 600 ~/.ssh/config && cat >> ~/.ssh/config << 'KORTIX_SSH_CONFIG'\n${sshConfig}\nKORTIX_SSH_CONFIG`
+    ? sshResult.ssh_config_command
     : '';
 
   return (

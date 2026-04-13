@@ -21,7 +21,7 @@ export default function PricingPage() {
           className="text-center space-y-6"
         >
           <h1 className="text-4xl font-semibold tracking-tight">Simple pricing</h1>
-          <p className="text-muted-foreground/60 text-lg max-w-xl mx-auto">
+          <p className="text-muted-foreground text-lg max-w-xl mx-auto">
             One machine, one subscription. Priced by the specs you need.
           </p>
           <Button size="lg" className="px-10" onClick={() => openNewInstanceModal()}>

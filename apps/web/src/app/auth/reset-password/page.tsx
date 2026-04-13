@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AlertCircle, ArrowLeft, CheckCircle } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
@@ -183,13 +184,7 @@ function ResetPasswordContent() {
 
 export default function ResetPassword() {
   return (
-    <Suspense
-      fallback={
-        <main className="flex flex-col items-center justify-center min-h-screen w-full">
-          <KortixLoader size="large" />
-        </main>
-      }
-    >
+    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Resetting password" />}>
       <ResetPasswordContent />
     </Suspense>
   );

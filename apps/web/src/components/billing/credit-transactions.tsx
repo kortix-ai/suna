@@ -81,8 +81,11 @@ export default function CreditTransactions({ accountId }: Props) {
     const badges: Record<string, { label: string; variant: any }> = {
       'tier_grant': { label: 'Tier Grant', variant: 'default' },
       'purchase': { label: 'Purchase', variant: 'default' },
+      'auto_topup': { label: 'Auto Top-up', variant: 'default' },
+      'machine_bonus': { label: 'Machine Bonus', variant: 'secondary' },
       'admin_grant': { label: 'Admin Grant', variant: 'secondary' },
       'promotional': { label: 'Promotional', variant: 'secondary' },
+      'daily_refresh': { label: 'Daily Refresh', variant: 'secondary' },
       'usage': { label: 'Usage', variant: 'outline' },
       'refund': { label: 'Refund', variant: 'secondary' },
       'adjustment': { label: 'Adjustment', variant: 'outline' },
@@ -159,6 +162,10 @@ export default function CreditTransactions({ accountId }: Props) {
             <SelectItem value="all">All types</SelectItem>
             <SelectItem value="tier_grant">Tier Grant</SelectItem>
             <SelectItem value="purchase">Purchase</SelectItem>
+            <SelectItem value="auto_topup">Auto Top-up</SelectItem>
+            <SelectItem value="machine_bonus">Machine Bonus</SelectItem>
+            <SelectItem value="daily_refresh">Daily Refresh</SelectItem>
+            <SelectItem value="admin_grant">Admin Grant</SelectItem>
             <SelectItem value="usage">Usage</SelectItem>
             <SelectItem value="refund">Refund</SelectItem>
             <SelectItem value="expired">Expired</SelectItem>

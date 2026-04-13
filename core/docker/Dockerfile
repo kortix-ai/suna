@@ -72,6 +72,30 @@ ARG OCX_VERSION=2.0.0
 # ── License ──────────────────────────────────────────────────────────────────
 COPY LICENSE /LICENSE
 
+# ── Skill/runtime requirement inventory ──────────────────────────────────────
+# The skill tree under core/kortix-master/opencode/skills/ currently references
+# or strongly implies the following baked-in runtime surface:
+#   - Baseline CLIs: bash, bun, curl, git, gh, jq, docker cli, ripgrep,
+#     rsync, ssh, unzip, uv, node/npm, python3/pip
+#   - Document/PDF stack: pandoc, soffice/libreoffice, poppler (pdftotext,
+#     pdftoppm, pdfimages), qpdf, tesseract, imagemagick, texlive/bibtex
+#   - Media/browser stack: ffmpeg/ffprobe, chromium, Playwright runtimes
+#   - Research/utilities: whois (domain-research), git/gh (coding-and-data)
+#   - Font coverage: fontconfig + Latin/CJK/emoji families for PDF/browser
+#     rendering consistency across PDF/docx/pptx/website skills
+#   - Python libs: pypdf, pdfplumber, reportlab, pypdfium2, PyPDF2,
+#     pdf2image, pytesseract, PyMuPDF, openpyxl, python-pptx, lxml, Pillow,
+#     pdf2docx, docx2pdf, python-docx, markitdown[pptx], numpy, pandas,
+#     matplotlib, seaborn, playwright, youtube-transcript-api, rembg,
+#     onnxruntime, fastapi[standard]
+#   - Node globals used directly by skills/tests: pptxgenjs, docx, pdf-lib,
+#     playwright, react, react-dom, react-icons, sharp, appium
+#   - Host-only deps intentionally NOT baked here: Xcode/iOS simulator stack,
+#     agent-click on the user's macOS machine via Agent Tunnel
+#
+# Keep this inventory close to the install blocks so Dockerfile/package drift is
+# easy to audit when skills add new runtime assumptions.
+
 # ── OS packages ──────────────────────────────────────────────────────────────
 RUN apk update \
     && apk add --no-cache \
@@ -81,6 +105,11 @@ RUN apk update \
         gcc g++ musl-dev linux-headers \
         libffi-dev libxml2-dev libxslt-dev \
         gcompat \
+        git github-cli jq ripgrep \
+        docker docker-cli-compose \
+        fuse-overlayfs iptables ip6tables \
+        whois \
+        fontconfig ttf-dejavu font-liberation font-noto font-noto-cjk font-noto-emoji \
         openssh-server openssh-sftp-server \
         bash-completion \
     && rm -rf /var/cache/apk/*
@@ -95,6 +124,7 @@ RUN apk update \
 # libreoffice: headless convert, recalc, render (docx/xlsx/pptx skills)
 # tesseract-ocr: OCR engine for pytesseract (pdf skill)
 # ffmpeg: media processing (remotion, media skills)
+# imagemagick: crop/inspect rendered pages during PDF form work
 # texlive: pdflatex + bibtex (paper-creator skill)
 # *-dev: build deps for Pillow, pdf2image (pptx, pdf, logo-creator)
 RUN apk update \
@@ -105,6 +135,7 @@ RUN apk update \
         libreoffice \
         tesseract-ocr tesseract-ocr-data-eng \
         ffmpeg \
+        imagemagick \
         texlive texmf-dist-latexrecommended texmf-dist-bibtexextra \
         jpeg-dev zlib-dev freetype-dev openjpeg-dev tiff-dev \
     && rm -rf /var/cache/apk/*
@@ -136,6 +167,7 @@ RUN /lsiopy/bin/pip install --no-cache-dir "local-semantic-search==${LSS_VERSION
 # Group 1: Document processing (pdf, docx, pptx, xlsx skills)
 # Group 2: Data science / visualization (visualization, xlsx skills)
 # Group 3: Media / AI (logo-creator, presentations, media skills)
+# Group 4: App/server tooling (fastapi-sdk skill)
 # PDF: pypdf pdfplumber reportlab pypdfium2 PyPDF2 pdf2image pytesseract PyMuPDF
 # Office: openpyxl python-pptx lxml Pillow pdf2docx docx2pdf markitdown[pptx]
 # Data science: numpy pandas matplotlib seaborn
@@ -143,9 +175,9 @@ RUN /lsiopy/bin/pip install --no-cache-dir "local-semantic-search==${LSS_VERSION
 # YouTube: youtube-transcript-api
 RUN /lsiopy/bin/pip install --no-cache-dir \
     pypdf pdfplumber reportlab pypdfium2 PyPDF2 pdf2image pytesseract \
-    openpyxl python-pptx lxml Pillow pdf2docx docx2pdf "markitdown[pptx]" \
+    openpyxl python-pptx python-docx lxml Pillow pdf2docx docx2pdf "markitdown[pptx]" \
     numpy pandas matplotlib seaborn \
-    playwright youtube-transcript-api \
+    playwright youtube-transcript-api "fastapi[standard]" \
     && echo "[docker] Skill Python packages installed." \
     && /lsiopy/bin/pip install --no-cache-dir PyMuPDF 2>/dev/null \
     && echo "[docker] PyMuPDF installed." \
@@ -158,11 +190,14 @@ RUN /lsiopy/bin/pip install --no-cache-dir rembg onnxruntime 2>/dev/null \
     || echo "[docker] WARN: rembg/onnxruntime skipped (musl-incompatible). Logo bg removal will use Replicate API."
 
 # ── Skill npm global packages ────────────────────────────────────────────────
-# Node packages used by pptx (deck creation), docx (Word creation), and
-# pptx icon rendering pipeline.
-RUN npm install -g --no-audit --no-fund \
+# Node packages used by pptx (deck creation), docx/pdf (document creation),
+# browser E2E checks, and the pptx icon rendering pipeline.
+RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g --no-audit --no-fund \
     pptxgenjs \
     docx \
+    pdf-lib \
+    playwright \
+    appium \
     react react-dom react-icons \
     sharp \
     && echo "[docker] Skill npm packages installed."
@@ -227,7 +262,7 @@ ENV KORTIX_WORKSPACE=/workspace
 
 # ── Services (s6-rc.d longrun) ──────────────────────────────────────────────
 COPY core/s6-services/ /etc/s6-overlay/s6-rc.d/
-RUN for svc in svc-kortix-master svc-opencode-serve \
+RUN for svc in svc-kortix-master svc-opencode-serve svc-opencode-state-sync \
         svc-chromium-persistent svc-agent-browser-session svc-agent-browser-viewer \
         svc-static-web svc-lss-sync svc-sshd svc-docker; do \
         touch "/etc/s6-overlay/s6-rc.d/user/contents.d/${svc}"; \
@@ -256,6 +291,20 @@ RUN chmod +x /custom-cont-init.d/*
 COPY core/scripts/apk-persist /usr/local/bin/apk-persist
 RUN chmod +x /usr/local/bin/apk-persist
 
+COPY core/scripts/kortix-opencode-state /usr/local/bin/kortix-opencode-state
+RUN chmod +x /usr/local/bin/kortix-opencode-state
+
+# ── Docker-in-Docker readiness helper ───────────────────────────────────────
+# Polls `docker info` until dockerd is reachable. Use from anywhere that
+# needs to run `docker ...` commands early in the boot sequence.
+COPY core/scripts/docker-wait-ready /usr/local/bin/docker-wait-ready
+RUN chmod +x /usr/local/bin/docker-wait-ready
+
+# ── Pre-create /var/lib/docker so the named volume mounts cleanly ───────────
+# dockerd uses this as its data-root. Compose mounts a named volume here so
+# the storage lives on the host's native filesystem (required for overlay2).
+RUN mkdir -p /var/lib/docker /etc/docker
+
 # ── E2E test scripts ────────────────────────────────────────────────────────
 COPY core/tests/ /ephemeral/tests/
 RUN chmod +x /ephemeral/tests/*.sh 2>/dev/null || true
@@ -263,7 +312,7 @@ RUN chmod +x /ephemeral/tests/*.sh 2>/dev/null || true
 # ── Copy source packages to build staging area ──────────────────────────────
 # All sandbox packages are now consolidated inside core/kortix-master/
 #   kortix-master/opencode/   — OpenCode config dir (agents, skills, plugins, tools)
-#   kortix-master/channels/   — Channel CLIs (ktelegram, kslack, kchannel)
+#   kortix-master/channels/   — CLIs: ktelegram, kslack, kchannel, kconnectors, kpipedream
 #   kortix-master/triggers/   — Cron + webhook triggers
 COPY core/kortix-master  /opt/build/kortix-master
 COPY core/s6-services/svc-agent-browser-viewer/index.html /opt/build/browser-viewer/index.html
@@ -279,6 +328,9 @@ RUN set -eo pipefail && echo "[docker] Building sandbox runtime v${SANDBOX_VERSI
     test -d /ephemeral/kortix-master/node_modules && \
     chmod +x /ephemeral/kortix-master/scripts/*.sh 2>/dev/null || true && \
     echo "[docker] kortix-master: bun install OK (includes triggers, channel CLIs, opencode)" && \
+    \
+    # ── 1b. Install Kortix CLI wrappers into /usr/local/bin ── \
+    /ephemeral/kortix-master/scripts/install-channel-clis.sh && \
     \
     # ── 2. skills shipped in-tree under skills/KORTIX-system/ (recursive discovery) ── \
     echo "[docker] skills: agent-tunnel, agent-browser, presentations in /ephemeral/kortix-master/opencode/skills/KORTIX-system/" && \
@@ -360,6 +412,7 @@ RUN chmod +x /ephemeral/startup.sh
 ENV PYTHONUSERBASE=/workspace/.local
 ENV PIP_USER=1
 ENV NPM_CONFIG_PREFIX=/workspace/.npm-global
+ENV NODE_PATH="/usr/local/lib/node_modules:${NODE_PATH}"
 ENV PATH="/workspace/.npm-global/bin:/workspace/.local/bin:${PATH}"
 
 # ── Environment ───────────────────────────────────────────────────────────────
@@ -373,7 +426,23 @@ ENV AGENT_BROWSER_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 ENV AGENT_BROWSER_IDLE_TIMEOUT_MS=0
 ENV AGENT_BROWSER_STREAM_PORT=9223
 ENV OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
+ENV KORTIX_PERSISTENT_ROOT=/persistent
+ENV OPENCODE_STORAGE_BASE=/persistent/opencode
+ENV OPENCODE_SHADOW_STORAGE_BASE=/persistent/opencode-shadow
+ENV KORTIX_OPENCODE_ARCHIVE_DIR=/persistent/opencode-archive
+ENV KORTIX_OPENCODE_CACHE_DIR=/persistent/opencode-cache
+ENV AUTH_JSON_PATH=/persistent/opencode/auth.json
+ENV SECRET_FILE_PATH=/persistent/secrets/.secrets.json
+ENV SALT_FILE_PATH=/persistent/secrets/.salt
+ENV ENCRYPTION_KEY_PATH=/persistent/secrets/.encryption-key
+ENV LSS_DIR=/persistent/lss
 ENV SANDBOX_VERSION=${SANDBOX_VERSION}
+
+# ── Docker-in-Docker defaults ────────────────────────────────────────────────
+# DOCKER_HOST is the unix socket dockerd creates inside this container. Set
+# it globally so every shell and every `docker` invocation inside the sandbox
+# hits the DinD daemon, not the host socket (which isn't mounted anyway).
+ENV DOCKER_HOST=unix:///var/run/docker.sock
 
 # ── Playwright — use system Chromium (no separate download needed) ───────────
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser

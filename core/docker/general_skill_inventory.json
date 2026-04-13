@@ -1,0 +1,1757 @@
+{
+  "skills": {
+    "account-research": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": []
+    },
+    "audit-support": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "SOX Section 404 requires management to assess the effectiveness of internal controls over financial reporting (ICFR). This involves:",
+        "- Requires sufficient sample sizes to support a conclusion",
+        "**Disadvantages:** May miss high-risk items, requires complete population listing",
+        "**Advantages:** Simple, no technology required",
+        "### Workpaper Requirements",
+        "- User access provisioning (new access requests require approval)",
+        "- Was it performed timely (within the required timeframe)?",
+        "- System-enforced approval workflows (cannot proceed without required approvals)",
+        "- Input validation controls (required fields, format checks, range checks)"
+      ]
+    },
+    "brand-voice": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- Image alt text requirements",
+        "| data is (singular) | data are | Unless the publication requires plural |",
+        "- Trademark and registration symbols (when required and when to omit)"
+      ]
+    },
+    "call-prep": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "**Required:**",
+        "- Key output: Technical requirements, decision timeline"
+      ]
+    },
+    "campaign-planning": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- What is your budget? (paid channels require spend; owned/earned require time)"
+      ]
+    },
+    "canned-responses": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "You are a response template assistant for an in-house legal team. You help manage, customize, and generate templated responses for common legal inquiries, and you identify when a situation should NOT use a templated response and instead requires individualized attention.",
+        "5. **Required variables**: Information that must be customized for each use",
+        "- Identity verification requirements",
+        "- Acknowledgment requirement",
+        "Subject: LEGAL HOLD NOTICE - {{matter_name}} - Action Required",
+        "- Any required caveats or limitations",
+        "**Critical note**: Subpoena responses almost always require individualized counsel review. Templates serve as starting frameworks, not final responses.",
+        "### Required Customization",
+        "- Multiple jurisdictions are involved with conflicting requirements",
+        "- Hold conflicts with regulatory deletion requirements",
+        "- ALWAYS requires counsel review (templates are starting points only)",
+        "### Step 2: Identify Required Elements",
+        "- What regulatory requirements apply?",
+        "- What stays the same? (legal requirements, standard language)",
+        "- Include all legally required elements"
+      ]
+    },
+    "close-management": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "description: \"Month-end close checklist, task sequencing and dependencies, status tracking, and common close activities organized by day.\"",
+        "Month-end close checklist, task sequencing and dependencies, status tracking, and common close activities organized by day.",
+        "## Task Sequencing and Dependencies",
+        "### Dependency Map",
+        "LEVEL 1 (No dependencies \u2014 can start immediately at T+1):",
+        "- **Not Started:** Task has not yet begun (may be waiting on dependencies)",
+        "- **Blocked:** Task cannot proceed due to a dependency, missing data, or issue"
+      ]
+    },
+    "coding-and-data": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "Delegate when the task requires:",
+        "- Gather tickets, issue links, requirements, PR URLs, or other non-code context yourself."
+      ]
+    },
+    "competitive-analysis": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- **Regulatory changes**: New regulations that create requirements or opportunities"
+      ]
+    },
+    "competitive-intelligence": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "**Required:**"
+      ]
+    },
+    "compliance": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- **Data protection impact assessments (DPIAs)**: Required for processing likely to result in high risk to individuals",
+        "- **DPO requirement**: Appoint a Data Protection Officer if required (public authority, large-scale processing of special categories, large-scale systematic monitoring)",
+        "- Advising product teams on privacy by design requirements",
+        "| **LGPD** (Brazil) | Brazil | Similar to GDPR; requires DPO appointment; National Data Protection Authority (ANPD) enforcement |",
+        "| **POPIA** (South Africa) | South Africa | Information Regulator oversight; required registration of processing |",
+        "| **PIPL** (China) | China | Strict cross-border transfer rules; data localization requirements; CAC oversight |",
+        "### Required Elements (GDPR Article 28)",
+        "- [ ] **Process only on documented instructions**: Processor commits to process only per controller's instructions (with exception for legal requirements)",
+        "- [ ] **Sub-processor requirements**:",
+        "- [ ] Written authorization requirement (general or specific)",
+        "- [ ] **Deletion or return**: On termination, delete or return all personal data (at controller's choice) and delete existing copies unless legal retention required",
+        "- [ ] **Security standards**: Specific security standards or certifications required (SOC 2, ISO 27001, etc.)",
+        "| Blanket sub-processor authorization without notification | Loss of control over processing chain | Require notification with right to object |",
+        "| Breach notification timeline > 72 hours | May prevent timely regulatory notification | Require notification within 24-48 hours |",
+        "| Data deletion timeline not specified | Data retained indefinitely | Require deletion within 30-90 days of termination |",
+        "| No data processing locations specified | Data could be processed anywhere | Require disclosure of processing locations |",
+        "| Outdated SCCs | Invalid transfer mechanism | Require current EU SCCs (2021 version) |",
+        "- What are the specific requirements and timelines?",
+        "- Do not require excessive documentation",
+        "- **Industry standards**: Updates to ISO 27001, SOC 2, NIST frameworks, and sector-specific requirements",
+        "- **Cross-border transfer developments**: Adequacy decisions, SCC updates, data localization requirements",
+        "- A compliance deadline is approaching that requires organizational changes"
+      ]
+    },
+    "content-creation": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- Reduce risk: \"No credit card required\", \"Cancel anytime\", \"Free for 14 days\""
+      ]
+    },
+    "contract-review": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- Procedure: notice requirements, right to control defense, right to settle",
+        "- Whether a Data Processing Agreement/Addendum (DPA) is required",
+        "- Data security requirements and audit rights",
+        "- Breach notification timeline longer than regulatory requirements",
+        "The clause falls outside the standard position but within a negotiable range. The term is common in the market but not the organization's preference. Requires attention and likely negotiation, but not escalation.",
+        "**Action**: Generate specific redline language. Provide fallback position. Estimate business impact of accepting vs. negotiating.",
+        "The clause falls outside acceptable range, triggers a defined escalation criterion, or poses material risk. Requires senior counsel review, outside counsel involvement, or business decision-maker sign-off.",
+        "4. **Provide fallback positions**: For YELLOW items, include a fallback position if the primary ask is rejected.",
+        "**Fallback**: [Alternative position if primary redline is rejected]",
+        "- Missing data protection requirements for regulated data",
+        "- Insurance certificate requirements"
+      ]
+    },
+    "create-an-asset": {
+      "files": [
+        "QUICKREF.md",
+        "README.md",
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "node"
+      ],
+      "requirements_text": [
+        "Generate professional, customer-ready sales assets in minutes. No design skills required.",
+        "| Field | Prompt | Required |",
+        "| Field | Prompt | Required |",
+        "| Field | Prompt | Required |",
+        "| **Rich** | Transcripts uploaded, detailed pain points, clear requirements | Light \u2014 fill gaps only |",
+        "value_note: \"No manual data gathering required\"",
+        "obligations: minimum $50M revenue, 12% margin requirement, quarterly",
+        "## Phase 5: Clarifying Questions (REQUIRED)",
+        "- No external dependencies (except Google Fonts)",
+        "## Appendix: Brand Color Fallbacks"
+      ]
+    },
+    "customer-research": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- Question requires specialized knowledge not available in sources",
+        "- The answer requires specialized expertise you don't have",
+        "- Answer required synthesizing multiple sources"
+      ]
+    },
+    "daily-briefing": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": []
+    },
+    "deep-research": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "curl"
+      ],
+      "requirements_text": [
+        "- Required evidence types (empirical data, expert opinion, primary sources, statistics)"
+      ]
+    },
+    "design-foundations": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "**These are roles, not a mandate.** A typical output uses Background + Text + Primary. Add semantic colors (error, warning, success) only when the content requires them. Do not introduce color for decoration.",
+        "| **Websites** | Intentionally selected distinctive fonts loaded via CDN. **Prefer Fontshare** (less overexposed) over Google Fonts. The font IS the design \u2014 it should match the art direction. | Websites load any font via CDN. System fonts are fallback only. |",
+        "| **Slides (PPTX)** | System fonts only \u2014 Calibri, Trebuchet MS, Arial, Georgia. | PPTX cannot embed fonts. The viewer must have the font installed. |",
+        "### Brand Fonts (Fallback Defaults)",
+        "**Overused on the web (never use as the primary font for websites):** Roboto, Arial, Helvetica, Open Sans, Lato, Montserrat, Poppins. System fonts (Arial, Helvetica, Georgia, Calibri, Times New Roman, Verdana, Tahoma, Trebuchet MS) belong in the fallback stack only \u2014 never as the chosen font. Every website loads a distinctive font via CDN; system fonts are the safety net if loading fails. For slides and documents where embedding isn't available, system fonts are fine as the primary choice.",
+        "PPTX cannot embed fonts. Use only fonts installed on the viewer's machine:",
+        "Fallback: Helvetica (built-in, no download needed).",
+        "4. **Accessible** \u2014 Never color alone. 3:1 contrast between adjacent elements. Alt text or data tables as fallback."
+      ]
+    },
+    "document-review": {
+      "files": [
+        "SKILL.md",
+        "scripts/annotate_pdf.py",
+        "scripts/annotate_pptx.py",
+        "scripts/annotate_xlsx.py",
+        "scripts/constants.py",
+        "scripts/manage_state.py",
+        "scripts/models.py",
+        "specializations/finance.md"
+      ],
+      "py_imports": [
+        "constants",
+        "fitz",
+        "models",
+        "openpyxl"
+      ],
+      "ts_imports": [],
+      "commands": [
+        "python",
+        "python3"
+      ],
+      "requirements_text": [
+        "A \"claim\" is a factual statement in the document that requires external verification or calculation to confirm.",
+        "- `verify_public_data`: Facts that need external sources to verify. Requires web search to fact-check.",
+        "- `numerical_consistency`: Calculations using numbers from within the document. Requires python code to perform calculations to verify.",
+        "- **Test**: Could a spell-checker or grammar-checker catch this? If yes \u2192 `spelling_grammar`. If it requires understanding meaning or context \u2192 it's another type.",
+        "- `narrative_logic`: Logical errors, contradictions, timeline problems, nonsensical content, or structural issues that require understanding meaning to detect.",
+        "- **Test**: Does this require understanding what the words mean (dates, logic, context) to spot the error? If yes \u2192 `narrative_logic`.",
+        "- `verify_public_data`: Facts that differ from verifiable external sources. Requires web search to verify.",
+        "- `numerical_consistency`: Math errors using the document's own numbers. Requires calculation to verify.",
+        "**Create a claim when** the statement requires:",
+        "SEARCH_FALLBACK_LEN = 30",
+        "FALLBACK_POINT = fitz.Point(50, 50)",
+        "\"\"\"Search for text on the page, with fallback to shorter prefix.\"\"\"",
+        "quads = page.search_for(original_text[:SEARCH_FALLBACK_LEN])",
+        "icon_point = FALLBACK_POINT",
+        "def _validate_required_keys(item: dict, required: list[str], label: str) -> None:",
+        "\"\"\"Exit with error if any required keys are missing.\"\"\"",
+        "missing = [k for k in required if k not in item]",
+        "f\"Error: {label} missing required keys: {', '.join(missing)}\",",
+        "_validate_required_keys(",
+        "_validate_required_keys(",
+        "_validate_required_keys(",
+        "_validate_required_keys(",
+        "sub = parser.add_subparsers(dest=\"command\", required=True)",
+        "g_sections = p_sections.add_mutually_exclusive_group(required=True)",
+        "g_claims = p_claims.add_mutually_exclusive_group(required=True)",
+        "g_update = p_update.add_mutually_exclusive_group(required=True)",
+        "g_issues = p_issues.add_mutually_exclusive_group(required=True)",
+        "fallback = ws[\"A1\"]",
+        "if fallback.comment:",
+        "existing = fallback.comment.text",
+        "fallback.comment = Comment(",
+        "fallback.comment = comment"
+      ]
+    },
+    "docx": {
+      "files": [
+        "CREATION.md",
+        "EDITING.md",
+        "SKILL.md",
+        "scripts/accept_changes.py",
+        "scripts/comment.py",
+        "scripts/pack.py",
+        "scripts/templates/comments.xml",
+        "scripts/templates/commentsExtended.xml",
+        "scripts/templates/commentsExtensible.xml",
+        "scripts/templates/commentsIds.xml",
+        "scripts/templates/people.xml",
+        "scripts/unpack.py"
+      ],
+      "py_imports": [
+        "lxml"
+      ],
+      "ts_imports": [],
+      "commands": [
+        "convert",
+        "node",
+        "npm",
+        "pandoc",
+        "pdftoppm",
+        "python",
+        "soffice",
+        "unzip"
+      ],
+      "requirements_text": [
+        "const fs = require('fs');",
+        "const docx = require('docx');",
+        "Pick a professional, universally installed sans-serif font as your base. Check `skills/GENERAL-KNOWLEDGE-WORKER/design-foundations/SKILL.md` for typeface recommendations. Keep heading text in black to ensure legibility.",
+        "The `type` field is required on every `ImageRun`.",
+        "- **Bullet lists require numbering config** -- inserting raw Unicode bullet characters produces broken formatting",
+        "| Flatten tracked changes | `python skills/GENERAL-KNOWLEDGE-WORKER/docx/scripts/accept_changes.py in.docx out.docx` | Requires LibreOffice |",
+        "All tools referenced above (`pandoc`, `soffice`, `pdftoppm`, `docx` npm module, `pdf2docx`) are pre-installed in the sandbox.",
+        "Copies the input, installs a Basic macro into a temporary LibreOffice profile,",
+        "return f\"-env:UserInstallation=file://{PROFILE_DIR}\"",
+        "return None, \"Macro installation into LibreOffice profile failed\""
+      ]
+    },
+    "domain-research": {
+      "files": [
+        "SKILL.md",
+        "scripts/domain-lookup.py"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "python3",
+        "whois",
+        "zip"
+      ],
+      "requirements_text": [
+        "description: \"Free domain research and availability checking. No API keys or credentials required. Uses RDAP (1195+ TLDs) with whois CLI fallback for universal coverage. Checks if domains are available, searches keywords across TLDs, performs WHOIS/RDAP lookups, checks expiry dates, and finds nameservers. Use when the agent needs to: check if a domain is available, search for domains, find who owns a domain, check domain expiration, get nameservers, bulk check domains, or do any domain research. Triggers on: 'check domain', 'is domain available', 'search domains', 'domain availability', 'who owns this domain', 'whois', 'domain expiry', 'when does domain expire', 'nameservers for', 'domain research', 'find domains for', 'domain ideas', 'bulk domain check'.\"",
+        "**How it works:** RDAP protocol (1195+ TLDs, JSON, fast) with `whois` CLI fallback for TLDs RDAP doesn't cover (.io, .co, .me, .sh, .gg, .so, etc). Parallel lookups for speed.",
+        "2. **whois fallback** -- for TLDs without RDAP support, runs `whois` CLI and pattern-matches response.",
+        "### whois fallback covers",
+        "Zero credentials required. Uses RDAP (1195+ TLDs) with whois CLI fallback.",
+        "RDAP_FALLBACK = \"https://rdap.org/domain/\"  # Last resort only",
+        "# Empty fallback \u2014 will use rdap.org",
+        "# Fallback to rdap.org proxy",
+        "return f\"{RDAP_FALLBACK}{domain}\"",
+        "fallback_url = f\"{RDAP_FALLBACK}{domain}\"",
+        "req = urllib.request.Request(fallback_url, headers={\"Accept\": \"application/rdap+json,application/json\"})",
+        "# Fallback to whois CLI",
+        "print(f\"ERROR: Could not look up {domain} (whois not installed or timed out)\")",
+        "# Whois fallback",
+        "# Whois fallback"
+      ]
+    },
+    "draft-outreach": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": []
+    },
+    "elevenlabs": {
+      "files": [
+        "SKILL.md",
+        "scripts/tts.py"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "convert",
+        "docker",
+        "python",
+        "python3"
+      ],
+      "requirements_text": [
+        "description: \"ElevenLabs audio generation \u2014 text-to-speech, voice cloning, and sound effects. Use this skill any time the agent needs to: convert text to spoken audio, narrate documents or content, generate voiceovers, clone voices from audio samples, create sound effects, or produce any audio output from text. Supports multiple voices, languages, models, voice cloning, batch processing, and sound effect generation. Requires ELEVENLABS_API_KEY.\"",
+        "**Required env var:** `ELEVENLABS_API_KEY`",
+        "The CLI script at `scripts/tts.py` uses only Python stdlib (`urllib`, `json`, `argparse`) \u2014 no pip dependencies needed.",
+        "- **No pip dependencies.** The script uses only Python stdlib (`urllib.request`, `json`, `argparse`). Works on any Python 3.10+ installation.",
+        "| Variable | Required | Description |",
+        "Env: ELEVENLABS_API_KEY (required)",
+        "sub = parser.add_subparsers(dest=\"command\", required=True)"
+      ]
+    },
+    "escalation": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- **Complexity**: Issue is beyond support's ability to diagnose, requires access support doesn't have, involves custom implementation",
+        "**When:** Issue requires deeper investigation, specialized product knowledge, or advanced troubleshooting",
+        "**When:** Confirmed bug, infrastructure issue, needs code change, requires system-level investigation",
+        "**When:** Feature gap causing customer pain, design decision needed, workflow doesn't match customer expectations, competing customer needs require prioritization",
+        "**When:** High-revenue customer threatening churn, SLA breach on critical account, cross-functional decision needed, exception to policy required, PR or legal risk"
+      ]
+    },
+    "exploration": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "### Lineage and Dependencies"
+      ]
+    },
+    "fastapi-sdk": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "python",
+        "uv"
+      ],
+      "requirements_text": [
+        "Always prefer the `Annotated` style for parameter and dependency declarations.",
+        "### For Dependencies",
+        "Use `Annotated` for dependencies with `Depends()`.",
+        "Unless asked not to, create a new type alias for the dependency to allow re-using it.",
+        "Do not use `...` as a default value for required parameters, it's not needed and not recommended.",
+        "Apply shared dependencies at the router level via `dependencies=[Depends(...)]`.",
+        "## Dependency Injection",
+        "See [the dependency injection reference](references/dependencies.md) for detailed patterns including `yield` with `scope`, and class dependencies.",
+        "Use dependencies when the logic can't be declared in Pydantic validation, depends on external resources, needs cleanup (with `yield`), or is shared across endpoints.",
+        "Apply shared dependencies at the router level via `dependencies=[Depends(...)]`.",
+        "The same rules apply to dependencies."
+      ]
+    },
+    "feature-spec": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "description: \"You are an expert at writing product requirements documents (PRDs) and feature specifications. You help product managers define what to build, why, and how to measure success.\"",
+        "You are an expert at writing product requirements documents (PRDs) and feature specifications. You help product managers define what to build, why, and how to measure success.",
+        "### 5. Requirements",
+        "For each requirement:",
+        "- Flag dependencies on other teams or systems",
+        "- Dependencies on other teams' work or releases",
+        "## Requirements Categorization",
+        "- Requirements keep getting added after the spec is approved",
+        "- Stakeholders add requirements without removing anything",
+        "- Require that any scope addition comes with a scope removal or timeline extension"
+      ]
+    },
+    "financial-statements": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "description: \"Formats, GAAP presentation requirements, common adjustments, and flux analysis methodology for income statements, balance sheets, and cash flow statements.\"",
+        "Formats, GAAP presentation requirements, common adjustments, and flux analysis methodology for income statements, balance sheets, and cash flow statements.",
+        "### GAAP Presentation Requirements (ASC 220 / IAS 1)",
+        "- **Revenue disaggregation:** ASC 606 requires disaggregation of revenue into categories that depict how the nature, amount, timing, and uncertainty of revenue are affected by economic factors",
+        "### GAAP Presentation Requirements (ASC 210 / IAS 1)",
+        "### GAAP Presentation Requirements (ASC 230 / IAS 7)",
+        "- Direct method is permitted but rarely used (requires supplemental indirect reconciliation)",
+        "6. Note any actions required (further investigation, forecast update, process change)"
+      ]
+    },
+    "hyper-fast-youtube-transcript": {
+      "files": [
+        "SKILL.md",
+        "scripts/get_youtube_transcript.py"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "python3"
+      ],
+      "requirements_text": [
+        "- The script auto-installs `youtube-transcript-api` if it is missing.",
+        "def ensure_dependency():",
+        "\"install\",",
+        "api_module = ensure_dependency()"
+      ]
+    },
+    "journal-entry-prep": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "description: \"Best practices, standard entry types, documentation requirements, and review workflows for journal entry preparation.\"",
+        "Best practices, standard entry types, documentation requirements, and review workflows for journal entry preparation.",
+        "- Track PTO/vacation accrual liability if required by policy or jurisdiction",
+        "## Supporting Documentation Requirements"
+      ]
+    },
+    "knowledge-management": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": []
+    },
+    "legal-writer": {
+      "files": [
+        "SKILL.md",
+        "references/bluebook.md",
+        "references/document-types.md",
+        "scripts/courtlistener.py",
+        "scripts/ecfr_lookup.py",
+        "scripts/verify-legal.py"
+      ],
+      "py_imports": [
+        "docx"
+      ],
+      "ts_imports": [],
+      "commands": [
+        "convert",
+        "jq",
+        "libreoffice",
+        "node",
+        "python3"
+      ],
+      "requirements_text": [
+        "**Note:** CourtListener requires a free API token for higher rate limits. Set `COURTLISTENER_API_TOKEN` env var. Without it, limited to 100 requests/day.",
+        "No API key required.",
+        "- **Pinpoint cites required** \u2014 always cite to the specific page.",
+        "- \"must\" = condition/requirement",
+        "2. **Completeness:** All required sections present for document type, no gaps in logic",
+        "- [ ] Required boilerplate provisions present (contracts)",
+        "pip install docx2pdf && python3 -c \"from docx2pdf import convert; convert('legal/$SLUG/document.docx')\"",
+        "- **Margins:** 1 inch all sides (check local rules \u2014 some require 1.5\" left)",
+        "- **Caption:** Court name, parties, case number \u2014 use the court's required format",
+        "- **Line numbers:** Required in some jurisdictions (e.g., California state courts)",
+        "| California state | 13pt+ proportional serif | Double | 1.5\" left/right | Line numbers required |",
+        "Structure templates for each major document type. These are the **required sections and conventions** \u2014 adapt as needed for jurisdiction and context.",
+        "[Verification if required]",
+        "[Demand \u2014 action required, deadline (10-30 days), consequences]",
+        "\"\"\"Extract full text from a DOCX file using python-docx or fallback to XML.\"\"\"",
+        "# Fallback: extract text from DOCX XML directly",
+        "print(\"\\n--- Required Provisions ---\")",
+        "required_provisions = {",
+        "for provision, pattern in required_provisions.items():",
+        "check_pass(f\"Found {len(found)}/{len(required_provisions)} standard provisions: {', '.join(found)}\")",
+        "\"\"\"Look up a case by cluster_id via the search endpoint (no auth required).\"\"\"",
+        "# Fallback: try the clusters endpoint (requires auth)",
+        "Uses the search endpoint (no auth required) with cluster_id filter.",
+        "Note: This endpoint requires authentication (API token).",
+        "Uses the search endpoint (no auth required).",
+        "and federal statutes. No API key required.",
+        "No authentication required for either API.",
+        "The eCFR versioner API requires a date <= the title's up_to_date_as_of."
+      ]
+    },
+    "logo-creator": {
+      "files": [
+        "SKILL.md",
+        "references/prompt-patterns.md",
+        "scripts/compose_logo.py",
+        "scripts/create_logo_sheet.py",
+        "scripts/remove_bg.py"
+      ],
+      "py_imports": [
+        "PIL",
+        "numpy",
+        "playwright",
+        "rembg"
+      ],
+      "ts_imports": [],
+      "commands": [
+        "chromium",
+        "convert",
+        "playwright",
+        "python3"
+      ],
+      "requirements_text": [
+        "- `scripts/remove_bg.py` \u2014 Local background removal fallback (if the Replicate result produces artifacts)",
+        "\u2192 REJECT \u2014 re-run with local fallback: python3 scripts/remove_bg.py input.webp output.png",
+        "**If the result has artifacts** (gray halos, jagged edges, eaten details), use the local fallback:",
+        "pip install rembg pillow onnxruntime  # first time only",
+        "- If bad: re-run with `scripts/remove_bg.py` (local fallback)",
+        "- Fallback to `scripts/remove_bg.py` if needed",
+        "| `--brand` | required | Brand name (rendered as text) |",
+        "10. **Verify remove_bg quality.** Read the transparent PNG. If it has artifacts, use the local fallback script.",
+        "print(\"Error: playwright required. Install: pip install playwright && playwright install chromium\")",
+        "This is the logo-creator skill's local fallback for background removal",
+        "Requirements:",
+        "pip install rembg pillow onnxruntime",
+        "print(\"Error: rembg not installed. Run: pip install rembg pillow onnxruntime\")",
+        "print(\"Error: rembg not installed.\")",
+        "print(\"Install: pip install rembg pillow onnxruntime\")"
+      ]
+    },
+    "media": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "If the runtime has the `elevenlabs` skill installed, prefer it for dedicated text-to-speech, voice, and transcription workflows instead of building custom wrappers.",
+        "| Parameter | Required | Default | Description |",
+        "| Parameter | Required | Default | Description |",
+        "| Parameter | Required | Default | Description |",
+        "| Parameter | Required | Default | Description |"
+      ]
+    },
+    "meeting-briefing": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "| **Deal Review** | Contract status, open issues, counterparty history, negotiation strategy, approval requirements |",
+        "| **Cross-Functional** | Legal implications of business decisions, risk assessment, compliance requirements |",
+        "- **Approval requirements**: What approvals are needed and from whom",
+        "- **Note dependencies**: If an action item depends on another action or external input, note it"
+      ]
+    },
+    "metrics-tracking": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "convert"
+      ],
+      "requirements_text": [
+        "- **Too many metrics**: Dashboards that require scrolling to see. If it does not fit on one screen, cut metrics.",
+        "Set alerts for metrics that require immediate attention:"
+      ]
+    },
+    "nda-triage": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- [ ] **Marking requirements**: If marking is required, is it workable? (Written marking within 30 days of oral disclosure is standard)",
+        "- [ ] **No onerous obligations**: No requirements that are impractical (e.g., encrypting all communications, maintaining physical logs)",
+        "- [ ] **Legal compulsion**: Right to disclose when required by law, regulation, or legal process (with notice to the disclosing party where legally permitted)",
+        "- [ ] **Legal/regulatory**: Can disclose as required by law or regulation",
+        "- [ ] **Retention exception**: Allows retention of copies required by law, regulation, or internal compliance/backup policies",
+        "**Routing**: Approve via standard delegation of authority. No counsel review required.",
+        "- Marking requirements present but workable",
+        "- **Unilateral when mutual is required** (or wrong direction for the relationship)",
+        "- **Audit rights** without reasonable scope or notice requirements",
+        "**Routing**: Full legal review required. Do not sign. Requires negotiation, counterproposal with the organization's standard form NDA, or rejection.",
+        "**Standard position**: Resist residuals clauses. If required, limit to: (a) general ideas, concepts, know-how, or techniques retained in the unaided memory of individuals who had authorized access; (b) explicitly exclude trade secrets and patentable information; (c) does not grant any IP license."
+      ]
+    },
+    "openalex-paper-search": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "curl",
+        "python",
+        "python3"
+      ],
+      "requirements_text": [
+        "Search 240M+ scholarly works using the OpenAlex API -- completely free, no API key required, no SDK needed. Just `curl` or `bash` with URL construction."
+      ]
+    },
+    "paper-creator": {
+      "files": [
+        "SKILL.md",
+        "assets/template.tex",
+        "scripts/compile.sh",
+        "scripts/openalex_to_bibtex.py",
+        "scripts/verify.sh"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "bibtex",
+        "curl",
+        "pdflatex",
+        "python",
+        "python3"
+      ],
+      "requirements_text": [
+        "%     \\REQUIRE Input description"
+      ]
+    },
+    "pdf": {
+      "files": [
+        "SKILL.md",
+        "form-filling.md",
+        "formfill.py",
+        "layout.py",
+        "libraries/cli-tools.md",
+        "libraries/pdfplumber.md",
+        "libraries/pypdfium2.md",
+        "libraries/reportlab.md",
+        "render.py"
+      ],
+      "py_imports": [
+        "PIL",
+        "pdf2image",
+        "pdfplumber",
+        "pypdf"
+      ],
+      "ts_imports": [],
+      "commands": [
+        "convert",
+        "magick",
+        "node",
+        "pdfimages",
+        "pdftoppm",
+        "pdftotext",
+        "python",
+        "qpdf"
+      ],
+      "requirements_text": [
+        "**CJK text:** Fonts like Inter and DM Sans only cover Latin glyphs. ReportLab has no automatic font fallback \u2014 unregistered scripts render as tofu. Register Noto Sans CJK for Chinese, Japanese, or Korean text. See [libraries/reportlab.md](libraries/reportlab.md) (CJK Font Support).",
+        "**Fallback**: Helvetica (built-in, no download). **Blacklist**: see `skills/GENERAL-KNOWLEDGE-WORKER/design-foundations/SKILL.md` Font Rules.",
+        "Fonts like Inter and DM Sans only cover Latin glyphs. ReportLab has no automatic font fallback \u2014 unregistered scripts render as tofu boxes. For Chinese, Japanese, or Korean text, register **Noto Sans CJK** from system fonts:"
+      ]
+    },
+    "performance-analytics": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "| Data-driven | Algorithmic credit based on conversion patterns | Most accurate representation | Requires significant data volume |",
+        "- Data-driven attribution requires high conversion volume to be statistically meaningful",
+        "- Calculate required sample size before starting (do not end tests early)"
+      ]
+    },
+    "pptx": {
+      "files": [
+        "CREATING.md",
+        "EDITING.md",
+        "SKILL.md",
+        "scripts/pack.py",
+        "scripts/repair.py",
+        "scripts/slides.py",
+        "scripts/unpack.py"
+      ],
+      "py_imports": [
+        "PIL",
+        "lxml"
+      ],
+      "ts_imports": [],
+      "commands": [
+        "convert",
+        "node",
+        "pdftoppm",
+        "python",
+        "soffice"
+      ],
+      "requirements_text": [
+        "const pptxgen = require(\"pptxgenjs\");",
+        "- **`breakLine: true`** \u2014 Required on every segment except the last in a multi-segment `addText` array. Without it, segments concatenate onto one line.",
+        "- **Factory function required** \u2014 shadow objects are mutated during render (see above).",
+        "const React = require(\"react\");",
+        "const { renderToStaticMarkup } = require(\"react-dom/server\");",
+        "const sharp = require(\"sharp\");",
+        "const { HiOutlineLightningBolt } = require(\"react-icons/hi\");",
+        "Pre-installed sandbox packages: `markitdown[pptx]`, `Pillow`, `pptxgenjs` (Node), `react-icons` + `react` + `react-dom` + `sharp` (icon rendering), LibreOffice (`soffice`), Poppler (`pdftoppm`).",
+        "- **No icons** unless the user explicitly asks. Icons next to headings, in colored circles, or as bullet decorations are visual clutter. Only include icons when data or content requires them (chart selector, logo).",
+        "## QA (Required \u2014 do not skip any step)",
+        "subs = parser.add_subparsers(dest=\"command\", required=True)"
+      ]
+    },
+    "presentations": {
+      "files": [
+        "SKILL.md",
+        "presentation.ts",
+        "scripts/.python-version",
+        "scripts/convert_pdf.py",
+        "scripts/convert_pptx.py",
+        "scripts/pyproject.toml",
+        "scripts/uv.lock",
+        "scripts/validate_slide.py",
+        "viewer.html"
+      ],
+      "py_imports": [
+        "PIL",
+        "PyPDF2",
+        "playwright",
+        "pptx"
+      ],
+      "ts_imports": [],
+      "commands": [
+        "bun",
+        "chromium",
+        "convert",
+        "npm",
+        "playwright",
+        "python3",
+        "uv"
+      ],
+      "requirements_text": [
+        "const fallback = resolve(process.cwd(), PRESENTATIONS_DIR);",
+        "mkdirSync(fallback, { recursive: true });",
+        "return fallback;",
+        "if (!presentation_name) return out({ success: false, error: \"presentation_name is required\" });",
+        "if (!slide_title) return out({ success: false, error: \"slide_title is required\" });",
+        "if (!content) return out({ success: false, error: \"content is required\" });",
+        "if (!presentation_name) return out({ success: false, error: \"presentation_name is required\" });",
+        "if (!presentation_name) return out({ success: false, error: \"presentation_name is required\" });",
+        "if (!presentation_name) return out({ success: false, error: \"presentation_name is required\" });",
+        "if (!presentation_name) return out({ success: false, error: \"presentation_name is required\" });",
+        "if (!presentation_name) return out({ success: false, error: \"presentation_name is required\" });",
+        "if (!presentation_name) return out({ success: false, error: \"presentation_name is required\" });",
+        "if (!presentation_name) return out({ success: false, error: \"presentation_name is required\" });",
+        "# 3. Let Playwright use its own bundled chromium (macOS after `playwright install`)",
+        "requires-python = \">=3.12\"",
+        "dependencies = ["
+      ]
+    },
+    "reconciliation": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "### Category 2: Adjustments Required",
+        "Items that require a journal entry to correct:",
+        "### Category 3: Requires Investigation"
+      ]
+    },
+    "remotion": {
+      "files": [
+        "SKILL.md",
+        "rules/3d.md",
+        "rules/animations.md",
+        "rules/assets.md",
+        "rules/audio-visualization.md",
+        "rules/audio.md",
+        "rules/calculate-metadata.md",
+        "rules/can-decode.md",
+        "rules/charts.md",
+        "rules/compositions.md",
+        "rules/display-captions.md",
+        "rules/extract-frames.md",
+        "rules/ffmpeg.md",
+        "rules/fonts.md",
+        "rules/get-audio-duration.md",
+        "rules/get-video-dimensions.md",
+        "rules/get-video-duration.md",
+        "rules/gifs.md",
+        "rules/images.md",
+        "rules/import-srt-captions.md",
+        "rules/light-leaks.md",
+        "rules/lottie.md",
+        "rules/maps.md",
+        "rules/measuring-dom-nodes.md",
+        "rules/measuring-text.md",
+        "rules/parameters.md",
+        "rules/sequencing.md",
+        "rules/subtitles.md",
+        "rules/tailwind.md",
+        "rules/text-animations.md",
+        "rules/timing.md",
+        "rules/transcribe-captions.md",
+        "rules/transitions.md",
+        "rules/transparent-videos.md",
+        "rules/trimming.md",
+        "rules/videos.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "bun",
+        "bunx",
+        "ffmpeg",
+        "ffprobe",
+        "npm"
+      ],
+      "requirements_text": [
+        "To transcribe audio to generate captions in Remotion, you can use the [`transcribe()`](https://www.remotion.dev/docs/install-whisper-cpp/transcribe) function from the [`@remotion/install-whisper-cpp`](https://www.remotion.dev/docs/install-whisper-cpp) package.",
+        "First, the @remotion/install-whisper-cpp package needs to be installed.",
+        "If it is not installed, use the following command:",
+        "npx remotion add @remotion/install-whisper-cpp",
+        "installWhisperCpp,",
+        "} from \"@remotion/install-whisper-cpp\";",
+        "await installWhisperCpp({",
+        "Install @remotion/layout-utils if it is not already installed:",
+        "First, `zod` must be installed - it must be exactly version `3.22.3`.",
+        "Remotion requires that the top-level type is a z.object(), because the collection of props of a React component is always an object.",
+        "If it is not installed, use the following command:",
+        "You can and should use TailwindCSS in Remotion, if TailwindCSS is installed in the project.",
+        "Tailwind must be installed and enabled first in a Remotion project - fetch  https://www.remotion.dev/docs/tailwind using WebFetch for instructions.",
+        "`<TransitionSeries.Transition>` requires:",
+        "First, the @remotion/captions package needs to be installed.",
+        "If it is not installed, use the following command:",
+        "Use `<Still>` for single-frame images. It does not require `durationInFrames` or `fps`.",
+        "First, the @remotion/media package needs to be installed.",
+        "First, the @remotion/media package needs to be installed.",
+        "If it is not installed, use the following command:",
+        "First, the `@remotion/three` package needs to be installed.",
+        "First, the @remotion/google-fonts package needs to be installed.",
+        "If it is not installed, use the following command:",
+        "First, install @remotion/fonts:",
+        "family: \"MyFont\", // Required: name to use in CSS",
+        "url: staticFile(\"font.woff2\"), // Required: font file URL",
+        "Install: `npx remotion add @remotion/paths`",
+        "Mapbox and `@turf/turf` need to be installed.",
+        "`ffmpeg` and `ffprobe` do not need to be installed. They are available via the `bunx remotion ffmpeg` and `bunx remotion ffprobe`:",
+        "First, the @remotion/lottie package needs to be installed.",
+        "First, the [`@remotion/captions`](https://www.remotion.dev/docs/captions) package needs to be installed.",
+        "If it is not installed, use the following command:"
+      ]
+    },
+    "replicate": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "curl",
+        "jq"
+      ],
+      "requirements_text": [
+        "description: Discover, compare, and run AI models using Replicate's API. Use this skill whenever the task involves AI-generated media \u2014 images (text-to-image, style transfer, editing, upscaling, background removal), video, audio, or any other ML model output. Requires a REPLICATE_API_TOKEN \u2014 ask the user for it if not already set.",
+        "All requests require the header: `Authorization: Bearer <token>`"
+      ]
+    },
+    "research-assistant": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "description: \"Use for deep, multi-source research that requires synthesis, structured analysis, and iterative evidence gathering before writing the final answer or report.\"",
+        "When the task requires both research and a built artifact:"
+      ]
+    },
+    "research-report": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "python3"
+      ],
+      "requirements_text": [
+        "- [ ] Major claims are cited when research was required"
+      ]
+    },
+    "response-drafting": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- Customer has unique technical requirements beyond standard support",
+        "- Integration issues require engineering investigation"
+      ]
+    },
+    "risk-assessment": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "| 1 | **Remote** | Highly unlikely to occur; no known precedent in similar situations; would require exceptional circumstances. |",
+        "| 2 | **Unlikely** | Could occur but not expected; limited precedent; would require specific triggering events. |",
+        "- **No escalation required**: Can be managed by the responsible team member",
+        "- Risks that warrant attention but do not require immediate action",
+        "- Issues that require senior attention and dedicated mitigation efforts",
+        "- Data processing activity that may violate a regulatory requirement if not restructured",
+        "- **Regulatory notifications**: Make any required regulatory notifications",
+        "- **Jurisdictional complexity**: Matters involving unfamiliar jurisdictions or conflicting legal requirements across jurisdictions",
+        "- **Regulatory changes**: New regulations that materially affect the business and require compliance program development"
+      ]
+    },
+    "roadmap-management": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "- Shows dependencies between items",
+        "## Dependency Mapping",
+        "### Identifying Dependencies",
+        "Look for dependencies across these categories:",
+        "- **Technical dependencies**: Feature B requires infrastructure work from Feature A",
+        "- **Team dependencies**: Feature requires work from another team (design, platform, data)",
+        "- **External dependencies**: Waiting on a vendor, partner, or third-party integration",
+        "- **Knowledge dependencies**: Need research or investigation results before starting",
+        "- **Sequential dependencies**: Must ship Feature A before starting Feature B (shared code, user flow)",
+        "### Managing Dependencies",
+        "- List all dependencies explicitly in the roadmap",
+        "- Assign an owner to each dependency (who is responsible for resolving it)",
+        "- Build buffer around dependencies \u2014 they are the highest-risk items on any roadmap",
+        "- Flag dependencies that cross team boundaries early \u2014 these require coordination",
+        "- Have a contingency plan: what do you do if the dependency slips?",
+        "### Reducing Dependencies",
+        "- Can you build a simpler version that avoids the dependency?",
+        "- Can you sequence differently to move the dependency earlier?",
+        "- Dependency slip from another team",
+        "- Competitive move that requires response"
+      ]
+    },
+    "sql-queries": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": []
+    },
+    "stakeholder-comms": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "What is the situation that requires a decision? What forces are at play?",
+        "5. Dependencies: flag any cross-team or external dependencies"
+      ]
+    },
+    "statistical-analysis": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "python"
+      ],
+      "requirements_text": []
+    },
+    "theme-factory": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "**Custom theme requirements:**"
+      ]
+    },
+    "ticket-triage": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": []
+    },
+    "user-research-synthesis": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": []
+    },
+    "validation": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "git",
+        "python"
+      ],
+      "requirements_text": []
+    },
+    "variance-analysis": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [],
+      "requirements_text": [
+        "Materiality thresholds determine which variances require investigation and narrative explanation. Set thresholds based on:",
+        "Action: [None required / Monitor / Investigate further / Update forecast]",
+        "- [ ] **Actionable:** Identifies any required follow-up or decision"
+      ]
+    },
+    "visualization": {
+      "files": [
+        "SKILL.md"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "python"
+      ],
+      "requirements_text": []
+    },
+    "webapp": {
+      "files": [
+        "SKILL.md",
+        "dashboards.md",
+        "references/environment.md",
+        "references/layout_and_spacing.md",
+        "references/shadcn_component_rules.md",
+        "references/sidebar_rules.md",
+        "references/visual_style_and_contrast.md",
+        "template/client/index.html",
+        "template/client/src/App.tsx",
+        "template/client/src/components/SiteAttribution.tsx",
+        "template/client/src/components/ui/accordion.tsx",
+        "template/client/src/components/ui/alert-dialog.tsx",
+        "template/client/src/components/ui/alert.tsx",
+        "template/client/src/components/ui/aspect-ratio.tsx",
+        "template/client/src/components/ui/avatar.tsx",
+        "template/client/src/components/ui/badge.tsx",
+        "template/client/src/components/ui/breadcrumb.tsx",
+        "template/client/src/components/ui/button.tsx",
+        "template/client/src/components/ui/calendar.tsx",
+        "template/client/src/components/ui/card.tsx",
+        "template/client/src/components/ui/carousel.tsx",
+        "template/client/src/components/ui/chart.tsx",
+        "template/client/src/components/ui/checkbox.tsx",
+        "template/client/src/components/ui/collapsible.tsx",
+        "template/client/src/components/ui/command.tsx",
+        "template/client/src/components/ui/context-menu.tsx",
+        "template/client/src/components/ui/dialog.tsx",
+        "template/client/src/components/ui/drawer.tsx",
+        "template/client/src/components/ui/dropdown-menu.tsx",
+        "template/client/src/components/ui/form.tsx",
+        "template/client/src/components/ui/hover-card.tsx",
+        "template/client/src/components/ui/input-otp.tsx",
+        "template/client/src/components/ui/input.tsx",
+        "template/client/src/components/ui/label.tsx",
+        "template/client/src/components/ui/menubar.tsx",
+        "template/client/src/components/ui/navigation-menu.tsx",
+        "template/client/src/components/ui/pagination.tsx",
+        "template/client/src/components/ui/popover.tsx",
+        "template/client/src/components/ui/progress.tsx",
+        "template/client/src/components/ui/radio-group.tsx",
+        "template/client/src/components/ui/resizable.tsx",
+        "template/client/src/components/ui/scroll-area.tsx",
+        "template/client/src/components/ui/select.tsx",
+        "template/client/src/components/ui/separator.tsx",
+        "template/client/src/components/ui/sheet.tsx",
+        "template/client/src/components/ui/sidebar.tsx",
+        "template/client/src/components/ui/skeleton.tsx",
+        "template/client/src/components/ui/slider.tsx",
+        "template/client/src/components/ui/switch.tsx",
+        "template/client/src/components/ui/table.tsx",
+        "template/client/src/components/ui/tabs.tsx",
+        "template/client/src/components/ui/textarea.tsx",
+        "template/client/src/components/ui/toast.tsx",
+        "template/client/src/components/ui/toaster.tsx",
+        "template/client/src/components/ui/toggle-group.tsx",
+        "template/client/src/components/ui/toggle.tsx",
+        "template/client/src/components/ui/tooltip.tsx",
+        "template/client/src/hooks/use-mobile.tsx",
+        "template/client/src/hooks/use-toast.ts",
+        "template/client/src/index.css",
+        "template/client/src/lib/queryClient.ts",
+        "template/client/src/lib/utils.ts",
+        "template/client/src/main.tsx",
+        "template/client/src/pages/not-found.tsx",
+        "template/components.json",
+        "template/drizzle.config.ts",
+        "template/postcss.config.js",
+        "template/script/build.ts",
+        "template/server/index.ts",
+        "template/server/routes.ts",
+        "template/server/static.ts",
+        "template/server/storage.ts",
+        "template/server/vite.ts",
+        "template/shared/schema.ts",
+        "template/tailwind.config.ts",
+        "template/tsconfig.json",
+        "template/vite.config.ts"
+      ],
+      "py_imports": [],
+      "ts_imports": [
+        "@radix-ui/react-accordion",
+        "@radix-ui/react-alert-dialog",
+        "@radix-ui/react-aspect-ratio",
+        "@radix-ui/react-avatar",
+        "@radix-ui/react-checkbox",
+        "@radix-ui/react-collapsible",
+        "@radix-ui/react-context-menu",
+        "@radix-ui/react-dialog",
+        "@radix-ui/react-dropdown-menu",
+        "@radix-ui/react-hover-card",
+        "@radix-ui/react-label",
+        "@radix-ui/react-menubar",
+        "@radix-ui/react-navigation-menu",
+        "@radix-ui/react-popover",
+        "@radix-ui/react-progress",
+        "@radix-ui/react-radio-group",
+        "@radix-ui/react-scroll-area",
+        "@radix-ui/react-select",
+        "@radix-ui/react-separator",
+        "@radix-ui/react-slider",
+        "@radix-ui/react-slot",
+        "@radix-ui/react-switch",
+        "@radix-ui/react-tabs",
+        "@radix-ui/react-toast",
+        "@radix-ui/react-toggle",
+        "@radix-ui/react-toggle-group",
+        "@radix-ui/react-tooltip",
+        "@shared/schema",
+        "@tailwindcss/typography",
+        "@tanstack/react-query",
+        "@vitejs/plugin-react",
+        "class-variance-authority",
+        "clsx",
+        "cmdk",
+        "drizzle-kit",
+        "drizzle-orm",
+        "drizzle-zod",
+        "embla-carousel-react",
+        "esbuild",
+        "express",
+        "input-otp",
+        "lucide-react",
+        "nanoid",
+        "react",
+        "react-day-picker",
+        "react-dom",
+        "react-hook-form",
+        "react-resizable-panels",
+        "recharts",
+        "tailwind-merge",
+        "tailwindcss",
+        "tailwindcss-animate",
+        "vaul",
+        "vite",
+        "wouter",
+        "zod"
+      ],
+      "commands": [
+        "node",
+        "npm",
+        "python3"
+      ],
+      "requirements_text": [
+        "Copy the template to your project directory, then install dependencies:",
+        "npm install",
+        "- If the app is complex and requires functionality that can't be done in a single request, it is okay to stub out the backend and implement the frontend first.",
+        "- Analyze the comments inside of `index.css` to determine how to set colors \u2014 replacing every `red` placeholder. **Infer a palette from the product's subject matter first** (see \"Replacing `red` Placeholders\" above). Use Kortix HSL values from `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/01-design-tokens.md` only as a last-resort fallback when both inference and asking the user yield no direction. Do NOT forget to replace every single instance of `red`. Pay attention to what you see in index.css.",
+        "## Installing Packages",
+        "If you need to install additional packages, run `npm install <package-name>`.",
+        "Read `skills/GENERAL-KNOWLEDGE-WORKER/webapp/references/environment.md` \u2014 pre-installed packages, dev server setup, deployment constraints.",
+        "These files come from the `website-building` dependency and live under `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/` \u2014 NOT under `skills/GENERAL-KNOWLEDGE-WORKER/webapp/shared/`.",
+        "- `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/01-design-tokens.md` \u2014 **Always read.** Type scale, spacing system, Kortix palette, base stylesheet. Provides the fallback design system when the user gives no art direction.",
+        "npm install",
+        "After copying the template, run `npm install` before starting the dev server. The existing package set is the baseline; add more packages only when the task clearly needs them.",
+        "Use the existing Shadcn Avatar components (or Radix Avatar) unless the user requests otherwise. Use `AvatarFallback` when there's no image for `AvatarImage`.",
+        "Text colors must always take into account the surface they're rendered on. Light text should never appear on a light background, and darker text should never appear on a dark background. Double or triple check this requirement.",
+        "- Border radii should **always** be small unless creating a perfect circle or perfect \"pill\" shape (which require border radius to be exactly half the element height).",
+        "plugins: [require(\"tailwindcss-animate\"), require(\"@tailwindcss/typography\")],",
+        "...Object.keys(pkg.dependencies || {}),",
+        "...Object.keys(pkg.devDependencies || {}),",
+        "{/* Fallback to 404 */}",
+        "const AvatarFallback = React.forwardRef<",
+        "React.ElementRef<typeof AvatarPrimitive.Fallback>,",
+        "React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback>",
+        "<AvatarPrimitive.Fallback",
+        "AvatarFallback.displayName = AvatarPrimitive.Fallback.displayName",
+        "export { Avatar, AvatarImage, AvatarFallback }"
+      ]
+    },
+    "website-building": {
+      "files": [
+        "SKILL.md",
+        "game/2d-canvas.md",
+        "game/game-testing.md",
+        "game/game.md",
+        "game/references/action_payloads.json",
+        "game/scripts/web_game_playwright_client.js",
+        "informational/informational.md",
+        "shared/01-design-tokens.md",
+        "shared/02-typography.md",
+        "shared/03-motion.md",
+        "shared/04-layout.md",
+        "shared/05-taste.md",
+        "shared/06-css-and-tailwind.md",
+        "shared/07-toolkit.md",
+        "shared/08-standards.md",
+        "shared/09-technical.md",
+        "shared/10-charts-and-dataviz.md",
+        "shared/11-web-technologies.md",
+        "shared/12-playwright-interactive.md",
+        "shared/19-backend.md",
+        "shared/20-llm-api.md",
+        "shared/generate-palette.ts",
+        "shared/head-defaults.html",
+        "webapp/SKILL.md",
+        "webapp/dashboards.md",
+        "webapp/references/environment.md",
+        "webapp/references/layout_and_spacing.md",
+        "webapp/references/shadcn_component_rules.md",
+        "webapp/references/sidebar_rules.md",
+        "webapp/references/visual_style_and_contrast.md",
+        "webapp/template/client/index.html",
+        "webapp/template/client/src/App.tsx",
+        "webapp/template/client/src/components/SiteAttribution.tsx",
+        "webapp/template/client/src/components/ui/accordion.tsx",
+        "webapp/template/client/src/components/ui/alert-dialog.tsx",
+        "webapp/template/client/src/components/ui/alert.tsx",
+        "webapp/template/client/src/components/ui/aspect-ratio.tsx",
+        "webapp/template/client/src/components/ui/avatar.tsx",
+        "webapp/template/client/src/components/ui/badge.tsx",
+        "webapp/template/client/src/components/ui/breadcrumb.tsx",
+        "webapp/template/client/src/components/ui/button.tsx",
+        "webapp/template/client/src/components/ui/calendar.tsx",
+        "webapp/template/client/src/components/ui/card.tsx",
+        "webapp/template/client/src/components/ui/carousel.tsx",
+        "webapp/template/client/src/components/ui/chart.tsx",
+        "webapp/template/client/src/components/ui/checkbox.tsx",
+        "webapp/template/client/src/components/ui/collapsible.tsx",
+        "webapp/template/client/src/components/ui/command.tsx",
+        "webapp/template/client/src/components/ui/context-menu.tsx",
+        "webapp/template/client/src/components/ui/dialog.tsx",
+        "webapp/template/client/src/components/ui/drawer.tsx",
+        "webapp/template/client/src/components/ui/dropdown-menu.tsx",
+        "webapp/template/client/src/components/ui/form.tsx",
+        "webapp/template/client/src/components/ui/hover-card.tsx",
+        "webapp/template/client/src/components/ui/input-otp.tsx",
+        "webapp/template/client/src/components/ui/input.tsx",
+        "webapp/template/client/src/components/ui/label.tsx",
+        "webapp/template/client/src/components/ui/menubar.tsx",
+        "webapp/template/client/src/components/ui/navigation-menu.tsx",
+        "webapp/template/client/src/components/ui/pagination.tsx",
+        "webapp/template/client/src/components/ui/popover.tsx",
+        "webapp/template/client/src/components/ui/progress.tsx",
+        "webapp/template/client/src/components/ui/radio-group.tsx",
+        "webapp/template/client/src/components/ui/resizable.tsx",
+        "webapp/template/client/src/components/ui/scroll-area.tsx",
+        "webapp/template/client/src/components/ui/select.tsx",
+        "webapp/template/client/src/components/ui/separator.tsx",
+        "webapp/template/client/src/components/ui/sheet.tsx",
+        "webapp/template/client/src/components/ui/sidebar.tsx",
+        "webapp/template/client/src/components/ui/skeleton.tsx",
+        "webapp/template/client/src/components/ui/slider.tsx",
+        "webapp/template/client/src/components/ui/switch.tsx",
+        "webapp/template/client/src/components/ui/table.tsx",
+        "webapp/template/client/src/components/ui/tabs.tsx",
+        "webapp/template/client/src/components/ui/textarea.tsx",
+        "webapp/template/client/src/components/ui/toast.tsx",
+        "webapp/template/client/src/components/ui/toaster.tsx",
+        "webapp/template/client/src/components/ui/toggle-group.tsx",
+        "webapp/template/client/src/components/ui/toggle.tsx",
+        "webapp/template/client/src/components/ui/tooltip.tsx",
+        "webapp/template/client/src/hooks/use-mobile.tsx",
+        "webapp/template/client/src/hooks/use-toast.ts",
+        "webapp/template/client/src/index.css",
+        "webapp/template/client/src/lib/queryClient.ts",
+        "webapp/template/client/src/lib/utils.ts",
+        "webapp/template/client/src/main.tsx",
+        "webapp/template/client/src/pages/not-found.tsx",
+        "webapp/template/components.json",
+        "webapp/template/drizzle.config.ts",
+        "webapp/template/postcss.config.js",
+        "webapp/template/script/build.ts",
+        "webapp/template/server/index.ts",
+        "webapp/template/server/routes.ts",
+        "webapp/template/server/static.ts",
+        "webapp/template/server/storage.ts",
+        "webapp/template/server/vite.ts",
+        "webapp/template/shared/schema.ts",
+        "webapp/template/tailwind.config.ts",
+        "webapp/template/tsconfig.json",
+        "webapp/template/vite.config.ts"
+      ],
+      "py_imports": [],
+      "ts_imports": [
+        "@radix-ui/react-accordion",
+        "@radix-ui/react-alert-dialog",
+        "@radix-ui/react-aspect-ratio",
+        "@radix-ui/react-avatar",
+        "@radix-ui/react-checkbox",
+        "@radix-ui/react-collapsible",
+        "@radix-ui/react-context-menu",
+        "@radix-ui/react-dialog",
+        "@radix-ui/react-dropdown-menu",
+        "@radix-ui/react-hover-card",
+        "@radix-ui/react-label",
+        "@radix-ui/react-menubar",
+        "@radix-ui/react-navigation-menu",
+        "@radix-ui/react-popover",
+        "@radix-ui/react-progress",
+        "@radix-ui/react-radio-group",
+        "@radix-ui/react-scroll-area",
+        "@radix-ui/react-select",
+        "@radix-ui/react-separator",
+        "@radix-ui/react-slider",
+        "@radix-ui/react-slot",
+        "@radix-ui/react-switch",
+        "@radix-ui/react-tabs",
+        "@radix-ui/react-toast",
+        "@radix-ui/react-toggle",
+        "@radix-ui/react-toggle-group",
+        "@radix-ui/react-tooltip",
+        "@shared/schema",
+        "@tailwindcss/typography",
+        "@tanstack/react-query",
+        "@vitejs/plugin-react",
+        "class-variance-authority",
+        "clsx",
+        "cmdk",
+        "drizzle-kit",
+        "drizzle-orm",
+        "drizzle-zod",
+        "embla-carousel-react",
+        "esbuild",
+        "express",
+        "input-otp",
+        "lucide-react",
+        "nanoid",
+        "playwright",
+        "react",
+        "react-day-picker",
+        "react-dom",
+        "react-hook-form",
+        "react-resizable-panels",
+        "recharts",
+        "tailwind-merge",
+        "tailwindcss",
+        "tailwindcss-animate",
+        "vaul",
+        "vite",
+        "wouter",
+        "zod"
+      ],
+      "commands": [
+        "bun",
+        "chromium",
+        "convert",
+        "node",
+        "npm",
+        "playwright",
+        "python",
+        "python3"
+      ],
+      "requirements_text": [
+        "**Interactive QA:** Read `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/12-playwright-interactive.md` for persistent browser automation with Playwright (screenshots, functional testing, visual QA). Required for game testing, useful for any complex site.",
+        "Every site should have a visual identity derived from its content. **Do not skip to the Kortix fallback palette.** The Kortix palette is a last resort for when both inference and asking have failed \u2014 not a convenient default.",
+        "5. **Kortix fallback \u2014 only when inference AND asking yield nothing.** If the user has been asked and gave no direction, AND the subject matter gives no clear signal, then fall back to Kortix/Swiss defaults.",
+        "### The Fallback: Clean & Swiss (Last Resort)",
+        "Copy the template to your project directory, then install dependencies:",
+        "npm install",
+        "- If the app is complex and requires functionality that can't be done in a single request, it is okay to stub out the backend and implement the frontend first.",
+        "- Analyze the comments inside of `index.css` to determine how to set colors \u2014 replacing every `red` placeholder. **Infer a palette from the product's subject matter first** (see \"Replacing `red` Placeholders\" above). Use Kortix HSL values from `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/01-design-tokens.md` only as a last-resort fallback when both inference and asking the user yield no direction. Do NOT forget to replace every single instance of `red`. Pay attention to what you see in index.css.",
+        "## Installing Packages",
+        "If you need to install additional packages, run `npm install <package-name>`.",
+        "Read `skills/GENERAL-KNOWLEDGE-WORKER/webapp/references/environment.md` \u2014 pre-installed packages, dev server setup, deployment constraints.",
+        "These files come from the `website-building` dependency and live under `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/` \u2014 NOT under `skills/GENERAL-KNOWLEDGE-WORKER/webapp/shared/`.",
+        "- `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/01-design-tokens.md` \u2014 **Always read.** Type scale, spacing system, Kortix palette, base stylesheet. Provides the fallback design system when the user gives no art direction.",
+        "npm install",
+        "Use the existing Shadcn Avatar components (or Radix Avatar) unless the user requests otherwise. Use `AvatarFallback` when there's no image for `AvatarImage`.",
+        "Text colors must always take into account the surface they're rendered on. Light text should never appear on a light background, and darker text should never appear on a dark background. Double or triple check this requirement.",
+        "- Border radii should **always** be small unless creating a perfect circle or perfect \"pill\" shape (which require border radius to be exactly half the element height).",
+        "plugins: [require(\"tailwindcss-animate\"), require(\"@tailwindcss/typography\")],",
+        "...Object.keys(pkg.dependencies || {}),",
+        "...Object.keys(pkg.devDependencies || {}),",
+        "{/* Fallback to 404 */}",
+        "const AvatarFallback = React.forwardRef<",
+        "React.ElementRef<typeof AvatarPrimitive.Fallback>,",
+        "React.ComponentPropsWithoutRef<typeof AvatarPrimitive.Fallback>",
+        "<AvatarPrimitive.Fallback",
+        "AvatarFallback.displayName = AvatarPrimitive.Fallback.displayName",
+        "export { Avatar, AvatarImage, AvatarFallback }",
+        "1. List the user-visible requirements and the claims you expect to make in the final answer.",
+        "**The rule**: if every section breaks the grid, none of them are surprising. Contrast requires a baseline of order.",
+        "- **Masonry layouts: use for content of genuinely variable height.** CSS `masonry-layout` is experimental; use CSS columns or JS Masonry as a fallback:",
+        "- Test at 200% zoom (WCAG requirement).",
+        "### Kortix Design System (Fallback Palette \u2014 ONLY for Kortix-branded sites)",
+        "Always load a distinctive font via CDN \u2014 system fonts are fallback only.",
+        "base.css uses var(--font-body, sans-serif) as fallback. */",
+        "/* System preference fallback: duplicate [data-theme=\"dark\"] variables",
+        "When using the fullstack webapp template (Tailwind + shadcn), `index.css` uses HSL values in `H S% L%` format (no `hsl()` wrapper). Below are Kortix HSL conversions for when Kortix is the appropriate fallback (see \"Art Direction First\" above). For inferred or custom palettes, convert your chosen colors to the same `H S% L%` format:",
+        "These are the Kortix fallback values. **Always try to derive a concept-driven palette first** (see \"Art Direction First\" above). Use Kortix only when the request is truly generic with no topic to infer from. When deriving a custom palette, convert your chosen colors to the same `H S% L%` format and role structure with both light and dark modes.",
+        "npm install",
+        "## Defensive UI \u2014 Skeleton, Empty, Error, and Fallback States",
+        "Skeleton mirrors the component structure (avatar\u2192circle, title\u2192bar, text\u2192bars). Surface tokens for colors. Gentle 1.5s shimmer. Respect `prefers-reduced-motion` (static fallback).",
+        "### Image Fallbacks",
+        "Every `<img>` handles failure. CSS: `img { background: var(--color-surface-offset) }`. JS: on `error`, replace with a `.img-fallback` div (`role=\"img\"`, `aria-label` from alt, placeholder SVG, `background:var(--color-surface-offset)`).",
+        "Inline errors (validation) \u2192 next to the element, `--color-error`, specific message (\"Email is required\" not \"Error\"). Page errors (404, network) \u2192 treat as empty state with message + action. Never raw error codes. Use `--color-error` sparingly.",
+        "| Library | Level | Best For | Install |",
+        "| **Recharts** | Mid (declarative) | React dashboards, standard chart types. | `npm install recharts` |",
+        "| **Nivo** | Mid-high | Rich animated charts with SVG, Canvas, HTML rendering. SSR support. | `npm install @nivo/core @nivo/bar` |",
+        "| **Visx** | Low (primitives) | Pixel-level control over custom visualizations. By Airbnb. | `npm install @visx/group @visx/shape` |",
+        "| **Tremor** | Very high (meta) | Quick dashboards. Built on Recharts. | `npm install @tremor/react` |",
+        "**Rule:** Features with 90%+ global support can be used freely. Features below 90% need `@supports` fallbacks.",
+        "| [Embla Carousel](https://www.embla-carousel.com) | Performant, dependency-free carousel. Library-agnostic. | Any carousel, slider, or swipeable content. |",
+        "When a project needs a map \u2014 never use Google Maps (requires API key and billing):",
+        "| **Mapbox GL JS** | Premium features: 3D terrain, turn-by-turn, Mapbox Studio styles. Requires API key. | `<script src=\"https://api.mapbox.com/mapbox-gl-js/v3.12.0/mapbox-gl.js\"></script>` |",
+        "OpenFreeMap style URL: `https://tiles.openfreemap.org/styles/{liberty,bright,positron}`. Do **not** use OpenStreetMap tiles (`tile.openstreetmap.org`) \u2014 they require a Referer header and return 403 in sandboxed iframes.",
+        "If the backend depends on external AI APIs, require the matching environment variables explicitly and document them in the project. Read `shared/20-llm-api.md` before wiring those features.",
+        "plugins: [require(\"tailwindcss-animate\"), require(\"@tailwindcss/typography\")],",
+        "shadcn/ui is the standard component system for React projects. It is not a dependency you install \u2014 it copies source code into your project, giving you full ownership and zero version lock-in. Components are built on Radix UI primitives (accessible, keyboard-navigable, WAI-ARIA compliant) and styled with Tailwind CSS.",
+        "### Setup \u2014 Webapp Template (Pre-installed)",
+        "The webapp template ships with shadcn pre-installed (52 components in `client/src/components/ui/`). No setup needed \u2014 just import and use:",
+        "cd myapp && npm install",
+        "npm install -D tailwindcss postcss autoprefixer"
+      ]
+    },
+    "whisper": {
+      "files": [
+        "SKILL.md",
+        "scripts/transcribe.ts"
+      ],
+      "py_imports": [],
+      "ts_imports": [],
+      "commands": [
+        "bun",
+        "node"
+      ],
+      "requirements_text": [
+        "Transcribe any audio or video file to text. Uses Groq Whisper (fastest, near-instant) with OpenAI fallback.",
+        "| `--file` | Path to audio/video file (required) |",
+        "Requires `GROQ_API_KEY` (preferred \u2014 near-instant) or `OPENAI_API_KEY`.",
+        "*   2. OpenAI Whisper (reliable fallback)",
+        "// \u2500\u2500\u2500 Env resolution (s6 \u2192 process.env fallback) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+      ]
+    },
+    "xlsx": {
+      "files": [
+        "SKILL.md",
+        "scripts/_soffice.py",
+        "scripts/pivot_table.py",
+        "scripts/recalc.py"
+      ],
+      "py_imports": [
+        "openpyxl"
+      ],
+      "ts_imports": [],
+      "commands": [
+        "libreoffice",
+        "python",
+        "soffice"
+      ],
+      "requirements_text": [
+        "# Requirements for Outputs",
+        "#### Required Format Rules",
+        "#### Documentation Requirements for Hardcodes",
+        "LibreOffice is pre-installed. Both scripts configure it automatically on first run.",
+        "- [ ] **Verify dependencies**: Check all cells referenced in formulas exist",
+        "def _install_macro(content: str) -> bool:",
+        "return \"source_sheet is required\"",
+        "return \"target_sheet is required\"",
+        "return \"data_fields is required (at least one)\"",
+        "if not _install_macro(_generate_macro(config)):",
+        "return {\"status\": \"error\", \"error\": \"Failed to install LibreOffice macro\"}",
+        "if not _install_macro(_generate_delete_macro(source_sheet, pivot_name)):",
+        "return {\"status\": \"error\", \"error\": \"Failed to install LibreOffice macro\"}"
+      ]
+    }
+  },
+  "totals": {
+    "skill_count": 64,
+    "python_imports": [
+      "PIL",
+      "PyPDF2",
+      "constants",
+      "docx",
+      "fitz",
+      "lxml",
+      "models",
+      "numpy",
+      "openpyxl",
+      "pdf2image",
+      "pdfplumber",
+      "playwright",
+      "pptx",
+      "pypdf",
+      "rembg"
+    ],
+    "ts_imports": [
+      "@radix-ui/react-accordion",
+      "@radix-ui/react-alert-dialog",
+      "@radix-ui/react-aspect-ratio",
+      "@radix-ui/react-avatar",
+      "@radix-ui/react-checkbox",
+      "@radix-ui/react-collapsible",
+      "@radix-ui/react-context-menu",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-hover-card",
+      "@radix-ui/react-label",
+      "@radix-ui/react-menubar",
+      "@radix-ui/react-navigation-menu",
+      "@radix-ui/react-popover",
+      "@radix-ui/react-progress",
+      "@radix-ui/react-radio-group",
+      "@radix-ui/react-scroll-area",
+      "@radix-ui/react-select",
+      "@radix-ui/react-separator",
+      "@radix-ui/react-slider",
+      "@radix-ui/react-slot",
+      "@radix-ui/react-switch",
+      "@radix-ui/react-tabs",
+      "@radix-ui/react-toast",
+      "@radix-ui/react-toggle",
+      "@radix-ui/react-toggle-group",
+      "@radix-ui/react-tooltip",
+      "@shared/schema",
+      "@tailwindcss/typography",
+      "@tanstack/react-query",
+      "@vitejs/plugin-react",
+      "class-variance-authority",
+      "clsx",
+      "cmdk",
+      "drizzle-kit",
+      "drizzle-orm",
+      "drizzle-zod",
+      "embla-carousel-react",
+      "esbuild",
+      "express",
+      "input-otp",
+      "lucide-react",
+      "nanoid",
+      "playwright",
+      "react",
+      "react-day-picker",
+      "react-dom",
+      "react-hook-form",
+      "react-resizable-panels",
+      "recharts",
+      "tailwind-merge",
+      "tailwindcss",
+      "tailwindcss-animate",
+      "vaul",
+      "vite",
+      "wouter",
+      "zod"
+    ],
+    "commands": [
+      "bibtex",
+      "bun",
+      "bunx",
+      "chromium",
+      "convert",
+      "curl",
+      "docker",
+      "ffmpeg",
+      "ffprobe",
+      "git",
+      "jq",
+      "libreoffice",
+      "magick",
+      "node",
+      "npm",
+      "pandoc",
+      "pdfimages",
+      "pdflatex",
+      "pdftoppm",
+      "pdftotext",
+      "playwright",
+      "python",
+      "python3",
+      "qpdf",
+      "soffice",
+      "unzip",
+      "uv",
+      "whois",
+      "zip"
+    ]
+  }
+}

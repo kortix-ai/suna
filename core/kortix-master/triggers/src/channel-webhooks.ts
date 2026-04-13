@@ -314,7 +314,6 @@ export function parseSlackEvent(payload: any, configId: string, botUserId: strin
   const event = payload.event
   const eventType = event.type
   const eventId = payload.event_id
-  const cli = cliPath("slack")
 
   // ── Bot's own messages → skip (prevents feedback loops) ──
   if (event.bot_id || event.bot_profile) {

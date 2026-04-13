@@ -28,7 +28,12 @@ let mockDeductResult: any = { success: true, cost: 0.5, newBalance: 99.5, transa
 let mockDeductError: Error | null = null;
 let mockTransactionsSummary: any = { totalCredits: 150, totalDebits: 50, count: 200 };
 
-let mockDeletionStatus: any = { pending: false };
+let mockDeletionStatus: any = {
+  has_pending_deletion: false,
+  deletion_scheduled_for: null,
+  requested_at: null,
+  can_cancel: false,
+};
 let mockDeletionRequestResult: any = null;
 let mockDeletionCancelResult: any = null;
 let mockDeletionDeleteResult: any = null;
@@ -45,6 +50,10 @@ mock.module('../middleware/auth', () => ({
   },
   apiKeyAuth: async (c: any, next: any) => { await next(); },
   combinedAuth: async (c: any, next: any) => { await next(); },
+}));
+
+mock.module('../shared/resolve-account', () => ({
+  resolveAccountId: async () => TEST_USER_ID,
 }));
 
 // Credits service mock
@@ -107,7 +116,9 @@ mock.module('../billing/services/account-deletion', () => ({
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionRequestResult || {
       id: 'del_test_001',
-      scheduled_for: new Date(Date.now() + 14 * 86400000).toISOString(),
+      success: true,
+      message: 'Account deletion scheduled successfully',
+      deletion_scheduled_for: new Date(Date.now() + 14 * 86400000).toISOString(),
       can_cancel: true,
       grace_period_days: 14,
     };
@@ -150,6 +161,7 @@ mock.module('../config', () => ({
     INTERNAL_KORTIX_ENV: 'staging',
     DATABASE_URL: '',
     FRONTEND_URL: 'http://localhost:3000',
+    KORTIX_BILLING_INTERNAL_ENABLED: true,
     ALLOWED_SANDBOX_PROVIDERS: ['local_docker'],
     isLocal: () => false,
     isCloud: () => true,
@@ -215,7 +227,12 @@ beforeEach(() => {
   mockDeductResult = { success: true, cost: 0.5, newBalance: 99.5, transactionId: 'tx_test_001' };
   mockDeductError = null;
   mockTransactionsSummary = { totalCredits: 150, totalDebits: 50, count: 200 };
-  mockDeletionStatus = { pending: false };
+  mockDeletionStatus = {
+    has_pending_deletion: false,
+    deletion_scheduled_for: null,
+    requested_at: null,
+    can_cancel: false,
+  };
   mockDeletionRequestResult = null;
   mockDeletionCancelResult = null;
   mockDeletionDeleteResult = null;
@@ -425,16 +442,14 @@ describe('Billing: account deletion', () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.pending).toBe(false);
+    expect(body.has_pending_deletion).toBe(false);
   });
 
   test('GET /v1/billing/account/deletion-status returns pending deletion', async () => {
     mockDeletionStatus = {
-      pending: true,
-      request_id: 'del_test_001',
-      scheduled_for: '2026-03-01T00:00:00.000Z',
+      has_pending_deletion: true,
+      deletion_scheduled_for: '2026-03-01T00:00:00.000Z',
       requested_at: '2026-02-15T00:00:00.000Z',
-      reason: 'No longer needed',
       can_cancel: true,
     };
     const app = createBillingTestApp();
@@ -444,9 +459,9 @@ describe('Billing: account deletion', () => {
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.pending).toBe(true);
+    expect(body.has_pending_deletion).toBe(true);
     expect(body.can_cancel).toBe(true);
-    expect(body.scheduled_for).toBeDefined();
+    expect(body.deletion_scheduled_for).toBeDefined();
   });
 
   test('POST /v1/billing/account/request-deletion creates deletion request', async () => {
@@ -459,7 +474,8 @@ describe('Billing: account deletion', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.id).toBeDefined();
-    expect(body.scheduled_for).toBeDefined();
+    expect(body.success).toBe(true);
+    expect(body.deletion_scheduled_for).toBeDefined();
     expect(body.can_cancel).toBe(true);
     expect(body.grace_period_days).toBe(14);
   });

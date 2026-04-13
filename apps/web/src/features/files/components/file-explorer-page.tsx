@@ -201,9 +201,12 @@ export function FileExplorerPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleSearch, closeSearch, isSearchOpen]);
 
+  // Elevated system directories — always pinned at the top
+  const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
+
   // Sort and separate dirs and files
-  const { dirs, fileItems } = useMemo(() => {
-    if (!files) return { dirs: [] as FileNode[], fileItems: [] as FileNode[] };
+  const { elevatedDirs, dirs, fileItems } = useMemo(() => {
+    if (!files) return { elevatedDirs: [] as FileNode[], dirs: [] as FileNode[], fileItems: [] as FileNode[] };
 
     const sortFn = (a: FileNode, b: FileNode) => {
       let cmp = 0;
@@ -220,20 +223,23 @@ export function FileExplorerPage() {
         }
         case 'modified':
         case 'size':
-          // API doesn't provide these yet, fallback to name
           cmp = a.name.localeCompare(b.name);
           break;
       }
       return sortOrder === 'desc' ? -cmp : cmp;
     };
 
-    const dirs = files
-      .filter((f) => f.type === 'directory')
+    const allDirs = files.filter((f) => f.type === 'directory');
+    const elevatedDirs = allDirs
+      .filter((f) => ELEVATED_DIRS.has(f.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const dirs = allDirs
+      .filter((f) => !ELEVATED_DIRS.has(f.name))
       .sort(sortFn);
     const fileItems = files
       .filter((f) => f.type === 'file')
       .sort(sortFn);
-    return { dirs, fileItems };
+    return { elevatedDirs, dirs, fileItems };
   }, [files, sortBy, sortOrder]);
 
   // ── Handlers ──────────────────────────────────────────────────
@@ -672,6 +678,7 @@ export function FileExplorerPage() {
           <>
             {viewMode === 'grid' ? (
               <DriveGridView
+                elevatedDirs={elevatedDirs}
                 dirs={dirs}
                 files={fileItems}
                 onNavigateToDir={handleNavigateToDir}
@@ -693,6 +700,7 @@ export function FileExplorerPage() {
               />
             ) : (
               <DriveListView
+                elevatedDirs={elevatedDirs}
                 dirs={dirs}
                 files={fileItems}
                 onNavigateToDir={handleNavigateToDir}

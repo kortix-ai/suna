@@ -23,12 +23,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Receipt,
-  Wallet,
   Loader2,
 } from 'lucide-react';
 import { useTransactions } from '@/hooks/billing/use-transactions';
 import { cn } from '@/lib/utils';
-import { creditsToDollars, formatCredits } from '@kortix/shared';
+import { creditsToDollars } from '@kortix/shared';
 
 type FilterTab = 'all' | 'topups' | 'subscription' | 'refunds';
 
@@ -78,41 +77,6 @@ function getConfig(type: string): TypeConfig {
 const PAYMENT_TYPES = ['purchase', 'auto_topup', 'tier_grant', 'machine_bonus', 'refund'] as const;
 function isPaymentType(type: string) { return PAYMENT_TYPES.includes(type as (typeof PAYMENT_TYPES)[number]); }
 
-// ─── Summary stats ───────────────────────────────────────────────────────────
-
-function SummaryStats({ transactions }: { transactions: ReturnType<typeof useTransactions>['data'] }) {
-  const txList = (transactions?.transactions ?? []).filter((tx) => isPaymentType(tx.type));
-
-  const totalCharged = txList
-    .filter((t) => t.type === 'purchase' || t.type === 'auto_topup' || t.type === 'machine_bonus')
-    .reduce((s, t) => s + t.amount, 0);
-
-  const recurringPayments = txList.filter((t) => t.type === 'tier_grant').length;
-
-  const stats = [
-    { label: 'Charged', value: formatDollars(totalCharged), icon: Wallet },
-    { label: 'Credits added', value: formatCredits(totalCharged), icon: CreditCard },
-    { label: 'Renewals', value: String(recurringPayments), icon: CalendarSync },
-  ];
-
-  return (
-    <div className="grid grid-cols-3 gap-3 mb-4">
-      {stats.map((s) => {
-        const Icon = s.icon;
-        return (
-          <div key={s.label} className="flex items-center gap-2.5 rounded-lg border border-border px-3 py-2.5">
-            <Icon className="size-3.5 text-muted-foreground shrink-0" />
-            <div>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{s.label}</p>
-              <p className="text-sm font-medium tabular-nums">{s.value}</p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 const LIMIT = 50;
@@ -159,8 +123,6 @@ export default function BillingHistory() {
 
   return (
     <div className="space-y-4">
-      <SummaryStats transactions={data} />
-
       {/* Filters + refresh */}
       <div className="flex items-center justify-between">
         <FilterBar>

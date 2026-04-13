@@ -63,6 +63,15 @@ export function getMasterPublicBaseUrl(): string {
   const slug = process.env.JUSTAVPS_SLUG || ''
   const proxyToken = process.env.JUSTAVPS_PROXY_TOKEN || ''
   const proxyDomain = process.env.JUSTAVPS_PROXY_DOMAIN || 'kortix.cloud'
+  const explicitPublicBase = getEnv('PUBLIC_BASE_URL') || process.env.PUBLIC_BASE_URL || ''
+
+  // Explicit public base wins. This is the authoritative external URL injected
+  // by the platform and already includes the correct host/query params for the
+  // current sandbox. Using cloud fallbacks before this breaks webhook URLs by
+  // generating authenticated /v1/p/... links instead of public proxy URLs.
+  if (explicitPublicBase) {
+    return explicitPublicBase.replace(/\/+$/, '')
+  }
 
   // Cloud: CF Worker URL for port 8000
   if (envMode === 'cloud' && slug && proxyToken) {
@@ -74,11 +83,6 @@ export function getMasterPublicBaseUrl(): string {
   const kortixApiUrl = (process.env.KORTIX_API_URL || '').replace(/\/v1\/router\/?$/, '')
   if (envMode === 'cloud' && sandboxId && kortixApiUrl) {
     return `${kortixApiUrl}/v1/p/${sandboxId}/8000`
-  }
-
-  const explicitPublicBase = getEnv('PUBLIC_BASE_URL') || process.env.PUBLIC_BASE_URL || ''
-  if (explicitPublicBase) {
-    return explicitPublicBase.replace(/\/+$/, '')
   }
 
   // Local: host port mapping for port 8000, or direct

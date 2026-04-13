@@ -2,6 +2,31 @@
 
 import { useEffect, useState } from 'react';
 import { getAuthToken } from '@/lib/auth-token';
+import { useServerStore } from '@/stores/server-store';
+
+function derivePreviewAuthEndpoint(candidateUrl: string): string | null {
+  try {
+    const url = new URL(candidateUrl);
+
+    if (/^\/proxy\/\d+(?:\/|$)/.test(url.pathname)) {
+      return `${url.origin}/v1/p/auth`;
+    }
+
+    const previewIndex = url.pathname.indexOf('/p/');
+    if (previewIndex !== -1) {
+      return `${url.origin}${url.pathname.slice(0, previewIndex)}/p/auth`;
+    }
+
+    return `${url.origin}/v1/p/auth`;
+  } catch {
+    return null;
+  }
+}
+
+export function buildPreviewAuthEndpoint(previewUrl: string, serverUrl?: string): string | null {
+  return (serverUrl ? derivePreviewAuthEndpoint(serverUrl) : null)
+    ?? derivePreviewAuthEndpoint(previewUrl);
+}
 
 /**
  * Pre-authenticates preview proxy URLs via cookie-based auth.
@@ -25,6 +50,7 @@ import { getAuthToken } from '@/lib/auth-token';
  */
 export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
   const [authenticatedUrl, setAuthenticatedUrl] = useState<string | null>(null);
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
   useEffect(() => {
     if (!previewUrl) {
@@ -45,22 +71,8 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
         return;
       }
 
-      // Derive the auth endpoint from the preview URL.
-      // Preview URLs look like: http://host/v1/p/{sandboxId}/{port}/...
-      // Auth endpoint is:        http://host/v1/p/auth
-      let authEndpoint: string;
-      try {
-        const url = new URL(previewUrl);
-        // Find /v1/p/ in the pathname and build the auth URL
-        const pIndex = url.pathname.indexOf('/v1/p/');
-        if (pIndex !== -1) {
-          authEndpoint = `${url.origin}${url.pathname.slice(0, pIndex)}/v1/p/auth`;
-        } else {
-          // Fallback: assume the origin is the API host
-          authEndpoint = `${url.origin}/v1/p/auth`;
-        }
-      } catch {
-        // URL parsing failed — can't authenticate
+      const authEndpoint = buildPreviewAuthEndpoint(previewUrl, serverUrl);
+      if (!authEndpoint) {
         setAuthenticatedUrl(previewUrl);
         return;
       }
@@ -108,14 +120,8 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
         const token = await getAuthToken();
         if (cancelled || !token) return;
 
-        let authEndpoint: string;
-        try {
-          const url = new URL(previewUrl);
-          const pIndex = url.pathname.indexOf('/v1/p/');
-          authEndpoint = pIndex !== -1
-            ? `${url.origin}${url.pathname.slice(0, pIndex)}/v1/p/auth`
-            : `${url.origin}/v1/p/auth`;
-        } catch {
+        const authEndpoint = buildPreviewAuthEndpoint(previewUrl, serverUrl);
+        if (!authEndpoint) {
           return;
         }
 
@@ -138,7 +144,7 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [previewUrl]);
+  }, [previewUrl, serverUrl]);
 
   return authenticatedUrl;
 }

@@ -1,36 +1,22 @@
 /**
- * Todo Enforcer — Detect unfinished tracked work
+ * Todo Enforcer — detect unfinished tracked work.
  *
- * Inspects the session's todo list (via client.session.todo()) and
- * determines whether there's unfinished work that should prevent
- * the session from going idle.
- *
- * Three outcomes:
- *   - "done"       → All tracked work is complete or cancelled
- *   - "unfinished" → There are pending/in-progress items → should continue
- *   - "blocked"    → Work exists but appears blocked → should stop and report
+ * Evaluates the native OpenCode todo list and decides whether there is
+ * unfinished work that should block a session from idling out.
  */
 
 import type { Todo } from "@opencode-ai/sdk"
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 export type TodoVerdict = "done" | "unfinished" | "blocked"
 
 export interface TodoEnforcerResult {
 	verdict: TodoVerdict
 	reason: string
-	/** Pending/in-progress items (for the continuation prompt) */
 	remainingItems: Todo[]
-	/** Total items in the todo list */
 	totalItems: number
-	/** Completed items */
 	completedItems: number
 }
 
-// ─── Blocked detection ───────────────────────────────────────────────────────
-
-// Heuristic: if a todo item's content mentions these, it's likely blocked
 const BLOCKED_KEYWORDS = [
 	"waiting",
 	"blocked",
@@ -44,19 +30,10 @@ const BLOCKED_KEYWORDS = [
 
 function looksBlocked(todo: Todo): boolean {
 	const text = todo.content.toLowerCase()
-	return BLOCKED_KEYWORDS.some(kw => new RegExp(kw, "i").test(text))
+	return BLOCKED_KEYWORDS.some((keyword) => new RegExp(keyword, "i").test(text))
 }
 
-// ─── Enforcer ────────────────────────────────────────────────────────────────
-
-/**
- * Evaluate a session's todo list to determine if work is complete.
- *
- * @param todos - The session's current todo list
- * @returns Verdict with remaining items and counts
- */
 export function evaluateTodos(todos: Todo[]): TodoEnforcerResult {
-	// No todos at all — can't enforce, treat as done
 	if (!todos || todos.length === 0) {
 		return {
 			verdict: "done",
@@ -67,10 +44,9 @@ export function evaluateTodos(todos: Todo[]): TodoEnforcerResult {
 		}
 	}
 
-	const completed = todos.filter(t => t.status === "completed" || t.status === "cancelled")
-	const remaining = todos.filter(t => t.status === "pending" || t.status === "in_progress")
+	const completed = todos.filter((todo) => todo.status === "completed" || todo.status === "cancelled")
+	const remaining = todos.filter((todo) => todo.status === "pending" || todo.status === "in_progress")
 
-	// All done
 	if (remaining.length === 0) {
 		return {
 			verdict: "done",
@@ -81,10 +57,8 @@ export function evaluateTodos(todos: Todo[]): TodoEnforcerResult {
 		}
 	}
 
-	// Check if remaining items look blocked
 	const blockedItems = remaining.filter(looksBlocked)
 	if (blockedItems.length > 0 && blockedItems.length === remaining.length) {
-		// ALL remaining items look blocked — don't continue
 		return {
 			verdict: "blocked",
 			reason: `${remaining.length} item(s) appear blocked`,
@@ -94,10 +68,8 @@ export function evaluateTodos(todos: Todo[]): TodoEnforcerResult {
 		}
 	}
 
-	// Unfinished work — should continue
-	const inProgress = remaining.filter(t => t.status === "in_progress")
-	const pending = remaining.filter(t => t.status === "pending")
-
+	const inProgress = remaining.filter((todo) => todo.status === "in_progress")
+	const pending = remaining.filter((todo) => todo.status === "pending")
 	const parts: string[] = []
 	if (inProgress.length > 0) parts.push(`${inProgress.length} in progress`)
 	if (pending.length > 0) parts.push(`${pending.length} pending`)
@@ -109,19 +81,4 @@ export function evaluateTodos(todos: Todo[]): TodoEnforcerResult {
 		totalItems: todos.length,
 		completedItems: completed.length,
 	}
-}
-
-/**
- * Build a concise reminder of remaining work for the continuation prompt.
- */
-export function formatRemainingWork(result: TodoEnforcerResult): string {
-	if (result.remainingItems.length === 0) return ""
-
-	const lines = [`[TODO ENFORCER] ${result.completedItems}/${result.totalItems} complete. Remaining:`]
-	for (const item of result.remainingItems) {
-		const status = item.status === "in_progress" ? "🔄" : "⬜"
-		const priority = item.priority === "high" ? " ❗" : ""
-		lines.push(`  ${status} ${item.content}${priority}`)
-	}
-	return lines.join("\n")
 }

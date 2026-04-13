@@ -142,9 +142,27 @@ wait_for_url() {
   return 1
 }
 
+wait_for_supabase_auth() {
+  local base_url="$1" label="$2" max="${3:-60}"
+  local anon_key=""
+  if [ -f "$HOME/.kortix/.env" ]; then
+    anon_key=$(grep -m1 '^SUPABASE_ANON_KEY=' "$HOME/.kortix/.env" | cut -d= -f2- || true)
+  fi
+
+  for i in $(seq 1 "$max"); do
+    if [ -n "$anon_key" ] && curl -fsS "$base_url/auth/v1/health" -H "apikey: $anon_key" >/dev/null 2>&1; then
+      pass "$label"
+      return 0
+    fi
+    sleep 2
+  done
+  fail "$label (timeout after ${max}x2s)"
+  return 1
+}
+
 wait_for_url "$E2E_BASE_URL/auth"               "Frontend :13737"
 wait_for_url "${E2E_API_URL}/health"             "API :13738"     30
-wait_for_url "$E2E_SUPABASE_URL/auth/v1/health"  "Supabase :13740" 30
+wait_for_supabase_auth "$E2E_SUPABASE_URL"       "Supabase :13740" 30
 
 # Sandbox may take longer
 wait_for_url "$E2E_SANDBOX_HEALTH_URL"            "Sandbox :14000"  90 || info "(sandbox health timeout — tests will retry)"

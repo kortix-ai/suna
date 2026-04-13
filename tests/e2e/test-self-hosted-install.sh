@@ -125,8 +125,10 @@ run_test "Frontend responds on port 13737" \
 run_test "API responds on port 13738" \
     "curl -sf $API_URL/v1/health -o /dev/null"
 
+ANON_KEY=$(grep -m1 '^SUPABASE_ANON_KEY=' "$INSTALL_DIR/.env" | cut -d= -f2- || true)
+
 run_test "Supabase Kong responds on port 13740" \
-    "curl -sf $SUPABASE_URL/auth/v1/health -o /dev/null"
+    "curl -sf $SUPABASE_URL/auth/v1/health -H \"apikey: $ANON_KEY\" -o /dev/null"
 
 run_test "Sandbox responds on port 14000" \
     "curl -sf http://localhost:14000/kortix/health -o /dev/null"

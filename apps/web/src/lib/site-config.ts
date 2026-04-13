@@ -10,7 +10,7 @@ export const siteConfig = {
   },
   hero: {
     description:
-      'Kortix – open-source platform to build, manage and train your AI Workforce.',
+      'Kortix – the open-source operating system for running autonomous companies.',
   },
   footerLinks: [
     {

@@ -8,6 +8,12 @@ import { AlertCircle, CheckCircle2, Loader2, ShieldCheck } from 'lucide-react';
 import { configureAutoTopup, getAutoTopupSettings, getAutoTopupSetupStatus, type AutoTopupConfig } from '@/lib/api/billing';
 import { toast } from '@/lib/toast';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AUTO_TOPUP_DEFAULT_AMOUNT,
+  AUTO_TOPUP_DEFAULT_THRESHOLD,
+  AUTO_TOPUP_MIN_AMOUNT,
+  AUTO_TOPUP_MIN_THRESHOLD,
+} from '@kortix/shared';
 
 export interface AutoTopupCardProps {
   /** If true, fetches current settings from API on mount (for settings modal) */
@@ -27,8 +33,8 @@ export interface AutoTopupCardProps {
 export function AutoTopupCard({
   fetchSettings = false,
   defaultEnabled = true,
-  defaultThreshold = 0,
-  defaultAmount = 5,
+  defaultThreshold = AUTO_TOPUP_DEFAULT_THRESHOLD,
+  defaultAmount = AUTO_TOPUP_DEFAULT_AMOUNT,
   showSaveButton = false,
   onChange,
   configRef,
@@ -69,26 +75,26 @@ export function AutoTopupCard({
   // Expose current config via ref
   useEffect(() => {
     if (configRef) {
-      configRef.current = {
-        enabled,
-        threshold: Math.max(0, parseInt(threshold, 10) || 0),
-        amount: Math.max(1, parseInt(amount, 10) || 1),
-      };
-    }
-  }, [enabled, threshold, amount, configRef]);
+        configRef.current = {
+          enabled,
+          threshold: Math.max(AUTO_TOPUP_MIN_THRESHOLD, parseInt(threshold, 10) || AUTO_TOPUP_DEFAULT_THRESHOLD),
+          amount: Math.max(AUTO_TOPUP_MIN_AMOUNT, parseInt(amount, 10) || AUTO_TOPUP_DEFAULT_AMOUNT),
+        };
+      }
+    }, [enabled, threshold, amount, configRef]);
 
   // Notify parent on change
   useEffect(() => {
     onChange?.({
       enabled,
-      threshold: Math.max(0, parseInt(threshold, 10) || 0),
-      amount: Math.max(1, parseInt(amount, 10) || 1),
+      threshold: Math.max(AUTO_TOPUP_MIN_THRESHOLD, parseInt(threshold, 10) || AUTO_TOPUP_DEFAULT_THRESHOLD),
+      amount: Math.max(AUTO_TOPUP_MIN_AMOUNT, parseInt(amount, 10) || AUTO_TOPUP_DEFAULT_AMOUNT),
     });
   }, [enabled, threshold, amount, onChange]);
 
   const handleSave = useCallback(async () => {
-    const thresholdNum = Math.max(0, parseInt(threshold, 10) || 0);
-    const amountNum = Math.max(1, parseInt(amount, 10) || 1);
+    const thresholdNum = Math.max(AUTO_TOPUP_MIN_THRESHOLD, parseInt(threshold, 10) || AUTO_TOPUP_DEFAULT_THRESHOLD);
+    const amountNum = Math.max(AUTO_TOPUP_MIN_AMOUNT, parseInt(amount, 10) || AUTO_TOPUP_DEFAULT_AMOUNT);
     if (enabled && setupStatus && !setupStatus.has_default_payment_method) {
       const message = 'No default payment method found. Please set up a default card in Billing before enabling auto-topup.';
       setSaveResult({ type: 'error', message });
@@ -166,7 +172,7 @@ export function AutoTopupCard({
                 value={amount}
                 onChange={(e) => { setAmount(e.target.value); setDirty(true); setSaveResult(null); }}
                 className="w-full h-8 rounded-lg border border-border bg-background pl-6 pr-2 text-xs tabular-nums text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-foreground/30 transition-colors"
-                placeholder="5"
+                placeholder={String(AUTO_TOPUP_DEFAULT_AMOUNT)}
               />
             </div>
             <span className="text-xs text-muted-foreground shrink-0">when below</span>
@@ -174,12 +180,12 @@ export function AutoTopupCard({
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
               <input
                 type="number"
-                min={0}
+                min={AUTO_TOPUP_MIN_THRESHOLD}
                 step={1}
                 value={threshold}
                 onChange={(e) => { setThreshold(e.target.value); setDirty(true); setSaveResult(null); }}
                 className="w-full h-8 rounded-lg border border-border bg-background pl-6 pr-2 text-xs tabular-nums text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-foreground/30 transition-colors"
-                placeholder="0"
+                placeholder={String(AUTO_TOPUP_DEFAULT_THRESHOLD)}
               />
             </div>
           </div>

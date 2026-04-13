@@ -51,6 +51,7 @@ import type {
   PromptPart,
 } from '@/hooks/opencode/use-opencode-sessions';
 import { useOpenCodeSessions, useOpenCodeSessionTodo } from '@/hooks/opencode/use-opencode-sessions';
+import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
@@ -170,8 +171,8 @@ export function AgentSelector({
   const [flash, setFlash] = useState(false);
   const prevAgentRef = useRef(selectedAgent);
 
-  const primaryAgents = useMemo(() => agents.filter((a) => a.mode !== 'subagent'), [agents]);
-  const subAgents = useMemo(() => agents.filter((a) => a.mode === 'subagent'), [agents]);
+  const primaryAgents = useMemo(() => agents.filter((a) => !a.hidden && a.mode !== 'subagent'), [agents]);
+  const subAgents = useMemo(() => agents.filter((a) => !a.hidden && a.mode === 'subagent'), [agents]);
 
   // Flash highlight when agent changes (e.g. via Tab cycling)
   useEffect(() => {
@@ -209,7 +210,7 @@ export function AgentSelector({
     );
   }, [subAgents, search]);
 
-  const currentAgent = agents.find((a) => a.name === selectedAgent) || agents[0];
+  const currentAgent = agents.find((a) => a.name === selectedAgent) || agents.filter((a) => !a.hidden)[0];
   const displayName = currentAgent?.name || 'Agent';
 
   return (
@@ -381,7 +382,7 @@ function VariantSelector({
 // AutoContinue Mode Selector
 // ============================================================================
 
-export type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3' | 'orchestrate';
+export type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3';
 
 interface AutoContinueAlgorithm {
   id: AutoContinueMode;
@@ -470,23 +471,6 @@ const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
       'Tests may validate internal components without catching integration bugs',
     ],
     howItWorks: 'Uses controlled entropy scheduling — high entropy in search, low entropy in execution.\n\nThe system drives the agent through 5 phases:\n\n1. EXPAND (high entropy) — Reframe the task 5+ ways, list hidden assumptions, generate diverse solution families across multiple lenses.\n\n2. BRANCH (high entropy) — Crystallize 3-5 materially different candidate approaches. Each must differ in strategy, not wording.\n\n3. ATTACK (medium entropy) — Candidates cross-attack each other. Find failure modes, blind spots, merge strongest parts.\n\n4. RANK (low entropy) — Score by robustness/novelty/feasibility. Pick ONE path. No hedging.\n\n5. COMPRESS (minimal entropy) — Execute the ranked winner with TDD. No re-exploring.\n\nThe agent emits phase markers (<phase>X-done</phase>) and the system advances it. DONE before the compress phase is rejected as premature convergence.',
-  },
-  {
-    id: 'orchestrate',
-    label: 'Orchestrate',
-    role: 'Spawner',
-    description: 'Multi-session — parallel workers',
-    commandName: 'orchestrate',
-    bestFor: 'Large tasks that can be parallelized across independent sub-tasks',
-    strengths: [
-      'Parallel execution across multiple sessions',
-      'Good for large codebases with independent modules',
-    ],
-    weaknesses: [
-      'Coordination overhead between sessions',
-      'Not suitable for tightly-coupled work',
-    ],
-    howItWorks: 'Spawns multiple worker sessions that execute sub-tasks in parallel. The orchestrator decomposes the task, assigns work to workers, and aggregates results. Best for work that naturally splits into independent units.',
   },
 ];
 
@@ -1009,7 +993,7 @@ function SlashCommandPopover({
 
   return (
     <div
-      className="fixed z-[9999] bg-popover border border-border/60 rounded-lg shadow-lg overflow-hidden"
+      className="fixed z-[99999] bg-popover border border-border/60 rounded-lg overflow-hidden"
       style={{ bottom: window.innerHeight - r.top + 4, left: r.left, width: Math.min(r.width, 480) }}
     >
       <div ref={scrollRef} className="max-h-64 overflow-y-auto py-1">
@@ -1021,8 +1005,8 @@ function SlashCommandPopover({
               onSelect(cmd);
             }}
             className={cn(
-              'w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors cursor-pointer',
-              i === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
+              'w-full flex flex-col gap-0.5 px-3 py-2 text-left transition-colors cursor-pointer border border-transparent rounded-md -mx-1',
+              i === selectedIndex ? 'bg-muted border-border/50' : 'hover:bg-muted/50',
             )}
           >
             <span className="font-mono text-sm text-foreground">/{cmd.name}</span>
@@ -1041,16 +1025,22 @@ function SlashCommandPopover({
 // ============================================================================
 
 export interface MentionItem {
-  kind: 'file' | 'agent' | 'session';
+  kind: 'file' | 'agent' | 'session' | 'project';
   label: string;
   value?: string;
   description?: string;
+  /** Project-only: absolute workspace path (e.g. `/workspace/foo`). */
+  path?: string;
 }
 
 export interface TrackedMention {
-  kind: 'file' | 'agent' | 'session';
+  kind: 'file' | 'agent' | 'session' | 'project';
   label: string;
-  value?: string; // session ID for session mentions
+  value?: string; // session ID for session mentions, project ID for project mentions
+  /** Project-only: absolute workspace path. */
+  path?: string;
+  /** Project-only: short description, passed through to the <project_ref>. */
+  description?: string;
 }
 
 function MentionPopover({
@@ -1082,6 +1072,7 @@ function MentionPopover({
   const r = el.getBoundingClientRect();
 
   const agents = items.filter((i) => i.kind === 'agent');
+  const projects = items.filter((i) => i.kind === 'project');
   const sessions = items.filter((i) => i.kind === 'session');
   const files = items.filter((i) => i.kind === 'file');
 
@@ -1089,7 +1080,7 @@ function MentionPopover({
 
   return (
     <div
-      className="fixed z-[9999] bg-popover border border-border/60 rounded-lg shadow-lg overflow-hidden"
+      className="fixed z-[99999] bg-popover border border-border/60 rounded-lg overflow-hidden"
       style={{ bottom: window.innerHeight - r.top + 4, left: r.left, width: Math.min(r.width, 480) }}
     >
       <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
@@ -1108,9 +1099,38 @@ function MentionPopover({
                     idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
                   )}
                 >
-                  <span className="size-4 rounded flex items-center justify-center bg-purple-500/15 text-purple-500 text-[10px] font-semibold shrink-0">@</span>
+                  <span className="size-4 rounded flex items-center justify-center bg-foreground/10 text-foreground/60 text-[10px] font-semibold shrink-0">@</span>
                   <span className="truncate font-medium capitalize">{item.label}</span>
                   {item.description && <span className="text-muted-foreground/40 truncate text-[10px]">{item.description}</span>}
+                </button>
+              );
+            })}
+          </>
+        )}
+        {projects.length > 0 && (
+          <>
+            <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Projects</div>
+            {projects.map((item) => {
+              const idx = globalIndex++;
+              return (
+                <button
+                  key={`project-${item.value}`}
+                  data-mention-index={idx}
+                  onMouseDown={(e) => { e.preventDefault(); onSelect(item); }}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer',
+                    idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
+                  )}
+                >
+                  <Folder className="size-4 text-foreground/50 shrink-0" />
+                  <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+                    <span className="truncate text-sm font-medium">{item.label}</span>
+                    {item.path && (
+                      <span className="text-[10px] text-muted-foreground/35 font-mono truncate flex-shrink min-w-0">
+                        {item.path}
+                      </span>
+                    )}
+                  </div>
                 </button>
               );
             })}
@@ -1131,7 +1151,7 @@ function MentionPopover({
                     idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
                   )}
                 >
-                  <MessageSquare className="size-4 text-emerald-500 shrink-0" />
+                  <MessageSquare className="size-4 text-foreground/50 shrink-0" />
                   <span className="truncate text-sm font-medium">{item.label}</span>
                   {item.description && <span className="text-[10px] text-muted-foreground/35 truncate ml-auto">{item.description}</span>}
                 </button>
@@ -1159,9 +1179,9 @@ function MentionPopover({
                   )}
                 >
                   {isDir ? (
-                    <Folder className="size-4 shrink-0 text-blue-400" />
+                    <Folder className="size-4 shrink-0 text-foreground/50" />
                   ) : (
-                    getFileIcon(fileName, { className: 'size-4 shrink-0' })
+                    getFileIcon(fileName, { className: 'size-4 shrink-0 text-foreground/50' })
                   )}
                   <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
                     <span className="truncate text-sm font-medium">{fileName}</span>
@@ -1516,6 +1536,7 @@ export function SessionChatInput({
 
   // Sessions for @ mention search
   const { data: allSessions } = useOpenCodeSessions();
+  const { data: kortixProjects } = useKortixProjects();
 
   useEffect(() => {
     if (text.trim().length > 0) return;
@@ -1729,6 +1750,22 @@ export function SessionChatInput({
       .filter((a) => (a.name || '').toLowerCase().includes(q))
       .map((a) => ({ kind: 'agent' as const, label: a.name || '', value: a.name || '' }));
 
+    // Project items: filter by name, path, or description. Sort by recency.
+    const projectItems: MentionItem[] = (kortixProjects ?? [])
+      .filter((p) => {
+        const hay = [p.name, p.path, p.description].join(' ').toLowerCase();
+        return !q || hay.includes(q);
+      })
+      .sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
+      .slice(0, 5)
+      .map((p) => ({
+        kind: 'project' as const,
+        label: p.name,
+        value: p.id,
+        path: p.path,
+        description: p.description,
+      }));
+
     // Session items: filter by title, session ID, or changed file paths, exclude current/child/archived
     const sessionItems: MentionItem[] = (allSessions ?? [])
       .filter((s: Session) => {
@@ -1761,8 +1798,8 @@ export function SessionChatInput({
       label: f,
       value: f,
     }));
-    return [...agentItems, ...sessionItems, ...fileItems];
-  }, [mentionQuery, agents, allSessions, sessionId, fileResults]);
+    return [...agentItems, ...projectItems, ...sessionItems, ...fileItems];
+  }, [mentionQuery, agents, kortixProjects, allSessions, sessionId, fileResults]);
 
   // Clamp mention index when items change to prevent out-of-bounds selection
   useEffect(() => {
@@ -1855,9 +1892,18 @@ export function SessionChatInput({
       textareaRef.current.style.height = 'auto';
     }
 
-    // If busy, queue the message instead of sending immediately
+    // If busy, queue the message instead of sending immediately.
+    // Capture the active agent/model/variant at enqueue time so the message
+    // drains under the same settings the user picked when typing it
+    // (matches OpenCode FollowupDraft semantics).
     if (isBusy && sessionId) {
-      enqueue(sessionId, trimmed, filesToSend);
+      enqueue(sessionId, {
+        text: trimmed,
+        files: filesToSend,
+        agent: selectedAgent ?? null,
+        model: selectedModel ?? null,
+        variant: selectedVariant ?? null,
+      });
       return;
     }
 
@@ -1867,7 +1913,7 @@ export function SessionChatInput({
       // Restore the text so the user can retry
       setText(trimmed);
     }
-  }, [text, isBusy, disabled, onSend, onCommand, stagedCommand, attachedFiles, mentions, sessionId, enqueue, lockForQuestion, onCustomAnswer, onQuestionAction]);
+  }, [text, isBusy, disabled, onSend, onCommand, stagedCommand, attachedFiles, mentions, sessionId, enqueue, selectedAgent, selectedModel, selectedVariant, lockForQuestion, onCustomAnswer, onQuestionAction]);
 
   const handleSelectCommand = (cmd: Command) => {
     // Stage the command — show an args input instead of executing immediately
@@ -1886,7 +1932,17 @@ export function SessionChatInput({
     const inserted = `@${item.label} `;
     const newText = before + inserted + after;
     setText(newText);
-    setMentions((prev) => [...prev, { kind: item.kind, label: item.label, ...(item.kind === 'session' ? { value: item.value } : {}) }]);
+    setMentions((prev) => [
+      ...prev,
+      {
+        kind: item.kind,
+        label: item.label,
+        ...(item.kind === 'session' ? { value: item.value } : {}),
+        ...(item.kind === 'project'
+          ? { value: item.value, path: item.path, description: item.description }
+          : {}),
+      },
+    ]);
     setMentionQuery(null);
     setMentionIndex(0);
     setFileResults([]);
@@ -2043,8 +2099,9 @@ export function SessionChatInput({
   // Build highlighted segments for the overlay behind the textarea
   const highlightSegments = useMemo(() => {
     if (mentions.length === 0 || !text) return null;
+    type SegKind = 'file' | 'agent' | 'session' | 'project';
     // Collect all mention ranges sorted by position
-    const ranges: { start: number; end: number; kind: 'file' | 'agent' | 'session' }[] = [];
+    const ranges: { start: number; end: number; kind: SegKind }[] = [];
     for (const m of mentions) {
       const needle = `@${m.label}`;
       const idx = text.indexOf(needle);
@@ -2055,7 +2112,7 @@ export function SessionChatInput({
     if (ranges.length === 0) return null;
     ranges.sort((a, b) => a.start - b.start || b.end - a.end);
 
-    const segs: { text: string; kind?: 'file' | 'agent' | 'session' }[] = [];
+    const segs: { text: string; kind?: SegKind }[] = [];
     let last = 0;
     for (const r of ranges) {
       if (r.start < last) continue;
@@ -2246,9 +2303,7 @@ export function SessionChatInput({
                     <span
                       key={i}
                       className={cn(
-                        seg.kind === 'file' && 'text-blue-500 font-medium',
-                        seg.kind === 'agent' && 'text-purple-500 font-medium',
-                        seg.kind === 'session' && 'text-emerald-500 font-medium',
+                        (seg.kind === 'file' || seg.kind === 'agent' || seg.kind === 'session' || seg.kind === 'project') && 'border-b border-foreground/40 font-medium text-foreground/80',
                       )}
                     >
                       {seg.text}
@@ -2258,6 +2313,7 @@ export function SessionChatInput({
               )}
               <textarea
                 ref={textareaRef}
+                data-session-chat-stop-scope="true"
                 value={text}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}

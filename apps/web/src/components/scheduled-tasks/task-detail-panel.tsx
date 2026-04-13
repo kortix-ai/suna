@@ -49,7 +49,7 @@ import { cn } from '@/lib/utils';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
 import { getSandboxUrl } from '@/lib/platform-client';
 import { AgentSelector } from '@/components/session/session-chat-input';
-import { useOpenCodeAgents } from '@/hooks/opencode/use-opencode-sessions';
+import { useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -149,7 +149,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
   const runMutation = useRunTrigger();
 
   // Use shared hooks (same as ChatInput / channels)
-  const { data: agents = [], isLoading: agentsLoading } = useOpenCodeAgents();
+  const agents = useVisibleAgents();
 
   const { data: executions = [] } = useTriggerExecutions(
     tab === 'executions' && trigger.triggerId ? trigger.triggerId : '',
@@ -378,20 +378,13 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
             {(trigger.action_type === 'prompt' || !trigger.action_type) && (
             <div className="space-y-2">
               <Label>Agent</Label>
-              {agentsLoading ? (
-                <div className="flex items-center gap-2 h-9 px-3 text-sm text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Loading agents...
-                </div>
-              ) : (
-                <div className="rounded-xl border bg-card px-2 py-1">
-                  <AgentSelector
-                    agents={agents}
-                    selectedAgent={agentName}
-                    onSelect={(next) => { setAgentName(next); markDirty(); }}
-                  />
-                </div>
-              )}
+              <div className="rounded-xl border bg-card px-2 py-1">
+                <AgentSelector
+                  agents={agents}
+                  selectedAgent={agentName}
+                  onSelect={(next) => { setAgentName(next); markDirty(); }}
+                />
+              </div>
             </div>
             )}
 

@@ -33,6 +33,7 @@ import {
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   FadeIn,
@@ -141,6 +142,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetBottomPadding();
   const { sandboxId, sandboxUrl } = useSandboxContext();
   const setTabState = useTabStore((s) => s.setTabState);
   const savedTabState = useTabStore((s) => s.tabStateById[page.id] as FilesTabState | undefined);
@@ -1074,7 +1076,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
           style={{
             paddingHorizontal: 24,
             paddingTop: 8,
-            paddingBottom: Math.max(insets.bottom, 20) + 16,
+            paddingBottom: sheetPadding,
           }}
         >
           {/* Header */}
@@ -1211,7 +1213,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
           style={{
             paddingHorizontal: 24,
             paddingTop: 8,
-            paddingBottom: Math.max(insets.bottom, 20) + 16,
+            paddingBottom: sheetPadding,
           }}
         >
           {/* Header */}

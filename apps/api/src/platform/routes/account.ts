@@ -176,6 +176,7 @@ export function createAccountRouter(
         .where(
           and(
             eq(sandboxes.accountId, accountId),
+            eq(sandboxes.provider, 'local_docker'),
             eq(sandboxes.status, 'active'),
           ),
         )
@@ -192,6 +193,7 @@ export function createAccountRouter(
         .where(
           and(
             eq(sandboxes.accountId, accountId),
+            eq(sandboxes.provider, 'local_docker'),
             eq(sandboxes.status, 'provisioning'),
           ),
         )
@@ -419,7 +421,12 @@ export function createAccountRouter(
       const [row] = await db
         .select()
         .from(sandboxes)
-        .where(eq(sandboxes.accountId, accountId))
+        .where(
+          and(
+            eq(sandboxes.accountId, accountId),
+            eq(sandboxes.provider, 'local_docker'),
+          ),
+        )
         .orderBy(desc(sandboxes.createdAt))
         .limit(1);
 

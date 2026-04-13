@@ -1107,6 +1107,15 @@ function getAdminHTML(): string {
     let dirtyKeys = {};
     let activeTab = 'credentials';
 
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     const API_BASE = '/v1/admin/api';
 
     // ─── Auth ───────────────────────────────────────────────────
@@ -1221,26 +1230,26 @@ function getAdminHTML(): string {
         const totalCount = group.keys.length;
         const allConfigured = configuredCount === totalCount;
 
-        html += '<div class="card" id="card-' + groupId + '">';
-        html += '<div class="card-header" onclick="toggleCard(\\'' + groupId + '\\')">';
-        html += '<div><h3>' + group.title + '</h3></div>';
+        html += '<div class="card" id="card-' + escapeHtml(groupId) + '">';
+        html += '<div class="card-header" onclick="toggleCard(\\'' + escapeHtml(groupId) + '\\')">';
+        html += '<div><h3>' + escapeHtml(group.title) + '</h3></div>';
         html += '<div style="display:flex;align-items:center;gap:8px;">';
         html += '<span class="badge ' + (allConfigured ? 'configured' : '') + '">' + configuredCount + '/' + totalCount + '</span>';
         html += '<span class="chevron">&#9660;</span>';
         html += '</div></div>';
         html += '<div class="card-body">';
-        html += '<div class="card-desc">' + (group.description || '') + '</div>';
+        html += '<div class="card-desc">' + escapeHtml(group.description || '') + '</div>';
 
         for (const k of group.keys) {
           const isSet = envData.configured[k.key];
           const masked = envData.masked[k.key] || '';
           html += '<div class="key-row">';
-          html += '<label title="' + k.key + '">' + k.key;
+          html += '<label title="' + escapeHtml(k.key) + '">' + escapeHtml(k.key);
           if (k.helpUrl) {
-            html += ' <a href="' + k.helpUrl + '" target="_blank" class="key-help">?</a>';
+            html += ' <a href="' + escapeHtml(k.helpUrl) + '" target="_blank" rel="noopener noreferrer" class="key-help">?</a>';
           }
           html += '</label>';
-          html += '<input type="text" id="key-' + k.key + '" placeholder="' + (isSet ? masked : 'Not set') + '" oninput="markDirty(\\'' + k.key + '\\')" />';
+          html += '<input type="text" id="key-' + escapeHtml(k.key) + '" placeholder="' + escapeHtml(isSet ? masked : 'Not set') + '" oninput="markDirty(\\'' + escapeHtml(k.key) + '\\')" />';
           html += '<span class="key-status ' + (isSet ? 'set' : 'unset') + '">' + (isSet ? '&#10003;' : '&#8212;') + '</span>';
           html += '</div>';
         }
@@ -1322,10 +1331,10 @@ function getAdminHTML(): string {
                               inst.status === 'stopped' ? 'stopped' :
                               inst.status === 'archived' ? 'archived' : 'error';
           html += '<tr>';
-          html += '<td>' + (inst.name || inst.sandbox_id.slice(0, 8)) + '</td>';
-          html += '<td>' + (inst.provider || '-') + '</td>';
-          html += '<td><span class="status-badge ' + statusClass + '">' + inst.status + '</span></td>';
-          html += '<td title="' + (inst.external_id || '') + '">' + (inst.external_id ? inst.external_id.slice(0, 16) + '...' : '-') + '</td>';
+          html += '<td>' + escapeHtml(inst.name || inst.sandbox_id.slice(0, 8)) + '</td>';
+          html += '<td>' + escapeHtml(inst.provider || '-') + '</td>';
+          html += '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(inst.status) + '</span></td>';
+          html += '<td title="' + escapeHtml(inst.external_id || '') + '">' + escapeHtml(inst.external_id ? inst.external_id.slice(0, 16) + '...' : '-') + '</td>';
           html += '<td>' + new Date(inst.created_at).toLocaleDateString() + '</td>';
           html += '</tr>';
         }
@@ -1361,7 +1370,7 @@ function getAdminHTML(): string {
         ];
 
         for (const [label, value] of items) {
-          html += '<div class="status-item"><div class="label">' + label + '</div><div class="value">' + value + '</div></div>';
+          html += '<div class="status-item"><div class="label">' + escapeHtml(label) + '</div><div class="value">' + escapeHtml(value) + '</div></div>';
         }
 
         html += '</div>';

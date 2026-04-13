@@ -42,27 +42,27 @@ export default function PartnershipsPageClient() {
         </Reveal>
 
         <Reveal delay={0.08}>
-          <p className="text-base text-muted-foreground/60 leading-relaxed max-w-xl">
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl">
             We work with a handful of selected companies to build autonomous operations — the same way we build them for ourselves. Kortix leadership and engineers, embedded with your team.
           </p>
         </Reveal>
 
         <Reveal delay={0.16}>
-          <p className="text-base text-muted-foreground/60 leading-relaxed max-w-xl mt-4">
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl mt-4">
             We learn from every engagement. That knowledge feeds back into everything we build. You get your operations actually automated — by the team that does this every day for their own companies. Our full methodology, knowledge, and processes — shared openly.
           </p>
         </Reveal>
 
         {/* Price */}
         <Reveal delay={0.2}>
-          <div className="mt-14 p-6 rounded-lg border border-border/50 bg-muted/5">
-            <p className="text-xs uppercase tracking-widest text-muted-foreground/40 mb-2">
+          <div className="mt-14 p-6 rounded-lg border border-border bg-muted/5">
+            <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
               Monthly Retainer
             </p>
             <p className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground">
-              $20,000<span className="text-base font-normal text-muted-foreground/50">/month</span>
+              $20,000<span className="text-base font-normal text-muted-foreground">/month</span>
             </p>
-            <p className="text-sm text-muted-foreground/50 mt-2">
+            <p className="text-sm text-muted-foreground mt-2">
               Kortix leadership and engineers embedded with your team. Cancel anytime.
             </p>
           </div>
@@ -71,28 +71,28 @@ export default function PartnershipsPageClient() {
         {/* How it works */}
         <Reveal>
           <div className="mt-14">
-            <h2 className="text-xs uppercase tracking-widest text-muted-foreground/40 mb-5">
+            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
               How It Works
             </h2>
             <div className="space-y-6">
               <div>
-                <p className="text-xs text-muted-foreground/35 mb-1">Phase 1</p>
-                <p className="text-base font-medium text-foreground/70">Understand</p>
-                <p className="text-base text-muted-foreground/60 leading-relaxed mt-1.5">
+                <p className="text-xs text-muted-foreground mb-1">Phase 1</p>
+                <p className="text-base font-medium text-foreground">Understand</p>
+                <p className="text-base text-muted-foreground leading-relaxed mt-1.5">
                   We go deep. We talk to you, your team, your operators. We map every process — inputs, outputs, the black boxes where humans are doing repetitive work day-to-day. What{"'"}s actually happening, not what the org chart says.
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground/35 mb-1">Phase 2</p>
-                <p className="text-base font-medium text-foreground/70">Build & Deploy</p>
-                <p className="text-base text-muted-foreground/60 leading-relaxed mt-1.5">
+                <p className="text-xs text-muted-foreground mb-1">Phase 2</p>
+                <p className="text-base font-medium text-foreground">Build & Deploy</p>
+                <p className="text-base text-muted-foreground leading-relaxed mt-1.5">
                   We build autonomous operations on Kortix — agents, automations, autonomous teams — wired into your tools and data. Fully deployed, in production. This requires low politics, low bureaucracy, and real access. Credentials, systems, green lights. We need ownership to move. This is a partnership, not a consulting engagement.
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground/35 mb-1">Ongoing</p>
-                <p className="text-base font-medium text-foreground/70">Operate & Expand</p>
-                <p className="text-base text-muted-foreground/60 leading-relaxed mt-1.5">
+                <p className="text-xs text-muted-foreground mb-1">Ongoing</p>
+                <p className="text-base font-medium text-foreground">Operate & Expand</p>
+                <p className="text-base text-muted-foreground leading-relaxed mt-1.5">
                   We stay. Optimizing what{"'"}s running, expanding into new workflows, increasing autonomy — progressively replacing manual process with systems that run themselves.
                 </p>
               </div>
@@ -102,8 +102,8 @@ export default function PartnershipsPageClient() {
 
         {/* CTA */}
         <Reveal>
-          <div className="mt-14 pt-8 border-t border-border/50">
-            <p className="text-base text-muted-foreground/60 leading-relaxed">
+          <div className="mt-14 pt-8 border-t border-border">
+            <p className="text-base text-muted-foreground leading-relaxed">
               Also open to joint ventures and deeper structures beyond a retainer.
             </p>
 
@@ -118,7 +118,7 @@ export default function PartnershipsPageClient() {
             <div className="flex flex-col gap-1.5 mt-5">
               <a
                 href="mailto:marko@kortix.com"
-                className="text-base text-foreground/70 hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors w-fit"
+                className="text-base text-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors w-fit"
               >
                 marko@kortix.com
               </a>
@@ -126,7 +126,7 @@ export default function PartnershipsPageClient() {
                 href="https://x.com/markokraemer"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-base text-foreground/70 hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors w-fit"
+                className="text-base text-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors w-fit"
               >
                 @markokraemer
               </a>
@@ -134,7 +134,7 @@ export default function PartnershipsPageClient() {
                 href="https://www.linkedin.com/in/markokraemer/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-base text-foreground/70 hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors w-fit"
+                className="text-base text-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors w-fit"
               >
                 linkedin.com/in/markokraemer
               </a>
@@ -148,7 +148,7 @@ export default function PartnershipsPageClient() {
 
       {/* Floating CTA Bar — commented out for now
       <div
-        className={cn('fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 px-1.5 py-1.5 rounded-full border border-border/50 bg-background/95 backdrop-blur-md transition-colors duration-300', 
+        className={cn('fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 px-1.5 py-1.5 rounded-full border border-border bg-background/95 backdrop-blur-md transition-colors duration-300', 
           showFloatingCta ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0 pointer-events-none'
         )}
       >

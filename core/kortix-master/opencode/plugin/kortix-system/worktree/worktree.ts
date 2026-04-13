@@ -13,7 +13,6 @@
 
 import type { Database } from "bun:sqlite"
 import { access, copyFile, cp, mkdir, rm, stat, symlink } from "node:fs/promises"
-import * as os from "node:os"
 import * as path from "node:path"
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import type { Event } from "@opencode-ai/sdk"
@@ -42,6 +41,7 @@ import {
 	setPendingDelete,
 } from "./state"
 import { openTerminal } from "./terminal"
+import { getOpencodeStoragePath } from "../lib/opencode-storage-paths"
 
 /** Maximum retries for database initialization */
 const DB_MAX_RETRIES = 3
@@ -242,8 +242,8 @@ async function forkWithContext(
 	let delegationsCopied = false
 
 	try {
-		const workspaceBase = path.join(os.homedir(), ".local", "share", "opencode", "workspace")
-		const delegationsBase = path.join(os.homedir(), ".local", "share", "opencode", "delegations")
+		const workspaceBase = getOpencodeStoragePath("workspace")
+		const delegationsBase = getOpencodeStoragePath("delegations")
 
 		const destWorkspaceDir = path.join(workspaceBase, projectId, forkedSession.id)
 		const destDelegationsDir = path.join(delegationsBase, projectId, forkedSession.id)
@@ -270,8 +270,8 @@ async function forkWithContext(
 			})
 			.catch(() => {})
 		// Clean up orphaned directories
-		const workspaceBase = path.join(os.homedir(), ".local", "share", "opencode", "workspace")
-		const delegationsBase = path.join(os.homedir(), ".local", "share", "opencode", "delegations")
+		const workspaceBase = getOpencodeStoragePath("workspace")
+		const delegationsBase = getOpencodeStoragePath("delegations")
 		const destWorkspaceDir = path.join(workspaceBase, projectId, forkedSession.id)
 		const destDelegationsDir = path.join(delegationsBase, projectId, forkedSession.id)
 		await rm(destWorkspaceDir, { recursive: true, force: true }).catch((e) => {

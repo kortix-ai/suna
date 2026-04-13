@@ -20,7 +20,17 @@ import { PageHeader } from '@/components/ui/page-header';
 import { SlackIcon } from '@/components/ui/icons/slack';
 import { TelegramIcon } from '@/components/ui/icons/telegram';
 import { Skeleton } from '@/components/ui/skeleton';
-import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { toast } from '@/lib/toast';
 import { useServerStore, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { ChannelConfigDialog } from './channel-config-dialog';
@@ -47,13 +57,16 @@ interface Channel {
 
 async function channelFetch(path: string, opts?: RequestInit): Promise<any> {
   const url = getActiveOpenCodeUrl();
-  if (!url) return null;
+  if (!url) return { ok: false, error: 'No active sandbox' };
   try {
     const res = await authenticatedFetch(`${url}/kortix/channels${path}`, opts);
     const text = await res.text();
-    try { return JSON.parse(text); } catch { return null; }
-  } catch {
-    return null;
+    let data: any = null;
+    try { data = JSON.parse(text); } catch { data = null; }
+    if (res.ok) return data;
+    return data || { ok: false, error: text || `Request failed (${res.status})` };
+  } catch (error: any) {
+    return { ok: false, error: error?.message || 'Request failed' };
   }
 }
 
@@ -166,6 +179,8 @@ export function ChannelsPage() {
   const [configDialogPlatform, setConfigDialogPlatform] = useState<'telegram' | 'slack' | undefined>(undefined);
   const [settingsChannel, setSettingsChannel] = useState<Channel | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState<Channel | null>(null);
+  const [removing, setRemoving] = useState(false);
 
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
 
@@ -197,56 +212,88 @@ export function ChannelsPage() {
     setChannels(prev => prev.map(ch => ch.id === id ? { ...ch, enabled } : ch));
     const data = await channelFetch(`/${id}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' });
     if (data?.ok) {
-      toast.success(enabled ? 'Enabled' : 'Disabled');
+      toast.success(enabled ? 'Channel enabled' : 'Channel disabled');
     } else {
       setChannels(prev => prev.map(ch => ch.id === id ? { ...ch, enabled: !enabled } : ch));
-      toast.error('Failed');
+      toast.error('Failed to update channel', {
+        description: data?.error || 'The sandbox did not accept the channel state change.',
+      });
     }
   };
 
-  const handleRemove = async (id: string) => {
-    const ch = channels.find(c => c.id === id);
-    if (!confirm(`Remove ${ch?.name}?`)) return;
-    setChannels(prev => prev.filter(c => c.id !== id));
+  const handleRemove = (id: string) => {
+    const ch = channels.find(c => c.id === id) || null;
+    setRemoveTarget(ch);
+  };
 
-    // Env-based channels: remove env vars
-    if (id === 'env-telegram') {
-      const url = getActiveOpenCodeUrl();
-      if (url) {
-        try {
-          const envRes = await authenticatedFetch(`${url}/env/TELEGRAM_BOT_TOKEN`);
-          if (envRes.ok) {
-            const data = await envRes.json() as Record<string, string>;
-            if (data?.TELEGRAM_BOT_TOKEN) {
-              await fetch(`https://api.telegram.org/bot${data.TELEGRAM_BOT_TOKEN}/deleteWebhook`, { method: 'POST' });
+  const confirmRemove = async () => {
+    const ch = removeTarget;
+    if (!ch) return;
+    setRemoving(true);
+    setChannels(prev => prev.filter(c => c.id !== ch.id));
+
+    try {
+      // Env-based channels: remove env vars
+      if (ch.id === 'env-telegram') {
+        const url = getActiveOpenCodeUrl();
+        if (url) {
+          try {
+            const envRes = await authenticatedFetch(`${url}/env/TELEGRAM_BOT_TOKEN`);
+            if (envRes.ok) {
+              const data = await envRes.json() as Record<string, string>;
+              if (data?.TELEGRAM_BOT_TOKEN) {
+                await fetch(`https://api.telegram.org/bot${data.TELEGRAM_BOT_TOKEN}/deleteWebhook`, { method: 'POST' });
+              }
             }
+          } catch { /* ignore */ }
+          for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET_TOKEN']) {
+            try { await authenticatedFetch(`${url}/env/${key}`, { method: 'DELETE' }); } catch { /* ignore */ }
           }
-        } catch { /* ignore */ }
-        for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET_TOKEN']) {
-          try { await authenticatedFetch(`${url}/env/${key}`, { method: 'DELETE' }); } catch { /* ignore */ }
         }
+        toast.success('Telegram channel removed');
+        setRemoveTarget(null);
+        await load();
+        return;
       }
-      toast.success('Removed');
-      return;
-    }
-    if (id === 'env-slack') {
-      const url = getActiveOpenCodeUrl();
-      if (url) {
-        for (const key of ['SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET']) {
-          try { await authenticatedFetch(`${url}/env/${key}`, { method: 'DELETE' }); } catch { /* ignore */ }
-        }
-      }
-      toast.success('Removed');
-      return;
-    }
 
-    // Regular DB-backed channels
-    const data = await channelFetch(`/${id}`, { method: 'DELETE' });
-    if (data?.ok) {
-      toast.success('Removed');
-    } else {
-      load();
-      toast.error('Failed');
+      if (ch.id === 'env-slack') {
+        const url = getActiveOpenCodeUrl();
+        if (url) {
+          for (const key of ['SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET']) {
+            try { await authenticatedFetch(`${url}/env/${key}`, { method: 'DELETE' }); } catch { /* ignore */ }
+          }
+        }
+        toast.success('Slack channel removed');
+        setRemoveTarget(null);
+        await load();
+        return;
+      }
+
+      // Regular DB-backed channels
+      const data = await channelFetch(`/${ch.id}`, { method: 'DELETE' });
+      if (data?.ok) {
+        toast.success('Channel removed', {
+          description: data?.message || `${ch.name} removed`,
+        });
+        if (settingsChannel?.id === ch.id) {
+          setSettingsOpen(false);
+          setSettingsChannel(null);
+        }
+        setRemoveTarget(null);
+        await load();
+      } else {
+        await load();
+        toast.error('Failed to remove channel', {
+          description: data?.error || 'The sandbox did not remove the channel.',
+        });
+      }
+    } catch (error: any) {
+      await load();
+      toast.error('Failed to remove channel', {
+        description: error?.message || 'The sandbox did not remove the channel.',
+      });
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -395,6 +442,34 @@ export function ChannelsPage() {
         onOpenChange={setSettingsOpen}
         onUpdated={load}
       />
+
+      <AlertDialog open={Boolean(removeTarget)} onOpenChange={(open) => {
+        if (!open && !removing) setRemoveTarget(null);
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove channel?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removeTarget
+                ? `This will disconnect ${removeTarget.name} from this instance.`
+                : 'This will disconnect the selected channel from this instance.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removing}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmRemove();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {removing ? 'Removing…' : 'Remove channel'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

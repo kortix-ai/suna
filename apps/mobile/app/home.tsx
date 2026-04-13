@@ -18,6 +18,7 @@ import {
   Platform,
   StyleSheet,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text } from '@/components/ui/text';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar as RNStatusBar } from 'react-native';
@@ -50,6 +51,11 @@ import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { RightDrawerContent } from '@/components/session/RightDrawerContent';
 import { UserMenuSheet } from '@/components/session/UserMenuSheet';
+import { ViewChangesSheet } from '@/components/session/ViewChangesSheet';
+import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptSheet';
+import { ProjectsPage } from '@/components/pages/ProjectsPage';
+import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
+import { useKortixProjects, type KortixProject } from '@/lib/kortix';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { PlaceholderPage } from '@/components/session/PlaceholderPage';
 import { UpdatesPage } from '@/components/pages/UpdatesPage';
@@ -82,7 +88,7 @@ import {
 import type { BottomBarMenuItem } from '@/components/session/BottomBar';
 import { log } from '@/lib/logger';
 import { KortixLogo } from '@/components/ui/KortixLogo';
-import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
+import { useTabScreenshotStore, validatePersistedScreenshots } from '@/stores/tab-screenshot-store';
 
 // Safe import of react-native-view-shot — requires native rebuild.
 // Returns null if the native module isn't available yet.
@@ -182,12 +188,24 @@ function AnimatedChevron({ expanded, color, size = 16 }: { expanded: boolean; co
 function SessionListItem({
   item,
   isActive,
+  isChild = false,
+  childCount = 0,
+  isExpanded = false,
+  onToggleExpand,
   onPress,
   onArchive,
   onDelete,
 }: {
   item: Session;
   isActive: boolean;
+  /** True when this row is rendered nested under a parent */
+  isChild?: boolean;
+  /** Total number of direct children — shows a persistent toggle pill */
+  childCount?: number;
+  /** Whether this row's children are currently expanded */
+  isExpanded?: boolean;
+  /** Toggle expand/collapse for this row's children */
+  onToggleExpand?: () => void;
   onPress: (s: Session) => void;
   onArchive?: (id: string) => void;
   onDelete?: (id: string) => void;
@@ -223,6 +241,35 @@ function SessionListItem({
         >
           {item.title || 'New Session'}
         </Text>
+
+        {/* Child toggle pill — matches web f1aea74: persistent badge that stays
+            visible so expanded sub-session lists can be collapsed again */}
+        {childCount > 0 && onToggleExpand && (
+          <TouchableOpacity
+            onPress={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+            hitSlop={6}
+            activeOpacity={0.6}
+            accessibilityLabel={isExpanded ? 'Collapse sub-sessions' : 'Expand sub-sessions'}
+            className={`ml-2 rounded-full px-2 py-0.5 ${
+              isExpanded
+                ? isDark ? 'bg-white/10' : 'bg-black/10'
+                : isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'
+            }`}
+          >
+            <Text
+              className={`text-[10px] ${
+                isExpanded ? 'text-foreground' : 'text-muted-foreground'
+              }`}
+              style={{ fontVariant: ['tabular-nums'] }}
+            >
+              {childCount}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {isActive && (
           <View className="flex-row items-center ml-2">
             <TouchableOpacity
@@ -245,6 +292,125 @@ function SessionListItem({
         )}
       </View>
     </TouchableOpacity>
+  );
+}
+
+/**
+ * Build a map from parent session ID → array of child session IDs.
+ * Ported from web's childMapByParent() in ui/turns.ts.
+ */
+function buildChildMap(sessions: Session[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const session of sessions) {
+    if (!session.parentID) continue;
+    const existing = map.get(session.parentID);
+    if (existing) {
+      existing.push(session.id);
+    } else {
+      map.set(session.parentID, [session.id]);
+    }
+  }
+  return map;
+}
+
+/**
+ * SessionGroup — renders a session row + its expanded children (recursive for nested trees).
+ */
+function SessionGroup({
+  session,
+  allSessions,
+  childMap,
+  expandedNodes,
+  onToggleExpand,
+  activeSessionId,
+  onPress,
+  onArchive,
+  onDelete,
+}: {
+  session: Session;
+  allSessions: Session[];
+  childMap: Map<string, string[]>;
+  expandedNodes: Record<string, boolean>;
+  onToggleExpand: (sessionId: string) => void;
+  activeSessionId: string | null;
+  onPress: (s: Session) => void;
+  onArchive?: (id: string) => void;
+  onDelete?: (id: string) => void;
+}) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const childIds = childMap.get(session.id);
+  const hasChildren = !!childIds && childIds.length > 0;
+  const isExpanded = expandedNodes[session.id] ?? false;
+
+  const childSessions = useMemo(() => {
+    if (!childIds) return [];
+    return childIds
+      .map((id) => allSessions.find((s) => s.id === id))
+      .filter((s): s is Session => !!s)
+      .sort((a, b) => (a.time?.created ?? 0) - (b.time?.created ?? 0));
+  }, [childIds, allSessions]);
+
+  return (
+    <View>
+      <SessionListItem
+        item={session}
+        isActive={session.id === activeSessionId}
+        isChild={false}
+        childCount={hasChildren ? childSessions.length : 0}
+        isExpanded={isExpanded}
+        onToggleExpand={hasChildren ? () => onToggleExpand(session.id) : undefined}
+        onPress={onPress}
+        onArchive={onArchive}
+        onDelete={onDelete}
+      />
+
+      {/* Expanded children — indented with a subtle left border */}
+      {hasChildren && isExpanded && (
+        <View
+          className="ml-4 pl-2"
+          style={{
+            borderLeftWidth: 1,
+            borderLeftColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+          }}
+        >
+          {childSessions.map((child) => {
+            const grandchildIds = childMap.get(child.id);
+            const hasGrandchildren = !!grandchildIds && grandchildIds.length > 0;
+
+            // Recurse for grandchildren
+            if (hasGrandchildren) {
+              return (
+                <SessionGroup
+                  key={child.id}
+                  session={child}
+                  allSessions={allSessions}
+                  childMap={childMap}
+                  expandedNodes={expandedNodes}
+                  onToggleExpand={onToggleExpand}
+                  activeSessionId={activeSessionId}
+                  onPress={onPress}
+                  onArchive={onArchive}
+                  onDelete={onDelete}
+                />
+              );
+            }
+
+            return (
+              <SessionListItem
+                key={child.id}
+                item={child}
+                isActive={child.id === activeSessionId}
+                isChild
+                onPress={onPress}
+                onArchive={onArchive}
+                onDelete={onDelete}
+              />
+            );
+          })}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -421,6 +587,8 @@ export default function HomeScreen() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null);
   const userMenuSheetRef = useRef<BottomSheetModal>(null);
+  const viewChangesSheetRef = useRef<BottomSheetModal>(null);
+  const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
   const { updateAvailable: hasUpdate } = useGlobalSandboxUpdate();
 
@@ -461,6 +629,9 @@ export default function HomeScreen() {
     };
   }, [colorScheme]);
 
+  // Validate persisted tab screenshots (remove stale entries on startup)
+  useEffect(() => { validatePersistedScreenshots(); }, []);
+
   // Compact session mutation
   const compactSession = useCompactSession();
 
@@ -491,6 +662,13 @@ export default function HomeScreen() {
   // Data
   const { data: sessions = [], isLoading: sessionsLoading } =
     useSessions(sandboxUrl);
+  const { data: kortixProjects } = useKortixProjects(sandboxUrl);
+  const sortedProjects = useMemo(() => {
+    if (!kortixProjects || !Array.isArray(kortixProjects)) return [];
+    return [...kortixProjects].sort(
+      (a: KortixProject, b: KortixProject) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  }, [kortixProjects]);
   const createSession = useCreateSession(sandboxUrl);
   const deleteSession = useDeleteSession(sandboxUrl);
   const archiveSession = useArchiveSession(sandboxUrl);
@@ -509,6 +687,21 @@ export default function HomeScreen() {
   // Collapsible state
   const [sessionsExpanded, setSessionsExpanded] = useState(true);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const [expandedSessionNodes, setExpandedSessionNodes] = useState<Record<string, boolean>>({});
+
+  const toggleSessionExpand = useCallback((sessionId: string) => {
+    setExpandedSessionNodes((prev) => ({ ...prev, [sessionId]: !prev[sessionId] }));
+  }, []);
+
+  // Build parent→children map and derive the list of top-level (root) sessions.
+  // Child sessions render nested under their parents when the parent is expanded.
+  const { childMap, rootSessions } = useMemo(() => {
+    const map = buildChildMap(activeSessions);
+    const sessionIds = new Set(activeSessions.map((s) => s.id));
+    const roots = activeSessions.filter((s) => !s.parentID || !sessionIds.has(s.parentID));
+    return { childMap: map, rootSessions: roots };
+  }, [activeSessions]);
 
   // Agent/model/variant for dashboard input
   const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
@@ -576,6 +769,13 @@ export default function HomeScreen() {
     navigateToSession(session.id);
     setDrawerOpen(false);
   }, [navigateToSession]);
+
+  const handleProjectPress = useCallback((project: KortixProject) => {
+    const pageId = `page:project:${project.id}`;
+    useTabStore.getState().setTabState(pageId, { projectName: project.name });
+    useTabStore.getState().navigateToPage(pageId);
+    setDrawerOpen(false);
+  }, []);
 
   const handleBack = useCallback(() => navigateToSession(null), [navigateToSession]);
 
@@ -791,6 +991,51 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Projects header (collapsible) — above Sessions, matches web sidebar */}
+        {sortedProjects.length > 0 && (
+          <>
+            <TouchableOpacity
+              onPress={() => setProjectsExpanded((v) => !v)}
+              className="flex-row items-center justify-between px-5 py-2.5"
+              activeOpacity={0.6}
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="folder-outline" size={18} color={iconColor} />
+                <Text className="text-sm font-medium ml-3 text-foreground">Projects</Text>
+              </View>
+              <View className="flex-row items-center">
+                <View className="bg-muted rounded-full px-2 py-0.5 mr-1">
+                  <Text className="text-xs text-muted-foreground">{sortedProjects.length}</Text>
+                </View>
+                <AnimatedChevron expanded={projectsExpanded} color={mutedColor} size={16} />
+              </View>
+            </TouchableOpacity>
+
+            <AnimatedCollapsible expanded={projectsExpanded}>
+              <View className="px-2 pb-2">
+                {sortedProjects.map((project: KortixProject) => (
+                  <TouchableOpacity
+                    key={project.id}
+                    onPress={() => handleProjectPress(project)}
+                    className="flex-row items-center rounded-lg px-4 py-2 mb-0.5"
+                    activeOpacity={0.6}
+                  >
+                    <Ionicons name="folder-outline" size={14} color={mutedColor} style={{ marginRight: 8 }} />
+                    <Text className="flex-1 text-sm text-muted-foreground" numberOfLines={1}>
+                      {project.name}
+                    </Text>
+                    {(project.sessionCount ?? 0) > 0 && (
+                      <Text className="text-xs text-muted-foreground/50 ml-2">
+                        {project.sessionCount}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </AnimatedCollapsible>
+          </>
+        )}
+
         {/* Sessions header (collapsible) */}
         <TouchableOpacity
           onPress={() => setSessionsExpanded((v) => !v)}
@@ -866,17 +1111,21 @@ export default function HomeScreen() {
                 </>
               )}
 
-              {/* Active sessions */}
-              {activeSessions.length === 0 ? (
+              {/* Active sessions — parent/child tree (matches web f1aea74) */}
+              {rootSessions.length === 0 ? (
                 <View className="items-center py-8">
                   <Text className="text-sm text-muted-foreground">No sessions yet</Text>
                 </View>
               ) : (
-                activeSessions.map((item) => (
-                  <SessionListItem
+                rootSessions.map((item) => (
+                  <SessionGroup
                     key={item.id}
-                    item={item}
-                    isActive={item.id === activeSessionId}
+                    session={item}
+                    allSessions={activeSessions}
+                    childMap={childMap}
+                    expandedNodes={expandedSessionNodes}
+                    onToggleExpand={toggleSessionExpand}
+                    activeSessionId={activeSessionId}
                     onPress={handleSessionPress}
                     onArchive={handleArchive}
                     onDelete={handleDelete}
@@ -924,10 +1173,17 @@ export default function HomeScreen() {
     isDark,
     insets,
     activeSessions,
+    rootSessions,
+    childMap,
+    expandedSessionNodes,
+    toggleSessionExpand,
     archivedSessions,
     sessionsLoading,
     sessionsExpanded,
     archivedExpanded,
+    projectsExpanded,
+    sortedProjects,
+    handleProjectPress,
     activeSessionId,
     userDisplayName,
     planLabel,
@@ -1226,6 +1482,27 @@ export default function HomeScreen() {
               onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
             />
 
+          /* Active page tab — Projects list */
+          ) : activePageId === 'page:projects' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <ProjectsPage
+              page={PAGE_TABS[activePageId]}
+              onBack={handleBack}
+              onOpenDrawer={handleDrawerOpen}
+              onOpenRightDrawer={handleRightDrawerOpen}
+            />
+
+          /* Active page tab — Single project detail (dynamic: page:project:{id}) */
+          ) : activePageId?.startsWith('page:project:') && !showTabsOverview ? (
+            <ProjectDetailPage
+              projectId={activePageId.replace('page:project:', '')}
+              onBack={() => {
+                // Go back to projects list
+                useTabStore.getState().navigateToPage('page:projects');
+              }}
+              onOpenDrawer={handleDrawerOpen}
+              onOpenRightDrawer={handleRightDrawerOpen}
+            />
+
           /* Active page tab — other pages (placeholder) */
           ) : activePageId && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <PlaceholderPage
@@ -1260,7 +1537,7 @@ export default function HomeScreen() {
 
           /* Dashboard */
           ) : (
-            <View className="flex-1 bg-background">
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" className="bg-background">
               <View
                 style={{ paddingTop: insets.top }}
                 className="px-4 pb-3 bg-background"
@@ -1317,7 +1594,7 @@ export default function HomeScreen() {
                   sandboxUrl={sandboxUrl}
                 />
               </View>
-            </View>
+            </KeyboardAvoidingView>
           )}
 
         </>
@@ -1366,8 +1643,16 @@ export default function HomeScreen() {
                     );
                   }
                 }}
-                onExportTranscript={() => log.log('TODO: export transcript')}
-                onViewChanges={() => log.log('TODO: view changes')}
+                onExportTranscript={() => {
+                  if (activeSessionId) {
+                    exportTranscriptSheetRef.current?.present();
+                  }
+                }}
+                onViewChanges={() => {
+                  if (activeSessionId) {
+                    viewChangesSheetRef.current?.present();
+                  }
+                }}
                 onDiagnostics={() => log.log('TODO: diagnostics')}
                 onArchiveSession={() => { if (activeSessionId) handleArchive(activeSessionId); }}
                 customMenuItems={
@@ -1502,6 +1787,16 @@ export default function HomeScreen() {
         onSelectTheme={handleThemeSelect}
         activeTheme={themePreference}
         isSigningOut={isSigningOut}
+      />
+
+      <ViewChangesSheet
+        ref={viewChangesSheetRef}
+        sessionId={activeSessionId}
+      />
+
+      <ExportTranscriptSheet
+        ref={exportTranscriptSheetRef}
+        sessionId={activeSessionId}
       />
 
       {/* Command Palette */}

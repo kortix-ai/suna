@@ -18,6 +18,7 @@ export { OcImageGenToolView } from './OcImageGenToolView';
 export { OcShowUserToolView } from './OcShowUserToolView';
 export { OcApplyPatchToolView } from './OcApplyPatchToolView';
 export { OcTaskToolView } from './OcTaskToolView';
+export { OcKortixTaskToolView } from './OcKortixTaskToolView';
 export { OcTodoToolView } from './OcTodoToolView';
 export { OcGenericToolView } from './OcGenericToolView';
 export { OcQuestionToolView } from './OcQuestionToolView';
@@ -43,6 +44,8 @@ export { OcProjectCreateToolView } from './OcProjectCreateToolView';
 export { OcConnectorListToolView } from './OcConnectorListToolView';
 export { OcConnectorGetToolView } from './OcConnectorGetToolView';
 export { OcConnectorSetupToolView } from './OcConnectorSetupToolView';
+export { OcTriggersToolView } from './OcTriggersToolView';
+export { OcSessionStatsToolView } from './OcSessionStatsToolView';
 
 import type { ToolViewComponent } from '../wrapper/ToolViewRegistry';
 import { OcBashToolView } from './OcBashToolView';
@@ -57,8 +60,6 @@ import { OcImageSearchToolView } from './OcImageSearchToolView';
 import { OcImageGenToolView } from './OcImageGenToolView';
 import { OcShowUserToolView } from './OcShowUserToolView';
 import { OcApplyPatchToolView } from './OcApplyPatchToolView';
-import { OcTaskToolView } from './OcTaskToolView';
-import { OcSessionSpawnToolView } from './OcSessionSpawnToolView';
 import { OcTodoToolView } from './OcTodoToolView';
 import { OcGenericToolView } from './OcGenericToolView';
 import { OcQuestionToolView } from './OcQuestionToolView';
@@ -84,6 +85,9 @@ import { OcProjectCreateToolView } from './OcProjectCreateToolView';
 import { OcConnectorListToolView } from './OcConnectorListToolView';
 import { OcConnectorGetToolView } from './OcConnectorGetToolView';
 import { OcConnectorSetupToolView } from './OcConnectorSetupToolView';
+import { OcTriggersToolView } from './OcTriggersToolView';
+import { OcSessionStatsToolView } from './OcSessionStatsToolView';
+import { OcKortixTaskToolView } from './OcKortixTaskToolView';
 
 /**
  * Registry entries for OpenCode tools.
@@ -150,19 +154,65 @@ export const ocToolViewRegistrations: Record<string, ToolViewComponent> = {
   'oc-apply-patch': OcApplyPatchToolView,
   'oc-apply_patch': OcApplyPatchToolView,
 
-  // Sub-agent delegation
-  'oc-task': OcTaskToolView,
-  'task': OcTaskToolView,
+  // Agent task tools (unified system)
+  'oc-agent_task': OcKortixTaskToolView,
+  'oc-agent-task': OcKortixTaskToolView,
+  'agent_task': OcKortixTaskToolView,
+  'agent-task': OcKortixTaskToolView,
+  'oc-agent_task_update': OcKortixTaskToolView,
+  'oc-agent-task-update': OcKortixTaskToolView,
+  'agent_task_update': OcKortixTaskToolView,
+  'agent-task-update': OcKortixTaskToolView,
+  'oc-agent_task_list': OcKortixTaskToolView,
+  'oc-agent-task-list': OcKortixTaskToolView,
+  'agent_task_list': OcKortixTaskToolView,
+  'agent-task-list': OcKortixTaskToolView,
+  'oc-agent_task_get': OcKortixTaskToolView,
+  'oc-agent-task-get': OcKortixTaskToolView,
+  'agent_task_get': OcKortixTaskToolView,
+  'agent-task-get': OcKortixTaskToolView,
+  'oc-task_create': OcKortixTaskToolView,
+  'oc-task-create': OcKortixTaskToolView,
+  'task_create': OcKortixTaskToolView,
+  'task-create': OcKortixTaskToolView,
+  'oc-task_update': OcKortixTaskToolView,
+  'oc-task-update': OcKortixTaskToolView,
+  'task_update': OcKortixTaskToolView,
+  'task-update': OcKortixTaskToolView,
+  'oc-task_list': OcKortixTaskToolView,
+  'oc-task-list': OcKortixTaskToolView,
+  'task_list': OcKortixTaskToolView,
+  'task-list': OcKortixTaskToolView,
+  'oc-task_get': OcKortixTaskToolView,
+  'oc-task-get': OcKortixTaskToolView,
+  'task_get': OcKortixTaskToolView,
+  'task-get': OcKortixTaskToolView,
 
-  // Kortix orchestrator session spawning
-  'oc-session_spawn': OcSessionSpawnToolView,
-  'oc-session-spawn': OcSessionSpawnToolView,
-  'session_spawn': OcSessionSpawnToolView,
-  'session-spawn': OcSessionSpawnToolView,
-  'oc-session_start_background': OcSessionSpawnToolView,
-  'oc-session-start-background': OcSessionSpawnToolView,
-  'session_start_background': OcSessionSpawnToolView,
-  'session-start-background': OcSessionSpawnToolView,
+  // Legacy agent tools (backwards compat for old sessions)
+  'oc-task': OcKortixTaskToolView,
+  'task': OcKortixTaskToolView,
+  'oc-agent_spawn': OcKortixTaskToolView,
+  'agent_spawn': OcKortixTaskToolView,
+  'agent-spawn': OcKortixTaskToolView,
+  'oc-agent_message': OcKortixTaskToolView,
+  'agent_message': OcKortixTaskToolView,
+  'agent-message': OcKortixTaskToolView,
+  'oc-agent_stop': OcKortixTaskToolView,
+  'agent_stop': OcKortixTaskToolView,
+  'agent-stop': OcKortixTaskToolView,
+  'oc-agent_status': OcKortixTaskToolView,
+  'agent_status': OcKortixTaskToolView,
+  'agent-status': OcKortixTaskToolView,
+
+  // Session spawning (legacy — routed to unified renderer)
+  'oc-session_spawn': OcKortixTaskToolView,
+  'oc-session-spawn': OcKortixTaskToolView,
+  'session_spawn': OcKortixTaskToolView,
+  'session-spawn': OcKortixTaskToolView,
+  'oc-session_start_background': OcKortixTaskToolView,
+  'oc-session-start-background': OcKortixTaskToolView,
+  'session_start_background': OcKortixTaskToolView,
+  'session-start-background': OcKortixTaskToolView,
 
   // Todo / task management
   'oc-todowrite': OcTodoToolView,
@@ -202,7 +252,7 @@ export const ocToolViewRegistrations: Record<string, ToolViewComponent> = {
   'oc-mem_save': OcMemSaveToolView,
   'oc-mem-save': OcMemSaveToolView,
 
-  // Session tools (kortix-sessions + kortix-orchestrator)
+  // Session tools (Kortix session surfaces)
   'oc-session_list': OcSessionListToolView,
   'oc-session-list': OcSessionListToolView,
   'session_list': OcSessionListToolView,
@@ -221,6 +271,9 @@ export const ocToolViewRegistrations: Record<string, ToolViewComponent> = {
   'oc-session_lineage': OcSessionLineageToolView,
   'oc-session-lineage': OcSessionLineageToolView,
   'session_lineage': OcSessionLineageToolView,
+  'oc-session_stats': OcSessionStatsToolView,
+  'oc-session-stats': OcSessionStatsToolView,
+  'session_stats': OcSessionStatsToolView,
   'oc-session_list_background': OcSessionListToolView,
   'oc-session-list-background': OcSessionListToolView,
   'session_list_background': OcSessionListToolView,
@@ -228,7 +281,7 @@ export const ocToolViewRegistrations: Record<string, ToolViewComponent> = {
   'oc-session-list-spawned': OcSessionListToolView,
   'session_list_spawned': OcSessionListToolView,
 
-  // Project tools (kortix-orchestrator)
+  // Project tools (Kortix project surfaces)
   'oc-project_list': OcProjectListToolView,
   'oc-project-list': OcProjectListToolView,
   'project_list': OcProjectListToolView,
@@ -264,6 +317,42 @@ export const ocToolViewRegistrations: Record<string, ToolViewComponent> = {
   'oc-get-mem': OcGetMemToolView,
   'get_mem': OcGetMemToolView,
   'get-mem': OcGetMemToolView,
+
+  // Trigger tools (Kortix trigger management)
+  'oc-triggers': OcTriggersToolView,
+  'triggers': OcTriggersToolView,
+  'oc-trigger_create': OcTriggersToolView,
+  'oc-trigger-create': OcTriggersToolView,
+  'trigger_create': OcTriggersToolView,
+  'trigger-create': OcTriggersToolView,
+  'oc-trigger_list': OcTriggersToolView,
+  'oc-trigger-list': OcTriggersToolView,
+  'trigger_list': OcTriggersToolView,
+  'trigger-list': OcTriggersToolView,
+  'oc-trigger_get': OcTriggersToolView,
+  'oc-trigger-get': OcTriggersToolView,
+  'trigger_get': OcTriggersToolView,
+  'trigger-get': OcTriggersToolView,
+  'oc-trigger_delete': OcTriggersToolView,
+  'oc-trigger-delete': OcTriggersToolView,
+  'trigger_delete': OcTriggersToolView,
+  'trigger-delete': OcTriggersToolView,
+  'oc-trigger_update': OcTriggersToolView,
+  'oc-trigger-update': OcTriggersToolView,
+  'trigger_update': OcTriggersToolView,
+  'trigger-update': OcTriggersToolView,
+  'oc-trigger_test': OcTriggersToolView,
+  'oc-trigger-test': OcTriggersToolView,
+  'trigger_test': OcTriggersToolView,
+  'trigger-test': OcTriggersToolView,
+  'oc-trigger_pause': OcTriggersToolView,
+  'oc-trigger-pause': OcTriggersToolView,
+  'trigger_pause': OcTriggersToolView,
+  'trigger-pause': OcTriggersToolView,
+  'oc-trigger_resume': OcTriggersToolView,
+  'oc-trigger-resume': OcTriggersToolView,
+  'trigger_resume': OcTriggersToolView,
+  'trigger-resume': OcTriggersToolView,
 
   // MCP tools and other unknown tools will fall through to the
   // registry's default (GenericToolView). The OcGenericToolView

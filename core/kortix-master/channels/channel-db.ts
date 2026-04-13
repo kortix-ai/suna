@@ -30,11 +30,18 @@ function resolveDbPath(): string {
 }
 
 let _db: Database | null = null
+let _dbPath: string | null = null
 
 export function getDb(): Database {
-  if (_db) return _db
   const dbPath = resolveDbPath()
+  if (_db && _dbPath === dbPath) return _db
+  if (_db && _dbPath !== dbPath) {
+    try { _db.close(false) } catch {}
+    _db = null
+    _dbPath = null
+  }
   _db = new Database(dbPath)
+  _dbPath = dbPath
   _db.exec("PRAGMA journal_mode=DELETE; PRAGMA busy_timeout=5000")
   _db.exec(`
     CREATE TABLE IF NOT EXISTS channels (
@@ -50,6 +57,7 @@ export function getDb(): Database {
       bot_username TEXT,
       default_agent TEXT DEFAULT 'kortix',
       default_model TEXT DEFAULT '',
+      bridge_instructions TEXT,
       instructions TEXT,
       created_by TEXT,
       created_at TEXT NOT NULL,
@@ -77,15 +85,30 @@ export function getDb(): Database {
           bot_username TEXT,
           default_agent TEXT DEFAULT 'kortix',
           default_model TEXT DEFAULT '',
+          bridge_instructions TEXT,
           instructions TEXT,
           created_by TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
-        INSERT INTO channels_new SELECT * FROM channels;
+        INSERT INTO channels_new (
+          id, platform, name, enabled, bot_token, signing_secret, webhook_secret, webhook_path,
+          bot_id, bot_username, default_agent, default_model, instructions, created_by, created_at, updated_at
+        )
+        SELECT 
+          id, platform, name, enabled, bot_token, signing_secret, webhook_secret, webhook_path,
+          bot_id, bot_username, default_agent, default_model, instructions, created_by, created_at, updated_at
+        FROM channels;
         DROP TABLE channels;
         ALTER TABLE channels_new RENAME TO channels;
       `)
+    }
+  } catch {}
+
+  try {
+    const columns = _db.prepare(`PRAGMA table_info(channels)`).all() as Array<{ name: string }>
+    if (!columns.some((column) => column.name === 'bridge_instructions')) {
+      _db.exec(`ALTER TABLE channels ADD COLUMN bridge_instructions TEXT`)
     }
   } catch {}
 
@@ -107,6 +130,7 @@ export interface ChannelConfig {
   bot_username: string | null
   default_agent: string
   default_model: string
+  bridge_instructions: string | null
   instructions: string | null
   created_by: string | null
   created_at: string
@@ -148,13 +172,17 @@ export function createChannel(opts: {
   bot_username?: string
   default_agent?: string
   default_model?: string
+  bridge_instructions?: string
   instructions?: string
   created_by?: string
   enabled?: boolean
 }): ChannelConfig {
   const db = getDb()
   const id = crypto.randomUUID()
-  const name = opts.name || generateChannelName(opts.created_by)
+  const inferredName = opts.bot_username
+    ? `${opts.platform === 'telegram' ? 'Telegram' : 'Slack'} @${opts.bot_username}`
+    : generateChannelName(opts.created_by)
+  const name = opts.name || inferredName
   const webhookSecret = crypto.randomUUID().replace(/-/g, "")
   const webhookPath = `/hooks/${opts.platform}/${id}`
   const now = new Date().toISOString()
@@ -162,13 +190,13 @@ export function createChannel(opts: {
 
   db.prepare(`
     INSERT INTO channels (id, platform, name, enabled, bot_token, signing_secret, webhook_secret, webhook_path,
-      bot_id, bot_username, default_agent, default_model, instructions, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      bot_id, bot_username, default_agent, default_model, bridge_instructions, instructions, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, opts.platform, name, enabled, opts.bot_token, opts.signing_secret || null,
     webhookSecret, webhookPath,
     opts.bot_id || null, opts.bot_username || null,
-    opts.default_agent || "kortix", opts.default_model || "",
+    opts.default_agent || "kortix", opts.default_model || "", opts.bridge_instructions || null,
     opts.instructions || null, opts.created_by || null, now, now,
   )
 
@@ -253,7 +281,7 @@ export function listChannels(platform?: string): ChannelConfig[] {
 }
 
 export function updateChannel(id: string, updates: Partial<Pick<ChannelConfig,
-  "name" | "enabled" | "bot_token" | "signing_secret" | "default_agent" | "default_model" | "instructions" | "bot_id" | "bot_username"
+  "name" | "enabled" | "bot_token" | "signing_secret" | "default_agent" | "default_model" | "bridge_instructions" | "instructions" | "bot_id" | "bot_username"
 >>): ChannelConfig | null {
   const db = getDb()
   const existing = getChannel(id)

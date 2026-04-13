@@ -640,29 +640,22 @@ export function getActiveSandboxId(): string | undefined {
 }
 
 /**
- * Whether the active server is using Daytona (cloud) mode.
- * Cloud mode has its own preview URL scheme — subdomain routing is only for local.
- */
-export function isCloudMode(): boolean {
-  const server = getActiveServer();
-  return server?.provider === 'daytona' || server?.provider === 'justavps';
-}
-
-/**
  * Get SubdomainUrlOptions for the active server.
- * Returns { sandboxId, backendPort } for subdomain URL construction.
- * Returns undefined for cloud/Daytona mode (uses its own URL scheme).
+ *
+ * Always returns a valid options object — every provider (local_docker, daytona,
+ * justavps) routes through the backend's unified preview proxy, so there is no
+ * "cloud uses its own scheme" special case anymore. The `apiBaseUrl` field lets
+ * `rewriteLocalhostUrl` take the path-based branch on remote deployments.
  *
  * Use in non-React contexts: call directly (reads from store snapshot).
  */
-export function getSubdomainOpts(): { sandboxId: string; backendPort: number; apiBaseUrl?: string } | undefined {
+export function getSubdomainOpts(): { sandboxId: string; backendPort: number; apiBaseUrl: string } {
   return getInstanceSubdomainOpts();
 }
 
 export function getInstanceSubdomainOpts(
   backendPort = 8000,
-): { sandboxId: string; backendPort: number; apiBaseUrl?: string } | undefined {
-  if (isCloudMode()) return undefined;
+): { sandboxId: string; backendPort: number; apiBaseUrl: string } {
   return {
     sandboxId: getActiveSandboxId() ?? getEnv().SANDBOX_ID ?? 'kortix-sandbox',
     backendPort,
@@ -672,6 +665,11 @@ export function getInstanceSubdomainOpts(
 
 /**
  * Derive SubdomainUrlOptions from a ServerEntry (pure function).
+ *
+ * Always returns a valid options object — never undefined. Every provider routes
+ * through the same backend preview proxy; the `apiBaseUrl` field lets
+ * `rewriteLocalhostUrl` take the path-based branch on VPS/cloud deployments
+ * where *.localhost DNS isn't available.
  *
  * Use inside useMemo with [server?.provider, server?.sandboxId] as deps
  * to satisfy react-hooks/exhaustive-deps:
@@ -683,13 +681,11 @@ export function getInstanceSubdomainOpts(
  */
 export function deriveSubdomainOpts(
   server: ServerEntry | null | undefined,
-): { sandboxId: string; backendPort: number; apiBaseUrl?: string } | undefined {
-  // Cloud providers use their own URL scheme — no subdomain proxy.
-  if (server?.provider === 'daytona' || server?.provider === 'justavps') return undefined;
-  // For all local/self-hosted modes (local_docker, null server, unknown provider),
-  // fall back to the configured sandbox ID (from runtime env) or 'kortix-sandbox'.
+): { sandboxId: string; backendPort: number; apiBaseUrl: string } {
+  // Fall back to the configured sandbox ID (from runtime env) or 'kortix-sandbox'.
   // This ensures proxy rewriting NEVER silently degrades to raw localhost URLs
-  // just because the store hasn't hydrated the sandboxId yet.
+  // just because the store hasn't hydrated the sandboxId yet, or because the
+  // provider is marked as cloud (Daytona/JustAVPS use the same /p/ proxy).
   const sandboxId = server?.sandboxId || getEnv().SANDBOX_ID || 'kortix-sandbox';
   return {
     sandboxId,

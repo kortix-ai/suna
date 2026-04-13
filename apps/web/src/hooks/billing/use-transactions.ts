@@ -37,23 +37,9 @@ export interface TransactionsResponse {
 }
 
 export interface TransactionsSummary {
-  period_days: number;
-  since_date: string;
-  current_balance: {
-    total: number;
-    expiring: number;
-    non_expiring: number;
-    tier: string;
-  };
-  summary: {
-    total_added: number;
-    total_used: number;
-    total_refunded: number;
-    total_expired: number;
-    net_change: number;
-  };
-  transaction_counts: Record<string, number>;
-  total_transactions: number;
+  totalCredits: number;
+  totalDebits: number;
+  count: number;
 }
 
 export function useTransactions(
@@ -107,21 +93,9 @@ export function useTransactionsSummary(days: number = 30) {
       
       const data = response.data as TransactionsSummary;
       return {
-        ...data,
-        current_balance: {
-          ...data.current_balance,
-          total: dollarsToCredits(data.current_balance.total),
-          expiring: dollarsToCredits(data.current_balance.expiring),
-          non_expiring: dollarsToCredits(data.current_balance.non_expiring),
-        },
-        summary: {
-          ...data.summary,
-          total_added: dollarsToCredits(data.summary.total_added),
-          total_used: dollarsToCredits(data.summary.total_used),
-          total_refunded: dollarsToCredits(data.summary.total_refunded),
-          total_expired: dollarsToCredits(data.summary.total_expired),
-          net_change: dollarsToCredits(data.summary.net_change),
-        },
+        totalCredits: dollarsToCredits(data.totalCredits),
+        totalDebits: dollarsToCredits(data.totalDebits),
+        count: data.count,
       };
     },
     staleTime: 60000,

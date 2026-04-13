@@ -7,7 +7,7 @@
  * dashboard/OpenCode APIs.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { useAuth } from '@/components/AuthProvider';
@@ -22,20 +22,13 @@ export interface KortixProject {
   created_at: string;
   opencode_id: string | null;
   sessionCount?: number;
-  delegationStats?: Record<string, number>;
-}
-
-export interface KortixProjectDetail extends KortixProject {
-  delegations: Array<{
-    session_id: string;
-    project_id: string;
-    prompt: string;
-    agent: string;
-    status: string;
-    result: string | null;
-    created_at: string;
-    completed_at: string | null;
-  }>;
+  // Extended properties from OpenCode Project (optional for compatibility)
+  worktree?: string;
+  time?: {
+    created: number;
+    updated: number;
+    initialized?: number;
+  };
 }
 
 // ── Fetch helper ─────────────────────────────────────────────────────────────
@@ -56,6 +49,10 @@ export const kortixKeys = {
   projects: () => ['kortix', 'projects'] as const,
   project: (id: string) => ['kortix', 'projects', id] as const,
 };
+
+interface KortixProjectQueryOptions {
+  enabled?: boolean;
+}
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
@@ -79,13 +76,36 @@ export function useKortixProject(id: string) {
   const { user, isLoading: isAuthLoading } = useAuth();
   const serverVersion = useServerStore((s) => s.serverVersion);
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  return useQuery<KortixProjectDetail>({
+  return useQuery<KortixProject>({
     queryKey: [...kortixKeys.project(id), user?.id ?? 'anonymous', serverUrl, serverVersion],
-    queryFn: () => kortixFetch<KortixProjectDetail>(serverUrl, `/${encodeURIComponent(id)}`),
+    queryFn: () => kortixFetch<KortixProject>(serverUrl, `/${encodeURIComponent(id)}`),
     enabled: !isAuthLoading && !!user && !!serverUrl && !!id,
     staleTime: 15_000,
     gcTime: 5 * 60 * 1000,
     retry: 2,
+    // Keep previous data while a new query (e.g. from a serverVersion bump
+    // when another tab closes) is loading. Prevents the skeleton flash.
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useKortixProjectForSession(sessionId: string, options: KortixProjectQueryOptions = {}) {
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const serverVersion = useServerStore((s) => s.serverVersion);
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  return useQuery<KortixProject | null>({
+    queryKey: ['kortix', 'projects', 'by-session', sessionId, user?.id ?? 'anonymous', serverUrl, serverVersion],
+    queryFn: async () => {
+      try {
+        return await kortixFetch<KortixProject>(serverUrl, `/by-session/${encodeURIComponent(sessionId)}`);
+      } catch {
+        return null;
+      }
+    },
+    enabled: !isAuthLoading && !!user && !!serverUrl && !!sessionId && (options.enabled ?? true),
+    staleTime: 15_000,
+    gcTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -93,35 +113,22 @@ export function useKortixProject(id: string) {
  * Fetch sessions linked to a specific project.
  * Returns OpenCode session objects enriched with title, time, etc.
  */
-export function useKortixProjectSessions(projectId: string) {
+export function useKortixProjectSessions(
+  projectId: string,
+  options: KortixProjectQueryOptions = {},
+) {
   const { user, isLoading: isAuthLoading } = useAuth();
   const serverVersion = useServerStore((s) => s.serverVersion);
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<any[]>({
     queryKey: ['kortix', 'projects', projectId, 'sessions', user?.id ?? 'anonymous', serverUrl, serverVersion],
     queryFn: () => kortixFetch<any[]>(serverUrl, `/${encodeURIComponent(projectId)}/sessions`),
-    enabled: !isAuthLoading && !!user && !!serverUrl && !!projectId,
+    enabled: !isAuthLoading && !!user && !!serverUrl && !!projectId && (options.enabled ?? true),
     staleTime: 15_000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
     retry: 2,
-  });
-}
-
-export function useUpdateProject() {
-  const qc = useQueryClient();
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  return useMutation({
-    mutationFn: ({ id, ...data }: { id: string; name?: string; description?: string }) =>
-      kortixFetch<KortixProject>(serverUrl, `/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }),
-    onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: kortixKeys.project(vars.id) });
-      qc.invalidateQueries({ queryKey: kortixKeys.projects() });
-    },
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -138,3 +145,4 @@ export function useDeleteProject() {
     },
   });
 }
+

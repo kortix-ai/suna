@@ -89,10 +89,16 @@ export type {
 
 // Store
 export {
+  createFilesStore,
+  FilesStoreProvider,
+  globalFilesStore,
   useFilesStore,
+  useFilesStoreApi,
   type FilesView,
   type ClipboardOperation,
   type ClipboardItem,
+  type FilesStore,
+  type FilesStoreApi,
 } from './store/files-store';
 
 // Components

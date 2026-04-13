@@ -159,15 +159,16 @@ export const useTabStore = create<TabState>()(
           : tabFocusHistory;
 
         // If tab already exists, update its metadata (URL may have changed) and activate it.
-        // Bump refreshCounter so preview tabs know to reload the iframe.
+        // Important: do NOT force-refresh preview tabs here. Re-opening or
+        // re-activating an existing preview tab should keep the iframe alive
+        // unless the preview component itself explicitly refreshes.
         if (tabs[tabInput.id]) {
           const existing = tabs[tabInput.id];
-          const prevCounter = (existing.metadata?.refreshCounter as number) || 0;
           const merged: Tab = {
             ...existing,
             ...tabInput,
             openedAt: existing.openedAt,
-            metadata: { ...existing.metadata, ...tabInput.metadata, refreshCounter: prevCounter + 1 },
+            metadata: { ...existing.metadata, ...tabInput.metadata },
           };
           set({
             tabs: { ...tabs, [tabInput.id]: merged },

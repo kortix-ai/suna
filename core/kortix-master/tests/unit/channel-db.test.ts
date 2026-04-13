@@ -33,19 +33,17 @@ describe('channel-db', () => {
     expect(tables).toHaveLength(1)
   })
 
-  it('creates a telegram channel with auto-generated name', async () => {
+  it('creates a telegram channel with a readable default name from the bot username', async () => {
     const { createChannel } = await loadDb()
     const ch = createChannel({
       platform: 'telegram',
       bot_token: 'test-token-123',
       bot_id: '999',
       bot_username: 'test_bot',
-      created_by: 'TestUser',
     })
     expect(ch.id).toBeTruthy()
     expect(ch.platform).toBe('telegram')
-    expect(ch.name).toContain('Kortix')
-    expect(ch.name).toContain('TestUser')
+    expect(ch.name).toBe('Telegram @test_bot')
     expect(ch.enabled).toBe(true)
     expect(ch.bot_token).toBe('test-token-123')
     expect(ch.webhook_path).toContain('/hooks/telegram/')
@@ -115,11 +113,12 @@ describe('channel-db', () => {
     const { createChannel, updateChannel } = await loadDb()
     const ch = createChannel({ platform: 'telegram', bot_token: 'tok' })
 
-    updateChannel(ch.id, { default_agent: 'worker', default_model: 'openai/gpt-4o' })
+    updateChannel(ch.id, { default_agent: 'worker', default_model: 'openai/gpt-4o', bridge_instructions: 'Acknowledge first.' })
     const { createChannel: _, getChannel } = await loadDb()
     const updated = getChannel(ch.id)!
     expect(updated.default_agent).toBe('worker')
     expect(updated.default_model).toBe('openai/gpt-4o')
+    expect(updated.bridge_instructions).toBe('Acknowledge first.')
   })
 
   it('deletes a channel', async () => {

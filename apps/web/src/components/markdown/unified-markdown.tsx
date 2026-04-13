@@ -152,19 +152,20 @@ function CopyButton({ code }: { code: string }) {
     <button
       onClick={handleCopy}
       className={cn(
-        "absolute top-3 right-3 p-1.5 rounded-lg cursor-pointer",
-        "opacity-0 group-hover:opacity-100 transition-opacity duration-150",
-        "border border-border/35 bg-background/70 backdrop-blur-sm",
-        "hover:bg-background/90 hover:border-border/50",
-        "text-muted-foreground hover:text-foreground",
+        "absolute top-2.5 right-2.5 p-1.5 rounded-md cursor-pointer",
+        "opacity-0 group-hover:opacity-100 transition-all duration-150",
+        "bg-background/80 backdrop-blur-sm",
+        "border border-border/40 hover:border-border/60",
+        "text-muted-foreground/70 hover:text-foreground",
+        "shadow-sm hover:shadow",
         "outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
       )}
       aria-label={copied ? "Copied!" : "Copy code"}
     >
       {copied ? (
-        <Check className="h-4 w-4 text-emerald-600 dark:text-green-400" />
+        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-green-400" />
       ) : (
-        <Copy className="h-4 w-4" />
+        <Copy className="h-3.5 w-3.5" />
       )}
     </button>
   );
@@ -272,10 +273,12 @@ function highlightAsync(code: string, language: string, theme: string): Promise<
     theme,
     transformers: [{
       pre(node) {
+        // Strip background-color (we use our own) and tabindex (causes focus outlines)
         if (node.properties.style) {
           node.properties.style = (node.properties.style as string)
             .replace(/background-color:[^;]+;?/g, '');
         }
+        delete node.properties.tabindex;
       },
     }],
   })
@@ -377,11 +380,20 @@ export function HighlightedCode({ code, language, children }: { code: string; la
     return () => clearTimeout(debounceRef.current);
   }, [code, language, theme, hlKey]);
 
+  const shikiResetClasses = cn(
+    "text-[13px] font-mono leading-[1.7] whitespace-pre",
+    // Collapse Shiki's wrapper elements so only .line spans render
+    "[&_pre]:contents [&_code]:contents",
+    // Reset .line spans: prevent global * { border-border } from causing visual artifacts
+    "[&_.line]:border-none [&_.line]:outline-none [&_.line]:shadow-none",
+    "[&_.line]:m-0 [&_.line]:p-0",
+  );
+
   // If we have a highlight for the EXACT current code, show it
   if (highlighted && highlighted.code === code) {
     return (
       <code
-        className="text-[13px] font-mono leading-relaxed whitespace-pre [&_pre]:contents [&_code]:contents"
+        className={shikiResetClasses}
         dangerouslySetInnerHTML={{ __html: highlighted.html }}
       />
     );
@@ -392,7 +404,7 @@ export function HighlightedCode({ code, language, children }: { code: string; la
   if (highlighted && code.startsWith(highlighted.code) && highlighted.code.length > 0) {
     const tail = code.slice(highlighted.code.length);
     return (
-      <code className="text-[13px] font-mono leading-relaxed whitespace-pre [&_pre]:contents [&_code]:contents">
+      <code className={shikiResetClasses}>
         <span dangerouslySetInnerHTML={{ __html: highlighted.html }} />
         {tail && <span className="text-inherit">{tail}</span>}
       </code>
@@ -401,7 +413,7 @@ export function HighlightedCode({ code, language, children }: { code: string; la
 
   // No matching highlight yet — show plain text
   return (
-    <code className="text-[13px] font-mono leading-relaxed text-inherit whitespace-pre">
+    <code className="text-[13px] font-mono leading-[1.7] text-inherit whitespace-pre">
       {children}
     </code>
   );
@@ -428,11 +440,13 @@ function CodeBlock({ children, isStreaming }: { children: React.ReactNode; isStr
         ref={preRef}
         className={cn(
           "p-4 rounded-xl overflow-x-auto",
-          "bg-zinc-100 dark:bg-zinc-900",
-          "border border-zinc-200 dark:border-zinc-800",
-          "text-[13px] font-mono leading-relaxed",
+          "bg-zinc-50 dark:bg-zinc-900/80",
+          "border border-zinc-200/70 dark:border-zinc-800/60",
+          "text-[13px] font-mono leading-[1.7]",
           "text-zinc-800 dark:text-zinc-200",
-          "[&_code]:bg-transparent [&_code]:text-inherit [&_code]:p-0"
+          // Reset nested code elements — prevent borders/outlines from leaking in
+          "[&_code]:bg-transparent [&_code]:text-inherit [&_code]:p-0 [&_code]:border-none",
+          "[&_span]:border-none [&_span]:outline-none",
         )}
       >
         {children}
@@ -568,11 +582,12 @@ export function CodeHighlight({
       <pre
         className={cn(
           'p-4 rounded-xl overflow-x-auto',
-          'bg-zinc-100 dark:bg-zinc-900',
-          'border border-zinc-200 dark:border-zinc-800',
-          'text-[13px] font-mono leading-relaxed',
+          'bg-zinc-50 dark:bg-zinc-900/80',
+          'border border-zinc-200/70 dark:border-zinc-800/60',
+          'text-[13px] font-mono leading-[1.7]',
           'text-zinc-800 dark:text-zinc-200',
-          '[&_code]:bg-transparent [&_code]:text-inherit [&_code]:p-0',
+          '[&_code]:bg-transparent [&_code]:text-inherit [&_code]:p-0 [&_code]:border-none',
+          '[&_span]:border-none [&_span]:outline-none',
         )}
       >
         <HighlightedCode code={code} language={language}>
@@ -773,7 +788,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
 
         // Block code without language - plain mono font
         return (
-          <code className="text-[13px] font-mono leading-relaxed text-inherit whitespace-pre">
+          <code className="text-[13px] font-mono leading-[1.7] text-inherit whitespace-pre">
             {children}
           </code>
         );

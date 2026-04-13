@@ -37,10 +37,10 @@ export function PresentationSlideCard({
   const [scale, setScale] = useState(1);
 
   const slidePreviewUrl = useMemo(() => {
-    if (!project?.sandbox?.sandbox_url) return null;
-    const url = constructHtmlPreviewUrl(project.sandbox.sandbox_url, slide.file_path, subdomainOpts);
+    if (!slide.file_path) return null;
+    const url = constructHtmlPreviewUrl(slide.file_path, subdomainOpts);
     return refreshTimestamp ? `${url}?t=${refreshTimestamp}` : url;
-  }, [project?.sandbox?.sandbox_url, slide.file_path, refreshTimestamp, subdomainOpts]);
+  }, [slide.file_path, refreshTimestamp, subdomainOpts]);
 
   useEffect(() => {
     if (!containerRef) return;

@@ -5,7 +5,11 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
-import { useConnectionToasts } from "@/components/dashboard/connecting-screen";
+import {
+	ConnectingScreen,
+	useConnectionToasts,
+	type Stage as ConnectingStage,
+} from "@/components/dashboard/connecting-screen";
 import { AppProviders } from "@/components/layout/app-providers";
 import { TabBar } from "@/components/tabs/tab-bar";
 import { useAdminRole } from "@/hooks/admin";
@@ -18,14 +22,13 @@ import { useWebNotifications } from "@/hooks/use-web-notifications";
 import { backendApi } from "@/lib/api-client";
 import { getClient } from "@/lib/opencode-sdk";
 import { Button } from "@/components/ui/button";
-import { KortixLogo } from "@/components/sidebar/kortix-logo";
 import { KortixLoader } from "@/components/ui/kortix-loader";
 import { featureFlags } from "@/lib/feature-flags";
 import { buildInstancePath, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname } from "@/lib/instance-routes";
 import { cn } from "@/lib/utils";
 import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
 import { useOnboardingModeStore } from "@/stores/onboarding-mode-store";
-import { getActiveOpenCodeUrl, useServerStore, switchToInstanceAsync } from "@/stores/server-store";
+import { getActiveOpenCodeUrl, useServerStore, switchToInstance, switchToInstanceAsync } from "@/stores/server-store";
 import { useTabStore } from "@/stores/tab-store";
 import { AnnouncementDialog } from "../announcements/announcement-dialog";
 import { NovuInboxProvider } from "../notifications/novu-inbox-provider";
@@ -47,13 +50,6 @@ import { ChevronRight } from "lucide-react";
 /** Monitors session status transitions and fires browser notifications. Renders nothing. */
 function WebNotificationProvider() {
 	useWebNotifications();
-	return null;
-}
-
-/** Monitors sandbox connection health + shows toast on connect/disconnect. Renders nothing. */
-function SandboxConnectionProvider() {
-	useSandboxConnection();
-	useConnectionToasts();
 	return null;
 }
 
@@ -126,11 +122,6 @@ const GlobalProviderModal = lazy(() =>
 	})),
 );
 
-const ConnectingScreen = lazy(() =>
-	import("@/components/dashboard/connecting-screen").then((mod) => ({
-		default: mod.ConnectingScreen,
-	})),
-);
 
 
 
@@ -234,39 +225,6 @@ async function readEnv(key: string): Promise<string | null> {
 		const d = await res.json();
 		return d?.[key] ?? null;
 	} catch { return null; }
-}
-
-// Minimal full-viewport loading state shown while auth / onboarding resolves.
-function DashboardSkeleton() {
-	return (
-		<div className="fixed inset-0 flex items-center justify-center bg-background px-6">
-			<div className="flex w-full max-w-[360px] flex-col items-center gap-6 text-center">
-				<div className="mb-2 flex flex-col items-center gap-3">
-					<KortixLogo size={22} />
-					<p className="text-[15px] font-normal uppercase tracking-[0.15em] text-foreground/30">
-						Connecting to Workspace
-					</p>
-				</div>
-
-				<KortixLoader size="medium" />
-
-				<p className="max-w-[300px] text-sm leading-relaxed text-muted-foreground/60">
-					Checking sandbox health and restoring your session.
-				</p>
-
-				<p className="max-w-[300px] text-xs leading-relaxed text-muted-foreground/50">
-					Having problems? Email{" "}
-					<a
-						href="mailto:support@kortix.com"
-						className="underline underline-offset-4 hover:text-foreground/80"
-					>
-						support@kortix.com
-					</a>
-					.
-				</p>
-			</div>
-		</div>
-	);
 }
 
 // ============================================================================
@@ -491,10 +449,18 @@ function OnboardingSkipButton({ onConfirm }: { onConfirm: () => void }) {
 
 interface DashboardLayoutContentProps {
 	children: React.ReactNode;
+	/**
+	 * Sidebar open state as read from the `sidebar_state` cookie on the
+	 * server. Used as the SSR default so the sidebar doesn't flash
+	 * expanded-then-collapse on reload when the user's last choice was
+	 * collapsed. `undefined` means no cookie was set (first visit).
+	 */
+	initialSidebarOpen?: boolean;
 }
 
 export default function DashboardLayoutContent({
 	children,
+	initialSidebarOpen,
 }: DashboardLayoutContentProps) {
 	const { user, isLoading } = useAuth();
 	const router = useRouter();
@@ -515,6 +481,15 @@ export default function DashboardLayoutContent({
 	// Register the primary sandbox in the server store so the OpenCode SDK can
 	// connect. Must run before the onboarding check.
 	useSandbox();
+
+	// Sandbox health poller + connect/disconnect toasts. Mounted at the top of
+	// the layout (not inside the post-guard JSX) so the first health check
+	// starts in parallel with the onboarding check. This collapses the old
+	// "DashboardSkeleton → ConnectingScreen first-connect overlay" double
+	// loader into a single unified loading state on initial mount.
+	useSandboxConnection();
+	useConnectionToasts();
+	const connectionStatus = useSandboxConnectionStore((s) => s.status);
 
 	const { data: adminRoleData, isLoading: isCheckingAdminRole } =
 		useAdminRole();
@@ -546,11 +521,37 @@ export default function DashboardLayoutContent({
 	const obRetries = useRef(0);
 
 	const activeServerId = useServerStore((s) => s.activeServerId);
-	const [onboardingChecked, setOnboardingChecked] = useState(false);
+
+	// Seed `onboardingChecked` from localStorage so users who have already
+	// completed onboarding on this instance skip the 100-300 ms round-trip
+	// on every subsequent cold load. The real check still runs in the
+	// background and flips this to its authoritative value.
+	const [onboardingChecked, setOnboardingChecked] = useState(() => {
+		if (typeof window === "undefined") return false;
+		try {
+			return (
+				localStorage.getItem(
+					`kortix-onboarding-complete:${routeInstanceId || "default"}`,
+				) === "true"
+			);
+		} catch {
+			return false;
+		}
+	});
 	const [routeSyncing, setRouteSyncing] = useState(false);
 
 	useEffect(() => {
-		setOnboardingChecked(false);
+		// When the instance changes, re-seed from that instance's cache.
+		if (typeof window === "undefined") return;
+		try {
+			const cached =
+				localStorage.getItem(
+					`kortix-onboarding-complete:${routeInstanceId || "default"}`,
+				) === "true";
+			setOnboardingChecked(cached);
+		} catch {
+			setOnboardingChecked(false);
+		}
 	}, [routeInstanceId]);
 
 	// Timeout fallback — fail open if sandbox never responds.
@@ -623,6 +624,20 @@ export default function DashboardLayoutContent({
 	}, [activeServerId]);
 
 	// Check ONBOARDING_COMPLETE — enter onboarding mode or pass through.
+	//
+	// Guiding rule: onboarding is ONLY entered when we have positive evidence
+	// that it's incomplete (the proxy returned a 200 with ONBOARDING_COMPLETE
+	// !== 'true'). A 5xx / network failure means the sandbox is unreachable
+	// right now — we can't tell whether onboarding was done, so we do NOT
+	// enter onboarding mode. Instead we bail and let either
+	//   (a) the retry-on-activeServerId-change re-run the check once the
+	//       sandbox comes back, or
+	//   (b) the 1-second timeout fail-open branch render the dashboard shell
+	//       so the connection monitor can surface the real error.
+	//
+	// Previously we defaulted to onboarding on any failure, which meant a
+	// transiently down sandbox would pop the setup wizard on users who had
+	// already onboarded. Never again.
 	useEffect(() => {
 		if (!paramHandled) return;
 		const check = async () => {
@@ -633,30 +648,44 @@ export default function DashboardLayoutContent({
 				const f = await import("@/lib/auth-token").then((m) => m.authenticatedFetch);
 				const res = await f(`${instanceUrl}/env/ONBOARDING_COMPLETE`, undefined, { retryOnAuthError: false });
 				if (!res.ok) {
-					// If sandbox is unreachable (403/500/502), don't skip onboarding —
-					// assume setup hasn't been done and enter onboarding mode with setup wizard.
-					// This prevents going straight to an unusable dashboard.
-					if (res.status === 403 || res.status >= 500) {
-						console.warn(`[onboarding] /env/ONBOARDING_COMPLETE returned ${res.status} — entering setup mode`);
-						ob.enter({ skipBoot: true, skipSetup: false });
-					}
-					setOnboardingChecked(true);
+					// Sandbox unreachable or auth not yet propagated — do NOT
+					// assume "not onboarded". Bail silently; the effect re-runs
+					// when activeServerId changes, and the timeout fallback
+					// keeps the UI from hanging forever.
+					console.warn(`[onboarding] /env/ONBOARDING_COMPLETE returned ${res.status} — deferring, not entering onboarding`);
 					return;
 				}
 				const data = await res.json();
 				if (data?.ONBOARDING_COMPLETE === 'true') {
+					// Persist so subsequent cold loads skip this round-trip.
+					try {
+						localStorage.setItem(
+							`kortix-onboarding-complete:${routeInstanceId || "default"}`,
+							"true",
+						);
+					} catch {
+						/* private mode / quota — non-fatal */
+					}
 					setOnboardingChecked(true);
 				} else {
-				// Enter onboarding mode. If there's an existing session, skip boot + setup.
-				const existing = await readEnv("ONBOARDING_SESSION_ID");
-				ob.enter({ skipBoot: !!existing, skipSetup: !!existing });
+					// Enter onboarding mode. If there's an existing session, skip boot + setup.
+					// Also clear any stale "onboarding complete" cache for this instance.
+					try {
+						localStorage.removeItem(
+							`kortix-onboarding-complete:${routeInstanceId || "default"}`,
+						);
+					} catch {
+						/* non-fatal */
+					}
+					const existing = await readEnv("ONBOARDING_SESSION_ID");
+					ob.enter({ skipBoot: !!existing, skipSetup: !!existing });
 					setOnboardingChecked(true);
 				}
 			} catch {
-				// Network error — sandbox likely not ready. Enter setup mode.
-				console.warn('[onboarding] Failed to check ONBOARDING_COMPLETE — entering setup mode');
-				ob.enter({ skipBoot: true, skipSetup: false });
-				setOnboardingChecked(true);
+				// Network error — sandbox is unreachable. Same reasoning as
+				// the !res.ok branch: do NOT default to onboarding. Let the
+				// connection monitor surface the real error state.
+				console.warn('[onboarding] Failed to check ONBOARDING_COMPLETE — deferring, not entering onboarding');
 			}
 		};
 		check();
@@ -770,38 +799,81 @@ export default function DashboardLayoutContent({
 	// Keep the active server in sync with the current instance.
 	// Source of truth: URL path (/instances/:id/...) OR active-instance cookie
 	// (set by middleware on rewrite). The store MUST point at that instance.
+	//
+	// Fast path: subscribe to the server store. `useSandbox()` is fetching
+	// sandboxes in parallel; as soon as the one we want lands in the store
+	// we switch to it synchronously — no extra `listSandboxes()` round-trip.
+	// Only if it doesn't show up within a short grace window do we fall back
+	// to an explicit API fetch.
 	useEffect(() => {
 		if (!routeInstanceId || !user) {
 			setRouteSyncing(false);
 			return;
 		}
 
-		// Already pointing at the right instance? Skip.
-		const state = useServerStore.getState();
-		const active = state.servers.find((s) => s.id === state.activeServerId);
-		if (active?.instanceId === routeInstanceId) {
+		// Already pointing at the right instance? Skip entirely.
+		{
+			const state = useServerStore.getState();
+			const active = state.servers.find((s) => s.id === state.activeServerId);
+			if (active?.instanceId === routeInstanceId) {
+				setRouteSyncing(false);
+				return;
+			}
+		}
+
+		let cancelled = false;
+
+		// Try the store synchronously first — zero network cost.
+		const syncResult = switchToInstance(routeInstanceId);
+		if (syncResult) {
 			setRouteSyncing(false);
 			return;
 		}
 
-		let cancelled = false;
 		setRouteSyncing(true);
-		switchToInstanceAsync(routeInstanceId, { validate: true })
-			.then((result) => {
-				if (cancelled) return;
-				if (!result) {
-					router.replace(`/instances/${routeInstanceId}`);
-					return;
-				}
+
+		// Subscribe to store updates so we react the instant `useSandbox()`
+		// registers the instance. This avoids making our own `listSandboxes()`
+		// call in the common case.
+		const unsubscribe = useServerStore.subscribe((s) => {
+			if (cancelled) return;
+			const match = s.servers.find(
+				(server) => server.instanceId === routeInstanceId,
+			);
+			if (!match) return;
+			const result = switchToInstance(routeInstanceId);
+			if (result) {
 				setRouteSyncing(false);
-			})
-			.catch(() => {
-				if (cancelled) return;
-				router.replace(`/instances/${routeInstanceId}`);
-			});
+				unsubscribe();
+			}
+		});
+
+		// Grace window fallback: if `useSandbox()` hasn't populated the store
+		// within 1.5s (e.g. primary sandbox fetch failed, or this instance is
+		// stopped/deleted), fetch directly. `validate: false` still tries the
+		// store first before hitting the API.
+		const fallbackTimer = setTimeout(() => {
+			if (cancelled) return;
+			switchToInstanceAsync(routeInstanceId, { validate: false })
+				.then((result) => {
+					if (cancelled) return;
+					if (!result) {
+						router.replace(`/instances/${routeInstanceId}`);
+						return;
+					}
+					setRouteSyncing(false);
+					unsubscribe();
+				})
+				.catch(() => {
+					if (cancelled) return;
+					router.replace(`/instances/${routeInstanceId}`);
+				});
+		}, 1500);
 
 		return () => {
 			cancelled = true;
+			clearTimeout(fallbackTimer);
+			unsubscribe();
 		};
 	}, [routeInstanceId, user, router]);
 
@@ -833,35 +905,78 @@ export default function DashboardLayoutContent({
 		return now < start && now < end;
 	})();
 
-	if (isLoading) {
-		return <DashboardSkeleton />;
-	}
+	// ── Unified initial-load gate ───────────────────────────────────────────
+	// On the VERY first render, show the single canonical ConnectingScreen
+	// until:
+	//   - auth has resolved
+	//   - the onboarding check has returned
+	//   - the sandbox connection has settled (connected OR unreachable)
+	//
+	// Once we've rendered the dashboard once, `hasEverRendered` latches true
+	// and we never return to the connect screen via early-return — transient
+	// failures and in-app instance switches are handled by the ConnectingScreen
+	// overlay rendered inside the tree, which avoids unmounting everything
+	// (the invariant called out at the top of this component).
+	//
+	// The same <ConnectingScreen /> component is used here and as the overlay
+	// below, so there is exactly one loading screen in the entire app.
+	const [hasEverRendered, setHasEverRendered] = useState(false);
+	useEffect(() => {
+		if (hasEverRendered) return;
+		if (
+			!isLoading &&
+			!!user &&
+			onboardingChecked &&
+			connectionStatus !== "connecting"
+		) {
+			setHasEverRendered(true);
+		}
+	}, [hasEverRendered, isLoading, user, onboardingChecked, connectionStatus]);
 
-	if (!onboardingChecked) {
-		return <DashboardSkeleton />;
-	}
+	// Pin the stage copy to whatever is actually pending so the connect
+	// screen reflects real progress instead of cycling blindly.
+	let gateStage: ConnectingStage | undefined;
+	if (isLoading || !user) gateStage = "auth";
+	else if (routeSyncing) gateStage = "routing";
+	else if (connectionStatus === "connecting") gateStage = "reaching";
+	else if (!onboardingChecked) gateStage = "restoring";
 
-	if (!user) {
-		return <DashboardSkeleton />;
-	}
+	const gateActive =
+		!hasEverRendered &&
+		(isLoading ||
+			!user ||
+			!onboardingChecked ||
+			connectionStatus === "connecting");
 
-	if (
+	const maintenanceBlock =
 		isMaintenanceActive &&
 		!systemStatusLoading &&
 		!isCheckingAdminRole &&
-		!isAdmin
-	) {
-		return (
-			<Suspense fallback={<DashboardSkeleton />}>
-				<MaintenancePage />
-			</Suspense>
-		);
-	}
+		!isAdmin;
 
 	const hideChrome = ob.active && !ob.morphing;
 
+	// ConnectingScreen is mounted once at the top level and persists across
+	// the gate→dashboard transition. Same DOM position in every branch, so
+	// React keeps the same instance and there is zero flicker between the
+	// initial load screen and the dashboard shell. When `gateActive` flips
+	// false, the sibling layout tree mounts underneath without disturbing
+	// the already-painted loader. After connection settles, the component
+	// reads store state and either returns null (connected) or swaps to
+	// the reconnect pill / unreachable view in place.
 	return (
-		<NovuInboxProvider>
+		<>
+			<ConnectingScreen
+				forceConnecting={gateActive}
+				overrideStage={gateStage}
+			/>
+			{!gateActive && maintenanceBlock && (
+				<Suspense fallback={null}>
+					<MaintenancePage />
+				</Suspense>
+			)}
+			{!gateActive && !maintenanceBlock && (
+				<NovuInboxProvider>
 			{/* Boot overlay — BIOS + logo on top of everything */}
 			{ob.showBoot && (
 				<Suspense fallback={null}>
@@ -874,20 +989,21 @@ export default function DashboardLayoutContent({
 			</Suspense>
 			<AppProviders
 				showSidebar={true}
-				defaultSidebarOpen={!ob.active}
+				defaultSidebarOpen={
+					// Prefer the server-read cookie so SSR and client match
+					// (no flicker on reload). Fall back to `!ob.active` when
+					// there's no persisted choice yet.
+					initialSidebarOpen ?? !ob.active
+				}
 				sidebarSiblings={
 					<Suspense fallback={null}>
 						<StatusOverlay />
 					</Suspense>
 				}
 			>
-			<SandboxConnectionProvider />
 			<OpenCodeEventStreamProvider />
 			<WebNotificationProvider />
 			<UpdateDialogProvider />
-			<Suspense fallback={null}>
-				<ConnectingScreen />
-			</Suspense>
 			<Suspense fallback={null}>
 				<GlobalProviderModal />
 			</Suspense>
@@ -985,5 +1101,7 @@ export default function DashboardLayoutContent({
 				) : null}
 			</AppProviders>
 		</NovuInboxProvider>
+			)}
+		</>
 	);
 }

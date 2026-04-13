@@ -30,7 +30,7 @@ function getLanguageLabel(filename: string): string {
 export function FileExplorerStatusBar() {
   const selectedFilePath = useFilesStore((s) => s.selectedFilePath);
 
-  const { data: gitStatuses } = useGitStatus();
+  const { data: gitStatuses } = useGitStatus({ enabled: false });
   const { data: health } = useServerHealth();
   const { data: project } = useCurrentProject();
   const diagByFile = useDiagnosticsStore((s) => s.byFile);

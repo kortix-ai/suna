@@ -11,21 +11,21 @@ function FAQItem({ question, answer }: { question: string; answer: React.ReactNo
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <div className="border-b border-border/40 last:border-0">
+    <div className="border-b border-border last:border-0">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full text-left py-5 flex items-center justify-between gap-4 cursor-pointer"
       >
-        <span className="text-base text-foreground/70">{question}</span>
+        <span className="text-base text-foreground">{question}</span>
         <ChevronDown
-          className={cn('size-4 text-muted-foreground/40 shrink-0 transition-transform duration-200', 
+          className={cn('size-4 text-muted-foreground shrink-0 transition-transform duration-200', 
             isOpen ? 'rotate-180' : ''
           )}
         />
       </button>
       {isOpen && (
         <div className="pb-5">
-          <div className="text-sm text-muted-foreground/60 leading-relaxed">{answer}</div>
+          <div className="text-sm text-muted-foreground leading-relaxed">{answer}</div>
         </div>
       )}
     </div>
@@ -45,7 +45,7 @@ function SupportPageContent() {
     }
   }, [searchParams]);
 
-  const linkClass = 'text-foreground/70 hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors';
+  const linkClass = 'text-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors';
 
   return (
     <main className="min-h-screen bg-background">
@@ -58,7 +58,7 @@ function SupportPageContent() {
           </h1>
         </Reveal>
         <Reveal delay={0.08}>
-          <p className="text-base text-muted-foreground/60 leading-relaxed max-w-xl">
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl">
             Email us at{' '}
             <a href="mailto:support@kortix.com" className={linkClass}>support@kortix.com</a>.
             {' '}We typically respond within 24 hours on business days.
@@ -68,7 +68,7 @@ function SupportPageContent() {
         {/* FAQ */}
         <Reveal>
           <div className="mt-14">
-            <h2 className="text-xs uppercase tracking-widest text-muted-foreground/40 mb-5">
+            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
               Frequently Asked Questions
             </h2>
             <div>
@@ -103,21 +103,21 @@ function SupportPageContent() {
         {/* Account Deletion */}
         <Reveal>
           <div ref={accountDeleteRef} id="account-delete" className="mt-14">
-            <h2 className="text-xs uppercase tracking-widest text-muted-foreground/40 mb-5">
+            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
               Account Deletion
             </h2>
-            <p className="text-base text-muted-foreground/60 leading-relaxed mb-4">
+            <p className="text-base text-muted-foreground leading-relaxed mb-4">
               To delete your account, either email{' '}
               <a href="mailto:support@kortix.com" className={linkClass}>support@kortix.com</a>
               {' '}or do it yourself from settings:
             </p>
-            <ol className="text-sm text-muted-foreground/60 leading-relaxed space-y-2 list-decimal ml-4">
+            <ol className="text-sm text-muted-foreground leading-relaxed space-y-2 list-decimal ml-4">
               <li>Click your avatar → Settings</li>
               <li>Scroll to Delete Account</li>
               <li>Choose 14-day grace period or immediate deletion</li>
               <li>Type &quot;delete&quot; to confirm</li>
             </ol>
-            <p className="text-xs text-muted-foreground/40 mt-4">
+            <p className="text-xs text-muted-foreground mt-4">
               All agents, sessions, credentials, and billing data will be permanently removed. This cannot be undone.
             </p>
           </div>
@@ -126,7 +126,7 @@ function SupportPageContent() {
         {/* Legal */}
         <Reveal>
           <div className="mt-14">
-            <h2 className="text-xs uppercase tracking-widest text-muted-foreground/40 mb-5">
+            <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-5">
               Legal
             </h2>
             <div className="flex flex-col gap-1.5">
@@ -145,8 +145,8 @@ function SupportPageContent() {
 
         {/* Contact */}
         <Reveal>
-          <div className="mt-14 pt-8 border-t border-border/50">
-            <p className="text-base text-muted-foreground/60 leading-relaxed">
+          <div className="mt-14 pt-8 border-t border-border">
+            <p className="text-base text-muted-foreground leading-relaxed">
               Still need help? Reach out.
             </p>
             <div className="flex flex-col gap-1.5 mt-3">
@@ -170,7 +170,7 @@ export default function SupportPage() {
     <Suspense fallback={
       <main className="min-h-screen bg-background">
         <div className="max-w-3xl mx-auto px-6 pt-24 sm:pt-32">
-          <div className="text-sm text-muted-foreground/40">Loading...</div>
+          <div className="text-sm text-muted-foreground">Loading...</div>
         </div>
       </main>
     }>

@@ -66,7 +66,7 @@ export function DashboardPromoBanner() {
         transition={{ duration: 0.25, ease: 'easeOut' }}
         className="fixed top-0 left-0 right-0 z-[200] pointer-events-none"
       >
-        <div className="pointer-events-auto border-b border-border/40 bg-background/95 backdrop-blur-md shadow-sm">
+        <div className="pointer-events-auto border-b border-border bg-background/95 backdrop-blur-md shadow-sm">
           <div className="px-4 py-1.5">
             <div className="flex items-center justify-center gap-3 sm:gap-4">
               {/* Content */}
@@ -79,7 +79,7 @@ export function DashboardPromoBanner() {
                 </span>
               </div>
 
-              <span className="text-muted-foreground/50 hidden sm:inline">&middot;</span>
+              <span className="text-muted-foreground hidden sm:inline">&middot;</span>
               
               {/* Countdown */}
               <span className="text-xs text-muted-foreground font-mono hidden sm:inline">
@@ -99,7 +99,7 @@ export function DashboardPromoBanner() {
               {/* Close */}
               <button
                 onClick={handleDismiss}
-                className="ml-1 p-1 rounded-full hover:bg-muted/50 transition-colors text-muted-foreground/60 hover:text-muted-foreground"
+                className="ml-1 p-1 rounded-full hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
                 aria-label="Dismiss"
               >
                 <X className="h-3.5 w-3.5" />

@@ -35,7 +35,7 @@ import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { useAuth } from '@/components/AuthProvider';
-import { createSandbox, ensureSandbox, extractMappedPorts, getSandboxUrl, setupSSH, cancelSandbox, reactivateSandbox, listSandboxes, type SandboxCreateProgress, type SandboxProviderName, type SandboxInfo, type ServerTypeOption, type ChangelogEntry, type SSHSetupResult } from '@/lib/platform-client';
+import { createSandbox, ensureSandbox, extractMappedPorts, getSandboxUrl, getSSHConnection, setupSSH, cancelSandbox, reactivateSandbox, listSandboxes, type SandboxCreateProgress, type SandboxProviderName, type SandboxInfo, type ServerTypeOption, type ChangelogEntry, type SSHConnectionInfo, type SSHSetupResult } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';
 import { isBillingEnabled } from '@/lib/config';
 
@@ -222,9 +222,15 @@ const SSH_META_STORAGE_KEY = 'kortix:ssh-access-meta:v1';
 
 type SSHAccessMeta = {
   ssh_command: string;
+  reconnect_command: string;
+  ssh_config_entry: string;
+  ssh_config_command: string;
   host: string;
   port: number;
   username: string;
+  provider: string;
+  key_name: string;
+  host_alias: string;
   updatedAt: number;
 };
 
@@ -666,8 +672,16 @@ export function InstanceManagerDialog({
       } catch {
         setSSHMeta(null);
       }
+
+      const activeServer = servers.find((s) => s.id === activeServerId);
+      getSSHConnection(activeServer?.instanceId).then((connection: SSHConnectionInfo) => {
+        setSSHMeta((prev) => ({
+          ...connection,
+          updatedAt: prev?.updatedAt || Date.now(),
+        }));
+      }).catch(() => {});
     }
-  }, [open]);
+  }, [open, servers, activeServerId]);
 
   // Focus URL input when entering custom/edit mode
   React.useEffect(() => {
@@ -885,10 +899,7 @@ export function InstanceManagerDialog({
       const result = await setupSSH(activeServer?.instanceId);
       setSSHResult(result);
       const meta: SSHAccessMeta = {
-        ssh_command: result.ssh_command,
-        host: result.host,
-        port: result.port,
-        username: result.username,
+        ...result,
         updatedAt: Date.now(),
       };
       setSSHMeta(meta);
@@ -914,17 +925,16 @@ export function InstanceManagerDialog({
 
   async function savePrivateKey() {
     if (!sshResult) return;
-    const keyName = `kortix_${sshResult.host.replace(/\./g, '-')}`;
     const blob = new Blob([sshResult.private_key], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = keyName;
+    a.download = sshResult.key_name;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success(`Key downloaded — run: chmod 600 ~/Downloads/${keyName}`);
+    toast.success(`Key downloaded — run: chmod 600 ~/Downloads/${sshResult.key_name}`);
   }
 
   // Compute description text based on mode
@@ -1070,11 +1080,11 @@ export function InstanceManagerDialog({
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => copyToClipboard('ssh kortix-sandbox', 'quick-short')}
+                        onClick={() => copyToClipboard(`ssh ${sshMeta.host_alias}`, 'quick-short')}
                         className={copyButtonBaseClass}
                       >
                         {copiedField === 'quick-short' ? <Check className="h-3 w-3 text-primary" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
-                        {copiedField === 'quick-short' ? 'Copied' : 'Copy ssh kortix-sandbox'}
+                        {copiedField === 'quick-short' ? 'Copied' : `Copy ssh ${sshMeta.host_alias}`}
                       </button>
                       <button
                         type="button"
@@ -1157,7 +1167,7 @@ export function InstanceManagerDialog({
                 </button>
               )}
 
-              {!isBillingEnabled() && hasLocalDocker && (
+              {hasLocalDocker && (
                 <button
                   type="button"
                   onClick={() => handleCreateSandbox('local_docker')}
@@ -1176,7 +1186,9 @@ export function InstanceManagerDialog({
                     <p className="text-xs text-muted-foreground/70 mt-0.5">
                       {isCreatingSandbox && creatingProvider === 'local_docker' && sandboxProgress
                         ? sandboxProgress.message
-                        : 'Runs on your machine via Docker'}
+                        : isBillingEnabled()
+                          ? 'Runs on your machine via Docker alongside cloud instances'
+                          : 'Runs on your machine via Docker'}
                     </p>
                   </div>
                 </button>

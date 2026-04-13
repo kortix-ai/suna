@@ -1,14 +1,44 @@
 /**
- * Kortix Tasks API — per-project task CRUD.
- * Mounted at /kortix/tasks in kortix-master.
+ * Kortix Tasks API — task-centric project execution.
+ *
+ * Statuses: todo, in_progress, input_needed, awaiting_review, completed, cancelled
+ *
+ * State machine:
+ *   todo → [POST /start] → in_progress → input_needed/awaiting_review
+ *   awaiting_review → [POST /approve, human review only] → completed
+ *   cancelled is always reachable; can reopen to todo
+ *
+ * POST /:id/start creates a real worker session via OpenCode and binds it to the task.
+ * POST /:id/approve moves awaiting_review → completed (human decision only).
  */
 
 import { Hono } from 'hono'
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { config } from '../config'
+import { createOpencodeClient } from '@opencode-ai/sdk/client'
+import {
+  approveTask,
+  createTask,
+  deleteTask,
+  ensureTasksTable,
+  getTaskById,
+  getTaskResolved,
+  getTaskLiveStatus,
+  listTasksResolved,
+  listTaskEvents,
+  patchTask,
+  startTask,
+  type OpenCodeClientLike,
+  type TaskRow,
+} from '../services/task-service'
 
 const tasksRouter = new Hono()
+
+// ---------------------------------------------------------------------------
+// DB + types
+// ---------------------------------------------------------------------------
 
 function getDb(): Database {
   const workspace = process.env.WORKSPACE_DIR || process.env.KORTIX_WORKSPACE || '/workspace'
@@ -19,65 +49,163 @@ function getDb(): Database {
   return db
 }
 
-interface TaskRow {
-  id: string; project_id: string; title: string; description: string
-  status: string; result: string | null; priority: string
-  created_at: string; updated_at: string
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+let _ocClient: ReturnType<typeof createOpencodeClient> | null = null
+function getOpenCodeClient() {
+  if (!_ocClient) {
+    _ocClient = createOpencodeClient({
+      baseUrl: `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`,
+    })
+  }
+  return _ocClient
 }
 
+// ---------------------------------------------------------------------------
 // GET /kortix/tasks?project_id=xxx&status=yyy
-tasksRouter.get('/', (c) => {
+// ---------------------------------------------------------------------------
+tasksRouter.get('/', async (c) => {
   try {
     const db = getDb()
-    const projectId = c.req.query('project_id')
-    const status = c.req.query('status')
-    let q = 'SELECT * FROM tasks WHERE 1=1'
-    const params: Record<string, string> = {}
-    if (projectId) { q += ' AND project_id=$pid'; params.$pid = projectId }
-    if (status) { q += ' AND status=$s'; params.$s = status }
-    q += " ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 WHEN 'low' THEN 2 END, created_at DESC LIMIT 100"
-    return c.json(db.prepare(q).all(params))
-  } catch { return c.json([]) }
+    ensureTasksTable(db)
+    const tasks = await listTasksResolved(db, getOpenCodeClient() as OpenCodeClientLike, {
+      projectId: c.req.query('project_id') || undefined,
+      status: c.req.query('status') || undefined,
+    })
+    return c.json(tasks)
+  } catch {
+    return c.json([])
+  }
 })
 
+// ---------------------------------------------------------------------------
 // GET /kortix/tasks/:id
-tasksRouter.get('/:id', (c) => {
+// ---------------------------------------------------------------------------
+tasksRouter.get('/:id', async (c) => {
   try {
     const db = getDb()
-    const task = db.prepare('SELECT * FROM tasks WHERE id=$id').get({ $id: c.req.param('id') }) as TaskRow | null
+    ensureTasksTable(db)
+    const task = await getTaskResolved(db, getOpenCodeClient() as OpenCodeClientLike, c.req.param('id'))
     if (!task) return c.json({ error: 'Not found' }, 404)
     return c.json(task)
-  } catch (e) { return c.json({ error: String(e) }, 500) }
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
 })
 
+// ---------------------------------------------------------------------------
+// GET /kortix/tasks/:id/status
+// ---------------------------------------------------------------------------
+tasksRouter.get('/:id/status', async (c) => {
+  try {
+    const db = getDb()
+    ensureTasksTable(db)
+    const task = getTaskById(db, c.req.param('id'))
+    if (!task) return c.json({ error: 'Not found' }, 404)
+    return c.json(await getTaskLiveStatus(db, getOpenCodeClient() as OpenCodeClientLike, task.id))
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// GET /kortix/tasks/:id/events
+// ---------------------------------------------------------------------------
+tasksRouter.get('/:id/events', async (c) => {
+  try {
+    const db = getDb()
+    ensureTasksTable(db)
+    const task = getTaskById(db, c.req.param('id'))
+    if (!task) return c.json({ error: 'Not found' }, 404)
+    return c.json(listTaskEvents(db, task.id))
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// POST /kortix/tasks  — create a new task
+// ---------------------------------------------------------------------------
+tasksRouter.post('/', async (c) => {
+  try {
+    const db = getDb()
+    const body = await c.req.json<Partial<TaskRow>>()
+    if (!body.project_id || !body.title) {
+      return c.json({ error: 'project_id and title required' }, 400)
+    }
+    return c.json(createTask(db, {
+      project_id: body.project_id,
+      title: body.title,
+      description: body.description,
+      verification_condition: body.verification_condition,
+      status: body.status,
+    }))
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// POST /kortix/tasks/:id/start — start execution (creates worker session)
+// ---------------------------------------------------------------------------
+tasksRouter.post('/:id/start', async (c) => {
+  try {
+    const db = getDb()
+    const body = await c.req.json<{ session_id?: string }>().catch(() => ({} as { session_id?: string }))
+    const existing = getTaskById(db, c.req.param('id'))
+    if (!existing) return c.json({ error: 'Not found' }, 404)
+    return c.json(await startTask({
+      db,
+      client: getOpenCodeClient() as OpenCodeClientLike,
+      taskId: c.req.param('id'),
+      parentSessionId: body.session_id || null,
+      workerAgent: 'worker',
+    }))
+  } catch (e) {
+    return c.json({ error: String(e) }, 400)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// POST /kortix/tasks/:id/approve  — HUMAN review approval → completed
+// ---------------------------------------------------------------------------
+tasksRouter.post('/:id/approve', async (c) => {
+  try {
+    return c.json(approveTask(getDb(), c.req.param('id')))
+  } catch (e) {
+    return c.json({ error: String(e) }, 400)
+  }
+})
+
+// ---------------------------------------------------------------------------
 // PATCH /kortix/tasks/:id
+// ---------------------------------------------------------------------------
 tasksRouter.patch('/:id', async (c) => {
   try {
     const db = getDb()
-    const id = c.req.param('id')
     const body = await c.req.json<Partial<TaskRow>>()
-    const task = db.prepare('SELECT * FROM tasks WHERE id=$id').get({ $id: id }) as TaskRow | null
-    if (!task) return c.json({ error: 'Not found' }, 404)
-    const now = new Date().toISOString()
-    if (body.status) db.prepare('UPDATE tasks SET status=$v, updated_at=$now WHERE id=$id').run({ $v: body.status, $now: now, $id: id })
-    if (body.title) db.prepare('UPDATE tasks SET title=$v, updated_at=$now WHERE id=$id').run({ $v: body.title, $now: now, $id: id })
-    if (body.description) db.prepare('UPDATE tasks SET description=$v, updated_at=$now WHERE id=$id').run({ $v: body.description, $now: now, $id: id })
-    if (body.priority) db.prepare('UPDATE tasks SET priority=$v, updated_at=$now WHERE id=$id').run({ $v: body.priority, $now: now, $id: id })
-    if (body.result !== undefined) db.prepare('UPDATE tasks SET result=$v, updated_at=$now WHERE id=$id').run({ $v: body.result, $now: now, $id: id })
-    return c.json(db.prepare('SELECT * FROM tasks WHERE id=$id').get({ $id: id }))
-  } catch (e) { return c.json({ error: String(e) }, 500) }
+    return c.json(patchTask(db, c.req.param('id'), body))
+  } catch (e) {
+    return c.json({ error: String(e) }, 400)
+  }
 })
 
+// ---------------------------------------------------------------------------
 // DELETE /kortix/tasks/:id
+// ---------------------------------------------------------------------------
 tasksRouter.delete('/:id', (c) => {
   try {
     const db = getDb()
     const id = c.req.param('id')
-    const task = db.prepare('SELECT * FROM tasks WHERE id=$id').get({ $id: id }) as TaskRow | null
+    const task = getTaskById(db, id)
     if (!task) return c.json({ error: 'Not found' }, 404)
-    db.prepare('DELETE FROM tasks WHERE id=$id').run({ $id: id })
+    deleteTask(db, id)
     return c.json({ deleted: true })
-  } catch (e) { return c.json({ error: String(e) }, 500) }
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
 })
 
 export { tasksRouter }

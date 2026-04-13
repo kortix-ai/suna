@@ -116,9 +116,8 @@ export function FullScreenPresentationViewer({
       const sanitizedPresentationName = sanitizeFilename(presentationName);
       
       const metadataUrl = constructHtmlPreviewUrl(
-        sandboxUrl, 
         `presentations/${sanitizedPresentationName}/metadata.json`,
-        subdomainOpts
+        subdomainOpts,
       );
       
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
@@ -381,7 +380,7 @@ export function FullScreenPresentationViewer({
         );
       }
 
-      const slideUrl = constructHtmlPreviewUrl(sandboxUrl, slide.file_path, subdomainOpts);
+      const slideUrl = constructHtmlPreviewUrl(slide.file_path, subdomainOpts);
       // Add cache-busting to iframe src to ensure fresh content
       const slideUrlWithCacheBust = `${slideUrl}?t=${refreshTimestamp}`;
 

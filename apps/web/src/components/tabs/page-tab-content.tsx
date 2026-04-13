@@ -1,6 +1,6 @@
 'use client';
 
-import { lazy, Suspense, type ComponentType } from 'react';
+import { lazy, Suspense, useMemo, type ComponentType } from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
@@ -119,6 +119,10 @@ const ProjectDetailPage = lazy(() =>
 	import('@/app/(dashboard)/projects/[id]/page'),
 );
 
+const TaskDetailPage = lazy(() =>
+	import('@/app/(dashboard)/tasks/[id]/page'),
+);
+
 // ---------------------------------------------------------------------------
 // Route → Component mapping
 // ---------------------------------------------------------------------------
@@ -172,19 +176,34 @@ function resolveComponent(routeKey: string): { Component: ComponentType<any>; pa
 		return { Component: ProjectDetailPage, params: { id: decodeURIComponent(projectMatch[1]) } };
 	}
 
+	const taskMatch = routeKey.match(/^\/tasks\/([^/]+)$/);
+	if (taskMatch) {
+		return { Component: TaskDetailPage, params: { id: decodeURIComponent(taskMatch[1]) } };
+	}
+
 	return null;
 }
 
 export function PageTabContent({ href }: { href: string }) {
-	let routeKey = href;
-	try {
-		const parsed = new URL(href, window.location.origin);
-		routeKey = parsed.pathname;
-	} catch {
-		routeKey = href.split('?')[0]?.split('#')[0] || href;
-	}
+	const routeKey = useMemo(() => {
+		try {
+			return new URL(href, window.location.origin).pathname;
+		} catch {
+			return href.split('?')[0]?.split('#')[0] || href;
+		}
+	}, [href]);
 
-	const resolved = resolveComponent(routeKey);
+	const resolved = useMemo(() => resolveComponent(routeKey), [routeKey]);
+
+	// IMPORTANT: memoize the params Promise so we hand the SAME promise
+	// reference to `use()` across re-renders. A new Promise instance every
+	// render makes React.use() re-suspend → Suspense fallback flashes →
+	// the user sees a loader spinner every time the parent re-renders.
+	const paramsPromise = useMemo(
+		() => (resolved?.params ? Promise.resolve(resolved.params) : undefined),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[resolved?.params && JSON.stringify(resolved.params)],
+	);
 
 	if (!resolved) {
 		return (
@@ -194,7 +213,7 @@ export function PageTabContent({ href }: { href: string }) {
 		);
 	}
 
-	const { Component, params } = resolved;
+	const { Component } = resolved;
 
 	return (
 		<Suspense
@@ -204,7 +223,7 @@ export function PageTabContent({ href }: { href: string }) {
 				</div>
 			}
 		>
-			<Component params={params ? Promise.resolve(params) : undefined} />
+			<Component params={paramsPromise} />
 		</Suspense>
 	);
 }

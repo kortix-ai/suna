@@ -327,8 +327,6 @@ function AutoTopupPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
       <div className="w-full rounded-xl border bg-card/50 p-4">
         <AutoTopupCard
           defaultEnabled={true}
-          defaultThreshold={0}
-          defaultAmount={5}
           configRef={configRef}
         />
       </div>

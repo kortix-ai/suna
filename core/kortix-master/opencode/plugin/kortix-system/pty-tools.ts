@@ -2,7 +2,7 @@ import { type Plugin, tool } from '@opencode-ai/plugin'
 import { DEFAULT_READ_LIMIT, MAX_LINE_LENGTH } from './pty/opencode-pty/src/shared/constants.ts'
 import { formatLine, formatSessionInfo } from './pty/opencode-pty/src/plugin/pty/formatters.ts'
 import { initPermissions, checkCommandPermission, checkWorkdirPermission } from './pty/opencode-pty/src/plugin/pty/permissions.ts'
-import { initManager, manager, isBunPtyAvailable, bunPtyLoadError } from './pty/opencode-pty/src/plugin/pty/manager.ts'
+import { initManager, manager } from './pty/opencode-pty/src/plugin/pty/manager.ts'
 
 const ETX = String.fromCharCode(3)
 const EOT = String.fromCharCode(4)
@@ -88,9 +88,6 @@ const PtyToolsPlugin: Plugin = async ({ client, directory, serverUrl }) => {
           notifyOnExit: tool.schema.boolean().optional().describe('Notify when the process exits'),
         },
         async execute(args, ctx) {
-          if (!isBunPtyAvailable()) {
-            throw new Error(`[pty_spawn] PTY backend unavailable. ${bunPtyLoadError() ?? ''}`.trim())
-          }
           await checkCommandPermission(args.command, args.args ?? [])
           if (args.workdir) await checkWorkdirPermission(args.workdir)
           const info = await manager.spawn({

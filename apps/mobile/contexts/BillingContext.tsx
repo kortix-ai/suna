@@ -1,300 +1,103 @@
 /**
- * Billing Context
+ * Billing Context — DISABLED
  *
- * Global billing state management
- * Combines subscription, credit balance, and billing status
+ * Billing is currently disabled for self-hosted / local development.
+ * This module exports the same interface as the real BillingProvider
+ * but returns static no-op values so all consumers continue to work
+ * without making any billing API calls.
+ *
+ * To re-enable billing, restore the original implementation from git history.
  */
 
-import React, { createContext, useContext, useCallback, ReactNode } from 'react';
-import {
-  useSubscription,
-  useCreditBalance,
-  useBillingStatus,
-  billingKeys,
-  type SubscriptionInfo,
-  type CreditBalance,
-  type BillingStatus,
-} from '@/lib/billing';
-import { useQueryClient } from '@tanstack/react-query';
-import { useAuthContext } from './AuthContext';
-import { log } from '@/lib/logger';
+import React, { createContext, useContext, ReactNode } from 'react';
+import type { SubscriptionInfo, CreditBalance, BillingStatus } from '@/lib/billing';
 
 // ============================================================================
-// Context Types
+// Context Types (unchanged — consumers depend on this shape)
 // ============================================================================
 
 export interface BillingContextType {
-  // Data
   subscriptionData: SubscriptionInfo | null;
   creditBalance: CreditBalance | null;
   billingStatus: BillingStatus | null;
 
-  // Loading states
   isLoading: boolean;
   subscriptionLoading: boolean;
   balanceLoading: boolean;
   statusLoading: boolean;
 
-  // Errors
   error: Error | null;
 
-  // Actions
   refetchAll: () => void;
   refetchSubscription: () => void;
   refetchBalance: () => void;
   refetchStatus: () => void;
   checkBillingStatus: () => Promise<boolean>;
 
-  // Computed states
   hasActiveSubscription: boolean;
   hasFreeTier: boolean;
   needsSubscription: boolean;
 }
 
 // ============================================================================
-// Context Creation
+// Static disabled value — no API calls, no loading, no errors
 // ============================================================================
 
-const BillingContext = createContext<BillingContextType | null>(null);
+const noop = () => {};
+
+const DISABLED_VALUE: BillingContextType = {
+  subscriptionData: null,
+  creditBalance: null,
+  billingStatus: null,
+
+  isLoading: false,
+  subscriptionLoading: false,
+  balanceLoading: false,
+  statusLoading: false,
+
+  error: null,
+
+  refetchAll: noop,
+  refetchSubscription: noop,
+  refetchBalance: noop,
+  refetchStatus: noop,
+  checkBillingStatus: async () => true, // Always allow — no billing gate
+
+  hasActiveSubscription: true, // Treat as "subscribed" so nothing is gated
+  hasFreeTier: false,
+  needsSubscription: false,
+};
 
 // ============================================================================
-// Provider Component
+// Context & Provider
 // ============================================================================
+
+const BillingContext = createContext<BillingContextType>(DISABLED_VALUE);
 
 interface BillingProviderProps {
   children: ReactNode;
 }
 
+/**
+ * No-op billing provider. Renders children directly without any billing logic.
+ * All billing hooks return static "billing disabled" values.
+ */
 export function BillingProvider({ children }: BillingProviderProps) {
-  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
-  const queryClient = useQueryClient();
-
-  // Handle billing cache based on auth state
-  const prevAuthRef = React.useRef<boolean | null>(null);
-  React.useEffect(() => {
-    if (authLoading) return;
-
-    const wasAuthenticated = prevAuthRef.current;
-    const justLoggedIn = wasAuthenticated === false && isAuthenticated === true;
-    const justLoggedOut = wasAuthenticated === true && isAuthenticated === false;
-
-    prevAuthRef.current = isAuthenticated;
-
-    if (justLoggedOut) {
-      // User logged out - clear all billing data
-      log.log('🚫 User logged out - clearing billing cache');
-      queryClient.cancelQueries({ queryKey: billingKeys.all });
-      queryClient.removeQueries({ queryKey: billingKeys.all });
-    } else if (justLoggedIn) {
-      // User just logged in - immediately fetch fresh account state
-      log.log('✅ User logged in - fetching fresh account state immediately');
-      queryClient.removeQueries({ queryKey: billingKeys.all });
-      // Immediately invalidate and refetch - don't wait
-      queryClient.invalidateQueries({ 
-        queryKey: billingKeys.all,
-        refetchType: 'active' // Force active queries to refetch
-      });
-    }
-  }, [isAuthenticated, authLoading, queryClient]);
-
-  // Fetch all billing data (only when authenticated AND not loading)
-  const shouldFetchBilling = isAuthenticated === true && !authLoading;
-
-  const {
-    data: subscriptionData,
-    isLoading: subscriptionLoading,
-    isFetching: subscriptionFetching,
-    error: subscriptionError,
-    refetch: refetchSubscription,
-  } = useSubscription({
-    enabled: shouldFetchBilling,
-  });
-
-  const {
-    data: creditBalance,
-    isLoading: balanceLoading,
-    isFetching: balanceFetching,
-    error: balanceError,
-    refetch: refetchBalance,
-  } = useCreditBalance({
-    enabled: shouldFetchBilling,
-  });
-
-  const {
-    data: billingStatus,
-    isLoading: statusLoading,
-    isFetching: statusFetching,
-    error: statusError,
-    refetch: refetchStatus,
-  } = useBillingStatus({
-    enabled: shouldFetchBilling,
-  });
-
-  // Loading = true when:
-  // 1. Auth is still loading (we don't know if we need to fetch yet)
-  // 2. We should be fetching but don't have data yet (initial fetch)
-  // 3. Any query is actively loading
-  const needsInitialFetch = shouldFetchBilling && subscriptionData === undefined;
-  const isLoading =
-    authLoading || needsInitialFetch || subscriptionLoading || balanceLoading || statusLoading;
-
-  // Debug logging for billing state
-  React.useEffect(() => {
-    const tierKey = subscriptionData?.tier_key || subscriptionData?.subscription?.tier_key;
-    log.log('💰 Billing state:', {
-      authLoading,
-      shouldFetchBilling,
-      subscriptionData: subscriptionData !== undefined ? 'has data' : 'undefined',
-      tierKey,
-      tierName: subscriptionData?.tier?.name,
-      subscriptionLoading,
-      needsInitialFetch,
-      isLoading,
-    });
-    
-    // // Log full subscription data when available (for debugging)
-    // if (subscriptionData) {
-    //   log.log('📋 [BillingContext] Full subscriptionData:', JSON.stringify({
-    //     status: subscriptionData.status,
-    //     plan_name: subscriptionData.plan_name,
-    //     tier_key: subscriptionData.tier_key,
-    //     billing_period: subscriptionData.billing_period,
-    //     provider: subscriptionData.provider,
-    //     is_trial: subscriptionData.is_trial,
-    //     trial_status: subscriptionData.trial_status,
-    //     has_scheduled_change: subscriptionData.has_scheduled_change,
-    //     subscription: subscriptionData.subscription ? {
-    //       id: subscriptionData.subscription.id ? '✓' : '✗',
-    //       status: subscriptionData.subscription.status,
-    //       tier_key: subscriptionData.subscription.tier_key,
-    //       cancel_at_period_end: subscriptionData.subscription.cancel_at_period_end,
-    //     } : null,
-    //     tier: subscriptionData.tier,
-    //     credits: subscriptionData.credits,
-    //     revenuecat_product_id: (subscriptionData as any).revenuecat_product_id,
-    //   }, null, 2));
-    // }
-  }, [
-    authLoading,
-    shouldFetchBilling,
-    subscriptionData,
-    subscriptionLoading,
-    needsInitialFetch,
-    isLoading,
-  ]);
-
-  // Combine errors (first error encountered)
-  const error = (subscriptionError || balanceError || statusError) as Error | null;
-
-  // Refetch all billing data
-  const refetchAll = useCallback(() => {
-    log.log('🔄 Refetching all billing data...');
-    queryClient.invalidateQueries({ queryKey: billingKeys.all });
-  }, [queryClient]);
-
-  // Check billing status and return whether user can proceed
-  const checkBillingStatus = useCallback(async (): Promise<boolean> => {
-    log.log('💳 Checking billing status...');
-
-    if (!isAuthenticated) {
-      log.log('❌ User not authenticated');
-      return false;
-    }
-
-    try {
-      // Refetch latest status
-      const { data } = await refetchStatus();
-
-      // can_run is nested under credits in AccountState
-      const canRun = (data as any)?.can_run ?? data?.credits?.can_run;
-      if (canRun) {
-        log.log('✅ Billing check passed');
-        return true;
-      } else {
-        log.log('❌ Insufficient credits');
-        return false;
-      }
-    } catch (err) {
-      log.error('❌ Billing check error:', err);
-      return false;
-    }
-  }, [isAuthenticated, refetchStatus]);
-
-  // Computed states for easier access
-  // Check tier_key for subscription status (matches frontend logic)
-  const tierKey = subscriptionData?.tier_key || subscriptionData?.subscription?.tier_key;
-
-  const hasActiveSubscription = Boolean(tierKey && tierKey !== 'none' && tierKey !== 'free');
-
-  // Free tier = tier_key is 'free', 'none', or not set
-  const hasFreeTier = Boolean(!tierKey || tierKey === 'free' || tierKey === 'none');
-
-  const needsSubscription = !hasActiveSubscription;
-
-  // Context value
-  const value: BillingContextType = {
-    // Data
-    subscriptionData: subscriptionData || null,
-    creditBalance: creditBalance || null,
-    billingStatus: billingStatus || null,
-
-    // Loading states
-    isLoading,
-    subscriptionLoading,
-    balanceLoading,
-    statusLoading,
-
-    // Errors
-    error,
-
-    // Actions
-    refetchAll,
-    refetchSubscription,
-    refetchBalance,
-    refetchStatus,
-    checkBillingStatus,
-
-    // Computed states
-    hasActiveSubscription,
-    hasFreeTier,
-    needsSubscription,
-  };
-
-  return <BillingContext.Provider value={value}>{children}</BillingContext.Provider>;
+  return <BillingContext.Provider value={DISABLED_VALUE}>{children}</BillingContext.Provider>;
 }
 
 // ============================================================================
-// Hook
+// Hooks (same API, static returns)
 // ============================================================================
 
 export function useBillingContext(): BillingContextType {
-  const context = useContext(BillingContext);
-
-  if (!context) {
-    throw new Error('useBillingContext must be used within a BillingProvider');
-  }
-
-  return context;
+  return useContext(BillingContext);
 }
 
-// Convenience hook for checking if user has credits
-export function useHasCredits(minimumCredits = 0): boolean {
-  const { creditBalance } = useBillingContext();
-
-  if (!creditBalance) {
-    return false;
-  }
-
-  return creditBalance.balance >= minimumCredits;
+export function useHasCredits(_minimumCredits = 0): boolean {
+  return true; // Always has credits when billing is disabled
 }
 
-// Convenience hook for subscription tier
 export function useSubscriptionTier(): string {
-  const { subscriptionData } = useBillingContext();
-
-  if (!subscriptionData) {
-    return 'free';
-  }
-
-  return subscriptionData.tier.name;
+  return 'none'; // No tier concept when billing is disabled
 }

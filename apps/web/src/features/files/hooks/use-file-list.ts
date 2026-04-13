@@ -42,11 +42,17 @@ export function useFileList(
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
   });
 
-  // Filter hidden files client-side so the cache stays complete
+  // Filter hidden files client-side so the cache stays complete.
+  // .kortix and .opencode are always shown — they are elevated system dirs.
   const data = useMemo(() => {
     if (!query.data) return query.data;
     if (showHidden) return query.data;
-    return query.data.filter((node) => !node.name.startsWith('.'));
+    return query.data.filter(
+      (node) =>
+        !node.name.startsWith('.') ||
+        node.name === '.kortix' ||
+        node.name === '.opencode',
+    );
   }, [query.data, showHidden]);
 
   return { ...query, data };

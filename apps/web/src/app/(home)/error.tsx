@@ -66,7 +66,7 @@ export default function HomeError({
         </h1>
 
         {/* Description */}
-        <p className="px-2 text-center text-sm leading-relaxed text-foreground/60 sm:text-base">
+        <p className="px-2 text-center text-sm leading-relaxed text-muted-foreground sm:text-base">
           We encountered an unexpected error. Please try again or return to the homepage.
         </p>
 

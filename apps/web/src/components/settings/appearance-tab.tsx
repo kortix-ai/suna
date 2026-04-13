@@ -3,54 +3,19 @@
 import * as React from 'react';
 import { Check, Monitor, Sun, Moon, Palette, ImageIcon } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import Image from 'next/image';
-import { Button } from '@/components/ui/button';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { transitionFromElement } from '@/lib/view-transition';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { THEMES, DEFAULT_THEME_ID, type KortixTheme } from '@/lib/themes';
 import { WALLPAPERS, DEFAULT_WALLPAPER_ID, type Wallpaper } from '@/lib/wallpapers';
+import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 
-function ThemeItem({
-  theme,
-  isActive,
-  onSelect,
-}: {
-  theme: KortixTheme;
-  isActive: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      onClick={onSelect}
-      className={cn(
-        'flex items-center gap-3 w-full h-auto px-3 py-2.5 rounded-lg text-left justify-start',
-        isActive && 'bg-accent'
-      )}
-    >
-      <span
-        className="size-5 rounded-full shrink-0 ring-1 ring-border/30"
-        style={{ backgroundColor: theme.accentColor }}
-      />
-      <span className="flex items-center gap-2 min-w-0">
-        <span className="text-sm font-medium text-foreground truncate">
-          {theme.name}
-        </span>
-        {theme.id === DEFAULT_THEME_ID && (
-          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
-            Default
-          </span>
-        )}
-      </span>
-      {isActive && (
-        <Check className="size-4 text-primary ml-auto shrink-0" />
-      )}
-    </Button>
-  );
-}
+// Reference "real page" size that WallpaperBackground is tuned for.
+// The preview renders the component at this size inside a card and scales
+// it down via CSS transform so the thumbnail is an exact, identical
+// representation of what users see on real pages.
+const PREVIEW_REF_WIDTH = 1280;
+const PREVIEW_REF_HEIGHT = 720;
 
 function WallpaperCard({
   wallpaper,
@@ -61,63 +26,54 @@ function WallpaperCard({
   isActive: boolean;
   onSelect: () => void;
 }) {
-  const isSvg = wallpaper.type === 'svg';
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const [scale, setScale] = React.useState(0.15);
+
+  React.useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setScale(w / PREVIEW_REF_WIDTH);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={cn(
-        'group relative cursor-pointer rounded-lg overflow-hidden transition-colors duration-200',
-        'ring-2 ring-offset-1 ring-offset-background',
-        isActive
-          ? 'ring-primary'
-          : 'ring-transparent hover:ring-border/50'
-      )}
+      className="group relative cursor-pointer rounded-lg text-left"
     >
-      <div className="relative w-full aspect-video bg-muted">
-        {isSvg ? (
-          /* SVG brandmark — theme-aware: dark bg in dark mode, light bg in light mode */
-          <>
-            <div className="absolute inset-0 bg-zinc-100 dark:bg-zinc-950 flex items-center justify-center overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={wallpaper.thumbnailUrl}
-                alt={wallpaper.name}
-                className="w-[200%] h-auto object-contain select-none opacity-30 dark:opacity-30 invert dark:invert-0"
-                draggable={false}
-              />
-            </div>
-          </>
-        ) : (
-          /* Image wallpaper — show light variant in light mode, dark in dark */
-          <>
-            <div className="absolute inset-0 dark:hidden">
-              <Image
-                src={wallpaper.lightUrl!}
-                alt={wallpaper.name}
-                fill
-                className="object-cover"
-                unoptimized
-                sizes="160px"
-              />
-            </div>
-            <div className="absolute inset-0 hidden dark:block">
-              <Image
-                src={wallpaper.darkUrl!}
-                alt={wallpaper.name}
-                fill
-                className="object-cover"
-                unoptimized
-                sizes="160px"
-              />
-            </div>
-          </>
+      <div
+        ref={containerRef}
+        className={cn(
+          'relative w-full aspect-video bg-background overflow-hidden rounded-md isolate border transition-colors duration-200',
+          isActive ? 'border-primary' : 'border-border group-hover:border-border/80'
         )}
+      >
+        {/* Render the real WallpaperBackground at its native reference size
+            (1280×720) and scale it down to fit the thumbnail. This guarantees
+            the preview is pixel-identical to what the user sees on real pages. */}
+        <div
+          className="absolute top-0 left-0"
+          style={{
+            width: PREVIEW_REF_WIDTH,
+            height: PREVIEW_REF_HEIGHT,
+            transformOrigin: 'top left',
+            transform: `scale(${scale})`,
+          }}
+          aria-hidden="true"
+        >
+          <WallpaperBackground wallpaperId={wallpaper.id} />
+        </div>
         {/* Hover overlay */}
         <div
           className={cn(
-            'absolute inset-0 transition-opacity duration-200',
+            'absolute inset-0 transition-opacity duration-200 pointer-events-none',
             isActive ? 'bg-black/10' : 'bg-black/0 group-hover:bg-black/10'
           )}
         />
@@ -139,7 +95,7 @@ function WallpaperCard({
          </span>
        </div>
      </button>
-   );
+  );
 }
 
 const BASE_MODES = [
@@ -150,8 +106,6 @@ const BASE_MODES = [
 
 export function AppearanceTab() {
   const { theme: baseMode, setTheme: setBaseMode } = useTheme();
-  const themeId = useUserPreferencesStore((s) => s.preferences.themeId);
-  const setThemeId = useUserPreferencesStore((s) => s.setThemeId);
   const wallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID
   );
@@ -162,15 +116,6 @@ export function AppearanceTab() {
     setMounted(true);
   }, []);
 
-  React.useEffect(() => {
-    if (!THEMES.some((theme) => theme.id === themeId)) {
-      setThemeId(DEFAULT_THEME_ID);
-    }
-  }, [themeId, setThemeId]);
-
-  const hasCustomSettings =
-    themeId !== DEFAULT_THEME_ID || wallpaperId !== DEFAULT_WALLPAPER_ID;
-
   return (
     <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
       <div>
@@ -179,7 +124,7 @@ export function AppearanceTab() {
           <h3 className="text-lg font-semibold">Appearance</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Choose a theme, color mode, and wallpaper.
+          Choose a color mode and wallpaper.
         </p>
       </div>
 
@@ -229,42 +174,7 @@ export function AppearanceTab() {
           </div>
         </div>
 
-        <div className="border-t pt-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Palette className="size-4 text-muted-foreground" />
-            <label className="text-xs font-medium text-muted-foreground">
-              Theme Palette
-            </label>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            {THEMES.map((theme) => (
-              <ThemeItem
-                key={theme.id}
-                theme={theme}
-                isActive={themeId === theme.id}
-                onSelect={() => setThemeId(theme.id)}
-              />
-            ))}
-          </div>
-        </div>
       </div>
-
-      {hasCustomSettings && (
-        <div className="pt-3 border-t">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-xs text-muted-foreground"
-            onClick={() => {
-              setThemeId(DEFAULT_THEME_ID);
-              setWallpaperId(DEFAULT_WALLPAPER_ID);
-            }}
-          >
-            Reset to defaults
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

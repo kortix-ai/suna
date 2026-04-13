@@ -1,10 +1,10 @@
 import Docker from 'dockerode';
-import { randomBytes } from 'crypto';
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { config, SANDBOX_VERSION } from '../../config';
 import { generateSandboxKeyPair } from '../../shared/crypto';
+import { getAuthCandidates, getSandboxServiceKeyByExternalId } from '../services/sandbox-auth';
 import type {
   SandboxProvider,
   ProviderName,
@@ -33,6 +33,24 @@ const PORT_MAP: Record<string, string> = {
 };
 
 const BASE_URL = `http://localhost:${PORT_MAP['8000']}`;
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `"'"'`)}'`;
+}
+
+function buildDockerEnvWriteCommand(payload: Record<string, string>, targetDir: string): string {
+  const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+  return `mkdir -p ${targetDir} && ENV_WRITE_PAYLOAD_B64=${shellQuote(payloadB64)} python3 - <<PY
+import base64, json, os
+from pathlib import Path
+
+target_dir = Path(${JSON.stringify(targetDir)})
+target_dir.mkdir(parents=True, exist_ok=True)
+payload = json.loads(base64.b64decode(os.environ["ENV_WRITE_PAYLOAD_B64"]).decode("utf-8"))
+for key, value in payload.items():
+    (target_dir / key).write_text(value)
+PY`;
+}
 
 const EXPOSED_PORTS: Record<string, {}> = Object.fromEntries(
   Object.keys(PORT_MAP).map((p) => [`${p}/tcp`, {}]),
@@ -416,6 +434,7 @@ export class LocalDockerProvider implements SandboxProvider {
           Image: 'alpine:latest',
           Cmd: ['sh', '-c', [
             // Use 911:911 (abc user from linuxserver base image), NOT 1000
+            'for p in /workspace/.secrets /workspace/.lss; do if [ -L "$p" ] && [ "$(readlink "$p" 2>/dev/null || true)" = "$p" ]; then rm -f "$p"; fi; done',
             'chown -R 911:911 /workspace 2>/dev/null || true',
             'find /workspace -name "*.db-wal" -o -name "*.db-shm" 2>/dev/null | xargs rm -f',
             'echo "volume prepared"',
@@ -529,16 +548,7 @@ export class LocalDockerProvider implements SandboxProvider {
   }
 
   /**
-   * Ensure the running container has the correct values for all 3 core env vars:
-   *   - KORTIX_API_URL        (how sandbox reaches kortix-api)
-   *   - KORTIX_TOKEN           (sandbox → kortix-api auth)
-   *   - INTERNAL_SERVICE_KEY   (kortix-api → sandbox auth)
-   *
-   * If any differ from what kortix-api has, inject via s6 env dir and restart
-   * kortix-master so the sandbox picks them up without a full container recreate.
-   */
-  /**
-   * Sync the 3 core env vars to the sandbox via the secrets manager API.
+   * Sync the non-auth core env vars to the sandbox via the secrets manager API.
    *
    * Uses kortix-master's /env endpoint which does triple-write:
    *   1. SecretStore (.secrets.json — encrypted at rest)
@@ -549,10 +559,8 @@ export class LocalDockerProvider implements SandboxProvider {
    * take effect immediately — no service restart needed.
    * Only POSTs when values actually differ from what's currently set.
    *
-   * NOTE: KORTIX_TOKEN and TUNNEL_TOKEN are NOT synced here. They are managed
-   * by injectSandboxToken (at API startup) and syncTokenToContainer (at runtime
-   * when ensure() is called with a caller-provided token). This prevents
-   * clobbering the authoritative DB token with stale Docker creation-time values.
+   * Auth aliases (KORTIX_TOKEN / INTERNAL_SERVICE_KEY / TUNNEL_TOKEN) are
+   * synced separately from the canonical sandbox service key in the DB.
    */
   async syncCoreEnvVars(): Promise<void> {
     if (this._serviceKeySynced) return;
@@ -567,7 +575,6 @@ export class LocalDockerProvider implements SandboxProvider {
     const routerBase = `${sandboxApiBase}/v1/router`;
     const desired: Record<string, string> = {
       KORTIX_API_URL: sandboxApiBase,
-      INTERNAL_SERVICE_KEY: config.INTERNAL_SERVICE_KEY,
       TUNNEL_API_URL: sandboxApiBase,
       // Tool proxy URLs — route through kortix-api router so sandbox tools
       // auth with KORTIX_TOKEN and the router injects real upstream API keys.
@@ -579,9 +586,10 @@ export class LocalDockerProvider implements SandboxProvider {
 
     // Read current state from the live master env (s6 env dir) — NOT from
     // Docker inspect which only has stale creation-time values.
+    const authCandidates = getAuthCandidates(await this.getCanonicalServiceKey());
     let currentEnv: Record<string, string> = {};
     try {
-      currentEnv = await this.fetchMasterEnv();
+      currentEnv = await this.fetchMasterEnv(authCandidates);
     } catch {
       // Master not ready yet — fall back to Docker inspect for URL/key only
       const containerEnv = await this.getContainerEnv();
@@ -606,7 +614,7 @@ export class LocalDockerProvider implements SandboxProvider {
 
     console.log(`[LOCAL-DOCKER] Syncing ${Object.keys(stale).join(', ')} via secrets manager...`);
     try {
-      await this.postMasterEnv(stale);
+      await this.postMasterEnv(stale, authCandidates);
       this._serviceKeySynced = true;
       console.log(`[LOCAL-DOCKER] Core env vars synced: ${Object.keys(stale).join(', ')}`);
     } catch (err: any) {
@@ -623,34 +631,41 @@ export class LocalDockerProvider implements SandboxProvider {
   /**
    * GET /env from kortix-master — returns all current env vars.
    */
-  private async fetchMasterEnv(): Promise<Record<string, string>> {
+  private async fetchMasterEnv(authCandidates: string[]): Promise<Record<string, string>> {
     const url = `http://localhost:${config.SANDBOX_PORT_BASE || 14000}/env`;
-    const res = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${config.INTERNAL_SERVICE_KEY}`,
-      },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) throw new Error(`GET /env returned ${res.status}`);
-    return (await res.json()) as Record<string, string>;
+    for (const token of authCandidates) {
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        return (await res.json()) as Record<string, string>;
+      }
+    }
+    throw new Error('GET /env returned unauthorized for all auth candidates');
   }
 
   /**
    * POST /env to kortix-master — sets env vars via the secrets manager.
    * No restart needed: getEnv() reads s6 env dir directly on every call.
    */
-  private async postMasterEnv(keys: Record<string, string>): Promise<void> {
+  private async postMasterEnv(keys: Record<string, string>, authCandidates: string[]): Promise<void> {
     const url = `http://localhost:${config.SANDBOX_PORT_BASE || 14000}/env`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.INTERNAL_SERVICE_KEY}`,
-      },
-      body: JSON.stringify({ keys }),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) throw new Error(`POST /env returned ${res.status}`);
+    for (const token of authCandidates) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ keys }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.ok) return;
+    }
+    throw new Error('POST /env returned unauthorized for all auth candidates');
   }
 
   /**
@@ -663,14 +678,9 @@ export class LocalDockerProvider implements SandboxProvider {
       env.DOCKER_HOST = `unix://${config.DOCKER_HOST}`;
     }
 
-    const writes = Object.entries(stale)
-      .map(([key, val]) => `printf '%s' '${val}' > /run/s6/container_environment/${key}`)
-      .join(' && ');
-    // No restart — getEnv() reads from s6 env dir live.
-
     const cmd =
-      `docker exec ${CONTAINER_NAME} bash -c ` +
-      `"mkdir -p /run/s6/container_environment && ${writes}"`;
+      `docker exec ${shellQuote(CONTAINER_NAME)} bash -c ` +
+      `${shellQuote(buildDockerEnvWriteCommand(stale, '/run/s6/container_environment'))}`;
 
     execSync(cmd, { timeout: 15_000, stdio: 'pipe', env });
     console.log(`[LOCAL-DOCKER] Core env vars synced via fallback (docker exec): ${Object.keys(stale).join(', ')}`);
@@ -685,20 +695,35 @@ export class LocalDockerProvider implements SandboxProvider {
    */
   private async syncTokenToContainer(token: string): Promise<void> {
     const containerEnv = await this.getContainerEnv();
-    if (containerEnv['KORTIX_TOKEN'] === token) return; // already in sync
+    if (
+      containerEnv['KORTIX_TOKEN'] === token &&
+      containerEnv['INTERNAL_SERVICE_KEY'] === token &&
+      containerEnv['TUNNEL_TOKEN'] === token
+    ) return;
 
     console.log('[LOCAL-DOCKER] Syncing DB-registered KORTIX_TOKEN into running container...');
+    const authCandidates = getAuthCandidates(token);
+    const authBundle = {
+      KORTIX_TOKEN: token,
+      INTERNAL_SERVICE_KEY: token,
+      TUNNEL_TOKEN: token,
+    };
     try {
-      await this.postMasterEnv({ KORTIX_TOKEN: token });
-      console.log('[LOCAL-DOCKER] KORTIX_TOKEN synced to container via /env API');
+      await this.postMasterEnv(authBundle, authCandidates);
+      console.log('[LOCAL-DOCKER] Sandbox auth bundle synced to container via /env API');
     } catch {
       try {
-        this.syncCoreEnvVarsFallback({ KORTIX_TOKEN: token });
-        console.log('[LOCAL-DOCKER] KORTIX_TOKEN synced to container via docker exec fallback');
+        this.syncCoreEnvVarsFallback(authBundle);
+        console.log('[LOCAL-DOCKER] Sandbox auth bundle synced to container via docker exec fallback');
       } catch (err: any) {
-        console.error('[LOCAL-DOCKER] Failed to sync KORTIX_TOKEN into container:', err.message || err);
+        console.error('[LOCAL-DOCKER] Failed to sync sandbox auth bundle into container:', err.message || err);
       }
     }
+  }
+
+  private async getCanonicalServiceKey(): Promise<string> {
+    const dbKey = await getSandboxServiceKeyByExternalId(CONTAINER_NAME);
+    return dbKey || this._lastCreateOpts?.envVars?.KORTIX_TOKEN || '';
   }
 
   private _lastCreateOpts?: CreateSandboxOpts;
@@ -831,11 +856,7 @@ export class LocalDockerProvider implements SandboxProvider {
     }
     const sandboxEnvVars = readSandboxEnv();
 
-    if (!config.INTERNAL_SERVICE_KEY) {
-      process.env.INTERNAL_SERVICE_KEY = randomBytes(32).toString('hex');
-      console.log('[LOCAL-DOCKER] Auto-generated INTERNAL_SERVICE_KEY for sandbox auth');
-    }
-    const serviceKey = config.INTERNAL_SERVICE_KEY;
+    const serviceKey = authToken;
 
     const MANAGED_VARS = new Set([
       'KORTIX_TOKEN',
@@ -868,15 +889,15 @@ export class LocalDockerProvider implements SandboxProvider {
       'OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode',
       'OPENCODE_PERMISSION={"*":"allow"}',
       'DISPLAY=:1',
-      'LSS_DIR=/workspace/.lss',
+      'LSS_DIR=/persistent/lss',
       'KORTIX_WORKSPACE=/workspace',
       'PYTHONUSERBASE=/workspace/.local',
       'PIP_USER=1',
       'NPM_CONFIG_PREFIX=/workspace/.npm-global',
-      // ── Persistent secret paths (all under /workspace/.secrets/) ──────
-      'SECRET_FILE_PATH=/workspace/.secrets/.secrets.json',
-      'SALT_FILE_PATH=/workspace/.secrets/.salt',
-      // ENCRYPTION_KEY_PATH auto-derived from SECRET_FILE_PATH dir
+      // ── Persistent secret paths (aligned with startup.sh persistent model) ──
+      'SECRET_FILE_PATH=/persistent/secrets/.secrets.json',
+      'SALT_FILE_PATH=/persistent/secrets/.salt',
+      'ENCRYPTION_KEY_PATH=/persistent/secrets/.encryption-key',
       `KORTIX_API_URL=${sandboxApiBase}`,
       `KORTIX_TOKEN=${authToken}`,
       `INTERNAL_SERVICE_KEY=${serviceKey}`,

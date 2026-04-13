@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono'
+import { clearChannelSessions } from '../../channels/channel-sessions'
 import { getMasterPublicBaseUrl } from './share'
 
 const channelsRouter = new Hono()
@@ -62,6 +63,7 @@ channelsRouter.get('/', async (c) => {
         bot_username: ch.bot_username,
         default_agent: ch.default_agent,
         default_model: ch.default_model,
+        bridge_instructions: ch.bridge_instructions || '',
         instructions: ch.instructions || '',
         webhook_path: ch.webhook_path,
         webhook_url: publicBase ? joinPublicBaseUrl(publicBase, ch.webhook_path) : null,
@@ -252,7 +254,7 @@ channelsRouter.post('/slack-manifest', async (c) => {
     const resolvedUrl = publicUrl || getChannelPublicBaseUrl() || ''
     if (!resolvedUrl) return c.json({ ok: false, error: 'Could not resolve public URL. Set PUBLIC_BASE_URL or provide publicUrl.' }, 400)
 
-    const displayName = botName || generateBotName()
+    const displayName = botName?.trim() || 'Kortix Slack'
 
     // Create the channel row NOW so the manifest gets a real webhook URL.
     const { createChannel } = await loadDb()
@@ -357,6 +359,7 @@ channelsRouter.get('/:id', async (c) => {
         bot_username: ch.bot_username,
         default_agent: ch.default_agent,
         default_model: ch.default_model,
+        bridge_instructions: ch.bridge_instructions || '',
         instructions: ch.instructions,
         webhook_path: ch.webhook_path,
         webhook_url: publicBase ? joinPublicBaseUrl(publicBase, ch.webhook_path) : null,
@@ -468,13 +471,28 @@ channelsRouter.patch('/:id', async (c) => {
     const updates: Record<string, any> = {}
     if (body.default_agent !== undefined) updates.default_agent = body.default_agent
     if (body.default_model !== undefined) updates.default_model = body.default_model
+    if (body.bridge_instructions !== undefined) updates.bridge_instructions = body.bridge_instructions
     if (body.instructions !== undefined) updates.instructions = body.instructions
     if (body.name !== undefined) updates.name = body.name
     if (body.enabled !== undefined) updates.enabled = body.enabled
 
     const ch = updateChannel(c.req.param('id'), updates)
     if (!ch) return c.json({ ok: false, error: 'Not found' }, 404)
-    return c.json({ ok: true, message: `${ch.name} updated` })
+
+    const resetsChannelSession = (
+      body.default_agent !== undefined ||
+      body.default_model !== undefined ||
+      body.bridge_instructions !== undefined ||
+      body.instructions !== undefined
+    )
+    const resetCount = resetsChannelSession ? clearChannelSessions(ch.platform, ch.id) : 0
+
+    return c.json({
+      ok: true,
+      message: `${ch.name} updated`,
+      sessionReset: resetsChannelSession,
+      resetCount,
+    })
   } catch (e) {
     return c.json({ ok: false, error: String(e) }, 500)
   }

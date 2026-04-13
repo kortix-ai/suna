@@ -33,6 +33,10 @@ function getEnv(key: string): string | undefined {
   return process.env[key]
 }
 
+function getPublicUrl(flagsUrl?: string): string {
+  return flagsUrl || getEnv("PUBLIC_BASE_URL") || getEnv("PUBLIC_URL") || ""
+}
+
 function getToken(): string | undefined {
   return getEnv("TELEGRAM_BOT_TOKEN")
 }
@@ -378,7 +382,7 @@ async function main(): Promise<void> {
       })
 
       // Register webhook
-      const publicUrl = flags.url || getEnv("PUBLIC_URL") || ""
+      const publicUrl = getPublicUrl(flags.url)
       if (publicUrl) {
         const webhookUrl = joinPublicBaseUrl(publicUrl, channel.webhook_path)
         await telegramSetWebhook({ url: webhookUrl, secretToken: channel.webhook_secret })

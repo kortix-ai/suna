@@ -207,7 +207,7 @@ function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, is
 // Sessions Flyout Content
 // ============================================================================
 
-function SessionsFlyout() {
+function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
   const pathname = normalizeAppPathname(usePathname());
   const { data: sessions } = useOpenCodeSessions();
   const permissions = useOpenCodePendingStore((s) => s.permissions);
@@ -252,7 +252,7 @@ function SessionsFlyout() {
                   : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
               )}
             >
-              <ThreadIcon iconName={(session as any).icon} className="flex-shrink-0" size={14} />
+              {!collapsed && <ThreadIcon iconName={(session as any).icon} className="flex-shrink-0" size={14} />}
               <span className="flex-1 truncate text-left">{session.title || 'Untitled'}</span>
               {pending > 0 && (
                 <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-semibold flex items-center justify-center">
@@ -799,6 +799,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
     avatar: string;
     isAdmin?: boolean;
   }>({ name: 'Loading...', email: '', avatar: '', isAdmin: false });
+  const [isMac, setIsMac] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -815,6 +816,10 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
     };
     fetchUserData();
   }, [isAdmin]);
+
+  useEffect(() => {
+    setIsMac(/Mac/.test(navigator.userAgent));
+  }, []);
 
   const createSession = useCreateOpenCodeSession();
 
@@ -982,7 +987,6 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
             icon={<Search className="h-4 w-4" />}
             label="Search"
             onClick={() => {
-              const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent);
               document.dispatchEvent(
                 new KeyboardEvent('keydown', {
                   key: 'k',
@@ -1016,7 +1020,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
           <CollapsedIconButton
             icon={<ListTree className="h-4 w-4" />}
             label="Sessions"
-            flyoutContent={<SessionsFlyout />}
+            flyoutContent={<SessionsFlyout collapsed />}
           />
         </div>
 
@@ -1041,14 +1045,13 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               <SquarePen className="h-4 w-4 flex-shrink-0" />
               <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
               <kbd className="text-[10px] text-muted-foreground">
-                {typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent) ? '\u2318J' : 'Ctrl J'}
+                {isMac ? '\u2318J' : 'Ctrl J'}
               </kbd>
             </button>
 
             {/* Search */}
             <button
               onClick={() => {
-                const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent);
                 document.dispatchEvent(
                   new KeyboardEvent('keydown', {
                     key: 'k',
@@ -1065,7 +1068,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               <Search className="h-4 w-4 flex-shrink-0" />
               <span className="flex-1 text-left">Search</span>
               <kbd className="text-[10px] text-muted-foreground">
-                {typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent) ? '\u2318K' : 'Ctrl K'}
+                {isMac ? '\u2318K' : 'Ctrl K'}
               </kbd>
             </button>
 

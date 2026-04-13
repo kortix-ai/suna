@@ -437,12 +437,25 @@ export function computeStatusFromPart(part: Part | undefined): string | undefine
         return 'Delegating to agent...';
       case 'agent_spawn':
       case 'agent-spawn':
+      case 'agent_task':
+      case 'agent-task':
         return 'Delegating to agent...';
+      case 'agent_task_update':
+      case 'agent-task-update':
+      case 'task_update':
+      case 'task-update':
+        return 'Updating task...';
       case 'agent_message':
       case 'agent-message':
+      case 'agent_task_message':
+      case 'agent-task-message':
+      case 'task_message':
+      case 'task-message':
         return 'Messaging agent...';
       case 'task_create':
       case 'task-create':
+      case 'task_start':
+      case 'task-start':
         return 'Creating task...';
       case 'task_list':
       case 'task-list':
@@ -528,10 +541,18 @@ export function getTurnStatus(
   for (let i = parts.length - 1; i >= 0; i--) {
     const p = parts[i].part;
 
-    // If it's a running task, try to get status from child session
+    // If it's a running task orchestration tool, try to get status from child session
     if (
       isToolPart(p) &&
-      p.tool === 'task' &&
+      (
+        p.tool === 'task' ||
+        p.tool === 'agent_task' ||
+        p.tool === 'agent-task' ||
+        p.tool === 'task_create' ||
+        p.tool === 'task-create' ||
+        p.tool === 'task_start' ||
+        p.tool === 'task-start'
+      ) &&
       p.state.status === 'running' &&
       childMessages &&
       childMessages.length > 0
@@ -575,10 +596,15 @@ export function formatDuration(ms: number): string {
  * Extract child session ID from a task tool part's metadata.
  */
 export function getChildSessionId(part: ToolPart): string | undefined {
-  // Native task tool or agent_spawn
-  if (part.tool === 'task' || part.tool === 'agent_spawn' || part.tool === 'agent-spawn' || part.tool === 'agent_message' || part.tool === 'agent-message') {
+  // Native task tool, agent_spawn, or agent_task
+  const t = part.tool || '';
+  if (t === 'task' || t === 'agent_spawn' || t === 'agent-spawn' || t === 'agent_message' || t === 'agent-message'
+    || t === 'agent_task' || t === 'agent-task' || t === 'agent_task_update' || t === 'agent-task-update'
+    || t === 'agent_task_message' || t === 'agent-task-message' || t === 'agent_task_start' || t === 'agent-task-start'
+    || t === 'task_create' || t === 'task-create' || t === 'task_start' || t === 'task-start'
+    || t === 'task_update' || t === 'task-update' || t === 'task_message' || t === 'task-message') {
     // 1. Try metadata (ctx.metadata — available immediately for built-in tools)
-    const metaSessionId = (part.state.metadata as any)?.sessionId;
+    const metaSessionId = ((part.state as any)?.metadata as any)?.sessionId;
     if (metaSessionId) return metaSessionId;
 
     // 2. Try title (plugin tools embed session ID in title via ctx.metadata)

@@ -118,7 +118,10 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
 
     // ── Checkpoint ──
     await setPhase(sandboxId, 'stopping', 40, 'Saving state...');
-    await checkpointSqlite(endpoint, containerConfig.name);
+    const checkpointResult = await checkpointSqlite(endpoint, containerConfig.name);
+    if (!checkpointResult.success) {
+      throw new Error(`State sync failed before update: ${checkpointResult.stderr || checkpointResult.stdout || 'unknown error'}`);
+    }
 
     // ── Stop & restart ──
     await setPhase(sandboxId, 'restarting', 55, 'Restarting with new image...');

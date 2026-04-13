@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import type { AppEnv } from '../types';
+import { config } from '../config';
 import { resolveAccountId } from '../shared/resolve-account';
 import { upsertAccountCreds, getAccountCreds, deleteAccountCreds } from './credential-store';
 
@@ -30,7 +31,20 @@ export function createCredentialRoutes(): Hono<AppEnv> {
       });
     }
 
-    await upsertAccountCreds(accountId, parsed.data);
+    const accountCreds = {
+      client_id: parsed.data.client_id,
+      client_secret: parsed.data.client_secret,
+      project_id: parsed.data.project_id,
+      environment: parsed.data.environment ?? 'production',
+    };
+
+    try {
+      await upsertAccountCreds(accountId, accountCreds);
+    } catch (error) {
+      throw new HTTPException(503, {
+        message: `Pipedream credential storage unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
     console.log(`[PIPEDREAM] Credentials saved for account=${accountId}`);
     return c.json({ success: true, source: 'account' });
   });
@@ -41,9 +55,12 @@ export function createCredentialRoutes(): Hono<AppEnv> {
   app.get('/credentials', async (c) => {
     const accountId = await resolveAccount(c);
     const creds = await getAccountCreds(accountId);
+    const hasDefaultCreds = Boolean(
+      config.PIPEDREAM_CLIENT_ID && config.PIPEDREAM_CLIENT_SECRET && config.PIPEDREAM_PROJECT_ID,
+    );
 
     return c.json({
-      configured: !!creds,
+      configured: !!creds || hasDefaultCreds,
       source: creds ? 'account' : 'default',
       provider: 'pipedream',
     });
@@ -54,7 +71,13 @@ export function createCredentialRoutes(): Hono<AppEnv> {
    */
   app.delete('/credentials', async (c) => {
     const accountId = await resolveAccount(c);
-    await deleteAccountCreds(accountId);
+    try {
+      await deleteAccountCreds(accountId);
+    } catch (error) {
+      throw new HTTPException(503, {
+        message: `Pipedream credential storage unavailable: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
     console.log(`[PIPEDREAM] Credentials deleted for account=${accountId}`);
     return c.json({ success: true });
   });

@@ -16,6 +16,8 @@
  *   svc-kortix-master      — This process (port 8000)
  */
 
+import { config } from '../config'
+
 export type ReloadMode = 'dispose-only' | 'full'
 
 export interface ReloadResult {
@@ -23,6 +25,140 @@ export interface ReloadResult {
   mode: ReloadMode
   steps: string[]
   errors: string[]
+}
+
+interface SessionStatusLike {
+  type?: string
+}
+
+export function getBusySessionIds(statuses?: Record<string, SessionStatusLike> | null): string[] {
+  if (!statuses) return []
+  return Object.entries(statuses)
+    .filter(([sessionId, status]) => Boolean(sessionId) && !!status && status.type !== 'idle')
+    .map(([sessionId]) => sessionId)
+}
+
+async function cancelActiveSessionsBeforeShutdown(result: ReloadResult): Promise<void> {
+  const baseUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`
+
+  let busySessionIds: string[] = []
+  try {
+    const res = await fetch(`${baseUrl}/session/status`, {
+      signal: AbortSignal.timeout(5_000),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const statuses = (await res.json()) as Record<string, SessionStatusLike>
+    busySessionIds = getBusySessionIds(statuses)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    result.errors.push(`Could not inspect active sessions before shutdown: ${msg}`)
+    return
+  }
+
+  if (busySessionIds.length === 0) {
+    result.steps.push('No active sessions needed cancellation before shutdown')
+    return
+  }
+
+  result.steps.push(`Cancelling ${busySessionIds.length} active session(s) before shutdown`)
+
+  const failures: string[] = []
+  await Promise.all(
+    busySessionIds.map(async (sessionId) => {
+      try {
+        const res = await fetch(`${baseUrl}/session/${sessionId}/abort`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(5_000),
+        })
+        if (!res.ok && res.status !== 404) {
+          const body = await res.text().catch(() => '')
+          throw new Error(body ? `HTTP ${res.status}: ${body.slice(0, 200)}` : `HTTP ${res.status}`)
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        failures.push(`${sessionId}: ${msg}`)
+      }
+    }),
+  )
+
+  const cancelledCount = busySessionIds.length - failures.length
+  if (cancelledCount > 0) {
+    result.steps.push(`Cancelled ${cancelledCount} active session(s) before shutdown`)
+    await Bun.sleep(250)
+  }
+
+  if (failures.length > 0) {
+    result.errors.push(`Failed to cancel ${failures.length} active session(s): ${failures.join('; ')}`)
+  }
+}
+
+export function getSafeFullReloadFallback(options?: {
+  envMode?: string
+  uid?: number
+}): string | null {
+  const envMode = (options?.envMode || process.env.ENV_MODE || 'local').toLowerCase()
+  const uid = options?.uid ?? (typeof process.getuid === 'function' ? process.getuid() : undefined)
+
+  if (envMode === 'local' && uid !== 0) {
+    return 'Full restart is not supported from the local sandbox app process; performed a safe OpenCode dispose instead to avoid a kortix-master restart loop'
+  }
+
+  return null
+}
+
+interface S6RunResult {
+  ok: boolean
+  exitCode: number
+  command: string
+  stderr: string
+}
+
+function decodeOutput(bytes?: Uint8Array | null): string {
+  if (!bytes || bytes.length === 0) return ''
+  return Buffer.from(bytes).toString('utf8').trim()
+}
+
+function runS6Svc(args: string[]): S6RunResult {
+  const candidates: string[][] = [
+    ['sudo', '-n', 's6-svc', ...args],
+    ['s6-svc', ...args],
+  ]
+
+  let last: S6RunResult = {
+    ok: false,
+    exitCode: -1,
+    command: candidates[0].join(' '),
+    stderr: 's6-svc unavailable',
+  }
+
+  for (const cmd of candidates) {
+    try {
+      const proc = Bun.spawnSync(cmd, {
+        stdin: 'ignore',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      const stderr = decodeOutput(proc.stderr)
+      const exitCode = proc.exitCode ?? -1
+      const result: S6RunResult = {
+        ok: exitCode === 0,
+        exitCode,
+        command: cmd.join(' '),
+        stderr,
+      }
+      if (result.ok) return result
+      last = result
+    } catch (err) {
+      last = {
+        ok: false,
+        exitCode: -1,
+        command: cmd.join(' '),
+        stderr: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
+
+  return last
 }
 
 /**
@@ -51,17 +187,19 @@ async function disposeOpenCode(result: ReloadResult): Promise<boolean> {
  * Returns immediately — s6 handles the lifecycle.
  */
 function restartS6(svcName: string, result: ReloadResult): void {
-  try {
-    const proc = Bun.spawnSync(['s6-svc', '-r', `/run/service/${svcName}`])
-    if (proc.exitCode === 0) {
-      result.steps.push(`Restarted ${svcName}`)
-    } else {
-      // exit 111 = supervisor not running (service doesn't exist in this environment)
-      result.steps.push(`${svcName}: skipped (exit ${proc.exitCode})`)
-    }
-  } catch {
-    result.steps.push(`${svcName}: s6-svc not available (local dev?)`)
+  const res = runS6Svc(['-r', `/run/service/${svcName}`])
+  if (res.ok) {
+    result.steps.push(`Restarted ${svcName}`)
+    return
   }
+
+  // exit 111 = supervisor not running (service doesn't exist in this environment)
+  if (res.exitCode === 111) {
+    result.steps.push(`${svcName}: skipped (exit 111)`)
+    return
+  }
+
+  result.errors.push(`${svcName} restart failed via '${res.command}': ${res.stderr || `exit ${res.exitCode}`}`)
 }
 
 export async function initiateRuntimeReload(mode: ReloadMode): Promise<ReloadResult> {
@@ -72,11 +210,22 @@ export async function initiateRuntimeReload(mode: ReloadMode): Promise<ReloadRes
     errors: [],
   }
 
+  await cancelActiveSessionsBeforeShutdown(result)
+
   // ── dispose-only: hot-reload config without killing processes ──
   if (mode === 'dispose-only') {
     const ok = await disposeOpenCode(result)
     result.success = ok
     if (ok) result.steps.push('Note: .ts plugin code changes need Full Restart')
+    return result
+  }
+
+  const safeFallbackReason = getSafeFullReloadFallback()
+  if (safeFallbackReason) {
+    const ok = await disposeOpenCode(result)
+    result.success = ok
+    result.steps.push(safeFallbackReason)
+    if (!ok) result.errors.push('Safe fallback reload failed')
     return result
   }
 
@@ -94,13 +243,19 @@ export async function initiateRuntimeReload(mode: ReloadMode): Promise<ReloadRes
   // Self-restart — deferred so HTTP response goes out first
   setTimeout(() => {
     console.log('[runtime-reload] Full restart: killing kortix-master — s6 will respawn')
-    try {
-      Bun.spawn(['s6-svc', '-r', '/run/service/svc-kortix-master'], {
-        stdout: 'inherit', stderr: 'inherit',
-      })
-    } catch {}
-    // Fallback hard exit if s6 didn't kill us
-    setTimeout(() => process.exit(0), 3000)
+
+    const restart = runS6Svc(['-r', '/run/service/svc-kortix-master'])
+    if (!restart.ok) {
+      console.warn(`[runtime-reload] Failed to restart svc-kortix-master via '${restart.command}': ${restart.stderr || `exit ${restart.exitCode}`}`)
+      // Fallback hard exit so s6 still respawns us even if the privileged helper
+      // is unavailable in this environment.
+      setTimeout(() => process.exit(0), 3000)
+      return
+    }
+
+    // Safety valve: if s6 accepted the restart but for some reason this process
+    // was not terminated, exit anyway so the supervisor can bring up a clean copy.
+    setTimeout(() => process.exit(0), 5000)
   }, 300)
 
   return result

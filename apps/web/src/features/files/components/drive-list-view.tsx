@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Folder,
+  FolderCog,
   MoreVertical,
   Download,
   History,
@@ -304,6 +305,7 @@ function ListRow({
 // ─── Main List View ─────────────────────────────────────────────────────────
 
 interface DriveListViewProps {
+  elevatedDirs: FileNode[];
   dirs: FileNode[];
   files: FileNode[];
   onNavigateToDir: (node: FileNode) => void;
@@ -324,7 +326,14 @@ interface DriveListViewProps {
   isDirDownloading: (path: string) => boolean;
 }
 
+/** Descriptions for elevated system directories */
+const ELEVATED_DIR_META: Record<string, string> = {
+  '.kortix': 'Project config, tasks, context',
+  '.opencode': 'Agents, skills, commands',
+};
+
 export function DriveListView({
+  elevatedDirs,
   dirs,
   files,
   onNavigateToDir,
@@ -364,7 +373,7 @@ export function DriveListView({
       : <ArrowDown className="h-3 w-3 ml-1" />;
   };
 
-  const allItems = [...dirs, ...files];
+  const allItems = [...elevatedDirs, ...dirs, ...files];
 
   if (allItems.length === 0) {
     return (
@@ -411,6 +420,34 @@ export function DriveListView({
         </Button>
         <span />
       </div>
+
+      {/* Elevated system directories */}
+      {elevatedDirs.map((node) => (
+        <div
+          key={node.path}
+          onClick={() => onNavigateToDir(node)}
+          className={cn(
+            'grid grid-cols-[1fr_80px_80px_40px] items-center gap-4 px-4 h-10 cursor-pointer select-none',
+            'bg-primary/[0.03] border-b border-primary/10',
+            'hover:bg-primary/[0.06] transition-colors',
+          )}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <FolderCog className="h-4 w-4 text-primary/60 shrink-0" />
+            <span className="text-[13px] font-medium text-foreground truncate">
+              {node.name}
+            </span>
+            {ELEVATED_DIR_META[node.name] && (
+              <span className="text-[11px] text-muted-foreground/40 truncate hidden sm:inline">
+                {ELEVATED_DIR_META[node.name]}
+              </span>
+            )}
+          </div>
+          <span className="text-[11px] text-primary/50 font-medium">System</span>
+          <span className="text-[11px] text-muted-foreground/40">—</span>
+          <span />
+        </div>
+      ))}
 
       {/* Rows */}
       {dirs.map((node) => (

@@ -30,6 +30,9 @@ import type {
 
 export type { Session, Message, Part, Agent, Command, Project, SessionStatus, PermissionRule, Model, McpStatus, PathInfo, Worktree, WorktreeCreateInput, WorktreeRemoveInput, WorktreeResetInput };
 
+// Re-export filtered agents hook for UI agent selectors
+export { useVisibleAgents } from './use-visible-agents';
+
 /**
  * Shape returned by `client.session.messages()`:
  * `Array<{ info: Message; parts: Part[] }>`

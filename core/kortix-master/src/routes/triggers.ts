@@ -6,6 +6,7 @@
  */
 import { Hono } from 'hono'
 import { describeRoute } from 'hono-openapi'
+import { join } from 'path'
 import { z } from 'zod'
 import { TriggerStore, TriggerYaml, isValidCronExpression, describeCron, getNextRun } from '../../triggers/src/index'
 import type { TriggerRecord, TriggerResponse, ExecutionResponse } from '../../triggers/src/types'
@@ -18,16 +19,20 @@ import type { TriggerRecord, TriggerResponse, ExecutionResponse } from '../../tr
 let store: TriggerStore | null = null
 let yamlSync: TriggerYaml | null = null
 
+function getWorkspaceRoot(): string {
+  return process.env.WORKSPACE_DIR || process.env.KORTIX_WORKSPACE || '/workspace'
+}
+
 function getStore(): TriggerStore {
   if (!store) {
-    store = new TriggerStore('/workspace/.kortix/kortix.db')
+    store = new TriggerStore(join(getWorkspaceRoot(), '.kortix', 'kortix.db'))
   }
   return store
 }
 
 function getYamlSync(): TriggerYaml {
   if (!yamlSync) {
-    yamlSync = new TriggerYaml(getStore(), '/workspace')
+    yamlSync = new TriggerYaml(getStore(), getWorkspaceRoot())
   }
   return yamlSync
 }

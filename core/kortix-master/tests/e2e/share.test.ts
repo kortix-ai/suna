@@ -193,4 +193,20 @@ describe('Share system E2E', () => {
     clearEnv()
     process.env.SHARE_STORE_PATH = `/tmp/test-shares-e2e-${Date.now()}.json`
   })
+
+  test('explicit PUBLIC_BASE_URL wins over cloud fallback URLs', async () => {
+    process.env.ENV_MODE = 'cloud'
+    process.env.SANDBOX_ID = 'sb_123'
+    process.env.KORTIX_API_URL = 'https://api.kortix.test/v1/router'
+    process.env.PUBLIC_BASE_URL = 'https://8000--real-slug.kortix.cloud?__proxy_token=pt_real'
+
+    const app = buildApp()
+    const body = await (await app.request('/kortix/share/3000')).json() as any
+    expect(body.url).toContain('https://8000--real-slug.kortix.cloud')
+    expect(body.url).toContain('__proxy_token=pt_real')
+    expect(body.url).not.toContain('/v1/p/sb_123/8000')
+
+    clearEnv()
+    process.env.SHARE_STORE_PATH = `/tmp/test-shares-e2e-${Date.now()}.json`
+  })
 })

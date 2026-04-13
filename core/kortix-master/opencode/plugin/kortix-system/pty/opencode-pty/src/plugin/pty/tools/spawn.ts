@@ -1,5 +1,5 @@
 import { tool } from '@opencode-ai/plugin'
-import { manager, isBunPtyAvailable, bunPtyLoadError } from '../manager.ts'
+import { manager } from '../manager.ts'
 import { checkCommandPermission, checkWorkdirPermission } from '../permissions.ts'
 import DESCRIPTION from './spawn.txt'
 
@@ -25,19 +25,6 @@ export const ptySpawn = tool({
       ),
   },
   async execute(args, ctx) {
-    // Gate: is bun-pty even available?
-    if (!isBunPtyAvailable()) {
-      const loadErr = bunPtyLoadError()
-      throw new Error(
-        [
-          `[pty_spawn] PTY backend is not available — PTY tools cannot work.`,
-          `  Load error: ${loadErr ?? 'unknown'}`,
-          `  Platform: ${process.platform}/${process.arch}, Runtime: ${typeof Bun !== 'undefined' ? `Bun ${Bun.version}` : 'Node.js'}`,
-          `  Fix: Ensure the OpenCode /pty backend is up and websocket connections succeed.`,
-        ].join('\n')
-      )
-    }
-
     try {
       await checkCommandPermission(args.command, args.args ?? [])
 

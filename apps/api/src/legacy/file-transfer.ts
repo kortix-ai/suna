@@ -19,6 +19,14 @@ interface OldSandboxInfo {
 const ARCHIVE_PATH = '/tmp/legacy-uploads.tar.gz';
 const TRANSFER_DIRS = ['/workspace'];
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function toSafePathSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
 export async function getOldSandboxId(projectId: string): Promise<OldSandboxInfo | null> {
   const sql = postgres(config.DATABASE_URL!, { max: 1 });
   try {
@@ -114,7 +122,7 @@ async function tarFilesInOldSandbox(sandbox: Sandbox): Promise<{ fileCount: numb
 
   const tarSources = dirsWithFiles.map((d) => `"${d}"`).join(' ');
   const tarResult = await sandbox.process.executeCommand(
-    `tar czf ${ARCHIVE_PATH} ${tarSources} 2>&1`,
+    `tar czf ${shellQuote(ARCHIVE_PATH)} ${tarSources} 2>&1`,
     undefined,
     undefined,
     120,
@@ -165,13 +173,29 @@ async function uploadAndExtractOnNewSandbox(
     throw new Error(`Archive upload failed (${uploadRes.status}): ${uploadBody.slice(0, 300)}`);
   }
 
-  console.log(`[file-transfer] Archive uploaded, extracting on new sandbox...`);
+  // The upload endpoint guarantees collision-free writes and returns the
+  // actual path the archive was stored at. Parse it so extraction targets
+  // the right file even if `/tmp/legacy-uploads.tar.gz` already existed.
+  let archivePath = ARCHIVE_PATH;
+  try {
+    const parsed = JSON.parse(uploadBody) as Array<{ path: string; size: number }>;
+    if (Array.isArray(parsed) && parsed[0]?.path) {
+      archivePath = parsed[0].path;
+    }
+  } catch {
+    console.warn(`[file-transfer] Could not parse upload response; falling back to ${ARCHIVE_PATH}`);
+  }
+
+  console.log(`[file-transfer] Archive uploaded to ${archivePath}, extracting on new sandbox...`);
+
+  const quotedDestPath = shellQuote(destPath);
+  const quotedArchivePath = shellQuote(archivePath);
 
   const execRes = await fetch(`${baseUrl}/kortix/core/exec`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      cmd: `mkdir -p ${destPath} && tar xzf ${ARCHIVE_PATH} --strip-components=1 -C ${destPath} && rm -f ${ARCHIVE_PATH}`,
+      cmd: `mkdir -p ${quotedDestPath} && tar xzf ${quotedArchivePath} --strip-components=1 -C ${quotedDestPath} && rm -f ${quotedArchivePath}`,
     }),
     signal: AbortSignal.timeout(60_000),
   });
@@ -261,7 +285,9 @@ export async function transferFiles(
   }
 
   try {
-    const destPath = threadId ? `/workspace/legacy/${threadId}` : '/workspace/legacy';
+    const destPath = threadId
+      ? `/workspace/legacy/${toSafePathSegment(threadId)}`
+      : '/workspace/legacy';
     console.log(`[file-transfer] Starting upload/extract to ${destPath} via ${baseUrl}`);
     await uploadAndExtractOnNewSandbox(baseUrl, headers, archive, destPath);
     result.transferred = true;
@@ -273,7 +299,7 @@ export async function transferFiles(
   }
 
   try {
-    await oldSandboxInstance.process.executeCommand(`rm -f ${ARCHIVE_PATH}`);
+    await oldSandboxInstance.process.executeCommand(`rm -f ${shellQuote(ARCHIVE_PATH)}`);
     const daytona = getDaytona();
     await daytona.stop(oldSandboxInstance);
     console.log(`[file-transfer] Stopped old sandbox ${oldSandbox.externalId}`);

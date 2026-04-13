@@ -342,6 +342,36 @@ export async function getLatestSandboxVersion(): Promise<SandboxVersionInfo> {
   };
 }
 
+export type VersionChannel = 'stable' | 'dev';
+
+export interface VersionEntry {
+  version: string;
+  channel: VersionChannel;
+  date: string;
+  title: string;
+  body?: string;
+  sha?: string;
+  current: boolean;
+}
+
+export interface AllVersionsResponse {
+  versions: VersionEntry[];
+  current: {
+    version: string;
+    channel: VersionChannel;
+  };
+}
+
+export async function getAllVersions(): Promise<AllVersionsResponse> {
+  const token = await getAuthToken();
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${API_URL}/platform/sandbox/version/all`, { headers });
+  if (!res.ok) throw new Error(`All versions fetch failed: ${res.status}`);
+  return res.json();
+}
+
 export async function getFullChangelog(): Promise<ChangelogEntry[]> {
   try {
     const token = await getAuthToken();
@@ -386,13 +416,25 @@ export async function resetSandboxUpdateStatus(): Promise<void> {
 
 // ─── SSH API ────────────────────────────────────────────────────────────────
 
-export interface SSHSetupResult {
-  private_key: string;
-  public_key: string;
-  ssh_command: string;
+export interface SSHConnectionInfo {
   host: string;
   port: number;
   username: string;
+  provider: string;
+  key_name: string;
+  host_alias: string;
+  reconnect_command: string;
+  ssh_command: string;
+  ssh_config_entry: string;
+  ssh_config_command: string;
+}
+
+export interface SSHSetupResult extends SSHConnectionInfo {
+  private_key: string;
+  public_key: string;
+  setup_command: string;
+  agent_prompt: string;
+  key_comment: string;
 }
 
 export async function setupSSH(): Promise<SSHSetupResult> {
@@ -401,6 +443,16 @@ export async function setupSSH(): Promise<SSHSetupResult> {
   });
   if (!result.success || !result.data) {
     throw new Error(result.error || 'Failed to setup SSH');
+  }
+  return result.data;
+}
+
+export async function getSSHConnection(): Promise<SSHConnectionInfo> {
+  const result = await platformFetch<SSHConnectionInfo>('/platform/sandbox/ssh/connection', {
+    method: 'GET',
+  });
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to resolve SSH connection');
   }
   return result.data;
 }

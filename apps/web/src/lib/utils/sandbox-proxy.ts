@@ -3,10 +3,8 @@ import {
   type ServerEntry,
   deriveSubdomainOpts,
 } from '@/stores/server-store';
-import { getDirectPortUrl } from '@/lib/platform-client';
-import { getProxyBaseUrl } from '@/lib/utils/sandbox-url';
-
 import {
+  getProxyBaseUrl,
   proxyLocalhostUrl,
   rewriteLocalhostUrl,
   type SubdomainUrlOptions,
@@ -15,7 +13,7 @@ import {
 export interface SandboxProxyContext {
   serverUrl: string;
   mappedPorts?: Record<string, string>;
-  subdomainOpts?: SubdomainUrlOptions;
+  subdomainOpts: SubdomainUrlOptions;
 }
 
 export function createSandboxProxyContext({
@@ -36,12 +34,7 @@ export function proxySandboxUrl(
   url: string | undefined,
   context: SandboxProxyContext,
 ): string | undefined {
-  return proxyLocalhostUrl(
-    url,
-    context.serverUrl,
-    context.mappedPorts,
-    context.subdomainOpts,
-  );
+  return proxyLocalhostUrl(url, context.subdomainOpts);
 }
 
 export function rewriteSandboxPath(
@@ -49,16 +42,12 @@ export function rewriteSandboxPath(
   path: string,
   context: SandboxProxyContext,
 ): string {
-  return rewriteLocalhostUrl(port, path, context.serverUrl, context.subdomainOpts);
+  return rewriteLocalhostUrl(port, path, context.subdomainOpts);
 }
 
 export function getSandboxServiceUrl(
   port: number,
-  context: SandboxProxyContext & { activeServer: ServerEntry | null | undefined },
+  context: SandboxProxyContext,
 ): string {
-  return context.subdomainOpts
-    ? getProxyBaseUrl(port, context.serverUrl, context.subdomainOpts)
-    : (context.activeServer ? getDirectPortUrl(context.activeServer, String(port)) : null)
-        || getProxyBaseUrl(port, context.serverUrl, context.subdomainOpts)
-        || '';
+  return getProxyBaseUrl(port, context.subdomainOpts);
 }

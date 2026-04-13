@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { getFileStatus } from '../api/opencode-files';
 import type { GitFileStatus } from '../types';
+import { useCurrentProject, useServerHealth } from './use-server-health';
 
 export const gitStatusKeys = {
   all: ['opencode-files', 'git-status'] as const,
@@ -17,14 +18,25 @@ export const gitStatusKeys = {
  */
 export function useGitStatus(options?: { enabled?: boolean }) {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  const { data: health } = useServerHealth();
+  const { data: project } = useCurrentProject({
+    enabled: options?.enabled !== false,
+  });
+  const enabled =
+    options?.enabled !== false &&
+    health?.healthy === true &&
+    project?.vcs === 'git';
 
   return useQuery<GitFileStatus[]>({
     queryKey: gitStatusKeys.status(serverUrl),
     queryFn: () => getFileStatus(),
-    enabled: options?.enabled !== false,
-    staleTime: 5_000,
-    gcTime: 2 * 60_000,
+    enabled,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
+    refetchOnMount: false,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 0,
   });
 }
 

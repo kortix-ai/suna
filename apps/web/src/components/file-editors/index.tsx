@@ -164,7 +164,7 @@ export function EditableFileRenderer({
       return URL.createObjectURL(blob);
     }
     if (isHtmlFile && project?.sandbox?.sandbox_url && (filePath || fileName)) {
-      return constructHtmlPreviewUrl(project.sandbox.sandbox_url, filePath || fileName, subdomainOpts);
+      return constructHtmlPreviewUrl(filePath || fileName, subdomainOpts);
     }
     return undefined;
   }, [isHtmlFile, content, project?.sandbox?.sandbox_url, filePath, fileName, subdomainOpts]);

@@ -38,6 +38,10 @@ function getEnv(key: string): string | undefined {
   return process.env[key]
 }
 
+function getPublicUrl(flagsUrl?: string): string {
+  return flagsUrl || getEnv("PUBLIC_BASE_URL") || getEnv("PUBLIC_URL") || ""
+}
+
 function getToken(): string | undefined {
   return getEnv("SLACK_BOT_TOKEN")
 }
@@ -412,7 +416,7 @@ async function main(): Promise<void> {
       process.env.SLACK_BOT_TOKEN = origToken
 
       // Generate manifest if URL provided
-      const publicUrl = flags.url || getEnv("PUBLIC_URL") || ""
+      const publicUrl = getPublicUrl(flags.url)
       const webhookUrl = publicUrl ? joinPublicBaseUrl(publicUrl, channel.webhook_path) : null
 
       out({
@@ -434,7 +438,7 @@ async function main(): Promise<void> {
     }
 
     case "manifest": {
-      const publicUrl = flags.url || getEnv("PUBLIC_URL") || ""
+      const publicUrl = getPublicUrl(flags.url)
       if (!publicUrl) { out({ ok: false, error: "--url required (your public URL for webhooks)" }); process.exit(1) }
       const channelId = flags["channel-id"] || "new"
       const webhookUrl = joinPublicBaseUrl(publicUrl, `/hooks/slack/${channelId}`)

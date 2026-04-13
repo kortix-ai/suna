@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import * as Sentry from '@sentry/nextjs';
+import { shouldIgnoreBrowserRuntimeNoise } from '@/lib/browser-error-noise';
 
 export default function GlobalError({
   error,
@@ -14,6 +15,9 @@ export default function GlobalError({
   const [timestamp, setTimestamp] = useState('');
 
   useEffect(() => {
+    if (shouldIgnoreBrowserRuntimeNoise({ message: error.message, error })) {
+      return;
+    }
     console.error('[Kortix Global Error]', error);
     // Report to Better Stack via Sentry SDK
     Sentry.captureException(error, {

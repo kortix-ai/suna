@@ -7,15 +7,15 @@ import { SANDBOX_PORTS } from '@/lib/platform-client';
  * The static-web server (port 3211) serves workspace files via:
  *   http://localhost:3211/open?path=/workspace/{filePath}
  *
- * When subdomainOpts are provided (local/subdomain mode), this rewrites to:
- *   http://p3211-{sandboxId}.localhost:{backendPort}/open?path=/workspace/{filePath}
+ * Rewritten through the sandbox preview proxy to either:
+ *   - subdomain:  http://p3211-{sandboxId}.localhost:{backendPort}/open?path=/workspace/{filePath}
+ *   - path-based: {apiBaseUrl}/p/{sandboxId}/3211/open?path=/workspace/{filePath}
  *
- * This is the same pattern used for Desktop (port 6080) and Browser Viewer (port 9224).
+ * Same pattern used for Desktop (port 6080) and Browser Viewer (port 9224).
  */
 export function constructHtmlPreviewUrl(
-  baseUrl: string | undefined,
   filePath: string | undefined,
-  subdomainOpts?: SubdomainUrlOptions,
+  subdomainOpts: SubdomainUrlOptions,
 ): string | undefined {
   if (!filePath) return undefined;
 
@@ -30,17 +30,7 @@ export function constructHtmlPreviewUrl(
 
   const encodedPath = pathSegments.join('/');
 
-  // When subdomainOpts are provided, route through the static file server (port 3211)
-  // via the subdomain proxy — same pattern as Desktop/VNC.
-  if (subdomainOpts) {
-    const port = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
-    const staticPath = `/open?path=/workspace/${encodedPath}`;
-    return rewriteLocalhostUrl(port, staticPath, '', subdomainOpts);
-  }
-
-  // Legacy fallback: use the raw sandbox_url (Kortix Master at port 8000).
-  // Browser cannot reach this directly — only works when served in the same origin
-  // context or when blob URLs are used.
-  if (!baseUrl) return undefined;
-  return `${baseUrl}/${encodedPath}`;
+  const port = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
+  const staticPath = `/open?path=/workspace/${encodedPath}`;
+  return rewriteLocalhostUrl(port, staticPath, subdomainOpts);
 }

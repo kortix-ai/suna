@@ -103,11 +103,31 @@ export function useSessionSync(sessionId: string) {
 		let cancelled = false;
 		const fetchWithRetry = async (attempt = 0) => {
 			try {
+				const store = useSyncStore.getState();
 				const res = await getClient().session.messages({
 					sessionID: sessionId,
 				});
-				if (!cancelled && res.data) {
-					useSyncStore.getState().hydrate(sessionId, res.data as any);
+				if (cancelled) return;
+				const data = (res.data ?? []) as any[];
+
+				if (data.length === 0) {
+					let sessionExists = true;
+					try {
+						const sessionRes = await getClient().session.get({ sessionID: sessionId });
+						sessionExists = Boolean(sessionRes?.data);
+					} catch {
+						sessionExists = false;
+					}
+
+					const currentStatus = store.sessionStatus[sessionId] ?? IDLE_STATUS;
+					if (!sessionExists || currentStatus.type === "idle") {
+						store.clearSession(sessionId);
+						return;
+					}
+				}
+
+				if (res.data) {
+					store.hydrate(sessionId, res.data as any);
 				}
 			} catch {
 				if (cancelled) return;

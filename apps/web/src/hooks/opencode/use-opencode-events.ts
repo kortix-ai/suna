@@ -141,6 +141,44 @@ export function useOpenCodeEventStream() {
 		};
 	})());
 
+	const markSessionAbortedLocally = useRef((
+		sessionID: string,
+		message = "The operation was aborted because the runtime shut down.",
+	) => {
+		if (!sessionID) return;
+		const error = {
+			name: "AbortError",
+			data: { message },
+		};
+		stopCompaction(sessionID);
+		applySyncEvent({
+			type: "session.error",
+			properties: { sessionID, error },
+		} as any);
+		setStatus(sessionID, { type: "idle" } as any);
+		useSyncStore.getState().clearOptimisticMessages(sessionID);
+	});
+
+	const markSessionIdleLocally = useRef((sessionID: string) => {
+		if (!sessionID) return;
+		stopCompaction(sessionID);
+		applySyncEvent({
+			type: "session.idle",
+			properties: { sessionID },
+		} as any);
+		setStatus(sessionID, { type: "idle" } as any);
+		useSyncStore.getState().clearOptimisticMessages(sessionID);
+	});
+
+	const reconcileMissingBusySessions = useRef((nextStatuses: Record<string, any>) => {
+		const previousStatuses = useOpenCodeSessionStatusStore.getState().statuses;
+		for (const [sessionID, status] of Object.entries(previousStatuses)) {
+			if (status?.type !== "idle" && !nextStatuses[sessionID]) {
+				markSessionIdleLocally.current(sessionID);
+			}
+		}
+	});
+
 	useEffect(() => {
 		// On first mount, always start clean — the provider may have remounted
 		// after navigating from a non-dashboard page (e.g. /instances) where
@@ -219,6 +257,9 @@ export function useOpenCodeEventStream() {
 								properties: { sessionID, status },
 							} as any);
 						}
+						reconcileMissingBusySessions.current(statuses);
+					} else {
+						reconcileMissingBusySessions.current({});
 					}
 				})
 				.catch((err) => {
@@ -819,6 +860,16 @@ export function useOpenCodeEventStream() {
 
 			// ---- Server disposed ----
 			case "server.instance.disposed": {
+				for (const [sessionID, status] of Object.entries(
+					useOpenCodeSessionStatusStore.getState().statuses,
+				)) {
+					if (status?.type !== "idle") {
+						markSessionAbortedLocally.current(
+							sessionID,
+							"The operation was aborted because the server instance was disposed.",
+						);
+					}
+				}
 				// Instance dispose means the server rescanned skills, agents,
 				// tools, and commands. Invalidate all cached app metadata so
 				// the UI picks up newly installed marketplace components or

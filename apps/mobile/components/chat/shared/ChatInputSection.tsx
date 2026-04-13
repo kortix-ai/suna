@@ -118,20 +118,20 @@ export const CHAT_INPUT_SECTION_HEIGHT = {
   /** Gradient fade height at top */
   GRADIENT: GRADIENT_HEIGHT,
   /** Base height of chat input card */
-  INPUT: 140,
+  INPUT: 110,
   /** Additional height when quick actions bar is shown */
   QUICK_ACTIONS_BAR: 80,
   /** Height of attachment bar when attachments exist */
   ATTACHMENT_BAR: 80,
-  /** 
+  /**
    * Total height for ThreadPage (gradient + input + margins)
    * Used for ScrollView paddingBottom calculation
    */
-  THREAD_PAGE: GRADIENT_HEIGHT + 140 + 20, // gradient + input + bottom margin
-  /** 
+  THREAD_PAGE: GRADIENT_HEIGHT + 110 + 20, // gradient + input + bottom margin
+  /**
    * Total height for HomePage (includes quick actions)
    */
-  HOME_PAGE: GRADIENT_HEIGHT + 140 + 80 + 40, // gradient + input + quick actions + margins
+  HOME_PAGE: GRADIENT_HEIGHT + 110 + 80 + 40, // gradient + input + quick actions + margins
 };
 
 

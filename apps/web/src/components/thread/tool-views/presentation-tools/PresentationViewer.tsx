@@ -313,9 +313,8 @@ export function PresentationViewer({
     
     try {
       const metadataUrl = constructHtmlPreviewUrl(
-        project.sandbox.sandbox_url, 
         `presentations/${sanitizedPresentationName}/metadata.json`,
-        subdomainOpts
+        subdomainOpts,
       );
       
       // Add cache-busting parameter to ensure fresh data
@@ -504,9 +503,8 @@ export function PresentationViewer({
       const pollMetadata = async () => {
         const sanitizedName = sanitizeFilename(presentationToLoad);
         const metadataUrl = constructHtmlPreviewUrl(
-          project.sandbox!.sandbox_url!, 
           `presentations/${sanitizedName}/metadata.json`,
-          subdomainOpts
+          subdomainOpts,
         );
         
         try {

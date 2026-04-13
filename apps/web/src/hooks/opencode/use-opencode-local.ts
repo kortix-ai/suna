@@ -11,7 +11,7 @@
  * - Variant persistence via useModelStore
  */
 
-import { useMemo, useCallback, useRef, useEffect, useState } from 'react';
+import { useMemo, useCallback, useRef, useEffect } from 'react';
 import { useModelStore, type ModelKey } from './use-model-store';
 import type { FlatModel } from '@/components/session/session-chat-input';
 import type { Agent, ProviderListResponse, Config } from '@opencode-ai/sdk/v2/client';
@@ -216,21 +216,30 @@ export function useOpenCodeLocal({
     [rawAgents],
   );
 
-  // Local fallback state for when there's no sessionId (e.g., dashboard before session creation)
-  const [localAgentName, setLocalAgentName] = useState<string | undefined>(undefined);
+  // Resolve the current agent name with a two-tier priority:
+  //   1. Per-session slot (sessionAgentName[sessionId]) — sticky for THIS session
+  //   2. Global lastAgentName — the agent the user most recently picked anywhere.
+  //      Used by the dashboard (no sessionId) and as the seed for brand-new
+  //      sessions, so reloading the dashboard or starting a new chat doesn't
+  //      reset to the first agent in the list.
+  const sessionAgentName = sessionId ? modelStore.getSessionAgentName(sessionId) : undefined;
+  const currentAgentName = sessionAgentName ?? modelStore.lastAgentName;
 
-  // Read/write agent name from per-session localStorage slot (or local state fallback)
-  const currentAgentName = sessionId ? modelStore.getSessionAgentName(sessionId) : localAgentName;
   const setCurrentAgentName = useCallback(
     (name: string | undefined) => {
       if (sessionId) {
         modelStore.setSessionAgentName(sessionId, name);
-      } else {
-        setLocalAgentName(name);
+      }
+      // Always update the global "last used" slot so the dashboard and any
+      // future sessions pick up the user's most recent choice. Skipped only
+      // when clearing (name === undefined) and we're in a session, since
+      // clearing a session slot shouldn't wipe the global default.
+      if (name !== undefined || !sessionId) {
+        modelStore.setLastAgentName(name);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId, modelStore.setSessionAgentName],
+    [sessionId, modelStore.setSessionAgentName, modelStore.setLastAgentName],
   );
 
   // Resolve current agent (matching SolidJS: find by name or fall back to first)

@@ -293,5 +293,6 @@ function setPreviewSessionCookie(c: Context, token: string) {
 function extractPreviewSandboxId(path: string): string | null {
   const match = path.match(/^\/v1\/p\/([^/]+)(?:\/|$)/);
   if (!match) return null;
-  return match[1] === 'auth' ? null : match[1];
+  const segment = match[1];
+  return segment === 'auth' || segment === 'share' ? null : segment;
 }

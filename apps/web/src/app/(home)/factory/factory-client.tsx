@@ -21,12 +21,12 @@ function DoctrineItem({
   return (
     <Reveal>
       <div className="flex gap-5">
-        <span className="text-[11px] font-mono text-muted-foreground/25 pt-0.5 shrink-0 w-6 text-right">
+        <span className="text-[11px] font-mono text-muted-foreground pt-0.5 shrink-0 w-6 text-right">
           {number}
         </span>
         <div>
-          <p className="text-sm font-medium text-foreground/60 mb-1">{title}</p>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed">{body}</p>
+          <p className="text-sm font-medium text-foreground mb-1">{title}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{body}</p>
         </div>
       </div>
     </Reveal>
@@ -37,10 +37,10 @@ function DoctrineItem({
 function Stat({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground/80">
+      <span className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground">
         {value}
       </span>
-      <span className="text-xs text-muted-foreground/40 leading-snug">{label}</span>
+      <span className="text-xs text-muted-foreground leading-snug">{label}</span>
     </div>
   );
 }
@@ -52,7 +52,7 @@ export default function FactoryPageClient() {
 
         {/* ── Opening thesis ── */}
         <Reveal>
-          <p className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground/30 mb-6">
+          <p className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground mb-6">
             The Autonomy Factory
           </p>
         </Reveal>
@@ -65,7 +65,7 @@ export default function FactoryPageClient() {
         </Reveal>
 
         <Reveal delay={0.1}>
-          <p className="text-base text-muted-foreground/60 leading-relaxed max-w-xl">
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl">
             Not tools. Not agents. Not workflows. Companies — with engineering departments, 
             operations teams, finance functions, customer support, growth engines — that run 
             themselves. Agents doing the actual work, 24/7, without a human touching every task.
@@ -76,7 +76,7 @@ export default function FactoryPageClient() {
 
         {/* ── The ratio ── */}
         <Reveal>
-          <h2 className="text-xs uppercase tracking-widest text-muted-foreground/30 mb-8">
+          <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-8">
             The ratio
           </h2>
         </Reveal>
@@ -89,7 +89,7 @@ export default function FactoryPageClient() {
         </Reveal>
 
         <Reveal delay={0.1}>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xl">
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
             This is not a forecast. It is our operating target — the ratio we run ourselves at today, 
             and the ratio we build toward with every company we work with. Humans are not removed. 
             They are elevated. They set direction, review outputs, make final calls on things that 
@@ -101,20 +101,20 @@ export default function FactoryPageClient() {
 
         {/* ── The factory ── */}
         <Reveal>
-          <h2 className="text-xs uppercase tracking-widest text-muted-foreground/30 mb-6">
+          <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-6">
             What we mean by factory
           </h2>
         </Reveal>
 
         <Reveal delay={0.05}>
-          <p className="text-base text-muted-foreground/60 leading-relaxed max-w-xl mb-5">
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl mb-5">
             A factory is a system for turning inputs into outputs at scale, reliably, repeatedly, 
             without depending on any individual person being present. That is what we build for companies.
           </p>
         </Reveal>
 
         <Reveal delay={0.1}>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xl">
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
             You feed the factory your goals, your tools, your context, your standards. 
             The factory produces: shipped code, closed tickets, drafted contracts, reconciled books, 
             outbound campaigns, synthesized research, recruited candidates. Every day. Whether you 
@@ -126,7 +126,7 @@ export default function FactoryPageClient() {
 
         {/* ── The playbook ── */}
         <Reveal>
-          <h2 className="text-xs uppercase tracking-widest text-muted-foreground/30 mb-8">
+          <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-8">
             The playbook
           </h2>
         </Reveal>
@@ -168,13 +168,13 @@ export default function FactoryPageClient() {
 
         {/* ── Why we prove it on ourselves ── */}
         <Reveal>
-          <h2 className="text-xs uppercase tracking-widest text-muted-foreground/30 mb-6">
+          <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-6">
             Highest conviction from highest exposure
           </h2>
         </Reveal>
 
         <Reveal delay={0.05}>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xl mb-4">
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-xl mb-4">
             We run our own company on Kortix. Every day. Our engineering, our operations, our 
             growth — agents doing the work, humans governing the system. We eat our own output 
             before we ship it to anyone else.
@@ -182,7 +182,7 @@ export default function FactoryPageClient() {
         </Reveal>
 
         <Reveal delay={0.1}>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xl">
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
             This is not a product demo. It is how we operate. The credibility of the playbook 
             comes from the fact that we are living inside it. Every failure we encounter, we fix. 
             Every edge case we hit, we document. The factory improves itself.
@@ -193,19 +193,19 @@ export default function FactoryPageClient() {
 
         {/* ── The migration ── */}
         <Reveal>
-          <h2 className="text-xs uppercase tracking-widest text-muted-foreground/30 mb-6">
+          <h2 className="text-xs uppercase tracking-widest text-muted-foreground mb-6">
             The migration
           </h2>
         </Reveal>
 
         <Reveal delay={0.05}>
-          <p className="text-base text-muted-foreground/60 leading-relaxed max-w-xl mb-5">
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl mb-5">
             Kortix is infrastructure. The platform is not the point.
           </p>
         </Reveal>
 
         <Reveal delay={0.1}>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xl mb-4">
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-xl mb-4">
             The point is the migration — from human-operated to AI-operated. From companies that 
             require constant human attention to keep running, to companies that run themselves and 
             only require human judgment to keep improving.
@@ -213,7 +213,7 @@ export default function FactoryPageClient() {
         </Reveal>
 
         <Reveal delay={0.15}>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xl">
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
             We think every serious company will make this migration in the next few years. 
             The ones that move early will be operating at a cost base and execution speed 
             that latecomers cannot catch. We are building the path — and walking it first.
@@ -224,7 +224,7 @@ export default function FactoryPageClient() {
 
         {/* ── Closing ── */}
         <Reveal>
-          <p className="text-base text-muted-foreground/60 leading-relaxed max-w-xl mb-5">
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xl mb-5">
             We are a small team. We care that the playbook is real, that it works, and that 
             every company we help run this way comes out the other side faster and leaner than 
             when they started.
@@ -232,18 +232,18 @@ export default function FactoryPageClient() {
         </Reveal>
 
         <Reveal delay={0.08}>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xl">
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">
             If you want to build this with us —{' '}
             <Link
               href="/careers"
-              className="text-foreground/60 hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors"
+              className="text-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors"
             >
               we&apos;re hiring.
             </Link>
             {' '}            If you want to run your company on it —{' '}
             <Link
               href="/partnerships"
-              className="text-foreground/60 hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors"
+              className="text-foreground hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors"
             >
               reach out.
             </Link>

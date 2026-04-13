@@ -1,0 +1,4 @@
+export const AUTO_TOPUP_DEFAULT_THRESHOLD = 1;
+export const AUTO_TOPUP_DEFAULT_AMOUNT = 5;
+export const AUTO_TOPUP_MIN_THRESHOLD = 1;
+export const AUTO_TOPUP_MIN_AMOUNT = 1;

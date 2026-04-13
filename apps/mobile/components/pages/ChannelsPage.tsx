@@ -48,6 +48,7 @@ import BottomSheet, {
 } from '@gorhom/bottom-sheet';
 
 import { useThemeColors } from '@/lib/theme-colors';
+import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { PageTab } from '@/stores/tab-store';
 import {
@@ -198,10 +199,9 @@ function ChannelsContent() {
   const handleSelectChannel = useCallback((channel: ChannelConfig) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedChannel(channel);
-    // Use requestAnimationFrame to ensure state has rendered before presenting
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       detailSheetRef.current?.present();
-    });
+    }, 100);
   }, []);
 
   const handleDelete = useCallback(
@@ -248,9 +248,10 @@ function ChannelsContent() {
   return (
     <View style={{ flex: 1 }}>
       {/* Search Bar */}
-      <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 8, gap: 10 }}>
         <View
           style={{
+            flex: 1,
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: inputBg,
@@ -273,6 +274,17 @@ function ChannelsContent() {
             </Pressable>
           )}
         </View>
+        <TouchableOpacity
+          onPress={handleOpenAdd}
+          activeOpacity={0.8}
+          style={{
+            width: 40, height: 40, borderRadius: 12,
+            backgroundColor: theme.primary,
+            alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Plus size={20} color={theme.primaryForeground} />
+        </TouchableOpacity>
       </View>
 
       {/* Channel List */}
@@ -313,20 +325,6 @@ function ChannelsContent() {
         />
       )}
 
-      {/* FAB */}
-      <View style={{ position: 'absolute', bottom: insets.bottom + 24, right: 20 }}>
-        <Pressable
-          onPress={handleOpenAdd}
-          style={{
-            width: 56, height: 56, borderRadius: 28,
-            backgroundColor: theme.primary,
-            alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
-          }}
-        >
-          <Plus size={24} color={theme.primaryForeground} />
-        </Pressable>
-      </View>
 
       {/* Detail Sheet */}
       <ChannelDetailSheet
@@ -384,42 +382,47 @@ function ChannelsContent() {
 function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDark: boolean; onPress: () => void }) {
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const platform = channel.platform || channel.channelType!;
+  const modelShort = channel.default_model ? channel.default_model.split('/').pop() : null;
+  const isTelegram = platform === 'telegram';
 
   return (
-    <Pressable
+    <TouchableOpacity
       onPress={onPress}
+      activeOpacity={0.7}
       style={{
-        flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+        flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 14,
+        marginBottom: 8, borderRadius: 16,
+        borderWidth: 1,
+        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+        backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF',
       }}
     >
-      <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}>
-        <Ionicons name={getChannelIcon((channel.platform || channel.channelType!)) as any} size={18} color={muted} />
+      <View style={{
+        width: 42, height: 42, borderRadius: 13,
+        backgroundColor: isTelegram ? 'rgba(41,182,246,0.08)' : 'rgba(233,30,99,0.06)',
+        alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Ionicons name={getChannelIcon(platform) as any} size={20} color={isTelegram ? '#29B6F6' : '#E91E63'} />
       </View>
       <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{channel.name}</Text>
-          <ChannelStatusDot enabled={channel.enabled} isDark={isDark} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{channel.name}</Text>
+          <View style={{
+            paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6,
+            backgroundColor: channel.enabled ? 'rgba(52,211,153,0.12)' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+          }}>
+            <Text style={{ fontSize: 10, fontFamily: 'Roobert-SemiBold', color: channel.enabled ? '#34d399' : muted }}>{channel.enabled ? 'Live' : 'Off'}</Text>
+          </View>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-          <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>{getChannelTypeLabel((channel.platform || channel.channelType!))}</Text>
-          <Text style={{ fontSize: 11, color: muted }}>·</Text>
-          <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>{channel.sandbox?.name || 'No instance'}</Text>
-        </View>
+        <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 3 }} numberOfLines={1}>
+          @{channel.bot_username || '?'}
+          {modelShort ? ` · ${modelShort}` : ''}
+          {channel.default_agent && channel.default_agent !== 'kortix' ? ` · ${channel.default_agent}` : ''}
+        </Text>
       </View>
-      <ChevronRight size={16} color={muted} />
-    </Pressable>
-  );
-}
-
-function ChannelStatusDot({ enabled, isDark }: { enabled: boolean; isDark: boolean }) {
-  const color = enabled ? '#34d399' : (isDark ? 'rgba(248,248,248,0.35)' : 'rgba(18,18,21,0.35)');
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-      <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: color }} />
-      <Text style={{ fontSize: 11, fontFamily: 'Roobert', color }}>{enabled ? 'Active' : 'Disabled'}</Text>
-    </View>
+      <ChevronRight size={18} color={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'} />
+    </TouchableOpacity>
   );
 }
 
@@ -439,8 +442,17 @@ function ChannelDetailSheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetBottomPadding();
+  const { sandboxUrl } = useSandboxContext();
+  const updateChannel = useUpdateChannel();
+
   const [editName, setEditName] = useState('');
-  const [nameChanged, setNameChanged] = useState(false);
+  const [agentName, setAgentName] = useState('kortix');
+  const [selectedModelIdx, setSelectedModelIdx] = useState(0);
+  const [instructions, setInstructions] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [webhookCopied, setWebhookCopied] = useState(false);
 
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
@@ -448,25 +460,76 @@ function ChannelDetailSheet({
   const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
   const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
 
+  // Load agents & models
+  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
+  const { data: providers } = useOpenCodeProviders(sandboxUrl);
+  const models = useMemo(() => (providers ? flattenModels(providers) : []), [providers]);
+  const filteredModels = useMemo(() => filterToLatestModels(models), [models]);
+
   useEffect(() => {
     if (channel) {
       setEditName(channel.name);
-      setNameChanged(false);
+      setAgentName(channel.default_agent || channel.agentName || 'kortix');
+      setInstructions(channel.instructions || '');
+      setDirty(false);
+      // Find matching model index
+      if (channel.default_model && filteredModels.length > 0) {
+        const modelStr = channel.default_model;
+        const idx = filteredModels.findIndex(m => `${m.providerID}/${m.modelID}` === modelStr || m.modelID === modelStr);
+        setSelectedModelIdx(idx >= 0 ? idx : 0);
+      } else {
+        setSelectedModelIdx(0);
+      }
     }
-  }, [channel]);
+  }, [channel, filteredModels]);
+
+  const markDirty = () => setDirty(true);
+
+  const handleSave = async () => {
+    if (!channel) return;
+    setSaving(true);
+    const selModel = filteredModels[selectedModelIdx];
+    const modelStr = selModel ? `${selModel.providerID}/${selModel.modelID}` : undefined;
+    try {
+      await updateChannel.mutateAsync({
+        id: channel.id || channel.channelConfigId!,
+        data: {
+          name: editName.trim() || undefined,
+          default_agent: agentName || undefined,
+          default_model: modelStr,
+          instructions: instructions.trim(),
+        },
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setDirty(false);
+    } catch {
+      Alert.alert('Error', 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCopyWebhook = async () => {
+    const url = channel?.webhook_url || channel?.platformConfig?.webhook_url;
+    if (!url) return;
+    await Clipboard.setStringAsync(String(url));
+    setWebhookCopied(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setTimeout(() => setWebhookCopied(false), 2000);
+  };
 
   const renderBackdrop = useCallback(
     (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />,
     [],
   );
 
-  const createdDate = channel ? new Date(channel.created_at || channel.createdAt!).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
-  const updatedDate = channel ? new Date(channel.updated_at || channel.updatedAt!).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+  const platform = channel ? (channel.platform || channel.channelType!) : 'telegram';
+  const webhookUrl = channel?.webhook_url || (channel?.platformConfig?.webhook_url as string) || '';
 
   return (
     <BottomSheetModal
       ref={sheetRef}
-      snapPoints={['80%']}
+      snapPoints={['85%']}
       enablePanDownToClose
       onDismiss={onClose}
       backdropComponent={renderBackdrop}
@@ -474,91 +537,124 @@ function ChannelDetailSheet({
       handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
     >
       {channel ? (
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 20) + 16 }} showsVerticalScrollIndicator={false}>
+      <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: sheetPadding }} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-          <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-            <Ionicons name={getChannelIcon((channel.platform || channel.channelType!)) as any} size={22} color={fg} />
-            {channel.enabled && (
-              <View style={{ position: 'absolute', top: -2, right: -2, width: 12, height: 12, borderRadius: 6, backgroundColor: '#34d399', borderWidth: 2, borderColor: isDark ? '#161618' : '#FFFFFF' }} />
-            )}
+          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+            <Ionicons name={getChannelIcon(platform) as any} size={20} color={fg} />
           </View>
           <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: 18, fontFamily: 'Roobert-Semibold', color: fg }} numberOfLines={1}>{channel.name}</Text>
-              <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: channel.enabled ? 'rgba(52,211,153,0.12)' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') }}>
-                <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: channel.enabled ? '#34d399' : muted }}>{channel.enabled ? 'Active' : 'Disabled'}</Text>
-              </View>
-            </View>
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>{getChannelTypeLabel((channel.platform || channel.channelType!))}</Text>
+            <Text style={{ fontSize: 18, fontFamily: 'Roobert-Semibold', color: fg }} numberOfLines={1}>{channel.name}</Text>
+            <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 1 }}>@{channel.bot_username || '?'} · {platform}</Text>
+          </View>
+        </View>
+
+        {/* Enabled toggle */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 14, borderWidth: 1, borderColor, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 20 }}>
+          <View>
+            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Enabled</Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginTop: 1 }}>Receive and respond to messages</Text>
           </View>
           <Switch
             value={channel.enabled}
             onValueChange={(val) => onToggle(channel, val)}
-            trackColor={{ false: isDark ? '#3F3F46' : '#D4D4D8', true: '#34d399' }}
+            trackColor={{ false: isDark ? '#3F3F46' : '#D4D4D8', true: theme.primary }}
             thumbColor="#fff"
           />
         </View>
 
-        {/* Name Input */}
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</Text>
+        {/* Channel Name */}
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Channel Name</Text>
         <TextInput
           value={editName}
-          onChangeText={(text) => { setEditName(text); setNameChanged(text.trim() !== (channel.name || '')); }}
+          onChangeText={(text) => { setEditName(text); markDirty(); }}
           placeholder="Channel name"
           placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
           style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, fontFamily: 'Roobert', color: fg, marginBottom: 16 }}
         />
 
-        {nameChanged && (
-          <Pressable onPress={() => onSave(channel, editName.trim())} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 14, backgroundColor: theme.primary, marginBottom: 16 }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save Changes</Text>
-          </Pressable>
-        )}
+        {/* Agent */}
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Agent</Text>
+        <View style={{ borderRadius: 14, borderWidth: 1, borderColor, backgroundColor: inputBg, marginBottom: 16, overflow: 'hidden' }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 8, gap: 6 }}>
+            {agents.map((agent) => {
+              const active = agentName === agent.name;
+              return (
+                <Pressable key={agent.name} onPress={() => { setAgentName(agent.name); markDirty(); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
+                  <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }}>{agent.name}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
 
-        {/* Instance */}
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Linked Instance</Text>
-        <View style={{ borderRadius: 14, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', marginBottom: 16, overflow: 'hidden' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 14 }}>
-            <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-              <Ionicons name="cube-outline" size={16} color={muted} />
+        {/* Model */}
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Model</Text>
+        <View style={{ borderRadius: 14, borderWidth: 1, borderColor, backgroundColor: inputBg, marginBottom: 16, overflow: 'hidden' }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 8, gap: 6 }}>
+            {filteredModels.map((m, i) => {
+              const active = selectedModelIdx === i;
+              return (
+                <Pressable key={`${m.providerID}:${m.modelID}`} onPress={() => { setSelectedModelIdx(i); markDirty(); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
+                  <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }} numberOfLines={1}>{m.modelName}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* System Instructions */}
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>System Instructions</Text>
+        <TextInput
+          value={instructions}
+          onChangeText={(text) => { setInstructions(text); markDirty(); }}
+          placeholder="Optional custom instructions for this channel's agent..."
+          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+          multiline
+          numberOfLines={3}
+          style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, fontFamily: 'Roobert', color: fg, height: 80, textAlignVertical: 'top', marginBottom: 4 }}
+        />
+        <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginBottom: 16 }}>Prepended to every session started from this channel.</Text>
+
+        {/* Webhook URL */}
+        <View style={{ borderRadius: 14, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', padding: 14, marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <ExternalLink size={14} color={muted} />
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Webhook URL</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{channel.sandbox?.name || channel.sandboxId || 'No instance'}</Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>Channels stay attached to the instance they were created for.</Text>
-            </View>
+            {!!webhookUrl && (
+              <Pressable onPress={handleCopyWebhook} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                <Copy size={11} color={webhookCopied ? '#34d399' : muted} />
+                <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: webhookCopied ? '#34d399' : muted }}>{webhookCopied ? 'Copied' : 'Copy'}</Text>
+              </Pressable>
+            )}
           </View>
+          {webhookUrl ? (
+            <Text style={{ fontSize: 11, fontFamily: 'monospace', color: muted, lineHeight: 16 }} numberOfLines={2} selectable>{webhookUrl}</Text>
+          ) : (
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: '#d97706' }}>Public URL not resolved. Set PUBLIC_BASE_URL.</Text>
+          )}
+          <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginTop: 6 }}>
+            {platform === 'telegram'
+              ? 'Telegram sends webhook events to this URL. It was set during bot setup.'
+              : 'Set this as the Request URL in your Slack app → Event Subscriptions.'}
+          </Text>
         </View>
 
-        {/* Metadata */}
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Details</Text>
-        <View style={{ borderRadius: 14, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', marginBottom: 16, overflow: 'hidden' }}>
-          <DetailRow label="Type" value={getChannelTypeLabel((channel.platform || channel.channelType!))} isDark={isDark} fg={fg} muted={muted} />
-          {channel.instructions && <DetailRow label="Instructions" value={channel.instructions} isDark={isDark} fg={fg} muted={muted} />}
-          {(channel.default_agent || channel.agentName) && <DetailRow label="Agent" value={(channel.default_agent || channel.agentName)!} isDark={isDark} fg={fg} muted={muted} />}
-          <DetailRow label="Created" value={createdDate} isDark={isDark} fg={fg} muted={muted} />
-          <DetailRow label="Updated" value={updatedDate} isDark={isDark} fg={fg} muted={muted} last />
-        </View>
-
-        {/* Platform Config (webhook URL etc.) */}
-        {channel.platformConfig && Object.keys(channel.platformConfig).length > 0 && (
-          <>
-            <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 }}>Configuration</Text>
-            <View style={{ borderRadius: 14, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', marginBottom: 16, overflow: 'hidden' }}>
-              {Object.entries(channel.platformConfig).map(([key, value], i, arr) => (
-                <DetailRow
-                  key={key}
-                  label={key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-                  value={typeof value === 'string' ? value : JSON.stringify(value)}
-                  isDark={isDark}
-                  fg={fg}
-                  muted={muted}
-                  last={i === arr.length - 1}
-                  mono
-                />
-              ))}
-            </View>
-          </>
+        {/* Save button */}
+        {dirty && (
+          <Pressable
+            onPress={handleSave}
+            disabled={saving}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary, marginBottom: 16 }}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color={theme.primaryForeground} />
+            ) : (
+              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save Settings</Text>
+            )}
+          </Pressable>
         )}
 
         {/* Danger Zone */}
@@ -574,7 +670,7 @@ function ChannelDetailSheet({
             </Pressable>
           </View>
         </View>
-      </ScrollView>
+      </BottomSheetScrollView>
       ) : null}
     </BottomSheetModal>
   );
@@ -617,6 +713,7 @@ function AddChannelSheet({
   isCreating: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetBottomPadding();
   const [view, setView] = useState<WizardView>('type-select');
   const [selectedType, setSelectedType] = useState<ChannelType | null>(null);
   const [channelName, setChannelName] = useState('');
@@ -669,7 +766,7 @@ function AddChannelSheet({
       handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
     >
       <BottomSheetScrollView
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: Math.max(insets.bottom, 20) + 16 }}
+        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}
         keyboardShouldPersistTaps="handled"
       >
         {/* Header */}

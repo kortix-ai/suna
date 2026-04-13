@@ -9,18 +9,17 @@ This directory lives inside `core/kortix-master/opencode/` and is the OpenCode c
 ```
 opencode.jsonc          <- OpenCode config (plugins, model, MCP servers)
 package.json            <- minimal (deps managed by parent kortix-master/package.json)
-agents/kortix.md        <- the Kortix agent (natively discovered by OpenCode)
+agents/general.md       <- default generalist agent
+agents/orchestrator.md  <- project CEO / orchestrator agent
+agents/worker.md        <- task-run worker agent
 commands/*.md           <- slash commands (natively discovered)
 tools/*.ts              <- custom tools (natively discovered)
 skills/                 <- built-in skills (natively discovered)
-plugin/                 <- plugins loaded individually via opencode.jsonc
-  kortix-orchestrator/  <- project + session management (SQLite)
-  kortix-sessions/      <- session list/get/search tools
-  kortix-autowork/      <- autowork execution loop (DONE/VERIFIED protocol)
-  kortix-todo-enforcing/ <- passive todo continuation (nudges on idle)
-  opencode-pty/         <- PTY spawn/read/write tools
-  worktree/             <- git worktree plugin
-  connectors/           <- connector CRUD tools
+  plugin/                 <- plugins loaded individually via opencode.jsonc
+    kortix-system/        <- unified Kortix plugin (projects, tasks, sessions, connectors, autowork, triggers, worktree)
+    opencode-pty/         <- PTY spawn/read/write tools
+    worktree/             <- git worktree plugin
+    connectors/           <- connector CRUD tools
   btw/                  <- /btw quick question command
   agent-triggers.ts     <- cron/webhook trigger plugin
   anthropic-auth.ts     <- auth token plugin

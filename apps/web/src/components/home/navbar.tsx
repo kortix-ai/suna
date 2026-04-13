@@ -58,7 +58,7 @@ function PowerButton({ href, onClick, label = 'Launch Kortix' }: { href?: string
       {/* Power icon */}
       <svg
         viewBox="0 0 24 24"
-        className={cn("size-[22px] transition-colors duration-200", hovered ? "text-foreground" : "text-foreground/35")}
+        className={cn("size-[22px] transition-colors duration-200", hovered ? "text-foreground" : "text-muted-foreground")}
         fill="none"
         stroke="currentColor"
         strokeWidth={1.8}
@@ -72,7 +72,7 @@ function PowerButton({ href, onClick, label = 'Launch Kortix' }: { href?: string
       <AnimatePresence>
         {hovered && (
           <motion.span
-            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] text-foreground/70 bg-background border border-border/60 rounded-md px-2 py-0.5 pointer-events-none z-50 shadow-sm"
+            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-[11px] text-foreground bg-background border border-border rounded-md px-2 py-0.5 pointer-events-none z-50 shadow-sm"
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}

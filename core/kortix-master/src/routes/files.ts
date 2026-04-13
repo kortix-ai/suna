@@ -25,6 +25,10 @@ import {
 } from '../schemas/common'
 
 const filesRouter = new Hono()
+const root = process.env.KORTIX_WORKSPACE || '/workspace'
+
+let statusCache: { at: number; data: Array<{ path: string; added: number; removed: number; status: 'added' | 'deleted' | 'modified' }> } | null = null
+let statusPending: Promise<Array<{ path: string; added: number; removed: number; status: 'added' | 'deleted' | 'modified' }>> | null = null
 
 // ─── Security ────────────────────────────────────────────────────────────────
 
@@ -51,6 +55,142 @@ function validatePath(c: any, raw: string): string | null {
     c.status(403)
     return null
   }
+}
+
+// ─── Upload naming: collision-free writes ────────────────────────────────────
+
+/** Short high-entropy suffix (~12 chars) for disambiguating filenames. */
+function uniqueSuffix(): string {
+  const ts = Date.now().toString(36)
+  const rnd = Math.random().toString(36).slice(2, 8)
+  return `${ts}-${rnd}`
+}
+
+/**
+ * Insert a unique suffix before the file extension.
+ *   foo.txt    → foo-<suffix>.txt
+ *   README     → README-<suffix>
+ *   .env       → .env-<suffix>
+ *   foo.tar.gz → foo.tar-<suffix>.gz   (only the final extension is preserved)
+ */
+function withSuffix(dest: string, suffix: string): string {
+  const dir = path.dirname(dest)
+  const ext = path.extname(dest)
+  const base = path.basename(dest, ext)
+  const prefix = dir === '.' || dir === '' ? '' : `${dir}/`
+  return `${prefix}${base}-${suffix}${ext}`
+}
+
+/**
+ * Atomically write `buffer` to `dest`, never overwriting an existing file.
+ *
+ * Uses the POSIX `wx` flag (O_CREAT | O_EXCL) so concurrent uploads cannot
+ * race past an exists-check and clobber each other. On collision the
+ * filename is suffixed with a short unique token and the write is retried.
+ *
+ * Returns the path the file was actually written to (may differ from
+ * `dest` if a collision forced a rename).
+ */
+async function writeUploadUnique(dest: string, buffer: ArrayBuffer): Promise<string> {
+  const data = Buffer.from(buffer)
+  await fs.mkdir(path.dirname(resolvePath(dest)), { recursive: true })
+
+  let attempt = dest
+  for (let i = 0; i < 6; i++) {
+    try {
+      await fs.writeFile(resolvePath(attempt), data, { flag: 'wx' })
+      return attempt
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+      attempt = withSuffix(dest, uniqueSuffix())
+    }
+  }
+
+  // Extremely unlikely fallthrough — a full UUID makes further collision
+  // effectively impossible.
+  attempt = withSuffix(dest, crypto.randomUUID())
+  await fs.writeFile(resolvePath(attempt), data, { flag: 'wx' })
+  return attempt
+}
+
+function kind(code: string): 'added' | 'deleted' | 'modified' {
+  if (code === '??') return 'added'
+  if (code.includes('U')) return 'modified'
+  if (code.includes('A') && !code.includes('D')) return 'added'
+  if (code.includes('D') && !code.includes('A')) return 'deleted'
+  return 'modified'
+}
+
+async function git(args: string[]): Promise<string> {
+  const proc = Bun.spawn(['git', ...args], {
+    cwd: root,
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+
+  const [code, out, err] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
+
+  if (code === 0) return out
+  throw new Error(err.trim() || `git ${args.join(' ')} failed (${code})`)
+}
+
+async function status(): Promise<Array<{ path: string; added: number; removed: number; status: 'added' | 'deleted' | 'modified' }>> {
+  const now = Date.now()
+  if (statusCache && now - statusCache.at < 5_000) return statusCache.data
+  if (statusPending) return statusPending
+
+  statusPending = (async () => {
+    const inside = await git(['rev-parse', '--is-inside-work-tree']).catch(() => '')
+    if (inside.trim() !== 'true') {
+      statusCache = { at: Date.now(), data: [] }
+      return []
+    }
+
+    const [raw, diff] = await Promise.all([
+      git(['-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false', 'status', '--porcelain=v1', '--untracked-files=all', '--no-renames', '-z', '--', '.']),
+      git(['-c', 'core.fsmonitor=false', '-c', 'core.quotepath=false', 'diff', '--numstat', 'HEAD', '--', '.']).catch(() => ''),
+    ])
+
+    const stats = new Map<string, { added: number; removed: number }>()
+    for (const line of diff.trim().split('\n').filter(Boolean)) {
+      const [a, r, file] = line.split('\t')
+      if (!file) continue
+      const added = a === '-' ? 0 : Number.parseInt(a || '0', 10)
+      const removed = r === '-' ? 0 : Number.parseInt(r || '0', 10)
+      stats.set(file, {
+        added: Number.isFinite(added) ? added : 0,
+        removed: Number.isFinite(removed) ? removed : 0,
+      })
+    }
+
+    const items = new Map<string, { path: string; added: number; removed: number; status: 'added' | 'deleted' | 'modified' }>()
+    for (const item of raw.split('\u0000').filter(Boolean)) {
+      const code = item.slice(0, 2)
+      const file = item.slice(3)
+      if (!file) continue
+      const next = kind(code)
+      const counts = stats.get(file)
+      items.set(file, {
+        path: file,
+        added: counts?.added ?? 0,
+        removed: counts?.removed ?? 0,
+        status: next,
+      })
+    }
+
+    const data = [...items.values()]
+    statusCache = { at: Date.now(), data }
+    return data
+  })().finally(() => {
+    statusPending = null
+  })
+
+  return statusPending
 }
 
 // ─── Binary detection ────────────────────────────────────────────────────────
@@ -133,6 +273,37 @@ filesRouter.get('/',
 )
 
 // ─── GET /content — read file content (JSON, with base64 for binaries) ───────
+
+filesRouter.get('/status',
+  describeRoute({
+    tags: ['Files'],
+    summary: 'Git file status',
+    description: 'Returns the git status of changed files for the current workspace using a fast local implementation in kortix-master.',
+    responses: {
+      200: {
+        description: 'Changed files',
+        content: {
+          'application/json': {
+            schema: resolver(z.array(z.object({
+              path: z.string(),
+              added: z.number(),
+              removed: z.number(),
+              status: z.enum(['added', 'deleted', 'modified']),
+            }))),
+          },
+        },
+      },
+      500: { description: 'Server error', content: { 'application/json': { schema: resolver(ErrorResponse) } } },
+    },
+  }),
+  async (c) => {
+    try {
+      return c.json(await status())
+    } catch (err: any) {
+      return c.json({ error: err?.message || 'Failed to read git status' }, 500)
+    }
+  },
+)
 
 filesRouter.get('/content',
   describeRoute({
@@ -244,11 +415,12 @@ filesRouter.post('/upload',
           : key === 'file' || key === 'file[]'
             ? file.name
             : key
-        const resolved = resolvePath(dest)
         const buffer = await file.arrayBuffer()
-        await fs.mkdir(path.dirname(resolved), { recursive: true })
-        await Bun.write(resolved, buffer)
-        results.push({ path: dest, size: buffer.byteLength })
+        // Collision-free write: if `dest` already exists, the filename is
+        // automatically suffixed with a unique token and the actual path
+        // the bytes landed at is returned to the client.
+        const actualPath = await writeUploadUnique(dest, buffer)
+        results.push({ path: actualPath, size: buffer.byteLength })
       }
     }
 

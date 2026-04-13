@@ -3,6 +3,7 @@ import {
   getCreditAccount,
   getSubscriptionInfo,
 } from '../repositories/credit-accounts';
+import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import {
   getTier,
   getDailyCreditConfig,
@@ -208,8 +209,8 @@ export function buildLocalAccountState(): AccountStateResponse {
     },
     auto_topup: {
       enabled: false,
-      threshold: 5,
-      amount: 15,
+      threshold: AUTO_TOPUP_DEFAULT_THRESHOLD,
+      amount: AUTO_TOPUP_DEFAULT_AMOUNT,
     },
     instances: [],
     can_add_instances: false,

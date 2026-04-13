@@ -39,7 +39,7 @@ export async function readContainerConfig(
 
     const inspect = await execOnHost(
       endpoint,
-      `docker inspect --format='{{.Config.Image}}' ${config.name} 2>/dev/null`,
+      `docker inspect --format='{{.Config.Image}}' '${config.name}' 2>/dev/null`,
       5,
     );
     if (inspect.success) {
@@ -83,7 +83,7 @@ export async function buildFromInspect(
   for (const name of names) {
     const result = await execOnHost(
       endpoint,
-      `docker inspect ${name} --format='{{json .}}' 2>/dev/null`,
+      `docker inspect '${name}' --format='{{json .}}' 2>/dev/null`,
       10,
     );
     if (!result.success) continue;
@@ -135,24 +135,29 @@ function formatShmSize(bytes: number | undefined): string {
   return `${Math.round(mb)}m`;
 }
 
+// Shell-quote a value: wraps in single quotes, escaping any embedded single quotes.
+function sq(val: string): string {
+  return `'${val.replace(/'/g, "'\\''")}'`;
+}
+
 export function buildDockerRunCommand(config: ContainerConfig): string {
   const args: string[] = ['docker run -d --rm'];
-  args.push(`--name ${config.name}`);
-  if (config.envFile) args.push(`--env-file ${config.envFile}`);
+  args.push(`--name ${sq(config.name)}`);
+  if (config.envFile) args.push(`--env-file ${sq(config.envFile)}`);
 
   // Inject SANDBOX_VERSION from the image tag so the sandbox health endpoint
   // reports the correct version. This overrides any stale value in the env file.
   const imageTag = config.image.includes(':') ? config.image.split(':').pop() : 'unknown';
-  args.push(`-e SANDBOX_VERSION=${imageTag}`);
+  args.push(`-e SANDBOX_VERSION=${sq(imageTag!)}`);
 
   for (const cap of config.caps) {
     const stripped = cap.replace(/^CAP_/, '');
-    args.push(`--cap-add ${stripped}`);
+    args.push(`--cap-add ${sq(stripped)}`);
   }
-  for (const opt of config.securityOpt) args.push(`--security-opt ${opt}`);
-  if (config.shmSize) args.push(`--shm-size ${config.shmSize}`);
-  for (const vol of config.volumes) args.push(`-v ${vol}`);
-  for (const port of sanitizePorts(config.ports)) args.push(`-p ${port}`);
-  args.push(config.image);
+  for (const opt of config.securityOpt) args.push(`--security-opt ${sq(opt)}`);
+  if (config.shmSize) args.push(`--shm-size ${sq(config.shmSize)}`);
+  for (const vol of config.volumes) args.push(`-v ${sq(vol)}`);
+  for (const port of sanitizePorts(config.ports)) args.push(`-p ${sq(port)}`);
+  args.push(sq(config.image));
   return args.join(' ');
 }

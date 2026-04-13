@@ -1,6 +1,6 @@
 ---
 description: First-run onboarding — gatekeeper until unlock. ~5 min target. Seeds USER.md/MEMORY.md; skippable via UI or chat.
-agent: kortix
+agent: general
 ---
 
 # Onboarding

@@ -76,8 +76,9 @@ interface SessionRowProps {
   isBusy: boolean;
   pendingCount: number;
   isChild: boolean;
-  /** Number of collapsed children (0 = no children or expanded) */
-  collapsedChildCount?: number;
+  /** Total number of direct children for this row */
+  childCount?: number;
+  isExpanded?: boolean;
   onToggleExpand?: () => void;
   onClick: (e: React.MouseEvent, sessionId: string) => void;
   onDelete: (sessionId: string, title: string) => void;
@@ -92,7 +93,8 @@ function SessionRow({
   isBusy,
   pendingCount,
   isChild,
-  collapsedChildCount = 0,
+  childCount = 0,
+  isExpanded = false,
   onToggleExpand,
   onClick,
   onDelete,
@@ -155,23 +157,30 @@ function SessionRow({
           {displayTitle}
         </span>
 
-        {/* Collapsed child count — clickable to expand */}
-        {collapsedChildCount > 0 && onToggleExpand && (
+        {/* Child toggle — subtle count pill stays visible so expanded lists can be collapsed again */}
+        {childCount > 0 && onToggleExpand && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                className="flex-shrink-0 text-[10px] tabular-nums text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer px-0.5"
+                type="button"
+                aria-label={isExpanded ? 'Collapse sub-sessions' : 'Expand sub-sessions'}
+                className={cn(
+                  'flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] tabular-nums transition-colors cursor-pointer',
+                  isExpanded
+                    ? 'bg-sidebar-accent/80 text-sidebar-foreground'
+                    : 'text-muted-foreground/50 hover:bg-sidebar-accent/60 hover:text-muted-foreground',
+                )}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   onToggleExpand();
                 }}
               >
-                +{collapsedChildCount}
+                {childCount}
               </button>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs">
-              {collapsedChildCount} sub-{collapsedChildCount === 1 ? 'session' : 'sessions'}
+              {isExpanded ? 'Collapse' : 'Expand'} {childCount} sub-{childCount === 1 ? 'session' : 'sessions'}
             </TooltipContent>
           </Tooltip>
         )}
@@ -350,8 +359,8 @@ function SessionGroup({
     );
   };
 
-  // All sessions render with the same SessionRow — no chevron.
-  // Parents show a "+N" badge when collapsed to hint at sub-sessions.
+  // All sessions render with the same SessionRow.
+  // Parents keep a persistent toggle so expanded sub-session lists can be closed again.
   return (
     <div>
       <SessionRow
@@ -360,7 +369,8 @@ function SessionGroup({
         isBusy={isBusy}
         pendingCount={pendingCount}
         isChild={false}
-        collapsedChildCount={hasChildren && !isExpanded ? childSessions.length : 0}
+        childCount={hasChildren ? childSessions.length : 0}
+        isExpanded={isExpanded}
         onToggleExpand={hasChildren ? () => onToggleExpand(session.id) : undefined}
         onClick={onClick}
         onDelete={onDelete}

@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils';
 // Shared selectors from ChatInput (same as used in channels)
 import { AgentSelector, flattenModels } from '@/components/session/session-chat-input';
 import { ModelSelector } from '@/components/session/model-selector';
-import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useVisibleAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 
 interface TaskConfigDialogProps {
   open: boolean;
@@ -93,7 +93,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
   }, [sandbox]);
 
   // Use the same hooks as ChatInput / channels for agents + models
-  const { data: agents = [], isLoading: agentsLoading } = useOpenCodeAgents();
+  const agents = useVisibleAgents();
   const { data: providers, isLoading: modelsLoading } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
 
@@ -363,19 +363,13 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
                   {/* Agent — shared CommandPopover component from ChatInput */}
                   <div className="space-y-2">
                     <Label>Agent</Label>
-                    {agentsLoading ? (
-                      <div className="flex items-center gap-2 h-9 px-3 text-sm text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Loading agents...
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border bg-card px-2 py-1">
-                        <AgentSelector
-                          agents={agents}
-                          selectedAgent={agentName}
-                          onSelect={(next) => setAgentName(next)}
-                        />
-                      </div>
-                    )}
+                    <div className="rounded-xl border bg-card px-2 py-1">
+                      <AgentSelector
+                        agents={agents}
+                        selectedAgent={agentName}
+                        onSelect={(next) => setAgentName(next)}
+                      />
+                    </div>
                   </div>
 
                   {/* Model — shared CommandPopover component from ChatInput */}

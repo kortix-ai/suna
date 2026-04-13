@@ -37,15 +37,15 @@ export default function AboutPageClient() {
         <div className="space-y-5">
           {paragraphs.map((paragraph, index) => (
             <Reveal key={index} delay={index * 0.08}>
-              <p className="text-base text-muted-foreground/60 leading-relaxed">
+              <p className="text-base text-muted-foreground leading-relaxed">
                 {typeof paragraph === 'string' ? (
                   paragraph
                 ) : (
                   <>
                     {paragraph.text}
-                    <Link 
-                      href={paragraph.linkHref} 
-                      className="text-foreground/70 hover:text-foreground underline underline-offset-4 decoration-foreground/20 hover:decoration-foreground/50 transition-colors"
+                    <Link
+                      href={paragraph.linkHref}
+                      className="text-foreground font-medium underline underline-offset-4 decoration-foreground/40 hover:decoration-foreground transition-colors"
                     >
                       {paragraph.linkText}
                     </Link>

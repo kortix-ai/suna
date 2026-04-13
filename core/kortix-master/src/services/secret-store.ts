@@ -40,8 +40,9 @@ export class SecretStore {
   private lock: Promise<void> = Promise.resolve()
 
   constructor() {
-    this.secretsPath = process.env.SECRET_FILE_PATH || '/workspace/.secrets/.secrets.json'
-    this.saltPath = process.env.SALT_FILE_PATH || '/workspace/.secrets/.salt'
+    const persistentRoot = process.env.KORTIX_PERSISTENT_ROOT || '/persistent'
+    this.secretsPath = process.env.SECRET_FILE_PATH || `${persistentRoot}/secrets/.secrets.json`
+    this.saltPath = process.env.SALT_FILE_PATH || `${persistentRoot}/secrets/.salt`
     // Dedicated encryption key — lives alongside secrets, independent of KORTIX_TOKEN
     const dir = dirname(this.secretsPath)
     this.encryptionKeyPath = process.env.ENCRYPTION_KEY_PATH || join(dir, '.encryption-key')

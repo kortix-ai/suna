@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { useAuth } from '@/components/AuthProvider';
 import { ensureSandbox, getSandboxUrl } from '@/lib/platform-client';
+import { getActiveOpenCodeUrl, getServerByInstanceId, resolveServerUrl } from '@/stores/server-store';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -166,13 +167,25 @@ interface ApiRunResponse {
   };
 }
 
-async function getTriggersBaseUrl(): Promise<string> {
+async function resolveSandboxBaseUrl(instanceId?: string | null): Promise<string> {
+  if (instanceId) {
+    const server = getServerByInstanceId(instanceId);
+    if (server) return resolveServerUrl(server).replace(/\/+$/, '');
+  }
+
+  const activeBaseUrl = getActiveOpenCodeUrl();
+  if (activeBaseUrl) return activeBaseUrl.replace(/\/+$/, '');
+
   const { sandbox } = await ensureSandbox();
-  return `${getSandboxUrl(sandbox)}/kortix/triggers`;
+  return getSandboxUrl(sandbox).replace(/\/+$/, '');
 }
 
-async function fetchTriggersJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const baseUrl = await getTriggersBaseUrl();
+async function getTriggersBaseUrl(instanceId?: string | null): Promise<string> {
+  return `${await resolveSandboxBaseUrl(instanceId)}/kortix/triggers`;
+}
+
+async function fetchTriggersJson<T>(path: string, init?: RequestInit, instanceId?: string | null): Promise<T> {
+  const baseUrl = await getTriggersBaseUrl(instanceId);
   const response = await authenticatedFetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
@@ -188,8 +201,8 @@ async function fetchTriggersJson<T>(path: string, init?: RequestInit): Promise<T
   return body as T;
 }
 
-const fetchTriggers = async (): Promise<Trigger[]> => {
-  const api = await fetchTriggersJson<ApiListResponse>('');
+const fetchTriggers = async (sandboxId?: string): Promise<Trigger[]> => {
+  const api = await fetchTriggersJson<ApiListResponse>('', undefined, sandboxId);
   const normalized = api.data.map((trigger) => ({
     ...trigger,
     maxRetries: trigger.maxRetries ?? 0,
@@ -254,7 +267,7 @@ export const useTriggers = (sandboxId?: string) => {
   const { user, isLoading: isAuthLoading } = useAuth();
   return useQuery({
     queryKey: ['triggers', sandboxId ?? null, user?.id ?? 'anonymous'],
-    queryFn: () => fetchTriggers(),
+    queryFn: () => fetchTriggers(sandboxId),
     // When sandboxId is absent, backend returns all triggers for the account.
     enabled: !isAuthLoading && !!user,
     staleTime: 1 * 60 * 1000,
@@ -356,13 +369,12 @@ export interface SandboxAgent {
   mode?: string;
 }
 
-async function getSandboxBaseUrl(): Promise<string> {
-  const { sandbox } = await ensureSandbox();
-  return getSandboxUrl(sandbox);
+async function getSandboxBaseUrl(instanceId?: string | null): Promise<string> {
+  return resolveSandboxBaseUrl(instanceId);
 }
 
 const fetchSandboxModels = async (sandboxId: string): Promise<SandboxProvider[]> => {
-  const baseUrl = await getSandboxBaseUrl();
+  const baseUrl = await getSandboxBaseUrl(sandboxId);
   const response = await authenticatedFetch(`${baseUrl}/config/providers`);
   if (!response.ok) {
     throw new Error(`Failed to fetch models (${response.status})`);
@@ -381,7 +393,7 @@ const fetchSandboxModels = async (sandboxId: string): Promise<SandboxProvider[]>
 };
 
 const fetchSandboxAgents = async (sandboxId: string): Promise<SandboxAgent[]> => {
-  const baseUrl = await getSandboxBaseUrl();
+  const baseUrl = await getSandboxBaseUrl(sandboxId);
   const response = await authenticatedFetch(`${baseUrl}/agent`);
   if (!response.ok) {
     throw new Error(`Failed to fetch agents (${response.status})`);

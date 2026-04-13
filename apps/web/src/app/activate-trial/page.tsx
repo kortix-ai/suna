@@ -4,11 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { CreditCard, Zap, Shield, ArrowRight, CheckCircle, LogOut } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { toast } from '@/lib/toast';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, Suspense, lazy } from 'react';
 import { useTrialStatus, useStartTrial, useAccountState } from '@/hooks/billing';
-import { Skeleton } from '@/components/ui/skeleton';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -20,24 +20,6 @@ import { useAdminRole } from '@/hooks/admin';
 // Lazy load heavy components
 const MaintenancePage = lazy(() => import('@/components/maintenance/maintenance-page').then(mod => ({ default: mod.MaintenancePage })));
 
-// Skeleton for immediate FCP
-function ActivateTrialSkeleton() {
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl border-2 shadow-none bg-transparent border-none">
-        <CardHeader className="text-center space-y-4">
-          <Skeleton className="h-8 w-48 mx-auto" />
-          <Skeleton className="h-4 w-64 mx-auto" />
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <Skeleton className="h-40 w-full rounded-lg" />
-          <Skeleton className="h-24 w-full rounded-lg" />
-          <Skeleton className="h-12 w-full rounded-lg" />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
 
 export default function ActivateTrialPage() {
   const router = useRouter();
@@ -96,7 +78,7 @@ export default function ActivateTrialPage() {
   // Show skeleton immediately for FCP instead of blocking loader
   if (maintenanceNotice?.enabled && !maintenanceLoading && !isCheckingAdminRole && !isAdmin) {
     return (
-      <Suspense fallback={<ActivateTrialSkeleton />}>
+      <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Loading trial" />}>
         <MaintenancePage />
       </Suspense>
     );
@@ -106,7 +88,7 @@ export default function ActivateTrialPage() {
 
   // Show skeleton during initial load
   if (isLoading) {
-    return <ActivateTrialSkeleton />;
+    return <ConnectingScreen forceConnecting minimal title="Loading trial" />;
   }
 
   return (

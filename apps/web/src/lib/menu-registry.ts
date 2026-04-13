@@ -632,18 +632,6 @@ export const menuRegistry: MenuItemDef[] = [
     actionId: 'openProviderModal',
     keywords: 'llm providers models anthropic openai openrouter google groq xai',
   },
-  {
-    id: 'settings-providers',
-    label: 'Providers Settings',
-    icon: Bot,
-    group: 'settingsPages',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/settings/providers',
-    tabType: 'settings',
-    keywords: 'llm providers settings models anthropic openai configuration',
-  },
-
   // ──────────────────────────────────────────────────────────────────────────
   // PREFERENCES — open settings modal to a tab
   // ──────────────────────────────────────────────────────────────────────────

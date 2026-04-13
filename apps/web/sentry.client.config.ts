@@ -7,8 +7,13 @@
  */
 
 import * as Sentry from '@sentry/nextjs';
+import { shouldIgnoreSentryBrowserNoise } from '@/lib/browser-error-noise';
 
 const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
+
+function isBrowserNoiseEvent(event: Sentry.ErrorEvent): boolean {
+  return shouldIgnoreSentryBrowserNoise(event);
+}
 
 if (SENTRY_DSN) {
   Sentry.init({
@@ -45,20 +50,14 @@ if (SENTRY_DSN) {
       'ERR_BLOCKED_BY_CLIENT',
       // External Safari / WebView video probing noise
       'webkitPresentationMode',
+      "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",
+      // Browser extension/runtime bridge noise
+      'Invalid call to runtime.sendMessage(). Tab not found.',
     ],
 
     // Filter out internal/low-value errors before sending
     beforeSend(event) {
-      const message = event.exception?.values?.[0]?.value || event.message || '';
-      // Don't report errors from browser extensions
-      const frames = event.exception?.values?.[0]?.stacktrace?.frames || [];
-      if (frames.some((f) => f.filename?.includes('extension://'))) {
-        return null;
-      }
-      if (
-        message.includes('webkitPresentationMode') ||
-        frames.some((f) => f.filename?.startsWith('app:///'))
-      ) {
+      if (isBrowserNoiseEvent(event)) {
         return null;
       }
       return event;

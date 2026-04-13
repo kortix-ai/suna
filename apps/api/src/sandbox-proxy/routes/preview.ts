@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { eq, and, ne } from 'drizzle-orm';
-import { sandboxes, accountMembers, accountUser } from '@kortix/db';
+import { sandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
+import { canAccessPreviewSandbox } from '../../shared/preview-ownership';
 
 interface PreviewProxyContext {
   userId: string;
@@ -13,11 +14,6 @@ interface PreviewProxyContext {
 const preview = new Hono<{ Variables: PreviewProxyContext }>();
 
 // === In-memory caches with TTL ===
-
-interface OwnershipEntry {
-  allowed: boolean;
-  expiresAt: number;
-}
 
 interface PreviewLinkEntry {
   url: string;
@@ -30,26 +26,10 @@ interface ServiceKeyEntry {
   expiresAt: number;
 }
 
-const ownershipCache = new Map<string, OwnershipEntry>();
 const previewLinkCache = new Map<string, PreviewLinkEntry>();
 const serviceKeyCache = new Map<string, ServiceKeyEntry>();
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-function getCachedOwnership(sandboxId: string, userId: string): boolean | null {
-  const key = `${sandboxId}:${userId}`;
-  const entry = ownershipCache.get(key);
-  if (!entry || Date.now() > entry.expiresAt) {
-    ownershipCache.delete(key);
-    return null;
-  }
-  return entry.allowed;
-}
-
-function setCachedOwnership(sandboxId: string, userId: string, allowed: boolean) {
-  const key = `${sandboxId}:${userId}`;
-  ownershipCache.set(key, { allowed, expiresAt: Date.now() + CACHE_TTL_MS });
-}
 
 function getCachedServiceKey(sandboxId: string): string | null | undefined {
   const entry = serviceKeyCache.get(sandboxId);
@@ -80,85 +60,20 @@ function setCachedPreviewLink(sandboxId: string, port: number, url: string, toke
 }
 
 // === Ownership verification via kortix.sandboxes ===
+//
+// Delegates to the shared helper so the Daytona proxy path, the preview
+// auth middleware, and the subdomain token validator all agree on a
+// single definition of "user X can hit sandbox Y". See the rationale in
+// `shared/preview-ownership.ts`: we used to do a global "who owns
+// externalId=X" lookup, which broke in local-docker mode where every
+// user shares the `kortix-sandbox` container name and a stale row from
+// a previous user would lock everyone else out with 403.
 
 async function verifyOwnership(sandboxId: string, userId: string): Promise<boolean> {
   // If no userId is set, skip ownership check.
   // The proxy auth already validated the token — the user has access.
   if (!userId) return true;
-
-  // Check cache first
-  const cached = getCachedOwnership(sandboxId, userId);
-  if (cached !== null) return cached;
-
-  try {
-    // Find sandbox by externalId in kortix.sandboxes.
-    // Allow any status except 'pooled' (unassigned) — the auto-wake logic
-    // downstream handles stopped/archived sandboxes gracefully.
-    const [sandbox] = await db
-      .select({ accountId: sandboxes.accountId })
-      .from(sandboxes)
-      .where(
-        and(
-          eq(sandboxes.externalId, sandboxId),
-          ne(sandboxes.status, 'pooled'),
-        )
-      )
-      .limit(1);
-
-    if (!sandbox) {
-      console.warn(`[PREVIEW] No sandbox found for externalId=${sandboxId}`);
-      setCachedOwnership(sandboxId, userId, false);
-      return false;
-    }
-
-    // Check if user belongs to the account that owns this sandbox.
-    // Dual-read: try kortix.account_members first, fall back to basejump.account_user.
-    let allowed = false;
-
-    // Try kortix.account_members (new table)
-    try {
-      const [membership] = await db
-        .select({ accountRole: accountMembers.accountRole })
-        .from(accountMembers)
-        .where(
-          and(
-            eq(accountMembers.userId, userId),
-            eq(accountMembers.accountId, sandbox.accountId),
-          )
-        )
-        .limit(1);
-      if (membership) allowed = true;
-    } catch {
-      // Table may not exist yet
-    }
-
-    // Fall back to basejump.account_user (legacy, cloud prod)
-    if (!allowed) {
-      try {
-        const [legacy] = await db
-          .select({ accountRole: accountUser.accountRole })
-          .from(accountUser)
-          .where(
-            and(
-              eq(accountUser.userId, userId),
-              eq(accountUser.accountId, sandbox.accountId),
-            )
-          )
-          .limit(1);
-        if (legacy) allowed = true;
-      } catch {
-        // basejump schema doesn't exist (self-hosted) — check direct match
-        // In self-hosted, accountId === userId for personal accounts
-        allowed = sandbox.accountId === userId;
-      }
-    }
-
-    setCachedOwnership(sandboxId, userId, allowed);
-    return allowed;
-  } catch (err) {
-    console.error(`[PREVIEW] Ownership check failed for ${sandboxId}:`, err);
-    return false;
-  }
+  return canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId });
 }
 
 // === Service key resolution (for authenticating proxy → sandbox) ===

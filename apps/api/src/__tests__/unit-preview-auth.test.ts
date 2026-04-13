@@ -69,7 +69,9 @@ const { clearPreviewOwnershipCache } = await import('../shared/preview-ownership
 function createApp() {
   const app = new Hono();
   app.use('/v1/p/:sandboxId/:port/*', combinedAuth);
+  app.use('/v1/p/share', combinedAuth);
   app.get('/v1/p/:sandboxId/:port/*', (c) => c.json({ ok: true }));
+  app.post('/v1/p/share', (c) => c.json({ ok: true }));
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
       return c.json({ message: err.message }, err.status);
@@ -187,5 +189,15 @@ describe('preview auth ownership', () => {
       headers: { Authorization: 'Bearer kortix_owner' },
     });
     expect(res.status).toBe(403);
+  });
+
+  test('does not treat /v1/p/share as a sandbox ownership route', async () => {
+    const app = createApp();
+    mockSandboxAccountId = null;
+    const res = await app.request('/v1/p/share', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_owner' },
+    });
+    expect(res.status).toBe(200);
   });
 });

@@ -172,7 +172,7 @@ type ArcCfg = {
     blur: string[]; // DOF: more blur when smaller
 };
 
-const Arc = ({ left, cfg }: { left?: boolean; cfg: ArcCfg }) => {
+const Arc = ({ left, cfg, duration = 4.6 }: { left?: boolean; cfg: ArcCfg; duration?: number }) => {
     const stylePos: React.CSSProperties = {
         left: cfg.pos.left,
         right: cfg.pos.right,
@@ -223,18 +223,18 @@ const Arc = ({ left, cfg }: { left?: boolean; cfg: ArcCfg }) => {
                 scale: cfg.scale
             }}
             transition={{
-                duration: 4.6,
+                duration,
                 delay: cfg.delay,
                 ease: [0.85, 0, 0.06, 1.01],
                 repeat: Infinity,
                 repeatType: 'loop',
                 times: [0, 0.33, 0.66, 1]
             }}
-            onUpdate={(latest) => {
+            onUpdate={() => {
                 // Update animation progress for blur interpolation
                 const startTime = cfg.delay * 1000;
-                const elapsed = (Date.now() - startTime) % 4600;
-                animationProgress.set(elapsed / 4600);
+                const elapsed = (Date.now() - startTime) % (duration * 1000);
+                animationProgress.set(elapsed / (duration * 1000));
             }}
         >
             {left ? (
@@ -250,13 +250,15 @@ interface AnimatedBgProps {
     variant?: 'hero' | 'header';
     blurMultiplier?: number; // 0.5 = half blur, 2 = double blur
     sizeMultiplier?: number; // 0.8 = 80% size, 1.5 = 150% size
+    /** Animation loop duration in seconds (default 4.6) */
+    duration?: number;
     customArcs?: {
         left?: Partial<ArcCfg>[];
         right?: Partial<ArcCfg>[];
     };
 }
 
-export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplier = 1, customArcs }: AnimatedBgProps) {
+export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplier = 1, duration = 4.6, customArcs }: AnimatedBgProps) {
     const [mounted, setMounted] = useState(false);
     useEffect(() => setMounted(true), []);
     
@@ -433,10 +435,10 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         >
             <div className="absolute inset-0">
                 {left.map((cfg, i) => (
-                    <Arc key={`L${i}`} left cfg={cfg} />
+                    <Arc key={`L${i}`} left cfg={cfg} duration={duration} />
                 ))}
                 {right.map((cfg, i) => (
-                    <Arc key={`R${i}`} cfg={cfg} />
+                    <Arc key={`R${i}`} cfg={cfg} duration={duration} />
                 ))}
             </div>
             {/* Bottom gradient fade overlay */}

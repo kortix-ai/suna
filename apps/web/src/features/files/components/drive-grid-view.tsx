@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
   Folder,
   FolderOpen,
+  FolderCog,
   MoreVertical,
   Download,
   History,
@@ -15,6 +16,7 @@ import {
   ClipboardCopy,
   RefreshCw,
   ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { FileNode } from '../types';
@@ -439,7 +441,14 @@ function FileCard({
 
 // ─── Main Grid View ─────────────────────────────────────────────────────────
 
+/** Descriptions for elevated system directories */
+const ELEVATED_DIR_META: Record<string, { description: string; icon: typeof FolderCog }> = {
+  '.kortix': { description: 'Project config, tasks, context', icon: FolderCog },
+  '.opencode': { description: 'Agents, skills, commands', icon: FolderCog },
+};
+
 interface DriveGridViewProps {
+  elevatedDirs: FileNode[];
   dirs: FileNode[];
   files: FileNode[];
   onNavigateToDir: (node: FileNode) => void;
@@ -461,6 +470,7 @@ interface DriveGridViewProps {
 }
 
 export function DriveGridView({
+  elevatedDirs,
   dirs,
   files,
   onNavigateToDir,
@@ -482,6 +492,48 @@ export function DriveGridView({
 }: DriveGridViewProps) {
   return (
     <div className="p-4 space-y-6">
+      {/* Elevated system directories */}
+      {elevatedDirs.length > 0 && (
+        <div>
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 px-1 flex items-center gap-1.5">
+            <Sparkles className="h-3 w-3 text-primary/60" />
+            System
+          </h3>
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+            {elevatedDirs.map((node) => {
+              const meta = ELEVATED_DIR_META[node.name];
+              const DirIcon = meta?.icon ?? FolderCog;
+              return (
+                <div
+                  key={node.path}
+                  onClick={() => onNavigateToDir(node)}
+                  className={cn(
+                    'group flex items-center gap-3 px-3.5 py-3 rounded-lg cursor-pointer select-none',
+                    'border border-primary/20 bg-primary/[0.03]',
+                    'hover:bg-primary/[0.06] hover:border-primary/30',
+                    'transition-colors duration-150 active:scale-[0.98]',
+                  )}
+                >
+                  <div className="shrink-0 h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
+                    <DirIcon className="h-4 w-4 text-primary/70" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[13px] font-medium text-foreground block truncate">
+                      {node.name}
+                    </span>
+                    {meta?.description && (
+                      <span className="text-[11px] text-muted-foreground/50 block truncate">
+                        {meta.description}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Folders section */}
       {dirs.length > 0 && (
         <div>

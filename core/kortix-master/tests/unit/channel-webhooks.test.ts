@@ -182,7 +182,7 @@ describe('parseTelegramUpdate', () => {
     it('includes CLI send instructions', () => {
       const update = fixture('telegram-update-message.json')
       const result = parseTelegramUpdate(update, TEST_CONFIG_ID)
-      expect(result!.prompt).toContain('telegram.ts')
+      expect(result!.prompt).toContain('ktelegram send')
       expect(result!.prompt).toContain('send')
       expect(result!.prompt).toContain('--chat')
     })

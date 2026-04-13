@@ -6,7 +6,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { createClient } from '@/lib/supabase/client';
 import { getEnv } from '@/lib/env-config';
 import { Button } from '@/components/ui/button';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Shield, X } from 'lucide-react';
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
@@ -17,11 +17,7 @@ const SCOPE_DESCRIPTIONS: Record<string, string> = {
 export default function OAuthConsentPage() {
   return (
     <Suspense
-      fallback={
-        <div className="fixed inset-0 bg-background flex items-center justify-center">
-          <KortixLoader size="medium" />
-        </div>
-      }
+      fallback={<ConnectingScreen forceConnecting minimal title="Authorizing" />}
     >
       <OAuthConsent />
     </Suspense>
@@ -101,11 +97,7 @@ function OAuthConsent() {
   };
 
   if (isLoading || !user) {
-    return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center">
-        <KortixLoader size="medium" />
-      </div>
-    );
+    return <ConnectingScreen forceConnecting minimal title="Authorizing" />;
   }
 
   if (!clientId || !redirectUri || !codeChallenge) {

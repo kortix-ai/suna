@@ -225,22 +225,24 @@ export default function GeneralSettingsScreen() {
           </View>
         </View>
 
-        <View className="px-1">
-          <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
-            Account
-          </Text>
-          <GeneralRow
-            icon={Trash2}
-            title={deletionStatus?.has_pending_deletion ? 'Deletion Scheduled' : 'Delete Account'}
-            description={deletionStatus?.has_pending_deletion
-              ? 'Manage or cancel your scheduled deletion'
-              : 'Request account deletion and data removal'}
-            onPress={() => router.push('/(settings)/account-deletion')}
-            destructive
-            badge={deletionStatus?.has_pending_deletion ? 'Scheduled' : undefined}
-            showDivider={false}
-          />
-        </View>
+        {(deletionStatus?.supported ?? true) && (
+          <View className="px-1">
+            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+              Account
+            </Text>
+            <GeneralRow
+              icon={Trash2}
+              title={deletionStatus?.has_pending_deletion ? 'Deletion Scheduled' : 'Delete Account'}
+              description={deletionStatus?.has_pending_deletion
+                ? 'Manage or cancel your scheduled deletion'
+                : 'Request account deletion and data removal'}
+              onPress={() => router.push('/(settings)/account-deletion')}
+              destructive
+              badge={deletionStatus?.has_pending_deletion ? 'Scheduled' : undefined}
+              showDivider={false}
+            />
+          </View>
+        )}
         </View>
       </ScrollView>
 

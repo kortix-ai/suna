@@ -1,39 +1,22 @@
 /**
- * Kortix Todo Enforcing Plugin — Passive continuation
+ * Kortix Todo Enforcer — native todo continuation.
  *
- * Always active. When the agent goes idle and there are pending/in-progress
- * todos, nudges it to keep working. Does NOT use the DONE/VERIFIED protocol.
- * Does NOT activate on /autowork commands.
- *
- * This is the ambient "don't stop mid-work" behavior, separate from the
- * explicit autowork execution loop.
- *
- * Defers to kortix-autowork: if an autowork loop is active for the session,
- * this plugin does nothing (it checks for the KORTIX_AUTOWORK marker and
- * the autowork loop's session flag).
+ * When a session goes idle with pending/in-progress native OpenCode todos,
+ * it re-prompts the same session to keep working until that tracked work is
+ * completed or genuinely blocked.
  */
 
 import type { Plugin } from "@opencode-ai/plugin"
 import type { Todo } from "@opencode-ai/sdk"
-import {
-	type ContinuationConfig,
-	type ContinuationState,
-	DEFAULT_CONFIG,
-	createInitialState,
-	mergeConfig,
-	INTERNAL_MARKER,
-	CODE_BLOCK_PATTERN,
-	INLINE_CODE_PATTERN,
-} from "../lib/autowork-config"
+import { autoworkActiveSessions } from "../autowork/autowork"
+import { wrapInKortixSystemTags } from "../lib/message-transform"
+import { clearStartupAbortedSession, hasStartupAbortedSession } from "../lib/startup-aborted-sessions"
+import { DEFAULT_CONFIG, TODO_ENFORCER_INTERNAL_MARKER, createInitialContinuationState, type ContinuationState } from "./config"
 import { evaluate } from "./engine"
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function wrapSystemPrompt(text: string): string {
-	return `<kortix_system type="passive-continuation" source="kortix-todo-enforcing">\n${text}\n</kortix_system>`
+	return wrapInKortixSystemTags(text, { type: "passive-continuation", source: "kortix-native-todo-enforcing" })
 }
-
-type LogFn = (level: "info" | "warn" | "error", message: string) => void
 
 function extractMessageText(input: any): string {
 	const parts = input?.parts ?? []
@@ -47,7 +30,7 @@ function extractMessageText(input: any): string {
 }
 
 function isInternalMessage(text: string): boolean {
-	if (text.includes(INTERNAL_MARKER)) return true
+	if (text.includes(TODO_ENFORCER_INTERNAL_MARKER)) return true
 	if (text.includes("[SYSTEM REMINDER")) return true
 	if (text.includes("<kortix_system")) return true
 	return false
@@ -57,66 +40,53 @@ function extractLastAssistantMessage(messages: any[]): { text: string; hadToolCa
 	let text = ""
 	let hadToolCalls = false
 	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i]
-		if (msg?.info?.role === "assistant") {
-			for (const part of (msg.parts ?? [])) {
-				if (part.type === "text" && !part.synthetic && !part.ignored) {
-					text += part.text + "\n"
-				}
-				if (part.type === "tool") hadToolCalls = true
-			}
-			break
+		const message = messages[i]
+		if (message?.info?.role !== "assistant") continue
+		for (const part of message.parts ?? []) {
+			if (part.type === "text" && !part.synthetic && !part.ignored) text += `${part.text ?? ""}\n`
+			if (part.type === "tool") hadToolCalls = true
 		}
+		break
 	}
 	return { text: text.trim(), hadToolCalls }
 }
 
 function hasPendingQuestion(messages: any[]): boolean {
 	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i]
-		const role = msg?.info?.role
+		const message = messages[i]
+		const role = message?.info?.role
 		if (role === "user") return false
-		if (role === "assistant") {
-			for (const part of (msg.parts ?? [])) {
-				if (part.type === "tool") {
-					const toolName = (part.toolName ?? part.tool_name ?? part.name ?? "") as string
-					if (toolName === "question" || toolName === "mcp_question") {
-						const status = part.state?.status ?? ""
-						if (status === "running" || status === "pending") return true
-					}
-				}
+		if (role !== "assistant") continue
+		for (const part of message.parts ?? []) {
+			if (part.type !== "tool") continue
+			const toolName = (part.toolName ?? part.tool_name ?? part.name ?? "") as string
+			const status = part.state?.status ?? ""
+			if ((toolName === "question" || toolName === "mcp_question") && (status === "running" || status === "pending")) {
+				return true
 			}
 		}
 	}
 	return false
 }
 
-// ─── Per-Session State ────────────────────────────────────────────────────────
-
-const SESSION_STATE_TTL_MS = 2 * 60 * 60 * 1000
-
-interface SessionEntry<T> {
-	state: T
-	lastAccessedAt: number
-}
-
 class SessionStateMap<T> {
-	private map = new Map<string, SessionEntry<T>>()
+	private map = new Map<string, { state: T; lastAccessedAt: number }>()
 	private lastGcAt = Date.now()
 	private readonly gcIntervalMs = 10 * 60 * 1000
+	private readonly ttlMs = 2 * 60 * 60 * 1000
 
 	constructor(private readonly factory: (sessionId: string) => T) {}
 
 	get(sessionId: string): T {
 		this.maybeGc()
-		let entry = this.map.get(sessionId)
-		if (!entry) {
-			entry = { state: this.factory(sessionId), lastAccessedAt: Date.now() }
-			this.map.set(sessionId, entry)
-		} else {
-			entry.lastAccessedAt = Date.now()
+		const existing = this.map.get(sessionId)
+		if (existing) {
+			existing.lastAccessedAt = Date.now()
+			return existing.state
 		}
-		return entry.state
+		const state = this.factory(sessionId)
+		this.map.set(sessionId, { state, lastAccessedAt: Date.now() })
+		return state
 	}
 
 	delete(sessionId: string): void {
@@ -127,159 +97,127 @@ class SessionStateMap<T> {
 		const now = Date.now()
 		if (now - this.lastGcAt < this.gcIntervalMs) return
 		this.lastGcAt = now
-		const cutoff = now - SESSION_STATE_TTL_MS
+		const cutoff = now - this.ttlMs
 		for (const [key, entry] of this.map) {
 			if (entry.lastAccessedAt < cutoff) this.map.delete(key)
 		}
 	}
 }
 
-// ─── Autowork detection ───────────────────────────────────────────────────────
-
-/**
- * Track which sessions have an active autowork loop.
- * The autowork plugin sets this; we check it to defer.
- */
-const autoworkActiveSessions = new Set<string>()
-
-// ─── Plugin ───────────────────────────────────────────────────────────────────
-
-const KortixTodoEnforcingPlugin: Plugin = async ({ client }) => {
-	const config: ContinuationConfig = mergeConfig(DEFAULT_CONFIG)
-
-	const continuationStates = new SessionStateMap<ContinuationState>(
-		(sid) => { const s = createInitialState(); s.sessionId = sid; return s },
-	)
-	/** Sessions where continuation has been explicitly disabled (e.g. by autowork-cancel) */
+const TodoEnforcerPlugin: Plugin = async ({ client }) => {
+	const states = new SessionStateMap<ContinuationState>((sessionId) => {
+		const state = createInitialContinuationState()
+		state.sessionId = sessionId
+		return state
+	})
 	const disabledSessions = new Set<string>()
 
-	const log: LogFn = (level, message) => {
+	const log = (level: "info" | "warn" | "error", message: string) => {
 		try {
-			client.app.log({
-				body: { service: "kortix-todo-enforcing", level, message },
-			}).catch(() => {})
-		} catch {}
+			client.app.log({ body: { service: "kortix-todo-enforcing", level, message } }).catch(() => {})
+		} catch {
+			// ignore logging failures
+		}
 	}
 
-	const sid = (sessionId: string) => sessionId.length > 16 ? sessionId.slice(-12) : sessionId
+	const sid = (sessionId: string) => (sessionId.length > 16 ? sessionId.slice(-12) : sessionId)
 
 	return {
 		"chat.message": async (input: any, output: any) => {
 			try {
-				const sessionId = input?.sessionID
+				const sessionId = input?.sessionID as string | undefined
 				if (!sessionId) return
 
 				const messageText = extractMessageText(output)
-				if (!messageText) return
-				if (isInternalMessage(messageText)) return
+				if (!messageText || isInternalMessage(messageText)) return
 
-				// Reset passive state on new user message
-				const contState = continuationStates.get(sessionId)
-				contState.workCycleStartedAt = Date.now()
-				contState.consecutiveAborts = 0
-				contState.inflight = false
+				const state = states.get(sessionId)
+				state.workCycleStartedAt = Date.now()
+				state.consecutiveAborts = 0
+				state.inflight = false
 
-				// If autowork is being activated in this message, mark the session
-				if (messageText.includes("KORTIX_AUTOWORK")) {
-					autoworkActiveSessions.add(sessionId)
-				}
-				// If autowork is being cancelled, remove the mark and disable passive too
+				if (messageText.includes("KORTIX_AUTOWORK")) autoworkActiveSessions.add(sessionId)
 				if (messageText.includes("KORTIX_AUTOWORK_CANCEL")) {
 					autoworkActiveSessions.delete(sessionId)
 					disabledSessions.add(sessionId)
 				}
-			} catch {}
+			} catch {
+				// ignore hook failures
+			}
 		},
 
 		event: async ({ event }) => {
 			try {
-				// Cleanup on session delete
 				if (event.type === "session.deleted") {
 					const sessionId = (event as any).properties?.info?.id ?? (event as any).properties?.sessionID
 					if (sessionId) {
-						continuationStates.delete(sessionId)
+						states.delete(sessionId)
 						autoworkActiveSessions.delete(sessionId)
 						disabledSessions.delete(sessionId)
+						clearStartupAbortedSession(sessionId)
 					}
 					return
 				}
 
-				// Track aborts for circuit breaker
-				if (event.type === "session.error" || (event.type as string) === "session.aborted") {
+				if (event.type === "session.error" || event.type === "session.aborted") {
 					const sessionId = (event as any).properties?.sessionID
 					if (!sessionId) return
-					const cs = continuationStates.get(sessionId)
-					cs.lastAbortAt = Date.now()
-					cs.consecutiveAborts++
-					cs.inflight = false
+					const state = states.get(sessionId)
+					state.lastAbortAt = Date.now()
+					state.consecutiveAborts += 1
+					state.inflight = false
+					disabledSessions.add(sessionId)
 					return
 				}
 
-				// ── session.idle — the main evaluation point ──
 				if (event.type !== "session.idle") return
 
 				const sessionId = (event as any).properties?.sessionID
-				if (!sessionId) return
-
-				// Defer to autowork if it's active for this session
-				if (autoworkActiveSessions.has(sessionId)) return
-
-				// Respect explicit disable
-				if (disabledSessions.has(sessionId)) return
-
-				const contState = continuationStates.get(sessionId)
-
-				try {
-					const [todoRes, messagesRes] = await Promise.all([
-						client.session.todo({ path: { id: sessionId } }).catch(() => ({ data: [] as Todo[] })),
-						client.session.messages({ path: { id: sessionId } }).catch(() => ({ data: [] as any[] })),
-					])
-
-					const todos = (todoRes.data ?? []) as Todo[]
-					const messages = (messagesRes.data ?? []) as any[]
-
-					if (hasPendingQuestion(messages)) {
-						log("info", `[todo-enforcing][${sid(sessionId)}] Skipped: pending question`)
-						return
-					}
-
-					const { text, hadToolCalls } = extractLastAssistantMessage(messages)
-
-					// Track empty/aborted responses for circuit breaker
-					if (!text.trim() && !hadToolCalls) {
-						contState.consecutiveAborts++
-					} else {
-						contState.consecutiveAborts = 0
-					}
-
-					const decision = evaluate(config, contState, text, hadToolCalls, todos)
-					log("info", `[todo-enforcing][${sid(sessionId)}] ${decision.action} — ${decision.reason}`)
-
-					if (decision.action === "continue" && decision.prompt) {
-						contState.inflight = true
-						contState.totalSessionContinuations++
-						contState.lastContinuationAt = Date.now()
-						await client.session.promptAsync({
-							path: { id: sessionId },
-							body: { parts: [{ type: "text" as const, text: wrapSystemPrompt(decision.prompt) }] },
-						}).catch((err: unknown) => {
-							log("warn", `[todo-enforcing][${sid(sessionId)}] promptAsync failed: ${err}`)
-						}).finally(() => {
-							contState.inflight = false
-						})
-					}
-				} catch (err) {
-					log("warn", `[todo-enforcing][${sid(sessionId)}] Error: ${err}`)
-					contState.inflight = false
+				if (!sessionId || autoworkActiveSessions.has(sessionId) || disabledSessions.has(sessionId)) return
+				if (hasStartupAbortedSession(sessionId)) {
+					disabledSessions.add(sessionId)
+					log("info", `[todo-enforcing][${sid(sessionId)}] skipped: session aborted during startup cleanup`)
+					return
 				}
-			} catch (err) {
-				log("warn", `[todo-enforcing] event hook error: ${err}`)
+
+				const state = states.get(sessionId)
+				const [todoRes, messagesRes] = await Promise.all([
+					client.session.todo({ path: { id: sessionId } }).catch(() => ({ data: [] as Todo[] })),
+					client.session.messages({ path: { id: sessionId } }).catch(() => ({ data: [] as any[] })),
+				])
+
+				const todos = (todoRes.data ?? []) as Todo[]
+				const messages = (messagesRes.data ?? []) as any[]
+
+				if (hasPendingQuestion(messages)) {
+					log("info", `[todo-enforcing][${sid(sessionId)}] skipped: pending question`)
+					return
+				}
+
+				const { text, hadToolCalls } = extractLastAssistantMessage(messages)
+				state.consecutiveAborts = !text.trim() && !hadToolCalls ? state.consecutiveAborts + 1 : 0
+
+				const decision = evaluate(DEFAULT_CONFIG, state, text, hadToolCalls, todos)
+				log("info", `[todo-enforcing][${sid(sessionId)}] ${decision.action} — ${decision.reason}`)
+
+				if (decision.action !== "continue" || !decision.prompt) return
+
+				state.inflight = true
+				state.totalSessionContinuations += 1
+				state.lastContinuationAt = Date.now()
+				await client.session.promptAsync({
+					path: { id: sessionId },
+					body: { parts: [{ type: "text" as const, text: wrapSystemPrompt(decision.prompt) }] },
+				}).catch((error: unknown) => {
+					log("warn", `[todo-enforcing][${sid(sessionId)}] promptAsync failed: ${error}`)
+				}).finally(() => {
+					state.inflight = false
+				})
+			} catch (error) {
+				log("warn", `[todo-enforcing] event hook error: ${error}`)
 			}
 		},
 	}
 }
 
-export default KortixTodoEnforcingPlugin
-
-/** Allow autowork plugin to signal session state */
-export { autoworkActiveSessions }
+export default TodoEnforcerPlugin

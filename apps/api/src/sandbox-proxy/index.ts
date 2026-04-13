@@ -8,6 +8,7 @@ import { proxyToSandbox } from './routes/local-preview';
 import { getAuthToken } from './routes/auth';
 import { shareApp } from './routes/share';
 import { db } from '../shared/db';
+import { isProxyTokenStale, refreshSandboxProxyToken } from '../platform/providers/justavps';
 
 const sandboxProxyApp = new Hono();
 
@@ -39,6 +40,15 @@ interface ProviderCacheEntry {
 const providerCache = new Map<string, ProviderCacheEntry>();
 const PROVIDER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * Drop a sandbox from the in-process provider cache so the next request
+ * re-reads from the DB. Used after a proxy-token refresh so cached stale
+ * tokens aren't served for up to PROVIDER_CACHE_TTL_MS.
+ */
+export function invalidateProviderCache(externalId: string): void {
+  providerCache.delete(externalId);
+}
+
 export async function resolveProvider(externalId: string): Promise<{ provider: CachedProviderName; baseUrl: string; serviceKey: string; proxyToken: string; slug: string } | null> {
   const cached = providerCache.get(externalId);
   if (cached && Date.now() < cached.expiresAt) {
@@ -68,35 +78,14 @@ export async function resolveProvider(externalId: string): Promise<{ provider: C
     let proxyToken = typeof metaJson.justavpsProxyToken === 'string' ? metaJson.justavpsProxyToken : '';
     const slug = typeof metaJson.justavpsSlug === 'string' ? metaJson.justavpsSlug : '';
 
-    if (provider === 'justavps' && !proxyToken && config.JUSTAVPS_API_KEY) {
-      try {
-        const apiBase = config.JUSTAVPS_API_URL.replace(/\/$/, '');
-        const res = await fetch(`${apiBase}/proxy-tokens`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${config.JUSTAVPS_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            machine_id: externalId,
-            label: `kortix-sandbox-${externalId}`,
-            expires_in_seconds: 7 * 24 * 60 * 60,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json() as { token: string };
-          proxyToken = data.token;
-          await db.update(sandboxes).set({
-            metadata: { ...metaJson, justavpsProxyToken: proxyToken },
-            updatedAt: new Date(),
-          }).where(eq(sandboxes.externalId, externalId));
-          console.log(`[PREVIEW] Lazy-created proxy token for JustAVPS sandbox ${externalId}`);
-        } else {
-          const errText = await res.text().catch(() => '');
-          console.error(`[PREVIEW] Proxy token creation returned ${res.status}: ${errText.slice(0, 300)}`);
-        }
-      } catch (err) {
-        console.warn(`[PREVIEW] Failed to lazy-create proxy token for ${externalId}:`, err);
+    // Refresh the JustAVPS proxy token if it's missing, legacy, or within the
+    // refresh buffer of expiry. Shared helper in providers/justavps.ts handles
+    // minting, persistence, old-token revocation, and in-process dedup.
+    if (provider === 'justavps' && config.JUSTAVPS_API_KEY && isProxyTokenStale(metaJson)) {
+      const refreshed = await refreshSandboxProxyToken(externalId, metaJson);
+      if (refreshed) {
+        proxyToken = refreshed.token;
+        console.log(`[PREVIEW] Refreshed proxy token for JustAVPS sandbox ${externalId}`);
       }
     }
 
@@ -145,7 +134,12 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
 
     const origin = c.req.header('Origin') || '';
 
-    return proxyToSandbox(sandboxId, port, method, remainingPath, queryString, c.req.raw.headers, body, false, origin);
+    const resolved = await resolveProvider(sandboxId);
+    if (!resolved || resolved.provider !== 'local_docker') {
+      return c.json({ error: 'Sandbox not found' }, 404);
+    }
+
+    return proxyToSandbox(sandboxId, port, method, remainingPath, queryString, c.req.raw.headers, body, false, origin, undefined, resolved.serviceKey);
   });
 
   localOnlyProxy.all('/:sandboxId/:port', async (c) => {
@@ -239,7 +233,7 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
     const origin = c.req.header('Origin') || '';
 
     if (resolved?.provider === 'local_docker') {
-      return proxyToSandbox(sandboxId, port, method, remainingPath, queryString, c.req.raw.headers, body, false, origin);
+      return proxyToSandbox(sandboxId, port, method, remainingPath, queryString, c.req.raw.headers, body, false, origin, undefined, resolved.serviceKey);
     }
 
     if (resolved?.provider === 'justavps') {

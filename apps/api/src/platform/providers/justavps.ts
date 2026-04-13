@@ -117,10 +117,103 @@ export async function justavpsFetch<T = any>(
   return res.json() as Promise<T>;
 }
 
-// ─── Auto-resolve latest JustAVPS image ──────────────────────────────────────
-// Images follow the naming convention `kortix-computer-v{semver}`.
-// We query all images, filter to ready ones matching the prefix, and pick the
-// highest version. Result cached 5 min. JUSTAVPS_IMAGE_ID env var is an override.
+
+export const PROXY_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const PROXY_TOKEN_REFRESH_BUFFER_MS = 24 * 60 * 60 * 1000;
+
+export interface ProxyTokenRecord {
+  token: string;
+  id: string;
+  expiresAt: number; // ms epoch
+}
+
+interface JustAvpsProxyTokenResponse {
+  id: string;
+  token: string;
+  expires_at: string;
+}
+
+const inflightRefreshes = new Map<string, Promise<ProxyTokenRecord | null>>();
+
+export function isProxyTokenStale(meta: Record<string, unknown> | undefined | null): boolean {
+  if (!meta) return true;
+  const token = meta.justavpsProxyToken;
+  if (typeof token !== 'string' || token.length === 0) return true;
+  const expiresAt = meta.justavpsProxyTokenExpiresAt;
+  if (typeof expiresAt !== 'number') return true;
+  return Date.now() > expiresAt - PROXY_TOKEN_REFRESH_BUFFER_MS;
+}
+
+export async function mintProxyTokenOnJustAvps(
+  externalId: string,
+): Promise<ProxyTokenRecord | null> {
+  try {
+    const res = await justavpsFetch<JustAvpsProxyTokenResponse>('/proxy-tokens', {
+      method: 'POST',
+      body: {
+        machine_id: externalId,
+        label: `kortix-sandbox-${externalId}`,
+        expires_in_seconds: PROXY_TOKEN_TTL_SECONDS,
+      },
+    });
+    return {
+      token: res.token,
+      id: res.id,
+      expiresAt: new Date(res.expires_at).getTime(),
+    };
+  } catch (err) {
+    console.warn(`[JUSTAVPS] Failed to mint proxy token for ${externalId}:`, err);
+    return null;
+  }
+}
+
+export async function refreshSandboxProxyToken(
+  externalId: string,
+  currentMeta: Record<string, unknown>,
+): Promise<ProxyTokenRecord | null> {
+  const existing = inflightRefreshes.get(externalId);
+  if (existing) return existing;
+
+  const promise = (async (): Promise<ProxyTokenRecord | null> => {
+    const minted = await mintProxyTokenOnJustAvps(externalId);
+    if (!minted) return null;
+
+    const oldTokenId = typeof currentMeta.justavpsProxyTokenId === 'string'
+      ? currentMeta.justavpsProxyTokenId
+      : undefined;
+
+    try {
+      await db.update(sandboxes).set({
+        metadata: {
+          ...currentMeta,
+          justavpsProxyToken: minted.token,
+          justavpsProxyTokenId: minted.id,
+          justavpsProxyTokenExpiresAt: minted.expiresAt,
+        },
+        updatedAt: new Date(),
+      }).where(eq(sandboxes.externalId, externalId));
+      console.log(
+        `[JUSTAVPS] Refreshed proxy token for ${externalId} (new expiry ${new Date(minted.expiresAt).toISOString()})`,
+      );
+    } catch (err) {
+      console.error(`[JUSTAVPS] Failed to persist refreshed proxy token for ${externalId}:`, err);
+    }
+
+    if (oldTokenId) {
+      justavpsFetch(`/proxy-tokens/${oldTokenId}`, { method: 'DELETE' })
+        .catch((err) => console.warn(`[JUSTAVPS] Failed to revoke old proxy token ${oldTokenId}:`, err));
+    }
+
+    return minted;
+  })();
+
+  inflightRefreshes.set(externalId, promise);
+  try {
+    return await promise;
+  } finally {
+    inflightRefreshes.delete(externalId);
+  }
+}
 
 interface JustAVPSImage {
   id: string;
@@ -149,12 +242,10 @@ function compareSemver(a: number[], b: number[]): number {
 }
 
 async function resolveLatestImageId(): Promise<string | null> {
-  // Explicit override always wins
   if (config.JUSTAVPS_IMAGE_ID) {
     return config.JUSTAVPS_IMAGE_ID;
   }
 
-  // Return cached value if still fresh
   if (cachedImageId && Date.now() < cachedImageExpiry) {
     return cachedImageId;
   }
@@ -163,7 +254,6 @@ async function resolveLatestImageId(): Promise<string | null> {
     const data = await justavpsFetch<{ images: JustAVPSImage[] }>('/images');
     const readyImages = (data.images || []).filter((img) => img.status === 'ready');
 
-    // 1. Prefer dev images (kortix-computer-vdev-*) — sorted by creation date, newest first
     const devCandidates = readyImages
       .filter((img) => img.name.startsWith(DEV_IMAGE_NAME_PREFIX))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -175,7 +265,6 @@ async function resolveLatestImageId(): Promise<string | null> {
       return cachedImageId;
     }
 
-    // 2. Fall back to semver images (kortix-computer-v0.8.*) — sorted by version, highest first
     const semverCandidates = readyImages
       .filter((img) => img.name.startsWith(IMAGE_NAME_PREFIX) && !img.name.startsWith(DEV_IMAGE_NAME_PREFIX))
       .map((img) => ({
@@ -183,7 +272,7 @@ async function resolveLatestImageId(): Promise<string | null> {
         version: parseSemver(img.name.slice(IMAGE_NAME_PREFIX.length)),
         name: img.name,
       }))
-      .sort((a, b) => compareSemver(b.version, a.version)); // highest first
+      .sort((a, b) => compareSemver(b.version, a.version));
 
     if (semverCandidates.length > 0) {
       cachedImageId = semverCandidates[0].id;
@@ -200,7 +289,6 @@ async function resolveLatestImageId(): Promise<string | null> {
   }
 }
 
-/** Bust the cached image so the next create picks up a freshly built image. */
 export function invalidateImageCache(): void {
   cachedImageId = null;
   cachedImageExpiry = 0;
@@ -301,7 +389,6 @@ function resolveReachableKortixApiUrl(): string {
       return new URL(config.JUSTAVPS_WEBHOOK_URL).origin;
     }
   } catch {
-    // Fall through to the direct base URL
   }
 
   return directBase;
@@ -429,21 +516,14 @@ export class JustAVPSProvider implements SandboxProvider {
     const proxyDomain = config.JUSTAVPS_PROXY_DOMAIN;
     const cfBaseUrl = `https://${machine.slug}.${proxyDomain}`;
 
-    // Create a long-lived proxy token for CF Worker auth (30 days, all ports)
-    let proxyToken: string | undefined;
-    try {
-      const tokenRes = await justavpsFetch<{ token: string }>('/proxy-tokens', {
-        method: 'POST',
-        body: {
-          machine_id: machine.id,
-          label: `kortix-sandbox-${machine.id}`,
-          expires_in_seconds: 7 * 24 * 60 * 60, // 30 days
-        },
-      });
-      proxyToken = tokenRes.token;
+    // Mint an initial proxy token for CF Worker auth. Lifetime is capped by
+    // JustAVPS (currently 7 days) — refreshSandboxProxyToken() handles rotation
+    // on subsequent requests before the token actually expires.
+    const minted = await mintProxyTokenOnJustAvps(machine.id);
+    if (minted) {
       console.log(`[JUSTAVPS] Proxy token created for machine ${machine.id}`);
-    } catch (err) {
-      console.warn(`[JUSTAVPS] Failed to create proxy token for ${machine.id}, will retry on first request:`, err);
+    } else {
+      console.warn(`[JUSTAVPS] Proxy token mint failed for ${machine.id}, will retry lazily on first request`);
     }
 
     return {
@@ -452,7 +532,9 @@ export class JustAVPSProvider implements SandboxProvider {
       metadata: {
         justavpsMachineId: machine.id,
         justavpsSlug: machine.slug,
-        justavpsProxyToken: proxyToken,
+        justavpsProxyToken: minted?.token,
+        justavpsProxyTokenId: minted?.id,
+        justavpsProxyTokenExpiresAt: minted?.expiresAt,
         provisioningStage: 'server_creating',
         serverType,
         location,
@@ -525,30 +607,15 @@ export class JustAVPSProvider implements SandboxProvider {
       'Content-Type': 'application/json',
     };
 
-    // Use proxy token for CF Worker auth (doesn't consume Authorization header)
+    // Proxy token for CF Worker auth (doesn't consume the Authorization header).
+    // Proactively refresh when missing, legacy (no expiresAt), or within the
+    // refresh buffer of expiry. refreshSandboxProxyToken dedups concurrent
+    // refreshes for the same sandbox in-process.
     let proxyToken = meta.justavpsProxyToken as string | undefined;
-
-    // Lazy-create proxy token for existing sandboxes that don't have one
-    if (!proxyToken) {
-      try {
-        const tokenRes = await justavpsFetch<{ token: string }>('/proxy-tokens', {
-          method: 'POST',
-          body: {
-            machine_id: externalId,
-            label: `kortix-sandbox-${externalId}`,
-            expires_in_seconds: 7 * 24 * 60 * 60,
-          },
-        });
-        proxyToken = tokenRes.token;
-        if (row) {
-          await db.update(sandboxes).set({
-            metadata: { ...meta, justavpsProxyToken: proxyToken },
-            updatedAt: new Date(),
-          }).where(eq(sandboxes.externalId, externalId));
-        }
-        console.log(`[JUSTAVPS] Lazy-created proxy token for sandbox ${externalId}`);
-      } catch (err) {
-        console.warn(`[JUSTAVPS] Failed to lazy-create proxy token for ${externalId}:`, err);
+    if (row && isProxyTokenStale(meta)) {
+      const refreshed = await refreshSandboxProxyToken(externalId, meta);
+      if (refreshed) {
+        proxyToken = refreshed.token;
       }
     }
 

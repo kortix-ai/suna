@@ -567,7 +567,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     setIsSaving(true);
     try {
       const data = db.export();
-      const blob = new Blob([data], { type: 'application/x-sqlite3' });
+      const blob = new Blob([data as unknown as BlobPart], { type: 'application/x-sqlite3' });
       const file = new File([blob], fileName, { type: 'application/x-sqlite3' });
       const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
       const { uploadFile } = await import('@/features/files/api/opencode-files');

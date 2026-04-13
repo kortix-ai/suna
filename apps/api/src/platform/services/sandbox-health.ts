@@ -2,7 +2,7 @@
  * Sandbox Health Monitor
  *
  * Periodic health check that ensures kortix-api can always reach the sandbox.
- * Self-heals by re-syncing INTERNAL_SERVICE_KEY on auth failures.
+ * Self-heals by re-syncing the canonical sandbox auth bundle on auth failures.
  *
  * Runs every HEALTH_CHECK_INTERVAL_MS. On failure:
  *   1. Attempts key sync (up to 3 times with backoff)
@@ -11,6 +11,7 @@
  */
 
 import { config } from '../../config';
+import { buildCanonicalSandboxAuthCommand, getAuthCandidates, getLocalSandboxServiceKey } from './sandbox-auth';
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,24 @@ const HEALTH_CHECK_INTERVAL_MS = 60_000;   // 60s between checks
 const HEALTH_TIMEOUT_MS = 5_000;           // 5s timeout per check
 const MAX_SYNC_RETRIES = 3;
 const SYNC_BACKOFF_MS = [2_000, 5_000, 10_000]; // progressive backoff
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `"'"'`)}'`;
+}
+
+function buildDockerEnvWriteCommand(payload: Record<string, string>, targetDir: string): string {
+  const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+  return `mkdir -p ${targetDir} && ENV_WRITE_PAYLOAD_B64=${shellQuote(payloadB64)} python3 - <<PY
+import base64, json, os
+from pathlib import Path
+
+target_dir = Path(${JSON.stringify(targetDir)})
+target_dir.mkdir(parents=True, exist_ok=True)
+payload = json.loads(base64.b64decode(os.environ["ENV_WRITE_PAYLOAD_B64"]).decode("utf-8"))
+for key, value in payload.items():
+    (target_dir / key).write_text(value)
+PY`;
+}
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
@@ -76,6 +95,8 @@ async function checkSandboxHealth(): Promise<void> {
   const baseUrl = config.SANDBOX_NETWORK
     ? `http://${config.SANDBOX_CONTAINER_NAME}:8000`
     : `http://localhost:${config.SANDBOX_PORT_BASE}`;
+  const canonicalServiceKey = await getLocalSandboxServiceKey();
+  const authCandidates = getAuthCandidates(canonicalServiceKey);
 
   try {
     // 1. Check basic reachability (health endpoint bypasses auth)
@@ -104,23 +125,31 @@ async function checkSandboxHealth(): Promise<void> {
     }
 
     // 2. Check auth works (protected endpoint)
-    const authRes = await fetch(`${baseUrl}/kortix/ports`, {
-      headers: { Authorization: `Bearer ${config.INTERNAL_SERVICE_KEY}` },
-      signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
-    });
+    const fetchAuthorized = async (): Promise<Response> => {
+      for (const authToken of authCandidates) {
+        const res = await fetch(`${baseUrl}/kortix/ports`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+          signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+        });
+        if (res.status !== 401 && res.status !== 403) return res;
+      }
+      return fetch(`${baseUrl}/kortix/ports`, {
+        headers: { Authorization: `Bearer ${authCandidates[0] || ''}` },
+        signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+      });
+    };
+
+    const authRes = await fetchAuthorized();
 
     if (authRes.status === 401) {
       // Auth mismatch — try to sync key
       console.warn('[sandbox-health] Auth failed (401), attempting key sync...');
-      const synced = await attemptKeySync(baseUrl);
+      const synced = await attemptKeySync(baseUrl, canonicalServiceKey, authCandidates);
       if (!synced) {
         throw new Error('Auth failed and key sync unsuccessful');
       }
       // Key synced — verify again
-      const retryRes = await fetch(`${baseUrl}/kortix/ports`, {
-        headers: { Authorization: `Bearer ${config.INTERNAL_SERVICE_KEY}` },
-        signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
-      });
+      const retryRes = await fetchAuthorized();
       if (!retryRes.ok) {
         throw new Error(`Auth still failing after key sync (${retryRes.status})`);
       }
@@ -151,14 +180,12 @@ async function checkSandboxHealth(): Promise<void> {
 }
 
 /**
- * Attempt to sync all 3 core env vars to the sandbox container.
- * Syncs KORTIX_API_URL, KORTIX_TOKEN (if set), and INTERNAL_SERVICE_KEY.
+ * Attempt to sync the canonical auth bundle + API URLs to the sandbox container.
  * Tries the secrets manager /env API first (preferred — triple-write + no restart needed).
  * Falls back to docker exec if the API is unreachable (e.g. kortix-master down).
  */
-async function attemptKeySync(baseUrl: string): Promise<boolean> {
-  const ourKey = config.INTERNAL_SERVICE_KEY;
-  if (!ourKey) return false;
+async function attemptKeySync(baseUrl: string, canonicalServiceKey: string, authCandidates: string[]): Promise<boolean> {
+  if (!canonicalServiceKey) return false;
 
   // Compute the correct internal API URL for the sandbox (same logic as local-docker.ts)
   let internalApiUrl = `http://host.docker.internal:${config.PORT}`;
@@ -175,7 +202,9 @@ async function attemptKeySync(baseUrl: string): Promise<boolean> {
   }
 
   const keysToSync: Record<string, string> = {
-    INTERNAL_SERVICE_KEY: ourKey,
+    KORTIX_TOKEN: canonicalServiceKey,
+    INTERNAL_SERVICE_KEY: canonicalServiceKey,
+    TUNNEL_TOKEN: canonicalServiceKey,
     KORTIX_API_URL: internalApiUrl,
     TUNNEL_API_URL: internalApiUrl,
   };
@@ -187,28 +216,34 @@ async function attemptKeySync(baseUrl: string): Promise<boolean> {
 
       // Preferred: use secrets manager /env API (triple-write, no restart needed)
       const envApiUrl = `${baseUrl}/env`;
-      const res = await fetch(envApiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ourKey}`,
-        },
-        body: JSON.stringify({ keys: keysToSync }),
-        signal: AbortSignal.timeout(10_000),
-      });
+      let envApiSynced = false;
+      for (const authToken of authCandidates) {
+        const res = await fetch(envApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ keys: keysToSync }),
+          signal: AbortSignal.timeout(10_000),
+        });
 
-      if (res.ok) {
-        console.log(`[sandbox-health] Core env sync successful via /env API (attempt ${attempt + 1})`);
-        return true;
+        if (res.ok) {
+          console.log(`[sandbox-health] Core env sync successful via /env API (attempt ${attempt + 1})`);
+          return true;
+        }
+
+        if (res.status !== 401 && res.status !== 403) {
+          console.warn(`[sandbox-health] /env API returned ${res.status}, retrying...`);
+          envApiSynced = true;
+          break;
+        }
       }
 
-      // Auth failure on the /env API itself — fall back to docker exec
-      if (res.status === 401 || res.status === 403) {
-        console.warn(`[sandbox-health] /env API returned ${res.status}, falling back to docker exec...`);
+      if (!envApiSynced) {
+        console.warn('[sandbox-health] /env API auth candidates exhausted, falling back to docker exec...');
         if (await attemptKeySyncFallback(keysToSync)) return true;
       }
-
-      console.warn(`[sandbox-health] /env API returned ${res.status}, retrying...`);
     } catch (err: any) {
       console.warn(`[sandbox-health] /env API unreachable (attempt ${attempt + 1}), trying docker exec fallback...`);
       // /env API not reachable — try docker exec fallback
@@ -241,13 +276,10 @@ async function attemptKeySyncFallback(keys: Record<string, string>): Promise<boo
       env.DOCKER_HOST = `unix://${config.DOCKER_HOST}`;
     }
 
-    const writes = Object.entries(keys)
-      .map(([key, val]) => `printf '%s' '${val}' > /run/s6/container_environment/${key}`)
-      .join(' && ');
-    // No restart — getEnv() reads from s6 env dir live.
-
+    const token = keys.KORTIX_TOKEN || keys.INTERNAL_SERVICE_KEY || '';
+    const apiUrl = keys.KORTIX_API_URL || keys.TUNNEL_API_URL || '';
     execSync(
-      `docker exec ${config.SANDBOX_CONTAINER_NAME} bash -c "mkdir -p /run/s6/container_environment && ${writes}"`,
+      `docker exec ${shellQuote(config.SANDBOX_CONTAINER_NAME)} bash -c ${shellQuote(buildCanonicalSandboxAuthCommand(token, apiUrl))}`,
       { timeout: 15_000, stdio: 'pipe', env },
     );
 

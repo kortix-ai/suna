@@ -204,10 +204,26 @@ function TunnelContent() {
 
   return (
     <View style={{ flex: 1 }}>
+      {/* Add Connection button */}
+      {sorted.length > 0 && (
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 20, paddingBottom: 8 }}>
+          <Pressable
+            onPress={handleOpenCreate}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 6,
+              paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+              backgroundColor: theme.primary,
+            }}
+          >
+            <Plus size={16} color={theme.primaryForeground} />
+            <RNText style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add Connection</RNText>
+          </Pressable>
+        </View>
+      )}
       <FlatList
         data={sorted}
         keyExtractor={(item) => item.tunnelId}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 80 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 24 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={refetch} tintColor={fg} />}
         ListEmptyComponent={
           <View style={{ paddingVertical: 40, alignItems: 'center' }}>
@@ -326,28 +342,6 @@ function TunnelContent() {
         )}
       />
 
-      {/* FAB */}
-      <Pressable
-        onPress={handleOpenCreate}
-        style={{
-          position: 'absolute',
-          right: 20,
-          bottom: insets.bottom + 20,
-          width: 52,
-          height: 52,
-          borderRadius: 16,
-          backgroundColor: theme.primary,
-          alignItems: 'center',
-          justifyContent: 'center',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.2,
-          shadowRadius: 8,
-          elevation: 6,
-        }}
-      >
-        <Plus size={24} color={theme.primaryForeground} />
-      </Pressable>
 
       {/* Create Sheet */}
       <CreateTunnelSheet ref={createSheetRef} renderBackdrop={renderBackdrop} />

@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 
 // ============================================================================
 // Types
@@ -67,7 +68,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
       preferences: {
         keyboard: getDefaultKeyboardPreferences(),
         themeId: 'graphite',
-        wallpaperId: 'brandmark',
+        wallpaperId: DEFAULT_WALLPAPER_ID,
       },
 
       setKeyboardPreferences: (prefs) => {
@@ -105,7 +106,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
           preferences: {
             keyboard: getDefaultKeyboardPreferences(),
             themeId: 'graphite',
-            wallpaperId: 'brandmark',
+            wallpaperId: DEFAULT_WALLPAPER_ID,
           },
         });
       },

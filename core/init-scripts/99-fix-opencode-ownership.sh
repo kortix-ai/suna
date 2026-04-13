@@ -28,6 +28,8 @@ chown -R "$ABC_UID:$ABC_GID" \
   /workspace/.browser-profile \
   /workspace/.lss \
   /workspace/.ocx \
+  /workspace/.persistent-system \
+  /persistent \
   /workspace/.git \
   2>/dev/null || true
 

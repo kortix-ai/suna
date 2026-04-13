@@ -21,6 +21,7 @@ import {
 import { grantCredits, resetExpiringCredits } from './credits';
 import { grantMachineBonusOnce, getStripeMachineBonusKey } from './machine-bonus';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
+import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 
 // ─── Stripe Webhook Processing ──────────────────────────────────────────────
 
@@ -158,10 +159,10 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     planType: isYearly ? 'yearly' : 'monthly',
     commitmentType: commitmentType === 'yearly_commitment' ? commitmentType : null,
     ...(isYearly ? { nextCreditGrant: calculateNextCreditGrant(new Date()).toISOString() } : {}),
-    // Auto-topup on by default: charge $20 when balance drops below $5
+    // Auto-topup on by default: charge $5 when balance drops below $1
     autoTopupEnabled: true,
-    autoTopupThreshold: '5',
-    autoTopupAmount: '20',
+    autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
+    autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
   });
 
   // Grant tier credits if applicable (credits system, separate from instances)
@@ -575,10 +576,10 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
     revenuecatProductId: productId,
     revenuecatCustomerId: event.subscriber_id ?? null,
     stripeSubscriptionId: null,
-    // Auto-topup on by default: charge $20 when balance drops below $5
+    // Auto-topup on by default: charge $5 when balance drops below $1
     autoTopupEnabled: true,
-    autoTopupThreshold: '5',
-    autoTopupAmount: '20',
+    autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
+    autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
   });
 
   if (tier.monthlyCredits > 0) {

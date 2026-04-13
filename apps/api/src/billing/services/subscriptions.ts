@@ -12,6 +12,7 @@ import { getTier, isUpgrade, isDowngrade, getMonthlyCredits, resolvePriceId, get
 import { grantCredits, resetExpiringCredits } from './credits';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import Stripe from 'stripe';
+import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 
 export async function getOrCreateStripeCustomer(
   accountId: string,
@@ -134,10 +135,10 @@ export async function createCheckoutSession(params: {
           stripeSubscriptionId: subscription.id,
           stripeSubscriptionStatus: subscription.status,
           paymentStatus: 'active',
-          // Auto-topup on by default: charge $20 when balance drops below $5
+          // Auto-topup on by default: charge $5 when balance drops below $1
           autoTopupEnabled: true,
-          autoTopupThreshold: '5',
-          autoTopupAmount: '20',
+          autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
+          autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
         });
 
         await upsertCustomer({

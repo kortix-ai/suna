@@ -29,6 +29,7 @@ if [ ! -d /workspace/.git ] || [ -z "$(git -C /workspace rev-list --max-parents=
     cat > /workspace/.git/info/exclude << 'GITEXCLUDE'
 # kortix/opencode internal dirs — never include in snapshot diffs
 .local/share/opencode/
+.persistent-system/
 .cache/
 .config/
 .opencode/
@@ -67,6 +68,7 @@ fi
 # This is a no-op if they were never tracked.
 git -C /workspace rm --cached -r --ignore-unmatch \
     .browser-profile .local/share/opencode .cache/opencode \
+    .persistent-system \
     .bun .npm-global .lss .ocx .XDG \
     >/dev/null 2>&1 || true
 
@@ -85,7 +87,7 @@ fi
 # ── Tool dependencies ─────────────────────────────────────────────────────────
 # OpenCode bundler resolves modules from /workspace/.cache/opencode (its runtime
 # package cache). Pre-seed tool deps there so external tool imports work offline.
-CACHE_DIR="/workspace/.cache/opencode"
+CACHE_DIR="${KORTIX_OPENCODE_CACHE_DIR:-/persistent/opencode-cache}"
 if [ -d /ephemeral/kortix-master/node_modules ] && [ ! -d "$CACHE_DIR/node_modules/@mendable" ]; then
     mkdir -p "$CACHE_DIR"
     cp -r /ephemeral/kortix-master/node_modules "$CACHE_DIR/" 2>/dev/null || true

@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Mail, ArrowRight, X, Check } from 'lucide-react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { openInbox } from 'react-native-email-link';
+import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
@@ -37,7 +38,8 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
   const { signInWithMagicLink, isLoading } = useAuth();
   const toast = useToast();
   const insets = useSafeAreaInsets();
-  
+  const sheetPadding = useSheetBottomPadding();
+
   const [emailSent, setEmailSent] = React.useState(false);
   const [email, setEmail] = React.useState('');
   const [acceptedTerms, setAcceptedTerms] = React.useState(false);
@@ -146,7 +148,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: 24,
-          paddingBottom: Math.max(insets.bottom, 20) + 16,
+          paddingBottom: sheetPadding,
         }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"

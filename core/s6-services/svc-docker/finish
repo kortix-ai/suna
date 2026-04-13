@@ -1,0 +1,16 @@
+#!/usr/bin/with-contenv bash
+# Graceful shutdown: give dockerd time to stop containers cleanly before
+# s6 sends SIGKILL to the service group. dockerd needs ~10s to wind down
+# running containers and release the socket.
+echo "[svc-docker] dockerd exited (code=$1, signal=$2) — cleaning up"
+
+# Remove the socket so stale clients fail fast instead of hanging.
+rm -f /var/run/docker.sock 2>/dev/null || true
+
+# If dockerd died unexpectedly, surface the last few log lines for debugging.
+if [ "$1" != "0" ] && [ -f /var/log/dockerd.log ]; then
+  echo "[svc-docker] last dockerd log lines:"
+  tail -n 20 /var/log/dockerd.log 2>/dev/null || true
+fi
+
+exit 0

@@ -716,8 +716,8 @@ export function FileOperationToolView({
   const contentLines = useMemo(() => splitContentIntoLines(fileContent), [fileContent]);
 
   const htmlPreviewUrl =
-    isHtml && project?.sandbox?.sandbox_url && processedFilePath
-      ? constructHtmlPreviewUrl(project.sandbox.sandbox_url, processedFilePath, subdomainOpts)
+    isHtml && processedFilePath
+      ? constructHtmlPreviewUrl(processedFilePath, subdomainOpts)
       : undefined;
 
   const FileIcon = getFileIcon(fileName);

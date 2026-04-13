@@ -47,14 +47,14 @@ export interface SubdomainUrlOptions {
   backendPort: number;
   /**
    * The public-facing API base URL (e.g. 'https://e2e-test.kortix.cloud/v1').
-   * When set and the user is NOT on localhost, path-based proxy URLs are
-   * generated instead of subdomain URLs:
+   * When the user's browser is NOT on localhost, path-based proxy URLs are
+   * generated from this:
    *   https://e2e-test.kortix.cloud/v1/p/{sandboxId}/{port}/{path}
    *
-   * This makes proxy URLs work correctly on VPS/self-hosted deployments
-   * where *.localhost subdomain DNS resolution isn't available.
+   * This makes proxy URLs work on VPS/self-hosted deployments where
+   * *.localhost subdomain DNS resolution isn't available.
    */
-  apiBaseUrl?: string;
+  apiBaseUrl: string;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -80,6 +80,7 @@ const SUBDOMAIN_URL_REGEX =
  * by the sandbox infrastructure (VNC, OpenCode Web, presentation viewer, etc.)
  */
 const EXCLUDED_PORTS = new Set([
+  22, // SSH daemon — never preview/probe as HTTP
   4096, // OpenCode API (proxied by Kortix Master)
   parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10), // Kortix Master itself
 ]);
@@ -333,53 +334,63 @@ export function hasLocalhostUrls(text: string): boolean {
 }
 
 /**
- * Detect whether the browser is running on localhost.
- * Safe to call server-side (returns false).
+ * Detect whether the kortix-api backend is on the user's own machine
+ * (i.e. apiBaseUrl hostname is localhost/127.0.0.1).
+ *
+ * This — NOT where the browser is running — is the correct trigger for picking
+ * between subdomain and path-based proxy. The subdomain proxy works by having
+ * `*.localhost:{backendPort}` resolve to 127.0.0.1 on the user's machine. That
+ * only reaches kortix-api if kortix-api is ALSO running on the user's machine.
+ * If the backend lives remotely, *.localhost:8008 points at whatever the user
+ * happens to have running locally — which is exactly the "internal browser
+ * literally loads localhost" bug.
  */
-function isBrowserOnLocalhost(): boolean {
-  if (typeof window === 'undefined') return false;
-  const hostname = window.location.hostname;
-  return hostname === 'localhost' || hostname === '127.0.0.1';
+function isBackendOnLocalhost(apiBaseUrl: string): boolean {
+  try {
+    const { hostname } = new URL(apiBaseUrl);
+    return hostname === 'localhost' || hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
 }
 
 /**
  * Build a preview proxy URL for a sandbox service port.
  *
- * Two modes:
- *   - **Subdomain** (local dev): `http://p{port}-{sandboxId}.localhost:{backendPort}/{path}`
- *     Works because browsers resolve *.localhost to 127.0.0.1.
+ * Both modes are proxy URLs — neither connects to the user's raw localhost.
+ * Provider type (local_docker, daytona, justavps) is irrelevant; the only thing
+ * that matters is whether kortix-api is running on the user's local machine,
+ * because that determines whether *.localhost DNS can reach it.
  *
- *   - **Path-based** (VPS/self-hosted): `{apiBaseUrl}/p/{sandboxId}/{port}/{path}`
- *     Goes through Caddy → API → sandbox. Used when the browser isn't on localhost.
+ *   - **Subdomain** (backend local): `http://p{port}-{sandboxId}.localhost:{backendPort}/{path}`
+ *     Transparent mode — the proxied app thinks it's at root `/`. Only works
+ *     when kortix-api is on 127.0.0.1.
+ *
+ *   - **Path-based** (backend remote): `{apiBaseUrl}/p/{sandboxId}/{port}/{path}`
+ *     Goes through Caddy → API → sandbox. Used for all deployed setups.
  *
  * @example
- *   // Local: rewriteLocalhostUrl(3210, '/viewer.html', '', opts)
- *   // → 'http://p3210-kortix-sandbox.localhost:8008/viewer.html'
- *
- *   // VPS:   rewriteLocalhostUrl(3210, '/viewer.html', '', opts)
- *   // → 'https://e2e-test.kortix.cloud/v1/p/kortix-sandbox/3210/viewer.html'
+ *   // Local dev:      → 'http://p3210-kortix-sandbox.localhost:8008/viewer.html'
+ *   // Deployed back:  → 'https://e2e-test.kortix.cloud/v1/p/kortix-sandbox/3210/viewer.html'
  */
 export function rewriteLocalhostUrl(
   port: number,
   path: string,
-  _serverUrl: string,
-  subdomainOpts?: SubdomainUrlOptions,
+  subdomainOpts: SubdomainUrlOptions,
 ): string {
-  if (!subdomainOpts) {
-    const safePath = normalizePath(path);
-    return `http://localhost:${port}${safePath}`;
-  }
-
   const safePath = normalizePath(path);
 
-  // Path-based proxy for VPS/remote deployments
-  if (subdomainOpts.apiBaseUrl && !isBrowserOnLocalhost()) {
-    // apiBaseUrl is like "https://e2e-test.kortix.cloud/v1" — strip trailing /v1 or / to get origin+prefix
+  // Path-based proxy whenever the backend is NOT on the user's machine.
+  // This is the only safe choice when apiBaseUrl is remote — the subdomain
+  // scheme relies on *.localhost DNS which would point at the user's own box.
+  if (!isBackendOnLocalhost(subdomainOpts.apiBaseUrl)) {
+    // apiBaseUrl is like "https://e2e-test.kortix.cloud/v1" — strip trailing slash.
     const base = subdomainOpts.apiBaseUrl.replace(/\/+$/, '');
     return `${base}/p/${subdomainOpts.sandboxId}/${port}${safePath}`;
   }
 
-  // Subdomain proxy for localhost (local dev)
+  // Subdomain proxy — only used in true local-dev where kortix-api is on
+  // 127.0.0.1 so *.localhost:{backendPort} is guaranteed to reach it.
   return `http://p${port}-${subdomainOpts.sandboxId}.localhost:${subdomainOpts.backendPort}${safePath}`;
 }
 
@@ -389,10 +400,9 @@ export function rewriteLocalhostUrl(
  */
 export function getProxyBaseUrl(
   port: number,
-  serverUrl: string,
-  subdomainOpts?: SubdomainUrlOptions,
+  subdomainOpts: SubdomainUrlOptions,
 ): string {
-  return rewriteLocalhostUrl(port, '/', serverUrl, subdomainOpts);
+  return rewriteLocalhostUrl(port, '/', subdomainOpts);
 }
 
 /**
@@ -429,9 +439,7 @@ export function isProxiableLocalhostUrl(url: string): boolean {
  */
 export function proxyLocalhostUrl(
   url: string | undefined,
-  serverUrl: string,
-  _mappedPorts?: Record<string, string>,
-  subdomainOpts?: SubdomainUrlOptions,
+  subdomainOpts: SubdomainUrlOptions,
 ): string | undefined {
   if (!url) return url;
 
@@ -441,12 +449,7 @@ export function proxyLocalhostUrl(
   // Don't rewrite URLs pointing at the app itself or already-proxied URLs
   if (!isProxiableLocalhostUrl(parsed.originalUrl)) return parsed.originalUrl;
 
-  return rewriteLocalhostUrl(
-    parsed.port,
-    parsed.path,
-    serverUrl,
-    subdomainOpts,
-  );
+  return rewriteLocalhostUrl(parsed.port, parsed.path, subdomainOpts);
 }
 
 /**
@@ -565,18 +568,11 @@ const WEB_PROXY_PATH_PREFIX = '/web-proxy/';
  * which hosts the /web-proxy/ forward proxy.
  *
  * The web proxy lives on Kortix Master, NOT the OpenCode server, so we
- * must construct a URL targeting port 8000 via the subdomain/path proxy.
- *
- * Strategy (most robust → least):
- *   1. subdomainOpts provided → use rewriteLocalhostUrl for port 8000
- *   2. serverUrl is a subdomain proxy URL (p8008-...) → swap port prefix to 8000
- *   3. serverUrl is a path-based proxy (/v1/p/sandbox/8000) → rewrite port segment
- *   4. Fallback: bare http://localhost:8000 (only works inside the sandbox)
+ * construct a URL targeting port 8000 via the standard sandbox preview proxy.
  */
 export function buildWebProxyUrl(
   targetUrl: string,
-  serverUrl: string,
-  subdomainOpts?: SubdomainUrlOptions,
+  subdomainOpts: SubdomainUrlOptions,
 ): string | null {
   try {
     const parsed = new URL(targetUrl);
@@ -584,35 +580,9 @@ export function buildWebProxyUrl(
     const scheme = parsed.protocol.replace(':', '');
     const proxyPath = `${WEB_PROXY_PATH_PREFIX}${scheme}/${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
 
-    const kmPort = SANDBOX_PORTS.KORTIX_MASTER; // "8000"
-
-    // 1. If subdomainOpts is provided, use the standard rewrite
-    if (subdomainOpts) {
-      const baseUrl = rewriteLocalhostUrl(parseInt(kmPort, 10), '/', serverUrl, subdomainOpts);
-      return `${baseUrl.replace(/\/$/, '')}${proxyPath}`;
-    }
-
-    // 2. Derive from serverUrl directly (handles local subdomain proxy)
-    //    serverUrl like "http://p8008-kortix-sandbox.localhost:8008"
-    //    → swap to   "http://p8000-kortix-sandbox.localhost:8008"
-    try {
-      const server = new URL(serverUrl);
-      const subdomainMatch = server.hostname.match(/^p(\d+)-(.+)$/);
-      if (subdomainMatch) {
-        const sandboxHost = subdomainMatch[2]; // "kortix-sandbox.localhost"
-        return `${server.protocol}//p${kmPort}-${sandboxHost}:${server.port}${proxyPath}`;
-      }
-
-      // 3. Path-based proxy: "https://domain/v1/p/{sandboxId}/8000"
-      //    → rewrite to     "https://domain/v1/p/{sandboxId}/8000/web-proxy/..."
-      const pathMatch = server.pathname.match(/^(\/v1\/p\/[^/]+)\/\d+/);
-      if (pathMatch) {
-        return `${server.origin}${pathMatch[1]}/${kmPort}${proxyPath}`;
-      }
-    } catch { /* fall through */ }
-
-    // 4. Last resort: bare localhost (only works if Kortix Master is accessible directly)
-    return `http://localhost:${kmPort}${proxyPath}`;
+    const kmPort = parseInt(SANDBOX_PORTS.KORTIX_MASTER, 10); // 8000
+    const baseUrl = rewriteLocalhostUrl(kmPort, '/', subdomainOpts);
+    return `${baseUrl.replace(/\/$/, '')}${proxyPath}`;
   } catch {
     return null;
   }

@@ -66,14 +66,11 @@ function CommandDialog({
       </DialogHeader>
       <DialogContent
         className={cn(
-          'overflow-hidden p-0 gap-0',
+          'overflow-hidden p-0 gap-0 shadow-none',
           // Border
-          'border-border/30 rounded-xl',
+          'border-border/60 rounded-xl',
           // Solid popover background
           'bg-popover',
-          // Refined floating shadow
-          'shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3),0_0_0_1px_rgba(0,0,0,0.03)]',
-          'dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7),0_0_0_1px_rgba(255,255,255,0.05)]',
           // Subtle slide-in from above
           'data-[state=open]:slide-in-from-top-[2%] data-[state=closed]:slide-out-to-top-[2%]',
           className,

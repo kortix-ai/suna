@@ -15,9 +15,11 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   Animated,
+  Platform,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
@@ -48,6 +50,9 @@ import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
+import { useAudioRecorder } from '@/hooks/media/useAudioRecorder';
+import { useAudioRecordingHandlers } from '@/hooks/media/useAudioRecordingHandlers';
+import { transcribeAudio } from '@/lib/chat/transcription';
 import { SessionTurn } from './SessionTurn';
 import { QuestionPrompt } from './QuestionPrompt';
 import { useSessions } from '@/lib/platform/hooks';
@@ -242,6 +247,23 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   const drainScheduledRef = useRef(false);
   const queueInFlightRef = useRef<{ queueId: string; sentAt: number } | null>(null);
 
+
+  // ── Audio recording ──
+
+  const audioRecorder = useAudioRecorder();
+  // Dummy agent manager shape for useAudioRecordingHandlers compatibility
+  const dummyAgentManager = useMemo(() => ({ selectedAgent: null } as any), []);
+
+  // Track transcribed text to inject into SessionChatInput
+  const [pendingTranscription, setPendingTranscription] = useState<string | null>(null);
+  const transcribeAndAddToInput = useCallback(async (audioUri: string) => {
+    const transcribedText = await transcribeAudio(audioUri);
+    if (transcribedText) {
+      setPendingTranscription(transcribedText);
+    }
+  }, []);
+
+  const audioHandlers = useAudioRecordingHandlers(audioRecorder, dummyAgentManager, transcribeAndAddToInput);
 
   // ── Send / Stop handlers (defined early so queue drain logic can reference them) ──
 
@@ -632,6 +654,24 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
     [sandboxUrl, sessionId, safeMessages],
   );
 
+  // Fork with edited prompt — forks at the user message and pre-fills new text
+  const handleEditFork = useCallback(
+    async (messageId: string, editedText: string) => {
+      if (!sandboxUrl) return;
+      try {
+        // Fork at this message (exclusive — copies everything before it)
+        const forkedSession = await forkSession(sandboxUrl, sessionId, messageId);
+        AsyncStorage.setItem(`fork_origin_${forkedSession.id}`, sessionId);
+        // Stash the edited prompt so the new session can pre-fill it
+        AsyncStorage.setItem(`fork_prompt_${forkedSession.id}`, editedText);
+        useTabStore.getState().navigateToSession(forkedSession.id);
+      } catch (err: any) {
+        log.error('Failed to edit-fork session:', err?.message || err);
+      }
+    },
+    [sandboxUrl, sessionId],
+  );
+
   // Track last turn height for footer sizing
   const turnHeights = useRef<Record<string, number>>({});
   const [lastTurnHeight, setLastTurnHeight] = useState(80);
@@ -655,6 +695,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           isBusy={isBusy}
           pendingQuestions={pendingQuestions}
           onFork={handleFork}
+          onEditFork={handleEditFork}
           agentNames={agentNames}
           onFileMention={handleFileMention}
           onSessionMention={handleSessionMention}
@@ -662,13 +703,17 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         />
       </View>
     ),
-    [safeMessages, sessionStatus, isBusy, turns.length, pendingQuestions, handleFork, agentNames, handleFileMention, handleSessionMention, commands],
+    [safeMessages, sessionStatus, isBusy, turns.length, pendingQuestions, handleFork, handleEditFork, agentNames, handleFileMention, handleSessionMention, commands],
   );
 
   const title = session?.title || 'New Session';
 
   return (
-    <View className="flex-1 bg-background">
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior="padding"
+      className="bg-background"
+    >
       {/* Header — matches dashboard layout exactly */}
       <View
         style={{ paddingTop: insets.top }}
@@ -781,9 +826,9 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
               <View
                 style={{
                   // Fill remaining viewport so the last turn's user bubble
-                  // sits at the top. Subtract: header (~60+insets), input (~120+insets),
+                  // sits at the top. Subtract: header (~60+insets), input (~90+insets),
                   // footer bar (~50), and the actual measured last turn height.
-                  height: Math.max(0, windowHeight - insets.top - insets.bottom - 210 - lastTurnHeight),
+                  height: Math.max(0, windowHeight - insets.top - insets.bottom - 195 - lastTurnHeight),
                 }}
               />
             </View>
@@ -834,6 +879,15 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
             onboardingMode={onboardingMode}
             initialText={savedInputText}
             onTextChange={(t) => { inputTextRef.current = t; }}
+            onAudioRecord={audioHandlers.handleStartRecording}
+            onCancelRecording={audioHandlers.handleCancelRecording}
+            onSendAudio={audioHandlers.handleSendAudio}
+            isRecording={audioRecorder.isRecording}
+            recordingDuration={audioRecorder.recordingDuration}
+            audioLevels={audioRecorder.audioLevels}
+            isTranscribing={audioHandlers.isTranscribing}
+            pendingTranscription={pendingTranscription}
+            onTranscriptionConsumed={() => setPendingTranscription(null)}
             agent={resolved.agent}
             agents={resolved.agents}
             model={resolved.model}
@@ -881,7 +935,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         sandboxId=""
         sandboxUrl={sandboxUrl}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

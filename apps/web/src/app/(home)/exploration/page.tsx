@@ -97,7 +97,7 @@ function Reveal({
 function SectionLabel({ label }: { label: string }) {
   return (
     <div className="mb-5 flex items-center gap-4">
-      <span className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground/42">
+      <span className="text-[11px] uppercase tracking-[0.28em] text-muted-foreground">
         {label}
       </span>
       <div className="h-px flex-1 bg-border/50" />
@@ -120,19 +120,19 @@ function StudyCard({
     <article className="rounded-[28px] border border-border/60 bg-background/80 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.05)] backdrop-blur-xl sm:p-7">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground/42">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
             Study {id}
           </p>
           <h2 className="mt-2 text-2xl font-medium tracking-tight text-foreground">
             {name}
           </h2>
         </div>
-        <span className="rounded-full border border-border/60 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground/55">
+        <span className="rounded-full border border-border/60 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
           Candidate
         </span>
       </div>
 
-      <p className="mb-6 max-w-xl text-sm leading-relaxed text-muted-foreground/72">
+      <p className="mb-6 max-w-xl text-sm leading-relaxed text-muted-foreground">
         {thesis}
       </p>
 
@@ -142,8 +142,8 @@ function StudyCard({
             key={title}
             className="grid gap-1 border-t border-border/45 px-5 py-4 first:border-t-0 sm:grid-cols-[1.15fr_0.85fr] sm:items-center"
           >
-            <p className="text-sm font-medium text-foreground/88">{title}</p>
-            <p className="text-xs leading-relaxed text-muted-foreground/60">{detail}</p>
+            <p className="text-sm font-medium text-foreground">{title}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">{detail}</p>
           </div>
         ))}
       </div>
@@ -160,7 +160,7 @@ function NotebookBlock({
 }) {
   return (
     <section className="rounded-[24px] border border-border/55 bg-background/78 p-5 backdrop-blur-xl sm:p-6">
-      <p className="mb-4 text-[11px] uppercase tracking-[0.24em] text-muted-foreground/42">
+      <p className="mb-4 text-[11px] uppercase tracking-[0.24em] text-muted-foreground">
         {title}
       </p>
       {children}
@@ -186,7 +186,7 @@ export default function ExplorationPage() {
       <div className="relative z-10 mx-auto max-w-7xl px-6 pb-24 pt-10 sm:px-8 sm:pt-14">
         <Reveal>
           <div className="mb-12 flex items-center justify-between gap-4">
-            <Button asChild variant="ghost" className="-ml-3 rounded-full text-muted-foreground/58">
+            <Button asChild variant="ghost" className="-ml-3 rounded-full text-muted-foreground">
               <Link href="/">
                 <ArrowLeft className="mr-2 size-4" />
                 Home
@@ -198,13 +198,13 @@ export default function ExplorationPage() {
         <div className="grid gap-10 xl:grid-cols-[minmax(0,1.25fr)_360px]">
           <div>
             <Reveal delay={0.03}>
-              <p className="text-[11px] uppercase tracking-[0.32em] text-muted-foreground/42">
+              <p className="text-[11px] uppercase tracking-[0.32em] text-muted-foreground">
                 Exploration
               </p>
               <h1 className="mt-4 max-w-4xl text-4xl font-medium tracking-tight text-foreground sm:text-5xl md:text-6xl">
                 A calmer way to evaluate how Kortix should explain itself.
               </h1>
-              <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground/68 sm:text-[15px]">
+              <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-[15px]">
                 This page is a working wall: architecture studies, filesystem proof,
                 integration language, and positioning lines. The goal is not to ship
                 all of it. The goal is to identify the strongest structure for the homepage.
@@ -231,7 +231,7 @@ export default function ExplorationPage() {
               <div className="grid gap-6 lg:grid-cols-2">
                 <Reveal delay={0.1}>
                   <NotebookBlock title="Filesystem">
-                    <div className="rounded-2xl border border-border/45 bg-muted/18 p-5 font-mono text-xs leading-loose text-muted-foreground/70">
+                    <div className="rounded-2xl border border-border/45 bg-muted/18 p-5 font-mono text-xs leading-loose text-muted-foreground">
                       {filesystemProof.map((item) => (
                         <div key={item}>{item}</div>
                       ))}
@@ -242,22 +242,22 @@ export default function ExplorationPage() {
                 <Reveal delay={0.14}>
                   <NotebookBlock title="Memory Model">
                     <div className="rounded-2xl border border-border/45 bg-muted/18 p-5">
-                      <div className="flex flex-wrap gap-2 text-[11px] font-mono text-muted-foreground/68">
+                      <div className="flex flex-wrap gap-2 text-[11px] font-mono text-muted-foreground">
                         {['tool call', 'observation', 'consolidation', 'long-term memory', 'future context'].map(
                           (item, index) => (
                             <div key={item} className="flex items-center gap-2">
                               <span className="rounded-full border border-border/50 px-3 py-1">
                                 {item}
                               </span>
-                              {index < 4 ? <span className="text-muted-foreground/35">{'->'}</span> : null}
+                              {index < 4 ? <span className="text-muted-foreground">{'->'}</span> : null}
                             </div>
                           )
                         )}
                       </div>
-                      <div className="mt-5 space-y-2 text-sm text-muted-foreground/68">
-                        <p><span className="text-foreground/86">Episodic</span> - what happened and when</p>
-                        <p><span className="text-foreground/86">Semantic</span> - facts, systems, structure</p>
-                        <p><span className="text-foreground/86">Procedural</span> - workflows and how-to knowledge</p>
+                      <div className="mt-5 space-y-2 text-sm text-muted-foreground">
+                        <p><span className="text-foreground">Episodic</span> - what happened and when</p>
+                        <p><span className="text-foreground">Semantic</span> - facts, systems, structure</p>
+                        <p><span className="text-foreground">Procedural</span> - workflows and how-to knowledge</p>
                       </div>
                     </div>
                   </NotebookBlock>
@@ -275,7 +275,7 @@ export default function ExplorationPage() {
                       {copyLines.map((line) => (
                         <div
                           key={line}
-                          className="rounded-2xl border border-border/45 bg-muted/14 px-4 py-3 text-sm leading-relaxed text-foreground/84"
+                          className="rounded-2xl border border-border/45 bg-muted/14 px-4 py-3 text-sm leading-relaxed text-foreground"
                         >
                           {line}
                         </div>
@@ -286,11 +286,11 @@ export default function ExplorationPage() {
 
                 <Reveal delay={0.14}>
                   <NotebookBlock title="Integration Surface">
-                    <div className="rounded-2xl border border-border/45 bg-muted/18 p-5 font-mono text-xs leading-loose text-muted-foreground/70">
+                    <div className="rounded-2xl border border-border/45 bg-muted/18 p-5 font-mono text-xs leading-loose text-muted-foreground">
                       {integrations.map(([name, method]) => (
                         <div key={name} className="flex items-start justify-between gap-4 border-t border-border/35 py-2 first:border-t-0 first:pt-0 last:pb-0">
-                          <span className="text-foreground/84">{name}</span>
-                          <span className="text-muted-foreground/48">{method}</span>
+                          <span className="text-foreground">{name}</span>
+                          <span className="text-muted-foreground">{method}</span>
                         </div>
                       ))}
                     </div>
@@ -304,24 +304,24 @@ export default function ExplorationPage() {
             <Reveal delay={0.08}>
               <div className="xl:sticky xl:top-24 space-y-6">
                 <NotebookBlock title="Editorial Read">
-                  <div className="space-y-4 text-sm leading-relaxed text-muted-foreground/68">
+                  <div className="space-y-4 text-sm leading-relaxed text-muted-foreground">
                     <p>
-                      <span className="text-foreground/88">Best homepage anchor:</span>{' '}
+                      <span className="text-foreground">Best homepage anchor:</span>{' '}
                       State First. It gets to the real differentiator fastest.
                     </p>
                     <p>
-                      <span className="text-foreground/88">Best supporting proof:</span>{' '}
+                      <span className="text-foreground">Best supporting proof:</span>{' '}
                       filesystem + memory. Those two make the idea feel concrete.
                     </p>
                     <p>
-                      <span className="text-foreground/88">Design direction:</span>{' '}
+                      <span className="text-foreground">Design direction:</span>{' '}
                       quieter, more editorial, less product-demo energy.
                     </p>
                   </div>
                 </NotebookBlock>
 
                 <NotebookBlock title="Recommended Homepage Mix">
-                  <ol className="space-y-3 text-sm leading-relaxed text-muted-foreground/68">
+                  <ol className="space-y-3 text-sm leading-relaxed text-muted-foreground">
                     <li>1. Lead with a single stack graphic.</li>
                     <li>2. Follow with one filesystem proof block.</li>
                     <li>3. Add one line about memory and one line about integrations.</li>

@@ -313,6 +313,19 @@ const DYNAMIC_RESOLVERS: DynamicResolver[] = [
     };
   },
 
+  // /tasks/<id> — standalone task detail page
+  (pathname) => {
+    const m = pathname.match(/^\/tasks\/([^/]+)$/);
+    if (!m) return null;
+    const taskId = decodeURIComponent(m[1]);
+    return {
+      id: `task:${taskId}`,
+      title: 'Task',
+      type: 'page',
+      href: `/tasks/${m[1]}`,
+    };
+  },
+
   // /projects/<id> — project detail page
   // Title is generic here; the project page component updates it once data loads.
   (pathname) => {

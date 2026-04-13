@@ -5,7 +5,7 @@ set -euo pipefail
 # Secrets → s6 env recovery
 #
 # This is the PERSISTENCE BRIDGE between the two zones:
-#   /workspace/.secrets/  (persistent, encrypted)  →  /run/s6/container_environment/ (tmpfs)
+#   /persistent/secrets/  (persistent, encrypted)  →  /run/s6/container_environment/ (tmpfs)
 #
 # The s6 env dir is tmpfs — wiped on every container start. This script
 # rebuilds it from the persistent encrypted secrets store so all services
@@ -13,15 +13,15 @@ set -euo pipefail
 #
 # Recovery chain (in priority order):
 #   1. Docker env vars (injected at container create) → always present on first boot
-#   2. /workspace/.secrets/.bootstrap-env.json → core vars (KORTIX_TOKEN, etc.)
-#   3. /workspace/.secrets/.secrets.json → all user secrets (API keys, etc.)
+#   2. /persistent/secrets/.bootstrap-env.json → core vars (KORTIX_TOKEN, etc.)
+#   3. /persistent/secrets/.secrets.json → all user secrets (API keys, etc.)
 #
 # The SecretStore encrypts with a DEDICATED encryption key (NOT KORTIX_TOKEN).
 # This means secrets survive KORTIX_TOKEN changes, API restarts, and rotations.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Derive secrets directory from SECRET_FILE_PATH.
-_SECRET_FILE="${SECRET_FILE_PATH:-/workspace/.secrets/.secrets.json}"
+_SECRET_FILE="${SECRET_FILE_PATH:-${KORTIX_PERSISTENT_ROOT:-/persistent}/secrets/.secrets.json}"
 SECRETS_DIR="$(dirname "$_SECRET_FILE")"
 S6_ENV_DIR="/run/s6/container_environment"
 SECRETS_FILE="$_SECRET_FILE"

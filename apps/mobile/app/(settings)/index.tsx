@@ -144,19 +144,27 @@ export default function SettingsScreen() {
     },
   ];
 
+  // Account deletion is hidden when the backend endpoint is unsupported
+  // (matches web's `isBillingEnabled() && accountDeletionSupported` guard).
+  const accountDeletionSupported = deletionStatus?.supported ?? true;
+
   const advancedRows: SettingsRow[] = [
-    {
-      key: 'deletion',
-      icon: Trash2,
-      label: deletionStatus?.has_pending_deletion
-        ? t('accountDeletion.deletionScheduled')
-        : t('accountDeletion.deleteYourAccount'),
-      description: 'Schedule or cancel account deletion',
-      onPress: () => go('/(settings)/account-deletion'),
-      badge: deletionStatus?.has_pending_deletion ? 'Scheduled' : undefined,
-      destructive: true,
-      disabled: isGuest,
-    },
+    ...(accountDeletionSupported
+      ? [
+          {
+            key: 'deletion',
+            icon: Trash2,
+            label: deletionStatus?.has_pending_deletion
+              ? t('accountDeletion.deletionScheduled')
+              : t('accountDeletion.deleteYourAccount'),
+            description: 'Schedule or cancel account deletion',
+            onPress: () => go('/(settings)/account-deletion'),
+            badge: deletionStatus?.has_pending_deletion ? 'Scheduled' : undefined,
+            destructive: true,
+            disabled: isGuest,
+          } as SettingsRow,
+        ]
+      : []),
     {
       key: 'logout',
       icon: LogOut,

@@ -2,13 +2,15 @@
 
 import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { buildInstancePath } from '@/lib/instance-routes';
-import { KortixLoader } from '@/components/ui/kortix-loader';
 
 /**
- * Legacy onboarding route — redirects to the dashboard.
- * Onboarding is now handled as a state within the dashboard layout itself,
- * so this page just forwards there.
+ * Legacy onboarding route — redirects to the dashboard, where onboarding is
+ * handled as a state within the dashboard layout itself. Renders the single
+ * canonical ConnectingScreen for the sub-second redirect so users don't see
+ * any other loader style.
  */
 export default function OnboardingPage() {
   const router = useRouter();
@@ -18,9 +20,5 @@ export default function OnboardingPage() {
     router.replace(buildInstancePath(id, '/dashboard'));
   }, [router, id]);
 
-  return (
-    <div className="fixed inset-0 flex items-center justify-center bg-background">
-      <KortixLoader size="medium" />
-    </div>
-  );
+  return <ConnectingScreen forceConnecting overrideStage="routing" />;
 }

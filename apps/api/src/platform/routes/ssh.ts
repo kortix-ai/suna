@@ -19,21 +19,28 @@ import { readFileSync, unlinkSync, mkdirSync, rmdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import Docker from 'dockerode';
+import { and, eq } from 'drizzle-orm';
+import { sandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { execOnHost } from '../../update/exec';
 import type { AuthVariables } from '../../types';
+import { supabaseAuth } from '../../middleware/auth';
+import { db } from '../../shared/db';
+import { resolveAccountId } from '../../shared/resolve-account';
+import { buildSSHConnectionInfo, buildSSHSetupPayload, resolvePublicSSHHost, type SSHConnectionInfo } from '../services/ssh-access';
 
 const sshRouter = new Hono<{ Variables: AuthVariables }>();
+sshRouter.use('/*', supabaseAuth);
 
 // ─── Shared: keypair generation ──────────────────────────────────────────────
 
-function generateKeypair(): { privateKey: string; publicKey: string } {
+function generateKeypair(comment = 'kortix-sandbox'): { privateKey: string; publicKey: string } {
   const tmpPath = join(tmpdir(), `kortix-ssh-${Date.now()}`);
   mkdirSync(tmpPath, { recursive: true });
   const keyPath = join(tmpPath, 'key');
 
   try {
-    execSync(`ssh-keygen -t ed25519 -f "${keyPath}" -N "" -C "kortix-sandbox" -q`, { stdio: 'pipe' });
+    execSync(`ssh-keygen -t ed25519 -f "${keyPath}" -N "" -C "${comment}" -q`, { stdio: 'pipe' });
   } catch {
     throw new Error('Failed to generate SSH keypair via ssh-keygen');
   }
@@ -46,6 +53,25 @@ function generateKeypair(): { privateKey: string; publicKey: string } {
   try { rmdirSync(tmpPath); } catch {}
 
   return { privateKey, publicKey };
+}
+
+type SandboxRecord = typeof sandboxes.$inferSelect;
+
+async function resolveSandboxRecord(userId: string, requestedSandboxId?: string): Promise<SandboxRecord | null> {
+  const accountId = await resolveAccountId(userId);
+  let sandbox: SandboxRecord | undefined;
+
+  if (requestedSandboxId) {
+    [sandbox] = await db.select().from(sandboxes)
+      .where(and(eq(sandboxes.accountId, accountId), eq(sandboxes.sandboxId, requestedSandboxId)))
+      .limit(1);
+  } else {
+    [sandbox] = await db.select().from(sandboxes)
+      .where(and(eq(sandboxes.accountId, accountId), eq(sandboxes.status, 'active')))
+      .limit(1);
+  }
+
+  return sandbox ?? null;
 }
 
 // ─── Shared: authorized_keys injection via remote host toolbox exec ──────────
@@ -76,6 +102,19 @@ async function injectPublicKeyViaHostExec(
   }
 }
 
+async function verifyPublicKeyViaHostExec(
+  endpoint: { url: string; headers: Record<string, string> },
+  publicKey: string,
+  containerName = 'justavps-workload',
+): Promise<void> {
+  const keyData = publicKey.split(' ')[1] || publicKey;
+  const verifyCmd = `docker exec ${containerName} sh -lc "test -f /config/.ssh/authorized_keys && grep -q '${keyData}' /config/.ssh/authorized_keys && test \"$(stat -c %a /config/.ssh/authorized_keys)\" = \"600\" && test \"$(stat -c %U /config/.ssh/authorized_keys)\" = \"abc\""`;
+  const result = await execOnHost(endpoint, verifyCmd, 30);
+  if (!result.success) {
+    throw new Error(`SSH key verification failed: ${result.stderr || result.stdout || 'authorized_keys missing or invalid'}`);
+  }
+}
+
 async function injectPublicKeyViaHostExecWithRetry(
   endpoint: { url: string; headers: Record<string, string> },
   publicKey: string,
@@ -97,6 +136,62 @@ async function injectPublicKeyViaHostExecWithRetry(
   throw lastError instanceof Error
     ? lastError
     : new Error('Timed out waiting for sandbox exec endpoint to become ready');
+}
+
+function buildAuthorizedKeysInstallCommand(publicKey: string, targetDir: string): string {
+  const publicKeyB64 = Buffer.from(`${publicKey}\n`).toString('base64');
+  return [
+    `mkdir -p ${targetDir}`,
+    `printf '%s' '${publicKeyB64}' | base64 -d >> ${targetDir}/authorized_keys`,
+    `sort -u -o ${targetDir}/authorized_keys ${targetDir}/authorized_keys`,
+    `chmod 700 ${targetDir}`,
+    `chmod 600 ${targetDir}/authorized_keys`,
+    `chown -R abc:abc ${targetDir}`,
+  ].join(' && ');
+}
+
+async function verifyAuthorizedKeyInContainer(container: Docker.Container, publicKey: string, targetDir = '/config/.ssh'): Promise<void> {
+  const keyData = publicKey.split(' ')[1] || publicKey;
+  await runContainerCommand(
+    container,
+    `test -f ${targetDir}/authorized_keys && grep -q '${keyData}' ${targetDir}/authorized_keys && test "$(stat -c %a ${targetDir}/authorized_keys)" = "600" && test "$(stat -c %U ${targetDir}/authorized_keys)" = "abc"`,
+  );
+}
+
+function resolveLocalSshPort(sandbox: SandboxRecord | null): number {
+  const meta = (sandbox?.metadata || {}) as Record<string, unknown>;
+  const mappedPorts = (meta.mappedPorts || {}) as Record<string, string>;
+  const mapped = parseInt(mappedPorts['22'] || '', 10);
+  return Number.isFinite(mapped) && mapped > 0 ? mapped : config.SANDBOX_PORT_BASE + 7;
+}
+
+function buildConnectionForLocalDocker(c: any, sandbox: SandboxRecord | null): SSHConnectionInfo {
+  return buildSSHConnectionInfo({
+    host: resolvePublicSSHHost(c),
+    port: resolveLocalSshPort(sandbox),
+    username: 'abc',
+    provider: 'local_docker',
+  });
+}
+
+async function buildConnectionForJustavps(externalId: string): Promise<SSHConnectionInfo> {
+  const { justavpsFetch } = await import('../providers/justavps');
+  const machine = await justavpsFetch<{ ip: string | null; status: string }>(`/machines/${externalId}`);
+
+  if (machine.status !== 'ready') {
+    throw new Error('Sandbox is not ready yet. Wait for provisioning to complete.');
+  }
+
+  if (!machine.ip) {
+    throw new Error('Sandbox does not have an IP address yet.');
+  }
+
+  return buildSSHConnectionInfo({
+    host: machine.ip,
+    port: 22,
+    username: 'abc',
+    provider: 'justavps',
+  });
 }
 
 // ─── Local Docker: inject via docker exec ────────────────────────────────────
@@ -142,7 +237,7 @@ async function runContainerCommand(container: Docker.Container, cmd: string): Pr
   }
 }
 
-async function setupLocalDockerSSH(containerName: string, c: any) {
+async function setupLocalDockerSSH(containerName: string, c: any, sandbox: SandboxRecord | null) {
   const docker = getDockerClient();
   const container = docker.getContainer(containerName);
   try {
@@ -157,34 +252,22 @@ async function setupLocalDockerSSH(containerName: string, c: any) {
     throw e;
   }
 
-  const { privateKey, publicKey } = generateKeypair();
+  const connection = buildConnectionForLocalDocker(c, sandbox);
+  const { privateKey, publicKey } = generateKeypair(connection.host_alias);
 
-  const escapedPubKey = publicKey.replace(/'/g, "'\\''");
-  // Inject into both /config/.ssh (sshd config) and /workspace/.ssh (fallback)
   await runContainerCommand(
     container,
-    `mkdir -p /config/.ssh && echo '${escapedPubKey}' >> /config/.ssh/authorized_keys && sort -u -o /config/.ssh/authorized_keys /config/.ssh/authorized_keys && chmod 700 /config/.ssh && chmod 600 /config/.ssh/authorized_keys && chown -R abc:abc /config/.ssh`,
+    buildAuthorizedKeysInstallCommand(publicKey, '/config/.ssh'),
   );
+  await verifyAuthorizedKeyInContainer(container, publicKey, '/config/.ssh');
   console.log(`[SSH] Public key injected into container ${containerName}`);
 
-  const port = config.SANDBOX_PORT_BASE + 7;
-  let host = 'localhost';
-  const fwdHost = c.req.header('x-forwarded-host') || c.req.header('host') || '';
-  const fwdHostOnly = fwdHost.split(':')[0];
-  if (fwdHostOnly && fwdHostOnly !== 'localhost' && !fwdHostOnly.includes('kortix-api')) {
-    host = fwdHostOnly;
-  }
-
-  const sshCmd = `ssh -i ~/.ssh/kortix_sandbox -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p ${port} abc@${host}`;
-
-  return {
-    private_key: privateKey,
-    public_key: publicKey,
-    ssh_command: sshCmd,
-    host,
-    port,
-    username: 'abc',
-  };
+  return buildSSHSetupPayload({
+    connection,
+    privateKey,
+    publicKey,
+    keyComment: connection.host_alias,
+  });
 }
 
 // ─── JustAVPS: inject into sandbox container (NOT the VPS host) ──────────────
@@ -198,7 +281,6 @@ async function setupLocalDockerSSH(containerName: string, c: any) {
 //      into the workload container.
 
 async function setupJustavpsSSH(externalId: string) {
-  const { justavpsFetch } = await import('../providers/justavps');
   const { JustAVPSProvider } = await import('../providers/justavps');
 
   const provider = new JustAVPSProvider();
@@ -208,23 +290,10 @@ async function setupJustavpsSSH(externalId: string) {
   // actually ready before attempting SSH setup.
   await provider.ensureRunning(externalId);
 
-  // Get machine IP and verify it's ready
-  const machine = await justavpsFetch<{
-    id: string;
-    ip: string | null;
-    status: string;
-  }>(`/machines/${externalId}`);
-
-  if (machine.status !== 'ready') {
-    throw new Error('Sandbox is not ready yet. Wait for provisioning to complete.');
-  }
-
-  if (!machine.ip) {
-    throw new Error('Sandbox does not have an IP address yet.');
-  }
+  const connection = await buildConnectionForJustavps(externalId);
 
   // Generate a fresh keypair for this session
-  const { privateKey, publicKey } = generateKeypair();
+  const { privateKey, publicKey } = generateKeypair(connection.host_alias);
 
   // Resolve sandbox endpoint via the CF proxy (same path used by all other API calls)
   const endpoint = await provider.resolveEndpoint(externalId);
@@ -233,77 +302,65 @@ async function setupJustavpsSSH(externalId: string) {
   // resolveEndpoint() targets the host, so we exec on the VPS and then docker
   // exec into the workload container.
   await injectPublicKeyViaHostExecWithRetry(endpoint, publicKey);
+  await verifyPublicKeyViaHostExec(endpoint, publicKey);
   console.log(`[SSH] Public key injected into JustAVPS container ${externalId}`);
 
-  // JustAVPS only guarantees external SSH reachability on host port 22.
-  // start-sandbox.sh configures host sshd so `ssh abc@host` authenticates using
-  // the container's authorized_keys and force-commands the session into the
-  // workload container as user abc.
-  const port = 22;
-  const host = machine.ip;
-  const sshCmd = `ssh -i ~/.ssh/kortix_sandbox -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p ${port} abc@${host}`;
-
-  return {
-    private_key: privateKey,
-    public_key: publicKey,
-    ssh_command: sshCmd,
-    host,
-    port,
-    username: 'abc',
-  };
+  return buildSSHSetupPayload({
+    connection,
+    privateKey,
+    publicKey,
+    keyComment: connection.host_alias,
+  });
 }
+
+async function resolveSshContext(c: any): Promise<{ sandbox: SandboxRecord | null; provider: string | null; externalId: string | null; containerName: string }> {
+  const body = await c.req.json().catch(() => ({}));
+  const requestedSandboxId = (body?.sandboxId as string | undefined) || c.req.query('sandboxId') || undefined;
+  const userId = c.get('userId');
+
+  let sandbox: SandboxRecord | null = null;
+  if (userId) {
+    try {
+      sandbox = await resolveSandboxRecord(userId, requestedSandboxId);
+    } catch {
+      sandbox = null;
+    }
+  }
+
+  const provider = sandbox?.provider ?? null;
+  const externalId = sandbox?.externalId ?? null;
+  const containerName = sandbox?.externalId && provider === 'local_docker'
+    ? sandbox.externalId
+    : config.SANDBOX_CONTAINER_NAME;
+
+  return { sandbox, provider, externalId, containerName };
+}
+
+sshRouter.get('/connection', async (c) => {
+  try {
+    const { sandbox, provider, externalId } = await resolveSshContext(c);
+
+    if (provider === 'justavps') {
+      if (!externalId) {
+        return c.json({ success: false, error: 'No JustAVPS machine found for this sandbox.' }, 400);
+      }
+      const data = await buildConnectionForJustavps(externalId);
+      return c.json({ success: true, data });
+    }
+
+    const data = buildConnectionForLocalDocker(c, sandbox);
+    return c.json({ success: true, data });
+  } catch (err) {
+    console.error('[SSH] connection error:', err);
+    return c.json({ success: false, error: err instanceof Error ? err.message : 'Failed to resolve SSH connection' }, 500);
+  }
+});
 
 // ─── Route ───────────────────────────────────────────────────────────────────
 
 sshRouter.post('/setup', async (c) => {
   try {
-    let containerName = config.SANDBOX_CONTAINER_NAME;
-    let provider: string | null = null;
-    let externalId: string | null = null;
-
-    const body = await c.req.json().catch(() => ({}));
-    const requestedSandboxId = body?.sandboxId as string | undefined;
-
-    try {
-      const authHeader = c.req.header('Authorization');
-      if (authHeader && config.SUPABASE_URL && config.SUPABASE_SERVICE_ROLE_KEY) {
-        const { createClient } = await import('@supabase/supabase-js');
-        const { resolveAccountId } = await import('../../shared/resolve-account');
-        const { db } = await import('../../shared/db');
-        const { sandboxes } = await import('@kortix/db');
-        const { eq, and } = await import('drizzle-orm');
-
-        const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY);
-        const token = authHeader.replace('Bearer ', '');
-        const { data: { user } } = await supabase.auth.getUser(token);
-
-        if (user) {
-          const accountId = await resolveAccountId(user.id);
-
-          let sandbox;
-          if (requestedSandboxId) {
-            [sandbox] = await db.select().from(sandboxes)
-              .where(and(
-                eq(sandboxes.accountId, accountId),
-                eq(sandboxes.sandboxId, requestedSandboxId),
-              ))
-              .limit(1);
-          } else {
-            [sandbox] = await db.select().from(sandboxes)
-              .where(and(eq(sandboxes.accountId, accountId), eq(sandboxes.status, 'active')))
-              .limit(1);
-          }
-
-          provider = sandbox?.provider ?? null;
-          externalId = sandbox?.externalId ?? null;
-          if (sandbox?.externalId && provider === 'local_docker') {
-            containerName = sandbox.externalId;
-          }
-        }
-      }
-    } catch {
-      // DB unavailable — use default container name
-    }
+    const { sandbox, provider, externalId, containerName } = await resolveSshContext(c);
 
     let data;
 
@@ -313,7 +370,7 @@ sshRouter.post('/setup', async (c) => {
       }
       data = await setupJustavpsSSH(externalId);
     } else {
-      data = await setupLocalDockerSSH(containerName, c);
+      data = await setupLocalDockerSSH(containerName, c, sandbox);
     }
 
     return c.json({ success: true, data });

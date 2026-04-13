@@ -264,11 +264,21 @@ async function parseToUniverData(arrayBuffer: ArrayBuffer, format: FileFormat, f
 async function parseXlsxToUniverData(arrayBuffer: ArrayBuffer, fileName: string): Promise<UniverWorkbookData> {
   const ExcelJS = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(arrayBuffer);
+
+  // ExcelJS's reconcile() crashes with "Cannot read properties of undefined (reading 'anchors')"
+  // on workbooks containing certain drawings/images/charts. When that happens, fall back to
+  // SheetJS which parses data + merges correctly (styles are lost but content is preserved).
+  try {
+    await workbook.xlsx.load(arrayBuffer);
+  } catch (e) {
+    console.warn('[XlsxRenderer] ExcelJS load failed, falling back to SheetJS:', e);
+    return parseXlsToUniverData(arrayBuffer, fileName);
+  }
 
   const sheetOrder: string[] = [];
   const sheets: Record<string, UniverSheetData> = {};
 
+  try {
   workbook.eachSheet((ws) => {
     const sheetId = `sheet-${sheetOrder.length}`;
     const sheetName = ws.name || `Sheet ${sheetOrder.length + 1}`;
@@ -350,6 +360,16 @@ async function parseXlsxToUniverData(arrayBuffer: ArrayBuffer, fileName: string)
         : undefined,
     };
   });
+  } catch (e) {
+    console.warn('[XlsxRenderer] ExcelJS extraction failed, falling back to SheetJS:', e);
+    return parseXlsToUniverData(arrayBuffer, fileName);
+  }
+
+  // If ExcelJS loaded but produced zero sheets, fall back to SheetJS.
+  if (sheetOrder.length === 0) {
+    console.warn('[XlsxRenderer] ExcelJS produced no sheets, falling back to SheetJS');
+    return parseXlsToUniverData(arrayBuffer, fileName);
+  }
 
   return {
     id: 'xlsx-viewer',

@@ -13,112 +13,13 @@
  */
 
 import { Hono } from 'hono'
-import { execSync, spawn } from 'child_process'
 import { config } from '../../config'
 import { resolveProvider } from '../index'
 import { combinedAuth } from '../../middleware/auth'
+import { ensureLocalSandboxPublicBase } from '../../platform/services/local-public-base'
 
 const shareApp = new Hono()
-
-type NgrokTunnel = {
-  name: string
-  public_url: string
-  proto: string
-  config?: { addr?: string }
-}
-
-const NGROK_API_PORTS = [4040, 4041, 4042]
-const LOCAL_SHARE_TUNNEL_NAME = 'kortix-share'
 type ResolvedProvider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>
-
-function isNgrokInstalled(): boolean {
-  try {
-    execSync('which ngrok', { stdio: 'pipe' })
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function probeNgrokApi(apiPort: number): Promise<{ tunnels: NgrokTunnel[]; apiPort: number } | null> {
-  try {
-    const res = await fetch(`http://127.0.0.1:${apiPort}/api/tunnels`, {
-      signal: AbortSignal.timeout(2000),
-    })
-    if (!res.ok) return null
-    const data = await res.json() as { tunnels: NgrokTunnel[] }
-    return { tunnels: data.tunnels, apiPort }
-  } catch {
-    return null
-  }
-}
-
-async function findNgrokAgent(): Promise<{ tunnels: NgrokTunnel[]; apiPort: number } | null> {
-  const results = await Promise.all(NGROK_API_PORTS.map(probeNgrokApi))
-  return results.find((r): r is NonNullable<typeof r> => r !== null) ?? null
-}
-
-function findTunnelForPort(tunnels: NgrokTunnel[], port: number): NgrokTunnel | undefined {
-  return tunnels.find((t) => {
-    const addr = t.config?.addr || ''
-    const match = addr.match(/:(\d+)$/)
-    return match && Number(match[1]) === port
-  })
-}
-
-async function ensureLocalTunnel(hostPort: number): Promise<string> {
-  const agent = await findNgrokAgent()
-
-  if (agent) {
-    const existing = findTunnelForPort(agent.tunnels, hostPort)
-    if (existing) return existing.public_url.replace(/\/+$/, '')
-
-    const res = await fetch(`http://127.0.0.1:${agent.apiPort}/api/tunnels`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: LOCAL_SHARE_TUNNEL_NAME, proto: 'http', addr: String(hostPort) }),
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`Failed to add ngrok tunnel (${res.status}): ${text.slice(0, 300)}`)
-    }
-    const created = await res.json() as NgrokTunnel
-    return created.public_url.replace(/\/+$/, '')
-  }
-
-  if (!isNgrokInstalled()) {
-    throw new Error('ngrok is not installed')
-  }
-
-  const ngrokProc = spawn('ngrok', ['http', String(hostPort)], {
-    stdio: 'ignore',
-    detached: true,
-  })
-  ngrokProc.unref()
-
-  for (let i = 0; i < 25; i += 1) {
-    const found = await findNgrokAgent()
-    const tunnel = found ? findTunnelForPort(found.tunnels, hostPort) : null
-    if (tunnel) return tunnel.public_url.replace(/\/+$/, '')
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-  }
-
-  throw new Error(`ngrok tunnel for port ${hostPort} was not detected in time`)
-}
-
-async function syncSandboxPublicBase(resolvedBaseUrl: string, serviceKey: string, publicBaseUrl: string): Promise<void> {
-  if (!serviceKey) return
-  await fetch(`${resolvedBaseUrl}/env`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${serviceKey}`,
-    },
-    body: JSON.stringify({ keys: { PUBLIC_BASE_URL: publicBaseUrl } }),
-    signal: AbortSignal.timeout(10_000),
-  })
-}
 
 function buildSharedUrl(baseUrl: string, token: string): string {
   const base = new URL(baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
@@ -209,6 +110,11 @@ shareApp.post('/',
 
     // Forward the request to the sandbox
     try {
+      let localPublicBaseUrl: string | null = null
+      if (target.resolved.provider === 'local_docker') {
+        localPublicBaseUrl = await ensureLocalSandboxPublicBase(target.resolved.baseUrl, target.resolved.serviceKey)
+      }
+
       const resp = await fetch(sandboxUrl, {
         headers: buildSandboxHeaders(target.resolved),
         signal: AbortSignal.timeout(10_000),
@@ -221,18 +127,8 @@ shareApp.post('/',
       }
 
       if (target.resolved.provider === 'local_docker') {
-        const hostPort = (() => {
-          try {
-            const parsed = new URL(target.resolved.baseUrl)
-            return Number(parsed.port || '14000')
-          } catch {
-            return 14000
-          }
-        })()
-        const publicBaseUrl = await ensureLocalTunnel(hostPort)
-        await syncSandboxPublicBase(target.resolved.baseUrl, target.resolved.serviceKey, publicBaseUrl)
-        if (typeof result.token === 'string') {
-          result.url = buildSharedUrl(publicBaseUrl, result.token)
+        if (typeof result.token === 'string' && localPublicBaseUrl) {
+          result.url = buildSharedUrl(localPublicBaseUrl, result.token)
         }
       }
 
@@ -256,6 +152,10 @@ shareApp.get('/', combinedAuth, async (c) => {
   }
 
   try {
+    if (target.resolved.provider === 'local_docker') {
+      await ensureLocalSandboxPublicBase(target.resolved.baseUrl, target.resolved.serviceKey)
+    }
+
     const resp = await fetch(target.sandboxShareBaseUrl, {
       headers: buildSandboxHeaders(target.resolved),
       signal: AbortSignal.timeout(10_000),

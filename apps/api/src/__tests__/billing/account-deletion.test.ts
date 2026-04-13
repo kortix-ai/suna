@@ -93,10 +93,11 @@ describe('requestAccountDeletion', () => {
   test('creates request with 14-day grace period', async () => {
     const result = await requestAccountDeletion('acc_test_123', 'user_123', 'Testing');
 
+    expect(result.success).toBe(true);
     expect(result.grace_period_days).toBe(14);
     expect(result.can_cancel).toBe(true);
 
-    const scheduledDate = new Date(result.scheduled_for);
+    const scheduledDate = new Date(result.deletion_scheduled_for);
     const now = new Date();
     const diffDays = (scheduledDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
     expect(diffDays).toBeGreaterThan(13);
@@ -109,7 +110,7 @@ describe('requestAccountDeletion', () => {
   test('returns scheduled date and can_cancel=true', async () => {
     const result = await requestAccountDeletion('acc_test_123', 'user_123');
 
-    expect(result.scheduled_for).toBeDefined();
+    expect(result.deletion_scheduled_for).toBeDefined();
     expect(result.can_cancel).toBe(true);
     expect(result.id).toBeDefined();
   });
@@ -131,7 +132,7 @@ describe('requestAccountDeletion', () => {
 });
 
 describe('getAccountDeletionStatus', () => {
-  test('returns pending=true when active request exists', async () => {
+  test('returns has_pending_deletion=true when active request exists', async () => {
     activeDeletionRequest = {
       id: 'del_123',
       accountId: 'acc_test_123',
@@ -143,18 +144,19 @@ describe('getAccountDeletionStatus', () => {
 
     const result = await getAccountDeletionStatus('acc_test_123');
 
-    expect(result.pending).toBe(true);
-    expect(result.request_id).toBe('del_123');
-    expect(result.scheduled_for).toBeDefined();
-    expect(result.reason).toBe('Test reason');
+    expect(result.has_pending_deletion).toBe(true);
+    expect(result.deletion_scheduled_for).toBeDefined();
+    expect(result.requested_at).toBeDefined();
+    expect(result.can_cancel).toBe(true);
   });
 
-  test('returns pending=false when no request', async () => {
+  test('returns has_pending_deletion=false when no request', async () => {
     activeDeletionRequest = null;
 
     const result = await getAccountDeletionStatus('acc_test_123');
 
-    expect(result.pending).toBe(false);
+    expect(result.has_pending_deletion).toBe(false);
+    expect(result.deletion_scheduled_for).toBe(null);
   });
 });
 

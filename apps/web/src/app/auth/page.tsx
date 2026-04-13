@@ -10,6 +10,7 @@ import { signUp, verifyOtp, requestAccess, signInWithPassword, sendOtpCode } fro
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Mail, MailCheck, Clock, ExternalLink, ChevronRight } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useAuth } from '@/components/AuthProvider';
 import { useAuthMethodTracking } from '@/stores/auth-tracking';
@@ -22,6 +23,7 @@ import { trackSendAuthLink } from '@/lib/analytics/gtm';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { cn } from '@/lib/utils';
+import { AuthBrowserNoiseGuard } from '@/components/auth/auth-browser-noise-guard';
 
 // Lazy load heavy components
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
@@ -59,10 +61,9 @@ function LiveClock() {
 
 /* ─── Email provider helper ─────────────────────────────────────────────── */
 
-function getEmailProviderInfo(email: string) {
+function getEmailProviderInfo(email: string, isMobileDevice: boolean) {
   const domain = email.split('@')[1]?.toLowerCase();
   if (!domain) return null;
-  const isMobileDevice = typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
   const providers: { [key: string]: { name: string; webUrl: string; mobileUrl: string } } = {
     'gmail.com': { name: 'Gmail', webUrl: 'https://mail.google.com', mobileUrl: 'googlegmail://' },
     'googlemail.com': { name: 'Gmail', webUrl: 'https://mail.google.com', mobileUrl: 'googlegmail://' },
@@ -167,6 +168,7 @@ function LoginContent() {
   const [showReferralDialog, setShowReferralDialog] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
 
   const { wasLastMethod: wasEmailLastMethod, markAsUsed: markEmailAsUsed } = useAuthMethodTracking('email');
 
@@ -203,6 +205,10 @@ function LoginContent() {
   }, [returnUrl]);
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    setIsMobileDevice(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
+  }, []);
 
   useEffect(() => {
     if (!isLoading && user) {
@@ -367,10 +373,10 @@ function LoginContent() {
 
   /* ── Registration success ── */
   if (registrationSuccess) {
-    const provider = registrationEmail ? getEmailProviderInfo(registrationEmail) : null;
+    const provider = registrationEmail ? getEmailProviderInfo(registrationEmail, isMobileDevice) : null;
     return (
       <div className="fixed inset-0">
-        <WallpaperBackground />
+        <WallpaperBackground wallpaperId="brandmark" />
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-4 gap-6">
           <KortixLogo size={28} />
           <h1 className="text-[36px] font-extralight tracking-tight text-foreground/80 leading-none">
@@ -442,7 +448,7 @@ function LoginContent() {
   if (signupClosed) {
     return (
       <div className="fixed inset-0 overflow-hidden">
-        <WallpaperBackground />
+        <WallpaperBackground wallpaperId="brandmark" />
 
         <motion.div
           className="absolute inset-0 z-10 flex flex-col items-center justify-center"
@@ -496,12 +502,12 @@ function LoginContent() {
   /* ── Expired link / OTP flow ── */
   if (linkExpired) {
     const emailForProvider = expiredEmailState || resendEmail;
-    const provider = emailForProvider ? getEmailProviderInfo(emailForProvider) : null;
+    const provider = emailForProvider ? getEmailProviderInfo(emailForProvider, isMobileDevice) : null;
     const otpDigits = otpCode.padEnd(6, '').split('');
 
     return (
       <div className="fixed inset-0">
-        <WallpaperBackground />
+        <WallpaperBackground wallpaperId="brandmark" />
         <div className="relative z-10 flex flex-col items-center justify-center h-full px-4 gap-6">
           {autoSendingCode ? (
             <div className="flex flex-col items-center gap-4">
@@ -609,7 +615,7 @@ function LoginContent() {
       onClick={() => phase === 'lock' && setPhase('form')}
     >
       {/* Wallpaper always visible */}
-      <WallpaperBackground />
+      <WallpaperBackground wallpaperId="brandmark" />
 
       {/* ── Lock phase: clock + hint ── */}
       <AnimatePresence>
@@ -866,11 +872,7 @@ function SelfHostedLoginContent() {
   }, [phase]);
 
   if (isLoading || statusLoading || (user && installed !== false)) {
-    return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center">
-        <KortixLoader size="medium" />
-      </div>
-    );
+    return <ConnectingScreen forceConnecting minimal title="Signing in" />;
   }
 
   // Lock screen → frosted glass auth form
@@ -879,7 +881,7 @@ function SelfHostedLoginContent() {
       className="fixed inset-0 overflow-hidden cursor-pointer"
       onClick={() => phase === 'lock' && setPhase('form')}
     >
-      <WallpaperBackground />
+      <WallpaperBackground wallpaperId="brandmark" />
 
       {/* ── Lock phase: clock + hint ── */}
       <AnimatePresence>
@@ -967,14 +969,20 @@ function SelfHostedLoginContent() {
 export default function Login() {
   if (isSelfHosted()) {
     return (
-      <Suspense fallback={<div className="fixed inset-0 bg-background flex items-center justify-center"><KortixLoader size="medium" /></div>}>
-        <SelfHostedLoginContent />
+      <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Signing in" />}>
+        <>
+          <AuthBrowserNoiseGuard />
+          <SelfHostedLoginContent />
+        </>
       </Suspense>
     );
   }
   return (
-    <Suspense fallback={<div className="fixed inset-0 bg-background flex items-center justify-center"><KortixLoader size="medium" /></div>}>
-      <LoginContent />
+    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Signing in" />}>
+      <>
+        <AuthBrowserNoiseGuard />
+        <LoginContent />
+      </>
     </Suspense>
   );
 }

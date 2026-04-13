@@ -1,0 +1,10 @@
+#!/usr/bin/with-contenv bash
+
+echo "[opencode-state-sync] Starting shadow sync loop"
+
+while true; do
+  if ! /usr/local/bin/kortix-opencode-state sync >/tmp/opencode-state-sync.json 2>/tmp/opencode-state-sync.err; then
+    echo "[opencode-state-sync] sync failed: $(cat /tmp/opencode-state-sync.err 2>/dev/null)"
+  fi
+  sleep "${KORTIX_OPENCODE_SYNC_INTERVAL_SEC:-30}"
+done

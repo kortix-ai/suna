@@ -8,6 +8,7 @@ import {
 import { z } from 'zod'
 
 const lssRouter = new Hono()
+const LSS_DIR = process.env.LSS_DIR || `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/lss`
 
 /**
  * GET /lss/search?q=<query>&k=<limit>&path=<scope>&ext=<extensions>
@@ -57,7 +58,7 @@ lssRouter.get('/search',
       const proc = Bun.spawn(['lss', ...args], {
         env: {
           ...process.env,
-          LSS_DIR: '/workspace/.lss',
+          LSS_DIR,
           HOME: '/workspace',
           PATH: '/lsiopy/bin:/usr/local/bin:/usr/bin:/bin',
         },
@@ -119,7 +120,7 @@ lssRouter.get('/status',
       const proc = Bun.spawn(['lss', 'status'], {
         env: {
           ...process.env,
-          LSS_DIR: '/workspace/.lss',
+          LSS_DIR,
           HOME: '/workspace',
           PATH: '/lsiopy/bin:/usr/local/bin:/usr/bin:/bin',
         },

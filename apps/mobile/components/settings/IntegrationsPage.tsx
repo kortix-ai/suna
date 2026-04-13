@@ -61,6 +61,7 @@ import {
 } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 
+import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import {
   useIntegrationApps,
   useIntegrationConnections,
@@ -133,6 +134,7 @@ function IntegrationsContent({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetBottomPadding();
   const queryClient = useQueryClient();
   const { t } = useLanguage();
   const themeColors = useThemeColors();
@@ -502,7 +504,7 @@ function IntegrationsContent({
           borderRadius: 3,
         }}
       >
-        <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
+        <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
             <View

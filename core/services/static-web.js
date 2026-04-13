@@ -61,6 +61,49 @@ function isAllowed(absPath) {
 }
 
 /**
+ * Resolve the public base URL the *client* used, not the internal one we see.
+ *
+ * The proxy chain (sandbox-proxy/routes/{preview,local-preview}.ts) rewrites
+ * the Host header to the upstream sandbox address before forwarding here, so
+ * `req.url` would give us something like `http://127.0.0.1:3211` or
+ * `http://kortix-sandbox:8000` — both unreachable from the user's browser.
+ *
+ * The proxies inject the original public origin into headers:
+ *   - X-Forwarded-Prefix: full URL the client used, including any path
+ *     prefix the proxy strips (e.g. `https://api.kortix.cloud/v1/p/<id>/3211`
+ *     for path-based routing, or `http://p3211-<id>.localhost:8008` for
+ *     subdomain routing).
+ *   - X-Forwarded-Proto / X-Forwarded-Host: standard fallbacks if no prefix.
+ *
+ * Without this resolution the injected <base href> ends up pointing at the
+ * internal sandbox address, and every relative <link>/<script>/<img> in the
+ * served HTML fails with ERR_CONNECTION_REFUSED.
+ */
+function resolvePublicBaseUrl(req, url) {
+  const xfp = req.headers.get("x-forwarded-prefix");
+  if (xfp) {
+    // Full URL convention used by our proxies — use as-is.
+    if (/^https?:\/\//i.test(xfp)) return xfp.replace(/\/$/, "");
+    // Standard convention: path-only prefix. Combine with proto+host.
+    const proto = req.headers.get("x-forwarded-proto") || url.protocol.replace(":", "");
+    const host = req.headers.get("x-forwarded-host") || url.host;
+    const prefix = xfp.startsWith("/") ? xfp : `/${xfp}`;
+    return `${proto}://${host}${prefix}`.replace(/\/$/, "");
+  }
+
+  const xfProto = req.headers.get("x-forwarded-proto");
+  const xfHost = req.headers.get("x-forwarded-host");
+  if (xfProto || xfHost) {
+    const proto = xfProto || url.protocol.replace(":", "");
+    const host = xfHost || url.host;
+    return `${proto}://${host}`;
+  }
+
+  // No proxy headers — direct access (curl, local dev). Use what Bun saw.
+  return `${url.protocol}//${url.host}`;
+}
+
+/**
  * Inject a <base> tag into an HTML document so that all relative URLs
  * (./style.css, ../images/logo.png, script.js, etc.) resolve through the
  * /abs/ route of THIS server rather than against the proxy origin.
@@ -207,7 +250,7 @@ Bun.serve({
   hostname: "0.0.0.0",
   fetch(req) {
     const url = new URL(req.url);
-    const baseUrl = `${url.protocol}//${url.host}`;
+    const baseUrl = resolvePublicBaseUrl(req, url);
     const pathname = decodeURIComponent(url.pathname);
 
     // CORS preflight

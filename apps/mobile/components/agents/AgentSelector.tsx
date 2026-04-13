@@ -69,15 +69,15 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   return (
     <TouchableOpacity
       onPress={onPress}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 }}
       hitSlop={ANDROID_HIT_SLOP}
       activeOpacity={0.7}
     >
-      <ModeLogo mode={mode} height={13} />
+      <ModeLogo mode={mode} height={11} />
       <Icon
         as={ChevronDown}
-        size={10}
-        className="text-foreground/60"
+        size={9}
+        className="text-foreground/50"
         strokeWidth={2}
       />
     </TouchableOpacity>

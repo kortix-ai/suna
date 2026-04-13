@@ -4,7 +4,8 @@ import { useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 
 /**
  * OAuth callback page for integration connections.
@@ -32,18 +33,8 @@ export default function ConnectCallbackPage() {
       toast.error(message || `Failed to connect ${app || 'integration'}`);
     }
 
-    // Redirect back to integrations page
     router.replace('/connectors');
   }, [searchParams, router, queryClient]);
 
-  return (
-    <div className="min-h-[100dvh] flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          Completing connection...
-        </p>
-      </div>
-    </div>
-  );
+  return <ConnectingScreen forceConnecting minimal title="Completing connection" />;
 }

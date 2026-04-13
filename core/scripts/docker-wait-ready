@@ -1,0 +1,54 @@
+#!/bin/sh
+# docker-wait-ready — block until dockerd is reachable, or fail loudly.
+#
+# Usage:
+#   docker-wait-ready              # default timeout 30s
+#   docker-wait-ready 60           # custom timeout in seconds
+#   docker-wait-ready 60 --quiet   # no per-attempt output
+#
+# Exit codes:
+#   0  dockerd is up and `docker info` succeeded
+#   1  timed out
+#   2  START_DOCKER != true (DinD disabled — caller should skip docker work)
+#   3  dockerd binary missing
+
+set -eu
+
+TIMEOUT="${1:-30}"
+QUIET="${2:-}"
+
+if [ "${START_DOCKER:-false}" != "true" ]; then
+  echo "[docker-wait-ready] START_DOCKER != true — DinD not enabled"
+  exit 2
+fi
+
+if ! command -v dockerd >/dev/null 2>&1; then
+  echo "[docker-wait-ready] dockerd binary not installed"
+  exit 3
+fi
+
+SOCK="${DOCKER_HOST:-unix:///var/run/docker.sock}"
+SOCK_PATH=$(echo "${SOCK}" | sed 's|^unix://||')
+
+start=$(date +%s)
+attempt=0
+while :; do
+  attempt=$((attempt + 1))
+  if [ -S "${SOCK_PATH}" ] && docker info >/dev/null 2>&1; then
+    [ "${QUIET}" = "--quiet" ] || echo "[docker-wait-ready] dockerd ready after ${attempt} attempt(s)"
+    exit 0
+  fi
+  now=$(date +%s)
+  elapsed=$((now - start))
+  if [ "${elapsed}" -ge "${TIMEOUT}" ]; then
+    echo "[docker-wait-ready] TIMEOUT after ${TIMEOUT}s (${attempt} attempts)"
+    echo "[docker-wait-ready] socket=${SOCK_PATH} exists=$([ -S "${SOCK_PATH}" ] && echo yes || echo no)"
+    if [ -f /var/log/dockerd.log ]; then
+      echo "[docker-wait-ready] last dockerd log lines:"
+      tail -n 20 /var/log/dockerd.log 2>/dev/null || true
+    fi
+    exit 1
+  fi
+  [ "${QUIET}" = "--quiet" ] || printf '[docker-wait-ready] attempt %d (%ds elapsed)...\n' "${attempt}" "${elapsed}"
+  sleep 1
+done

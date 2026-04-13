@@ -23,7 +23,7 @@ import {
   Home,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useFilesStore } from '../store/files-store';
+import { useFilesStore, useFilesStoreApi } from '../store/files-store';
 import { useFileList, useGitStatus, buildGitStatusMap, useServerHealth } from '../hooks';
 import {
   useFileUpload,
@@ -125,6 +125,7 @@ function TreeNode({
   onDownloadDir,
   isDirDownloading,
 }: TreeNodeProps) {
+  const filesStore = useFilesStoreApi();
   const expandedDirs = useFilesStore((s) => s.expandedDirs);
   const toggleDir = useFilesStore((s) => s.toggleDir);
   const selectedFilePath = useFilesStore((s) => s.selectedFilePath);
@@ -287,7 +288,7 @@ function TreeNode({
       <span className={cn(
         'truncate flex-1',
         gitStatus && gitStatusTextColor[gitStatus],
-        !gitStatus && node.name.startsWith('.') && 'opacity-50',
+        !gitStatus && node.name.startsWith('.') && node.name !== '.kortix' && node.name !== '.opencode' && 'opacity-50',
       )}>
         {node.name}
       </span>
@@ -361,7 +362,7 @@ function TreeNode({
             </ContextMenuItem>
           )}
           {!isDir && (
-            <ContextMenuItem onClick={() => useFilesStore.getState().openHistory(node.path)}>
+            <ContextMenuItem onClick={() => filesStore.getState().openHistory(node.path)}>
               <History className="mr-2 h-4 w-4" />
               View History
             </ContextMenuItem>
@@ -632,6 +633,7 @@ function TreeNodeChildren({
 // ─── Main tree sidebar ──────────────────────────────────────────────────────
 
 export function FileTree() {
+  const filesStore = useFilesStoreApi();
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
   const clipboard = useFilesStore((s) => s.clipboard);

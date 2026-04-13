@@ -70,15 +70,30 @@ write_env "apps/api/.env" \
   "" \
   "# Security (REQUIRED)" \
   "$(kv API_KEY_SECRET)" \
+  "$(kv TUNNEL_SIGNING_SECRET)" \
   "" \
   "# Sandbox" \
   "$(kv ALLOWED_SANDBOX_PROVIDERS local_docker)" \
   "$(kv DOCKER_HOST)" \
+  "$(kv KORTIX_URL)" \
+  "$(kv FRONTEND_URL "$(e NEXT_PUBLIC_URL http://localhost:3000)")" \
   "" \
   "# Daytona (conditional — only if daytona provider enabled)" \
   "$(kv DAYTONA_API_KEY)" \
   "$(kv DAYTONA_SERVER_URL)" \
   "$(kv DAYTONA_TARGET)" \
+  "" \
+  "# JustAVPS (conditional — only if justavps provider enabled)" \
+  "$(kv JUSTAVPS_API_URL https://justavps.com/api/v1)" \
+  "$(kv JUSTAVPS_API_KEY)" \
+  "$(kv JUSTAVPS_IMAGE_ID)" \
+  "$(kv JUSTAVPS_DEFAULT_LOCATION nbg1)" \
+  "$(kv JUSTAVPS_DEFAULT_SERVER_TYPE pro)" \
+  "$(kv JUSTAVPS_IMAGE_BUILD_LOCATION)" \
+  "$(kv JUSTAVPS_IMAGE_BUILD_SERVER_TYPE)" \
+  "$(kv JUSTAVPS_PROXY_DOMAIN kortix.cloud)" \
+  "$(kv JUSTAVPS_WEBHOOK_SECRET)" \
+  "$(kv JUSTAVPS_WEBHOOK_URL)" \
   "" \
   "# Integrations / Pipedream" \
   "$(kv INTEGRATION_AUTH_PROVIDER pipedream)" \
@@ -86,6 +101,11 @@ write_env "apps/api/.env" \
   "$(kv PIPEDREAM_CLIENT_SECRET)" \
   "$(kv PIPEDREAM_PROJECT_ID)" \
   "$(kv PIPEDREAM_ENVIRONMENT development)" \
+  "$(kv PIPEDREAM_WEBHOOK_SECRET)" \
+  "" \
+  "# Scheduler / Cron" \
+  "$(kv SCHEDULER_ENABLED true)" \
+  "$(kv CRON_TICK_SECRET)" \
   "" \
   "# LLM Providers (optional — cloud routing)" \
   "$(kv OPENROUTER_API_KEY)" \
@@ -103,16 +123,22 @@ write_env "apps/api/.env" \
   "# Billing (optional)" \
   "$(kv STRIPE_SECRET_KEY)" \
   "$(kv STRIPE_WEBHOOK_SECRET)" \
-  "$(kv REVENUECAT_WEBHOOK_SECRET)"
+  "$(kv REVENUECAT_WEBHOOK_SECRET)" \
+  "" \
+  "# Internal service auth" \
+  "$(kv INTERNAL_SERVICE_KEY)"
 
 write_env "apps/web/.env" \
+  "$(kv NEXT_PUBLIC_ENV_MODE "$(e ENV_MODE local)")" \
   "$(kv NEXT_PUBLIC_BILLING_ENABLED false)" \
   "" \
   "$(kv NEXT_PUBLIC_SUPABASE_URL "$(e SUPABASE_URL)")" \
   "$(kv NEXT_PUBLIC_SUPABASE_ANON_KEY "$(e SUPABASE_ANON_KEY)")" \
   "" \
+  "$(kv NEXT_PUBLIC_APP_URL "$(e NEXT_PUBLIC_URL http://localhost:3000)")" \
   "$(kv NEXT_PUBLIC_URL http://localhost:3000)" \
   "$(kv NEXT_PUBLIC_BACKEND_URL http://localhost:8008/v1)" \
+  "$(kv NEXT_PUBLIC_SANDBOX_ID "$(e SANDBOX_CONTAINER_NAME kortix-sandbox)")" \
   "" \
   "$(kv NEXT_PUBLIC_GOOGLE_CLIENT_ID)" \
   "$(kv NEXT_PUBLIC_POSTHOG_KEY)" \

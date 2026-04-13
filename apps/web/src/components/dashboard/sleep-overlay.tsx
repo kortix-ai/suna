@@ -99,9 +99,7 @@ function useSleepUser() {
 export function SleepOverlay() {
   const { sleeping, wake } = useSleep();
   const user = useSleepUser();
-  const [stage, setStage] = useState<'mounting' | 'in' | 'visible' | 'out' | 'hidden'>(
-    () => (typeof window !== 'undefined' && localStorage.getItem(SLEEP_KEY) === 'true') ? 'mounting' : 'hidden',
-  );
+  const [stage, setStage] = useState<'mounting' | 'in' | 'visible' | 'out' | 'hidden'>('hidden');
   const wakeRef = useRef(wake);
   wakeRef.current = wake;
 

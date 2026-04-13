@@ -5,7 +5,7 @@ import { execOnHost } from './exec';
 export function getCurrentImage(endpoint: ResolvedEndpoint, containerName: string): Promise<StepResult> {
   return execOnHost(
     endpoint,
-    `docker inspect --format='{{.Config.Image}}' ${containerName}`,
+    `docker inspect --format='{{.Config.Image}}' '${containerName}'`,
     10,
   );
 }
@@ -168,12 +168,16 @@ export async function pullImage(endpoint: ResolvedEndpoint, image: string): Prom
 // ─── Container operations ───────────────────────────────────────────────────
 
 export async function checkpointSqlite(endpoint: ResolvedEndpoint, containerName: string): Promise<StepResult> {
+  // The Python fallback is base64-encoded to avoid shell quoting issues —
+  // parentheses in glob.glob() / sqlite3.connect() break sh parsing otherwise.
+  const pythonFallback = Buffer.from(
+    'import sqlite3,glob\nfor db in glob.glob("/workspace/.local/share/opencode/*.db"):\n c=sqlite3.connect(db); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close()',
+  ).toString('base64');
+
   return execOnHost(
     endpoint,
-    `docker exec ${containerName} python3 -c "import sqlite3,glob
-for db in glob.glob('/workspace/.local/share/opencode/*.db'):
- c=sqlite3.connect(db);c.execute('PRAGMA wal_checkpoint(TRUNCATE)');c.close()" 2>/dev/null || true`,
-    10,
+    `docker exec '${containerName}' sh -c "if command -v kortix-opencode-state >/dev/null 2>&1; then kortix-opencode-state sync --archive pre-update; else echo ${pythonFallback} | base64 -d | python3; fi"`,
+    60,
   );
 }
 
@@ -182,31 +186,35 @@ export async function stopAndStartContainer(
   containerName: string,
   runCommand: string,
 ): Promise<StepResult> {
+  // Shell-quote the container name inside the generated bash script
+  const sqName = `'${containerName.replace(/'/g, "'\\''")}'`;
   const scriptLines = [
     '#!/bin/bash',
     'systemctl disable --now justavps-docker 2>/dev/null || true',
     'systemctl disable --now kortix-sandbox 2>/dev/null || true',
-    `docker stop -t 10 ${containerName} 2>/dev/null || true`,
-    `docker rm -f ${containerName} 2>/dev/null || true`,
-    `for i in $(seq 1 10); do docker inspect ${containerName} >/dev/null 2>&1 || break; sleep 1; done`,
+    `docker stop -t 10 ${sqName} 2>/dev/null || true`,
+    `docker rm -f ${sqName} 2>/dev/null || true`,
+    `for i in $(seq 1 10); do docker inspect ${sqName} >/dev/null 2>&1 || break; sleep 1; done`,
     runCommand,
   ].join('\n');
 
   const b64 = Buffer.from(scriptLines).toString('base64');
   const unitName = `kortix-update-${Date.now()}`;
+  const scriptPath = `/tmp/kortix-update-${Date.now()}.sh`;
 
   await execOnHost(
     endpoint,
-    `echo '${b64}' | base64 -d > /tmp/kortix-update.sh && chmod +x /tmp/kortix-update.sh`,
+    `echo '${b64}' | base64 -d > ${scriptPath} && chmod +x ${scriptPath}`,
     5,
   );
 
   const result = await execOnHost(
     endpoint,
-    `systemctl reset-failed ${unitName} 2>/dev/null || true; systemd-run --unit=${unitName} --description="Kortix sandbox update" /tmp/kortix-update.sh`,
+    `systemctl reset-failed ${unitName} 2>/dev/null || true; systemd-run --unit=${unitName} --description="Kortix sandbox update" ${scriptPath}`,
     15,
   );
 
+  // The container restart kills the proxy connection, so 502/aborted/timeout is expected
   if (!result.success && (result.stderr.includes('502') || result.stderr.includes('aborted') || result.stderr.includes('timed out'))) {
     return { success: true, stdout: '', stderr: '', exitCode: 0, durationMs: result.durationMs };
   }
@@ -222,7 +230,7 @@ export async function verifyContainer(
   for (let i = 0; i < retries; i++) {
     const result = await execOnHost(
       endpoint,
-      `docker inspect --format='{{.Config.Image}}' ${containerName}`,
+      `docker inspect --format='{{.Config.Image}}' '${containerName}'`,
       10,
     );
     const running = result.stdout.trim().replace(/'/g, '');

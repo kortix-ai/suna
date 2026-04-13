@@ -192,22 +192,22 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // Simple native approach - no complex calculations
   // TextInput grows naturally, we just clamp the max
-  const MAX_INPUT_HEIGHT = 72; // ~3-4 lines before scroll
+  const MAX_INPUT_HEIGHT = 64; // ~3-4 lines before scroll
 
   // Recording status text
   const recordingStatusText = isTranscribing ? 'Transcribing...' : formatDuration(recordingDuration);
 
-  // Placeholder color based on color scheme
+  // Placeholder color based on color scheme (subtle like Slack)
   const placeholderTextColor = React.useMemo(
-    () => colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)',
+    () => colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.35)' : 'rgba(18, 18, 21, 0.35)',
     [colorScheme]
   );
 
-  // Text input style - memoized
+  // Text input style - memoized (compact Slack-like sizing)
   const textInputStyle = React.useMemo(() => ({
     fontFamily: 'Roobert-Regular',
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 20,
     opacity: isDisabled ? 0.5 : 1,
   }), [isDisabled]);
 
@@ -442,13 +442,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   return (
     <GestureDetector gesture={swipeDownGesture}>
       <View
-        className="rounded-[30px] overflow-hidden bg-card border border-border"
+        className="rounded-2xl overflow-hidden bg-card border border-border"
         style={style}
         collapsable={false}
         {...props}
       >
         {/* Simple flex layout: text grows, buttons stay at bottom */}
-        <View className="p-4" collapsable={false}>
+        <View className="px-3 pt-2.5 pb-2" collapsable={false}>
           {isRecording ? (
             <RecordingMode
               audioLevels={audioLevels}
@@ -528,26 +528,26 @@ const RecordingMode = React.memo(({
         {recordingStatusText}
       </Text>
     </View>
-    <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
+    <View className="absolute bottom-3 left-3 right-3 flex-row items-center justify-between">
       <AnimatedPressable
         onPressIn={onCancelPressIn}
         onPressOut={onCancelPressOut}
         onPress={onCancelRecording}
         className="bg-primary/5 rounded-full items-center justify-center"
-        style={[{ width: 40, height: 40 }, cancelAnimatedStyle]}
+        style={[{ width: 34, height: 34 }, cancelAnimatedStyle]}
         hitSlop={ANDROID_HIT_SLOP}
       >
-        <Icon as={X} size={16} className="text-foreground" strokeWidth={2} />
+        <Icon as={X} size={14} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
       <AnimatedPressable
         onPressIn={onStopPressIn}
         onPressOut={onStopPressOut}
         onPress={onSendAudio}
         className="bg-primary rounded-full items-center justify-center"
-        style={[{ width: 40, height: 40 }, stopAnimatedStyle]}
+        style={[{ width: 34, height: 34 }, stopAnimatedStyle]}
         hitSlop={ANDROID_HIT_SLOP}
       >
-        <Icon as={CornerDownLeft} size={16} className="text-primary-foreground" strokeWidth={2} />
+        <Icon as={CornerDownLeft} size={14} className="text-primary-foreground" strokeWidth={2} />
       </AnimatedPressable>
     </View>
   </>
@@ -647,7 +647,7 @@ const NormalMode = ({
         numberOfLines={Platform.OS === 'android' ? 4 : undefined}
         scrollEnabled={true}
         editable={!isDisabled}
-        className="text-foreground text-base"
+        className="text-foreground text-sm"
         style={[textInputStyle, { maxHeight: maxInputHeight }]}
         textAlignVertical="top"
         underlineColorAndroid="transparent"
@@ -661,9 +661,9 @@ const NormalMode = ({
         submitBehavior="newline"
       />
 
-      {/* Bottom buttons row - mt-3 for spacing from text */}
-      <View className="flex-row items-center justify-between mt-3">
-        <View className="flex-row items-center gap-2">
+      {/* Bottom buttons row - compact spacing */}
+      <View className="flex-row items-center justify-between mt-2">
+        <View className="flex-row items-center gap-1.5">
           {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
           <TouchableOpacity
             onPress={() => {
@@ -674,12 +674,12 @@ const NormalMode = ({
               onAttachPress?.();
             }}
             disabled={isDisabled}
-            style={{ width: 40, height: 40, borderWidth: 1, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: isDisabled ? 0.4 : 1 }}
+            style={{ width: 34, height: 34, borderWidth: 1, borderRadius: 17, alignItems: 'center', justifyContent: 'center', opacity: isDisabled ? 0.4 : 1 }}
             className="border-border"
             hitSlop={ANDROID_HIT_SLOP}
             activeOpacity={0.7}
           >
-            <Icon as={Paperclip} size={16} className="text-foreground" />
+            <Icon as={Paperclip} size={14} className="text-foreground/70" />
           </TouchableOpacity>
         </View>
 
@@ -693,20 +693,20 @@ const NormalMode = ({
           <TouchableOpacity
             onPress={onButtonPress}
             disabled={isStopping || hasUploadingFiles || (!hasAgent && !isAgentRunning && !isSendingMessage)}
-            style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: (isStopping || hasUploadingFiles) ? 0.5 : ((!hasAgent && !isAgentRunning && !isSendingMessage) ? 0.4 : 1) }}
+            style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', opacity: (isStopping || hasUploadingFiles) ? 0.5 : ((!hasAgent && !isAgentRunning && !isSendingMessage) ? 0.4 : 1) }}
             className={(isAgentRunning || isSendingMessage || isTranscribing || isStopping) ? 'bg-foreground' : 'bg-primary'}
             hitSlop={ANDROID_HIT_SLOP}
             activeOpacity={0.7}
           >
             {(isSendingMessage || isTranscribing || isAgentRunning || isStopping) ? (
-              <StopIcon size={14} className="text-background" />
+              <StopIcon size={12} className="text-background" />
             ) : (
               // Both icons rendered, Reanimated switches opacity on UI thread (instant!)
               <>
                 <Animated.View style={voiceIconStyle}>
                   <Icon
                     as={AudioLines}
-                    size={18}
+                    size={16}
                     className="text-primary-foreground"
                     strokeWidth={2}
                   />
@@ -714,7 +714,7 @@ const NormalMode = ({
                 <Animated.View style={sendIconStyle}>
                   <Icon
                     as={CornerDownLeft}
-                    size={18}
+                    size={16}
                     className="text-primary-foreground"
                     strokeWidth={2}
                   />

@@ -368,7 +368,7 @@ export function CommandPalette() {
     return match ? match[1] : null;
   }, [pathname]);
   const { toggleSidebar, open: sidebarOpen } = useSidebar();
-  const { proxyUrl: buildProxyUrl, serverUrl, subdomainOpts } = useSandboxProxy();
+  const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
   const createSession = useCreateOpenCodeSession();
   const createPty = useCreatePty();
   const { theme, setTheme } = useTheme();
@@ -552,7 +552,7 @@ export function CommandPalette() {
     if (!visibleAgents.length) return [];
     const q = query.trim().toLowerCase();
     return visibleAgents.filter((a) =>
-      a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
+      (a.name || '').toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q),
     );
   }, [visibleAgents, query]);
 
@@ -565,9 +565,14 @@ export function CommandPalette() {
     return allModels
       .filter((m) => {
         if (!q && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })) return false;
-        return !q || m.modelName.toLowerCase().includes(q) || m.modelID.toLowerCase().includes(q) || m.providerName.toLowerCase().includes(q);
+        return (
+          !q ||
+          (m.modelName || '').toLowerCase().includes(q) ||
+          (m.modelID || '').toLowerCase().includes(q) ||
+          (m.providerName || '').toLowerCase().includes(q)
+        );
       })
-      .sort((a, b) => a.modelName.localeCompare(b.modelName));
+      .sort((a, b) => (a.modelName || '').localeCompare(b.modelName || ''));
   }, [allModels, query, modelStore]);
 
   const groupedModels = useMemo(() => {
@@ -806,7 +811,7 @@ export function CommandPalette() {
     } else {
       // External URL — proxy through backend web proxy
       const extUrl = detectedUrl.url;
-      const proxyUrl = buildWebProxyUrl(extUrl, serverUrl, subdomainOpts) || extUrl;
+      const proxyUrl = buildWebProxyUrl(extUrl, subdomainOpts) || extUrl;
       let displayHost: string;
       try { displayHost = new URL(extUrl).hostname; } catch { displayHost = extUrl; }
 
@@ -824,7 +829,7 @@ export function CommandPalette() {
       });
     }
     close();
-  }, [detectedUrl, buildProxyUrl, serverUrl, subdomainOpts, close]);
+  }, [detectedUrl, buildProxyUrl, subdomainOpts, close]);
 
   const handleToggleSidebar = useCallback(() => {
     toggleSidebar();

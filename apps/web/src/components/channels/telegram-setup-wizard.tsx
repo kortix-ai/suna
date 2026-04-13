@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import { useTelegramVerifyToken, useTelegramConnect } from '@/hooks/channels/use-telegram-wizard';
 import { AgentSelector, flattenModels } from '@/components/session/session-chat-input';
 import { ModelSelector } from '@/components/session/model-selector';
-import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useVisibleAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 
 interface TelegramSetupWizardProps {
   onCreated: () => void;
@@ -32,7 +32,7 @@ export function TelegramSetupWizard({ onCreated, onBack }: TelegramSetupWizardPr
   const verifyToken = useTelegramVerifyToken();
   const connect = useTelegramConnect();
 
-  const { data: agents = [], isLoading: agentsLoading } = useOpenCodeAgents();
+  const agents = useVisibleAgents();
   const { data: providers, isLoading: modelsLoading } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
 
@@ -153,19 +153,13 @@ export function TelegramSetupWizard({ onCreated, onBack }: TelegramSetupWizardPr
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Agent</Label>
-              {agentsLoading ? (
-                <div className="flex items-center gap-2 h-9 px-3 text-sm text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Loading...
-                </div>
-              ) : (
-                <div className="rounded-xl border bg-card px-2 py-1">
-                  <AgentSelector
-                    agents={agents}
-                    selectedAgent={agentName}
-                    onSelect={(next) => setAgentName(next)}
-                  />
-                </div>
-              )}
+              <div className="rounded-xl border bg-card px-2 py-1">
+                <AgentSelector
+                  agents={agents}
+                  selectedAgent={agentName}
+                  onSelect={(next) => setAgentName(next)}
+                />
+              </div>
             </div>
 
             <div className="space-y-1.5">

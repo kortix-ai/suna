@@ -26,8 +26,10 @@ export async function requestAccountDeletion(
   const request = await createDeletionRequest(accountId, userId, scheduledFor, reason);
 
   return {
+    success: true,
     id: request.id,
-    scheduled_for: scheduledFor,
+    message: 'Account deletion scheduled successfully',
+    deletion_scheduled_for: scheduledFor,
     can_cancel: true,
     grace_period_days: GRACE_PERIOD_DAYS,
   };
@@ -37,15 +39,18 @@ export async function getAccountDeletionStatus(accountId: string) {
   const request = await getActiveDeletionRequest(accountId);
 
   if (!request) {
-    return { pending: false };
+    return {
+      has_pending_deletion: false,
+      deletion_scheduled_for: null,
+      requested_at: null,
+      can_cancel: false,
+    };
   }
 
   return {
-    pending: true,
-    request_id: request.id,
-    scheduled_for: request.scheduledFor,
+    has_pending_deletion: true,
+    deletion_scheduled_for: request.scheduledFor,
     requested_at: request.requestedAt,
-    reason: request.reason,
     can_cancel: true,
   };
 }

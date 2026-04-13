@@ -50,7 +50,9 @@ const APPEARANCE_THEMES: AppearanceTheme[] = [
 ];
 
 const WALLPAPERS: WallpaperOption[] = [
-  { id: 'brandmark', name: 'Kortix', badge: 'Default' },
+  { id: 'brandmark', name: 'Brandmark' },
+  { id: 'symbol', name: 'Symbol' },
+  { id: 'aurora', name: 'Aurora', badge: 'Default' },
 ];
 
 export default function AppearanceScreen() {
@@ -306,8 +308,18 @@ function WallpaperCard({
         </View>
 
         <View className="absolute inset-0 items-center justify-center">
-          <View style={{ opacity: isDark ? 0.18 : 0.14 }}>
-            <KortixLogo size={94} variant="symbol" color={isDark ? 'dark' : 'light'} />
+          <View style={{
+            opacity: wallpaper.id === 'symbol'
+              ? (isDark ? 0.05 : 0.04)
+              : wallpaper.id === 'aurora'
+                ? (isDark ? 0.08 : 0.06)
+                : (isDark ? 0.18 : 0.14),
+          }}>
+            <KortixLogo
+              size={wallpaper.id === 'symbol' ? 48 : wallpaper.id === 'aurora' ? 30 : 94}
+              variant={wallpaper.id === 'aurora' ? 'logomark' : 'symbol'}
+              color={isDark ? 'dark' : 'light'}
+            />
           </View>
         </View>
 

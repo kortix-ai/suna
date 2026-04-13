@@ -5,13 +5,16 @@
 # PERSISTENCE MODEL
 # =================
 #
-# The sandbox has exactly TWO zones:
+# The sandbox has exactly THREE logical zones:
 #
-#   /workspace/   →  PERSISTENT (Docker named volume "sandbox_data")
-#                    Everything the user cares about lives here:
-#                    code, secrets, sessions, packages, config, state.
-#                    Survives container recreate, image update, restart.
-#                    This is the ONLY volume. If it's in /workspace, it persists.
+#   /workspace/   →  PERSISTENT USER WORKSPACE (Docker named volume "sandbox_data")
+#                    Code, repos, user-installed packages, project files.
+#
+#   /persistent/  →  PERSISTENT SYSTEM STATE (symlink → /workspace/.persistent-system)
+#                    OpenCode DB + shadow backup, secrets, auth.json, browser
+#                    profile, lss data, and other sandbox-internal state.
+#                    Kept away from normal workspace paths so user/project ops
+#                    do not casually touch critical runtime data.
 #
 #   /ephemeral/  →  SHIPPED RUNTIME (image layer, REPLACED on every update)
 #                    Kortix server, OpenCode config, services, metadata.
@@ -23,12 +26,13 @@
 #
 # On container recreate (image update):
 #   ✅ /workspace/*          — preserved (volume)
-#   ✅ secrets, encryption   — preserved (/workspace/.secrets/)
-#   ✅ OpenCode state/DB     — preserved (/workspace/.local/share/opencode/)
+#   ✅ secrets, encryption   — preserved (/persistent/secrets/)
+#   ✅ OpenCode state/DB     — preserved (/persistent/opencode/)
+#   ✅ OpenCode shadow copy  — preserved (/persistent/opencode-shadow/)
 #   ✅ user-installed pkgs   — preserved (/workspace/.local/, .npm-global/, .kortix/packages/)
 #   ✅ git repos, projects   — preserved (/workspace/)
 #   ❌ /opt/*                — replaced (new image)
-#   ❌ /run/s6/              — rebuilt from /workspace/.secrets/ on boot
+#   ❌ /run/s6/              — rebuilt from /persistent/secrets/ on boot
 #   ❌ apk system packages   — re-installed from manifest on boot (99-restore-packages.sh)
 #
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,16 +59,22 @@ services:
       - OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
       - OPENCODE_PERMISSION={"*":"allow"}
       - DISPLAY=:1
-      - LSS_DIR=/workspace/.lss
+      - KORTIX_PERSISTENT_ROOT=/persistent
+      - OPENCODE_STORAGE_BASE=/persistent/opencode
+      - OPENCODE_SHADOW_STORAGE_BASE=/persistent/opencode-shadow
+      - KORTIX_OPENCODE_ARCHIVE_DIR=/persistent/opencode-archive
+      - KORTIX_OPENCODE_CACHE_DIR=/persistent/opencode-cache
+      - AUTH_JSON_PATH=/persistent/opencode/auth.json
+      - LSS_DIR=/persistent/lss
       - KORTIX_WORKSPACE=/workspace
       # ── Persistent package paths (all under /workspace/) ──────────────
       - PYTHONUSERBASE=/workspace/.local
       - PIP_USER=1
       - NPM_CONFIG_PREFIX=/workspace/.npm-global
-      # ── Persistent secret paths (all under /workspace/.secrets/) ──────
-      - SECRET_FILE_PATH=/workspace/.secrets/.secrets.json
-      - SALT_FILE_PATH=/workspace/.secrets/.salt
-      # ENCRYPTION_KEY_PATH is auto-derived from SECRET_FILE_PATH dir
+      # ── Persistent secret paths (all under /persistent/secrets/) ─────
+      - SECRET_FILE_PATH=/persistent/secrets/.secrets.json
+      - SALT_FILE_PATH=/persistent/secrets/.salt
+      - ENCRYPTION_KEY_PATH=/persistent/secrets/.encryption-key
       # ── Sandbox identity (injected by kortix-api or set manually) ─────
       - KORTIX_API_URL=${KORTIX_API_URL:-http://host.docker.internal:8008}
       - KORTIX_TOKEN=${KORTIX_TOKEN:-}
@@ -81,10 +91,23 @@ services:
     volumes:
       # ── THE persistence volume ─────────────────────────────────────────
       # Single volume, mounted at /workspace. This is the ONLY persistent
-      # storage. /config is a symlink to /workspace (linuxserver compat).
-      # Everything that needs to survive container recreate MUST live here.
+      # storage for user code and state. /config is a symlink to /workspace
+      # (linuxserver compat). Everything that needs to survive container
+      # recreate MUST live here.
       - sandbox_data:/workspace
       - sandbox_data:/config
+      # ── Docker-in-Docker data root ─────────────────────────────────────
+      # Dedicated named volume for dockerd's /var/lib/docker. This is NOT
+      # "user data" — it's image layers, container fs, volumes, networks.
+      # Separate from sandbox_data because:
+      #   1. dockerd needs a NATIVE filesystem here (for overlay2). If we
+      #      stuck it inside /workspace the nested overlay-on-overlay
+      #      config would force us to vfs (huge + slow) or fuse-overlayfs.
+      #   2. User-workspace backups should not drag along every image layer.
+      #   3. "docker system prune" should be decoupled from user data.
+      # Pulled images + containers survive container recreate but can be
+      # nuked independently via `docker volume rm sandbox_docker`.
+      - sandbox_docker:/var/lib/docker
     ports:
       - "127.0.0.1:14000:8000"  # Kortix Master (proxy entry point)
       - "127.0.0.1:14002:6080"  # Desktop (noVNC)
@@ -105,3 +128,4 @@ services:
 
 volumes:
   sandbox_data:
+  sandbox_docker:

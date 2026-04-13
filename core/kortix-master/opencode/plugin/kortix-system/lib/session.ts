@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from "node:fs"
-import { homedir } from "node:os"
-import { join } from "node:path"
+import { readFileSync } from "node:fs"
 import type { Message, Part, Session, ToolPart, ToolStateCompleted, ToolStateError } from "@opencode-ai/sdk"
 import { Database } from "bun:sqlite"
+import { getOpencodeDbPath, getOpencodeStorageBase } from "./opencode-storage-paths"
 
 const S6_ENV_DIR = process.env.S6_ENV_DIR || "/run/s6/container_environment"
 
@@ -21,11 +20,8 @@ export function getEnv(key: string): string | undefined {
 	return undefined
 }
 
-export const STORAGE_BASE = process.env.OPENCODE_STORAGE_BASE
-	|| (existsSync("/workspace/.local/share/opencode")
-		? "/workspace/.local/share/opencode"
-		: join(homedir(), ".local", "share", "opencode"))
-export const DB_PATH = `${STORAGE_BASE}/opencode.db`
+export const STORAGE_BASE = getOpencodeStorageBase()
+export const DB_PATH = getOpencodeDbPath()
 const TTC_API_URL = "https://api.thetokencompany.com/v1/compress"
 const TTC_MODEL = "bear-1.2"
 const TOOL_INPUT_TRUNC = 200

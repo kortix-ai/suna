@@ -374,11 +374,13 @@ export async function listSandboxes(): Promise<SandboxInfo[]> {
 }
 
 /**
- * Restart the active sandbox (stop + start).
+ * Restart a sandbox (stop + start). Pass `sandboxId` to target a specific
+ * instance; omit to restart the user's most recently created sandbox.
  */
-export async function restartSandbox(): Promise<void> {
+export async function restartSandbox(sandboxId?: string): Promise<void> {
   const result = await platformFetch<void>('/platform/sandbox/restart', {
     method: 'POST',
+    body: sandboxId ? JSON.stringify({ sandbox_id: sandboxId }) : undefined,
   });
 
   if (!result.success) {
@@ -387,11 +389,13 @@ export async function restartSandbox(): Promise<void> {
 }
 
 /**
- * Stop the active sandbox.
+ * Stop a sandbox. Pass `sandboxId` to target a specific instance; omit to
+ * stop the user's active sandbox.
  */
-export async function stopSandbox(): Promise<void> {
+export async function stopSandbox(sandboxId?: string): Promise<void> {
   const result = await platformFetch<void>('/platform/sandbox/stop', {
     method: 'POST',
+    body: sandboxId ? JSON.stringify({ sandbox_id: sandboxId }) : undefined,
   });
 
   if (!result.success) {
@@ -497,13 +501,25 @@ export async function deleteBackup(
 
 // ─── SSH Setup API ──────────────────────────────────────────────────────────
 
-export interface SSHSetupResult {
-  private_key: string;
-  public_key: string;
-  ssh_command: string;
+export interface SSHConnectionInfo {
   host: string;
   port: number;
   username: string;
+  provider: string;
+  key_name: string;
+  host_alias: string;
+  reconnect_command: string;
+  ssh_command: string;
+  ssh_config_entry: string;
+  ssh_config_command: string;
+}
+
+export interface SSHSetupResult extends SSHConnectionInfo {
+  private_key: string;
+  public_key: string;
+  setup_command: string;
+  agent_prompt: string;
+  key_comment: string;
 }
 
 /**
@@ -518,6 +534,19 @@ export async function setupSSH(sandboxId?: string): Promise<SSHSetupResult> {
 
   if (!result.success || !result.data) {
     throw new Error(result.error || 'Failed to setup SSH');
+  }
+
+  return result.data;
+}
+
+export async function getSSHConnection(sandboxId?: string): Promise<SSHConnectionInfo> {
+  const qs = sandboxId ? `?sandboxId=${encodeURIComponent(sandboxId)}` : '';
+  const result = await platformFetch<SSHConnectionInfo>(`/platform/sandbox/ssh/connection${qs}`, {
+    method: 'GET',
+  });
+
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to resolve SSH connection');
   }
 
   return result.data;

@@ -4,12 +4,12 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ArrowRight } from 'lucide-react-native';
-import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface AuthButtonProps {
   label: string;
+  loadingLabel?: string;
   onPress: () => void;
   isLoading?: boolean;
   disabled?: boolean;
@@ -18,27 +18,14 @@ interface AuthButtonProps {
 }
 
 /**
- * AuthButton Component
- * 
- * Primary action button for authentication flows
- * - Sign in
- * - Sign up
- * - Reset password
- * - Continue
- * 
- * Features:
- * - Animated press feedback
- * - Loading state
- * - Optional arrow icon
- * 
- * Specifications:
- * - Height: 48px
- * - Border radius: 16px
- * - Primary: White background, dark text
- * - Secondary: Card background, foreground text
+ * AuthButton — animated auth action button with inline loading state.
+ *
+ * Loading state shows a spinner next to a loading label (e.g. "Signing in...")
+ * instead of replacing the entire button content.
  */
 export function AuthButton({
   label,
+  loadingLabel,
   onPress,
   isLoading = false,
   disabled = false,
@@ -52,17 +39,11 @@ export function AuthButton({
   }));
 
   const handlePressIn = () => {
-    log.log('🎯 Auth button press in:', label);
-    scale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+    scale.value = withSpring(0.97, { damping: 15, stiffness: 400 });
   };
 
   const handlePressOut = () => {
     scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePress = () => {
-    log.log('🎯 Auth button pressed:', label);
-    onPress();
   };
 
   const isPrimary = variant === 'primary';
@@ -70,7 +51,7 @@ export function AuthButton({
 
   return (
     <AnimatedPressable
-      onPress={handlePress}
+      onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={isDisabled}
@@ -78,37 +59,34 @@ export function AuthButton({
       className="w-full"
     >
       <View
-        className={`h-12 rounded-2xl ${
+        className={`h-[52px] rounded-2xl ${
           isPrimary ? 'bg-primary' : 'bg-card border border-border'
-        } ${isDisabled ? 'opacity-50' : ''}`}
+        } ${isDisabled ? 'opacity-70' : ''}`}
       >
-        <View className="flex-row items-center justify-center h-full px-6 gap-3">
-          {isLoading ? (
+        <View className="flex-row items-center justify-center h-full px-6 gap-2.5">
+          {isLoading && (
             <ActivityIndicator
               size="small"
-              color={isPrimary ? '#121215' : 'hsl(var(--foreground))'}
+              color={isPrimary ? '#FFFFFF' : undefined}
+              style={{ marginRight: 2 }}
             />
-          ) : (
-            <>
-              <Text
-                className={`${
-                  isPrimary ? 'text-primary-foreground' : 'text-foreground'
-                } text-[14px] font-roobert-medium tracking-wide`}
-              >
-                {label}
-              </Text>
-              {showArrow && (
-                <Icon
-                  as={ArrowRight}
-                  size={16}
-                  className={isPrimary ? 'text-primary-foreground' : 'text-foreground'}
-                />
-              )}
-            </>
+          )}
+          <Text
+            className={`${
+              isPrimary ? 'text-primary-foreground' : 'text-foreground'
+            } text-[15px] font-roobert-medium`}
+          >
+            {isLoading ? (loadingLabel || label) : label}
+          </Text>
+          {!isLoading && showArrow && (
+            <Icon
+              as={ArrowRight}
+              size={16}
+              className={isPrimary ? 'text-primary-foreground' : 'text-foreground'}
+            />
           )}
         </View>
       </View>
     </AnimatedPressable>
   );
 }
-

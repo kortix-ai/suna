@@ -2,16 +2,18 @@
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "*": "allow",
-    "task": "deny",
-    "todoread": "deny",
-    "todowrite": "deny"
+    "task": "deny"
   },
   "autoupdate": false,
   "disabled_providers": ["opencode"],
-  "default_agent": "kortix",
+  "default_agent": "general",
+  // Shared system prompt base — always injected into every agent session.
+  // Agent-specific persona/loop/rules live in ./agents/<name>.md.
+  "instructions": ["./kortix-system.md"],
   "agent": {
     "build": { "disable": true },
-    "plan": { "disable": true }
+    "plan": { "disable": true },
+    "explore": { "disable": true }
   },
   "provider": {
     "kortix": {
@@ -54,7 +56,8 @@
     }
   },
   "plugin": [
-    "./plugin/kortix-system/kortix-system.ts"
+    "./plugin/kortix-system/kortix-system.ts",
+    "./plugin/opencode-caveman-plugin/opencode-caveman-plugin.ts"
   ],
   "mcp": {
     "context7": {

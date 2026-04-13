@@ -256,8 +256,9 @@ export function TabsOverview({
               isPage ? tabId === activePageId : tabId === activeSessionId
             );
             const isSelected = selecting && selectedIds.has(tabId);
+            const tabState = isPage ? useTabStore.getState().tabStateById[tabId] : undefined;
             const title = isPage
-              ? (pageTab?.label || tabId)
+              ? (pageTab?.label || (tabId.startsWith('page:project:') ? `Project - ${(tabState?.projectName as string) || 'Untitled'}` : tabId))
               : (session?.title || 'New Session');
             const cardIcon = isPage
               ? (pageTab?.icon || 'help-outline')

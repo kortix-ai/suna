@@ -50,7 +50,6 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
   const rawPreviewUrl = (tab?.metadata?.url as string) || '';
   const port = (tab?.metadata?.port as number) || 0;
   const originalUrl = (tab?.metadata?.originalUrl as string) || '';
-  const refreshCounter = (tab?.metadata?.refreshCounter as number) || 0;
 
   // Address bar state — shows the internal localhost URL
   const [addressValue, setAddressValue] = useState(originalUrl || (port ? `http://localhost:${port}/` : ''));
@@ -61,7 +60,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
     return !port && !!originalUrl && !originalUrl.startsWith('http://localhost') && !originalUrl.startsWith('http://127.0.0.1');
   }, [port, originalUrl]);
 
-  const { activeServer, serverUrl, subdomainOpts, proxyUrl, rewritePortPath } = useSandboxProxy();
+  const { activeServer, subdomainOpts, proxyUrl, rewritePortPath } = useSandboxProxy();
 
   const proxiedPreviewUrl = useMemo(
     () => proxyUrl(rawPreviewUrl) ?? rawPreviewUrl,
@@ -92,17 +91,6 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
       }
     }
   }, [originalUrl, port, isAddressEditing, isExternalBrowsing]);
-
-  // Refresh the iframe when the tab is re-opened (refreshCounter bumped by openTab)
-  const prevCounterRef = useRef(refreshCounter);
-  useEffect(() => {
-    if (refreshCounter > prevCounterRef.current) {
-      prevCounterRef.current = refreshCounter;
-      setIsLoading(true);
-      setHasError(false);
-      setRefreshKey((k) => k + 1);
-    }
-  }, [refreshCounter]);
 
   /** Clear any pending load timeout. */
   const clearLoadTimeout = useCallback(() => {
@@ -139,7 +127,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
   const navigateTo = useCallback((url: string) => {
     const externalUrl = normalizeExternalInput(url);
     if (externalUrl && isExternalUrl(externalUrl)) {
-      const newProxyUrl = buildWebProxyUrl(externalUrl, serverUrl, subdomainOpts);
+      const newProxyUrl = buildWebProxyUrl(externalUrl, subdomainOpts);
       if (!newProxyUrl) return;
 
       let displayHost: string;
@@ -193,7 +181,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
     setIsLoading(true);
     setHasError(false);
     setRefreshKey((k) => k + 1);
-  }, [serverUrl, subdomainOpts, rewritePortPath, tabId, updateTabMetadata, historyIndex]);
+  }, [subdomainOpts, rewritePortPath, tabId, updateTabMetadata, historyIndex]);
 
   /** Handle address bar submission. */
   const handleAddressSubmit = useCallback((e: React.FormEvent) => {

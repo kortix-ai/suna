@@ -33,6 +33,7 @@ const sections: MenuSection[] = [
     items: [
       { icon: 'folder-open-outline', label: 'Files', pageId: 'page:files' },
       { icon: 'terminal-outline', label: 'Terminal', pageId: 'page:terminal' },
+      { icon: 'folder-outline', label: 'Projects', pageId: 'page:projects' },
       // Memory page temporarily hidden
       { icon: 'grid-outline', label: 'Workspace', pageId: 'page:workspace' },
       { icon: 'sparkles-outline', label: 'Marketplace', pageId: 'page:marketplace' },

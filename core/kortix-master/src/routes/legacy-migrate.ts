@@ -4,7 +4,8 @@ import { existsSync } from 'node:fs'
 
 const legacyMigrateRouter = new Hono()
 
-const OPENCODE_DB_PATH = '/workspace/.local/share/opencode/opencode.db'
+const OPENCODE_DB_PATH = process.env.OPENCODE_DB_PATH
+  || `${process.env.OPENCODE_STORAGE_BASE || `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/opencode`}/opencode.db`
 
 legacyMigrateRouter.post('/migrate', async (c) => {
   const body = await c.req.json<{ sql: string; sessionId?: string }>()

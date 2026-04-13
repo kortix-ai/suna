@@ -15,12 +15,12 @@ import { Switch } from '@/components/ui/switch';
 import { Loader2, Save, Copy, Check, ExternalLink } from 'lucide-react';
 import { SlackIcon } from '@/components/ui/icons/slack';
 import { TelegramIcon } from '@/components/ui/icons/telegram';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { AgentSelector, flattenModels } from '@/components/session/session-chat-input';
 import { ModelSelector } from '@/components/session/model-selector';
-import { useOpenCodeAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useVisibleAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 
 interface Channel {
   id: string;
@@ -30,6 +30,7 @@ interface Channel {
   bot_username: string | null;
   default_agent: string;
   default_model: string;
+  bridge_instructions?: string;
   instructions?: string;
   webhook_path: string;
   webhook_url?: string | null;
@@ -63,11 +64,12 @@ export function ChannelSettingsDialog({ channel, open, onOpenChange, onUpdated }
   const [name, setName] = useState('');
   const [agentName, setAgentName] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<{ providerID: string; modelID: string } | null>(null);
+  const [bridgeInstructions, setBridgeInstructions] = useState('');
   const [instructions, setInstructions] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const { data: agents = [], isLoading: agentsLoading } = useOpenCodeAgents();
+  const agents = useVisibleAgents();
   const { data: providers, isLoading: modelsLoading } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
 
@@ -75,6 +77,7 @@ export function ChannelSettingsDialog({ channel, open, onOpenChange, onUpdated }
     if (channel) {
       setName(channel.name);
       setAgentName(channel.default_agent || 'kortix');
+      setBridgeInstructions(channel.bridge_instructions || '');
       setInstructions(channel.instructions || '');
       setEnabled(channel.enabled);
 
@@ -109,20 +112,29 @@ export function ChannelSettingsDialog({ channel, open, onOpenChange, onUpdated }
           name: name.trim() || undefined,
           default_agent: agentName || undefined,
           default_model: modelStr || undefined,
+          bridge_instructions: bridgeInstructions.trim(),
           instructions: instructions.trim(),
           enabled,
         }),
       });
       const data = await res.json() as any;
       if (data.ok) {
-        toast.success('Settings saved');
+        toast.success('Channel settings saved', {
+          description: data?.sessionReset
+            ? 'Active channel sessions were reset so agent/model/instruction changes apply on the next message.'
+            : 'Changes saved successfully.',
+        });
         onUpdated();
         onOpenChange(false);
       } else {
-        toast.error(data.error || 'Failed to save');
+        toast.error('Failed to save channel settings', {
+          description: data.error || 'The sandbox rejected the channel update.',
+        });
       }
     } catch (err: any) {
-      toast.error(err.message || 'Failed to save');
+      toast.error('Failed to save channel settings', {
+        description: err.message || 'The request did not complete.',
+      });
     } finally {
       setSaving(false);
     }
@@ -166,19 +178,13 @@ export function ChannelSettingsDialog({ channel, open, onOpenChange, onUpdated }
           {/* Agent */}
           <div className="space-y-1.5">
             <Label className="text-xs">Agent</Label>
-            {agentsLoading ? (
-              <div className="flex items-center gap-2 h-9 px-3 text-sm text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" /> Loading agents...
-              </div>
-            ) : (
-              <div className="rounded-xl border bg-card px-2 py-1">
-                <AgentSelector
-                  agents={agents}
-                  selectedAgent={agentName}
-                  onSelect={(next) => setAgentName(next)}
-                />
-              </div>
-            )}
+            <div className="rounded-xl border bg-card px-2 py-1">
+              <AgentSelector
+                agents={agents}
+                selectedAgent={agentName}
+                onSelect={(next) => setAgentName(next)}
+              />
+            </div>
           </div>
 
           {/* Model */}
@@ -201,6 +207,21 @@ export function ChannelSettingsDialog({ channel, open, onOpenChange, onUpdated }
 
           {/* Instructions */}
           <div className="space-y-1.5">
+            <Label className="text-xs">Bridge Instructions</Label>
+            <Textarea
+              value={bridgeInstructions}
+              onChange={(e) => setBridgeInstructions(e.target.value)}
+              placeholder="Optional per-channel delivery instructions appended to the Slack/Telegram bridge prompt..."
+              rows={3}
+              className="text-sm resize-none"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Appended to the built-in platform bridge instructions on every incoming message.
+            </p>
+          </div>
+
+          {/* System Instructions */}
+          <div className="space-y-1.5">
             <Label className="text-xs">System Instructions</Label>
             <Textarea
               value={instructions}
@@ -210,7 +231,7 @@ export function ChannelSettingsDialog({ channel, open, onOpenChange, onUpdated }
               className="text-sm resize-none"
             />
             <p className="text-[11px] text-muted-foreground">
-              Prepended to every session started from this channel.
+              Used as the system prompt for sessions started from this channel. Saving resets active channel sessions so changes apply on the next message.
             </p>
           </div>
 

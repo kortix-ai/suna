@@ -7,6 +7,14 @@ import { TriggerManager } from "./trigger-manager.js"
 import type { TriggerPluginOptions, PluginContextShape, TriggerRecord } from "./types.js"
 import { describeCron } from "./trigger-store.js"
 
+type TriggerManagerRegistry = Map<string, TriggerManager>
+
+function getTriggerManagerRegistry(): TriggerManagerRegistry {
+  const g = globalThis as typeof globalThis & { __kortixTriggerManagers?: TriggerManagerRegistry }
+  if (!g.__kortixTriggerManagers) g.__kortixTriggerManagers = new Map()
+  return g.__kortixTriggerManagers
+}
+
 function createLogger(client: PluginContextShape["client"], fallback?: TriggerPluginOptions["logger"]) {
   return (level: "info" | "warn" | "error", message: string) => {
     fallback?.(level, message)
@@ -36,11 +44,18 @@ export function createTriggersPlugin(options: TriggerPluginOptions = {}): Plugin
   const plugin: Plugin = async (ctx) => {
     const shaped = ctx as unknown as PluginContextShape
     const logger = createLogger(shaped.client, options.logger)
-    const manager = new TriggerManager(shaped.client, {
+    const normalizedOptions = {
       ...options,
       directory: options.directory ?? shaped.directory,
       logger,
-    })
+    }
+    const registryKey = `${normalizedOptions.directory ?? process.cwd()}::${normalizedOptions.webhookHost ?? "0.0.0.0"}:${normalizedOptions.webhookPort ?? 8099}`
+    const registry = getTriggerManagerRegistry()
+    let manager = registry.get(registryKey)
+    if (!manager) {
+      manager = new TriggerManager(shaped.client, normalizedOptions)
+      registry.set(registryKey, manager)
+    }
 
     if (options.autoSync !== false) await manager.start()
 

@@ -7,6 +7,8 @@
  */
 
 import type { Context } from 'hono';
+import { desc, eq } from 'drizzle-orm';
+import { sandboxes } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { resolveAccountId } from '../shared/resolve-account';
@@ -15,22 +17,23 @@ import { proxyToDaytona } from '../sandbox-proxy/routes/preview';
 
 async function resolveActiveSandbox(userId: string): Promise<{ externalId: string | null; baseUrl: string | null; proxyToken: string | null }> {
   const accountId = await resolveAccountId(userId);
-  const safeAccountId = accountId.replace(/'/g, "''");
-  const rows = await db.execute(`
-    select external_id, base_url, metadata
-    from kortix.sandboxes
-    where account_id = '${safeAccountId}'
-    order by updated_at desc
-    limit 1
-  `);
-  const row = rows?.[0] as { external_id?: string; base_url?: string; metadata?: { justavpsProxyToken?: string } | string | null } | undefined;
+  const [row] = await db
+    .select({
+      externalId: sandboxes.externalId,
+      baseUrl: sandboxes.baseUrl,
+      metadata: sandboxes.metadata,
+    })
+    .from(sandboxes)
+    .where(eq(sandboxes.accountId, accountId))
+    .orderBy(desc(sandboxes.updatedAt))
+    .limit(1);
   let proxyToken: string | null = null;
   if (row?.metadata && typeof row.metadata === 'object' && 'justavpsProxyToken' in row.metadata) {
     proxyToken = (row.metadata as { justavpsProxyToken?: string }).justavpsProxyToken || null;
   }
   return {
-    externalId: row?.external_id ?? null,
-    baseUrl: row?.base_url ?? null,
+    externalId: row?.externalId ?? null,
+    baseUrl: row?.baseUrl ?? null,
     proxyToken,
   };
 }

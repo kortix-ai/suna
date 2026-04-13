@@ -3,11 +3,6 @@
  *
  * When a Pro user's credit balance drops below their configured threshold,
  * we charge their Stripe default payment method off-session and grant credits.
- *
- * Constraints:
- *   threshold  >= $5
- *   amount     >= $15
- *   amount     >= 2 * threshold
  */
 
 import { getStripe } from '../../shared/stripe';
@@ -16,12 +11,20 @@ import { getCustomerByAccountId } from '../repositories/customers';
 import { grantCredits } from './credits';
 import { isPaidTier } from './tiers';
 import { BillingError } from '../../errors';
+import {
+  AUTO_TOPUP_DEFAULT_AMOUNT,
+  AUTO_TOPUP_DEFAULT_THRESHOLD,
+  AUTO_TOPUP_MIN_AMOUNT,
+  AUTO_TOPUP_MIN_THRESHOLD,
+} from '@kortix/shared';
 
 // ─── Validation Constants ────────────────────────────────────────────────────
-
-export const AUTO_TOPUP_MIN_THRESHOLD = 1;    // $1
-export const AUTO_TOPUP_MIN_AMOUNT = 1;       // $1
-export const AUTO_TOPUP_DEFAULT_AMOUNT = 20;  // $20  (default for new accounts)
+export {
+  AUTO_TOPUP_DEFAULT_AMOUNT,
+  AUTO_TOPUP_DEFAULT_THRESHOLD,
+  AUTO_TOPUP_MIN_AMOUNT,
+  AUTO_TOPUP_MIN_THRESHOLD,
+};
 
 /** Minimum 60 seconds between auto-topup charges to prevent rapid-fire. */
 const CHARGE_COOLDOWN_MS = 60_000;
@@ -86,11 +89,11 @@ export async function configureAutoTopup(accountId: string, cfg: AutoTopupConfig
 
 export async function getAutoTopupSettings(accountId: string) {
   const account = await getCreditAccount(accountId);
-  if (!account) return { enabled: true, threshold: AUTO_TOPUP_MIN_THRESHOLD, amount: AUTO_TOPUP_DEFAULT_AMOUNT };
+  if (!account) return { enabled: true, threshold: AUTO_TOPUP_DEFAULT_THRESHOLD, amount: AUTO_TOPUP_DEFAULT_AMOUNT };
 
   return {
     enabled: Boolean(account.autoTopupEnabled),
-    threshold: Number(account.autoTopupThreshold) || AUTO_TOPUP_MIN_THRESHOLD,
+    threshold: Number(account.autoTopupThreshold) || AUTO_TOPUP_DEFAULT_THRESHOLD,
     amount: Number(account.autoTopupAmount) || AUTO_TOPUP_DEFAULT_AMOUNT,
   };
 }
@@ -126,7 +129,7 @@ async function tryAutoTopup(accountId: string): Promise<void> {
   if (!isPaidTier(tierName)) return;
 
   const balance = Number(account.balance) || 0;
-  const threshold = Number(account.autoTopupThreshold) || AUTO_TOPUP_MIN_THRESHOLD;
+  const threshold = Number(account.autoTopupThreshold) || AUTO_TOPUP_DEFAULT_THRESHOLD;
   const amount = Number(account.autoTopupAmount) || AUTO_TOPUP_DEFAULT_AMOUNT;
 
   if (balance >= threshold) return;

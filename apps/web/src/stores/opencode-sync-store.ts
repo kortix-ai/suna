@@ -107,6 +107,7 @@ interface SyncState {
 	) => void;
 	optimisticRemove: (sessionID: string, messageID: string) => void;
 	clearOptimisticMessages: (sessionID: string) => void;
+	clearSession: (sessionID: string) => void;
 	hydrate: (
 		sessionID: string,
 		msgs: Array<{ info: Message; parts: Part[] }>,
@@ -474,6 +475,22 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			};
 		});
 	},
+
+	clearSession: (sessionID) =>
+		set((s) => {
+			const existingMessages = s.messages[sessionID] ?? [];
+			const nextParts = { ...s.parts };
+			for (const message of existingMessages) delete nextParts[message.id];
+			return {
+				messages: { ...s.messages, [sessionID]: [] },
+				parts: nextParts,
+				sessionStatus: { ...s.sessionStatus, [sessionID]: { type: "idle" } as SessionStatus },
+				permissions: { ...s.permissions, [sessionID]: [] },
+				questions: { ...s.questions, [sessionID]: [] },
+				diffs: { ...s.diffs, [sessionID]: [] },
+				todos: { ...s.todos, [sessionID]: [] },
+			};
+		}),
 
 	hydrate: (sessionID, msgs) =>
 		set((s) => {

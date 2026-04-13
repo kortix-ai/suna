@@ -1,5 +1,5 @@
 import { timingSafeEqual, createHash } from 'crypto'
-import { existsSync, mkdirSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync } from 'fs'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -35,10 +35,9 @@ import marketplaceRouter from './routes/marketplace'
 import preferencesRouter from './routes/preferences'
 import projectsRouter from './routes/projects'
 import { tasksRouter } from './routes/tasks'
-import { agentsRouter } from './routes/agents'
 import { serviceManager } from './services/service-manager'
 import { config } from './config'
-import { loadBootstrapEnv, saveBootstrapEnv } from './services/bootstrap-env'
+import { loadBootstrapEnv, normalizeBootstrapAuthAliases, saveBootstrapEnv } from './services/bootstrap-env'
 import { HealthResponse, PortsResponse } from './schemas/common'
 
 // ─── Crash protection ────────────────────────────────────────────────────────
@@ -56,6 +55,7 @@ const app = new Hono()
 // ─── Bootstrap: restore core env vars if missing from process.env ───────────
 // Must run BEFORE SecretStore because KORTIX_TOKEN is the encryption key.
 loadBootstrapEnv()
+normalizeBootstrapAuthAliases()
 
 // Initialize secret store and load ENV variables
 const secretStore = new SecretStore()
@@ -65,14 +65,14 @@ await secretStore.loadIntoProcessEnv()
 import { initShareStore } from './services/share-store'
 initShareStore()
 
-// ─── Guarantee KORTIX_TOKEN + KORTIX_API_URL in s6 env dir ──────────────────
+// ─── Guarantee core auth vars in s6 env dir ──────────────────────────────────
 // These are injected as Docker env vars at container creation but never written
 // to the s6 env directory. Tools use getEnv() which falls back to reading
 // /run/s6/container_environment/{KEY} — so we must write them there on boot
 // to ensure they're always available regardless of how the process was started.
 {
   const S6_ENV_DIR = process.env.S6_ENV_DIR || '/run/s6/container_environment'
-  const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY'] as const
+  const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const
   let synced = 0
   for (const key of CORE_VARS) {
     // Use injected env var, but fall back to a sane default for KORTIX_API_URL
@@ -84,8 +84,16 @@ initShareStore()
     if (val) {
       try {
         if (!existsSync(S6_ENV_DIR)) mkdirSync(S6_ENV_DIR, { recursive: true })
-        await Bun.write(`${S6_ENV_DIR}/${key}`, val)
-        synced++
+        const targetPath = `${S6_ENV_DIR}/${key}`
+        let existing: string | null = null
+        try {
+          existing = readFileSync(targetPath, 'utf-8')
+        } catch {}
+
+        if (existing !== val) {
+          await Bun.write(targetPath, val)
+          synced++
+        }
       } catch (err) {
         console.warn(`[Kortix Master] Failed to write ${key} to s6 env dir:`, err)
       }
@@ -114,7 +122,7 @@ if (!authSyncDisabled) {
 // Updates are Docker image-based — no crash recovery needed
 
 if (process.env.KORTIX_DISABLE_CORE_SUPERVISOR !== 'true') {
-  await serviceManager.start().catch(err =>
+  void serviceManager.start().catch(err =>
     console.error('[Kortix Master] service manager start error:', err)
   )
 }
@@ -211,22 +219,29 @@ let openCodeLastCheck = 0
 const OPENCODE_CHECK_INTERVAL = 5_000 // recheck every 5s when not ready
 
 async function checkOpenCodeReady(): Promise<boolean> {
-  if (openCodeReady) return true
   const now = Date.now()
-  if (now - openCodeLastCheck < OPENCODE_CHECK_INTERVAL) return false
+  if (now - openCodeLastCheck < OPENCODE_CHECK_INTERVAL) return openCodeReady
   openCodeLastCheck = now
   try {
     const res = await fetch(`http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}/session`, {
       signal: AbortSignal.timeout(3_000),
     })
     if (res.ok) {
+      if (!openCodeReady) {
+        console.log('[Kortix Master] OpenCode is ready')
+      }
       openCodeReady = true
-      console.log('[Kortix Master] OpenCode is ready')
       // Consume body to free connection
       await res.arrayBuffer()
       return true
     }
+    await res.arrayBuffer().catch(() => {})
   } catch {}
+  if (openCodeReady) {
+    console.warn('[Kortix Master] OpenCode is no longer reachable')
+  }
+  openCodeReady = false
+  void serviceManager.requestRecovery('opencode-serve', 'health-check')
   return false
 }
 
@@ -367,8 +382,6 @@ app.route('/kortix/projects', projectsRouter)
 app.route('/kortix/projects/', projectsRouter)
 app.route('/kortix/tasks', tasksRouter)
 app.route('/kortix/tasks/', tasksRouter)
-app.route('/kortix/agents', agentsRouter)
-app.route('/kortix/agents/', agentsRouter)
 
 // Public URL sharing — /kortix/share/:port returns the public URL for a sandbox port
 app.route('/kortix/share', shareRouter)
@@ -492,11 +505,13 @@ const WS_IDLE_TIMEOUT_MS = 5 * 60_000     // 5min idle timeout (no messages)
 interface WsProxyData {
   targetPort: number
   targetPath: string
+  subprotocol?: string
   upstream: WebSocket | null
   buffered: (string | Buffer | ArrayBuffer)[]
   bufferBytes: number
   connectTimer: ReturnType<typeof setTimeout> | null
   idleTimer: ReturnType<typeof setTimeout> | null
+  upstreamHeaders?: Record<string, string>
   closed: boolean
 }
 
@@ -511,6 +526,24 @@ function resetIdleTimer(ws: { data: WsProxyData; close: (code?: number, reason?:
     console.warn(`[Kortix Master] WS idle timeout for port ${ws.data.targetPort}`)
     try { ws.close(1000, 'idle timeout') } catch {}
   }, WS_IDLE_TIMEOUT_MS)
+}
+
+function buildWsUpstreamHeaders(req: Request): Record<string, string> | undefined {
+  const headers: Record<string, string> = {}
+  const origin = req.headers.get('origin')
+  const userAgent = req.headers.get('user-agent')
+  const protocol = req.headers.get('sec-websocket-protocol')?.split(',')[0]?.trim()
+
+  if (origin) headers.Origin = origin
+  if (userAgent) headers['User-Agent'] = userAgent
+  if (protocol) headers['Sec-WebSocket-Protocol'] = protocol
+
+  return Object.keys(headers).length > 0 ? headers : undefined
+}
+
+function buildWsUpgradeHeaders(req: Request): Record<string, string> | undefined {
+  const protocol = req.headers.get('sec-websocket-protocol')?.split(',')[0]?.trim()
+  return protocol ? { 'Sec-WebSocket-Protocol': protocol } : undefined
 }
 
 /**
@@ -571,14 +604,17 @@ export default {
 
       if (parsed && !WS_BLOCKED_PORTS.has(parsed.port)) {
         const success = server.upgrade(req, {
+          headers: buildWsUpgradeHeaders(req),
           data: {
             targetPort: parsed.port,
             targetPath: parsed.path + url.search,
+            subprotocol: req.headers.get('sec-websocket-protocol')?.split(',')[0]?.trim() || undefined,
             upstream: null,
             buffered: [],
             bufferBytes: 0,
             connectTimer: null,
             idleTimer: null,
+            upstreamHeaders: buildWsUpstreamHeaders(req),
             closed: false,
           } satisfies WsProxyData,
         })
@@ -588,14 +624,17 @@ export default {
       // Also handle catch-all WebSocket proxy to OpenCode
       if (!parsed) {
         const success = server.upgrade(req, {
+          headers: buildWsUpgradeHeaders(req),
           data: {
             targetPort: config.OPENCODE_PORT,
             targetPath: url.pathname + url.search,
+            subprotocol: req.headers.get('sec-websocket-protocol')?.split(',')[0]?.trim() || undefined,
             upstream: null,
             buffered: [],
             bufferBytes: 0,
             connectTimer: null,
             idleTimer: null,
+            upstreamHeaders: buildWsUpstreamHeaders(req),
             closed: false,
           } satisfies WsProxyData,
         })
@@ -615,8 +654,8 @@ export default {
      */
     open(ws: { data: WsProxyData; send: (data: any) => void; close: (code?: number, reason?: string) => void }) {
       activeConnections++
-      const { targetPort, targetPath } = ws.data
-      const upstreamUrl = `ws://localhost:${targetPort}${targetPath}`
+      const { targetPort, targetPath, upstreamHeaders } = ws.data
+      const upstreamUrl = `ws://127.0.0.1:${targetPort}${targetPath}`
 
       // Start idle timer
       resetIdleTimer(ws)
@@ -631,7 +670,13 @@ export default {
       }, WS_CONNECT_TIMEOUT_MS)
 
       try {
-        const upstream = new WebSocket(upstreamUrl)
+        const upstream = upstreamHeaders
+          ? (ws.data.subprotocol
+              ? new WebSocket(upstreamUrl, ws.data.subprotocol, { headers: upstreamHeaders } as any)
+              : new WebSocket(upstreamUrl, { headers: upstreamHeaders } as any))
+          : (ws.data.subprotocol
+              ? new WebSocket(upstreamUrl, ws.data.subprotocol)
+              : new WebSocket(upstreamUrl))
         ws.data.upstream = upstream
 
         upstream.addEventListener('open', () => {

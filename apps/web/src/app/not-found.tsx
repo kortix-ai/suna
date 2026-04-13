@@ -95,7 +95,7 @@ export default function NotFound() {
             size="lg"
             className="w-full h-12"
           >
-            <Link href="/" className="flex items-center justify-center gap-2">
+            <Link href="/instances" className="flex items-center justify-center gap-2">
               <ArrowLeft className="h-4 w-4" />
               <span>Return Home</span>
             </Link>

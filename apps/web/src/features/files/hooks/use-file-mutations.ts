@@ -12,6 +12,7 @@ import {
 } from '../api/opencode-files';
 import { fileListKeys } from './use-file-list';
 import { fileContentKeys } from './use-file-content';
+import { gitStatusKeys } from './use-git-status';
 import { useServerStore } from '@/stores/server-store';
 import type { FileNode } from '../types';
 
@@ -30,6 +31,7 @@ export function useFileUpload() {
     mutationFn: ({ file, targetPath }) => uploadFile(file, targetPath),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fileListKeys.all });
+      queryClient.invalidateQueries({ queryKey: gitStatusKeys.all });
     },
   });
 }
@@ -46,6 +48,7 @@ export function useFileDelete() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fileListKeys.all });
       queryClient.invalidateQueries({ queryKey: fileContentKeys.all });
+      queryClient.invalidateQueries({ queryKey: gitStatusKeys.all });
     },
   });
 }
@@ -61,6 +64,7 @@ export function useFileMkdir() {
     mutationFn: ({ dirPath }) => mkdirFile(dirPath),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fileListKeys.all });
+      queryClient.invalidateQueries({ queryKey: gitStatusKeys.all });
     },
   });
 }
@@ -77,7 +81,8 @@ export function useFileRename() {
     mutationFn: ({ from, to }) => renameFile(from, to),
     onMutate: async ({ from, to }) => {
       // Optimistically update the file list cache for the parent directory
-      const parentPath = from.substring(0, from.lastIndexOf('/')) || '/workspace';
+      const parentPath =
+        from.substring(0, from.lastIndexOf('/')) || '/workspace';
       const newName = to.split('/').pop() || '';
       const queryKey = fileListKeys.dir(serverUrl, parentPath);
 
@@ -93,21 +98,26 @@ export function useFileRename() {
           old?.map((node) => {
             if (node.path !== from) return node;
             // Update the absolute path by replacing the old name with the new one
-            const absoluteDir = node.absolute.substring(0, node.absolute.lastIndexOf('/'));
+            const absoluteDir = node.absolute.substring(
+              0,
+              node.absolute.lastIndexOf('/'),
+            );
             return {
               ...node,
               name: newName,
               path: to,
               absolute: `${absoluteDir}/${newName}`,
             };
-          })
+          }),
         );
       }
 
       return { previousData, queryKey };
     },
     onError: (_err: unknown, _vars: unknown, context: unknown) => {
-      const ctx = context as { previousData?: unknown; queryKey?: unknown[] } | undefined;
+      const ctx = context as
+        | { previousData?: unknown; queryKey?: unknown[] }
+        | undefined;
       // Rollback on error
       if (ctx?.previousData && ctx?.queryKey) {
         queryClient.setQueryData(ctx.queryKey, ctx.previousData);
@@ -117,6 +127,7 @@ export function useFileRename() {
       // Always refetch to ensure consistency with server
       queryClient.invalidateQueries({ queryKey: fileListKeys.all });
       queryClient.invalidateQueries({ queryKey: fileContentKeys.all });
+      queryClient.invalidateQueries({ queryKey: gitStatusKeys.all });
     },
   });
 }
@@ -132,6 +143,7 @@ export function useFileCreate() {
     mutationFn: ({ filePath }) => createFile(filePath),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fileListKeys.all });
+      queryClient.invalidateQueries({ queryKey: gitStatusKeys.all });
     },
   });
 }
@@ -143,10 +155,15 @@ export function useFileCreate() {
 export function useFileCopy() {
   const queryClient = useQueryClient();
 
-  return useMutation<UploadResult[], Error, { sourcePath: string; destPath: string }>({
+  return useMutation<
+    UploadResult[],
+    Error,
+    { sourcePath: string; destPath: string }
+  >({
     mutationFn: ({ sourcePath, destPath }) => copyFile(sourcePath, destPath),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fileListKeys.all });
+      queryClient.invalidateQueries({ queryKey: gitStatusKeys.all });
     },
   });
 }

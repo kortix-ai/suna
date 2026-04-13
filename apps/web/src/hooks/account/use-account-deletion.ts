@@ -7,6 +7,7 @@ export interface AccountDeletionStatus {
     deletion_scheduled_for: string | null;
     requested_at: string | null;
     can_cancel: boolean;
+    supported: boolean;
 }
 
 export interface RequestDeletionResponse {
@@ -28,6 +29,18 @@ export interface DeleteImmediatelyResponse {
 
 export const ACCOUNT_DELETION_QUERY_KEY = ['account', 'deletion-status'];
 
+const UNSUPPORTED_STATUS: AccountDeletionStatus = {
+    has_pending_deletion: false,
+    deletion_scheduled_for: null,
+    requested_at: null,
+    can_cancel: false,
+    supported: false,
+};
+
+function isUnsupportedEndpoint(error: { status?: number; code?: string } | undefined): boolean {
+    return error?.status === 404 || error?.code === '404';
+}
+
 export function useAccountDeletionStatus() {
     return useQuery<AccountDeletionStatus>({
         queryKey: ACCOUNT_DELETION_QUERY_KEY,
@@ -36,16 +49,21 @@ export function useAccountDeletionStatus() {
                 showErrors: false
             });
 
+            if (isUnsupportedEndpoint(response.error)) {
+                return UNSUPPORTED_STATUS;
+            }
+
             if (!response.success || !response.data) {
                 return {
-                    has_pending_deletion: false,
-                    deletion_scheduled_for: null,
-                    requested_at: null,
-                    can_cancel: false
+                    ...UNSUPPORTED_STATUS,
+                    supported: true,
                 };
             }
 
-            return response.data;
+            return {
+                ...response.data,
+                supported: true,
+            };
         },
         staleTime: 30000,
         refetchOnWindowFocus: true,
@@ -59,7 +77,13 @@ export function useRequestAccountDeletion() {
         mutationFn: async (reason?: string) => {
             const response = await backendApi.post<RequestDeletionResponse>('/account/request-deletion', {
                 reason: reason || 'User requested deletion'
+            }, {
+                showErrors: false,
             });
+
+            if (isUnsupportedEndpoint(response.error)) {
+                throw new Error('Account deletion is not available in this environment yet.');
+            }
 
             if (!response.success || !response.data) {
                 throw new Error(response.error?.message || 'Failed to request account deletion');
@@ -74,7 +98,8 @@ export function useRequestAccountDeletion() {
                 has_pending_deletion: true,
                 deletion_scheduled_for: data.deletion_scheduled_for,
                 requested_at: new Date().toISOString(),
-                can_cancel: data.can_cancel
+                can_cancel: data.can_cancel,
+                supported: true,
             });
         },
         onError: (error: Error) => {
@@ -88,7 +113,13 @@ export function useCancelAccountDeletion() {
 
     return useMutation({
         mutationFn: async () => {
-            const response = await backendApi.post<CancelDeletionResponse>('/account/cancel-deletion');
+            const response = await backendApi.post<CancelDeletionResponse>('/account/cancel-deletion', undefined, {
+                showErrors: false,
+            });
+
+            if (isUnsupportedEndpoint(response.error)) {
+                throw new Error('Account deletion is not available in this environment yet.');
+            }
 
             if (!response.success || !response.data) {
                 throw new Error(response.error?.message || 'Failed to cancel account deletion');
@@ -103,7 +134,8 @@ export function useCancelAccountDeletion() {
                 has_pending_deletion: false,
                 deletion_scheduled_for: null,
                 requested_at: null,
-                can_cancel: false
+                can_cancel: false,
+                supported: true,
             });
         },
         onError: (error: Error) => {
@@ -117,7 +149,13 @@ export function useDeleteAccountImmediately() {
 
     return useMutation({
         mutationFn: async () => {
-            const response = await backendApi.delete<DeleteImmediatelyResponse>('/account/delete-immediately');
+            const response = await backendApi.delete<DeleteImmediatelyResponse>('/account/delete-immediately', {
+                showErrors: false,
+            });
+
+            if (isUnsupportedEndpoint(response.error)) {
+                throw new Error('Account deletion is not available in this environment yet.');
+            }
 
             if (!response.success || !response.data) {
                 throw new Error(response.error?.message || 'Failed to delete account immediately');
@@ -133,7 +171,8 @@ export function useDeleteAccountImmediately() {
                 has_pending_deletion: false,
                 deletion_scheduled_for: null,
                 requested_at: null,
-                can_cancel: false
+                can_cancel: false,
+                supported: true,
             });
             
             // Redirect to home or logout after a short delay
@@ -146,4 +185,3 @@ export function useDeleteAccountImmediately() {
         }
     });
 }
-

@@ -28,8 +28,8 @@ export function useSandboxProxy() {
   );
 
   const getServiceUrl = useCallback(
-    (port: number) => getSandboxServiceUrl(port, { ...context, activeServer }),
-    [activeServer, context],
+    (port: number) => getSandboxServiceUrl(port, context),
+    [context],
   );
 
   return {

@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+
+import argparse
+import contextlib
+import fcntl
+import json
+import os
+import shutil
+import sqlite3
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+PERSIST_ROOT = Path(os.environ.get("KORTIX_PERSISTENT_ROOT", "/persistent"))
+LIVE_ROOT = Path(os.environ.get("OPENCODE_STORAGE_BASE", str(PERSIST_ROOT / "opencode")))
+SHADOW_ROOT = Path(os.environ.get("OPENCODE_SHADOW_STORAGE_BASE", str(PERSIST_ROOT / "opencode-shadow")))
+ARCHIVE_ROOT = Path(os.environ.get("KORTIX_OPENCODE_ARCHIVE_DIR", str(PERSIST_ROOT / "opencode-archive")))
+LOCK_PATH = Path(os.environ.get("KORTIX_OPENCODE_LOCK_PATH", str(PERSIST_ROOT / "opencode-sync.lock")))
+ARCHIVE_KEEP = int(os.environ.get("KORTIX_OPENCODE_ARCHIVE_KEEP", "5"))
+
+DB_NAME = "opencode.db"
+IGNORE_NAMES = {DB_NAME, f"{DB_NAME}-wal", f"{DB_NAME}-shm"}
+
+
+def ensure_layout() -> None:
+    LIVE_ROOT.mkdir(parents=True, exist_ok=True)
+    SHADOW_ROOT.parent.mkdir(parents=True, exist_ok=True)
+    ARCHIVE_ROOT.mkdir(parents=True, exist_ok=True)
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+@contextlib.contextmanager
+def locked():
+    ensure_layout()
+    with LOCK_PATH.open("a+") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def inspect_state(root: Path) -> dict:
+    db_path = root / DB_NAME
+    info = {
+        "root": str(root),
+        "db_path": str(db_path),
+        "exists": root.exists(),
+        "db_exists": db_path.exists(),
+        "ok": False,
+        "sessions": 0,
+        "messages": 0,
+        "error": None,
+    }
+    if not db_path.exists():
+        info["score"] = 0
+        return info
+
+    conn = None
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        cur = conn.cursor()
+
+        def count(table: str) -> int:
+            try:
+                row = cur.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                return int(row[0] if row else 0)
+            except sqlite3.DatabaseError:
+                return 0
+
+        info["sessions"] = count("session")
+        info["messages"] = count("message")
+        info["ok"] = True
+    except Exception as exc:  # noqa: BLE001
+        info["error"] = str(exc)
+    finally:
+        if conn is not None:
+            conn.close()
+
+    info["score"] = info["messages"] if info["messages"] > 0 else info["sessions"]
+    return info
+
+
+def stage_copy(src: Path, dst: Path) -> None:
+    dst.mkdir(parents=True, exist_ok=True)
+
+    src_db = src / DB_NAME
+    if src_db.exists():
+        dst_db = dst / DB_NAME
+        source = sqlite3.connect(f"file:{src_db}?mode=ro", uri=True)
+        target = sqlite3.connect(dst_db)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+            source.close()
+
+    for item in src.iterdir() if src.exists() else []:
+        if item.name in IGNORE_NAMES:
+            continue
+        target = dst / item.name
+        if item.is_dir():
+            shutil.copytree(item, target, symlinks=True, dirs_exist_ok=True)
+        elif item.is_symlink():
+            if target.exists() or target.is_symlink():
+                target.unlink()
+            target.symlink_to(os.readlink(item))
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+
+
+def trim_archives() -> None:
+    archives = sorted([p for p in ARCHIVE_ROOT.iterdir() if p.is_dir()])
+    if len(archives) <= ARCHIVE_KEEP:
+        return
+    for stale in archives[: len(archives) - ARCHIVE_KEEP]:
+        shutil.rmtree(stale, ignore_errors=True)
+
+
+def archive_snapshot(source: Path, label: str | None) -> Path:
+    ensure_layout()
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    safe_label = "manual" if not label else "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in label)
+    archive_dir = ARCHIVE_ROOT / f"{ts}-{safe_label}"
+    tmp_dir = Path(tempfile.mkdtemp(prefix=f".{archive_dir.name}.", dir=str(ARCHIVE_ROOT)))
+    stage_copy(source, tmp_dir)
+    tmp_dir.rename(archive_dir)
+    trim_archives()
+    return archive_dir
+
+
+def replace_tree(target: Path, staged: Path) -> None:
+    backup = target.parent / f".{target.name}.old"
+    if backup.exists():
+        shutil.rmtree(backup, ignore_errors=True)
+    if target.exists():
+        target.rename(backup)
+    staged.rename(target)
+    shutil.rmtree(backup, ignore_errors=True)
+
+
+def sync_state(create_archive: bool, archive_label: str | None) -> dict:
+    live = inspect_state(LIVE_ROOT)
+    shadow = inspect_state(SHADOW_ROOT)
+    if not live["db_exists"]:
+        return {"action": "skip", "reason": "live-db-missing", "live": live, "shadow": shadow}
+    if shadow["score"] > 0 and live["score"] == 0:
+        return {"action": "skip", "reason": "live-state-empty-shadow-preserved", "live": live, "shadow": shadow}
+
+    staged = Path(tempfile.mkdtemp(prefix=f".{SHADOW_ROOT.name}.", dir=str(SHADOW_ROOT.parent)))
+    stage_copy(LIVE_ROOT, staged)
+    if create_archive:
+        archive_snapshot(staged, archive_label)
+    replace_tree(SHADOW_ROOT, staged)
+    return {"action": "synced", "live": inspect_state(LIVE_ROOT), "shadow": inspect_state(SHADOW_ROOT)}
+
+
+def restore_state() -> dict:
+    shadow = inspect_state(SHADOW_ROOT)
+    if shadow["score"] == 0 and not shadow["db_exists"]:
+        return {"action": "skip", "reason": "shadow-empty", "shadow": shadow}
+    staged = Path(tempfile.mkdtemp(prefix=f".{LIVE_ROOT.name}.", dir=str(LIVE_ROOT.parent)))
+    stage_copy(SHADOW_ROOT, staged)
+    if LIVE_ROOT.exists():
+        archive_snapshot(LIVE_ROOT, "pre-restore-live")
+    replace_tree(LIVE_ROOT, staged)
+    return {"action": "restored", "live": inspect_state(LIVE_ROOT), "shadow": inspect_state(SHADOW_ROOT)}
+
+
+def guard_state() -> dict:
+    live = inspect_state(LIVE_ROOT)
+    shadow = inspect_state(SHADOW_ROOT)
+
+    if shadow["score"] > 0 and live["score"] == 0:
+        restored = restore_state()
+        restored["reason"] = "live-empty-shadow-restored"
+        return restored
+
+    if live["score"] > 0 and shadow["score"] == 0:
+        return sync_state(create_archive=False, archive_label=None)
+
+    return {"action": "noop", "live": live, "shadow": shadow}
+
+
+def status() -> dict:
+    return {"live": inspect_state(LIVE_ROOT), "shadow": inspect_state(SHADOW_ROOT), "archive_root": str(ARCHIVE_ROOT)}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Kortix OpenCode state guard/sync")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sync_parser = sub.add_parser("sync")
+    sync_parser.add_argument("--archive", nargs="?", const="sync", default=None)
+
+    sub.add_parser("guard")
+    sub.add_parser("restore")
+    sub.add_parser("status")
+
+    args = parser.parse_args()
+
+    with locked():
+        if args.command == "sync":
+            payload = sync_state(create_archive=args.archive is not None, archive_label=args.archive)
+        elif args.command == "guard":
+            payload = guard_state()
+        elif args.command == "restore":
+            payload = restore_state()
+        else:
+            payload = status()
+
+    print(json.dumps(payload, separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

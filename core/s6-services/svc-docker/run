@@ -1,48 +1,154 @@
 #!/usr/bin/with-contenv bash
-# Docker-in-Docker service — starts dockerd in privileged containers.
+# ─────────────────────────────────────────────────────────────────────────────
+# svc-docker — Docker-in-Docker daemon supervisor (s6 longrun)
 #
-# Overrides the base image's svc-docker/run which calls dockerd-entrypoint.sh → dind.
-# The stock dind script has TWO problems:
-#   1. `mount -t tmpfs none /tmp` — wipes X11 sockets, breaks the desktop
-#   2. cgroup v2 subtree_control loop — uses `sed` in a tight infinite retry loop
-#      that spams "sed: write error" when the write races with new processes
+# Runs dockerd INSIDE the sandbox container so agents can `docker run` / build
+# images / spin up compose stacks without touching the host.
 #
-# We handle cgroup setup ourselves (one-shot, no infinite loop) and skip the /tmp wipe.
+# REQUIREMENTS (enforced at the top of this script — we exit cleanly otherwise):
+#   1. Container must be privileged (or have CAP_SYS_ADMIN) — tested via
+#      /proc/self/status CapEff, not a brittle /dev probe.
+#   2. START_DOCKER=true must be set. Default is off so users who don't need
+#      DinD don't pay the ~40MB dockerd memory cost.
+#   3. dockerd binary must be installed (apk add docker-engine).
+#
+# STORAGE DRIVER SELECTION (this is THE thing that breaks DinD most often):
+#   - /var/lib/docker is expected to be a Docker NAMED VOLUME from the host
+#     compose file (sandbox_docker). That gives us a native filesystem, not
+#     an overlayfs, which means overlay2 works.
+#   - If /var/lib/docker turns out to be on overlayfs (e.g. user ran without
+#     the named volume), we fall back to fuse-overlayfs, and finally vfs.
+#   - The choice is written to /etc/docker/daemon.json before dockerd starts.
+#
+# CGROUPS:
+#   The stock dind entrypoint has an infinite retry loop that spams
+#   "sed: write error" as processes race to be moved between cgroups. We do
+#   it one-shot with a bounded retry and move on.
+#
+# /tmp:
+#   Stock dind mounts a fresh tmpfs over /tmp on boot — that wipes the X11
+#   socket webtop uses for its desktop. We do NOT do that.
+# ─────────────────────────────────────────────────────────────────────────────
 
+set -u
 
-# Only start if privileged AND explicitly requested
-if [ ! -e /dev/cpu_dma_latency ]; then
-  sleep infinity
+# ── Gate 1: user opted in ───────────────────────────────────────────────────
+if [ "${START_DOCKER:-false}" != "true" ]; then
+  echo "[svc-docker] START_DOCKER != true — DinD disabled, sleeping"
+  exec sleep infinity
 fi
 
-if [ "${START_DOCKER}" != "true" ]; then
-  sleep infinity
+# ── Gate 2: dockerd binary exists ───────────────────────────────────────────
+if ! command -v dockerd >/dev/null 2>&1; then
+  echo "[svc-docker] ERROR: dockerd not installed. The Alpine 'docker' package (NOT 'docker-cli') provides it — add it to the apk install block in core/docker/Dockerfile."
+  exec sleep infinity
 fi
 
+# ── Gate 3: privileged / CAP_SYS_ADMIN ──────────────────────────────────────
+# CapEff is a hex mask; CAP_SYS_ADMIN is bit 21 (0x200000). Privileged
+# containers have all caps (ffffffffff). If we don't have SYS_ADMIN we can't
+# mount cgroups or create network namespaces — no point starting dockerd.
+cap_eff_hex=$(awk '/^CapEff:/ {print $2}' /proc/self/status 2>/dev/null)
+if [ -z "${cap_eff_hex}" ]; then
+  echo "[svc-docker] ERROR: cannot read /proc/self/status — refusing to start dockerd"
+  exec sleep infinity
+fi
+# Convert to decimal and bit-test 0x200000 (CAP_SYS_ADMIN).
+if ! printf '%d\n' "0x${cap_eff_hex}" >/dev/null 2>&1; then
+  echo "[svc-docker] ERROR: malformed CapEff=${cap_eff_hex} — refusing to start"
+  exec sleep infinity
+fi
+cap_eff_dec=$(printf '%d' "0x${cap_eff_hex}")
+if [ $(( cap_eff_dec & 0x200000 )) -eq 0 ]; then
+  echo "[svc-docker] ERROR: container lacks CAP_SYS_ADMIN (CapEff=${cap_eff_hex})."
+  echo "[svc-docker] Run with 'privileged: true' in docker-compose.yml to enable DinD."
+  exec sleep infinity
+fi
+
+echo "[svc-docker] privileged OK (CapEff=${cap_eff_hex})"
+
+# Legacy DinD convention: signals to dockerd that it's running inside a container.
 export container=docker
 
-# Mount securityfs for AppArmor (same as dind, harmless if already mounted)
-if [ -d /sys/kernel/security ] && ! mountpoint -q /sys/kernel/security; then
+# ── Mount securityfs for AppArmor (harmless if already mounted) ─────────────
+if [ -d /sys/kernel/security ] && ! mountpoint -q /sys/kernel/security 2>/dev/null; then
   mount -t securityfs none /sys/kernel/security 2>/dev/null || true
 fi
 
-# cgroup v2: enable nesting (one-shot, NOT an infinite retry loop)
+# ── cgroup v2 nesting (one-shot, not an infinite loop) ──────────────────────
 if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
   mkdir -p /sys/fs/cgroup/init
-  # Move existing processes to /init — try a few times, then move on
-  for _attempt in 1 2 3 4 5; do
+  for attempt in 1 2 3 4 5; do
     xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || true
-    # Enable subtree controllers
     if sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
         > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null; then
+      echo "[svc-docker] cgroup v2 subtree_control configured (attempt ${attempt})"
       break
     fi
-    sleep 0.5
+    sleep 0.3
   done
 fi
 
-# Shared mount propagation (same as dind)
+# ── Shared mount propagation (required by dockerd for bind mounts) ──────────
 mount --make-rshared / 2>/dev/null || true
 
-# Start dockerd directly — no dind wrapper, no /tmp wipe
-exec dockerd --host=unix:///var/run/docker.sock -l error
+# ── Storage driver selection ────────────────────────────────────────────────
+# Inspect the FS type of /var/lib/docker. If it's a native filesystem
+# (ext4/xfs/btrfs), overlay2 is fine. If it's overlayfs (meaning the user did
+# not mount a named volume), overlay2 will fail with
+# "backing filesystem is unsupported". Fall back to fuse-overlayfs then vfs.
+mkdir -p /var/lib/docker
+
+detect_storage_driver() {
+  local fstype
+  fstype=$(stat -f -c '%T' /var/lib/docker 2>/dev/null || echo "unknown")
+  case "${fstype}" in
+    ext2/ext3|xfs|btrfs|zfs|tmpfs)
+      echo "overlay2"
+      ;;
+    overlayfs|overlay)
+      if command -v fuse-overlayfs >/dev/null 2>&1 && [ -c /dev/fuse ]; then
+        echo "fuse-overlayfs"
+      else
+        echo "vfs"
+      fi
+      ;;
+    *)
+      # Unknown fstype — try overlay2 first, dockerd will error-out loud and
+      # the finish script will surface it. Safer than silently picking vfs.
+      echo "overlay2"
+      ;;
+  esac
+}
+
+STORAGE_DRIVER="${DOCKER_STORAGE_DRIVER:-$(detect_storage_driver)}"
+DATA_ROOT="${DOCKER_DATA_ROOT:-/var/lib/docker}"
+echo "[svc-docker] storage-driver=${STORAGE_DRIVER} data-root=${DATA_ROOT} fstype=$(stat -f -c '%T' "${DATA_ROOT}" 2>/dev/null || echo unknown)"
+
+# ── Write daemon.json ───────────────────────────────────────────────────────
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<JSON
+{
+  "storage-driver": "${STORAGE_DRIVER}",
+  "data-root": "${DATA_ROOT}",
+  "hosts": ["unix:///var/run/docker.sock"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "iptables": true,
+  "live-restore": false
+}
+JSON
+
+# ── Rotate previous dockerd log so `finish` can surface the relevant run ──
+mkdir -p /var/log
+if [ -f /var/log/dockerd.log ]; then
+  mv /var/log/dockerd.log /var/log/dockerd.log.prev 2>/dev/null || true
+fi
+
+# dockerd honors daemon.json's "hosts" OR the -H flag but NOT both — we use
+# daemon.json, so pass NO -H here. Redirect output (NOT piped — piping would
+# make s6 supervise the shell instead of dockerd, breaking signal delivery).
+exec dockerd --config-file=/etc/docker/daemon.json >>/var/log/dockerd.log 2>&1

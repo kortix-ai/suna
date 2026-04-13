@@ -46,6 +46,7 @@ import * as Haptics from 'expo-haptics';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
 import { useThemeColors } from '@/lib/theme-colors';
+import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
 import {
   useScheduledTasks,
@@ -238,11 +239,12 @@ function ScheduledTasksContent() {
     [],
   );
 
-  // ── Search Bar ──
+  // ── Search Bar + Add Button ──
   const SearchBar = (
-    <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8, gap: 10 }}>
       <View
         style={{
+          flex: 1,
           flexDirection: 'row',
           alignItems: 'center',
           backgroundColor: inputBg,
@@ -274,6 +276,16 @@ function ScheduledTasksContent() {
           </Pressable>
         )}
       </View>
+      <Pressable
+        onPress={handleOpenCreate}
+        style={{
+          width: 42, height: 42, borderRadius: 12,
+          backgroundColor: theme.primary,
+          alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <Plus size={20} color={theme.primaryForeground} />
+      </Pressable>
     </View>
   );
 
@@ -332,29 +344,6 @@ function ScheduledTasksContent() {
           )
         }
       />
-
-      {/* FAB — Create Task */}
-      <Pressable
-        onPress={handleOpenCreate}
-        style={{
-          position: 'absolute',
-          right: 20,
-          bottom: insets.bottom + 20,
-          width: 52,
-          height: 52,
-          borderRadius: 16,
-          backgroundColor: theme.primary,
-          alignItems: 'center',
-          justifyContent: 'center',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.2,
-          shadowRadius: 8,
-          elevation: 6,
-        }}
-      >
-        <Plus size={24} color={theme.primaryForeground} />
-      </Pressable>
 
       {/* Detail Sheet */}
       <TaskDetailSheet
@@ -987,6 +976,7 @@ function CreateTaskSheet({
   renderBackdrop: (props: any) => React.ReactElement;
 }) {
   const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetBottomPadding();
   const createTask = useCreateScheduledTask();
 
   const fg = isDark ? '#f8f8f8' : '#121215';
@@ -1118,7 +1108,7 @@ function CreateTaskSheet({
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: 8,
-          paddingBottom: Math.max(insets.bottom, 20) + 16,
+          paddingBottom: sheetPadding,
         }}
         keyboardShouldPersistTaps="handled"
       >

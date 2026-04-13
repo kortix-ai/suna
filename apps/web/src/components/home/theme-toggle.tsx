@@ -42,7 +42,7 @@ export function ThemeToggle({ variant = 'icon' }: ThemeToggleProps) {
         <Select value={theme} onValueChange={setTheme}>
           <SelectTrigger
             size="sm"
-            className="h-7 px-2.5 w-fit min-w-[72px] border-0 bg-transparent hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 text-muted-foreground/60 transition-colors duration-200 shadow-none"
+            className="h-7 px-2.5 w-fit min-w-[72px] border-0 bg-transparent hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 text-muted-foreground transition-colors duration-200 shadow-none"
           >
             <div className="flex items-center gap-1.5">
               {resolvedTheme === 'dark' ? (

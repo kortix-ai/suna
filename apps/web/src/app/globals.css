@@ -341,9 +341,9 @@
     opacity: 0;}}}
 
 :root {
-  --background: oklch(0.985 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.99 0 0); /* Slightly off-white for light mode card contrast */
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
@@ -366,18 +366,18 @@
   --chart-4: oklch(0.8 0 0);
   --chart-5: oklch(0.45 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.965 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent: oklch(0.91 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.885 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 }
 
 .dark {
-  --background: oklch(0.18 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.94 0 0);
   --card: oklch(0.21 0 0);
   --card-foreground: oklch(0.94 0 0);
@@ -401,7 +401,7 @@
   --chart-3: oklch(0.45 0 0);
   --chart-4: oklch(0.35 0 0);
   --chart-5: oklch(0.55 0.01 260);
-  --sidebar: oklch(0.18 0 0);
+  --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.94 0 0);
   --sidebar-primary: oklch(0.55 0.01 260);
   --sidebar-primary-foreground: oklch(0.94 0 0);
@@ -423,9 +423,9 @@
 /* ──────────── Graphite (Default) ──────────── */
 /* Pure B&W, zero accent. Uses :root/.dark as base — this class is a mirror. */
 .theme-graphite {
-  --background: oklch(0.985 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.99 0 0); /* Slightly off-white for light mode card contrast */
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
@@ -447,17 +447,17 @@
   --chart-3: oklch(0.65 0 0);
   --chart-4: oklch(0.8 0 0);
   --chart-5: oklch(0.45 0 0);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.965 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent: oklch(0.91 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.885 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 }
 .dark.theme-graphite {
-  --background: oklch(0.18 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.94 0 0);
   --card: oklch(0.21 0 0);
   --card-foreground: oklch(0.94 0 0);
@@ -481,7 +481,7 @@
   --chart-3: oklch(0.45 0 0);
   --chart-4: oklch(0.35 0 0);
   --chart-5: oklch(0.55 0.01 260);
-  --sidebar: oklch(0.18 0 0);
+  --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.94 0 0);
   --sidebar-primary: oklch(0.55 0.01 260);
   --sidebar-primary-foreground: oklch(0.94 0 0);
@@ -494,9 +494,9 @@
 /* ──────────── Teal ──────────── */
 /* Black & white + turquoise accent (#22808D → oklch hue ~195) */
 .theme-teal {
-  --background: oklch(0.985 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.99 0 0); /* Slightly off-white for light mode card contrast */
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
@@ -518,17 +518,17 @@
   --chart-3: oklch(0.62 0.08 195);
   --chart-4: oklch(0.75 0.05 195);
   --chart-5: oklch(0.35 0.07 195);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.965 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.52 0.115 195);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent: oklch(0.91 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.885 0 0);
   --sidebar-ring: oklch(0.52 0.115 195);
 }
 .dark.theme-teal {
-  --background: oklch(0.18 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.94 0 0);
   --card: oklch(0.21 0 0);
   --card-foreground: oklch(0.94 0 0);
@@ -552,7 +552,7 @@
   --chart-3: oklch(0.45 0.08 195);
   --chart-4: oklch(0.82 0.06 195);
   --chart-5: oklch(0.52 0.09 195);
-  --sidebar: oklch(0.18 0 0);
+  --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.94 0 0);
   --sidebar-primary: oklch(0.72 0.12 195);
   --sidebar-primary-foreground: oklch(0.18 0 0);
@@ -565,9 +565,9 @@
 /* ──────────── Amber ──────────── */
 /* Black & white + golden yellow accent (#D4A017 → oklch hue ~84) */
 .theme-amber {
-  --background: oklch(0.985 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.99 0 0); /* Slightly off-white for light mode card contrast */
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
@@ -589,17 +589,17 @@
   --chart-3: oklch(0.65 0.09 84);
   --chart-4: oklch(0.78 0.06 84);
   --chart-5: oklch(0.38 0.08 84);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.965 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.55 0.145 84);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent: oklch(0.91 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.885 0 0);
   --sidebar-ring: oklch(0.55 0.145 84);
 }
 .dark.theme-amber {
-  --background: oklch(0.18 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.94 0 0);
   --card: oklch(0.21 0 0);
   --card-foreground: oklch(0.94 0 0);
@@ -623,7 +623,7 @@
   --chart-3: oklch(0.50 0.10 84);
   --chart-4: oklch(0.85 0.08 84);
   --chart-5: oklch(0.55 0.11 84);
-  --sidebar: oklch(0.18 0 0);
+  --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.94 0 0);
   --sidebar-primary: oklch(0.78 0.15 84);
   --sidebar-primary-foreground: oklch(0.18 0 0);
@@ -636,9 +636,9 @@
 /* ──────────── Rose ──────────── */
 /* Black & white + soft rose/pink accent (#D14D72 → oklch hue ~360/0) */
 .theme-rose {
-  --background: oklch(0.985 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.99 0 0); /* Slightly off-white for light mode card contrast */
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
@@ -660,17 +660,17 @@
   --chart-3: oklch(0.65 0.12 360);
   --chart-4: oklch(0.78 0.07 360);
   --chart-5: oklch(0.38 0.10 360);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.965 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.55 0.19 360);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent: oklch(0.91 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.885 0 0);
   --sidebar-ring: oklch(0.55 0.19 360);
 }
 .dark.theme-rose {
-  --background: oklch(0.18 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.94 0 0);
   --card: oklch(0.21 0 0);
   --card-foreground: oklch(0.94 0 0);
@@ -694,7 +694,7 @@
   --chart-3: oklch(0.45 0.11 360);
   --chart-4: oklch(0.82 0.08 360);
   --chart-5: oklch(0.52 0.13 360);
-  --sidebar: oklch(0.18 0 0);
+  --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.94 0 0);
   --sidebar-primary: oklch(0.72 0.17 360);
   --sidebar-primary-foreground: oklch(0.18 0 0);
@@ -707,9 +707,9 @@
 /* ──────────── Violet ──────────── */
 /* Black & white + electric purple accent (#7C5CFC → oklch hue ~292) */
 .theme-violet {
-  --background: oklch(0.985 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.99 0 0); /* Slightly off-white for light mode card contrast */
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
@@ -731,17 +731,17 @@
   --chart-3: oklch(0.62 0.13 292);
   --chart-4: oklch(0.75 0.08 292);
   --chart-5: oklch(0.35 0.12 292);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.965 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.52 0.20 292);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent: oklch(0.91 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.885 0 0);
   --sidebar-ring: oklch(0.52 0.20 292);
 }
 .dark.theme-violet {
-  --background: oklch(0.18 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.94 0 0);
   --card: oklch(0.21 0 0);
   --card-foreground: oklch(0.94 0 0);
@@ -765,7 +765,7 @@
   --chart-3: oklch(0.45 0.12 292);
   --chart-4: oklch(0.82 0.08 292);
   --chart-5: oklch(0.52 0.14 292);
-  --sidebar: oklch(0.18 0 0);
+  --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.94 0 0);
   --sidebar-primary: oklch(0.72 0.18 292);
   --sidebar-primary-foreground: oklch(0.18 0 0);
@@ -778,9 +778,9 @@
 /* ──────────── Emerald ──────────── */
 /* Black & white + rich green accent (#2D9F6F → oklch hue ~162) */
 .theme-emerald {
-  --background: oklch(0.985 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.99 0 0); /* Slightly off-white for light mode card contrast */
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
@@ -802,17 +802,17 @@
   --chart-3: oklch(0.65 0.09 162);
   --chart-4: oklch(0.78 0.06 162);
   --chart-5: oklch(0.38 0.08 162);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.965 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.55 0.14 162);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent: oklch(0.91 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.885 0 0);
   --sidebar-ring: oklch(0.55 0.14 162);
 }
 .dark.theme-emerald {
-  --background: oklch(0.18 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.94 0 0);
   --card: oklch(0.21 0 0);
   --card-foreground: oklch(0.94 0 0);
@@ -836,7 +836,7 @@
   --chart-3: oklch(0.45 0.09 162);
   --chart-4: oklch(0.82 0.06 162);
   --chart-5: oklch(0.52 0.10 162);
-  --sidebar: oklch(0.18 0 0);
+  --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.94 0 0);
   --sidebar-primary: oklch(0.72 0.13 162);
   --sidebar-primary-foreground: oklch(0.18 0 0);
@@ -850,9 +850,9 @@
 /* Black & white + FULL BRIGHTNESS neon yellow (#E8E000). */
 /* Both modes: screaming electric yellow. Dark text on light primary. */
 .theme-neon {
-  --background: oklch(0.985 0 0);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.99 0 0); /* Slightly off-white for light mode card contrast */
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
@@ -874,17 +874,17 @@
   --chart-3: oklch(0.70 0.16 110);
   --chart-4: oklch(0.95 0.14 110);
   --chart-5: oklch(0.78 0.22 110);
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.965 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.91 0.21 110);
   --sidebar-primary-foreground: oklch(0.12 0 0);
-  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent: oklch(0.91 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.885 0 0);
   --sidebar-ring: oklch(0.91 0.21 110);
 }
 .dark.theme-neon {
-  --background: oklch(0.18 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.94 0 0);
   --card: oklch(0.21 0 0);
   --card-foreground: oklch(0.94 0 0);
@@ -908,7 +908,7 @@
   --chart-3: oklch(0.70 0.16 110);
   --chart-4: oklch(0.88 0.14 110);
   --chart-5: oklch(0.78 0.20 110);
-  --sidebar: oklch(0.18 0 0);
+  --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.94 0 0);
   --sidebar-primary: oklch(0.93 0.22 110);
   --sidebar-primary-foreground: oklch(0.10 0 0);
@@ -979,6 +979,16 @@
 }
 
 /* Legacy chat-markdown styles removed - use UnifiedMarkdown component instead */
+
+/* Fix Shiki code block rendering: the global * { border-border } rule gives every
+   .line span a solid border-style. Combined with display:contents on Shiki wrappers,
+   browsers can render thin artifact lines between code lines in large blocks. */
+.kortix-markdown pre .line,
+.kortix-markdown pre code span {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
 
 .bg-pattern-grid {
   background-image: 
@@ -1344,10 +1354,10 @@
 
 @keyframes shimmer-text {
   0% {
-    background-position: 100% 50%;
+    background-position: -200% center;
   }
   100% {
-    background-position: -100% 50%;
+    background-position: 200% center;
   }
 }
 
@@ -1429,7 +1439,7 @@
 }
 
 @keyframes blur-fade-in {
-  0% {
+  from {
     opacity: 0;
     filter: blur(8px);
     transform: translateY(2px);
@@ -1439,7 +1449,7 @@
     filter: blur(3px);
     transform: translateY(1px);
   }
-  100% {
+  to {
     opacity: 1;
     filter: blur(0);
     transform: translateY(0);
@@ -1637,6 +1647,15 @@
 }
 .animate-instance-fade-in {
   animation: instance-fade-in 1s ease-out forwards;
+}
+
+/* ─── Connecting screen: sliding progress line ─── */
+@keyframes connect-progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.animate-connect-progress {
+  animation: connect-progress-slide 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 /* ─── Skeleton shimmer animations ─── */

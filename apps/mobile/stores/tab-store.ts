@@ -39,6 +39,7 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:browser':           { id: 'page:browser',           label: 'Browser',           icon: 'compass-outline' },
   'page:agent-browser':     { id: 'page:agent-browser',     label: 'Agent Browser',     icon: 'globe-outline' },
   'page:updates':           { id: 'page:updates',           label: 'Updates',           icon: 'arrow-down-circle-outline' },
+  'page:projects':          { id: 'page:projects',          label: 'Projects',          icon: 'folder-outline' },
 };
 
 // ---------------------------------------------------------------------------
@@ -336,6 +337,26 @@ export const useTabStore = create<TabState>()(
         historyIndex: state.historyIndex,
         tabStateById: state.tabStateById,
       }),
+      // Guard rehydration against corrupted AsyncStorage data.
+      // If any persisted field is missing or the wrong type, reset it to a safe default
+      // to prevent ".filter is not a function" / "Cannot read properties of undefined" crashes.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        state.openTabIds = Array.isArray(state.openTabIds) ? state.openTabIds : [];
+        state.openPageIds = Array.isArray(state.openPageIds) ? state.openPageIds : [];
+        state.openTabOrder = Array.isArray(state.openTabOrder) ? state.openTabOrder : [];
+        state.sessionHistory = Array.isArray(state.sessionHistory) ? state.sessionHistory : [];
+        state.historyIndex = typeof state.historyIndex === 'number' ? state.historyIndex : -1;
+        state.tabStateById = state.tabStateById && typeof state.tabStateById === 'object'
+          ? state.tabStateById
+          : {};
+        if (state.activeSessionId !== null && typeof state.activeSessionId !== 'string') {
+          state.activeSessionId = null;
+        }
+        if (state.activePageId !== null && typeof state.activePageId !== 'string') {
+          state.activePageId = null;
+        }
+      },
     },
   ),
 );

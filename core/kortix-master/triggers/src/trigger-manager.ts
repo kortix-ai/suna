@@ -74,7 +74,29 @@ export class TriggerManager {
 
     // Start runtimes
     this.rebuildRuntime()
-    await this.webhookServer.start()
+    try {
+      await this.webhookServer.start()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const isAddrInUse = msg.includes("EADDRINUSE") || msg.includes("address already in use") || msg.includes("Failed to start server")
+      if (isAddrInUse) {
+        const port = this.options.webhookPort ?? 8099
+        try {
+          const res = await fetch(`http://127.0.0.1:${port}/health`)
+          if (res.ok) {
+            this.log("info", `[triggers] Reusing existing webhook server on port ${port}`)
+          } else {
+            throw err
+          }
+        } catch {
+          this.started = false
+          throw err
+        }
+      } else {
+        this.started = false
+        throw err
+      }
+    }
     this.yamlSync.startWatching()
 
     this.log("info", `[triggers] Started: ${syncResult.total} triggers, ${this.cronJobs.size} cron jobs`)

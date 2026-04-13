@@ -204,6 +204,38 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'validate_slide':
       return 'presentation';
 
+    // Session tools
+    case 'session_spawn':
+    case 'session-spawn':
+    case 'session_start_background':
+    case 'session-start-background':
+      return 'computer';
+    case 'session_read':
+    case 'session-read':
+      return 'file-text';
+    case 'session_get':
+    case 'session-get':
+      return 'book-open';
+    case 'session_search':
+    case 'session-search':
+      return 'search';
+    case 'session_message':
+    case 'session-message':
+      return 'network';
+    case 'session_lineage':
+    case 'session-lineage':
+      return 'list';
+    case 'session_stats':
+    case 'session-stats':
+      return 'list';
+    case 'session_list':
+    case 'session-list':
+    case 'session_list_background':
+    case 'session-list-background':
+    case 'session_list_spawned':
+    case 'session-list-spawned':
+      return 'list';
+
     // Session context (cross-session references)
     case 'session_context':
     case 'session-context':
@@ -237,6 +269,26 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'get-paper-citations':
     case 'get-paper-references':
       return 'book-open';
+
+    // Trigger tools (Kortix trigger management)
+    case 'triggers':
+    case 'trigger_create':
+    case 'trigger-create':
+    case 'trigger_list':
+    case 'trigger-list':
+    case 'trigger_get':
+    case 'trigger-get':
+    case 'trigger_delete':
+    case 'trigger-delete':
+    case 'trigger_update':
+    case 'trigger-update':
+    case 'trigger_test':
+    case 'trigger-test':
+    case 'trigger_pause':
+    case 'trigger-pause':
+    case 'trigger_resume':
+    case 'trigger-resume':
+      return 'clock';
 
     // MCP tools
     default:

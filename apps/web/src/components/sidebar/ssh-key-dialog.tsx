@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import { setupSSH, type SSHSetupResult } from '@/lib/platform-client';
+import { getSSHConnection, setupSSH, type SSHConnectionInfo, type SSHSetupResult } from '@/lib/platform-client';
 import { getActiveInstanceId } from '@/stores/server-store';
 import { toast } from '@/lib/toast';
 
@@ -37,21 +37,17 @@ const SSH_META_STORAGE_KEY = 'kortix:ssh-access-meta:v1';
 
 type SSHAccessMeta = {
   ssh_command: string;
+  reconnect_command: string;
+  ssh_config_entry: string;
+  ssh_config_command: string;
   host: string;
   port: number;
   username: string;
+  provider: string;
+  key_name: string;
+  host_alias: string;
   updatedAt: number;
 };
-
-/* ─── Derive machine-unique identifiers from host IP ─────────────────────── */
-
-function deriveKeyName(host: string) {
-  return `kortix_${host.replace(/\./g, '-')}`;
-}
-
-function deriveHostAlias(host: string) {
-  return `kortix-${host.replace(/\./g, '-')}`;
-}
 
 /* ─── Copy hook ──────────────────────────────────────────────────────────── */
 
@@ -159,17 +155,10 @@ export function SSHResultView({ sshResult, copiedField, onCopy, onRegenerate, is
   isGenerating: boolean;
   onDownloadKey: () => void;
 }) {
-  const keyName = deriveKeyName(sshResult.host);
-  const hostAlias = deriveHostAlias(sshResult.host);
-  const pk = sshResult.private_key.trim();
-
-  const setupCmd = `mkdir -p ~/.ssh && cat > ~/.ssh/${keyName} << 'KORTIX_KEY'\n${pk}\nKORTIX_KEY\nchmod 600 ~/.ssh/${keyName} && ssh -i ~/.ssh/${keyName} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p ${sshResult.port} ${sshResult.username}@${sshResult.host}`;
-
-  const reconnectCmd = `ssh -i ~/.ssh/${keyName} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p ${sshResult.port} ${sshResult.username}@${sshResult.host}`;
-
-  const sshConfigCmd = `grep -q "Host ${hostAlias}" ~/.ssh/config 2>/dev/null || cat >> ~/.ssh/config << 'EOF'\n\nHost ${hostAlias}\n  HostName ${sshResult.host}\n  Port ${sshResult.port}\n  User ${sshResult.username}\n  IdentityFile ~/.ssh/${keyName}\n  StrictHostKeyChecking no\nEOF`;
-
-  const agentPrompt = `Set up SSH access to my remote Kortix instance and connect via Remote-SSH.\n\n1. Save the SSH key:\n${setupCmd}\n\n2. Add to ~/.ssh/config:\nHost ${hostAlias}\n  HostName ${sshResult.host}\n  Port ${sshResult.port}\n  User ${sshResult.username}\n  IdentityFile ~/.ssh/${keyName}\n  StrictHostKeyChecking no\n\n3. Connect via Remote-SSH to host "${hostAlias}"`;
+  const setupCmd = sshResult.setup_command;
+  const reconnectCmd = sshResult.reconnect_command;
+  const sshConfigCmd = sshResult.ssh_config_command;
+  const agentPrompt = sshResult.agent_prompt;
 
   return (
     <div className="flex flex-col gap-3">
@@ -243,7 +232,7 @@ export function SSHResultView({ sshResult, copiedField, onCopy, onRegenerate, is
               {' → '}
               <span className="text-foreground/70">Remote-SSH: Connect to Host</span>
               {' → '}
-              <code className="px-1 py-0.5 rounded-sm bg-muted border border-border/50 font-mono text-[10px] text-foreground/80">{hostAlias}</code>
+              <code className="px-1 py-0.5 rounded-sm bg-muted border border-border/50 font-mono text-[10px] text-foreground/80">{sshResult.host_alias}</code>
             </p>
           </div>
 
@@ -302,6 +291,14 @@ export function SSHKeyDialog({ open, onOpenChange }: SSHKeyDialogProps) {
         setSSHMeta(parsed);
       }
     } catch {}
+
+    const instanceId = getActiveInstanceId();
+    getSSHConnection(instanceId).then((connection: SSHConnectionInfo) => {
+      setSSHMeta((prev) => ({
+        ...connection,
+        updatedAt: prev?.updatedAt || Date.now(),
+      }));
+    }).catch(() => {});
   }, [open]);
 
   const handleGenerate = useCallback(async () => {
@@ -313,10 +310,7 @@ export function SSHKeyDialog({ open, onOpenChange }: SSHKeyDialogProps) {
       const result = await setupSSH(instanceId);
       setSSHResult(result);
       const meta: SSHAccessMeta = {
-        ssh_command: result.ssh_command,
-        host: result.host,
-        port: result.port,
-        username: result.username,
+        ...result,
         updatedAt: Date.now(),
       };
       setSSHMeta(meta);
@@ -341,17 +335,16 @@ export function SSHKeyDialog({ open, onOpenChange }: SSHKeyDialogProps) {
 
   function savePrivateKey() {
     if (!sshResult) return;
-    const keyName = deriveKeyName(sshResult.host);
     const blob = new Blob([sshResult.private_key], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = keyName;
+    a.download = sshResult.key_name;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast.success(`Key downloaded — run: chmod 600 ~/Downloads/${keyName}`);
+    toast.success(`Key downloaded — run: chmod 600 ~/Downloads/${sshResult.key_name}`);
   }
 
   const handleOpenChange = useCallback((next: boolean) => {
@@ -399,7 +392,7 @@ export function SSHKeyDialog({ open, onOpenChange }: SSHKeyDialogProps) {
               )}
             </Button>
             <p className="text-[10px] text-muted-foreground/60 text-center">
-              Generates an ed25519 keypair unique to this machine and configures SSH access.
+              Generates a fresh ed25519 keypair and configures SSH access.
             </p>
 
             {sshMeta && (

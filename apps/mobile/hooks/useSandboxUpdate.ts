@@ -9,6 +9,7 @@ import {
   type SandboxUpdateStatus,
   type UpdatePhase,
 } from '@/lib/platform/client';
+import { getAuthToken } from '@/api/config';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 
 function isNewerVersion(current: string, latest: string): boolean {
@@ -50,7 +51,10 @@ const PHASE_PROGRESS: Record<string, number> = {
 const POLL_INTERVAL_MS = 2000;
 const TERMINAL_PHASES: UpdatePhase[] = ['complete', 'failed', 'idle'];
 
-export function useSandboxUpdate(currentVersion: string | null | undefined) {
+export function useSandboxUpdate(
+  currentVersion: string | null | undefined,
+  onVersionChanged?: (newVersion: string) => void,
+) {
   const queryClient = useQueryClient();
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [updateStatus, setUpdateStatus] = useState<SandboxUpdateStatus | null>(null);
@@ -84,12 +88,23 @@ export function useSandboxUpdate(currentVersion: string | null | undefined) {
         setUpdateStatus(status);
         if (TERMINAL_PHASES.includes(status.phase)) {
           stopPolling();
+          // On successful update, invalidate all version-related queries
+          if (status.phase === 'complete') {
+            queryClient.invalidateQueries({ queryKey: ['sandbox', 'latest-version'] });
+            queryClient.invalidateQueries({ queryKey: ['sandbox', 'versions'] });
+            queryClient.invalidateQueries({ queryKey: ['sandbox', 'changelog'] });
+            // Notify parent to re-fetch current version
+            const newVer = status.currentVersion || latestVersion;
+            if (newVer && onVersionChanged) {
+              onVersionChanged(newVer);
+            }
+          }
         }
       } catch {
         // ignore polling errors
       }
     }, POLL_INTERVAL_MS);
-  }, [stopPolling]);
+  }, [stopPolling, queryClient, latestVersion, onVersionChanged]);
 
   useEffect(() => () => stopPolling(), [stopPolling]);
 
@@ -146,6 +161,7 @@ export function useSandboxUpdate(currentVersion: string | null | undefined) {
 export function useGlobalSandboxUpdate() {
   const { sandboxId, sandboxUrl } = useSandboxContext();
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+  const [fetchSeq, setFetchSeq] = useState(0);
 
   // Fetch current version from health endpoint
   useEffect(() => {
@@ -153,7 +169,10 @@ export function useGlobalSandboxUpdate() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${sandboxUrl}/kortix/health`);
+        const token = await getAuthToken();
+        const headers: Record<string, string> = {};
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const res = await fetch(`${sandboxUrl}/kortix/health`, { headers });
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled && data?.version) {
@@ -162,7 +181,14 @@ export function useGlobalSandboxUpdate() {
       } catch {}
     })();
     return () => { cancelled = true; };
-  }, [sandboxUrl]);
+  }, [sandboxUrl, fetchSeq]);
 
-  return useSandboxUpdate(currentVersion);
+  // Callback: re-fetch health to pick up the new version after update
+  const handleVersionChanged = useCallback((newVersion: string) => {
+    setCurrentVersion(newVersion);
+    // Also trigger a re-fetch from health to get the authoritative version
+    setFetchSeq((s) => s + 1);
+  }, []);
+
+  return useSandboxUpdate(currentVersion, handleVersionChanged);
 }

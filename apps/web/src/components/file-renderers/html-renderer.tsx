@@ -73,9 +73,9 @@ export function HtmlRenderer({
       return previewUrl;
     }
 
-    // Construct preview URL if we have both sandbox URL and a valid file path
-    if (project?.sandbox?.sandbox_url && filePath) {
-      return constructHtmlPreviewUrl(project.sandbox.sandbox_url, filePath, subdomainOpts);
+    // Construct preview URL if we have a valid file path
+    if (filePath) {
+      return constructHtmlPreviewUrl(filePath, subdomainOpts);
     }
 
     // Fall back to blob URL if available

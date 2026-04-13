@@ -37,6 +37,12 @@ interface ModelStore {
   selectedModel?: Record<string, ModelKey | undefined>;
   /** Per-session agent name — keyed by sessionId so each session remembers its own agent */
   sessionAgentName?: Record<string, string | undefined>;
+  /**
+   * Globally last-used agent name. Persisted so the dashboard (no sessionId) and
+   * freshly-created sessions inherit the agent the user most recently picked,
+   * instead of resetting to the first agent in the list on every reload.
+   */
+  lastAgentName?: string;
   /** Per-session model selection — keyed by sessionId so each session remembers its own model across reloads */
   sessionModel?: Record<string, ModelKey | undefined>;
   /**
@@ -307,6 +313,17 @@ export function useModelStore(allModels: FlatModel[]) {
     setStore({ ...s, sessionAgentName: next });
   }, []);
 
+  // Globally last-used agent — fallback for dashboard (no sessionId) and a seed
+  // for brand-new sessions. Written alongside the per-session slot so that
+  // picking an agent anywhere sticks as the "last used" default.
+  const lastAgentName = useMemo(() => store.lastAgentName, [store.lastAgentName]);
+
+  const setLastAgentName = useCallback((name: string | undefined) => {
+    const s = getStore();
+    if (s.lastAgentName === name) return;
+    setStore({ ...s, lastAgentName: name });
+  }, []);
+
   // Per-session model selection (survives reload — user's explicit choice for this session)
   const getSessionModel = useCallback(
     (sessionId: string): ModelKey | undefined => store.sessionModel?.[sessionId],
@@ -353,6 +370,8 @@ export function useModelStore(allModels: FlatModel[]) {
     setSelectedModel,
     getSessionAgentName,
     setSessionAgentName,
+    lastAgentName,
+    setLastAgentName,
     getSessionModel,
     setSessionModel,
     globalDefault,

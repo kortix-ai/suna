@@ -27,7 +27,7 @@ import {
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
-import { Infinity as InfinityIcon, Slash as SlashIcon, Info as InfoIcon, X as XIcon } from 'lucide-react-native';
+import { Infinity as InfinityIcon, Slash as SlashIcon, Info as InfoIcon, X as XIcon, Plus as PlusIcon, Mic as MicIcon } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -36,6 +36,7 @@ import { getAuthToken } from '@/api/config';
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
 import { MentionSuggestions } from './MentionSuggestions';
+import { AudioWaveform } from '@/components/attachments/AudioWaveform';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
 import { Text as RNText } from 'react-native';
 import { useThemeColors } from '@/lib/theme-colors';
@@ -65,7 +66,7 @@ export type { TrackedMention } from './useMentions';
 
 // ─── AutoContinue configuration (shared with frontend) ────────────────────────
 
-export type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3' | 'orchestrate';
+export type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3';
 
 interface AutoContinueAlgorithm {
   id: AutoContinueMode;
@@ -159,24 +160,6 @@ const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
     howItWorks:
       'Uses five entropy-phased stages: EXPAND (diverge problem framings), BRANCH (crystallize distinct candidates), ATTACK (candidates cross-attack), RANK (score + pick one path), COMPRESS (execute winner with TDD). Phase markers ensure it does not converge early.',
   },
-  {
-    id: 'orchestrate',
-    label: 'Orchestrate',
-    role: 'Spawner',
-    description: 'Multi-session — parallel workers',
-    commandName: 'orchestrate',
-    bestFor: 'Large tasks that can be parallelized across independent sub-tasks',
-    strengths: [
-      'Parallel execution across multiple sessions',
-      'Great for large codebases with independent modules',
-    ],
-    weaknesses: [
-      'Coordination overhead between sessions',
-      'Not suitable for tightly coupled work',
-    ],
-    howItWorks:
-      'Spawns worker sessions that execute sub-tasks in parallel. The orchestrator decomposes the work, assigns tasks, aggregates results, and ensures alignment across workers.',
-  },
 ];
 
 const DEFAULT_AUTOCONTINUE_MODE: AutoContinueMode = 'autowork';
@@ -219,6 +202,18 @@ interface SessionChatInputProps {
   initialText?: string;
   /** Called whenever the input text changes — used to track current text externally */
   onTextChange?: (text: string) => void;
+  /** Audio recording */
+  onAudioRecord?: () => void;
+  onCancelRecording?: () => void;
+  onSendAudio?: () => void;
+  isRecording?: boolean;
+  recordingDuration?: number;
+  audioLevels?: number[];
+  isTranscribing?: boolean;
+  /** Transcribed text to inject into the input (set by parent after voice transcription) */
+  pendingTranscription?: string | null;
+  /** Called after the transcription text has been consumed */
+  onTranscriptionConsumed?: () => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -251,6 +246,15 @@ export function SessionChatInput({
   onboardingMode = false,
   initialText = '',
   onTextChange,
+  onAudioRecord,
+  onCancelRecording,
+  onSendAudio,
+  isRecording = false,
+  recordingDuration = 0,
+  audioLevels = [],
+  isTranscribing = false,
+  pendingTranscription,
+  onTranscriptionConsumed,
 }: SessionChatInputProps) {
   const [text, setText] = useState(initialText);
   const inputRef = useRef<TextInput>(null);
@@ -279,6 +283,16 @@ export function SessionChatInput({
 
   const [autocontinueMode, setAutocontinueMode] = useState<AutoContinueMode | null>(null);
   const [showAutoSheet, setShowAutoSheet] = useState(false);
+  const [showActionsSheet, setShowActionsSheet] = useState(false);
+
+  // ── Consume pending transcription from parent ────────────────────────────
+  useEffect(() => {
+    if (pendingTranscription) {
+      setText((prev) => prev ? `${prev} ${pendingTranscription}` : pendingTranscription);
+      onTranscriptionConsumed?.();
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [pendingTranscription, onTranscriptionConsumed]);
 
   // ── File attachments ─────────────────────────────────────────────────────
 
@@ -535,6 +549,14 @@ export function SessionChatInput({
 
   const canSend = (text.trim().length > 0 || attachedFiles.length > 0) && !disabled && !isUploading;
   const hasDraftText = text.trim().length > 0;
+  const hasContent = text.trim().length > 0 || attachedFiles.length > 0;
+
+  // Format duration as M:SS
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     onDraftChange?.(hasDraftText);
@@ -674,8 +696,8 @@ export function SessionChatInput({
         )}
 
         {/* Text input area */}
-        <View className="px-4 pt-1 pb-3">
-          <View className="rounded-2xl px-4 pt-2 pb-1 bg-card border border-border">
+        <View className="px-3 pt-1 pb-2">
+          <View className="rounded-2xl px-3 pt-2 pb-1 bg-card border border-border">
             {/* Queue / question slot — rendered above textarea */}
             {inputSlot}
 
@@ -800,186 +822,296 @@ export function SessionChatInput({
               </View>
             )}
 
-            {/* TextInput + animated placeholder wrapper */}
-            <View style={{ position: 'relative' }}>
-              {showAnimatedPlaceholder && (
-                <Animated.Text
-                  pointerEvents="none"
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: Platform.OS === 'ios' ? 6 : 4,
-                    fontSize: 16,
-                    color: isDark ? '#999999' : '#6e6e6e',
-                    opacity: fadeAnim,
-                    transform: [{ translateY: slideAnim }],
-                    zIndex: 1,
-                  }}
-                >
-                  {placeholderVariants[placeholderIndex]}
-                </Animated.Text>
-              )}
-              <TextInput
-                ref={inputRef}
-                value={text}
-                onChangeText={handleTextChange}
-                onSelectionChange={handleSelectionChange}
-                placeholder={stagedCommand ? 'Enter details and press send, or tap X to cancel' : ''}
-                placeholderTextColor={isDark ? '#555' : '#aaa'}
-                multiline
-                maxLength={10000}
-                style={{
-                  maxHeight: 120,
-                  fontSize: 16,
-                  lineHeight: 22,
-                  color: isDark ? '#F8F8F8' : '#121215',
-                  paddingTop: Platform.OS === 'ios' ? 6 : 4,
-                  paddingBottom: Platform.OS === 'ios' ? 6 : 4,
-                  minHeight: 36,
-                }}
-                onSubmitEditing={handleSubmit}
-                blurOnSubmit={false}
-                returnKeyType="default"
-                editable={!disabled}
-              />
-            </View>
-
-            {/* Toolbar row — inside the input card */}
-            <View className="flex-row items-center justify-between py-1.5">
-              {/* Left: attach + config + AutoContinue */}
-              <View className="flex-row items-center" style={{ gap: 6 }}>
-                {/* File attachment button */}
-                {!onboardingMode && (
+            {/* Recording mode — replaces text input while recording */}
+            {isRecording ? (
+              <View style={{ paddingVertical: 8 }}>
+                <View style={{ alignItems: 'center', justifyContent: 'center', height: 40 }}>
+                  <AudioWaveform isRecording={true} audioLevels={audioLevels} />
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6 }}>
                   <TouchableOpacity
-                    onPress={handleAttachPress}
+                    onPress={onCancelRecording}
                     activeOpacity={0.7}
-                    hitSlop={6}
+                    hitSlop={8}
                     style={{
-                      width: 28,
-                      height: 28,
+                      width: 26,
+                      height: 26,
                       alignItems: 'center',
                       justifyContent: 'center',
-                      borderRadius: 14,
+                      borderRadius: 13,
                       backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
                     }}
                   >
-                    <Ionicons
-                      name="attach"
-                      size={16}
-                      color={isDark ? '#a1a1aa' : '#71717a'}
-                    />
+                    <XIcon size={13} color={isDark ? '#d4d4d8' : '#52525b'} strokeWidth={2} />
                   </TouchableOpacity>
-                )}
-
-                {/* Config button — text only, no leading icon */}
-                <TouchableOpacity
-                  onPress={() => setShowConfigSheet(true)}
-                  activeOpacity={0.7}
-                  hitSlop={6}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: 8,
-                    paddingVertical: 5,
-                    borderRadius: 20,
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                  }}
-                >
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      fontSize: 12,
-                      fontFamily: 'Roobert-Medium',
-                      color: isDark ? '#a1a1aa' : '#71717a',
-                      maxWidth: 140,
-                    }}
-                  >
-                    {agent?.name || 'Agent'}
-                    {model?.modelName ? ` · ${model.modelName}` : ''}
-                    {variant ? ` · ${variantLabel}` : ''}
+                  <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.4)' }}>
+                    {isTranscribing ? 'Transcribing...' : formatDuration(recordingDuration)}
                   </Text>
-                  <Ionicons
-                    name="chevron-down"
-                    size={10}
-                    color={isDark ? '#52525b' : '#a1a1aa'}
-                    style={{ marginLeft: 3 }}
-                  />
-                </TouchableOpacity>
-
-                {/* AutoContinue — text only, no leading icon */}
-                {!onboardingMode && availableAutoAlgorithms.length > 0 && (
-                  <AutoContinueButton
-                    isDark={isDark}
-                    isActive={!!autocontinueMode}
-                    label={autocontinueMode ? (currentAutoAlgorithm?.label || 'Auto') : 'Off'}
-                    onPress={() => setShowAutoSheet(true)}
-                  />
-                )}
-              </View>
-
-              {/* Right: send/stop/queue */}
-              <View className="flex-row items-center" style={{ gap: 8 }}>
-                {isBusy && canSend && onEnqueue && (
                   <TouchableOpacity
-                    onPress={handleSubmit}
+                    onPress={onSendAudio}
                     activeOpacity={0.7}
                     style={{
-                      flexDirection: 'row',
+                      width: 26,
+                      height: 26,
                       alignItems: 'center',
-                      paddingHorizontal: 10,
-                      paddingVertical: 5,
-                      borderRadius: 20,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                      justifyContent: 'center',
+                      borderRadius: 13,
+                      backgroundColor: themeColors.primary,
                     }}
                   >
-                    <Ionicons
-                      name="list-outline"
-                      size={13}
-                      color={isDark ? '#a1a1aa' : '#71717a'}
-                      style={{ marginRight: 4 }}
-                    />
-                    <Text
+                    <Ionicons name="arrow-up" size={14} color={themeColors.primaryForeground} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                {/* TextInput + animated placeholder wrapper */}
+                <View style={{ position: 'relative' }}>
+                  {showAnimatedPlaceholder && (
+                    <Animated.Text
+                      pointerEvents="none"
                       style={{
-                        fontSize: 12,
-                        fontFamily: 'Roobert-Medium',
-                        color: isDark ? '#a1a1aa' : '#71717a',
+                        position: 'absolute',
+                        left: 0,
+                        top: Platform.OS === 'ios' ? 5 : 3,
+                        fontSize: 14,
+                        color: isDark ? '#999999' : '#6e6e6e',
+                        opacity: fadeAnim,
+                        transform: [{ translateY: slideAnim }],
+                        zIndex: 1,
                       }}
                     >
-                      Queue
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                {isBusy ? (
-                  <TouchableOpacity
-                    onPress={onStop}
-                    className="h-7 w-7 items-center justify-center rounded-full"
-                    style={{ backgroundColor: themeColors.primary }}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons name="stop" size={14} color={themeColors.primaryForeground} />
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    onPress={handleSubmit}
-                    disabled={!canSend}
-                    className="h-7 w-7 items-center justify-center rounded-full"
-                    style={{ backgroundColor: canSend ? themeColors.primary : isDark ? '#232324' : '#E5E7EB' }}
-                    activeOpacity={0.7}
-                  >
-                    <Ionicons
-                      name="arrow-up"
-                      size={16}
-                      color={canSend ? themeColors.primaryForeground : (isDark ? '#999999' : '#6e6e6e')}
-                    />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
+                      {placeholderVariants[placeholderIndex]}
+                    </Animated.Text>
+                  )}
+                  <TextInput
+                    ref={inputRef}
+                    value={text}
+                    onChangeText={handleTextChange}
+                    onSelectionChange={handleSelectionChange}
+                    placeholder={stagedCommand ? 'Enter details and press send, or tap X to cancel' : ''}
+                    placeholderTextColor={isDark ? '#555' : '#aaa'}
+                    multiline
+                    maxLength={10000}
+                    style={{
+                      maxHeight: 100,
+                      fontSize: 14,
+                      lineHeight: 20,
+                      color: isDark ? '#F8F8F8' : '#121215',
+                      paddingTop: Platform.OS === 'ios' ? 5 : 3,
+                      paddingBottom: Platform.OS === 'ios' ? 5 : 3,
+                      minHeight: 32,
+                    }}
+                    onSubmitEditing={handleSubmit}
+                    blurOnSubmit={false}
+                    returnKeyType="default"
+                    editable={!disabled && !isTranscribing}
+                  />
+                </View>
+
+                {/* Compact toolbar row — minimal like Slack */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, paddingBottom: 2 }}>
+                  {/* Left: "+" button + compact context indicators */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    {!onboardingMode && (
+                      <TouchableOpacity
+                        onPress={() => setShowActionsSheet(true)}
+                        activeOpacity={0.7}
+                        hitSlop={6}
+                        style={{
+                          width: 26,
+                          height: 26,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 13,
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                        }}
+                      >
+                        <PlusIcon size={14} color={isDark ? '#a1a1aa' : '#71717a'} strokeWidth={2} />
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Compact config label */}
+                    <TouchableOpacity
+                      onPress={() => setShowConfigSheet(true)}
+                      activeOpacity={0.7}
+                      hitSlop={6}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 6,
+                        paddingVertical: 3,
+                        borderRadius: 12,
+                      }}
+                    >
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          fontSize: 11,
+                          fontFamily: 'Roobert',
+                          color: isDark ? '#71717a' : '#a1a1aa',
+                          maxWidth: 140,
+                        }}
+                      >
+                        {agent?.name ? agent.name.charAt(0).toUpperCase() + agent.name.slice(1) : 'Agent'}
+                        {model?.modelName ? ` · ${model.modelName}` : ''}
+                        {variant ? ` · ${variantLabel}` : ''}
+                      </Text>
+                      <Ionicons
+                        name="chevron-down"
+                        size={9}
+                        color={isDark ? '#52525b' : '#d4d4d8'}
+                        style={{ marginLeft: 2 }}
+                      />
+                    </TouchableOpacity>
+
+                    {/* Compact autocontinue indicator — only when mode is active */}
+                    {!!autocontinueMode && currentAutoAlgorithm && (
+                      <TouchableOpacity
+                        onPress={() => setShowAutoSheet(true)}
+                        activeOpacity={0.7}
+                        hitSlop={6}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 6,
+                          paddingVertical: 3,
+                          borderRadius: 10,
+                          backgroundColor: isDark ? 'rgba(109,40,217,0.15)' : 'rgba(99,102,241,0.12)',
+                        }}
+                      >
+                        <View style={{
+                          width: 5,
+                          height: 5,
+                          borderRadius: 2.5,
+                          backgroundColor: isDark ? '#c4b5fd' : '#6366f1',
+                          marginRight: 4,
+                        }} />
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontFamily: 'Roobert-Medium',
+                            color: isDark ? '#c4b5fd' : '#4c1d95',
+                          }}
+                          numberOfLines={1}
+                        >
+                          {currentAutoAlgorithm.label}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Right: queue + mic/send/stop */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {isBusy && canSend && onEnqueue && (
+                      <TouchableOpacity
+                        onPress={handleSubmit}
+                        activeOpacity={0.7}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 8,
+                          paddingVertical: 3,
+                          borderRadius: 12,
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                        }}
+                      >
+                        <Ionicons name="list-outline" size={11} color={isDark ? '#a1a1aa' : '#71717a'} style={{ marginRight: 3 }} />
+                        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isDark ? '#a1a1aa' : '#71717a' }}>
+                          Queue
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    {isBusy ? (
+                      <TouchableOpacity
+                        onPress={onStop}
+                        activeOpacity={0.7}
+                        style={{
+                          width: 26,
+                          height: 26,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 13,
+                          backgroundColor: themeColors.primary,
+                        }}
+                      >
+                        <Ionicons name="stop" size={12} color={themeColors.primaryForeground} />
+                      </TouchableOpacity>
+                    ) : hasContent ? (
+                      <TouchableOpacity
+                        onPress={handleSubmit}
+                        disabled={!canSend}
+                        activeOpacity={0.7}
+                        style={{
+                          width: 26,
+                          height: 26,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 13,
+                          backgroundColor: canSend ? themeColors.primary : (isDark ? '#232324' : '#E5E7EB'),
+                        }}
+                      >
+                        <Ionicons
+                          name="arrow-up"
+                          size={14}
+                          color={canSend ? themeColors.primaryForeground : (isDark ? '#999999' : '#6e6e6e')}
+                        />
+                      </TouchableOpacity>
+                    ) : onAudioRecord ? (
+                      <TouchableOpacity
+                        onPress={onAudioRecord}
+                        activeOpacity={0.7}
+                        style={{
+                          width: 26,
+                          height: 26,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 13,
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                        }}
+                      >
+                        <MicIcon size={14} color={isDark ? '#a1a1aa' : '#71717a'} strokeWidth={2} />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={handleSubmit}
+                        disabled={true}
+                        activeOpacity={0.7}
+                        style={{
+                          width: 26,
+                          height: 26,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 13,
+                          backgroundColor: isDark ? '#232324' : '#E5E7EB',
+                        }}
+                      >
+                        <Ionicons name="arrow-up" size={14} color={isDark ? '#999999' : '#6e6e6e'} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </>
+            )}
           </View>
         </View>
 
 
       </View>
+
+      {/* Actions bottom sheet — attach, config, autocontinue */}
+      <ActionsSheet
+        visible={showActionsSheet}
+        onClose={() => setShowActionsSheet(false)}
+        isDark={isDark}
+        onAttach={() => { setShowActionsSheet(false); setTimeout(handleAttachPress, 300); }}
+        onConfig={() => { setShowActionsSheet(false); setTimeout(() => setShowConfigSheet(true), 300); }}
+        onAutoContinue={availableAutoAlgorithms.length > 0 ? () => { setShowActionsSheet(false); setTimeout(() => setShowAutoSheet(true), 300); } : undefined}
+        autocontinueLabel={autocontinueMode ? (currentAutoAlgorithm?.label || 'Auto') : 'Off'}
+        autocontinueActive={!!autocontinueMode}
+        configLabel={`${agent?.name ? agent.name.charAt(0).toUpperCase() + agent.name.slice(1) : 'Agent'}${model?.modelName ? ` · ${model.modelName}` : ''}${variant ? ` · ${variantLabel}` : ''}`}
+        onboardingMode={onboardingMode}
+      />
 
       {/* Config bottom sheet — agent, model, variant */}
       <Modal
@@ -1065,6 +1197,191 @@ function AutoContinueButton({
         style={{ marginLeft: 4 }}
       />
     </TouchableOpacity>
+  );
+}
+
+// ─── Actions Sheet ──────────────────────────────────────────────────────────
+
+interface ActionsSheetProps {
+  visible: boolean;
+  onClose: () => void;
+  isDark: boolean;
+  onAttach: () => void;
+  onConfig: () => void;
+  onAutoContinue?: () => void;
+  autocontinueLabel: string;
+  autocontinueActive: boolean;
+  configLabel: string;
+  onboardingMode: boolean;
+}
+
+function ActionsSheet({
+  visible,
+  onClose,
+  isDark,
+  onAttach,
+  onConfig,
+  onAutoContinue,
+  autocontinueLabel,
+  autocontinueActive,
+  configLabel,
+  onboardingMode,
+}: ActionsSheetProps) {
+  const insets = useSafeAreaInsets();
+  const muted = isDark ? '#a1a1aa' : '#71717a';
+  const bg = isDark ? '#1a1a1d' : '#FFFFFF';
+  const rowBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
+  const rowBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <View style={{ flex: 1, backgroundColor: bg }}>
+        {/* Drag handle */}
+        <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 8 }}>
+          <View style={{ width: 36, height: 5, borderRadius: 3, backgroundColor: isDark ? '#3F3F46' : '#D4D4D8' }} />
+        </View>
+
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 16 }}>
+          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
+            Actions
+          </Text>
+          <TouchableOpacity onPress={onClose} hitSlop={10}>
+            <Ionicons name="close" size={22} color={muted} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Action rows */}
+        <View style={{ paddingHorizontal: 16 }}>
+          {/* Attach files */}
+          {!onboardingMode && (
+            <TouchableOpacity
+              onPress={onAttach}
+              activeOpacity={0.7}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: 14,
+                paddingHorizontal: 16,
+                borderRadius: 14,
+                backgroundColor: rowBg,
+                marginBottom: 8,
+              }}
+            >
+              <View style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 14,
+              }}>
+                <Ionicons name="attach" size={18} color={isDark ? '#d4d4d8' : '#52525b'} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
+                  Attach files
+                </Text>
+                <Text style={{ fontSize: 12, color: muted, marginTop: 2 }}>
+                  Photos, documents, or files
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={isDark ? '#3F3F46' : '#D4D4D8'} />
+            </TouchableOpacity>
+          )}
+
+          {/* Agent & Model config */}
+          <TouchableOpacity
+            onPress={onConfig}
+            activeOpacity={0.7}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingVertical: 14,
+              paddingHorizontal: 16,
+              borderRadius: 14,
+              backgroundColor: rowBg,
+              marginBottom: 8,
+            }}
+          >
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: 14,
+            }}>
+              <Ionicons name="settings-outline" size={17} color={isDark ? '#d4d4d8' : '#52525b'} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
+                Agent & Model
+              </Text>
+              <Text style={{ fontSize: 12, color: muted, marginTop: 2 }} numberOfLines={1}>
+                {configLabel}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={isDark ? '#3F3F46' : '#D4D4D8'} />
+          </TouchableOpacity>
+
+          {/* AutoContinue */}
+          {onAutoContinue && (
+            <TouchableOpacity
+              onPress={onAutoContinue}
+              activeOpacity={0.7}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingVertical: 14,
+                paddingHorizontal: 16,
+                borderRadius: 14,
+                backgroundColor: autocontinueActive
+                  ? (isDark ? 'rgba(109,40,217,0.12)' : 'rgba(99,102,241,0.08)')
+                  : rowBg,
+                marginBottom: 8,
+                borderWidth: autocontinueActive ? 1 : 0,
+                borderColor: autocontinueActive ? (isDark ? 'rgba(192,132,252,0.25)' : 'rgba(99,102,241,0.25)') : 'transparent',
+              }}
+            >
+              <View style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                backgroundColor: autocontinueActive
+                  ? (isDark ? 'rgba(192,132,252,0.15)' : 'rgba(99,102,241,0.12)')
+                  : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 14,
+              }}>
+                <InfinityIcon
+                  size={17}
+                  color={autocontinueActive ? (isDark ? '#c4b5fd' : '#6366f1') : (isDark ? '#d4d4d8' : '#52525b')}
+                  strokeWidth={2.2}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
+                  AutoContinue
+                </Text>
+                <Text style={{ fontSize: 12, color: autocontinueActive ? (isDark ? '#c4b5fd' : '#4c1d95') : muted, marginTop: 2 }}>
+                  {autocontinueActive ? `Active · ${autocontinueLabel}` : 'Off — manual mode'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={isDark ? '#3F3F46' : '#D4D4D8'} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 

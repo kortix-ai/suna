@@ -3,9 +3,12 @@
 # Container entrypoint — boots s6-overlay inside a PID namespace.
 #
 # PERSISTENCE MODEL:
-#   /workspace/  = PERSISTENT  (Docker volume — survives restart, recreate, update)
-#   /opt/        = EPHEMERAL   (image layer — replaced on every image update)
-#   /run/s6/     = EPHEMERAL   (tmpfs — rebuilt from /workspace/.secrets/ on boot)
+#   /workspace/   = PERSISTENT USER WORKSPACE (projects, repos, user files)
+#   /persistent/  = PERSISTENT SYSTEM STATE   (OpenCode DB, secrets, browser state)
+#                   Backed by /workspace/.persistent-system so it survives every
+#                   restart/recreate without depending on host-level extra mounts.
+#   /opt/         = EPHEMERAL RUNTIME         (image layer — replaced on update)
+#   /run/s6/      = EPHEMERAL TMPFS           (rebuilt from persistent secrets)
 #
 # On boot, this script:
 #   1. Ensures all persistent dirs exist under /workspace/
@@ -29,32 +32,106 @@ WORKSPACE_GID="$(id -g abc 2>/dev/null || echo 911)"
 
 echo "[startup] Preparing Kortix sandbox..."
 
-# ── Persistent dirs (all under /workspace/) ─────────────────────────────────
-# /workspace is the ONLY persistent volume. Everything outside /workspace
-# is ephemeral and gets reset on container recreate/update.
-# If something needs to survive, it MUST be in /workspace/.
+export KORTIX_PERSISTENT_ROOT=/persistent
+export OPENCODE_STORAGE_BASE="${OPENCODE_STORAGE_BASE:-${KORTIX_PERSISTENT_ROOT}/opencode}"
+export OPENCODE_SHADOW_STORAGE_BASE="${OPENCODE_SHADOW_STORAGE_BASE:-${KORTIX_PERSISTENT_ROOT}/opencode-shadow}"
+export KORTIX_OPENCODE_ARCHIVE_DIR="${KORTIX_OPENCODE_ARCHIVE_DIR:-${KORTIX_PERSISTENT_ROOT}/opencode-archive}"
+export KORTIX_OPENCODE_CACHE_DIR="${KORTIX_OPENCODE_CACHE_DIR:-${KORTIX_PERSISTENT_ROOT}/opencode-cache}"
+export SECRET_FILE_PATH="${SECRET_FILE_PATH:-${KORTIX_PERSISTENT_ROOT}/secrets/.secrets.json}"
+export SALT_FILE_PATH="${SALT_FILE_PATH:-${KORTIX_PERSISTENT_ROOT}/secrets/.salt}"
+export ENCRYPTION_KEY_PATH="${ENCRYPTION_KEY_PATH:-${KORTIX_PERSISTENT_ROOT}/secrets/.encryption-key}"
+export AUTH_JSON_PATH="${AUTH_JSON_PATH:-${OPENCODE_STORAGE_BASE}/auth.json}"
+export LSS_DIR="${LSS_DIR:-${KORTIX_PERSISTENT_ROOT}/lss}"
+export KORTIX_BROWSER_PROFILE_DIR="${KORTIX_BROWSER_PROFILE_DIR:-${KORTIX_PERSISTENT_ROOT}/browser-profile}"
+export KORTIX_AGENT_BROWSER_DIR="${KORTIX_AGENT_BROWSER_DIR:-${KORTIX_PERSISTENT_ROOT}/agent-browser}"
+export KORTIX_KORTIX_STATE_DIR="${KORTIX_KORTIX_STATE_DIR:-${KORTIX_PERSISTENT_ROOT}/kortix-state}"
+export KORTIX_XDG_DIR="${KORTIX_XDG_DIR:-${KORTIX_PERSISTENT_ROOT}/xdg}"
+
+PERSIST_BACKING_DIR="/workspace/.persistent-system"
+mkdir -p "$PERSIST_BACKING_DIR"
+if [ -L "$KORTIX_PERSISTENT_ROOT" ]; then
+  if [ "$(readlink "$KORTIX_PERSISTENT_ROOT" 2>/dev/null || true)" != "$PERSIST_BACKING_DIR" ]; then
+    rm -f "$KORTIX_PERSISTENT_ROOT"
+    ln -s "$PERSIST_BACKING_DIR" "$KORTIX_PERSISTENT_ROOT"
+  fi
+elif [ -d "$KORTIX_PERSISTENT_ROOT" ] && [ -z "$(ls -A "$KORTIX_PERSISTENT_ROOT" 2>/dev/null)" ]; then
+  rmdir "$KORTIX_PERSISTENT_ROOT" 2>/dev/null || true
+  ln -s "$PERSIST_BACKING_DIR" "$KORTIX_PERSISTENT_ROOT"
+elif [ ! -e "$KORTIX_PERSISTENT_ROOT" ]; then
+  ln -s "$PERSIST_BACKING_DIR" "$KORTIX_PERSISTENT_ROOT"
+fi
+
+migrate_dir_to_persistent() {
+  local legacy="$1"
+  local target="$2"
+
+  if [ "$legacy" = "$target" ]; then
+    if [ -L "$legacy" ] && [ "$(readlink "$legacy" 2>/dev/null || true)" = "$legacy" ]; then
+      rm -f "$legacy"
+    fi
+    mkdir -p "$target"
+    return
+  fi
+
+  mkdir -p "$(dirname "$legacy")" "$target"
+
+  if [ -L "$legacy" ]; then
+    local link_target
+    link_target=$(readlink "$legacy" 2>/dev/null || true)
+    if [ -n "$link_target" ] && [ "$link_target" != "$target" ] && [ -d "$link_target" ]; then
+      cp -a "$link_target"/. "$target"/ 2>/dev/null || true
+    fi
+    rm -f "$legacy"
+  elif [ -d "$legacy" ]; then
+    cp -a "$legacy"/. "$target"/ 2>/dev/null || true
+    rm -rf "$legacy"
+  fi
+
+  ln -s "$target" "$legacy"
+}
+
+# ── Persistent dirs (workspace + system state) ───────────────────────────────
 mkdir -p \
-  /workspace/.agent-browser \
-  /workspace/.browser-profile \
-  /workspace/.lss \
-  /workspace/.cache/opencode \
-  /workspace/.local/share/opencode \
-  /workspace/.local/share/opencode/log \
-  /workspace/.local/share/opencode/storage \
-  /workspace/.local/share/opencode/snapshot \
   /workspace/.local/bin \
+  /workspace/.local/share \
   /workspace/.local/lib \
+  /workspace/.cache \
   /workspace/.npm-global/bin \
   /workspace/.npm-global/lib \
   /workspace/.kortix \
   /workspace/.kortix/packages \
-  /workspace/.kortix-state \
-  /workspace/.secrets \
   /workspace/.config \
-  /workspace/.XDG \
   /workspace/.opencode \
   /workspace/.opencode/skills \
   /workspace/.ocx
+
+mkdir -p \
+  "$OPENCODE_STORAGE_BASE" \
+  "$OPENCODE_STORAGE_BASE/log" \
+  "$OPENCODE_STORAGE_BASE/storage" \
+  "$OPENCODE_STORAGE_BASE/snapshot" \
+  "$OPENCODE_STORAGE_BASE/tool-output" \
+  "$OPENCODE_STORAGE_BASE/plugins" \
+  "$OPENCODE_STORAGE_BASE/workspace" \
+  "$OPENCODE_STORAGE_BASE/delegations" \
+  "$OPENCODE_SHADOW_STORAGE_BASE" \
+  "$KORTIX_OPENCODE_ARCHIVE_DIR" \
+  "$KORTIX_OPENCODE_CACHE_DIR" \
+  "$(dirname "$SECRET_FILE_PATH")" \
+  "$LSS_DIR" \
+  "$KORTIX_BROWSER_PROFILE_DIR" \
+  "$KORTIX_AGENT_BROWSER_DIR" \
+  "$KORTIX_KORTIX_STATE_DIR" \
+  "$KORTIX_XDG_DIR"
+
+migrate_dir_to_persistent /workspace/.local/share/opencode "$OPENCODE_STORAGE_BASE"
+migrate_dir_to_persistent /workspace/.cache/opencode "$KORTIX_OPENCODE_CACHE_DIR"
+migrate_dir_to_persistent /workspace/.secrets "$(dirname "$SECRET_FILE_PATH")"
+migrate_dir_to_persistent /workspace/.lss "$LSS_DIR"
+migrate_dir_to_persistent /workspace/.browser-profile "$KORTIX_BROWSER_PROFILE_DIR"
+migrate_dir_to_persistent /workspace/.agent-browser "$KORTIX_AGENT_BROWSER_DIR"
+migrate_dir_to_persistent /workspace/.kortix-state "$KORTIX_KORTIX_STATE_DIR"
+migrate_dir_to_persistent /workspace/.XDG "$KORTIX_XDG_DIR"
 
 # ── Migrate legacy symlinks to real dirs ────────────────────────────────────
 # Old images created /workspace/.opencode as a symlink to /workspace/.kortix/.opencode.
@@ -70,18 +147,7 @@ if [ -L /workspace/.opencode ]; then
   fi
 fi
 
-# Old images created /workspace/.secrets as a symlink to /workspace/.kortix/secrets.
-# New model: /workspace/.secrets IS the real dir. Migrate data if needed.
-if [ -L /workspace/.secrets ]; then
-  LINK_TARGET=$(readlink /workspace/.secrets 2>/dev/null || true)
-  echo "[startup] Migrating .secrets from symlink ($LINK_TARGET) to real dir..."
-  rm -f /workspace/.secrets
-  mkdir -p /workspace/.secrets
-  if [ -d "$LINK_TARGET" ]; then
-    cp -a "$LINK_TARGET"/. /workspace/.secrets/ 2>/dev/null || true
-  fi
-  chmod 700 /workspace/.secrets
-fi
+chmod 700 "$(dirname "$SECRET_FILE_PATH")" 2>/dev/null || true
 
 # ── Convenience symlink: opencode → .opencode ───────────────────────────────
 # Visible, discoverable alias for users who don't know to look for dotfiles.
@@ -103,6 +169,7 @@ if [ -f /workspace/.git/HEAD ]; then
   cat > /workspace/.git/info/exclude << 'GITEXCLUDE'
 # opencode internal data — never include in snapshot diffs
 .local/share/opencode/
+.persistent-system/
 .cache/
 .config/
 .opencode/
@@ -140,7 +207,7 @@ rm -f /workspace/.browser-profile/SingletonLock \
 # from the previous image. Fix ALL workspace files to match the current abc user.
 echo "[startup] Fixing workspace ownership..."
 chown -R "$WORKSPACE_UID:$WORKSPACE_GID" /workspace 2>/dev/null || true
-chmod 700 /workspace/.secrets 2>/dev/null || true
+chmod 700 "$(dirname "$SECRET_FILE_PATH")" 2>/dev/null || true
 
 # Also fix /opt dirs — the Dockerfile chowns these to abc:abc at build time,
 # but if the image was built with an older Dockerfile that used 1000:1000,
@@ -165,17 +232,22 @@ fi
 # ── Clean stale sqlite WAL/SHM files ────────────────────────────────────────
 # After container recreate, sqlite WAL/SHM files from the old container can
 # cause "readonly database" errors. Remove them so sqlite recreates cleanly.
-find /workspace/.local/share/opencode -name "*.db-wal" -o -name "*.db-shm" 2>/dev/null | while read f; do
+find "$OPENCODE_STORAGE_BASE" -name "*.db-wal" -o -name "*.db-shm" 2>/dev/null | while read f; do
   echo "[startup] Removing stale sqlite file: $f"
   rm -f "$f"
 done
 
+if command -v kortix-opencode-state >/dev/null 2>&1; then
+  kortix-opencode-state guard >/dev/null 2>&1 || true
+  kortix-opencode-state sync >/dev/null 2>&1 || true
+fi
+
 # ── Stale LSS database cleanup ───────────────────────────────────────────────
-if [ -f /workspace/.lss/lss.db ]; then
-  LSS_OWNER=$(stat -c '%u' /workspace/.lss/lss.db 2>/dev/null || echo "unknown")
+if [ -f "$LSS_DIR/lss.db" ]; then
+  LSS_OWNER=$(stat -c '%u' "$LSS_DIR/lss.db" 2>/dev/null || echo "unknown")
   if [ "$LSS_OWNER" != "$WORKSPACE_UID" ] && [ "$LSS_OWNER" != "unknown" ]; then
     echo "[startup] Removing stale LSS database (owned by UID $LSS_OWNER, expected $WORKSPACE_UID)"
-    rm -f /workspace/.lss/lss.db /workspace/.lss/lss.db-wal /workspace/.lss/lss.db-shm
+    rm -f "$LSS_DIR/lss.db" "$LSS_DIR/lss.db-wal" "$LSS_DIR/lss.db-shm"
   fi
 fi
 
@@ -189,9 +261,9 @@ if [ ! -e /ephemeral/kortix-master ]; then
   echo "[startup] WARNING: /ephemeral/kortix-master not found! Rebuild the Docker image."
 fi
 
-# ── Install stable channel CLI wrappers ─────────────────────────────────────
-# Runtime-facing commands (ktelegram/kslack/kchannel) should always resolve
-# from immutable /ephemeral code, never /workspace.
+# ── Install Kortix CLI wrappers ─────────────────────────────────────────────
+# Runtime-facing commands (ktelegram/kslack/kchannel/kconnectors/kpipedream)
+# should always resolve from immutable /ephemeral code, never /workspace.
 if [ -x /ephemeral/kortix-master/scripts/install-channel-clis.sh ]; then
   /ephemeral/kortix-master/scripts/install-channel-clis.sh || echo "[startup] WARNING: channel CLI install failed"
 fi

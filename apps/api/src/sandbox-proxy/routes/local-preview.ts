@@ -15,48 +15,81 @@
 
 import { config } from '../../config';
 import { execSync } from 'child_process';
+import { buildCanonicalSandboxAuthCommand } from '../../platform/services/sandbox-auth';
 
 const KORTIX_MASTER_PORT = 8000;
 const FETCH_TIMEOUT_MS = 30_000;
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `"'"'`)}'`;
+}
+
+function buildDockerEnvWriteCommand(payload: Record<string, string>, targetDir: string): string {
+  const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+  return `mkdir -p ${targetDir} && ENV_WRITE_PAYLOAD_B64=${shellQuote(payloadB64)} python3 - <<PY
+import base64, json, os
+from pathlib import Path
+
+target_dir = Path(${JSON.stringify(targetDir)})
+target_dir.mkdir(parents=True, exist_ok=True)
+payload = json.loads(base64.b64decode(os.environ["ENV_WRITE_PAYLOAD_B64"]).decode("utf-8"))
+for key, value in payload.items():
+    (target_dir / key).write_text(value)
+PY`;
+}
+
+function isExpectedStartupPreview(path: string, status: number, bodySnippet: string): boolean {
+  if (status !== 502 && status !== 503) return false;
+  const normalizedPath = path.split('?')[0];
+  const startupPaths = [
+    '/question',
+    '/global/health',
+    '/global/event',
+    '/session/status',
+    '/kortix/health',
+    '/log',
+  ];
+  return startupPaths.some((candidate) => normalizedPath.startsWith(candidate)) && (
+    bodySnippet.includes('Port 8000 — Not Reachable') ||
+    bodySnippet.includes('no such host') ||
+    bodySnippet.includes('connection refused') ||
+    bodySnippet.includes('Bad Gateway')
+  );
+}
+
 // ─── Service Key Sync ────────────────────────────────────────────────────────
-// Ensures the running sandbox container has the same INTERNAL_SERVICE_KEY as us.
-// Triggered on first 401 from the sandbox (key mismatch after startup).
+// Ensures the running sandbox container has the canonical auth bundle from the DB.
+// Triggered on first 401 from the sandbox (auth drift after startup/restart).
 // Retries up to MAX_SYNC_ATTEMPTS on failure before giving up.
 const MAX_SYNC_ATTEMPTS = 3;
 let _syncAttempts = 0;
 let _serviceKeySynced = false;
 
-function trySyncServiceKey(): boolean {
+function trySyncServiceKey(serviceKey: string): boolean {
   if (_serviceKeySynced) return false;
   if (_syncAttempts >= MAX_SYNC_ATTEMPTS) {
-    console.error(`[LOCAL-PREVIEW] INTERNAL_SERVICE_KEY sync failed after ${MAX_SYNC_ATTEMPTS} attempts, giving up`);
+    console.error(`[LOCAL-PREVIEW] Sandbox auth sync failed after ${MAX_SYNC_ATTEMPTS} attempts, giving up`);
     return false;
   }
   _syncAttempts++;
   try {
-    const ourKey = config.INTERNAL_SERVICE_KEY;
-    if (!ourKey) return false;
+    if (!serviceKey) return false;
 
     const env: Record<string, string> = { ...process.env as Record<string, string> };
     if (config.DOCKER_HOST && !config.DOCKER_HOST.includes('://')) {
       env.DOCKER_HOST = `unix://${config.DOCKER_HOST}`;
     }
 
-    console.log(`[LOCAL-PREVIEW] Syncing INTERNAL_SERVICE_KEY to sandbox container (attempt ${_syncAttempts}/${MAX_SYNC_ATTEMPTS})...`);
+    console.log(`[LOCAL-PREVIEW] Syncing sandbox auth bundle to container (attempt ${_syncAttempts}/${MAX_SYNC_ATTEMPTS})...`);
     execSync(
-      `docker exec ${config.SANDBOX_CONTAINER_NAME} bash -c "mkdir -p /run/s6/container_environment && ` +
-      `printf '%s' '${ourKey}' > /run/s6/container_environment/INTERNAL_SERVICE_KEY && ` +
-      `sudo s6-svc -r /run/service/svc-kortix-master"`,
+      `docker exec ${shellQuote(config.SANDBOX_CONTAINER_NAME)} bash -c ${shellQuote(buildCanonicalSandboxAuthCommand(serviceKey, config.KORTIX_URL.replace(/\/v1\/router\/?$/, '') || `http://host.docker.internal:${config.PORT}`))}`,
       { timeout: 15_000, stdio: 'pipe', env },
     );
     _serviceKeySynced = true;
-    console.log('[LOCAL-PREVIEW] INTERNAL_SERVICE_KEY synced, waiting for restart...');
-    // Give kortix-master a moment to restart
-    execSync('sleep 2', { stdio: 'pipe' });
+    console.log('[LOCAL-PREVIEW] Sandbox auth bundle synced');
     return true;
   } catch (err: any) {
-    console.error(`[LOCAL-PREVIEW] Failed to sync INTERNAL_SERVICE_KEY (attempt ${_syncAttempts}/${MAX_SYNC_ATTEMPTS}):`, err.message || err);
+    console.error(`[LOCAL-PREVIEW] Failed to sync sandbox auth bundle (attempt ${_syncAttempts}/${MAX_SYNC_ATTEMPTS}):`, err.message || err);
     // Don't set _serviceKeySynced — allow retry on next 401
     return false;
   }
@@ -132,19 +165,28 @@ export async function proxyToSandbox(
   if (serviceKey) {
     headers.set('Authorization', `Bearer ${serviceKey}`);
   }
-  if (extraHeaders) {
-    for (const [key, value] of Object.entries(extraHeaders)) {
-      headers.set(key, value);
-    }
-  }
-
   // Tell the sandbox what the public proxy base URL is so it can set the
-  // OpenAPI server URL correctly. Reconstruct from the original Host header
-  // (before we overwrite it) + the known proxy path prefix.
+  // OpenAPI server URL correctly AND so static-web's <base href> resolves
+  // sub-resources back through the same public origin.
+  //
+  // Default = path-based routing: `${proto}://${host}/v1/p/${sandboxId}/${port}`.
+  // Callers in subdomain mode (apps/api/src/index.ts subdomain handler)
+  // override this via `extraHeaders` because subdomain URLs have no path
+  // prefix — the subdomain itself encodes the routing.
   const originalHost = incomingHeaders.get('host');
   if (originalHost) {
     const proto = incomingHeaders.get('x-forwarded-proto') || 'http';
     headers.set('X-Forwarded-Prefix', `${proto}://${originalHost}/v1/p/${sandboxId}/${port}`);
+    headers.set('X-Forwarded-Proto', proto);
+    headers.set('X-Forwarded-Host', originalHost);
+  }
+
+  // extraHeaders applied last so callers can override defaults like
+  // X-Forwarded-Prefix.
+  if (extraHeaders) {
+    for (const [key, value] of Object.entries(extraHeaders)) {
+      headers.set(key, value);
+    }
   }
 
   // Abort handling — connection timeout only.
@@ -178,7 +220,7 @@ export async function proxyToSandbox(
   // On 401 from sandbox: service key mismatch. Sync our key and retry once.
   // Only attempt local docker exec sync for local_docker provider (no baseUrlOverride).
   if (response.status === 401 && !_serviceKeySynced && !baseUrlOverride) {
-    const synced = trySyncServiceKey();
+    const synced = trySyncServiceKey(serviceKey);
     if (synced) {
       // Retry the request with the same key (now the sandbox should accept it)
       const retryController = new AbortController();
@@ -219,16 +261,19 @@ export async function proxyToSandbox(
       try {
         const parsed = JSON.parse(snippet);
         const errMsg = parsed?.data?.message || parsed?.message || parsed?.error || snippet.slice(0, 150);
-        console.error(`[PREVIEW] Sandbox ${response.status} on ${method} ${path} (port ${port}): ${errMsg}`);
+        const log = isExpectedStartupPreview(path, response.status, errMsg) ? console.warn : console.error;
+        log(`[PREVIEW] Sandbox ${response.status} on ${method} ${path} (port ${port}): ${errMsg}`);
       } catch {
         if (snippet.includes('__bunfallback') || snippet.includes('BunError')) {
           console.error(`[PREVIEW] Sandbox ${response.status} on ${method} ${path} (port ${port}): Bun crash/module error (check sandbox logs)`);
         } else {
-          console.error(`[PREVIEW] Sandbox ${response.status} on ${method} ${path} (port ${port}): ${snippet || '(empty)'}`);
+          const log = isExpectedStartupPreview(path, response.status, snippet) ? console.warn : console.error;
+          log(`[PREVIEW] Sandbox ${response.status} on ${method} ${path} (port ${port}): ${snippet || '(empty)'}`);
         }
       }
     } catch {
-      console.error(`[PREVIEW] Sandbox ${response.status} on ${method} ${path} (port ${port})`);
+      const log = isExpectedStartupPreview(path, response.status, '') ? console.warn : console.error;
+      log(`[PREVIEW] Sandbox ${response.status} on ${method} ${path} (port ${port})`);
     }
   }
 

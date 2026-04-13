@@ -21,6 +21,7 @@ import {
   useUnlinkSandboxIntegration,
   type IntegrationConnection,
 } from '@/hooks/useIntegrations';
+import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useThemeColors } from '@/lib/theme-colors';
 import { log } from '@/lib/logger';
@@ -38,6 +39,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetBottomPadding();
 
   const rename = useRenameIntegration();
   const disconnect = useDisconnectIntegration();
@@ -344,7 +346,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
           style={{
             paddingHorizontal: 24,
             paddingTop: 8,
-            paddingBottom: Math.max(insets.bottom, 20) + 16,
+            paddingBottom: sheetPadding,
           }}
         >
           {/* Header */}

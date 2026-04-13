@@ -1,4 +1,8 @@
-import { create } from 'zustand';
+'use client';
+
+import { createContext, createElement, useContext, useRef, type ReactNode } from 'react';
+import { useStore } from 'zustand';
+import { createStore, type StoreApi } from 'zustand/vanilla';
 
 export type FilesView = 'browser' | 'viewer' | 'history';
 export type ViewMode = 'grid' | 'list';
@@ -151,7 +155,8 @@ function isWithinRoot(path: string, root: string): boolean {
   return normPath === normRoot || normPath.startsWith(normRoot + '/');
 }
 
-type FilesStore = FilesStoreState & FilesStoreActions;
+export type FilesStore = FilesStoreState & FilesStoreActions;
+export type FilesStoreApi = StoreApi<FilesStore>;
 
 const initialState: FilesStoreState = {
   view: 'browser',
@@ -176,8 +181,9 @@ const initialState: FilesStoreState = {
   panelMode: 'welcome',
 };
 
-export const useFilesStore = create<FilesStore>()((set, get) => ({
-  ...initialState,
+export function createFilesStore(): FilesStoreApi {
+  return createStore<FilesStore>()((set, get) => ({
+    ...initialState,
 
   navigateToPath: (path: string) => {
     const { rootPath } = get();
@@ -432,9 +438,48 @@ export const useFilesStore = create<FilesStore>()((set, get) => ({
     try { localStorage.setItem('files-sort-order', order); } catch {}
   },
 
-  toggleSortOrder: () => {
-    const next = get().sortOrder === 'asc' ? 'desc' : 'asc';
-    set({ sortOrder: next });
-    try { localStorage.setItem('files-sort-order', next); } catch {}
+    toggleSortOrder: () => {
+      const next = get().sortOrder === 'asc' ? 'desc' : 'asc';
+      set({ sortOrder: next });
+      try { localStorage.setItem('files-sort-order', next); } catch {}
+    },
+  }));
+}
+
+export const globalFilesStore = createFilesStore();
+
+const FilesStoreContext = createContext<FilesStoreApi | null>(null);
+
+type UseFilesStore = {
+  <T>(selector: (state: FilesStore) => T): T;
+  getState: FilesStoreApi['getState'];
+  setState: FilesStoreApi['setState'];
+  subscribe: FilesStoreApi['subscribe'];
+};
+
+export function FilesStoreProvider({
+  children,
+  store,
+}: {
+  children: ReactNode;
+  store?: FilesStoreApi;
+}) {
+  const storeRef = useRef<FilesStoreApi>(store ?? createFilesStore());
+  return createElement(FilesStoreContext.Provider, { value: storeRef.current }, children);
+}
+
+export const useFilesStore = Object.assign(
+  function useFilesStore<T>(selector: (state: FilesStore) => T): T {
+    const store = useContext(FilesStoreContext) ?? globalFilesStore;
+    return useStore(store, selector);
   },
-}));
+  {
+    getState: globalFilesStore.getState,
+    setState: globalFilesStore.setState,
+    subscribe: globalFilesStore.subscribe,
+  },
+) as UseFilesStore;
+
+export function useFilesStoreApi(): FilesStoreApi {
+  return useContext(FilesStoreContext) ?? globalFilesStore;
+}

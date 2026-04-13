@@ -28,10 +28,12 @@ export function getEnvMode(): EnvMode {
   
   switch (envMode) {
     case 'production':
+    case 'cloud':
       return EnvMode.PRODUCTION;
     case 'staging':
       return EnvMode.STAGING;
     case 'local':
+      return EnvMode.LOCAL;
     default:
       return EnvMode.LOCAL;
   }

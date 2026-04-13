@@ -24,6 +24,11 @@ import {
 } from './helpers';
 
 const HAS_DB = !!process.env.DATABASE_URL;
+const HAS_DEFAULT_PIPEDREAM_ENV = Boolean(
+  process.env.PIPEDREAM_CLIENT_ID &&
+  process.env.PIPEDREAM_CLIENT_SECRET &&
+  process.env.PIPEDREAM_PROJECT_ID,
+);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -242,7 +247,7 @@ describe.skipIf(!HAS_DB)('Pipedream credential routes (e2e)', () => {
     const res = await jsonGet(app, '/v1/pipedream/credentials');
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.configured).toBe(false);
+    expect(body.configured).toBe(HAS_DEFAULT_PIPEDREAM_ENV);
     expect(body.source).toBe('default');
     expect(body.provider).toBe('pipedream');
   });
@@ -326,7 +331,7 @@ describe.skipIf(!HAS_DB)('Pipedream credential routes (e2e)', () => {
 
     const getRes = await jsonGet(app, '/v1/pipedream/credentials');
     const body = await getRes.json();
-    expect(body.configured).toBe(false);
+    expect(body.configured).toBe(HAS_DEFAULT_PIPEDREAM_ENV);
   });
 
   it('DELETE is idempotent (no creds to delete)', async () => {
@@ -361,7 +366,7 @@ describe.skipIf(!HAS_DB)('Pipedream credential routes (e2e)', () => {
     await jsonDelete(app, '/v1/pipedream/credentials');
     const res1After = await jsonGet(app, '/v1/pipedream/credentials');
     const res2After = await jsonGet(otherApp, '/v1/pipedream/credentials');
-    expect((await res1After.json()).configured).toBe(false);
+    expect((await res1After.json()).configured).toBe(HAS_DEFAULT_PIPEDREAM_ENV);
     expect((await res2After.json()).configured).toBe(true);
   });
 });
@@ -537,7 +542,7 @@ describe.skipIf(!HAS_DB)('Full flow: sandbox push → DB → frontend resolve (e
 
     // Verify reverted
     body = await (await jsonGet(app, '/v1/pipedream/credentials')).json();
-    expect(body.configured).toBe(false);
+    expect(body.configured).toBe(HAS_DEFAULT_PIPEDREAM_ENV);
     expect(body.source).toBe('default');
   });
 });

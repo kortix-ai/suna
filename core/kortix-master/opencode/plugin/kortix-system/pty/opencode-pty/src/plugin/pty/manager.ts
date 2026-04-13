@@ -1,5 +1,6 @@
 import type { OpencodeClient } from '@opencode-ai/sdk'
 import { RingBuffer } from './buffer.ts'
+import { SessionLifecycleManager } from './session-lifecycle.ts'
 import type { PTYSession, PTYSessionInfo, ReadResult, SearchResult, SpawnOptions } from './types.ts'
 
 type BuiltinPtyInfo = {
@@ -89,6 +90,7 @@ function escapeXml(text: string): string {
 
 class PTYManager {
   private sessions = new Map<string, PTYSession>()
+  private localSessions = new SessionLifecycleManager()
 
   init(client: OpencodeClient, serverUrl?: URL, directory?: string): void {
     _client = client
@@ -117,6 +119,7 @@ class PTYManager {
       } catch {}
     }
     this.sessions.clear()
+    this.localSessions.clearAllSessions()
   }
 
   private toInfo(session: PTYSession): PTYSessionInfo {
@@ -197,7 +200,23 @@ class PTYManager {
 
   async spawn(opts: SpawnOptions): Promise<PTYSessionInfo> {
     if (!_backendAvailable) {
-      throw new Error(`[PTY manager] Cannot spawn: PTY backend is unavailable. Load error: ${_backendLoadError ?? 'unknown'}`)
+      await this.probe()
+    }
+
+    if (!_backendAvailable) {
+      const info = await this.localSessions.spawn(
+        opts,
+        (session, rawData) => {
+          notifyRawOutput(this.localSessions.toInfo(session), rawData)
+          notifySessionUpdate(this.localSessions.toInfo(session))
+        },
+        async (session) => {
+          notifySessionUpdate(this.localSessions.toInfo(session))
+          await this.sendExitNotification(session)
+        },
+      )
+      notifySessionUpdate(info)
+      return info
     }
 
     const cwd = opts.workdir ?? _directory
@@ -245,6 +264,12 @@ class PTYManager {
   }
 
   async write(id: string, data: string): Promise<boolean> {
+    const localSession = this.localSessions.getSession(id)
+    if (localSession?.process) {
+      localSession.process.write(data)
+      return true
+    }
+
     const session = this.sessions.get(id)
     if (!session || !session.process) return false
     session.process.write(data)
@@ -252,6 +277,18 @@ class PTYManager {
   }
 
   read(id: string, offset: number = 0, limit?: number): ReadResult | null {
+    const localSession = this.localSessions.getSession(id)
+    if (localSession) {
+      const lines = localSession.buffer.read(offset, limit)
+      const totalLines = localSession.buffer.length
+      return {
+        lines,
+        totalLines,
+        offset,
+        hasMore: offset + lines.length < totalLines,
+      }
+    }
+
     const session = this.sessions.get(id)
     if (!session) return null
     const lines = session.buffer.read(offset, limit)
@@ -265,6 +302,19 @@ class PTYManager {
   }
 
   search(id: string, pattern: RegExp, offset: number = 0, limit?: number): SearchResult | null {
+    const localSession = this.localSessions.getSession(id)
+    if (localSession) {
+      const matches = localSession.buffer.search(pattern)
+      const paged = limit !== undefined ? matches.slice(offset, offset + limit) : matches.slice(offset)
+      return {
+        matches: paged,
+        totalMatches: matches.length,
+        totalLines: localSession.buffer.length,
+        offset,
+        hasMore: offset + paged.length < matches.length,
+      }
+    }
+
     const session = this.sessions.get(id)
     if (!session) return null
     const matches = session.buffer.search(pattern)
@@ -280,47 +330,59 @@ class PTYManager {
 
   async list(): Promise<PTYSessionInfo[]> {
     try {
-      const live = await request<BuiltinPtyInfo[]>('/pty')
-      const liveIds = new Set(live.map((item) => item.id))
-      for (const item of live) {
-        const existing = this.sessions.get(item.id)
-        if (existing) {
-          existing.title = item.title
-          existing.command = item.command
-          existing.args = item.args
-          existing.workdir = item.cwd
-          existing.status = item.status
-          existing.pid = item.pid
-        } else {
-          this.sessions.set(item.id, {
-            id: item.id,
-            title: item.title,
-            command: item.command,
-            args: item.args,
-            workdir: item.cwd,
-            status: item.status,
-            pid: item.pid,
-            createdAt: new Date().toISOString(),
-            parentSessionId: '',
-            notifyOnExit: false,
-            buffer: new RingBuffer(),
-            process: null,
-          })
+      if (_backendAvailable) {
+        const live = await request<BuiltinPtyInfo[]>('/pty')
+        const liveIds = new Set(live.map((item) => item.id))
+        for (const item of live) {
+          const existing = this.sessions.get(item.id)
+          if (existing) {
+            existing.title = item.title
+            existing.command = item.command
+            existing.args = item.args
+            existing.workdir = item.cwd
+            existing.status = item.status
+            existing.pid = item.pid
+          } else {
+            this.sessions.set(item.id, {
+              id: item.id,
+              title: item.title,
+              command: item.command,
+              args: item.args,
+              workdir: item.cwd,
+              status: item.status,
+              pid: item.pid,
+              createdAt: new Date().toISOString(),
+              parentSessionId: '',
+              notifyOnExit: false,
+              buffer: new RingBuffer(),
+              process: null,
+            })
+          }
+        }
+        for (const [id, session] of this.sessions) {
+          if (!liveIds.has(id) && session.status === 'running') session.status = 'exited'
         }
       }
-      for (const [id, session] of this.sessions) {
-        if (!liveIds.has(id) && session.status === 'running') session.status = 'exited'
-      }
     } catch {}
-    return Array.from(this.sessions.values()).map((session) => this.toInfo(session))
+    return [
+      ...Array.from(this.sessions.values()).map((session) => this.toInfo(session)),
+      ...this.localSessions.listSessions().map((session) => this.localSessions.toInfo(session)),
+    ]
   }
 
   get(id: string): PTYSessionInfo | null {
+    const localSession = this.localSessions.getSession(id)
+    if (localSession) return this.localSessions.toInfo(localSession)
+
     const session = this.sessions.get(id)
     return session ? this.toInfo(session) : null
   }
 
   async kill(id: string, cleanup: boolean = false): Promise<boolean> {
+    if (this.localSessions.getSession(id)) {
+      return this.localSessions.kill(id, cleanup)
+    }
+
     const session = this.sessions.get(id)
     if (!session) return false
     session.status = 'killing'
@@ -342,6 +404,7 @@ class PTYManager {
   }
 
   cleanupBySession(parentSessionId: string): void {
+    this.localSessions.cleanupBySession(parentSessionId)
     for (const [id, session] of this.sessions) {
       if (session.parentSessionId === parentSessionId) {
         this.kill(id, true).catch(() => undefined)
@@ -363,6 +426,11 @@ export function bunPtyLoadError(): string | null {
 export function initManager(opcClient: OpencodeClient, serverUrl?: URL, directory?: string): void {
   manager.init(opcClient, serverUrl, directory)
   manager.probe().catch(() => undefined)
+}
+
+export async function ensurePtyBackendAvailable(): Promise<void> {
+  if (_backendAvailable) return
+  await manager.probe()
 }
 
 export function wrapPtyText(text: string): string {

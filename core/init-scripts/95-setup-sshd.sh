@@ -100,7 +100,6 @@ _wrap_cli_binary() {
   case "$bin" in *.real*) return 1 ;; esac
   [ -x "$bin" ] || return 1
   [ -f "$bin.real" ] && return 1
-  file "$bin" | grep -q ELF || return 1
   mv "$bin" "$bin.real"
   printf '%s\n' "$WRAPPER_CONTENT" > "$bin"
   chmod +x "$bin"
@@ -113,9 +112,14 @@ _wrap_cli_binary() {
 # VSCODE_AGENT_FOLDER, which the install script may override.
 _WRAP_DIRS="/config/.vscode-server /config/.cursor-server /workspace/.vscode-server /workspace/.cursor-server"
 
-# Part 1: wrap existing binaries right now
+# Part 1: wrap existing launchers right now
 for _dir in $_WRAP_DIRS; do
-  for _bin in "$_dir"/code-* "$_dir"/cursor-*; do
+  for _bin in \
+    "$_dir"/code-* \
+    "$_dir"/cursor-* \
+    "$_dir"/bin/*/*/bin/cursor-server \
+    "$_dir"/bin/*/*/bin/remote-cli/cursor \
+    "$_dir"/bin/*/*/bin/remote-cli/code; do
     _wrap_cli_binary "$_bin" 2>/dev/null
   done
 done
@@ -127,7 +131,12 @@ done
   while true; do
     for _dir in $_WRAP_DIRS; do
       [ -d "$_dir" ] || continue
-      for _bin in "$_dir"/code-* "$_dir"/cursor-*; do
+      for _bin in \
+        "$_dir"/code-* \
+        "$_dir"/cursor-* \
+        "$_dir"/bin/*/*/bin/cursor-server \
+        "$_dir"/bin/*/*/bin/remote-cli/cursor \
+        "$_dir"/bin/*/*/bin/remote-cli/code; do
         _wrap_cli_binary "$_bin" 2>/dev/null
       done
     done
@@ -143,9 +152,10 @@ chmod 600 /config/.ssh/authorized_keys
 chown -R abc:abc /config/.ssh
 
 # ── Secrets dir (single-volume layout) ──────────────────────────────────────
-mkdir -p /workspace/.secrets
-chown abc:abc /workspace/.secrets
-chmod 700 /workspace/.secrets
+SECRETS_DIR="$(dirname "${SECRET_FILE_PATH:-${KORTIX_PERSISTENT_ROOT:-/persistent}/secrets/.secrets.json}")"
+mkdir -p "$SECRETS_DIR"
+chown abc:abc "$SECRETS_DIR"
+chmod 700 "$SECRETS_DIR"
 
 # ── Editor server dirs (Cursor/VS Code download here on first connect) ──────
 for d in .vscode-server .cursor-server; do
@@ -167,20 +177,31 @@ chown -R abc:abc /config/.cache 2>/dev/null
 # If Cursor has installed its server, replace the bundled node with a symlink
 # to the system node. The install script already has fallback logic for this.
 _fix_cursor_node() {
-  local cursor_base="/config/.cursor-server/bin"
-  [ -d "$cursor_base" ] || return 0
-  for node_bin in "$cursor_base"/*/511523af765daeb1fa69500ab0df5b6524424610/node "$cursor_base"/*/*/node; do
-    [ -f "$node_bin" ] || continue
-    [ -L "$node_bin" ] && continue  # already a symlink, skip
-    local sys_node
-    sys_node="$(command -v node 2>/dev/null)" || continue
-    cp "$node_bin" "${node_bin}.bundled" 2>/dev/null
-    rm -f "$node_bin"
-    ln -s "$sys_node" "$node_bin"
-    echo "[init] Replaced Cursor bundled node with system node ($sys_node) at $node_bin"
+  local sys_node cursor_base node_bin
+  sys_node="$(command -v node 2>/dev/null)" || return 0
+  for cursor_base in /config/.cursor-server/bin /workspace/.cursor-server/bin; do
+    [ -d "$cursor_base" ] || continue
+    for node_bin in "$cursor_base"/*/*/node; do
+      [ -f "$node_bin" ] || continue
+      [ -L "$node_bin" ] && continue  # already a symlink, skip
+      cp "$node_bin" "${node_bin}.bundled" 2>/dev/null || true
+      rm -f "$node_bin"
+      ln -s "$sys_node" "$node_bin"
+      echo "[init] Replaced Cursor bundled node with system node ($sys_node) at $node_bin"
+    done
   done
 }
 _fix_cursor_node
+
+# Part 3: background watcher for newly-downloaded Cursor nodes
+# New Cursor server versions may be downloaded after container boot; repair
+# them continuously so Remote-SSH doesn't regress on reconnect.
+(
+  while true; do
+    _fix_cursor_node
+    sleep 1
+  done
+) &
 
 # ── Login profile for SSH sessions ──────────────────────────────────────────
 cat > /config/.profile <<'PROFILE'
@@ -189,6 +210,17 @@ export PATH="/workspace/.npm-global/bin:/workspace/.local/bin:$HOME/.local/bin:$
 export PYTHONUSERBASE=/workspace/.local
 export PIP_USER=1
 export NPM_CONFIG_PREFIX=/workspace/.npm-global
+export KORTIX_PERSISTENT_ROOT="${KORTIX_PERSISTENT_ROOT:-/persistent}"
+export OPENCODE_STORAGE_BASE="${OPENCODE_STORAGE_BASE:-$KORTIX_PERSISTENT_ROOT/opencode}"
+export OPENCODE_SHADOW_STORAGE_BASE="${OPENCODE_SHADOW_STORAGE_BASE:-$KORTIX_PERSISTENT_ROOT/opencode-shadow}"
+export KORTIX_OPENCODE_ARCHIVE_DIR="${KORTIX_OPENCODE_ARCHIVE_DIR:-$KORTIX_PERSISTENT_ROOT/opencode-archive}"
+export KORTIX_OPENCODE_CACHE_DIR="${KORTIX_OPENCODE_CACHE_DIR:-$KORTIX_PERSISTENT_ROOT/opencode-cache}"
+export AUTH_JSON_PATH="${AUTH_JSON_PATH:-$OPENCODE_STORAGE_BASE/auth.json}"
+export SECRET_FILE_PATH="${SECRET_FILE_PATH:-$KORTIX_PERSISTENT_ROOT/secrets/.secrets.json}"
+export SALT_FILE_PATH="${SALT_FILE_PATH:-$KORTIX_PERSISTENT_ROOT/secrets/.salt}"
+export ENCRYPTION_KEY_PATH="${ENCRYPTION_KEY_PATH:-$KORTIX_PERSISTENT_ROOT/secrets/.encryption-key}"
+export LSS_DIR="${LSS_DIR:-$KORTIX_PERSISTENT_ROOT/lss}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$KORTIX_PERSISTENT_ROOT}"
 
 # ── Source .bashrc for login shells ──
 # Login shells (bash -l) only read .profile, not .bashrc. Source it

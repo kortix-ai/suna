@@ -382,6 +382,13 @@ setupApp.post('/bootstrap-owner', async (c) => {
     const firstUser = listed.data?.users?.[0];
     if (firstUser) {
       if ((firstUser.email || '').toLowerCase() === email) {
+        const updateExisting = await supabase.auth.admin.updateUserById(firstUser.id, {
+          password,
+          email_confirm: true,
+        });
+        if (updateExisting.error) {
+          return c.json({ success: false, error: updateExisting.error.message || 'Could not refresh owner credentials' }, 500);
+        }
         try {
           const accountId = await resolveAccountId(firstUser.id);
           await db
@@ -392,7 +399,7 @@ setupApp.post('/bootstrap-owner', async (c) => {
         } catch {
           // best effort reset
         }
-        return c.json({ success: true, created: false, message: 'Owner already exists for this email' });
+        return c.json({ success: true, created: false, message: 'Owner already exists for this email', credentials_reset: true });
       }
       return c.json({ success: false, error: `Owner already exists (${firstUser.email})` }, 409);
     }

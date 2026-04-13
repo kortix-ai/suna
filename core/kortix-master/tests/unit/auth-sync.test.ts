@@ -7,13 +7,9 @@ import { SecretStore } from '../../src/services/secret-store'
 /**
  * Tests for the auth-sync service (two-way sync: auth.json ↔ SecretStore).
  *
- * Each test gets its own temp directory for isolation. We override the module
- * constants via process.env and re-import to get a fresh module instance.
+ * Each test gets its own temp directory for isolation. Paths are injected via
+ * env vars and modules are imported fresh per test where needed.
  */
-
-// We can't easily change the hardcoded AUTH_JSON path in auth-sync.ts,
-// so we test the exported functions by manipulating the files they read/write.
-// For unit testing, we'll create a wrapper that exercises the core logic.
 
 // ── Test helpers ────────────────────────────────────────────────────────────
 
@@ -54,12 +50,14 @@ describe('auth-sync', () => {
     savedEnv.ENCRYPTION_KEY_PATH = process.env.ENCRYPTION_KEY_PATH
     savedEnv.KORTIX_TOKEN = process.env.KORTIX_TOKEN
     savedEnv.S6_ENV_DIR = process.env.S6_ENV_DIR
+    savedEnv.AUTH_JSON_PATH = process.env.AUTH_JSON_PATH
 
     process.env.SECRET_FILE_PATH = join(tempDir, '.secrets.json')
     process.env.SALT_FILE_PATH = join(tempDir, '.salt')
     process.env.ENCRYPTION_KEY_PATH = join(tempDir, '.encryption-key')
     process.env.KORTIX_TOKEN = 'test-token-auth-sync'
     process.env.S6_ENV_DIR = s6EnvDir
+    process.env.AUTH_JSON_PATH = authJsonPath
 
     secretStore = new SecretStore()
   })
@@ -107,32 +105,30 @@ describe('auth-sync', () => {
     })
   })
 
-  // ─── Direction 1: auth.json → SecretStore ───────────────────────────────
-  //
-  // Since auth-sync reads from a hardcoded path (/workspace/...), we can't
-  // easily redirect it to our temp dir in a unit test. Instead, we test the
-  // core logic by directly exercising the functions with a real SecretStore
-  // and verifying the expected behavior through the SecretStore API.
-  //
-  // For a true integration test, we'd need to run inside the container.
-  // Here we test the building blocks and the Direction 2 path fully.
+  // ─── Direction 1 / 2 smoke coverage ─────────────────────────────────────
 
   describe('syncSecretToAuth (Direction 2: SecretStore → auth.json)', () => {
-    it('writes a provider key to auth.json when a mapped env var is set', async () => {
-      // Create an auth.json that syncSecretToAuth will read/write
-      // We need to test this against the real path the module uses.
-      // Since we can't redirect the path, let's test the logic indirectly
-      // by verifying the SecretStore side works correctly.
+    it('writes a mapped provider key into auth.json', async () => {
+      const { syncSecretToAuth } = await import(`../../src/services/auth-sync?write=${Date.now()}`)
 
-      // Set OPENAI_API_KEY in SecretStore
-      await secretStore.setEnv('OPENAI_API_KEY', 'sk-test-key-123')
+      const changed = await syncSecretToAuth('OPENAI_API_KEY', 'sk-test-key-123')
+      expect(changed).toBe(true)
 
-      // Verify it's in SecretStore
-      const value = await secretStore.get('OPENAI_API_KEY')
-      expect(value).toBe('sk-test-key-123')
+      const auth = readJson(authJsonPath) as Record<string, { type: string; key?: string }>
+      expect(auth.openai?.type).toBe('api')
+      expect(auth.openai?.key).toBe('sk-test-key-123')
+    })
 
-      // Verify it's in process.env
-      expect(process.env.OPENAI_API_KEY).toBe('sk-test-key-123')
+    it('syncs auth.json provider keys into SecretStore', async () => {
+      writeJson(authJsonPath, {
+        openai: { type: 'api', key: 'sk-from-auth-json' },
+      })
+
+      const { syncAuthToSecrets } = await import(`../../src/services/auth-sync?read=${Date.now()}`)
+      const count = await syncAuthToSecrets(secretStore)
+      expect(count).toBe(1)
+      expect(await secretStore.get('OPENAI_API_KEY')).toBe('sk-from-auth-json')
+      expect(process.env.OPENAI_API_KEY).toBe('sk-from-auth-json')
     })
 
     it('syncSecretToAuth returns false for non-provider keys', async () => {

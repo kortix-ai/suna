@@ -1,7 +1,6 @@
 import { RingBuffer } from './buffer.ts'
 import type { PTYSession, PTYSessionInfo, SpawnOptions } from './types.ts'
 import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS } from '../constants.ts'
-import moment from 'moment'
 import { existsSync } from 'node:fs'
 
 // ── Lazy bun-pty import ─────────────────────────────────────────────────────
@@ -73,7 +72,7 @@ export class SessionLifecycleManager {
       env: opts.env,
       status: 'running',
       pid: 0, // will be set after spawn
-      createdAt: moment(),
+      createdAt: new Date().toISOString(),
       parentSessionId: opts.parentSessionId,
       parentAgent: opts.parentAgent,
       notifyOnExit: opts.notifyOnExit ?? false,
@@ -247,7 +246,7 @@ export class SessionLifecycleManager {
       exitCode: session.exitCode,
       exitSignal: session.exitSignal,
       pid: session.pid,
-      createdAt: session.createdAt.toISOString(true),
+      createdAt: session.createdAt,
       lineCount: session.buffer.length,
     }
   }

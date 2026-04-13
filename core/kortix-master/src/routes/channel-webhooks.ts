@@ -8,6 +8,7 @@
  */
 import { Hono } from 'hono'
 import { getChannelByPath, updateChannel, type ChannelConfig } from '../../channels/channel-db'
+import { clearSession, getSessionState, rememberSession } from '../../channels/channel-sessions'
 import {
   parseTelegramUpdate,
   parseSlackEvent,
@@ -19,56 +20,12 @@ const channelWebhooksRouter = new Hono()
 
 const OPENCODE_URL = 'http://localhost:4096'
 
-// ── Persistent session store — survives restarts via SQLite ─────────────────
-
-import { getDb } from '../../channels/channel-db'
-
-function ensureSessionTable(): void {
-  const db = getDb()
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS channel_sessions (
-      session_key TEXT PRIMARY KEY,
-      current_session_id TEXT NOT NULL,
-      history TEXT NOT NULL DEFAULT '[]',
-      updated_at TEXT NOT NULL
-    );
-  `)
-}
-
-// Run on module load
-try { ensureSessionTable() } catch {}
-
-function getSessionState(sessionKey: string): { currentId: string | null; history: string[] } {
-  try {
-    const db = getDb()
-    const row = db.prepare('SELECT current_session_id, history FROM channel_sessions WHERE session_key = ?').get(sessionKey) as { current_session_id: string; history: string } | null
-    if (!row) return { currentId: null, history: [] }
-    return { currentId: row.current_session_id, history: JSON.parse(row.history || '[]') }
-  } catch {
-    return { currentId: null, history: [] }
+function applyBridgeInstructions(channel: ChannelConfig, event: NormalizedChannelEvent): NormalizedChannelEvent {
+  if (!channel.bridge_instructions?.trim()) return event
+  return {
+    ...event,
+    prompt: `${event.prompt}\n\n── Channel bridge instructions ──\n${channel.bridge_instructions.trim()}`,
   }
-}
-
-function rememberSession(sessionKey: string, sessionId: string): void {
-  try {
-    const db = getDb()
-    const existing = getSessionState(sessionKey)
-    const history = [sessionId, ...existing.history.filter(id => id !== sessionId)].slice(0, 10)
-    const now = new Date().toISOString()
-    db.prepare(`
-      INSERT INTO channel_sessions (session_key, current_session_id, history, updated_at)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(session_key) DO UPDATE SET current_session_id = excluded.current_session_id, history = excluded.history, updated_at = excluded.updated_at
-    `).run(sessionKey, sessionId, JSON.stringify(history), now)
-  } catch {}
-}
-
-function clearSession(sessionKey: string): void {
-  try {
-    const db = getDb()
-    db.prepare('UPDATE channel_sessions SET current_session_id = \'\', updated_at = ? WHERE session_key = ?')
-      .run(new Date().toISOString(), sessionKey)
-  } catch {}
 }
 
 async function sendTelegramText(channel: ChannelConfig, chatId: string, text: string): Promise<void> {
@@ -351,6 +308,7 @@ async function dispatchToOpenCode(
     body: JSON.stringify({
       parts: [{ type: 'text', text: event.prompt }],
       agent: channel.default_agent || 'kortix',
+      ...(modelOverride ? { model: modelOverride } : {}),
     }),
     signal: AbortSignal.timeout(30_000),
   })
@@ -359,7 +317,6 @@ async function dispatchToOpenCode(
   }
 
   // Cache session for reuse (persisted in SQLite)
-  rememberSession(event.session_key, session.id)
   rememberSession(event.session_key, session.id)
 
   return { sessionId: session.id }
@@ -392,7 +349,8 @@ channelWebhooksRouter.post('/hooks/telegram/:channelId', async (c) => {
     return c.json({ ok: false, error: 'invalid_json' }, 400)
   }
 
-  const event = parseTelegramUpdate(body, channelId)
+  const rawEvent = parseTelegramUpdate(body, channelId)
+  const event = rawEvent ? applyBridgeInstructions(channel, rawEvent) : null
   if (!event) {
     return c.json({ ok: true, skipped: true })
   }
@@ -453,11 +411,13 @@ channelWebhooksRouter.post('/hooks/slack/:channelId', async (c) => {
     return c.json({ ok: true, skipped: true })
   }
 
+  const dispatchEvent = applyBridgeInstructions(channel, preParseResult.dispatch_event)
+
   // Handle commands BEFORE enabled check — so !enable works on disabled channels
-  const command = await handleChannelCommand(channel, preParseResult.dispatch_event)
+  const command = await handleChannelCommand(channel, dispatchEvent)
   if (command.handled) {
     if (command.text) {
-      await sendSlackText(channel, preParseResult.dispatch_event.chat_id, command.text, preParseResult.dispatch_event.thread_ts || preParseResult.dispatch_event.message_id)
+      await sendSlackText(channel, dispatchEvent.chat_id, command.text, dispatchEvent.thread_ts || dispatchEvent.message_id)
     }
     channel = getChannelByPath(webhookPath)!
     return c.json({ ok: true, command: true })
@@ -480,8 +440,8 @@ channelWebhooksRouter.post('/hooks/slack/:channelId', async (c) => {
 
   // Dispatch to OpenCode
   try {
-    const dispatch = await dispatchToOpenCode(channel, result.dispatch_event)
-    console.log(`[Channel Webhook] Slack ${result.dispatch_event.event_type} from ${result.dispatch_event.username} → session ${dispatch.sessionId}`)
+    const dispatch = await dispatchToOpenCode(channel, dispatchEvent)
+    console.log(`[Channel Webhook] Slack ${dispatchEvent.event_type} from ${dispatchEvent.username} → session ${dispatch.sessionId}`)
     return c.json({ ok: true, sessionId: dispatch.sessionId }, 202)
   } catch (err) {
     console.error(`[Channel Webhook] Slack dispatch error:`, err)

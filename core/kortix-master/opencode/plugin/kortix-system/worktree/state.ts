@@ -4,17 +4,17 @@
  * Provides atomic, crash-safe persistence for worktree sessions and pending operations.
  * Uses bun:sqlite for zero external dependencies.
  *
- * Database location: ~/.local/share/opencode/plugins/worktree/{project-id}.sqlite
+ * Database location: <OPENCODE_STORAGE_BASE>/plugins/worktree/{project-id}.sqlite
  * Project ID is the first git root commit SHA (40-char hex), with SHA-256 path hash fallback (16-char).
  */
 
 import { Database } from "bun:sqlite"
 import { mkdirSync } from "node:fs"
-import * as os from "node:os"
 import * as path from "node:path"
 import { z } from "zod"
 import type { OpencodeClient } from "../lib"
 import { getProjectId, logWarn } from "../lib"
+import { getOpencodeStoragePath } from "../lib/opencode-storage-paths"
 import { ensureSchema } from "../lib/schema"
 
 // =============================================================================
@@ -80,16 +80,15 @@ export async function getWorktreePath(projectRoot: string, branch: string): Prom
 		throw new Error("branch is required")
 	}
 	const projectId = await getProjectId(projectRoot)
-	return path.join(os.homedir(), ".local", "share", "opencode", "worktree", projectId, branch)
+	return getOpencodeStoragePath("worktree", projectId, branch)
 }
 
 /**
  * Get the database directory path.
- * Location: ~/.local/share/opencode/plugins/worktree/
+ * Location: <OPENCODE_STORAGE_BASE>/plugins/worktree/
  */
 function getDbDirectory(): string {
-	const home = os.homedir()
-	return path.join(home, ".local", "share", "opencode", "plugins", "worktree")
+	return getOpencodeStoragePath("plugins", "worktree")
 }
 
 /**

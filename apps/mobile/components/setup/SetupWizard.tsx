@@ -69,6 +69,7 @@ import GeminiIcon from '@/assets/images/models/Gemini.svg';
 import GrokIcon from '@/assets/images/models/Grok.svg';
 import MoonshotIcon from '@/assets/images/models/Moonshot.svg';
 import type { SvgProps } from 'react-native-svg';
+import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useOpenCodeProviders, flattenModels, filterToLatestModels, type FlatModel } from '@/lib/opencode/hooks/use-opencode-data';
 import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
@@ -352,6 +353,7 @@ async function submitOAuthCallback(sandboxUrl: string, providerId: string, metho
 function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onContinue: () => void }) {
   const { sandboxUrl } = useSandboxContext();
   const insets = useSafeAreaInsets();
+  const sheetPadding = useSheetBottomPadding();
   const { data: providersData, isLoading, refetch } = useOpenCodeProviders(sandboxUrl);
   const sheetRef = useRef<BottomSheetModal>(null);
 
@@ -555,7 +557,7 @@ function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onConti
       >
         {sheetView === 'list' && (
           /* ── Provider list ── */
-          <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
+          <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: sheetPadding }}>
             <Text style={{ fontSize: 17, fontFamily: 'Roobert-SemiBold', color: colors.fg, textAlign: 'center', marginTop: 4, marginBottom: 2 }}>
               Choose a provider
             </Text>
@@ -587,7 +589,7 @@ function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onConti
 
         {sheetView === 'methods' && selectedProvider && (
           /* ── Auth method selection ── */
-          <BottomSheetView style={{ flex: 1, paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
+          <BottomSheetView style={{ flex: 1, paddingHorizontal: 24, paddingBottom: sheetPadding }}>
             <Pressable onPress={() => { setSheetView('list'); setSelectedProvider(null); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 16 }}>
               <ChevronLeft size={16} color={colors.muted} />
               <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: colors.muted }}>Back</Text>
@@ -651,7 +653,7 @@ function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onConti
 
         {sheetView === 'apikey' && selectedProvider && (
           /* ── API key input ── */
-          <BottomSheetView style={{ flex: 1, paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
+          <BottomSheetView style={{ flex: 1, paddingHorizontal: 24, paddingBottom: sheetPadding }}>
             <View style={{ flex: 1, justifyContent: 'center', paddingBottom: 24 }}>
               <Pressable onPress={() => authMethods.length > 1 ? setSheetView('methods') : (setSheetView('list'), setSelectedProvider(null))} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
                 <ChevronLeft size={16} color={colors.muted} />
@@ -714,7 +716,7 @@ function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onConti
 
         {sheetView === 'oauth' && selectedProvider && (
           /* ── OAuth flow — open browser + paste redirect URL ── */
-          <BottomSheetView style={{ flex: 1, paddingHorizontal: 24, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
+          <BottomSheetView style={{ flex: 1, paddingHorizontal: 24, paddingBottom: sheetPadding }}>
             {/* Back button */}
             <Pressable onPress={() => setSheetView('methods')} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 24 }}>
               <ChevronLeft size={16} color={colors.muted} />

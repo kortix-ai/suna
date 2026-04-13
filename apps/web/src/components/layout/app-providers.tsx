@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, lazy } from 'react';
+import React from 'react';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
@@ -9,31 +9,62 @@ import { SubscriptionStoreSync } from '@/stores/subscription-store';
 import { useModelHydration } from '@/hooks/opencode/use-model-hydration';
 import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
+import { SidebarLeft } from '@/components/sidebar/sidebar-left';
+import { SidebarRight } from '@/components/sidebar/sidebar-right';
 
-const SidebarLeft = lazy(() =>
-  import('@/components/sidebar/sidebar-left').then(mod => ({ default: mod.SidebarLeft }))
-);
-const SidebarRight = lazy(() =>
-  import('@/components/sidebar/sidebar-right').then(mod => ({ default: mod.SidebarRight }))
-);
-
-function SidebarSkeleton() {
+/**
+ * Left sidebar slot — lives inside SidebarProvider so it can read the
+ * onboarding morph state.
+ *
+ * Width is NOT driven by the `open` state here — `SidebarLeft` uses
+ * `collapsible="icon"`, so the collapsed state still shows a 3.25rem icon
+ * rail. Letting the inner `<Sidebar>` manage its own width means the main
+ * content's rounded left edge sits flush with the rail (not the viewport)
+ * in both states.
+ *
+ * `SidebarLeft` is imported eagerly (not lazy/Suspense) so there's no
+ * skeleton→real swap on initial load — that swap was the "weird flicker"
+ * on load, since the skeleton pulse and the real sidebar's own entrance
+ * both fired in the first few frames.
+ *
+ * The only time we clamp this slot ourselves is during the onboarding
+ * hide-sidebar morph: we animate max-width to 0 so the sidebar slides out
+ * entirely. A `booted` flag suppresses that transition on first paint so
+ * the initial render never flashes an animation.
+ */
+function SidebarLeftSlot({ sidebarContent }: { sidebarContent?: React.ReactNode }) {
   const obActive = useOnboardingModeStore((s) => s.active);
-  if (obActive) return null;
+  const obMorphing = useOnboardingModeStore((s) => s.morphing);
+  const hideSidebar = obActive && !obMorphing;
+
+  // Suppress transitions on the very first paint so nothing animates on
+  // initial load. Flip on the next frame so the onboarding morph still
+  // animates when it fires later.
+  const [booted, setBooted] = React.useState(false);
+  React.useEffect(() => {
+    const id = requestAnimationFrame(() => setBooted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   return (
-    <div className="hidden md:flex w-[280px] flex-col bg-sidebar shrink-0">
-      <div className="p-4 space-y-4">
-        <div className="h-8 w-32 bg-muted/40 rounded animate-pulse" />
-        <div className="space-y-2">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-9 bg-muted/30 rounded animate-pulse" />
-          ))}
-        </div>
-      </div>
-      <div className="flex-1" />
-      <div className="p-4">
-        <div className="h-10 bg-muted/30 rounded animate-pulse" />
-      </div>
+    <div
+      data-slot="sidebar-left-slot"
+      className={
+        booted
+          ? 'transition-[max-width,opacity] duration-500 ease-out overflow-hidden'
+          : 'overflow-hidden'
+      }
+      style={{
+        // Normal mode: use a max-width larger than any real sidebar width
+        // so it never constrains the inner <Sidebar> (which manages its
+        // own 280px / 3.25rem widths via `collapsible="icon"`).
+        // Onboarding-hide: clamp to 0 so the sidebar slides out with an
+        // animation — CSS needs a concrete start value to transition from.
+        maxWidth: hideSidebar ? 0 : 320,
+        opacity: hideSidebar ? 0 : 1,
+      }}
+    >
+      {sidebarContent || <SidebarLeft />}
     </div>
   );
 }
@@ -67,10 +98,6 @@ export function AppProviders({
   // Hydrate global default model from server on first mount
   useModelHydration();
 
-  const obActive = useOnboardingModeStore((s) => s.active);
-  const obMorphing = useOnboardingModeStore((s) => s.morphing);
-  const hideSidebar = obActive && !obMorphing;
-
   const content = (
     <DeleteOperationEffectsWrapper>
       <SubscriptionStoreSync>
@@ -84,27 +111,13 @@ export function AppProviders({
 
   return (
     <SidebarProvider defaultOpen={defaultSidebarOpen}>
-      <div
-        className="transition-[max-width,opacity] duration-500 ease-out overflow-hidden"
-        style={{
-          maxWidth: hideSidebar ? 0 : '280px',
-          opacity: hideSidebar ? 0 : 1,
-        }}
-      >
-        {sidebarContent || (
-          <Suspense fallback={<SidebarSkeleton />}>
-            <SidebarLeft />
-          </Suspense>
-        )}
-      </div>
+      <SidebarLeftSlot sidebarContent={sidebarContent} />
       <SidebarInset>
         <RightSidebarProvider>
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             {content}
           </div>
-          <Suspense fallback={null}>
-            <SidebarRight />
-          </Suspense>
+          <SidebarRight />
         </RightSidebarProvider>
       </SidebarInset>
       {sidebarSiblings}

@@ -29,22 +29,22 @@ export default function Layout({ children }: { children: ReactNode }) {
       }}
     >
       <DocsLayout
-        tree={source.pageTree}
+        tree={source.getPageTree()}
         nav={{
           title: <DocsLogo />,
           url: '/docs',
-          links: [
-            {
-              text: 'Home',
-              url: '/',
-            },
-            {
-              text: 'GitHub',
-              url: 'https://github.com/kortix-ai/suna',
-              external: true,
-            },
-          ],
         }}
+        links={[
+          {
+            text: 'Home',
+            url: '/',
+          },
+          {
+            text: 'GitHub',
+            url: 'https://github.com/kortix-ai/suna',
+            external: true,
+          },
+        ]}
         sidebar={{
           defaultOpenLevel: 0,
         }}

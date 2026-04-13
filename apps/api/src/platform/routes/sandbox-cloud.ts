@@ -707,24 +707,29 @@ export function createCloudSandboxRouter(
   });
 
   // ─── POST /stop ────────────────────────────────────────────────────────
-  // Stop the user's active sandbox.
+  // Stop a specific sandbox (by `sandbox_id` in body) or the user's active
+  // sandbox if no id is provided. Accepting `sandbox_id` lets the /instances
+  // page stop any instance the user owns, not just the newest one.
 
   router.post('/stop', async (c) => {
     const userId = c.get('userId');
 
     try {
       const accountId = await resolveAccountId(userId);
+      const body = await c.req.json().catch(() => ({}));
+      const requestedSandboxId = body?.sandbox_id as string | undefined;
 
-      const [sandbox] = await db
-        .select()
-        .from(sandboxes)
-        .where(
-          and(
+      const query = requestedSandboxId
+        ? and(
+            eq(sandboxes.accountId, accountId),
+            eq(sandboxes.sandboxId, requestedSandboxId),
+          )
+        : and(
             eq(sandboxes.accountId, accountId),
             eq(sandboxes.status, 'active'),
-          ),
-        )
-        .limit(1);
+          );
+
+      const [sandbox] = await db.select().from(sandboxes).where(query).limit(1);
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No active sandbox to stop' }, 404);
@@ -752,23 +757,29 @@ export function createCloudSandboxRouter(
   });
 
   // ─── POST /restart ─────────────────────────────────────────────────────
-  // Restart the user's active sandbox (stop then start).
+  // Restart a specific sandbox (by `sandbox_id` in body) or the user's most
+  // recently created sandbox if no id is provided. Accepting `sandbox_id`
+  // lets the /instances page restart any instance directly from its card.
 
   router.post('/restart', async (c) => {
     const userId = c.get('userId');
 
     try {
       const accountId = await resolveAccountId(userId);
+      const body = await c.req.json().catch(() => ({}));
+      const requestedSandboxId = body?.sandbox_id as string | undefined;
+
+      const query = requestedSandboxId
+        ? and(
+            eq(sandboxes.accountId, accountId),
+            eq(sandboxes.sandboxId, requestedSandboxId),
+          )
+        : eq(sandboxes.accountId, accountId);
 
       const [sandbox] = await db
         .select()
         .from(sandboxes)
-        .where(
-          and(
-            eq(sandboxes.accountId, accountId),
-            // Could be active or stopped
-          ),
-        )
+        .where(query)
         .orderBy(desc(sandboxes.createdAt))
         .limit(1);
 
