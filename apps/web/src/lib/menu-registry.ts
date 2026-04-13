@@ -797,7 +797,7 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'admin-sandboxes',
-    label: 'Admin: Sandboxes & Pool',
+    label: 'Admin: Sandboxes',
     icon: Server,
     group: 'admin',
     showIn: ['userMenu', 'commandPalette'],

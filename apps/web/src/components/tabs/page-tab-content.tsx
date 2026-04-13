@@ -110,6 +110,9 @@ const AdminAccessRequestsPage = lazy(() =>
 const AdminSandboxesPage = lazy(() =>
 	import('@/app/(dashboard)/admin/sandboxes/page'),
 );
+const AdminSandboxDetailPage = lazy(() =>
+	import('@/app/(dashboard)/admin/sandboxes/[sandboxId]/page'),
+);
 
 const LegacyThreadPage = lazy(() =>
 	import('@/app/(dashboard)/legacy/[threadId]/page'),
@@ -179,6 +182,11 @@ function resolveComponent(routeKey: string): { Component: ComponentType<any>; pa
 	const taskMatch = routeKey.match(/^\/tasks\/([^/]+)$/);
 	if (taskMatch) {
 		return { Component: TaskDetailPage, params: { id: decodeURIComponent(taskMatch[1]) } };
+	}
+
+	const sandboxMatch = routeKey.match(/^\/admin\/sandboxes\/([^/]+)$/);
+	if (sandboxMatch) {
+		return { Component: AdminSandboxDetailPage, params: { sandboxId: decodeURIComponent(sandboxMatch[1]) } };
 	}
 
 	return null;

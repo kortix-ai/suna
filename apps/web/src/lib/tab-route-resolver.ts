@@ -233,6 +233,19 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
 type DynamicResolver = (pathname: string) => TabDescriptor | null;
 
 const DYNAMIC_RESOLVERS: DynamicResolver[] = [
+  // /admin/sandboxes/<id>
+  (pathname) => {
+    const m = pathname.match(/^\/admin\/sandboxes\/([^/]+)$/);
+    if (!m) return null;
+    const sandboxId = m[1];
+    return {
+      id: `sandbox:${sandboxId}`,
+      title: `Sandbox · ${sandboxId.slice(0, 8)}`,
+      type: 'page',
+      href: `/admin/sandboxes/${sandboxId}`,
+    };
+  },
+
   // /sessions/<id>
   (pathname) => {
     const m = pathname.match(/^\/sessions\/([^/]+)$/);
