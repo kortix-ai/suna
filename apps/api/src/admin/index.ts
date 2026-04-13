@@ -33,6 +33,34 @@ export const adminApp = new Hono<AppEnv>();
 // All admin routes require a valid Supabase JWT AND admin/super_admin role.
 adminApp.use('/*', supabaseAuth, requireAdmin);
 
+// ─── Secret redaction ───────────────────────────────────────────────────────
+// Redacts sensitive fields from sandbox metadata and provider details before
+// returning them to the admin UI. Even admins shouldn't have credentials
+// streaming through DevTools / browser extensions when the UI doesn't need them.
+//
+// Note: provider_detail.ssh.private_key / setup_command are intentionally NOT
+// redacted — admins legitimately need to copy the SSH setup command from the
+// Connect tab. The UI masks the key visually via SecretCodeBlock.
+const ADMIN_REDACT_KEYS = new Set([
+  'justavpsProxyToken', 'justavpsProxyTokenId',
+  'machine_token', 'machineToken',
+  'api_key', 'apiKey',
+  'password', 'secret',
+]);
+function redactAdminSecrets<T>(value: T): T {
+  if (value === null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return value.map(redactAdminSecrets) as unknown as T;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (ADMIN_REDACT_KEYS.has(k) && typeof v === 'string' && v.length > 0) {
+      out[k] = `${v.slice(0, 4)}••••••${v.slice(-4)}`;
+    } else {
+      out[k] = redactAdminSecrets(v);
+    }
+  }
+  return out as T;
+}
+
 // ─── Helpers (reused from setup module) ─────────────────────────────────────
 
 function findRepoRoot(): string | null {
@@ -430,7 +458,9 @@ adminApp.get('/api/sandboxes', async (c) => {
     }
     if (q) {
       conditions.push(or(
-        ilike(sandboxes.sandboxId, `%${q}%`),
+        sql`cast(${sandboxes.sandboxId} as text) ilike ${'%' + q + '%'}`,
+        sql`cast(${sandboxes.accountId} as text) ilike ${'%' + q + '%'}`,
+        sql`cast(${sandboxes.externalId} as text) ilike ${'%' + q + '%'}`,
         ilike(sandboxes.name, `%${q}%`),
         ilike(accounts.name, `%${q}%`),
         sql`EXISTS (
@@ -482,7 +512,7 @@ adminApp.get('/api/sandboxes', async (c) => {
         .where(where),
     ]);
 
-    return c.json({ sandboxes: rows, total, page, limit });
+    return c.json({ sandboxes: redactAdminSecrets(rows), total, page, limit });
   } catch (e: any) {
     return c.json({ sandboxes: [], total: 0, page: 1, limit: 50, error: e?.message || String(e) }, 500);
   }
@@ -514,6 +544,177 @@ adminApp.delete('/api/sandboxes/:id', async (c) => {
 
     await db.delete(sandboxes).where(eq(sandboxes.sandboxId, sandboxId));
     return c.json({ success: true, sandboxId });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 500);
+  }
+});
+
+/** GET /v1/admin/api/sandboxes/:id — full sandbox detail merged with provider data */
+adminApp.get('/api/sandboxes/:id', async (c) => {
+  try {
+    const sandboxId = c.req.param('id');
+    const { db } = await import('../shared/db');
+    const { sandboxes, accounts } = await import('@kortix/db');
+    const { eq, sql } = await import('drizzle-orm');
+
+    const ownerEmailSub = sql<string>`(
+      SELECT au.email FROM auth.users au
+      INNER JOIN kortix.account_members am ON am.user_id = au.id
+      WHERE am.account_id = ${sandboxes.accountId}
+      LIMIT 1
+    )`;
+
+    const [row] = await db
+      .select({
+        sandboxId: sandboxes.sandboxId,
+        accountId: sandboxes.accountId,
+        name: sandboxes.name,
+        provider: sandboxes.provider,
+        externalId: sandboxes.externalId,
+        status: sandboxes.status,
+        baseUrl: sandboxes.baseUrl,
+        config: sandboxes.config,
+        metadata: sandboxes.metadata,
+        createdAt: sandboxes.createdAt,
+        updatedAt: sandboxes.updatedAt,
+        lastUsedAt: sandboxes.lastUsedAt,
+        accountName: accounts.name,
+        ownerEmail: ownerEmailSub,
+      })
+      .from(sandboxes)
+      .leftJoin(accounts, eq(sandboxes.accountId, accounts.accountId))
+      .where(eq(sandboxes.sandboxId, sandboxId))
+      .limit(1);
+
+    if (!row) return c.json({ error: 'Sandbox not found' }, 404);
+
+    let providerDetail: unknown = null;
+    let providerError: string | null = null;
+    if (row.provider === 'justavps' && row.externalId) {
+      try {
+        const { justavpsFetch } = await import('../platform/providers/justavps');
+        providerDetail = await justavpsFetch(`/machines/${row.externalId}`);
+      } catch (e: any) {
+        providerError = e?.message || String(e);
+      }
+    }
+
+    return c.json({
+      sandbox: redactAdminSecrets(row),
+      provider_detail: providerDetail, // ssh.private_key / setup_command left intact — admin needs them
+      provider_error: providerError,
+    });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 500);
+  }
+});
+
+/** POST /v1/admin/api/sandboxes/:id/exec — run a shell command on the sandbox via JustAVPS daemon */
+adminApp.post('/api/sandboxes/:id/exec', async (c) => {
+  try {
+    const sandboxId = c.req.param('id');
+    const body = await c.req.json().catch(() => ({})) as { command?: unknown; timeout?: unknown };
+    const command = typeof body.command === 'string' ? body.command : '';
+    const timeout = typeof body.timeout === 'number' && body.timeout > 0 && body.timeout <= 600 ? body.timeout : 60;
+    if (!command || command.length > 8192) {
+      return c.json({ error: 'command (string, 1-8192 chars) required' }, 400);
+    }
+
+    const { db } = await import('../shared/db');
+    const { sandboxes } = await import('@kortix/db');
+    const { eq } = await import('drizzle-orm');
+
+    const [row] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, sandboxId)).limit(1);
+    if (!row) return c.json({ error: 'Sandbox not found' }, 404);
+    if (row.provider !== 'justavps' || !row.externalId) {
+      return c.json({ error: `Exec not supported for provider: ${row.provider}` }, 400);
+    }
+
+    const { justavpsFetch } = await import('../platform/providers/justavps');
+    const result = await justavpsFetch(`/machines/${row.externalId}/exec`, {
+      method: 'POST',
+      body: { command, timeout },
+    });
+    return c.json(result);
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 502);
+  }
+});
+
+/** POST /v1/admin/api/sandboxes/:id/action — reboot/stop/start the sandbox machine */
+adminApp.post('/api/sandboxes/:id/action', async (c) => {
+  try {
+    const sandboxId = c.req.param('id');
+    const body = await c.req.json().catch(() => ({})) as { action?: unknown };
+    const action = body.action;
+    if (action !== 'reboot' && action !== 'stop' && action !== 'start') {
+      return c.json({ error: 'action must be one of: reboot, stop, start' }, 400);
+    }
+
+    const { db } = await import('../shared/db');
+    const { sandboxes } = await import('@kortix/db');
+    const { eq } = await import('drizzle-orm');
+
+    const [row] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, sandboxId)).limit(1);
+    if (!row) return c.json({ error: 'Sandbox not found' }, 404);
+    if (row.provider !== 'justavps' || !row.externalId) {
+      return c.json({ error: `Action not supported for provider: ${row.provider}` }, 400);
+    }
+
+    const { justavpsFetch } = await import('../platform/providers/justavps');
+    const result = await justavpsFetch(`/machines/${row.externalId}/${action}`, { method: 'POST' });
+
+    // Mirror status locally for stop/start so the admin list reflects state immediately.
+    if (action === 'stop') {
+      await db.update(sandboxes).set({ status: 'stopped' }).where(eq(sandboxes.sandboxId, sandboxId));
+    } else if (action === 'start') {
+      await db.update(sandboxes).set({ status: 'active' }).where(eq(sandboxes.sandboxId, sandboxId));
+    }
+
+    return c.json({ action, ...result });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 502);
+  }
+});
+
+/** POST /v1/admin/api/sandboxes/:id/proxy-token — mint a fresh JustAVPS proxy JWT for browser use */
+adminApp.post('/api/sandboxes/:id/proxy-token', async (c) => {
+  try {
+    const sandboxId = c.req.param('id');
+    const { db } = await import('../shared/db');
+    const { sandboxes } = await import('@kortix/db');
+    const { eq } = await import('drizzle-orm');
+
+    const [row] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, sandboxId)).limit(1);
+    if (!row) return c.json({ error: 'Sandbox not found' }, 404);
+    if (row.provider !== 'justavps' || !row.externalId) {
+      return c.json({ error: `Proxy token not supported for provider: ${row.provider}` }, 400);
+    }
+
+    const { mintProxyTokenOnJustAvps, justavpsFetch } = await import('../platform/providers/justavps');
+    const minted = await mintProxyTokenOnJustAvps(row.externalId);
+    if (!minted) return c.json({ error: 'Failed to mint proxy token' }, 502);
+
+    // Try to discover the live terminal URL from JustAVPS.
+    let terminalUrl: string | null = null;
+    let proxyUrl: string | null = null;
+    try {
+      const detail = await justavpsFetch<{ urls?: { terminal?: string | null; proxy?: string | null } | null }>(
+        `/machines/${row.externalId}`,
+      );
+      terminalUrl = detail?.urls?.terminal ?? null;
+      proxyUrl = detail?.urls?.proxy ?? null;
+    } catch {
+      /* ignore — caller can construct URL itself */
+    }
+
+    return c.json({
+      token: minted.token,
+      token_id: minted.id,
+      expires_at: minted.expiresAt,
+      terminal_url: terminalUrl,
+      proxy_url: proxyUrl,
+    });
   } catch (e: any) {
     return c.json({ error: e?.message || String(e) }, 500);
   }

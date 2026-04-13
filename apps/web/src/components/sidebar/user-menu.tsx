@@ -8,6 +8,7 @@ import {
   ChevronsUpDown,
   CreditCard,
   Settings as SettingsIcon,
+  ShieldCheck,
 } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -19,6 +20,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -130,12 +134,13 @@ export function UserMenu({ user }: UserMenuProps) {
     }
   };
 
-  const renderRegistryItem = (item: MenuItemDef) => {
+  const renderRegistryItem = (item: MenuItemDef, stripAdminPrefix = false) => {
     const Icon = item.icon;
+    const label = stripAdminPrefix ? item.label.replace(/^Admin:\s*/, '') : item.label;
     return (
       <DropdownMenuItem key={item.id} onClick={() => handleRegistryItem(item)} className="gap-2 p-2 cursor-pointer">
         <Icon className="h-4 w-4" />
-        <span>{item.label}</span>
+        <span>{label}</span>
       </DropdownMenuItem>
     );
   };
@@ -184,13 +189,19 @@ export function UserMenu({ user }: UserMenuProps) {
                 </DropdownMenuItem>
               </DropdownMenuGroup>
 
-              {/* Admin */}
+              {/* Admin submenu */}
               {adminItems.length > 0 && (
                 <>
                   <DropdownMenuSeparator className="my-1" />
-                  <DropdownMenuGroup>
-                    {adminItems.map(renderRegistryItem)}
-                  </DropdownMenuGroup>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger className="gap-2 p-2 cursor-pointer">
+                      <ShieldCheck className="size-4" />
+                      <span>Admin</span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="min-w-52 p-1.5">
+                      {adminItems.map((item) => renderRegistryItem(item, true))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                 </>
               )}
 
