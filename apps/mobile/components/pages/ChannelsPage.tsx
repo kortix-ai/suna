@@ -207,23 +207,27 @@ function ChannelsContent() {
   const handleDelete = useCallback(
     (channel: ChannelConfig) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      Alert.alert('Delete Channel', `Delete "${channel.name}"? This cannot be undone.`, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteChannelMut.mutateAsync((channel.id || channel.channelConfigId!));
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              detailSheetRef.current?.dismiss();
-              setSelectedChannel(null);
-            } catch {
-              Alert.alert('Error', 'Failed to delete channel');
-            }
+      Alert.alert(
+        'Remove channel?',
+        `This will disconnect ${channel.name} from this instance.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove channel',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await deleteChannelMut.mutateAsync((channel.id || channel.channelConfigId!));
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                detailSheetRef.current?.dismiss();
+                setSelectedChannel(null);
+              } catch (err: any) {
+                Alert.alert('Failed to remove channel', err?.message || 'The sandbox did not remove the channel.');
+              }
+            },
           },
-        },
-      ]);
+        ],
+      );
     },
     [deleteChannelMut],
   );
@@ -318,7 +322,7 @@ function ChannelsContent() {
       ) : (
         <FlatList
           data={filteredChannels}
-          keyExtractor={(item) => item.channelConfigId}
+          keyExtractor={(item) => item.channelConfigId || item.id || item.name}
           renderItem={renderItem}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 100 }}
           showsVerticalScrollIndicator={false}
@@ -449,6 +453,7 @@ function ChannelDetailSheet({
   const [editName, setEditName] = useState('');
   const [agentName, setAgentName] = useState('kortix');
   const [selectedModelIdx, setSelectedModelIdx] = useState(0);
+  const [bridgeInstructions, setBridgeInstructions] = useState('');
   const [instructions, setInstructions] = useState('');
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -470,6 +475,7 @@ function ChannelDetailSheet({
     if (channel) {
       setEditName(channel.name);
       setAgentName(channel.default_agent || channel.agentName || 'kortix');
+      setBridgeInstructions((channel as any).bridge_instructions || '');
       setInstructions(channel.instructions || '');
       setDirty(false);
       // Find matching model index
@@ -497,13 +503,14 @@ function ChannelDetailSheet({
           name: editName.trim() || undefined,
           default_agent: agentName || undefined,
           default_model: modelStr,
+          bridge_instructions: bridgeInstructions.trim(),
           instructions: instructions.trim(),
         },
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setDirty(false);
-    } catch {
-      Alert.alert('Error', 'Failed to save settings');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to save channel settings');
     } finally {
       setSaving(false);
     }
@@ -603,18 +610,31 @@ function ChannelDetailSheet({
           </ScrollView>
         </View>
 
-        {/* System Instructions */}
-        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>System Instructions</Text>
+        {/* Bridge Instructions (ported from web c6b83f1) */}
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Bridge Instructions</Text>
         <TextInput
-          value={instructions}
-          onChangeText={(text) => { setInstructions(text); markDirty(); }}
-          placeholder="Optional custom instructions for this channel's agent..."
+          value={bridgeInstructions}
+          onChangeText={(text) => { setBridgeInstructions(text); markDirty(); }}
+          placeholder="Optional per-channel delivery instructions..."
           placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
           multiline
           numberOfLines={3}
           style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, fontFamily: 'Roobert', color: fg, height: 80, textAlignVertical: 'top', marginBottom: 4 }}
         />
-        <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginBottom: 16 }}>Prepended to every session started from this channel.</Text>
+        <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginBottom: 16 }}>Appended to the built-in platform bridge instructions on every incoming message.</Text>
+
+        {/* System Instructions */}
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>System Instructions</Text>
+        <TextInput
+          value={instructions}
+          onChangeText={(text) => { setInstructions(text); markDirty(); }}
+          placeholder="Optional system prompt for this channel's sessions..."
+          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+          multiline
+          numberOfLines={3}
+          style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, fontFamily: 'Roobert', color: fg, height: 80, textAlignVertical: 'top', marginBottom: 4 }}
+        />
+        <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginBottom: 16 }}>Used as the system prompt for sessions started from this channel. Saving resets active channel sessions so changes apply on the next message.</Text>
 
         {/* Webhook URL */}
         <View style={{ borderRadius: 14, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', padding: 14, marginBottom: 20 }}>

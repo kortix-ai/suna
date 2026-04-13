@@ -50,6 +50,7 @@ export interface CreateChannelData {
 export interface UpdateChannelData {
   name?: string;
   platform_config?: Record<string, unknown>;
+  bridge_instructions?: string;
   instructions?: string;
   agent_name?: string;
   default_agent?: string;
