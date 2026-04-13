@@ -1,8 +1,0 @@
-{
-  "python.analysis.typeCheckingMode": "off",
-  "cursorpyright.analysis.typeCheckingMode": "off",
-  "python.defaultInterpreterPath": "./backend/.venv/bin/python",
-  "editor.fontFamily": "Monocraft",
-  "terminal.integrated.fontFamily": "Monocraft",
-  "debug.console.fontFamily": "Monocraft"
-}

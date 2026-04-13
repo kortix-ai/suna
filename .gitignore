@@ -76,3 +76,5 @@ core/kortix-master/opencode/.kortix/
 .pulumi
 .pulumi/
 .vercel
+
+.vscode/
