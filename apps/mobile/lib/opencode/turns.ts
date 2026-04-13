@@ -722,6 +722,7 @@ export function getToolInfo(tool: string, input: Record<string, any> = {}): Tool
       return { icon: 'terminal', title: 'Terminal Input', subtitle: input.id };
     case 'pty_kill':
       return { icon: 'terminal', title: 'Kill Process', subtitle: input.id };
+    // Session tools — full coverage (ported from web 99c57c5)
     case 'session_get':
     case 'session-get':
     case 'oc-session_get':
@@ -737,6 +738,116 @@ export function getToolInfo(tool: string, input: Record<string, any> = {}): Tool
     case 'oc-session_read':
     case 'oc-session-read':
       return { icon: 'book-open', title: 'Read Session', subtitle: input.session_id };
+    case 'session_spawn':
+    case 'session-spawn':
+    case 'oc-session_spawn':
+    case 'oc-session-spawn':
+    case 'session_start_background':
+    case 'session-start-background':
+    case 'oc-session_start_background':
+    case 'oc-session-start-background':
+      return { icon: 'terminal', title: 'Spawn Session', subtitle: input.prompt?.slice(0, 40) };
+    case 'session_search':
+    case 'session-search':
+    case 'oc-session_search':
+    case 'oc-session-search':
+      return { icon: 'search', title: 'Search Sessions', subtitle: input.query };
+    case 'session_message':
+    case 'session-message':
+    case 'oc-session_message':
+    case 'oc-session-message':
+      return { icon: 'message-circle', title: 'Message Session', subtitle: input.session_id };
+    case 'session_lineage':
+    case 'session-lineage':
+    case 'oc-session_lineage':
+    case 'oc-session-lineage':
+      return { icon: 'list', title: 'Session Lineage', subtitle: input.session_id };
+    case 'session_stats':
+    case 'session-stats':
+    case 'oc-session_stats':
+    case 'oc-session-stats':
+      return { icon: 'list', title: 'Session Stats', subtitle: input.session_id };
+    case 'session_list_background':
+    case 'session-list-background':
+    case 'oc-session_list_background':
+    case 'oc-session-list-background':
+      return { icon: 'list', title: 'Background Sessions' };
+    case 'session_list_spawned':
+    case 'session-list-spawned':
+    case 'oc-session_list_spawned':
+    case 'oc-session-list-spawned':
+      return { icon: 'list', title: 'Spawned Sessions' };
+    case 'session_context':
+    case 'session-context':
+    case 'oc-session_context':
+    case 'oc-session-context':
+      return { icon: 'book-open', title: 'Session Context', subtitle: input.session_id };
+
+    // Trigger tools — full coverage (ported from web 99c57c5)
+    case 'triggers':
+    case 'trigger_create':
+    case 'trigger-create':
+    case 'oc-trigger_create':
+    case 'oc-trigger-create':
+      return { icon: 'clock', title: 'Create Trigger', subtitle: input.name };
+    case 'trigger_list':
+    case 'trigger-list':
+    case 'oc-trigger_list':
+    case 'oc-trigger-list':
+      return { icon: 'clock', title: 'List Triggers' };
+    case 'trigger_get':
+    case 'trigger-get':
+    case 'oc-trigger_get':
+    case 'oc-trigger-get':
+      return { icon: 'clock', title: 'Trigger Details', subtitle: input.name || input.id };
+    case 'trigger_delete':
+    case 'trigger-delete':
+    case 'oc-trigger_delete':
+    case 'oc-trigger-delete':
+      return { icon: 'clock', title: 'Delete Trigger', subtitle: input.name || input.id };
+    case 'trigger_update':
+    case 'trigger-update':
+    case 'oc-trigger_update':
+    case 'oc-trigger-update':
+      return { icon: 'clock', title: 'Update Trigger', subtitle: input.name || input.id };
+    case 'trigger_test':
+    case 'trigger-test':
+    case 'oc-trigger_test':
+    case 'oc-trigger-test':
+      return { icon: 'clock', title: 'Test Trigger', subtitle: input.name || input.id };
+    case 'trigger_pause':
+    case 'trigger-pause':
+    case 'oc-trigger_pause':
+    case 'oc-trigger-pause':
+      return { icon: 'clock', title: 'Pause Trigger', subtitle: input.name || input.id };
+    case 'trigger_resume':
+    case 'trigger-resume':
+    case 'oc-trigger_resume':
+    case 'oc-trigger-resume':
+      return { icon: 'clock', title: 'Resume Trigger', subtitle: input.name || input.id };
+
+    // Agent task tools (ported from web 26cf37f)
+    case 'agent_task':
+    case 'agent-task':
+    case 'oc-agent_task':
+    case 'oc-agent-task':
+      return { icon: 'check-square', title: 'Create Task', subtitle: input.title };
+    case 'agent_task_update':
+    case 'agent-task-update':
+    case 'oc-agent_task_update':
+    case 'oc-agent-task-update':
+      return { icon: 'check-square', title: 'Update Task', subtitle: input.task_id };
+    case 'agent_task_list':
+    case 'agent-task-list':
+    case 'oc-agent_task_list':
+    case 'oc-agent-task-list':
+      return { icon: 'check-square', title: 'List Tasks' };
+    case 'agent_task_get':
+    case 'agent-task-get':
+    case 'oc-agent_task_get':
+    case 'oc-agent-task-get':
+      return { icon: 'check-square', title: 'Task Details', subtitle: input.task_id };
+
     default:
       return { icon: 'cpu', title: tool };
   }
