@@ -183,6 +183,80 @@ function AnimatedChevron({ expanded, color, size = 16 }: { expanded: boolean; co
   );
 }
 
+// ─── Connecting to Workspace (with restart button) ──────────────────────────
+// Ported from web's connecting-screen.tsx (commits 345b805, a13fd57).
+// Shows a restart button after 10s so users can recover a stuck sandbox.
+
+function ConnectingToWorkspace({ isDark }: { isDark: boolean }) {
+  const [showRestart, setShowRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+
+  // Show restart button after 10 seconds of waiting
+  useEffect(() => {
+    const timer = setTimeout(() => setShowRestart(true), 10_000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleRestart = useCallback(async () => {
+    if (restarting) return;
+    setRestarting(true);
+    try {
+      const { restartSandbox } = await import('@/lib/platform/client');
+      await restartSandbox();
+      Alert.alert('Restarting', 'Machine restart initiated. Reconnecting…');
+    } catch (err: any) {
+      Alert.alert('Restart failed', err?.message || 'Unknown error');
+    } finally {
+      // Keep the button disabled for 15s so the sandbox has time to come back
+      setTimeout(() => setRestarting(false), 15_000);
+    }
+  }, [restarting]);
+
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#09090b' : '#FFFFFF', paddingHorizontal: 40 }}>
+      <View style={{ flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+        <KortixLogo size={22} variant="symbol" color={isDark ? 'dark' : 'light'} />
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert', letterSpacing: 2, textTransform: 'uppercase', color: isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)' }}>
+          Connecting to Workspace
+        </Text>
+      </View>
+      <ActivityIndicator size="small" color={isDark ? '#ffffff' : '#000000'} />
+      <Text style={{ marginTop: 24, fontSize: 14, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)', textAlign: 'center', lineHeight: 22, maxWidth: 300 }}>
+        Checking sandbox health and restoring your session.
+      </Text>
+
+      {/* Restart button — appears after 10s of waiting (matches web) */}
+      {showRestart && (
+        <TouchableOpacity
+          onPress={handleRestart}
+          disabled={restarting}
+          activeOpacity={0.7}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            marginTop: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 999,
+            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            opacity: restarting ? 0.5 : 1,
+          }}
+        >
+          <Ionicons
+            name="refresh-outline"
+            size={14}
+            color={isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)'}
+          />
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
+            {restarting ? 'Restarting…' : 'Restart'}
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
 // ─── Session list item (extracted to avoid re-renders) ──────────────────────
 
 function SessionListItem({
@@ -501,7 +575,12 @@ export default function HomeScreen() {
             if (data?.INSTANCE_SETUP_COMPLETE === 'true') {
               // Persist that setup is done so future boots show "Connecting" instead of wizard
               await AsyncStorage.setItem(SETUP_DONE_KEY, '1').catch(() => {});
-              // Setup done — check if onboarding is also done
+              // Setup done — check if onboarding is also done.
+              // Fix (ported from web e635de8): only enter onboarding on
+              // POSITIVE evidence (200 response with value !== 'true').
+              // On failure (5xx, network error) defer silently — the sandbox
+              // is just slow, don't pop the onboarding wizard on users who
+              // already completed it.
               try {
                 const onbCtrl = new AbortController();
                 const onbTimeout = setTimeout(() => onbCtrl.abort(), 5000);
@@ -513,18 +592,29 @@ export default function HomeScreen() {
                   signal: onbCtrl.signal,
                 });
                 clearTimeout(onbTimeout);
-                if (!cancelled && onbRes.ok) {
+                if (cancelled) return;
+                if (onbRes.ok) {
                   const onbData = await onbRes.json();
                   if (onbData?.ONBOARDING_COMPLETE === 'true') {
                     setSetupState('done');
                     return;
                   }
+                  // Positive evidence: 200 but not 'true' → needs onboarding
+                  setSetupState('onboarding');
+                  return;
                 }
+                // Non-200 (5xx, 403, etc.) — can't tell. Defer to main app.
+                log.warn('[Home] ONBOARDING_COMPLETE returned', onbRes.status, '— deferring, not entering onboarding');
+                setSetupState('done');
+                return;
               } catch {
-                // Can't check — fall through to onboarding
+                // Network error — sandbox unreachable for this check.
+                // Don't default to onboarding. Show main app and let
+                // the user retry or wait for the sandbox to come back.
+                log.warn('[Home] Failed to check ONBOARDING_COMPLETE — deferring, not entering onboarding');
+                setSetupState('done');
+                return;
               }
-              if (!cancelled) setSetupState('onboarding');
-              return;
             }
           }
           // INSTANCE_SETUP_COMPLETE not 'true' yet.
@@ -814,11 +904,16 @@ export default function HomeScreen() {
     ]);
   }, [deleteSession, navigateToSession]);
 
+  // Simplified dashboard send flow (ported from web 3f150e0).
+  // Single `isSending` guard, `finally` cleanup, parallel session create + fade.
+  const [isDashboardSending, setIsDashboardSending] = useState(false);
+
   const handleDashboardSend = useCallback(
     async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
-      if (!sandboxUrl) return;
+      if (!sandboxUrl || isDashboardSending) return;
+      if (!text.trim()) return;
 
-      // Process session mentions — append XML refs (same as frontend)
+      // Process session mentions — append XML refs
       let finalText = text;
       const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
       if (sessionMentions && sessionMentions.length > 0) {
@@ -828,13 +923,16 @@ export default function HomeScreen() {
         finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
       }
 
+      setIsDashboardSending(true);
+
       try {
+        // Create session — navigate immediately on success
         const session = await createSession.mutateAsync({});
         navigateToSession(session.id);
 
+        // Optimistic user message
         const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
         useSyncStore.getState().addOptimisticMessage(session.id, {
           info: {
             id: messageId,
@@ -846,6 +944,7 @@ export default function HomeScreen() {
         });
         useSyncStore.getState().setStatus(session.id, { type: 'busy' });
 
+        // Fire prompt async (fire-and-forget)
         const payload: Record<string, any> = {
           parts: [{ type: 'text', text: finalText }],
         };
@@ -867,9 +966,11 @@ export default function HomeScreen() {
         });
       } catch (err: any) {
         log.error('❌ [Home] Dashboard send failed:', err?.message || err);
+      } finally {
+        setIsDashboardSending(false);
       }
     },
-    [sandboxUrl, createSession, navigateToSession],
+    [sandboxUrl, isDashboardSending, createSession, navigateToSession],
   );
 
   // Capture a screenshot of the current tab before showing tabs overview.
@@ -1223,23 +1324,13 @@ export default function HomeScreen() {
 
   // Show loading screen while checking setup status — matches frontend's
   // "Connecting to Workspace" skeleton screen.
+  // Includes a restart button that appears after a delay (ported from web 345b805 / a13fd57).
   if (setupState === 'checking') {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#09090b' : '#FFFFFF', paddingHorizontal: 40 }}>
-          <View style={{ flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-            <KortixLogo size={22} variant="symbol" color={isDark ? 'dark' : 'light'} />
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert', letterSpacing: 2, textTransform: 'uppercase', color: isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)' }}>
-              Connecting to Workspace
-            </Text>
-          </View>
-          <ActivityIndicator size="small" color={isDark ? '#ffffff' : '#000000'} />
-          <Text style={{ marginTop: 24, fontSize: 14, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)', textAlign: 'center', lineHeight: 22, maxWidth: 300 }}>
-            Checking sandbox health and restoring your session.
-          </Text>
-        </View>
+        <ConnectingToWorkspace isDark={isDark} />
       </>
     );
   }
@@ -1565,20 +1656,23 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <View className="flex-1 items-center justify-center px-8">
+              <Animated.View
+                className="flex-1 items-center justify-center px-8"
+                style={{ opacity: isDashboardSending ? 0.3 : 1 }}
+              >
                 <Text className="text-2xl font-bold mb-2 text-foreground">
                   What can I help with?
                 </Text>
                 <Text className="text-sm text-center text-muted-foreground">
                   Start a conversation or select a session from the menu.
                 </Text>
-              </View>
+              </Animated.View>
 
               <View>
                 <SessionChatInput
                   onSend={handleDashboardSend}
                   placeholder="Ask anything..."
-                  disabled={!sandboxUrl}
+                  disabled={!sandboxUrl || isDashboardSending}
                   agent={resolved.agent}
                   agents={resolved.agents}
                   model={resolved.model}
