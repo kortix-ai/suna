@@ -10,7 +10,7 @@
 #      /proc/self/status CapEff, not a brittle /dev probe.
 #   2. START_DOCKER=true must be set. Default is off so users who don't need
 #      DinD don't pay the ~40MB dockerd memory cost.
-#   3. dockerd binary must be installed (apk add docker-engine).
+#   3. dockerd binary must be present in the image (provided by the webtop base).
 #
 # STORAGE DRIVER SELECTION (this is THE thing that breaks DinD most often):
 #   - /var/lib/docker is expected to be a Docker NAMED VOLUME from the host
@@ -40,7 +40,7 @@ fi
 
 # ── Gate 2: dockerd binary exists ───────────────────────────────────────────
 if ! command -v dockerd >/dev/null 2>&1; then
-  echo "[svc-docker] ERROR: dockerd not installed. The Alpine 'docker' package (NOT 'docker-cli') provides it — add it to the apk install block in core/docker/Dockerfile."
+  echo "[svc-docker] ERROR: dockerd not installed. The sandbox image must include docker + dockerd before svc-docker can start."
   exec sleep infinity
 fi
 

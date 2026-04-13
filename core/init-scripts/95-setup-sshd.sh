@@ -65,7 +65,7 @@ EOF
 #      Fixed by using `sh -c 'cut -d" " -f4 /proc/self/stat'` to get the
 #      wrapper's PID in the container namespace (a child's PPID in /proc/self/stat
 #      field 4 gives the parent's container-internal PID).
-# NOTE: busybox ash (Alpine /bin/sh) — no bash-isms allowed.
+# NOTE: /bin/sh wrapper must stay POSIX-compatible — no bash-isms allowed.
 WRAPPER_CONTENT='#!/bin/sh
 REAL="${0}.real"
 case "$*" in *command-shell*)
@@ -169,11 +169,9 @@ done
 mkdir -p /config/.cache/Microsoft
 chown -R abc:abc /config/.cache 2>/dev/null
 
-# ── Fix Cursor's bundled Node.js (segfaults on Alpine ARM64) ────────────────
-# Cursor downloads a Node.js v22 binary compiled for alpine-arm64 (musl).
-# This binary intermittently segfaults (SIGSEGV / signal 11) when processing
-# WebSocket connections, causing the code server to crash on first connection.
-# The container's system Node.js (v24, also musl/ARM64) does not have this bug.
+# ── Fix Cursor's bundled Node.js (prefer stable system node) ─────────────────
+# Cursor sometimes downloads a bundled Node.js binary that is less stable than
+# the container's system node when handling Remote-SSH / WebSocket traffic.
 # If Cursor has installed its server, replace the bundled node with a symlink
 # to the system node. The install script already has fallback logic for this.
 _fix_cursor_node() {
@@ -289,10 +287,10 @@ alias grep='grep --color=auto'
 alias ..='cd ..'
 alias ...='cd ../..'
 
-# Persistent package management — use these instead of raw apk/pip/npm
+# Persistent package management — use these instead of raw apt/pip/npm
 # pip install <pkg>      → auto-persists (PIP_USER=1 → /workspace/.local/)
 # npm install -g <pkg>   → auto-persists (NPM_CONFIG_PREFIX → /workspace/.npm-global/)
-# apk-persist <pkg>      → installs + saves to manifest (auto-restored on restart)
+# apt-persist <pkg>      → installs + saves to manifest (auto-restored on restart)
 
 # Load readline config (case-insensitive completion, etc.)
 [ -f "$HOME/.inputrc" ] && export INPUTRC="$HOME/.inputrc"

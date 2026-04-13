@@ -42,27 +42,13 @@
 #
 #   THIRD-PARTY (/opt/ — baked at build, not user-modifiable):
 #     /opt/bun/                    Bun runtime
-#     /opt/bun-pty-musl/           PTY native library
 #
 
-# ── Stage 1: Build musl-compatible bun-pty Rust library ─────────────────────
-FROM rust:alpine AS rust-pty-builder
-RUN --mount=type=cache,target=/var/cache/apk \
-    apk add --no-cache musl-dev gcc git
-RUN git clone --depth 1 https://github.com/sursaone/bun-pty.git /build/bun-pty
-WORKDIR /build/bun-pty/rust-pty
-RUN sed -i 's/crate-type = \["cdylib"\]/crate-type = ["staticlib"]/' Cargo.toml
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    cargo build --release
-RUN gcc -shared -o /build/librust_pty.so \
-    -Wl,--whole-archive target/release/librust_pty.a -Wl,--no-whole-archive \
-    -lpthread -ldl -lutil -lm
-
-# ── Stage 2: Main image ─────────────────────────────────────────────────────
-FROM lscr.io/linuxserver/webtop:latest
+# ── Main image ───────────────────────────────────────────────────────────────
+FROM lscr.io/linuxserver/webtop:ubuntu-xfce
 
 ARG SANDBOX_VERSION=0.0.0-dev
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Global binary versions — pinned here, bumped manually
 ARG OPENCODE_VERSION=1.2.25
@@ -97,22 +83,37 @@ COPY LICENSE /LICENSE
 # easy to audit when skills add new runtime assumptions.
 
 # ── OS packages ──────────────────────────────────────────────────────────────
-RUN apk update \
-    && apk add --no-cache \
-        nodejs npm rsync \
-        python3-dev py3-pip py3-virtualenv \
-        curl unzip ca-certificates \
-        gcc g++ musl-dev linux-headers \
-        libffi-dev libxml2-dev libxslt-dev \
-        gcompat \
-        git github-cli jq ripgrep \
-        docker docker-cli-compose \
-        fuse-overlayfs iptables ip6tables \
-        whois \
-        fontconfig ttf-dejavu font-liberation font-noto font-noto-cjk font-noto-emoji \
-        openssh-server openssh-sftp-server \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         bash-completion \
-    && rm -rf /var/cache/apk/*
+        build-essential \
+        ca-certificates \
+        curl \
+        ffmpeg \
+        fontconfig \
+        fonts-dejavu-core \
+        fonts-liberation \
+        fonts-noto-cjk \
+        fonts-noto-color-emoji \
+        fonts-noto-core \
+        fuse-overlayfs \
+        gh \
+        git \
+        iptables \
+        jq \
+        libffi-dev \
+        libxml2-dev \
+        libxslt1-dev \
+        nodejs \
+        openssh-server \
+        python3-dev \
+        python3-pip \
+        python3-venv \
+        ripgrep \
+        rsync \
+        unzip \
+        whois \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Skill system dependencies ────────────────────────────────────────────────
 # Tools referenced by skills in opencode/skills/GENERAL-KNOWLEDGE-WORKER/
@@ -127,18 +128,24 @@ RUN apk update \
 # imagemagick: crop/inspect rendered pages during PDF form work
 # texlive: pdflatex + bibtex (paper-creator skill)
 # *-dev: build deps for Pillow, pdf2image (pptx, pdf, logo-creator)
-RUN apk update \
-    && apk add --no-cache \
-        poppler-utils poppler-dev \
-        qpdf \
-        pandoc \
-        libreoffice \
-        tesseract-ocr tesseract-ocr-data-eng \
-        ffmpeg \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         imagemagick \
-        texlive texmf-dist-latexrecommended texmf-dist-bibtexextra \
-        jpeg-dev zlib-dev freetype-dev openjpeg-dev tiff-dev \
-    && rm -rf /var/cache/apk/*
+        libfreetype6-dev \
+        libjpeg-dev \
+        libreoffice \
+        libopenjp2-7-dev \
+        libtiff-dev \
+        pandoc \
+        poppler-utils \
+        qpdf \
+        texlive \
+        texlive-bibtex-extra \
+        texlive-latex-recommended \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # ── Bun runtime ───────────────────────────────────────────────────────────────
 ENV BUN_INSTALL=/opt/bun
@@ -181,13 +188,13 @@ RUN /lsiopy/bin/pip install --no-cache-dir \
     && echo "[docker] Skill Python packages installed." \
     && /lsiopy/bin/pip install --no-cache-dir PyMuPDF 2>/dev/null \
     && echo "[docker] PyMuPDF installed." \
-    || echo "[docker] WARN: PyMuPDF skipped (build fails on musl/aarch64). PDF skills use pypdf/pdfplumber instead."
+    || echo "[docker] WARN: PyMuPDF skipped. PDF skills use pypdf/pdfplumber instead."
 
 # Optional heavy packages — rembg + onnxruntime for logo background removal.
-# These may fail on Alpine musl; the skill falls back to Replicate API.
+# If they fail to build on the current arch, the skill falls back to Replicate API.
 RUN /lsiopy/bin/pip install --no-cache-dir rembg onnxruntime 2>/dev/null \
     && echo "[docker] rembg + onnxruntime installed." \
-    || echo "[docker] WARN: rembg/onnxruntime skipped (musl-incompatible). Logo bg removal will use Replicate API."
+    || echo "[docker] WARN: rembg/onnxruntime skipped. Logo bg removal will use Replicate API."
 
 # ── Skill npm global packages ────────────────────────────────────────────────
 # Node packages used by pptx (deck creation), docx/pdf (document creation),
@@ -201,11 +208,6 @@ RUN PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install -g --no-audit --no-fund \
     react react-dom react-icons \
     sharp \
     && echo "[docker] Skill npm packages installed."
-
-# ── bun-pty musl .so ──────────────────────────────────────────────────────────
-COPY --from=rust-pty-builder /build/librust_pty.so /opt/bun-pty-musl/librust_pty.so
-RUN chmod 644 /opt/bun-pty-musl/librust_pty.so
-ENV BUN_PTY_LIB=/opt/bun-pty-musl/librust_pty.so
 
 # ── Workspace (PERSISTENT zone — Docker volume) ─────────────────────────────
 # Everything in /workspace/ survives container recreate/update.
@@ -280,16 +282,15 @@ RUN printf '#!/bin/bash\nPID_FILE="/de-pid"\nif [ ! -r "$PID_FILE" ]; then exit 
 # ── Container init scripts ───────────────────────────────────────────────────
 RUN mkdir -p /custom-cont-init.d
 COPY core/init-scripts/95-setup-sshd.sh /custom-cont-init.d/95-setup-sshd
-COPY core/init-scripts/96-fix-bun-pty.sh /custom-cont-init.d/96-fix-bun-pty
 COPY core/init-scripts/97-secrets-to-s6-env.sh /custom-cont-init.d/97-secrets-to-s6-env
 COPY core/init-scripts/kortix-env-setup.sh /custom-cont-init.d/98-kortix-env
 COPY core/init-scripts/99-restore-packages.sh /custom-cont-init.d/99-restore-packages
 COPY core/init-scripts/99-fix-opencode-ownership.sh /custom-cont-init.d/zz-fix-opencode-ownership
 RUN chmod +x /custom-cont-init.d/*
 
-# ── Persistent package wrapper (apk-persist) ────────────────────────────────
-COPY core/scripts/apk-persist /usr/local/bin/apk-persist
-RUN chmod +x /usr/local/bin/apk-persist
+# ── Persistent package wrapper (apt-persist) ────────────────────────────────
+COPY core/scripts/apt-persist /usr/local/bin/apt-persist
+RUN chmod +x /usr/local/bin/apt-persist
 
 COPY core/scripts/kortix-opencode-state /usr/local/bin/kortix-opencode-state
 RUN chmod +x /usr/local/bin/kortix-opencode-state
@@ -335,64 +336,35 @@ RUN set -eo pipefail && echo "[docker] Building sandbox runtime v${SANDBOX_VERSI
     # ── 2. skills shipped in-tree under skills/KORTIX-system/ (recursive discovery) ── \
     echo "[docker] skills: agent-tunnel, agent-browser, presentations in /ephemeral/kortix-master/opencode/skills/KORTIX-system/" && \
     \
-    # ── 4. bun-pty musl patches ── \
-    ARCH=$(uname -m) && \
-    for PTY_DIR in \
-        /ephemeral/kortix-master/node_modules/bun-pty/rust-pty/target/release \
-        /opt/bun/install/cache/bun-pty@*/rust-pty/target/release; do \
-      [ -d "$PTY_DIR" ] || continue; \
-      if [ "$ARCH" = "x86_64" ]; then \
-        cp /opt/bun-pty-musl/librust_pty.so "$PTY_DIR/librust_pty.so"; \
-      else \
-        cp /opt/bun-pty-musl/librust_pty.so "$PTY_DIR/librust_pty_arm64.so"; \
-      fi; \
-    done && \
-    \
-    # ── 6. Agent browser viewer ── \
+    # ── 4. Agent browser viewer ── \
     mkdir -p /ephemeral/agent-browser-viewer && \
     rsync -a --delete /opt/build/browser-viewer/ /ephemeral/agent-browser-viewer/ && \
     \
-    # ── 7. Version metadata ── \
+    # ── 5. Version metadata ── \
     mkdir -p /ephemeral/metadata && \
     printf '{"version":"%s","updatedAt":"%s"}\n' "${SANDBOX_VERSION}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /ephemeral/metadata/.version && \
     \
-    # ── 8. Global CLI binaries (direct install, no intermediate package.json) ── \
+    # ── 6. Global CLI binaries (direct install, no intermediate package.json) ── \
     npm install -g --no-audit --no-fund \
       "opencode-ai@${OPENCODE_VERSION}" \
       "agent-browser@${AGENT_BROWSER_VERSION}" \
       "ocx@${OCX_VERSION}" 2>&1 && \
-
-    # opencode postinstall caches a non-musl binary at .opencode — remove it \
-    # so the launcher resolves the musl variant (Alpine is musl-based) \
-    rm -f /usr/local/lib/node_modules/opencode-ai/bin/.opencode 2>/dev/null || true && \
     command -v opencode >/dev/null && \
     command -v agent-browser >/dev/null && \
     command -v ocx >/dev/null && \
     echo "[docker] Global binaries: opencode=$(opencode --version 2>/dev/null || echo '?'), agent-browser, ocx" && \
     \
-    # ── 9. Binary patches (MUST run after npm install -g opencode-ai) ── \
+    # ── 7. Binary patches (MUST run after npm install -g opencode-ai) ── \
     bash /ephemeral/kortix-master/opencode/patches/apply.sh && \
     \
-    # ── 10. Fix agent-browser native binary on Alpine musl ── \
-    # The Rust native binary requires glibc's __res_init which doesn't exist in musl. \
-    # Compile a tiny stub .so and create a wrapper that LD_PRELOADs it. \
-    printf 'int __res_init(void){return 0;}\n' > /tmp/res_init_stub.c && \
-    gcc -shared -o /usr/local/lib/libres_init.so /tmp/res_init_stub.c && \
-    rm -f /tmp/res_init_stub.c && \
-    # Create wrapper that sets LD_PRELOAD before calling the real binary \
-    mv /usr/local/bin/agent-browser /usr/local/bin/agent-browser-real && \
-    printf '#!/bin/sh\nexport LD_PRELOAD=/usr/local/lib/libres_init.so\nexec /usr/local/bin/agent-browser-real "$@"\n' > /usr/local/bin/agent-browser && \
-    chmod +x /usr/local/bin/agent-browser && \
-    echo "[docker] agent-browser musl shim installed" && \
-    \
-    # ── 10. Fix ownership ── \
+    # ── 8. Fix ownership ── \
     # CRITICAL: Use abc:abc (UID 911) — NOT 1000:1000. The linuxserver base image \
     # creates user abc with UID 911. All runtime processes (opencode, kortix-master) \
     # run as abc via s6-setuidgid. Using 1000 causes EACCES everywhere at runtime. \
     chown -R abc:abc /ephemeral \
       2>/dev/null || true && \
     \
-    # ── 11. Cleanup ── \
+    # ── 9. Cleanup ── \
     rm -rf /opt/build /root/.npm/_cacache /root/.npm/_logs 2>/dev/null || true && \
     echo "[docker] Build complete."
 
@@ -407,7 +379,7 @@ RUN chmod +x /ephemeral/startup.sh
 #
 # pip:    PYTHONUSERBASE + PIP_USER=1  → /workspace/.local/
 # npm -g: NPM_CONFIG_PREFIX           → /workspace/.npm-global/
-# apk:   apk-persist wrapper          → manifest in /workspace/.kortix/packages/
+# apt:    apt-persist wrapper         → manifest in /workspace/.kortix/packages/
 #
 ENV PYTHONUSERBASE=/workspace/.local
 ENV PIP_USER=1

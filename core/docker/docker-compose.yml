@@ -33,7 +33,7 @@
 #   ✅ git repos, projects   — preserved (/workspace/)
 #   ❌ /opt/*                — replaced (new image)
 #   ❌ /run/s6/              — rebuilt from /persistent/secrets/ on boot
-#   ❌ apk system packages   — re-installed from manifest on boot (99-restore-packages.sh)
+#   ❌ apt system packages   — re-installed from manifest on boot (99-restore-packages.sh)
 #
 # ─────────────────────────────────────────────────────────────────────────────
 

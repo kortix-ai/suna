@@ -20,7 +20,7 @@
 # The s6 init scripts then:
 #   - Restore secrets → s6 env dir (97-secrets-to-s6-env.sh)
 #   - Set up git, tool deps, env guards (98-kortix-env.sh)
-#   - Restore user-installed apk/pip/npm packages (99-restore-packages.sh)
+#   - Restore user-installed apt/pip/npm packages (99-restore-packages.sh)
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -e

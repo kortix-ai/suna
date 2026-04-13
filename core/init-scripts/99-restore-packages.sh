@@ -3,7 +3,7 @@
 #
 # The /workspace volume persists but the container layer is ephemeral.
 # This script re-installs packages that were saved to manifests by the
-# persistence wrappers (apk-persist, pip, npm -g).
+# persistence wrappers (apt-persist, pip, npm -g).
 #
 # Runs AFTER all other init scripts (99 = last).
 # Designed to be idempotent and non-fatal — a failed restore doesn't
@@ -16,16 +16,65 @@ mkdir -p "$MANIFEST_DIR"
 
 RESTORED=0
 
-# ── 1. Restore apk packages ─────────────────────────────────────────────────
-APK_MANIFEST="$MANIFEST_DIR/apk-packages.txt"
-if [ -s "$APK_MANIFEST" ]; then
-  echo "[restore-packages] Restoring apk packages..."
-  PKGS=$(tr '\n' ' ' < "$APK_MANIFEST")
-  if apk add --no-cache $PKGS 2>&1; then
-    RESTORED=$((RESTORED + $(wc -l < "$APK_MANIFEST")))
-    echo "[restore-packages] apk: restored $(wc -l < "$APK_MANIFEST") package(s)"
-  else
-    echo "[restore-packages] WARNING: some apk packages failed to install (non-fatal)"
+# ── 1. Restore apt packages ─────────────────────────────────────────────────
+APT_MANIFEST="$MANIFEST_DIR/apt-packages.txt"
+LEGACY_APK_MANIFEST="$MANIFEST_DIR/apk-packages.txt"
+LEGACY_APK_UNMAPPED="$MANIFEST_DIR/apk-packages.unmapped.txt"
+APT_READY=0
+
+apt_prepare() {
+  if [ "$APT_READY" -eq 1 ]; then
+    return 0
+  fi
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "[restore-packages] WARNING: apt-get not found — skipping system package restore"
+    return 1
+  fi
+  export DEBIAN_FRONTEND=noninteractive
+  if apt-get update >/dev/null 2>&1; then
+    APT_READY=1
+    return 0
+  fi
+  echo "[restore-packages] WARNING: apt-get update failed (non-fatal)"
+  return 1
+}
+
+if [ -s "$APT_MANIFEST" ]; then
+  echo "[restore-packages] Restoring apt packages..."
+  if apt_prepare; then
+    PKGS=$(tr '\n' ' ' < "$APT_MANIFEST")
+    if apt-get install -y --no-install-recommends $PKGS >/dev/null 2>&1; then
+      RESTORED=$((RESTORED + $(wc -l < "$APT_MANIFEST")))
+      echo "[restore-packages] apt: restored $(wc -l < "$APT_MANIFEST") package(s)"
+    else
+      echo "[restore-packages] WARNING: some apt packages failed to install (non-fatal)"
+    fi
+  fi
+fi
+
+if [ -s "$LEGACY_APK_MANIFEST" ]; then
+  echo "[restore-packages] Found legacy apk manifest — attempting one-time migration to apt"
+  : > "$LEGACY_APK_UNMAPPED"
+  touch "$APT_MANIFEST"
+  if apt_prepare; then
+    while IFS= read -r pkg || [ -n "$pkg" ]; do
+      [ -n "$pkg" ] || continue
+      if grep -qxF "$pkg" "$APT_MANIFEST" 2>/dev/null; then
+        continue
+      fi
+      if apt-get install -y --no-install-recommends "$pkg" >/dev/null 2>&1; then
+        echo "$pkg" >> "$APT_MANIFEST"
+        RESTORED=$((RESTORED + 1))
+        echo "[restore-packages] migrated '$pkg' into apt manifest"
+      else
+        echo "$pkg" >> "$LEGACY_APK_UNMAPPED"
+      fi
+    done < "$LEGACY_APK_MANIFEST"
+    if [ -s "$LEGACY_APK_UNMAPPED" ]; then
+      echo "[restore-packages] WARNING: some legacy apk package names do not exist on Ubuntu. Review $LEGACY_APK_UNMAPPED"
+    else
+      rm -f "$LEGACY_APK_UNMAPPED"
+    fi
   fi
 fi
 
@@ -79,4 +128,8 @@ if [ $RESTORED -gt 0 ]; then
   echo "[restore-packages] Restored $RESTORED package(s) total."
 else
   echo "[restore-packages] No packages to restore."
+fi
+
+if [ "$APT_READY" -eq 1 ]; then
+  rm -rf /var/lib/apt/lists/* 2>/dev/null || true
 fi

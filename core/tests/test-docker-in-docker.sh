@@ -68,7 +68,7 @@ fi
 pass "docker CLI installed: $(docker --version)"
 
 if ! command -v dockerd >/dev/null 2>&1; then
-  fail "dockerd binary missing — apk add 'docker' in Dockerfile"
+  fail "dockerd binary missing — sandbox image must include Docker daemon tooling"
   exit 1
 fi
 pass "dockerd binary installed: $(dockerd --version)"

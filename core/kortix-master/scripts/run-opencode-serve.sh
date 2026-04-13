@@ -11,7 +11,6 @@ export AUTH_JSON_PATH="${AUTH_JSON_PATH:-${OPENCODE_STORAGE_BASE}/auth.json}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-${KORTIX_PERSISTENT_ROOT}}"
 export OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 export OPENCODE_FILE_ROOT=/
-export BUN_PTY_LIB=/opt/bun-pty-musl/librust_pty.so
 export PATH="/opt/bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 # Drop empty *_BASE_URL vars — empty string causes @ai-sdk to fetch("") → ERR_INVALID_URL

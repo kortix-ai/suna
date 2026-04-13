@@ -1,0 +1,57 @@
+#!/bin/sh
+# apt-persist — wrapper around `apt-get install` that records packages to a
+# manifest so they are automatically re-installed on container restart/update.
+#
+# Usage:  apt-persist <package> [package2] ...
+#         apt-persist --list          Show saved packages
+#         apt-persist --remove <pkg>  Remove from manifest (doesn't uninstall)
+#
+# Manifest: /workspace/.kortix/packages/apt-packages.txt
+# One package per line. Restored at boot by 99-restore-packages init script.
+
+set -e
+
+MANIFEST="/workspace/.kortix/packages/apt-packages.txt"
+mkdir -p "$(dirname "$MANIFEST")"
+touch "$MANIFEST"
+
+if [ "$1" = "--list" ]; then
+  if [ -s "$MANIFEST" ]; then
+    echo "Persistent apt packages:"
+    cat "$MANIFEST"
+  else
+    echo "No persistent apt packages saved."
+  fi
+  exit 0
+fi
+
+if [ "$1" = "--remove" ]; then
+  shift
+  for pkg in "$@"; do
+    sed -i "/^${pkg}$/d" "$MANIFEST"
+    echo "[apt-persist] Removed '$pkg' from manifest"
+  done
+  exit 0
+fi
+
+if [ $# -eq 0 ]; then
+  echo "Usage: apt-persist <package> [package2] ..."
+  echo "       apt-persist --list"
+  echo "       apt-persist --remove <package>"
+  exit 1
+fi
+
+echo "[apt-persist] Installing: $*"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends "$@"
+rm -rf /var/lib/apt/lists/*
+
+for pkg in "$@"; do
+  if ! grep -qx "$pkg" "$MANIFEST" 2>/dev/null; then
+    echo "$pkg" >> "$MANIFEST"
+    echo "[apt-persist] Saved '$pkg' to manifest (will survive restarts)"
+  fi
+done
+
+echo "[apt-persist] Done. ${#} package(s) installed and recorded."
