@@ -183,6 +183,80 @@ function AnimatedChevron({ expanded, color, size = 16 }: { expanded: boolean; co
   );
 }
 
+// ─── Connecting to Workspace (with restart button) ──────────────────────────
+// Ported from web's connecting-screen.tsx (commits 345b805, a13fd57).
+// Shows a restart button after 10s so users can recover a stuck sandbox.
+
+function ConnectingToWorkspace({ isDark }: { isDark: boolean }) {
+  const [showRestart, setShowRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+
+  // Show restart button after 10 seconds of waiting
+  useEffect(() => {
+    const timer = setTimeout(() => setShowRestart(true), 10_000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleRestart = useCallback(async () => {
+    if (restarting) return;
+    setRestarting(true);
+    try {
+      const { restartSandbox } = await import('@/lib/platform/client');
+      await restartSandbox();
+      Alert.alert('Restarting', 'Machine restart initiated. Reconnecting…');
+    } catch (err: any) {
+      Alert.alert('Restart failed', err?.message || 'Unknown error');
+    } finally {
+      // Keep the button disabled for 15s so the sandbox has time to come back
+      setTimeout(() => setRestarting(false), 15_000);
+    }
+  }, [restarting]);
+
+  return (
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#09090b' : '#FFFFFF', paddingHorizontal: 40 }}>
+      <View style={{ flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+        <KortixLogo size={22} variant="symbol" color={isDark ? 'dark' : 'light'} />
+        <Text style={{ fontSize: 13, fontFamily: 'Roobert', letterSpacing: 2, textTransform: 'uppercase', color: isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)' }}>
+          Connecting to Workspace
+        </Text>
+      </View>
+      <ActivityIndicator size="small" color={isDark ? '#ffffff' : '#000000'} />
+      <Text style={{ marginTop: 24, fontSize: 14, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)', textAlign: 'center', lineHeight: 22, maxWidth: 300 }}>
+        Checking sandbox health and restoring your session.
+      </Text>
+
+      {/* Restart button — appears after 10s of waiting (matches web) */}
+      {showRestart && (
+        <TouchableOpacity
+          onPress={handleRestart}
+          disabled={restarting}
+          activeOpacity={0.7}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            marginTop: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            borderRadius: 999,
+            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            opacity: restarting ? 0.5 : 1,
+          }}
+        >
+          <Ionicons
+            name="refresh-outline"
+            size={14}
+            color={isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)'}
+          />
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
+            {restarting ? 'Restarting…' : 'Restart'}
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
 // ─── Session list item (extracted to avoid re-renders) ──────────────────────
 
 function SessionListItem({
@@ -1223,23 +1297,13 @@ export default function HomeScreen() {
 
   // Show loading screen while checking setup status — matches frontend's
   // "Connecting to Workspace" skeleton screen.
+  // Includes a restart button that appears after a delay (ported from web 345b805 / a13fd57).
   if (setupState === 'checking') {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#09090b' : '#FFFFFF', paddingHorizontal: 40 }}>
-          <View style={{ flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-            <KortixLogo size={22} variant="symbol" color={isDark ? 'dark' : 'light'} />
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert', letterSpacing: 2, textTransform: 'uppercase', color: isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)' }}>
-              Connecting to Workspace
-            </Text>
-          </View>
-          <ActivityIndicator size="small" color={isDark ? '#ffffff' : '#000000'} />
-          <Text style={{ marginTop: 24, fontSize: 14, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)', textAlign: 'center', lineHeight: 22, maxWidth: 300 }}>
-            Checking sandbox health and restoring your session.
-          </Text>
-        </View>
+        <ConnectingToWorkspace isDark={isDark} />
       </>
     );
   }
