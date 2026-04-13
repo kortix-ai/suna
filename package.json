@@ -19,7 +19,8 @@
     "stripe:listen": "stripe listen --forward-to http://localhost:8008/v1/billing/webhooks/stripe"
   },
   "devDependencies": {
-    "agent-tunnel": "workspace:@kortix/agent-tunnel@*"
+    "agent-tunnel": "workspace:@kortix/agent-tunnel@*",
+    "supabase": "^2.89.1"
   },
   "pnpm": {
     "overrides": {
