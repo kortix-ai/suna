@@ -882,44 +882,59 @@ const DCP_LEGACY_PRUNING_REGEX =
   /▣ Pruning \(~([\d.]+K?) tokens(?:, distilled ([\d.]+K?) tokens)?\)(?:\s*—\s*(.+))?/;
 const DCP_LEGACY_ITEM_REGEX = /→\s+(\S+?):\s+(.+)/g;
 
-const PTY_EXITED_BLOCK_REGEX = /<pty_exited>[\s\S]*?<\/pty_exited>/gi;
-const PTY_FAILURE_HINT_REGEX =
-  /Process failed\.\s*Use pty_read with the pattern parameter to search for errors in the output\.?/gi;
+// ── Generic XML notification parsing ──────────────────────────────────
+//
+// Matches any XML block: <tag_name>...content...</tag_name>
+// No hardcoded tag names. Runs LAST in the parsing pipeline so all
+// other XML subsystems (file refs, session refs, reply context, DCP,
+// kortix_system) have already consumed their tags. Whatever remains
+// is a system notification.
+const XML_BLOCK_REGEX = /<([a-z][a-z0-9_-]*)>([\s\S]*?)<\/\1>/gi;
 
-// ── agent_completed notifications ──────────────────────────────────────
-const AGENT_COMPLETED_BLOCK_REGEX =
-  /<agent_(?:task_)?(?:completed|failed|stopped)>[\s\S]*?<\/agent_(?:task_)?(?:completed|failed|stopped)>/gi;
-
-interface AgentCompletedNotification {
-  agentId?: string;
-  task?: string;
-  sessionId?: string;
-  status?: string;
-  error?: string;
-  summary?: string;
+interface SystemNotification {
+  tag: string;
+  label: string;
+  fields: [string, string][];
+  body: string;
 }
 
-function parseAgentCompletedNotifications(text: string): {
+/** Parse all remaining XML blocks from text as system notifications. */
+function parseSystemNotifications(text: string): {
   cleanText: string;
-  notifications: AgentCompletedNotification[];
+  notifications: SystemNotification[];
 } {
-  const notifications: AgentCompletedNotification[] = [];
+  const notifications: SystemNotification[] = [];
   const cleanText = text
-    .replace(AGENT_COMPLETED_BLOCK_REGEX, (full) => {
-      const body = full
-        .replace(/<\/?agent_(?:task_)?(?:completed|failed|stopped)>/gi, '')
-        .trim();
-      const getField = (label: string) => {
-        const m = body.match(new RegExp(`^${label}:\\s*(.+)$`, 'mi'));
-        return m?.[1]?.trim();
-      };
+    .replace(XML_BLOCK_REGEX, (_full, tag: string, rawBody: string) => {
+      const fields: [string, string][] = [];
+      const bodyLines: string[] = [];
+      let pastHeader = false;
+
+      for (const line of rawBody.trim().split('\n')) {
+        if (pastHeader) {
+          bodyLines.push(line);
+          continue;
+        }
+        if (line.trim() === '') {
+          pastHeader = true;
+          continue;
+        }
+        const m = line.match(/^([A-Za-z][\w\s]*?):\s*(.+)$/);
+        if (m) {
+          fields.push([m[1].trim(), m[2].trim()]);
+        } else {
+          pastHeader = true;
+          bodyLines.push(line);
+        }
+      }
+
       notifications.push({
-        agentId: getField('Agent'),
-        task: getField('Task'),
-        sessionId: getField('Session'),
-        status: getField('Status'),
-        error: getField('Error'),
-        summary: body,
+        tag: tag.toLowerCase(),
+        label: tag
+          .replace(/[-_]/g, ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase()),
+        fields,
+        body: bodyLines.join('\n').trim(),
       });
       return '';
     })
@@ -928,48 +943,16 @@ function parseAgentCompletedNotifications(text: string): {
   return { cleanText, notifications };
 }
 
-interface PtyExitedNotification {
-  id?: string;
-  description?: string;
-  exitCode?: string;
-  outputLines?: string;
-  lastLine?: string;
-}
-
-function parsePtyExitedNotifications(text: string): {
-  cleanText: string;
-  notifications: PtyExitedNotification[];
-} {
-  const notifications: PtyExitedNotification[] = [];
-  const cleanText = text
-    .replace(PTY_EXITED_BLOCK_REGEX, (full) => {
-      const body = full.replace(/<\/?pty_exited>/gi, '').trim();
-      const getField = (label: string) => {
-        const m = body.match(new RegExp(`^${label}:\\s*(.+)$`, 'mi'));
-        return m?.[1]?.trim();
-      };
-      notifications.push({
-        id: getField('ID'),
-        description: getField('Description'),
-        exitCode: getField('Exit Code'),
-        outputLines: getField('Output Lines'),
-        lastLine: getField('Last Line'),
-      });
-      return '';
-    })
-    .replace(PTY_FAILURE_HINT_REGEX, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
-  return { cleanText, notifications };
+/** True when text contains at least one XML block. */
+function hasXmlBlocks(text: string): boolean {
+  XML_BLOCK_REGEX.lastIndex = 0;
+  return XML_BLOCK_REGEX.test(text);
 }
 
 function stripSystemPtyText(text: string): string {
   if (!text) return '';
   return stripKortixSystemTags(text)
-    .replace(PTY_EXITED_BLOCK_REGEX, ' ')
-    .replace(PTY_FAILURE_HINT_REGEX, ' ')
-    .replace(AGENT_COMPLETED_BLOCK_REGEX, ' ')
+    .replace(XML_BLOCK_REGEX, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -1243,122 +1226,150 @@ function DCPNotificationCard({
   );
 }
 
-function PtyExitedNotificationCard({
+function SystemNotificationCard({
   notification,
 }: {
-  notification: PtyExitedNotification;
+  notification: SystemNotification;
 }) {
-  return (
-    <div className="rounded-lg border border-border/60 bg-card/50 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-muted/30">
-        <Terminal className="size-3.5 text-muted-foreground/70 flex-shrink-0" />
-        <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
-          Automated PTY response
-        </span>
-      </div>
-      <div className="px-3 py-2 text-xs text-muted-foreground space-y-1">
-        {notification.description && (
-          <div>
-            <span className="text-muted-foreground/60">Description:</span>{' '}
-            {notification.description}
-          </div>
+  const [open, setOpen] = useState(false);
+
+  // Show first 1-2 short field values inline as muted detail
+  const inlineDetail = notification.fields
+    .slice(0, 2)
+    .map(([, v]) => v)
+    .filter((v) => v.length < 40)
+    .join(' · ');
+
+  // Expandable when there's a body, >2 fields, or any long values
+  const hasExpandable =
+    !!notification.body ||
+    notification.fields.length > 2 ||
+    notification.fields.some(([, v]) => v.length >= 40);
+
+  const isError =
+    notification.tag.includes('failed') || notification.tag.includes('blocker');
+  const isWarning = notification.tag.includes('stopped');
+
+  const iconColor = isError
+    ? 'text-destructive/50'
+    : isWarning
+      ? 'text-amber-500/50'
+      : 'text-muted-foreground/50';
+
+  const trigger = (
+    <div
+      className={cn(
+        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
+        'bg-muted/20 border border-border/40',
+        'text-xs select-none max-w-full',
+        hasExpandable && 'cursor-pointer hover:bg-muted/40 transition-colors',
+      )}
+    >
+      <Terminal className={cn('size-3.5 flex-shrink-0', iconColor)} />
+      <span className="text-muted-foreground/70 truncate">
+        {notification.label}
+        {inlineDetail && (
+          <span className="text-muted-foreground/40 ml-1.5 font-mono">
+            {inlineDetail}
+          </span>
         )}
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {notification.id && (
-            <span>
-              <span className="text-muted-foreground/60">ID:</span>{' '}
-              {notification.id}
-            </span>
+      </span>
+      {hasExpandable && (
+        <ChevronRight
+          className={cn(
+            'size-3 text-muted-foreground/30 transition-transform flex-shrink-0 ml-auto',
+            open && 'rotate-90',
           )}
-          {notification.exitCode && (
-            <span>
-              <span className="text-muted-foreground/60">Exit:</span>{' '}
-              {notification.exitCode}
-            </span>
+        />
+      )}
+    </div>
+  );
+
+  if (!hasExpandable) return trigger;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>{trigger}</CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="px-3 py-2 text-xs space-y-1 border border-t-0 border-border/40 rounded-b-lg bg-muted/10">
+          {notification.fields.length > 0 && (
+            <div className="space-y-0.5">
+              {notification.fields.map(([key, value], i) => (
+                <div key={i} className="flex gap-2 min-w-0">
+                  <span className="text-muted-foreground/40 flex-shrink-0">
+                    {key}:
+                  </span>
+                  <span className="text-muted-foreground/60 font-mono text-[11px] break-all">
+                    {value}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
-          {notification.outputLines && (
-            <span>
-              <span className="text-muted-foreground/60">Lines:</span>{' '}
-              {notification.outputLines}
-            </span>
+          {notification.body && (
+            <div className="text-muted-foreground/50 font-mono text-[11px] whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+              {notification.body.slice(0, 2000)}
+            </div>
           )}
         </div>
-      </div>
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
-function AgentCompletedNotificationCard({
-  notification,
-}: {
-  notification: AgentCompletedNotification;
-}) {
-  const statusColor =
-    notification.status === 'completed'
-      ? 'text-emerald-600 dark:text-emerald-400'
-      : notification.status === 'failed'
-        ? 'text-destructive'
-        : 'text-amber-600 dark:text-amber-400';
+// ============================================================================
+// Notification-only turn detection
+// ============================================================================
 
-  const headerLabel =
-    notification.status === 'failed'
-      ? 'Agent failed'
-      : notification.status === 'stopped'
-        ? 'Agent stopped'
-        : 'Agent completed';
+/** True when a turn's user message contains only system notification XML
+ *  with no real user-authored text. */
+function isNotificationOnlyMessage(parts: Part[]): boolean {
+  if (parts.length === 0) return false;
+  const textParts = parts.filter(
+    (p) =>
+      isTextPart(p) &&
+      !(p as TextPart).synthetic &&
+      !(p as any).ignored,
+  ) as TextPart[];
+  if (textParts.length === 0) return false;
+  const combined = textParts
+    .map((p) => stripSystemPtyText(p.text))
+    .join('')
+    .trim();
+  return !combined && textParts.some((p) => hasXmlBlocks(p.text || ''));
+}
+
+// ============================================================================
+// NotificationTurn — lightweight turn for system notification messages
+// ============================================================================
+
+/** Renders notification-only turns (PTY exits, agent completions, etc.)
+ *  inline with the conversation flow, styled like tool-call cards. */
+function NotificationTurn({ turn }: { turn: Turn }) {
+  const rawText = useMemo(() => {
+    return turn.userMessage.parts
+      .filter(
+        (p) =>
+          isTextPart(p) &&
+          !(p as TextPart).synthetic &&
+          !(p as any).ignored,
+      )
+      .map((p) => (p as TextPart).text || '')
+      .join('\n');
+  }, [turn.userMessage.parts]);
+
+  const { notifications } = useMemo(
+    () => parseSystemNotifications(rawText),
+    [rawText],
+  );
+
+  if (notifications.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card/50 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-muted/30">
-        <Cpu
-          className={cn(
-            'size-3.5 flex-shrink-0',
-            notification.status === 'failed'
-              ? 'text-destructive/70'
-              : notification.status === 'stopped'
-                ? 'text-amber-500/70'
-                : 'text-muted-foreground/70',
-          )}
-        />
-        <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
-          {headerLabel}
-        </span>
-        {notification.status && (
-          <span className={cn('text-[10px] ml-auto font-medium', statusColor)}>
-            {notification.status}
-          </span>
-        )}
-      </div>
-      <div className="px-3 py-2 text-xs text-muted-foreground space-y-1">
-        {notification.task && (
-          <div>
-            <span className="text-muted-foreground/60">Task:</span>{' '}
-            {notification.task}
-          </div>
-        )}
-        {notification.error && (
-          <div className="text-destructive/80">
-            <span className="text-muted-foreground/60">Error:</span>{' '}
-            <span className="font-mono text-[11px]">
-              {notification.error.slice(0, 200)}
-            </span>
-          </div>
-        )}
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {notification.agentId && (
-            <span>
-              <span className="text-muted-foreground/60">Agent:</span>{' '}
-              <span className="font-mono">{notification.agentId}</span>
-            </span>
-          )}
-          {notification.sessionId && (
-            <span>
-              <span className="text-muted-foreground/60">Session:</span>{' '}
-              <span className="font-mono">{notification.sessionId}</span>
-            </span>
-          )}
-        </div>
-      </div>
+    <div className="flex flex-col gap-1.5 w-full">
+      {notifications.map((n, i) => (
+        <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
+      ))}
     </div>
   );
 }
@@ -1694,18 +1705,7 @@ function UserMessageRow({
         !(p as any).ignored,
     ) as TextPart[];
   const rawVisibleText = visibleTextParts.map((p) => p.text).join('\n');
-  const { cleanText: textAfterPty, notifications: ptyNotifications } = useMemo(
-    () => parsePtyExitedNotifications(rawVisibleText),
-    [rawVisibleText],
-  );
-  const {
-    cleanText: textAfterAgent,
-    notifications: agentCompletedNotifications,
-  } = useMemo(
-    () => parseAgentCompletedNotifications(textAfterPty),
-    [textAfterPty],
-  );
-  const rawText = stripSystemPtyText(textAfterAgent);
+  const rawText = stripSystemPtyText(rawVisibleText);
   const { cleanText: textAfterReply, replyContext } = useMemo(
     () => parseReplyContext(rawText),
     [rawText],
@@ -1726,9 +1726,19 @@ function UserMessageRow({
     () => parseAgentMentionReferences(textAfterFileMentions),
     [textAfterFileMentions],
   );
-  const { cleanText: text, sessions: sessionRefs } = useMemo(
+  const { cleanText: textAfterSessions, sessions: sessionRefs } = useMemo(
     () => parseSessionReferences(textAfterAgentMentions),
     [textAfterAgentMentions],
+  );
+  // System notification XML — parsed LAST so all other XML subsystems
+  // (file refs, session refs, reply context, etc.) consume their tags first.
+  // Whatever XML blocks remain are system notifications.
+  const {
+    cleanText: text,
+    notifications: systemNotifications,
+  } = useMemo(
+    () => parseSystemNotifications(textAfterSessions),
+    [textAfterSessions],
   );
   // Silence unused-variable warnings — these parsed refs are currently only
   // consumed as stripping side-effects; inline @ highlighting still uses
@@ -1954,31 +1964,25 @@ function UserMessageRow({
     return result;
   }, [text, filesWithSource, agentParts, agentNames, sessionRefs, projectRefs]);
 
-  // If the message is purely DCP notifications (no real user content), render only the cards
+  // If the message is purely notifications (no real user content), render only the cards
   const hasUserContent = !!(
     text ||
     replyContext ||
     uploadedFiles.length > 0 ||
     sessionRefs.length > 0 ||
     projectRefs.length > 0 ||
-    ptyNotifications.length > 0 ||
-    agentCompletedNotifications.length > 0 ||
+    systemNotifications.length > 0 ||
     attachments.length > 0
   );
 
   if (
     !hasUserContent &&
-    (dcpNotifications.length > 0 ||
-      ptyNotifications.length > 0 ||
-      agentCompletedNotifications.length > 0)
+    (dcpNotifications.length > 0 || systemNotifications.length > 0)
   ) {
     return (
       <div className="flex flex-col gap-1.5 w-full">
-        {ptyNotifications.map((n, i) => (
-          <PtyExitedNotificationCard key={`pty-${i}`} notification={n} />
-        ))}
-        {agentCompletedNotifications.map((n, i) => (
-          <AgentCompletedNotificationCard key={`agent-${i}`} notification={n} />
+        {systemNotifications.map((n, i) => (
+          <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
         ))}
         {dcpNotifications.map((n, i) => (
           <DCPNotificationCard key={i} notification={n} />
@@ -2083,21 +2087,11 @@ function UserMessageRow({
             ))}
           </div>
         )}
-        {ptyNotifications.length > 0 && (
+        {systemNotifications.length > 0 && (
           <div className="flex flex-col gap-1.5 w-full mt-1">
-            {ptyNotifications.map((n, i) => (
-              <PtyExitedNotificationCard
-                key={`cmd-pty-${i}`}
-                notification={n}
-              />
-            ))}
-          </div>
-        )}
-        {agentCompletedNotifications.length > 0 && (
-          <div className="flex flex-col gap-1.5 w-full mt-1">
-            {agentCompletedNotifications.map((n, i) => (
-              <AgentCompletedNotificationCard
-                key={`cmd-agent-${i}`}
+            {systemNotifications.map((n, i) => (
+              <SystemNotificationCard
+                key={`cmd-${n.tag}-${i}`}
                 notification={n}
               />
             ))}
@@ -2338,21 +2332,11 @@ function UserMessageRow({
           ))}
         </div>
       )}
-      {ptyNotifications.length > 0 && (
+      {systemNotifications.length > 0 && (
         <div className="flex flex-col gap-1.5 w-full mt-1">
-          {ptyNotifications.map((n, i) => (
-            <PtyExitedNotificationCard
-              key={`pty-mixed-${i}`}
-              notification={n}
-            />
-          ))}
-        </div>
-      )}
-      {agentCompletedNotifications.length > 0 && (
-        <div className="flex flex-col gap-1.5 w-full mt-1">
-          {agentCompletedNotifications.map((n, i) => (
-            <AgentCompletedNotificationCard
-              key={`agent-mixed-${i}`}
+          {systemNotifications.map((n, i) => (
+            <SystemNotificationCard
+              key={`mixed-${n.tag}-${i}`}
               notification={n}
             />
           ))}
@@ -3024,17 +3008,8 @@ function SessionTurn({
         isTextPart(p) &&
         !(p as TextPart).synthetic &&
         !(p as any).ignored &&
-          (!!stripSystemPtyText((p as TextPart).text || '') ||
-            (p as TextPart).text?.includes('<pty_exited>') ||
-            (p as TextPart).text?.includes('<agent_completed>') ||
-            (p as TextPart).text?.includes('<task_delivered>') ||
-            (p as TextPart).text?.includes('<task_blocker>') ||
-            (p as TextPart).text?.includes('<task_run_failed>') ||
-            (p as TextPart).text?.includes('<task_event_mirror>') ||
-            (p as TextPart).text?.includes('<agent_task_completed>') ||
-            (p as TextPart).text?.includes('<agent_task_failed>') ||
-            (p as TextPart).text?.includes('<agent_failed>') ||
-          (p as TextPart).text?.includes('<agent_stopped>')),
+        (!!stripSystemPtyText((p as TextPart).text || '') ||
+          hasXmlBlocks((p as TextPart).text || '')),
     );
     if (hasVisibleText) return true;
     // Has any attachment (image/PDF)?
@@ -5967,10 +5942,10 @@ export function SessionChat({
               role="log"
               className="mx-auto max-w-3xl min-w-0 w-full px-3 sm:px-6"
             >
-              <div className="flex flex-col gap-12 min-w-0">
+              <div className="flex flex-col min-w-0">
                 {/* Optimistic user message */}
                 {showOptimistic && (
-                  <div data-turn-id="optimistic">
+                  <div data-turn-id="optimistic" className="mt-12 first:mt-0">
                     <div className="flex justify-end">
                       <div className="flex flex-col max-w-[90%] rounded-3xl rounded-br-lg bg-card border overflow-hidden">
                         {(() => {
@@ -6082,7 +6057,7 @@ export function SessionChat({
                 )}
 
                 {isOptimisticCompacting && !hasCompactionTurn && (
-                  <div className="space-y-3">
+                  <div className="space-y-3 mt-12">
                     <div className="flex items-center gap-3 py-4 my-3">
                       <div className="flex-1 h-px bg-border" />
                       <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-muted/80 border border-border/60">
@@ -6110,7 +6085,6 @@ export function SessionChat({
                 {/* Turn-based message rendering */}
                 {turns.map((turn, turnIndex) => {
                   // Check if this turn is a compaction summary
-                  // The server sets `summary: true` on assistant messages that are compaction summaries
                   const hasCompaction =
                     turn.assistantMessages.some(
                       (msg) => (msg.info as any).summary === true,
@@ -6119,10 +6093,30 @@ export function SessionChat({
                       msg.parts.some((p) => p.type === 'compaction'),
                     );
 
+                  const notificationOnly = isNotificationOnlyMessage(
+                    turn.userMessage.parts,
+                  );
+
+                  // Notification-only turns render as lightweight inline
+                  // cards with tight spacing — no user bubble, no logo,
+                  // no steps chrome.
+                  if (notificationOnly) {
+                    return (
+                      <div
+                        key={turn.userMessage.info.id}
+                        data-turn-id={turn.userMessage.info.id}
+                        className="mt-1.5"
+                      >
+                        <NotificationTurn turn={turn} />
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
                       key={turn.userMessage.info.id}
                       data-turn-id={turn.userMessage.info.id}
+                      className={turnIndex === 0 ? '' : 'mt-12'}
                     >
                       {/* Compaction divider — shown before the first turn after compaction */}
                       {hasCompaction && (

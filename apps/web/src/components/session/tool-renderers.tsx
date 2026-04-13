@@ -1034,12 +1034,10 @@ export function BasicTool({
         </div>
       </CollapsibleTrigger>
 
-      {children && (
-        <CollapsibleContent>
-          <div className="mt-1.5 mb-2 rounded-lg bg-muted/20 border border-border/30 text-xs overflow-hidden">
-            {children}
-          </div>
-        </CollapsibleContent>
+      {children && open && (
+        <div className="mt-1.5 mb-2 rounded-lg bg-muted/20 border border-border/30 text-xs overflow-hidden">
+          {children}
+        </div>
       )}
     </Collapsible>
   );
@@ -2180,15 +2178,14 @@ function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     return parseStructuredOutput(normalized);
   }, [strippedOutput, sessionMeta, sessionMessages]);
 
-  const outputBlock = useMemo(() => {
+  const plainOutput = useMemo(() => {
     if (!strippedOutput || sessionMeta || sessionMessages || structuredSections)
       return '';
-    const { content, lang } = formatBashOutput(strippedOutput);
-    return `\`\`\`${lang}\n${content}\n\`\`\``;
+    return formatBashOutput(strippedOutput).content;
   }, [strippedOutput, sessionMeta, sessionMessages, structuredSections]);
 
   const hasOutput =
-    !!sessionMeta || !!sessionMessages || !!structuredSections || !!outputBlock;
+    !!sessionMeta || !!sessionMessages || !!structuredSections || !!plainOutput;
 
   const isStreaming = status === 'pending' && running;
   const isWaiting = !command && running;
@@ -2220,56 +2217,31 @@ function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       forceOpen={forceOpen}
       locked={locked}
     >
-      <div data-scrollable className="max-h-96 overflow-auto">
-        {/* Command */}
-        <div className="px-3 py-2.5 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_code]:break-words [&_pre]:contents">
-          {isWaiting ? (
-            <div className="rounded-md border border-border/40 bg-background/50 px-2.5 py-2">
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70">
-                <Loader2 className="size-3 animate-spin" />
-                <span>Preparing command...</span>
+      <div data-scrollable className="max-h-96 overflow-auto px-3 py-2">
+        {isWaiting || isStalePending ? (
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground/60">
+            <Loader2 className="size-3 animate-spin" />
+            <span>Preparing command...</span>
+          </div>
+        ) : (
+          <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">
+            <span className="text-muted-foreground/50">$</span>{' '}
+            <span className="text-foreground/80">{command}</span>
+            {hasOutput && (
+              <div className="mt-2 text-muted-foreground/70">
+                {sessionMeta ? (
+                  <SessionMetadataList sessions={sessionMeta} />
+                ) : sessionMessages ? (
+                  <InlineSessionMessagesList messages={sessionMessages} />
+                ) : structuredSections ? (
+                  <StructuredOutput sections={structuredSections} />
+                ) : plainOutput ? (
+                  <pre className="whitespace-pre-wrap break-words">
+                    {plainOutput}
+                  </pre>
+                ) : null}
               </div>
-            </div>
-          ) : isStalePending ? (
-            <div className="px-3 py-2 text-muted-foreground/60 text-[11px] italic">
-              Preparing command...
-            </div>
-          ) : (
-            <HighlightedCode code={`$ ${command}`} language="bash">
-              {`$ ${command}`}
-            </HighlightedCode>
-          )}
-        </div>
-        {/* Output */}
-        {hasOutput && (
-          <div className="mx-2 mb-2 rounded-md border border-border/40 bg-background/50 overflow-hidden">
-            {/* Output label */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 border-b border-border/30">
-              <div className="size-1.5 rounded-full bg-muted-foreground/25" />
-              <span className="text-[0.5625rem] font-medium uppercase tracking-wider text-muted-foreground/40">
-                Output
-              </span>
-            </div>
-            {sessionMeta ? (
-              <div className="p-2">
-                <SessionMetadataList sessions={sessionMeta} />
-              </div>
-            ) : sessionMessages ? (
-              <div className="p-2">
-                <InlineSessionMessagesList messages={sessionMessages} />
-              </div>
-            ) : structuredSections ? (
-              <div className="p-2">
-                <StructuredOutput sections={structuredSections} />
-              </div>
-            ) : outputBlock ? (
-              <div className={cn('p-2', MD_FLUSH_CLASSES)}>
-                <UnifiedMarkdown
-                  content={outputBlock}
-                  isStreaming={status === 'running'}
-                />
-              </div>
-            ) : null}
+            )}
           </div>
         )}
       </div>
@@ -2314,24 +2286,21 @@ function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       forceOpen={forceOpen}
       locked={locked}
     >
-      <div className="space-y-0">
+      <div className="px-3 py-2">
         {command && (
-          <div className="px-3 py-2.5 [&_code]:text-xs [&_code]:leading-relaxed [&_code]:whitespace-pre-wrap [&_code]:break-words [&_pre]:contents">
-            <HighlightedCode code={`$ ${command}`} language="bash">
-              {`$ ${command}`}
-            </HighlightedCode>
+          <div className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-words">
+            <span className="text-muted-foreground/50">$</span>{' '}
+            <span className="text-foreground/80">{command}</span>
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-t border-border/20">
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
           {processStatus && (
             <span
               className={cn(
                 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
                 processStatus === 'running'
                   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : processStatus === 'exited' || processStatus === 'stopped'
-                    ? 'bg-muted/60 text-muted-foreground'
-                    : 'bg-muted/60 text-muted-foreground',
+                  : 'bg-muted/60 text-muted-foreground',
               )}
             >
               {processStatus === 'running' && (
