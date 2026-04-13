@@ -1496,6 +1496,7 @@ export class ServiceManager {
   private async cleanupLegacyOrphans(): Promise<void> {
     const patterns = [
       "/usr/local/bin/opencode serve --port 4096 --hostname 0.0.0.0",
+      "/usr/bin/opencode serve --port 4096 --hostname 0.0.0.0",
       "bash /ephemeral/kortix-master/scripts/run-opencode-serve.sh",
       "/tmp/static-web-server.js",
     ];

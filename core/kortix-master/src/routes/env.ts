@@ -52,8 +52,9 @@ function isValidEnvKey(key: string): boolean {
 }
 
 /**
- * Get the innermost PID namespace PID for a given /proc entry.
- * Returns the PID to use with process.kill() from within this namespace.
+ * Resolve a PID that is safe to pass to process.kill() from this container.
+ * NSpid usually collapses to the same PID now, but reading it keeps restart
+ * logic namespace-safe if the runtime layout ever changes again.
  */
 function getInnerNsPid(procPid: number): number | null {
   try {
@@ -74,10 +75,8 @@ async function restartServices(services?: string[]): Promise<void> {
   // The opencode CLI is a Node wrapper → native binary chain. s6-svc -r
   // only SIGTERMs the supervised PID and doesn't propagate to grandchildren.
   //
-  // CRITICAL: This container uses `unshare --pid` creating a nested PID
-  // namespace. `pgrep`/`kill`/`killall` all fail because they resolve PIDs
-  // in the outer namespace but kill() operates in the inner namespace.
-  // We read NSpid from /proc/{pid}/status to get the inner namespace PID.
+  // Read NSpid from /proc/{pid}/status before kill() so service restarts stay
+  // namespace-safe even if the runtime layout changes.
   const restartAll = !services || services.length === 0
   const restartOpencode = restartAll || services?.includes('opencode')
 
@@ -101,7 +100,7 @@ async function restartServices(services?: string[]): Promise<void> {
         // Kill node/bun wrappers by cmdline
         if (comm === 'node' || comm === 'MainThread' || comm === 'bun') {
           const cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf-8')
-          if (restartOpencode && cmdline.includes('/usr/local/bin/opencode')) {
+          if (restartOpencode && (cmdline.includes('/usr/bin/opencode') || cmdline.includes('/usr/local/bin/opencode') || cmdline.includes('opencode serve --port 4096'))) {
             const innerPid = getInnerNsPid(pid)
             if (innerPid) {
               process.kill(innerPid, 9)

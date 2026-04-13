@@ -12,6 +12,12 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-${KORTIX_PERSISTENT_ROOT}}"
 export OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 export OPENCODE_FILE_ROOT=/
 export PATH="/opt/bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+OPENCODE_BIN="$(command -v opencode || true)"
+
+if [ -z "$OPENCODE_BIN" ]; then
+  echo "[opencode-serve] ERROR: opencode binary not found on PATH"
+  exit 1
+fi
 
 # Drop empty *_BASE_URL vars — empty string causes @ai-sdk to fetch("") → ERR_INVALID_URL
 [ -z "$ANTHROPIC_BASE_URL" ] && unset ANTHROPIC_BASE_URL
@@ -64,4 +70,4 @@ for i in $(seq 1 10); do
   sleep 1
 done
 
-exec /usr/local/bin/opencode serve --port 4096 --hostname 0.0.0.0
+exec "$OPENCODE_BIN" serve --port 4096 --hostname 0.0.0.0

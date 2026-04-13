@@ -1,6 +1,6 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Container entrypoint — boots s6-overlay inside a PID namespace.
+# Container entrypoint — boots s6-overlay directly.
 #
 # PERSISTENCE MODEL:
 #   /workspace/   = PERSISTENT USER WORKSPACE (projects, repos, user files)
@@ -268,11 +268,11 @@ if [ -x /ephemeral/kortix-master/scripts/install-channel-clis.sh ]; then
   /ephemeral/kortix-master/scripts/install-channel-clis.sh || echo "[startup] WARNING: channel CLI install failed"
 fi
 
-echo "[startup] Starting s6-overlay via PID namespace..."
+echo "[startup] Starting s6-overlay directly..."
 
-if unshare --pid --fork true >/dev/null 2>&1; then
-  exec unshare --pid --fork /init
-fi
-
-echo "[startup] WARNING: unshare not permitted — falling back to direct /init"
+# Docker-in-Docker must work by default. Running the whole sandbox inside an
+# extra nested PID namespace via `unshare --pid --fork /init` breaks nested
+# dockerd/containerd shim startup with errors like:
+#   open /proc/<pid>/oom_score_adj: no such file or directory
+# So the sandbox always starts s6 in the container's primary PID namespace.
 exec /init

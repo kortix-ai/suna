@@ -44,6 +44,15 @@
 #     /opt/bun/                    Bun runtime
 #
 
+# ── Stage 1: Known-good Docker-in-Docker toolchain ──────────────────────────
+# The Ubuntu webtop base currently ships Docker 29 / containerd 2.2, which
+# fails to start nested containers in this sandbox with:
+#   failed to adjust OOM score for shim: open /proc/<pid>/oom_score_adj: no
+#   such file or directory
+# The official docker:dind 28.x stack works reliably in the same environment,
+# so we vendor its daemon/runtime binaries into the Ubuntu desktop image.
+FROM docker:28-dind AS docker-dind-bins
+
 # ── Main image ───────────────────────────────────────────────────────────────
 FROM lscr.io/linuxserver/webtop:ubuntu-xfce
 
@@ -305,6 +314,18 @@ RUN chmod +x /usr/local/bin/docker-wait-ready
 # dockerd uses this as its data-root. Compose mounts a named volume here so
 # the storage lives on the host's native filesystem (required for overlay2).
 RUN mkdir -p /var/lib/docker /etc/docker
+
+# ── Known-good Docker/Containerd toolchain (from official docker:dind) ─────
+COPY --from=docker-dind-bins /usr/local/bin/containerd /usr/local/bin/containerd
+COPY --from=docker-dind-bins /usr/local/bin/containerd-shim-runc-v2 /usr/local/bin/containerd-shim-runc-v2
+COPY --from=docker-dind-bins /usr/local/bin/ctr /usr/local/bin/ctr
+COPY --from=docker-dind-bins /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-dind-bins /usr/local/bin/docker-compose /usr/local/bin/docker-compose
+COPY --from=docker-dind-bins /usr/local/bin/docker-init /usr/local/bin/docker-init
+COPY --from=docker-dind-bins /usr/local/bin/docker-proxy /usr/local/bin/docker-proxy
+COPY --from=docker-dind-bins /usr/local/bin/dockerd /usr/local/bin/dockerd
+COPY --from=docker-dind-bins /usr/local/bin/runc /usr/local/bin/runc
+COPY --from=docker-dind-bins /usr/local/libexec/docker/cli-plugins/ /usr/local/libexec/docker/cli-plugins/
 
 # ── E2E test scripts ────────────────────────────────────────────────────────
 COPY core/tests/ /ephemeral/tests/

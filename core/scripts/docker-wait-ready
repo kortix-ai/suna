@@ -9,22 +9,16 @@
 # Exit codes:
 #   0  dockerd is up and `docker info` succeeded
 #   1  timed out
-#   2  START_DOCKER != true (DinD disabled — caller should skip docker work)
-#   3  dockerd binary missing
+#   2  dockerd binary missing
 
 set -eu
 
 TIMEOUT="${1:-30}"
 QUIET="${2:-}"
 
-if [ "${START_DOCKER:-false}" != "true" ]; then
-  echo "[docker-wait-ready] START_DOCKER != true — DinD not enabled"
-  exit 2
-fi
-
 if ! command -v dockerd >/dev/null 2>&1; then
   echo "[docker-wait-ready] dockerd binary not installed"
-  exit 3
+  exit 2
 fi
 
 SOCK="${DOCKER_HOST:-unix:///var/run/docker.sock}"

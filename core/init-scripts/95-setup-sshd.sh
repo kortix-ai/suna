@@ -56,22 +56,16 @@ EOF
 #   2. parent-process-id: The install script passes --parent-process-id $$
 #      (its own shell PID). That shell exits after reporting the port. The
 #      binary monitors that PID and self-terminates when it disappears. Fixed
-#      by rewriting the PID to the wrapper's container-namespace PID.
-#   3. PID namespace mismatch: SSH sessions inside Docker containers see TWO
-#      PID namespaces. Shell $$ returns the HOST namespace PID, but /proc/
-#      inside the container only contains CONTAINER namespace PIDs. The binary
-#      checks /proc/PID/stat to monitor the parent — if PID is from the host
-#      namespace, /proc/PID/ doesn't exist and the binary exits immediately.
-#      Fixed by using `sh -c 'cut -d" " -f4 /proc/self/stat'` to get the
-#      wrapper's PID in the container namespace (a child's PPID in /proc/self/stat
-#      field 4 gives the parent's container-internal PID).
+#      by rewriting the PID to the wrapper's real container-visible PID.
+#   3. Parent PID correctness: the remote binary reads /proc/PID to watch its
+#      parent. We therefore resolve the wrapper shell's real PID directly from
+#      /proc/self/stat instead of trusting a transient caller PID.
 # NOTE: /bin/sh wrapper must stay POSIX-compatible — no bash-isms allowed.
 WRAPPER_CONTENT='#!/bin/sh
 REAL="${0}.real"
 case "$*" in *command-shell*)
-    # Get our PID in the container namespace (not host namespace).
-    # SSH sessions set $$ to the host-namespace PID which is invisible in /proc/.
-    # A child PPID in /proc/self/stat (field 4) gives the parent container-namespace PID.
+    # Get the wrapper shell real container-visible PID.
+    # A child PPID in /proc/self/stat (field 4) gives the parent shell PID.
     MY_PID=$(sh -c '"'"'cut -d" " -f4 /proc/self/stat'"'"')
     # Rebuild positional params with --parent-process-id rewritten.
     # CRITICAL: must use eval+set to preserve proper "$@" quoting — the binary

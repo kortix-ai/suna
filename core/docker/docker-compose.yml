@@ -85,7 +85,6 @@ services:
       - PROJECT_ID=${PROJECT_ID:-local}
       - ENV_MODE=${ENV_MODE:-local}
       - KORTIX_LOCAL_SOURCE=${KORTIX_LOCAL_SOURCE:-1}
-      - START_DOCKER=true
     env_file:
       - .env
     volumes:

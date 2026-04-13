@@ -8,9 +8,9 @@
 # REQUIREMENTS (enforced at the top of this script — we exit cleanly otherwise):
 #   1. Container must be privileged (or have CAP_SYS_ADMIN) — tested via
 #      /proc/self/status CapEff, not a brittle /dev probe.
-#   2. START_DOCKER=true must be set. Default is off so users who don't need
-#      DinD don't pay the ~40MB dockerd memory cost.
-#   3. dockerd binary must be present in the image (provided by the webtop base).
+#   2. dockerd binary must be present in the image (we ship a pinned official
+#      docker:dind toolchain because the webtop base's Docker 29 stack is not
+#      reliable for nested containers in this sandbox).
 #
 # STORAGE DRIVER SELECTION (this is THE thing that breaks DinD most often):
 #   - /var/lib/docker is expected to be a Docker NAMED VOLUME from the host
@@ -21,9 +21,10 @@
 #   - The choice is written to /etc/docker/daemon.json before dockerd starts.
 #
 # CGROUPS:
-#   The stock dind entrypoint has an infinite retry loop that spams
-#   "sed: write error" as processes race to be moved between cgroups. We do
-#   it one-shot with a bounded retry and move on.
+#   We intentionally use a bounded retry loop here instead of the stock dind
+#   infinite loop because this sandbox runs many long-lived services in the same
+#   cgroup root during boot. We need cgroup v2 delegation configured, but we
+#   also need the daemon to actually progress to startup.
 #
 # /tmp:
 #   Stock dind mounts a fresh tmpfs over /tmp on boot — that wipes the X11
@@ -32,19 +33,13 @@
 
 set -u
 
-# ── Gate 1: user opted in ───────────────────────────────────────────────────
-if [ "${START_DOCKER:-false}" != "true" ]; then
-  echo "[svc-docker] START_DOCKER != true — DinD disabled, sleeping"
-  exec sleep infinity
-fi
-
-# ── Gate 2: dockerd binary exists ───────────────────────────────────────────
+# ── Gate 1: dockerd binary exists ────────────────────────────────────────────
 if ! command -v dockerd >/dev/null 2>&1; then
   echo "[svc-docker] ERROR: dockerd not installed. The sandbox image must include docker + dockerd before svc-docker can start."
   exec sleep infinity
 fi
 
-# ── Gate 3: privileged / CAP_SYS_ADMIN ──────────────────────────────────────
+# ── Gate 2: privileged / CAP_SYS_ADMIN ──────────────────────────────────────
 # CapEff is a hex mask; CAP_SYS_ADMIN is bit 21 (0x200000). Privileged
 # containers have all caps (ffffffffff). If we don't have SYS_ADMIN we can't
 # mount cgroups or create network namespaces — no point starting dockerd.
@@ -75,13 +70,13 @@ if [ -d /sys/kernel/security ] && ! mountpoint -q /sys/kernel/security 2>/dev/nu
   mount -t securityfs none /sys/kernel/security 2>/dev/null || true
 fi
 
-# ── cgroup v2 nesting (one-shot, not an infinite loop) ──────────────────────
+# ── cgroup v2 nesting (bounded retry for multi-service sandbox) ─────────────
 if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
   mkdir -p /sys/fs/cgroup/init
   for attempt in 1 2 3 4 5; do
     xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || true
     if sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
-        > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null; then
+      > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null; then
       echo "[svc-docker] cgroup v2 subtree_control configured (attempt ${attempt})"
       break
     fi
@@ -148,7 +143,10 @@ if [ -f /var/log/dockerd.log ]; then
   mv /var/log/dockerd.log /var/log/dockerd.log.prev 2>/dev/null || true
 fi
 
+# Remove stale pid files exactly like the official dind entrypoint.
+find /run /var/run -iname 'docker*.pid' -delete 2>/dev/null || true
+
 # dockerd honors daemon.json's "hosts" OR the -H flag but NOT both — we use
-# daemon.json, so pass NO -H here. Redirect output (NOT piped — piping would
-# make s6 supervise the shell instead of dockerd, breaking signal delivery).
-exec dockerd --config-file=/etc/docker/daemon.json >>/var/log/dockerd.log 2>&1
+# daemon.json, so pass NO -H here. Wrap with docker-init like the official dind
+# image to keep shim lifecycle stable under supervision.
+exec docker-init -- dockerd --config-file=/etc/docker/daemon.json >>/var/log/dockerd.log 2>&1

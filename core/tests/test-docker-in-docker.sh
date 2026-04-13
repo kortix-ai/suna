@@ -13,7 +13,7 @@
 #   7. Compose v2 plugin is available
 #   8. Cleanup: pulled images + containers can be removed
 #
-# Run this AFTER starting the sandbox with START_DOCKER=true.
+# Run this inside a normal sandbox container. DinD is enabled by default.
 #
 # Usage:
 #   # From the host (against a running container):
@@ -25,7 +25,6 @@
 # Exit codes:
 #   0 = all tests passed
 #   1 = one or more tests failed
-#   2 = DinD is disabled (START_DOCKER != true) — nothing to test
 # ============================================================================
 
 set -uo pipefail
@@ -54,11 +53,7 @@ trap cleanup EXIT
 # ── 0. Preflight ────────────────────────────────────────────────────────────
 section "Preflight"
 
-if [ "${START_DOCKER:-false}" != "true" ]; then
-  echo "SKIP: START_DOCKER != true — DinD is disabled"
-  exit 2
-fi
-pass "START_DOCKER=true"
+pass "DinD is a core sandbox capability"
 
 if ! command -v docker >/dev/null 2>&1; then
   fail "docker CLI not on PATH"
