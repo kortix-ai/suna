@@ -888,11 +888,16 @@ export default function HomeScreen() {
     ]);
   }, [deleteSession, navigateToSession]);
 
+  // Simplified dashboard send flow (ported from web 3f150e0).
+  // Single `isSending` guard, `finally` cleanup, parallel session create + fade.
+  const [isDashboardSending, setIsDashboardSending] = useState(false);
+
   const handleDashboardSend = useCallback(
     async (text: string, options: PromptOptions, mentions?: TrackedMention[]) => {
-      if (!sandboxUrl) return;
+      if (!sandboxUrl || isDashboardSending) return;
+      if (!text.trim()) return;
 
-      // Process session mentions — append XML refs (same as frontend)
+      // Process session mentions — append XML refs
       let finalText = text;
       const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
       if (sessionMentions && sessionMentions.length > 0) {
@@ -902,13 +907,16 @@ export default function HomeScreen() {
         finalText = `${text}\n\nReferenced sessions (use the session_context tool to fetch details when needed):\n${refs}`;
       }
 
+      setIsDashboardSending(true);
+
       try {
+        // Create session — navigate immediately on success
         const session = await createSession.mutateAsync({});
         navigateToSession(session.id);
 
+        // Optimistic user message
         const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const partId = `prt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
         useSyncStore.getState().addOptimisticMessage(session.id, {
           info: {
             id: messageId,
@@ -920,6 +928,7 @@ export default function HomeScreen() {
         });
         useSyncStore.getState().setStatus(session.id, { type: 'busy' });
 
+        // Fire prompt async (fire-and-forget)
         const payload: Record<string, any> = {
           parts: [{ type: 'text', text: finalText }],
         };
@@ -941,9 +950,11 @@ export default function HomeScreen() {
         });
       } catch (err: any) {
         log.error('❌ [Home] Dashboard send failed:', err?.message || err);
+      } finally {
+        setIsDashboardSending(false);
       }
     },
-    [sandboxUrl, createSession, navigateToSession],
+    [sandboxUrl, isDashboardSending, createSession, navigateToSession],
   );
 
   // Capture a screenshot of the current tab before showing tabs overview.
@@ -1629,20 +1640,23 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <View className="flex-1 items-center justify-center px-8">
+              <Animated.View
+                className="flex-1 items-center justify-center px-8"
+                style={{ opacity: isDashboardSending ? 0.3 : 1 }}
+              >
                 <Text className="text-2xl font-bold mb-2 text-foreground">
                   What can I help with?
                 </Text>
                 <Text className="text-sm text-center text-muted-foreground">
                   Start a conversation or select a session from the menu.
                 </Text>
-              </View>
+              </Animated.View>
 
               <View>
                 <SessionChatInput
                   onSend={handleDashboardSend}
                   placeholder="Ask anything..."
-                  disabled={!sandboxUrl}
+                  disabled={!sandboxUrl || isDashboardSending}
                   agent={resolved.agent}
                   agents={resolved.agents}
                   model={resolved.model}
