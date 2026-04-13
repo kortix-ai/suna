@@ -584,7 +584,7 @@ function ChannelDetailSheet({
         <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Agent</Text>
         <View style={{ borderRadius: 14, borderWidth: 1, borderColor, backgroundColor: inputBg, marginBottom: 16, overflow: 'hidden' }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 8, gap: 6 }}>
-            {agents.map((agent) => {
+            {agents.filter((a) => a.mode !== 'subagent').map((agent) => {
               const active = agentName === agent.name;
               return (
                 <Pressable key={agent.name} onPress={() => { setAgentName(agent.name); markDirty(); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
