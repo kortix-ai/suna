@@ -1,5 +1,12 @@
 import { tool } from "@opencode-ai/plugin";
+import Replicate from "replicate";
 import { getEnv } from "./lib/get-env";
+
+const MOONDREAM_MODEL =
+  "lucataco/moondream2:72ccb656353c348c1385df54b237eeb7bfa874bf11486cf0b9473e691b662d31";
+const MOONDREAM_PROMPT =
+  "Describe this image in detail. Include any text visible in the image.";
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 15_000;
 
 interface CrwImageResult {
   url: string;
@@ -122,6 +129,71 @@ async function searchImagesSerper(
   return { query: q, images };
 }
 
+async function describeImage(
+  replicate: Replicate,
+  imageUrl: string,
+): Promise<string> {
+  try {
+    const res = await fetch(imageUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+      signal: AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS),
+      redirect: "follow",
+    });
+
+    if (!res.ok) return "";
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.startsWith("image/")) return "";
+
+    const imageBytes = await res.arrayBuffer();
+    const b64 = Buffer.from(imageBytes).toString("base64");
+    const dataUrl = `data:${contentType};base64,${b64}`;
+
+    const output: unknown = await replicate.run(MOONDREAM_MODEL, {
+      input: { image: dataUrl, prompt: MOONDREAM_PROMPT },
+    });
+
+    if (typeof output === "string") return output.trim();
+    if (output && typeof output === "object" && Symbol.iterator in output) {
+      return Array.from(output as Iterable<unknown>)
+        .map(String)
+        .join("")
+        .trim();
+    }
+    return "";
+  } catch {
+    return "";
+  }
+}
+
+async function enrichImages(images: EnrichedImage[]): Promise<EnrichedImage[]> {
+  const replicateBaseUrl = getEnv("REPLICATE_API_URL");
+  // When routed through the Kortix proxy (REPLICATE_API_URL is set), use KORTIX_TOKEN
+  // for auth — the proxy validates it and injects the real Replicate API token.
+  const replicateToken = replicateBaseUrl
+    ? getEnv("KORTIX_TOKEN")
+    : getEnv("REPLICATE_API_TOKEN");
+  if (!replicateToken || images.length === 0) return images;
+
+  const replicate = new Replicate({
+    auth: replicateToken,
+    ...(replicateBaseUrl ? { baseUrl: replicateBaseUrl } : {}),
+  });
+
+  return Promise.all(
+    images.map(async (img) => {
+      try {
+        const description = await describeImage(replicate, img.url);
+        return { ...img, description: description || img.description };
+      } catch {
+        return img;
+      }
+    }),
+  );
+}
+
 function isRouterProxy(url: string): boolean {
   return url.includes("/v1/router/");
 }
@@ -191,8 +263,9 @@ function resolveFallbackAuth(): AuthResult | null {
 
 export default tool({
   description:
-    "Search for images using CRW image search. " +
+    "Search for images using CRW or Serper. " +
     "Returns image URLs with titles, source pages, dimensions, descriptions, and thumbnails. " +
+    "When REPLICATE_API_TOKEN is set, enriches results with Moondream2 vision descriptions. " +
     "Supports batch queries separated by |||. " +
     "Use specific descriptive queries including topic/brand names for best results.",
   args: {
@@ -204,13 +277,20 @@ export default tool({
     num_results: tool.schema
       .number()
       .optional()
-      .describe("Images per query (1-20). Default: 5"),
+      .describe("Images per query (1-100). Default: 12"),
+    enrich: tool.schema
+      .boolean()
+      .optional()
+      .describe(
+        "Enrich images with AI descriptions via Moondream2. Requires REPLICATE_API_TOKEN. Default: true",
+      ),
   },
   async execute(args, _context) {
     const auth = resolveAuth();
     if (typeof auth === "string") return auth;
 
-    const numResults = Math.max(1, Math.min(args.num_results ?? 5, 20));
+    const numResults = Math.max(1, Math.min(args.num_results ?? 12, 100));
+    const shouldEnrich = args.enrich !== false;
     const queries = args.query
       .split("|||")
       .map((q: string) => q.trim())
@@ -250,25 +330,30 @@ export default tool({
         );
       if (!r.images || r.images.length === 0)
         return `No images found for: '${r.query}'`;
+      let images = r.images;
+      if (shouldEnrich) images = await enrichImages(images);
       return JSON.stringify(
-        { query: r.query, total: r.images.length, images: r.images },
+        { query: r.query, total: images.length, images },
         null,
         2,
       );
     }
 
+    const enrichedResults = await Promise.all(
+      results.map(async (r) => {
+        if (r.error) return { query: r.query, success: false, error: r.error };
+        let images = r.images ?? [];
+        if (shouldEnrich) images = await enrichImages(images);
+        return {
+          query: r.query,
+          total: images.length,
+          images,
+        };
+      }),
+    );
+
     return JSON.stringify(
-      {
-        batch_mode: true,
-        results: results.map((r) => {
-          if (r.error) return { query: r.query, success: false, error: r.error };
-          return {
-            query: r.query,
-            total: r.images?.length ?? 0,
-            images: r.images ?? [],
-          };
-        }),
-      },
+      { batch_mode: true, results: enrichedResults },
       null,
       2,
     );
