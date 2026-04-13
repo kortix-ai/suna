@@ -68,14 +68,6 @@ function resolveAuth(): AuthResult | string {
     };
   }
 
-  if (crwKey) {
-    return {
-      apiUrl: "https://fastcrw.com/api",
-      apiKey: crwKey,
-      provider: "crw",
-    };
-  }
-
   const firecrawlKey = getEnv("FIRECRAWL_API_KEY");
   if (firecrawlKey) {
     return {
