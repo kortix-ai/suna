@@ -40,6 +40,13 @@ function buildEnvPayload(serviceKey: string, metadata?: Record<string, unknown>)
     TUNNEL_TOKEN: serviceKey,
   };
 
+  // Only inject CRW proxy URL when the backend has a CRW key configured.
+  // When CRW is disabled, explicitly write empty string so the /env POST clears
+  // any stale CRW_API_URL from previously-claimed pool sandboxes. getEnv() treats
+  // an existing-but-empty s6 file as "explicitly cleared" and won't fall through
+  // to stale process.env values.
+  payload.CRW_API_URL = config.CRW_API_KEY ? `${routerBase}/crw` : '';
+
   // Compute PUBLIC_BASE_URL from JustAVPS metadata so getMasterPublicBaseUrl()
   // returns a real public URL instead of localhost inside the sandbox.
   if (metadata) {

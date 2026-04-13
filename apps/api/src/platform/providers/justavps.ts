@@ -486,6 +486,8 @@ export class JustAVPSProvider implements SandboxProvider {
       REPLICATE_API_URL: `${routerBase}/replicate`,
       SERPER_API_URL: `${routerBase}/serper`,
       FIRECRAWL_API_URL: `${routerBase}/firecrawl`,
+      // Only inject CRW proxy URL when backend has CRW key configured
+      ...(config.CRW_API_KEY ? { CRW_API_URL: `${routerBase}/crw` } : {}),
       PUID: '911',
       PGID: '911',
       ...opts.envVars,

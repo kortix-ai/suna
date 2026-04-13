@@ -93,6 +93,16 @@ export const PROVIDER_REGISTRY: ProviderDef[] = [
 
   // ─── Tool Providers ────────────────────────────────────────
   {
+    id: 'crw',
+    name: 'CRW',
+    category: 'tool',
+    envKeys: ['CRW_API_KEY'],
+    envUrlKey: 'CRW_API_URL',
+    defaultUrl: 'https://fastcrw.com/api',
+    helpUrl: 'https://fastcrw.com',
+    description: 'Web Search, Image Search, Scraping & Crawling (replaces Tavily, Serper, Firecrawl)',
+  },
+  {
     id: 'tavily',
     name: 'Tavily',
     category: 'tool',
