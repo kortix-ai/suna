@@ -24,6 +24,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { cn } from '@/lib/utils';
 import { AuthBrowserNoiseGuard } from '@/components/auth/auth-browser-noise-guard';
+import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 
 // Lazy load heavy components
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
@@ -155,7 +156,7 @@ function LoginContent() {
   const { user, isLoading } = useAuth();
   const mode = searchParams.get('mode');
   const rawReturnUrl = searchParams.get('returnUrl') || searchParams.get('redirect');
-  const returnUrl = rawReturnUrl?.match(/^\/instances\/[^/]+/) ? '/instances' : rawReturnUrl;
+  const returnUrl = sanitizeAuthReturnUrl(rawReturnUrl);
   const message = searchParams.get('message');
   const isExpired = searchParams.get('expired') === 'true';
   const expiredEmail = searchParams.get('email') || '';
@@ -198,7 +199,7 @@ function LoginContent() {
   const sendOtpCodeForEmail = useCallback(async (email: string) => {
     const formData = new FormData();
     formData.set('email', email);
-    formData.set('returnUrl', returnUrl || '/instances');
+    formData.set('returnUrl', returnUrl);
     formData.set('origin', isElectron() ? getAuthOrigin() : window.location.origin);
     if (isElectron()) formData.set('isDesktopApp', 'true');
     return sendOtpCode({}, formData);
@@ -212,7 +213,7 @@ function LoginContent() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.replace(returnUrl || '/instances');
+      router.replace(returnUrl);
     }
   }, [user, isLoading, router, returnUrl]);
 
@@ -271,7 +272,7 @@ function LoginContent() {
     markEmailAsUsed();
     const email = formData.get('email') as string;
     setRegistrationEmail(email);
-    const finalReturnUrl = returnUrl || '/instances';
+    const finalReturnUrl = returnUrl;
     formData.append('returnUrl', finalReturnUrl);
     formData.append('origin', isElectron() ? getAuthOrigin() : window.location.origin);
     formData.append('acceptedTerms', acceptedTerms.toString());
@@ -300,7 +301,7 @@ function LoginContent() {
   };
 
   const handlePasswordAuth = async (prevState: unknown, formData: FormData) => {
-    formData.append('returnUrl', returnUrl || '/instances');
+    formData.append('returnUrl', returnUrl);
     const result = await signInWithPassword(prevState, formData);
     if (result && typeof result === 'object') {
       if ('message' in result) {
@@ -321,7 +322,7 @@ function LoginContent() {
     if (!email) { toast.error(t('pleaseEnterValidEmail')); return {}; }
     formData.set('email', email);
     formData.set('token', otpCode);
-    formData.set('returnUrl', returnUrl || '/instances');
+    formData.set('returnUrl', returnUrl);
     const result = await verifyOtp(prevState, formData);
     if (result && typeof result === 'object') {
       if ('message' in result) {
@@ -734,7 +735,7 @@ function LoginContent() {
                   <>
                     {/* Google OAuth */}
                     <Suspense fallback={<div className="h-11 bg-foreground/[0.04] rounded-xl animate-pulse" />}>
-                      <GoogleSignIn returnUrl={returnUrl || undefined} referralCode={referralCode} />
+                      <GoogleSignIn returnUrl={returnUrl} referralCode={referralCode} />
                     </Suspense>
 
                     {/* Divider */}
@@ -846,7 +847,7 @@ function SelfHostedLoginContent() {
   const { user, isLoading } = useAuth();
   const { installed, loading: statusLoading } = useInstallStatus();
   const rawReturnUrl = searchParams.get('returnUrl') || searchParams.get('redirect');
-  const returnUrl = rawReturnUrl?.match(/^\/instances\/[^/]+/) ? '/instances' : rawReturnUrl;
+  const returnUrl = sanitizeAuthReturnUrl(rawReturnUrl);
   const [phase, setPhase] = useState<'lock' | 'form'>('lock');
 
   // After auth, redirect to /instances. The /instances page handles
@@ -854,7 +855,7 @@ function SelfHostedLoginContent() {
   useEffect(() => {
     if (isLoading || !user) return;
     if (installed === false) return; // installer flow handles its own redirect
-    router.replace(returnUrl || '/instances');
+    router.replace(returnUrl);
   }, [isLoading, user, installed, returnUrl, router]);
 
   // Keyboard controls: Enter/Space opens form, Escape closes it

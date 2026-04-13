@@ -11,6 +11,7 @@ import { invalidateTokenCache } from '@/lib/auth-token';
 import { setBootstrapAuthToken } from '@/lib/auth-token';
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { getEnv } from '@/lib/env-config';
+import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 
 /* ─── Installer Form Component ─────────────────────────────────────────────── */
 
@@ -208,6 +209,7 @@ interface SelfHostedFormProps {
 }
 
 export function SelfHostedForm({ returnUrl, installed }: SelfHostedFormProps) {
+  const safeReturnUrl = sanitizeAuthReturnUrl(returnUrl);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -265,7 +267,7 @@ export function SelfHostedForm({ returnUrl, installed }: SelfHostedFormProps) {
           const formData = new FormData();
           formData.set('email', email);
           formData.set('password', password);
-          if (returnUrl) formData.set('returnUrl', returnUrl);
+          formData.set('returnUrl', safeReturnUrl);
 
           const result = await selfHostedSignIn(null, formData);
 
@@ -292,7 +294,7 @@ export function SelfHostedForm({ returnUrl, installed }: SelfHostedFormProps) {
           }
 
           if (!signedInJwt) {
-            window.location.href = result.redirectTo || returnUrl || '/instances';
+            window.location.href = result.redirectTo || safeReturnUrl;
             return;
           }
         }
@@ -300,7 +302,7 @@ export function SelfHostedForm({ returnUrl, installed }: SelfHostedFormProps) {
         // Auth successful — redirect to /instances.
         // The /instances page handles sandbox creation, and
         // /instances/[id] handles setup (provider config, tool keys).
-        window.location.href = returnUrl || '/instances';
+        window.location.href = safeReturnUrl;
         return;
       } else {
         setErrorMessage('This instance still needs its initial owner account. Run the Kortix installer/CLI bootstrap first.');

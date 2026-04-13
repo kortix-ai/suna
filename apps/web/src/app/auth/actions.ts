@@ -1,6 +1,7 @@
 'use server';
 
 import { createTrialCheckout } from '@/lib/api/billing';
+import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 import { createClient } from '@/lib/supabase/server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { redirect } from 'next/navigation';
@@ -8,7 +9,7 @@ import { redirect } from 'next/navigation';
 
 export async function signIn(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
-  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
   const isDesktopApp = formData.get('isDesktopApp') === 'true';
@@ -33,7 +34,7 @@ export async function signIn(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/instances')}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -59,7 +60,7 @@ export async function signIn(prevState: any, formData: FormData) {
 export async function signUp(prevState: any, formData: FormData) {
   const origin = formData.get('origin') as string;
   const email = formData.get('email') as string;
-  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
   const referralCode = formData.get('referralCode') as string | undefined;
   const isDesktopApp = formData.get('isDesktopApp') === 'true';
@@ -107,7 +108,7 @@ export async function signUp(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/instances')}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -215,7 +216,7 @@ export async function resetPassword(prevState: any, formData: FormData) {
 
 export async function resendMagicLink(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
-  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
   const isDesktopApp = formData.get('isDesktopApp') === 'true';
@@ -240,7 +241,7 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/instances')}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -265,7 +266,7 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
 
 export async function sendOtpCode(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
-  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
   const isDesktopApp = formData.get('isDesktopApp') === 'true';
 
@@ -280,7 +281,7 @@ export async function sendOtpCode(prevState: any, formData: FormData) {
   if (isDesktopApp && origin.startsWith('kortix://')) {
     emailRedirectTo = 'kortix://auth/callback';
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/instances')}&email=${encodeURIComponent(normalizedEmail)}`;
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -305,7 +306,7 @@ export async function sendOtpCode(prevState: any, formData: FormData) {
 export async function signInWithPassword(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
-  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -331,7 +332,7 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   const authEvent = isNewUser ? 'signup' : 'login';
   
   // Return success — let the client redirect after auth state hydrates.
-  const finalReturnUrl = returnUrl || '/instances';
+  const finalReturnUrl = returnUrl;
   const redirectUrl = new URL(finalReturnUrl, 'http://localhost');
   redirectUrl.searchParams.set('auth_event', authEvent);
   redirectUrl.searchParams.set('auth_method', 'email');
@@ -346,7 +347,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
-  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
 
   if (!email || !email.includes('@')) {
@@ -364,7 +365,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const supabase = await createClient();
 
   const baseUrl = origin || getServerPublicEnv().APP_URL || 'http://localhost:3000';
-  const emailRedirectTo = `${baseUrl}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/instances')}`;
+  const emailRedirectTo = `${baseUrl}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}`;
 
   const { error } = await supabase.auth.signUp({
     email: email.trim().toLowerCase(),
@@ -379,7 +380,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   }
 
   // Return success - client will handle redirect
-  const finalReturnUrl = returnUrl || '/instances';
+  const finalReturnUrl = returnUrl;
   redirect(finalReturnUrl);
 }
 
@@ -458,7 +459,7 @@ export async function installOwner(_prevState: any, formData: FormData) {
 export async function selfHostedSignIn(_prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
-  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -481,7 +482,7 @@ export async function selfHostedSignIn(_prevState: any, formData: FormData) {
 
   return {
     success: true,
-    redirectTo: returnUrl || '/instances',
+    redirectTo: returnUrl,
     accessToken: data.session?.access_token || null,
     refreshToken: data.session?.refresh_token || null,
   };
@@ -501,7 +502,7 @@ export async function signOut() {
 export async function verifyOtp(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const token = formData.get('token') as string;
-  const returnUrl = formData.get('returnUrl') as string | undefined;
+  const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -530,7 +531,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   // For new cloud users with no plan yet, send them to /subscription first.
   const runtimeEnv = getServerPublicEnv();
   const billingEnabled = runtimeEnv.ENV_MODE === 'cloud';
-  let finalDestination = returnUrl || '/instances';
+  let finalDestination = returnUrl;
 
   if (billingEnabled && isNewUser && data.session?.access_token) {
     try {

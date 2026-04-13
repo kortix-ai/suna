@@ -3,6 +3,7 @@ import { getServerPublicEnv } from '@/lib/public-env-server'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes'
+import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url'
 
 /**
  * Auth Callback Route - Web Handler
@@ -19,9 +20,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
   const token = searchParams.get('token') // Supabase verification token
   const type = searchParams.get('type') // signup, recovery, etc.
-  const rawNext = searchParams.get('returnUrl') || searchParams.get('redirect') || '/instances'
-  // Normalize stale instance-specific URLs to /instances so users pick fresh
-  const next = rawNext.match(/^\/instances\/[^/]+/) ? '/instances' : rawNext
+  const next = sanitizeAuthReturnUrl(searchParams.get('returnUrl') || searchParams.get('redirect'))
   const termsAccepted = searchParams.get('terms_accepted') === 'true'
   const email = searchParams.get('email') || '' // Email passed from magic link redirect URL
   const runtimeEnv = getServerPublicEnv()

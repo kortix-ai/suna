@@ -15,11 +15,12 @@ import { signInWithPassword, signUpWithPassword } from '../actions';
 import { useAuth } from '@/components/AuthProvider';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
+import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
 
 function PasswordAuthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnUrl = searchParams.get('returnUrl') || searchParams.get('redirect');
+  const returnUrl = sanitizeAuthReturnUrl(searchParams.get('returnUrl') || searchParams.get('redirect'));
   const { user, isLoading } = useAuth();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
@@ -27,7 +28,7 @@ function PasswordAuthContent() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!isLoading && user) {
-      router.push(returnUrl || '/instances');
+      router.push(returnUrl);
     }
   }, [user, isLoading, router, returnUrl]);
 
@@ -52,8 +53,7 @@ function PasswordAuthContent() {
       }
 
       // If no error, redirect manually (fallback in case server redirect didn't work)
-      const finalReturnUrl = returnUrl || '/instances';
-      router.push(finalReturnUrl);
+      router.push(returnUrl);
       router.refresh();
     } catch (error: any) {
       // Next.js redirect() throws a special error - this is expected on success
@@ -192,9 +192,7 @@ function PasswordAuthContent() {
                   </div>
                 )}
 
-                {returnUrl && (
-                  <input type="hidden" name="returnUrl" value={returnUrl} />
-                )}
+                <input type="hidden" name="returnUrl" value={returnUrl} />
                 <input type="hidden" name="origin" value={typeof window !== 'undefined' ? window.location.origin : ''} />
 
                 <div className="space-y-4 pt-4">
