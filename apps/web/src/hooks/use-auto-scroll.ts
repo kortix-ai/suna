@@ -27,6 +27,11 @@ import { useRef, useEffect, useCallback, useState } from 'react';
  *     scrollable area (classic scrollHeight check, NOT measureTarget)
  */
 
+/** Max spacer height (px) when the session is idle. Prevents the
+ *  ChatGPT-style spacer from filling the viewport with whitespace
+ *  when the last turn is short and the session is no longer streaming. */
+const IDLE_SPACER_CAP = 120;
+
 interface UseAutoScrollOptions {
   working: boolean;
   /** Whether the scroll container has content. Used to re-attach listeners
@@ -86,6 +91,8 @@ export function useAutoScroll({ working, hasContent = false }: UseAutoScrollOpti
   const userScrolledRef = useRef(false);
   const rafIdRef = useRef<number>(0);
   const prevWorkingRef = useRef(working);
+  const workingRef = useRef(working);
+  workingRef.current = working;
   // Current spacer value for the RAF loop's contentH calculation.
   const spacerValRef = useRef(0);
   // Guard: true while a programmatic scroll (scrollToBottom/scrollToEnd) is
@@ -104,9 +111,15 @@ export function useAutoScroll({ working, hasContent = false }: UseAutoScrollOpti
     const vh = el.clientHeight;
     const turns = content.querySelectorAll<HTMLElement>('[data-turn-id]');
     const last = turns[turns.length - 1];
-    const h = last
+    let h = last
       ? Math.max(0, vh - last.offsetHeight - TURN_TOP_OFFSET)
       : vh;
+
+    // When idle, cap the spacer so short responses don't leave a huge
+    // blank area below the conversation.
+    if (!workingRef.current) {
+      h = Math.min(h, IDLE_SPACER_CAP);
+    }
 
     spacerValRef.current = h;
     spacer.style.height = h + 'px';
