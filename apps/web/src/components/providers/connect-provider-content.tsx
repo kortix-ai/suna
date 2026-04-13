@@ -246,7 +246,7 @@ export function ConnectProviderContent({
         if (data.method === 'code') {
           setOauthMethod('code');
           setOauthState('complete');
-          window.open(data.url, '_blank');
+          window.open(data.url, '_blank', 'noopener,noreferrer');
         } else if (data.method === 'auto') {
           setOauthMethod('auto');
           setOauthInstructions(data.instructions || '');
@@ -318,7 +318,7 @@ export function ConnectProviderContent({
 
     // Open auth URL automatically
     if (oauthUrl) {
-      window.open(oauthUrl, '_blank');
+      window.open(oauthUrl, '_blank', 'noopener,noreferrer');
     }
 
     (async () => {
@@ -753,7 +753,7 @@ export function ConnectProviderContent({
                 variant="outline"
                 size="sm"
                 className="w-full h-10 gap-2"
-                onClick={() => window.open(oauthUrl, '_blank')}
+                onClick={() => window.open(oauthUrl, '_blank', 'noopener,noreferrer')}
               >
                 <ExternalLink className="h-4 w-4" />
                 Open Authorization Page
@@ -792,7 +792,7 @@ export function ConnectProviderContent({
                 variant="outline"
                 size="sm"
                 className="w-full h-10 gap-2"
-                onClick={() => window.open(oauthUrl, '_blank')}
+                onClick={() => window.open(oauthUrl, '_blank', 'noopener,noreferrer')}
               >
                 <ExternalLink className="h-4 w-4" />
                 Open Authorization Page

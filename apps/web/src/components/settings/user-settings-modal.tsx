@@ -1559,7 +1559,7 @@ function CreditsHelpAlert() {
             variant="link"
             size="sm"
             className="h-7 text-muted-foreground"
-            onClick={() => window.open('/help/credits', '_blank')}
+            onClick={() => window.open('/help/credits', '_blank', 'noopener,noreferrer')}
           >
             Learn More about Credits
           </Button>

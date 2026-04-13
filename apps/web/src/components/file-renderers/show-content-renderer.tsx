@@ -51,6 +51,7 @@ import { FileContentRenderer } from '@/features/files/components/file-content-re
 import { SANDBOX_PORTS } from '@/lib/platform-client';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { useHeicBlob } from '@/hooks/use-heic-url';
+import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
@@ -551,7 +552,7 @@ export function ShowContentRenderer({
           title={title || 'HTML Preview'}
           className="w-full border-0 bg-white"
           style={{ height: arCSS ? undefined : '540px', aspectRatio: arCSS || undefined }}
-          sandbox="allow-scripts allow-same-origin"
+          sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
         />
       </div>
     );

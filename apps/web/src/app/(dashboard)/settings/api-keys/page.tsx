@@ -403,7 +403,7 @@ export default function APIKeysPage() {
                   window.open(`${docsUrl}${sep}token=${encodeURIComponent(token)}`, '_blank');
                 }
               } else {
-                window.open(docsUrl, '_blank');
+                window.open(docsUrl, '_blank', 'noopener,noreferrer');
               }
             }}
           >

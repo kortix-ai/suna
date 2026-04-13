@@ -592,7 +592,7 @@ function McpServersSection() {
     try {
       const result = await authStartMutation.mutateAsync(name);
       setAuthUrl(result.authorizationUrl);
-      window.open(result.authorizationUrl, '_blank');
+      window.open(result.authorizationUrl, '_blank', 'noopener,noreferrer');
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : String(err));
     }

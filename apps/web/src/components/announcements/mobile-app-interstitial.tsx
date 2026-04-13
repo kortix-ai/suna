@@ -79,7 +79,7 @@ export function MobileAppInterstitial() {
 
   const openStore = () => {
     if (platform) {
-      window.open(STORE_LINKS[platform], '_blank');
+      window.open(STORE_LINKS[platform], '_blank', 'noopener,noreferrer');
     }
   };
 

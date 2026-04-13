@@ -8,6 +8,7 @@ import { Monitor, Code, ExternalLink } from 'lucide-react';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { IframePreview } from '@/components/thread/iframe-preview';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 
 interface FileRendererProject {
   id?: string;
@@ -90,7 +91,7 @@ export function HtmlRenderer({
 
     // No valid preview URL available
     return '';
-  }, [project?.sandbox?.sandbox_url, filePath, previewUrl, blobHtmlUrl, subdomainOpts]);
+  }, [filePath, previewUrl, blobHtmlUrl, subdomainOpts]);
 
   return (
     <div className={cn('w-full h-full flex flex-col', className)}>
@@ -126,7 +127,7 @@ export function HtmlRenderer({
             variant="ghost"
             size="sm"
             className="flex items-center gap-2 bg-background/80 backdrop-blur-sm hover:bg-background/90"
-            onClick={() => window.open(htmlPreviewUrl || previewUrl, '_blank')}
+            onClick={() => window.open(htmlPreviewUrl || previewUrl, '_blank', 'noopener,noreferrer')}
             disabled={!htmlPreviewUrl && !previewUrl}
           >
             <ExternalLink className="h-4 w-4" />
@@ -141,6 +142,7 @@ export function HtmlRenderer({
                 url={htmlPreviewUrl}
                 title="HTML Preview"
                 className="w-full h-full"
+                sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-muted-foreground">

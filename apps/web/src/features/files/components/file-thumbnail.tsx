@@ -12,6 +12,7 @@ import { SANDBOX_PORTS } from '@/lib/platform-client';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { useBinaryBlob } from '../hooks/use-binary-blob';
 import { useHeicBlob } from '@/hooks/use-heic-url';
+import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 
 /** Ensure a sandbox file path starts with /workspace/ for the static file server. */
 function ensureWorkspacePath(filePath: string): string {
@@ -336,7 +337,7 @@ function HtmlThumbnail({ filePath }: { filePath: string }) {
             height: `${iframeHeight}px`,
             transform: `scale(${scale})`,
           }}
-          sandbox="allow-scripts allow-same-origin"
+          sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
           tabIndex={-1}
         />
       )}

@@ -54,6 +54,9 @@ echo "[e2e] Installing Playwright browser if needed"
 pnpm --dir apps/web exec playwright install chromium >/dev/null
 
 echo "[e2e] Running full E2E auth/onboarding test"
-pnpm --dir apps/web exec playwright test -c tests/e2e/playwright.config.ts tests/e2e/specs/self-hosted-onboarding.spec.ts
+pnpm --dir tests exec playwright test \
+  -c playwright.config.ts \
+  e2e/specs/04-auth-flow.spec.ts \
+  e2e/specs/05-onboarding-to-dashboard.spec.ts
 
 echo "[e2e] Full self-hosted E2E succeeded"

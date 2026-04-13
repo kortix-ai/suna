@@ -29,6 +29,7 @@ import { useDiagnosticsStore, findDiagnosticsForFile } from '@/stores/diagnostic
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { SANDBOX_PORTS } from '@/lib/platform-client';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
+import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { FilePathBreadcrumbs } from './file-breadcrumbs';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { useHeicBlob } from '@/hooks/use-heic-url';
@@ -777,7 +778,7 @@ export function FileContentRenderer({
                 src={authenticatedPreviewUrl}
                 title={fileName}
                 className="w-full h-full border-0"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+                sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
               />
             )}
           </>

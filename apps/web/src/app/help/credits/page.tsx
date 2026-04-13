@@ -342,7 +342,7 @@ export default function CreditsPage() {
             <Button
               variant="outline"
               className="gap-2"
-              onClick={() => window.open('https://discord.com/invite/RvFhXUdZ9H', '_blank')}
+              onClick={() => window.open('https://discord.com/invite/RvFhXUdZ9H', '_blank', 'noopener,noreferrer')}
             >
               <MessageCircle className="h-4 w-4" />
               Join Discord

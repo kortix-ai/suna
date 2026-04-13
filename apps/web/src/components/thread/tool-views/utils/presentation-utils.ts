@@ -303,7 +303,7 @@ export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationP
       toast.success('🎉 Presentation uploaded successfully!', {
         action: {
           label: 'Open in Google Slides',
-          onClick: () => window.open(result.google_slides_url, '_blank'),
+          onClick: () => window.open(result.google_slides_url, '_blank', 'noopener,noreferrer'),
         },
         duration: 20000,
       });

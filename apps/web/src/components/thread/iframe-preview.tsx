@@ -3,17 +3,20 @@
 import React from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
+import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 
 interface IframePreviewProps {
   url: string;
   title?: string;
   className?: string;
+  sandbox?: string;
 }
 
 export function IframePreview({
   url,
   title,
   className,
+  sandbox = getIframeSandbox(),
 }: IframePreviewProps) {
   const [isLoading, setIsLoading] = React.useState(true);
   const [hasError, setHasError] = React.useState(false);
@@ -40,7 +43,7 @@ export function IframePreview({
           src={url}
           title={title || 'Preview'}
           className={cn("absolute inset-0 w-full h-full border-0", className)}
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads"
+          sandbox={sandbox}
           style={{ background: 'white' }}
           onLoad={() => setIsLoading(false)}
           onError={() => {
@@ -52,4 +55,3 @@ export function IframePreview({
     </>
   );
 }
-
