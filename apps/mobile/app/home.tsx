@@ -575,7 +575,12 @@ export default function HomeScreen() {
             if (data?.INSTANCE_SETUP_COMPLETE === 'true') {
               // Persist that setup is done so future boots show "Connecting" instead of wizard
               await AsyncStorage.setItem(SETUP_DONE_KEY, '1').catch(() => {});
-              // Setup done — check if onboarding is also done
+              // Setup done — check if onboarding is also done.
+              // Fix (ported from web e635de8): only enter onboarding on
+              // POSITIVE evidence (200 response with value !== 'true').
+              // On failure (5xx, network error) defer silently — the sandbox
+              // is just slow, don't pop the onboarding wizard on users who
+              // already completed it.
               try {
                 const onbCtrl = new AbortController();
                 const onbTimeout = setTimeout(() => onbCtrl.abort(), 5000);
@@ -587,18 +592,29 @@ export default function HomeScreen() {
                   signal: onbCtrl.signal,
                 });
                 clearTimeout(onbTimeout);
-                if (!cancelled && onbRes.ok) {
+                if (cancelled) return;
+                if (onbRes.ok) {
                   const onbData = await onbRes.json();
                   if (onbData?.ONBOARDING_COMPLETE === 'true') {
                     setSetupState('done');
                     return;
                   }
+                  // Positive evidence: 200 but not 'true' → needs onboarding
+                  setSetupState('onboarding');
+                  return;
                 }
+                // Non-200 (5xx, 403, etc.) — can't tell. Defer to main app.
+                log.warn('[Home] ONBOARDING_COMPLETE returned', onbRes.status, '— deferring, not entering onboarding');
+                setSetupState('done');
+                return;
               } catch {
-                // Can't check — fall through to onboarding
+                // Network error — sandbox unreachable for this check.
+                // Don't default to onboarding. Show main app and let
+                // the user retry or wait for the sandbox to come back.
+                log.warn('[Home] Failed to check ONBOARDING_COMPLETE — deferring, not entering onboarding');
+                setSetupState('done');
+                return;
               }
-              if (!cancelled) setSetupState('onboarding');
-              return;
             }
           }
           // INSTANCE_SETUP_COMPLETE not 'true' yet.
