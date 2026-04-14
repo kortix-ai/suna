@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Check, XCircle, ArrowDownToLine, RotateCw, Sparkles, Bug, Zap, AlertTriangle, Shield, RefreshCw, Terminal, Copy } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -12,7 +12,6 @@ import {
   AlertDialogFooter,
 } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AnimatedCircularProgressBar } from '@/components/ui/animated-circular-progress';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { authenticatedFetch } from '@/lib/auth-token';
@@ -20,10 +19,9 @@ import { useServerStore } from '@/stores/server-store';
 import { getEnv } from '@/lib/env-config';
 import type { UpdatePhase } from '@/hooks/platform/use-sandbox-update';
 import type { ChangelogEntry, ChangelogChange } from '@/lib/platform-client';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 type DialogStep = 'confirm' | 'updating' | 'done' | 'failed';
-
-// ── Changelog items ──────────────────────────────────────────────────────────
 
 const changeTypeConfig: Record<string, { icon: typeof Sparkles; color: string }> = {
   feature:     { icon: Sparkles,      color: 'text-emerald-500' },
@@ -46,8 +44,6 @@ function ChangeItem({ change }: { change: ChangelogChange }) {
   );
 }
 
-// ── Phase labels ─────────────────────────────────────────────────────────────
-
 const PHASE_LABEL: Record<string, string> = {
   idle: 'Preparing...',
   backing_up: 'Creating backup...',
@@ -60,8 +56,6 @@ const PHASE_LABEL: Record<string, string> = {
   reconnecting: 'Reconnecting...',
   reconnected: 'Connected',
 };
-
-// ── Dialog ────────────────────────────────────────────────────────────────────
 
 interface UpdateDialogProps {
   open: boolean;
@@ -77,6 +71,7 @@ interface UpdateDialogProps {
   onClose: () => void;
   onConfirm: () => void;
   onRetry: () => void;
+  isDev?: boolean;
 }
 
 function formatVersion(version: string | null | undefined): string {
@@ -98,25 +93,40 @@ export function UpdateDialog({
   onClose,
   onConfirm,
   onRetry,
+  isDev,
 }: UpdateDialogProps) {
-  const [step, setStep] = useState<DialogStep>('confirm');
+  const [userRequested, setUserRequested] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [isReconnecting, setIsReconnecting] = useState(false);
   const [isReconnected, setIsReconnected] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const healthPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isFailed = phase === 'failed';
-  const isComplete = phase === 'complete';
+  const step: DialogStep = useMemo(() => {
+    if (isReconnected) return 'done';
+    if (userRequested && phase !== 'complete') return 'updating';
+    if (phase === 'failed') return 'failed';
+    if (phase !== 'idle') return 'updating';
+    return 'confirm';
+  }, [phase, userRequested, isReconnected]);
 
   useEffect(() => {
-    if (!open) return;
-    if (phase !== 'idle' && phase !== 'complete' && phase !== 'failed') {
-      setStep('updating');
+    if (phase === 'failed') setUserRequested(false);
+  }, [phase]);
+
+  const isComplete = phase === 'complete';
+  const isFailed = phase === 'failed';
+
+  useEffect(() => {
+    if (!open) {
+      if (healthPollRef.current) clearTimeout(healthPollRef.current);
+      return;
     }
-    if (phase === 'failed') {
-      setStep('failed');
-    }
-  }, [phase, open]);
+    setExpanded(false);
+    setIsReconnected(false);
+    setIsReconnecting(false);
+    setUserRequested(phase !== 'idle' && phase !== 'failed');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const pollHealth = useCallback(async () => {
     const state = useServerStore.getState();
@@ -135,61 +145,62 @@ export function UpdateDialog({
   }, []);
 
   useEffect(() => {
-    if (!isComplete || isFailed || step === 'done') return;
+    if (!isComplete || isFailed || isReconnected) return;
 
     setIsReconnecting(true);
     let attempts = 0;
+    let cancelled = false;
 
     const poll = async () => {
+      if (cancelled) return;
       attempts++;
       const healthy = await pollHealth();
-      if (healthy) {
+      if (cancelled) return;
+      if (healthy || attempts >= 30) {
         setIsReconnecting(false);
         setIsReconnected(true);
-        setTimeout(() => setStep('done'), 1000);
         return;
       }
-      if (attempts < 30) {
-        healthPollRef.current = setTimeout(poll, 2000);
-      } else {
-        setIsReconnecting(false);
-        setIsReconnected(true);
-        setTimeout(() => setStep('done'), 1000);
-      }
+      healthPollRef.current = setTimeout(poll, 2000);
     };
 
     healthPollRef.current = setTimeout(poll, 3000);
-    return () => { if (healthPollRef.current) clearTimeout(healthPollRef.current); };
-  }, [isComplete, isFailed, step, pollHealth]);
-
-  useEffect(() => {
-    if (open) {
-      setStep('confirm');
-      setExpanded(false);
-      setIsReconnecting(false);
-      setIsReconnected(false);
-    } else {
+    return () => {
+      cancelled = true;
       if (healthPollRef.current) clearTimeout(healthPollRef.current);
+    };
+  }, [isComplete, isFailed, isReconnected, pollHealth]);
+
+  const playedCompletionRef = useRef(false);
+  useEffect(() => {
+    if (step !== 'done') {
+      playedCompletionRef.current = false;
+      return;
     }
-  }, [open]);
+    if (playedCompletionRef.current) return;
+    playedCompletionRef.current = true;
+    try {
+      const audio = new Audio('/sounds/kortix/bootup.wav');
+      audio.volume = 0.6;
+      audio.play().catch(() => {});
+    } catch {}
+  }, [step]);
 
   useEffect(() => {
-    if (step !== 'done') return;
+    if (step !== 'done' || isDev) return;
     const timer = setTimeout(onClose, 2500);
     return () => clearTimeout(timer);
-  }, [step, onClose]);
+  }, [step, onClose, isDev]);
 
   const handleConfirm = () => {
-    setStep('updating');
+    setUserRequested(true);
     onConfirm();
   };
 
   const copyCliCommand = async () => {
     try {
       await navigator.clipboard.writeText('kortix update');
-    } catch {
-      // no-op
-    }
+    } catch {}
   };
 
   const changes = changelog?.changes ?? [];
@@ -203,8 +214,106 @@ export function UpdateDialog({
       ? PHASE_LABEL.reconnecting
       : PHASE_LABEL[phase] ?? 'Updating...';
 
+  if (open && step !== 'confirm') {
+    const pct = Math.max(0, Math.min(100, circularProgress));
+    return (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background">
+        {step === 'updating' && (
+          <p className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground/60">
+            It's not recommended to refresh this tab during the update.
+          </p>
+        )}
+        <AnimatePresence mode="wait">
+          {step === 'updating' && (
+            <motion.div
+              key="updating-full"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+              className="flex flex-col items-center"
+            >
+              <KortixLogo size={28} variant="symbol" />
+              <div className="mt-8 h-[2px] w-[240px] rounded-full bg-foreground/10 overflow-hidden">
+                <motion.div
+                  className="h-full bg-foreground"
+                  animate={{ width: `${pct}%` }}
+                  transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+                />
+              </div>
+            </motion.div>
+          )}
+
+          {step === 'done' && (
+            <motion.div
+              key="done-full"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="flex flex-col items-center"
+            >
+              <div className="relative flex h-10 w-10 items-center justify-center">
+                <span className="absolute inset-0 rounded-full bg-primary/40 animate-ping" />
+                <motion.div
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', stiffness: 240, damping: 18 }}
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full bg-primary"
+                >
+                  <Check className="h-5 w-5 text-primary-foreground" strokeWidth={3} />
+                </motion.div>
+              </div>
+              <motion.p
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
+                className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight"
+              >
+                Updated to <span className="tabular-nums">{formatVersion(updateResult?.currentVersion ?? latestVersion)}</span>
+              </motion.p>
+            </motion.div>
+          )}
+
+          {step === 'failed' && (
+            <motion.div
+              key="failed-full"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="flex flex-col items-center max-w-md px-6"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/15">
+                <XCircle className="h-5 w-5 text-red-500" />
+              </div>
+              <p className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight">
+                Update failed
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground/70 text-center">
+                {phaseMessage || 'Something went wrong.'}
+              </p>
+              {errorMessage && (
+                <div className="mt-5 w-full max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/30 px-3 py-2 font-mono text-[10px] text-foreground/70">
+                  {errorMessage}
+                </div>
+              )}
+              <div className="mt-6 flex gap-2">
+                <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+                <Button size="sm" onClick={() => { setUserRequested(true); onRetry(); }} className="gap-1.5">
+                  <RotateCw className="h-3 w-3" />
+                  Retry
+                </Button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   return (
-    <AlertDialog open={open} onOpenChange={(o) => { if (!o && (step === 'confirm' || step === 'done' || step === 'failed')) onClose(); }}>
+    <AlertDialog open={open} onOpenChange={(o) => { if (!o && step === 'confirm') onClose(); }}>
       <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
@@ -271,116 +380,6 @@ export function UpdateDialog({
             </motion.div>
           )}
 
-          {/* ── Updating Step ── */}
-          {step === 'updating' && (
-            <motion.div
-              key="updating"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col items-center py-8"
-            >
-              <AnimatedCircularProgressBar
-                value={circularProgress}
-                gaugePrimaryColor="var(--color-primary)"
-                gaugeSecondaryColor="var(--color-border)"
-                className="size-32 text-xl"
-              />
-
-              <div className="mt-6 text-center min-h-[3rem]">
-                <AnimatePresence mode="wait">
-                  <motion.p
-                    key={activeLabel}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.3 }}
-                    className="text-sm font-medium text-foreground"
-                  >
-                    {activeLabel}
-                  </motion.p>
-                </AnimatePresence>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Updating to {formatVersion(latestVersion)}
-                </p>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── Done Step ── */}
-          {step === 'done' && (
-            <motion.div
-              key="done"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="flex flex-col items-center py-14"
-            >
-              <div className="relative flex h-16 w-16 items-center justify-center">
-                <motion.div
-                  className="absolute inset-0 rounded-full bg-emerald-500/20"
-                  initial={{ scale: 1 }}
-                  animate={{ scale: [1, 1.5, 1] }}
-                  transition={{ duration: 1, repeat: 1 }}
-                />
-                <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/25">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 20, delay: 0.1 }}
-                  >
-                    <Check className="h-7 w-7 text-white" />
-                  </motion.div>
-                </div>
-              </div>
-
-              <motion.div
-                className="mt-4 text-center"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-              >
-                <p className="text-base font-semibold text-foreground">Update Complete</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Now running {formatVersion(updateResult?.currentVersion ?? latestVersion)}
-                </p>
-              </motion.div>
-            </motion.div>
-          )}
-
-          {/* ── Failed Step ── */}
-          {step === 'failed' && (
-            <motion.div key="failed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-              <div className="flex flex-col items-center py-6">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500/10 border-2 border-red-500/30">
-                  <XCircle className="h-7 w-7 text-red-500" />
-                </div>
-                <p className="text-base font-semibold text-foreground mt-4">Update Failed</p>
-              </div>
-
-              <Alert variant="destructive" className="mt-1">
-                <XCircle className="h-4 w-4" />
-                <AlertTitle>{phaseMessage || 'Something went wrong during the update.'}</AlertTitle>
-                {errorMessage && (
-                  <AlertDescription>
-                    <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-xl bg-muted/40 px-3 py-2 font-mono text-xs text-foreground/80">
-                      {errorMessage}
-                    </div>
-                  </AlertDescription>
-                )}
-              </Alert>
-
-              <AlertDialogFooter>
-                <Button variant="outline" onClick={onClose}>Close</Button>
-                <Button onClick={() => { setStep('updating'); onRetry(); }} className="gap-2">
-                  <RotateCw className="h-4 w-4" />
-                  Retry
-                </Button>
-              </AlertDialogFooter>
-            </motion.div>
-          )}
         </AnimatePresence>
       </AlertDialogContent>
     </AlertDialog>

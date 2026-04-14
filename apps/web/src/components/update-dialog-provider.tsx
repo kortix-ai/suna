@@ -8,7 +8,7 @@ import { useServerStore } from '@/stores/server-store';
 import { UpdateDialog } from '@/components/update-dialog';
 import type { UpdatePhase } from '@/lib/platform-client';
 
-const DEV_PHASES: UpdatePhase[] = ['idle', 'backing_up', 'pulling', 'patching', 'stopping', 'restarting', 'verifying', 'complete'];
+const DEV_PHASES: UpdatePhase[] = ['pulling', 'patching', 'stopping', 'restarting', 'verifying', 'complete'];
 
 export function UpdateDialogProvider() {
   const { open, targetVersion, closeDialog, openDialog } = useUpdateDialogStore();
@@ -21,7 +21,16 @@ export function UpdateDialogProvider() {
   const {
     phase, phaseMessage, phaseProgress, latestVersion,
     changelog, updateResult, update, updateErrorMessage,
+    isDestructive, isUpdating,
   } = useGlobalSandboxUpdate();
+
+  useEffect(() => {
+    if (open && isUpdating && !isDestructive) closeDialog();
+  }, [open, isUpdating, isDestructive, closeDialog]);
+
+  useEffect(() => {
+    if (!open && isDestructive) openDialog();
+  }, [open, isDestructive, openDialog]);
 
   const [devMode, setDevMode] = useState(false);
   const [devPhaseIdx, setDevPhaseIdx] = useState(0);
@@ -73,6 +82,7 @@ export function UpdateDialogProvider() {
       onClose={() => { if (devMode) setDevMode(false); closeDialog(); }}
       onConfirm={() => { if (devMode) { setDevPhaseIdx(1); return; } update(targetVersion ?? undefined); }}
       onRetry={() => { if (devMode) { setDevPhaseIdx(1); return; } update(targetVersion ?? undefined); }}
+      isDev={devMode}
     />
   );
 }

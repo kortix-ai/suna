@@ -45,15 +45,70 @@ async function resolveContainerConfig(
   throw new Error('Cannot determine container config — no config file and no running container found');
 }
 
-async function tryBackup(provider: string, externalId: string): Promise<void> {
+const BACKUP_POLL_INTERVAL_MS = 30_000;
+const BACKUP_TIMEOUT_MS = 20 * 60_000;
+
+/**
+ * Kick off a provider-side backup and wait for it to finish. Soft-fails on
+ * timeout or error so a flaky provider can never block a legitimate update.
+ *
+ * While waiting we stay in the `backing_up` phase (0–10% progress). The
+ * client reads that phase and shows a non-blocking indicator so the user
+ * can keep using the machine until we transition to the destructive phases.
+ */
+async function runBackup(
+  sandboxId: string,
+  provider: string,
+  externalId: string,
+  previousVersion: string | null,
+  targetVersion: string,
+): Promise<void> {
   if (provider !== 'justavps') return;
+
+  const { justavpsFetch } = await import('../platform/providers/justavps');
+
+  const from = previousVersion ? `v${previousVersion.replace(/^v/, '')}` : 'unknown';
+  const to = `v${targetVersion.replace(/^v/, '')}`;
+  const description = `Kortix pre-update backup ${from} → ${to}`;
+
+  let backupId: string | null = null;
   try {
-    const { justavpsFetch } = await import('../platform/providers/justavps');
-    await justavpsFetch(`/machines/${externalId}/backups`, { method: 'POST' });
-    console.log(`[UPDATE] Backup created for machine ${externalId}`);
+    const started = await justavpsFetch<{ backup_id: string; status: string }>(
+      `/machines/${externalId}/backups`,
+      { method: 'POST', body: { description } },
+    );
+    backupId = started.backup_id;
+    await setPhase(sandboxId, 'backing_up', 5, 'Creating backup…', { backupId });
+    console.log(`[UPDATE] Backup ${backupId} started for machine ${externalId}`);
   } catch (err) {
-    console.warn(`[UPDATE] Backup failed (non-fatal):`, err instanceof Error ? err.message : err);
+    console.warn(`[UPDATE] Backup start failed (non-fatal):`, err instanceof Error ? err.message : err);
+    return;
   }
+
+  const start = Date.now();
+  while (Date.now() - start < BACKUP_TIMEOUT_MS) {
+    await new Promise((r) => setTimeout(r, BACKUP_POLL_INTERVAL_MS));
+    try {
+      const list = await justavpsFetch<{ backups: Array<{ id: string; status: string }> }>(
+        `/machines/${externalId}/backups`,
+      );
+      const match = list.backups.find((b) => b.id === backupId);
+      if (!match) {
+        console.warn(`[UPDATE] Backup ${backupId} vanished from list — proceeding`);
+        return;
+      }
+      if (match.status !== 'creating') {
+        console.log(`[UPDATE] Backup ${backupId} finished with status=${match.status}`);
+        return;
+      }
+      const elapsed = Date.now() - start;
+      const progress = Math.min(10, 5 + Math.floor((elapsed / BACKUP_TIMEOUT_MS) * 5));
+      await setPhase(sandboxId, 'backing_up', progress, 'Creating backup…', { backupId });
+    } catch (err) {
+      console.warn(`[UPDATE] Backup poll error (continuing):`, err instanceof Error ? err.message : err);
+    }
+  }
+  console.warn(`[UPDATE] Backup ${backupId} did not finish within ${BACKUP_TIMEOUT_MS / 60_000}min — proceeding with update anyway`);
 }
 
 export async function executeUpdate(sandboxId: string, targetVersion: string): Promise<void> {
@@ -99,12 +154,13 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
     const hubCheck = await checkImageExistsOnHub(targetImage);
     if (!hubCheck.success) throw new Error(hubCheck.stderr);
 
-    // ── Backup ──
-    await setPhase(sandboxId, 'backing_up', 5, 'Creating backup...', {
+    // ── Backup (non-destructive; UI stays unblocked during this phase) ──
+    await setPhase(sandboxId, 'backing_up', 5, 'Creating backup…', {
       previousVersion,
       currentVersion: previousVersion,
+      backupId: null,
     });
-    await tryBackup(row.provider, row.externalId);
+    await runBackup(sandboxId, row.provider, row.externalId, previousVersion, targetVersion);
 
     // ── Pull ──
     await setPhase(sandboxId, 'pulling', 15, `Pulling ${targetImage}...`);

@@ -19,6 +19,7 @@ export interface UpdateStatus {
   error: string | null;
   startedAt: string | null;
   updatedAt: string | null;
+  backupId: string | null;
 }
 
 export const IDLE_STATUS: UpdateStatus = {
@@ -31,6 +32,7 @@ export const IDLE_STATUS: UpdateStatus = {
   error: null,
   startedAt: null,
   updatedAt: null,
+  backupId: null,
 };
 
 export type StepResult = {

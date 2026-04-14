@@ -328,7 +328,10 @@ const changeTypeColor: Record<string, string> = {
 };
 
 function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
-  const { updateAvailable, latestVersion, currentChannel, changelog, update, isUpdating, updateResult } = useGlobalSandboxUpdate();
+  const {
+    updateAvailable, latestVersion, currentChannel, changelog,
+    isUpdating, updateResult, isBackingUp, isDestructive, phaseProgress,
+  } = useGlobalSandboxUpdate();
   const openDialog = useUpdateDialogStore((s) => s.openDialog);
   const router = useRouter();
   const [dismissed, setDismissed] = React.useState(false);
@@ -356,20 +359,55 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
     );
   };
 
-  if (!mounted || !updateAvailable || dismissed || updateResult?.success) return null;
+  // Hide only when there's truly nothing to show: no update available, not
+  // dismissed, and no in-progress work. An active backup must keep this card
+  // visible even if the user previously dismissed the "update available" toast.
+  const showBackupCard = isBackingUp;
+  if (!mounted || (!updateAvailable && !showBackupCard) || (dismissed && !showBackupCard) || updateResult?.success) return null;
 
   // ── Collapsed state: icon with pulse dot ──
   if (collapsed) {
     return (
       <div className="flex justify-center">
         <button
-          onClick={navigateToChangelog}
+          onClick={showBackupCard ? undefined : navigateToChangelog}
           className="relative p-2 rounded-lg hover:bg-primary/10 transition-colors cursor-pointer"
-          title={`v${latestVersion} available`}
+          title={showBackupCard ? `Backing up… ${phaseProgress}%` : `v${latestVersion} available`}
         >
-          <ArrowDownToLine className="h-4 w-4 text-primary" />
+          {showBackupCard
+            ? <Loader2 className="h-4 w-4 text-primary animate-spin" />
+            : <ArrowDownToLine className="h-4 w-4 text-primary" />}
           <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary animate-pulse" />
         </button>
+      </div>
+    );
+  }
+
+  if (showBackupCard) {
+    return (
+      <div className="rounded-xl border border-primary/15 bg-muted/40 overflow-hidden">
+        <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
+          <Loader2 className="h-3.5 w-3.5 text-primary animate-spin flex-shrink-0" />
+          <span className="text-xs font-semibold text-foreground truncate min-w-0">
+            Backing up sandbox
+          </span>
+          <span className="flex-1" />
+          <span className="text-[10px] text-muted-foreground flex-shrink-0">v{latestVersion}</span>
+        </div>
+        <p className="px-3 pb-2 text-[11px] text-muted-foreground leading-tight">
+          You can keep using your machine. Update will continue automatically once the backup completes.
+        </p>
+      </div>
+    );
+  }
+
+  if (isDestructive) {
+    return (
+      <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] px-3 py-2.5 flex items-center gap-2">
+        <Loader2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 animate-spin flex-shrink-0" />
+        <span className="text-xs font-medium text-amber-700 dark:text-amber-300 truncate">
+          Installing v{latestVersion}…
+        </span>
       </div>
     );
   }

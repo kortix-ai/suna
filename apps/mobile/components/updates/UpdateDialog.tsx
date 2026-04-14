@@ -1,10 +1,3 @@
-/**
- * UpdateDialog — modal dialog for sandbox updates.
- *
- * Matches the web's update-dialog.tsx with steps:
- * confirm → updating (circular progress) → done (success) → failed (retry)
- */
-
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -36,8 +29,6 @@ import { Icon } from '@/components/ui/icon';
 import { useThemeColors } from '@/lib/theme-colors';
 import type { ChangelogChange, ChangelogEntry, UpdatePhase } from '@/lib/platform/client';
 import Svg, { Circle } from 'react-native-svg';
-
-// ── Types ────────────────────────────────────────────────────────────────
 
 type DialogStep = 'confirm' | 'updating' | 'done' | 'failed';
 
