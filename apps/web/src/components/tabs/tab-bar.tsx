@@ -597,8 +597,8 @@ export function TabBar() {
   const closingTabIds = useRef<Set<string>>(new Set());
 
   // Tab store
-  const tabs = useTabStore((s) => s.tabs);
-  const tabOrder = useTabStore((s) => s.tabOrder);
+  const tabs = useTabStore((s) => s.tabs) || {};
+  const tabOrder = useTabStore((s) => s.tabOrder) || [];
   const activeTabId = useTabStore((s) => s.activeTabId);
   const openTab = useTabStore((s) => s.openTab);
   const setActiveTab = useTabStore((s) => s.setActiveTab);

@@ -14,11 +14,34 @@ import {
 import { getCreditSummary } from './credits';
 import { getAutoTopupSettings } from './auto-topup';
 import { isPlatformAdmin } from '../../shared/platform-roles';
+import { config } from '../../config';
 import type {
   AccountStateResponse,
   ScheduledChange,
   CommitmentInfo,
 } from '../../types';
+
+async function getYoloUsage(serviceKey: string | null): Promise<AccountStateResponse['yolo_usage']> {
+  if (config.ENV_MODE !== 'cloud') return null;
+  if (!serviceKey) return null;
+  try {
+    const res = await fetch(`${config.KORTIX_YOLO_URL}/me`, {
+      headers: { Authorization: `Bearer ${serviceKey}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as any;
+    return {
+      used_percent: Number(data?.usage?.usedPercent ?? 0),
+      used_percent_precise: Number(data?.usage?.usedPercentPrecise ?? 0),
+      window_started: Boolean(data?.usage?.windowStarted),
+      window_reset_in: Number(data?.usage?.windowResetIn ?? 0),
+      window_reset_at: String(data?.usage?.windowResetAt ?? new Date().toISOString()),
+    };
+  } catch {
+    return null;
+  }
+}
 
 export async function buildMinimalAccountState(accountId: string): Promise<AccountStateResponse> {
   const credits = await getCreditSummary(accountId);
@@ -64,6 +87,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
 
   // User's instances (sandboxes)
   let instances: any[] = [];
+  let yoloUsage: AccountStateResponse['yolo_usage'] = null;
   try {
     const { db } = await import('../../shared/db');
     const { sandboxes } = await import('@kortix/db');
@@ -97,6 +121,12 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
         created_at: row.createdAt.toISOString(),
       };
     });
+
+    const serviceKey = sandboxRows
+      .map((row: any) => (row.config as Record<string, unknown> | null)?.serviceKey)
+      .find((value: unknown): value is string => typeof value === 'string' && value.length > 0)
+      ?? null;
+    yoloUsage = await getYoloUsage(serviceKey);
   } catch {
     // DB may not be available in local mode
   }
@@ -157,6 +187,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     },
     auto_topup: autoTopup,
     instances,
+    yolo_usage: yoloUsage,
     can_add_instances: isAdmin || isPaidTier(tierName),
     can_claim_computer: canClaimComputer,
   };
@@ -213,6 +244,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       amount: AUTO_TOPUP_DEFAULT_AMOUNT,
     },
     instances: [],
+    yolo_usage: null,
     can_add_instances: false,
     can_claim_computer: false,
   };

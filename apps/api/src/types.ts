@@ -215,6 +215,13 @@ export interface AccountStateResponse {
     stripe_subscription_item_id: string | null;
     created_at: string;
   }>;
+  yolo_usage?: {
+    used_percent: number;
+    used_percent_precise: number;
+    window_started: boolean;
+    window_reset_in: number;
+    window_reset_at: string;
+  } | null;
   can_add_instances: boolean;
   /** True when a legacy paid user has no active machine and can claim one. */
   can_claim_computer?: boolean;

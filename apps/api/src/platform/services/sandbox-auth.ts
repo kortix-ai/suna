@@ -32,19 +32,23 @@ import json
 
 token = ${JSON.stringify(token)}
 api_url = ${JSON.stringify(apiUrl)}
+env_mode = ${JSON.stringify(config.ENV_MODE)}
 
 s6_dir = Path("/run/s6/container_environment")
 s6_dir_parent = s6_dir.parent
 if s6_dir_parent.exists() and not s6_dir_parent.is_dir():
     s6_dir_parent.unlink()
 s6_dir.mkdir(parents=True, exist_ok=True)
-for key, value in {
+values = {
     "KORTIX_TOKEN": token,
     "INTERNAL_SERVICE_KEY": token,
     "TUNNEL_TOKEN": token,
     "KORTIX_API_URL": api_url,
     "TUNNEL_API_URL": api_url,
-}.items():
+}
+if env_mode == "cloud":
+    values["KORTIX_YOLO_API_KEY"] = token
+for key, value in values.items():
     (s6_dir / key).write_text(value)
 
 bootstrap = Path("/workspace/.secrets/.bootstrap-env.json")
@@ -62,6 +66,8 @@ data.update({
     "TUNNEL_TOKEN": token,
     "KORTIX_API_URL": api_url,
 })
+if env_mode == "cloud":
+    data["KORTIX_YOLO_API_KEY"] = token
 bootstrap.write_text(json.dumps(data))
 PY`
 }

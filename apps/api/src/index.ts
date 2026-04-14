@@ -688,6 +688,7 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
     TUNNEL_TOKEN: token,
     KORTIX_API_URL: kortixApiUrl,
     TUNNEL_API_URL: kortixApiUrl,
+    ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token } : {}),
     // Self-hosted: skip onboarding wizard (no setup needed for local Docker)
     ...(config.SANDBOX_NETWORK ? { ONBOARDING_COMPLETE: 'true' } : {}),
   };
@@ -746,6 +747,7 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
             KORTIX_API_URL: kortixApiUrl,
             INTERNAL_SERVICE_KEY: token,
             TUNNEL_TOKEN: token,
+            ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token } : {}),
           }))}`,
           { stdio: 'pipe', timeout: 15_000, env: dockerEnv },
         ).toString();

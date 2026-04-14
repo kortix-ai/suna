@@ -443,6 +443,17 @@ export const useTabStore = create<TabState>()(
         recentlyClosedTabs: state.recentlyClosedTabs,
         tabFocusHistory: state.tabFocusHistory,
       }),
+      merge: (persisted, current) => {
+        const p = (persisted as Partial<TabState>) || {};
+        return {
+          ...current,
+          ...p,
+          tabs: p.tabs && typeof p.tabs === 'object' ? p.tabs : current.tabs,
+          tabOrder: Array.isArray(p.tabOrder) ? p.tabOrder : current.tabOrder,
+          tabFocusHistory: Array.isArray(p.tabFocusHistory) ? p.tabFocusHistory : current.tabFocusHistory,
+          recentlyClosedTabs: Array.isArray(p.recentlyClosedTabs) ? p.recentlyClosedTabs : current.recentlyClosedTabs,
+        };
+      },
       // On rehydration, ensure dashboard tab is always present
       onRehydrateStorage: () => (state) => {
         if (state) {
