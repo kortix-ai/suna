@@ -163,13 +163,20 @@ export function ProjectDetailPage({
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
   const bg = isDark ? '#121215' : '#F8F8F8';
 
+  // Sort sessions with manager session pinned to top (ported from web 5099c92)
   const sessionList = useMemo(() => {
     const rows = sessions ?? [];
-    return [...rows].sort((a: any, b: any) => (
-      (b.time?.updated ? +new Date(b.time.updated) : 0) -
-      (a.time?.updated ? +new Date(a.time.updated) : 0)
-    ));
-  }, [sessions]);
+    if (!project?.manager_session_id) return rows;
+    return [...rows].sort((a: any, b: any) => {
+      // Manager session always first
+      if (a.id === project.manager_session_id) return -1;
+      if (b.id === project.manager_session_id) return 1;
+      return (
+        (b.time?.updated ? +new Date(b.time.updated) : 0) -
+        (a.time?.updated ? +new Date(a.time.updated) : 0)
+      );
+    });
+  }, [sessions, project?.manager_session_id]);
   const taskList = tasks ?? [];
 
   const taskStats = useMemo(() => {
@@ -558,6 +565,11 @@ export function ProjectDetailPage({
                     style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert', color: fg }}>
                     {s.title || 'Untitled'}
                   </RNText>
+                  {project?.manager_session_id === s.id && (
+                    <View style={{ backgroundColor: isDark ? 'rgba(96,165,250,0.15)' : 'rgba(37,99,235,0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                      <RNText style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: isDark ? '#60a5fa' : '#2563eb' }}>Manager</RNText>
+                    </View>
+                  )}
                   <RNText
                     style={{
                       fontSize: 11,
