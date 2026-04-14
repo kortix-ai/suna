@@ -468,18 +468,10 @@ export function InstanceSettingsModal({
               </div>
 
               <div className="flex-1 overflow-y-auto bg-background">{renderContent()}</div>
-
-              {sandbox ? (
-                <div className="border-t border-border bg-background/95 px-4 py-3 flex justify-end">
-                  <Button onClick={() => router.push(`/instances/${sandbox.sandbox_id}`)}>
-                    Open instance
-                  </Button>
-                </div>
-              ) : null}
             </div>
           ) : (
             <div className="flex flex-row h-[700px]">
-              <div className="bg-background flex-shrink-0 w-56 p-4 border-r border-border">
+              <div className="bg-background flex-shrink-0 w-56 p-4 border-r border-border flex flex-col">
                 <div className="flex justify-start mb-3">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onOpenChange(false)}>
                     <X className="h-4 w-4" />
@@ -513,18 +505,17 @@ export function InstanceSettingsModal({
                     );
                   })}
                 </div>
-              </div>
 
-              <div className="flex-1 min-h-0 w-full max-w-full bg-background flex flex-col">
-                <div className="flex-1 overflow-y-auto min-h-0">{renderContent()}</div>
                 {sandbox ? (
-                  <div className="border-t border-border bg-background/95 px-4 py-3 flex justify-end">
-                    <Button onClick={() => router.push(`/instances/${sandbox.sandbox_id}`)}>
+                  <div className="mt-auto pt-4">
+                    <Button className="w-full" onClick={() => router.push(`/instances/${sandbox.sandbox_id}`)}>
                       Open instance
                     </Button>
                   </div>
                 ) : null}
               </div>
+
+              <div className="flex-1 overflow-y-auto min-h-0 w-full max-w-full bg-background">{renderContent()}</div>
             </div>
           )}
         </DialogContent>
