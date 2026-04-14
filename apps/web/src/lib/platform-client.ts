@@ -99,6 +99,25 @@ export interface SandboxInfo {
   updated_at: string;
 }
 
+function normalizeSandboxId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const normalized = normalizeSandboxId(item);
+      if (normalized) return normalized;
+    }
+    return undefined;
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return normalizeSandboxId(record.sandboxId ?? record.id ?? record.slug ?? Object.values(record)[0]);
+  }
+  return undefined;
+}
+
 export interface ProvidersInfo {
   providers: SandboxProviderName[];
   default: SandboxProviderName;
@@ -350,9 +369,12 @@ export async function createSandbox(opts?: {
  * Get a single sandbox by ID from the list.
  * Avoids fetching the full list when only one sandbox is needed.
  */
-export async function getSandboxById(sandboxId: string): Promise<SandboxInfo | null> {
-  const all = await listSandboxes(sandboxId);
-  const ownMatch = all.find((s) => s.sandbox_id === sandboxId) ?? null;
+export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | null> {
+  const normalizedSandboxId = normalizeSandboxId(sandboxId);
+  if (!normalizedSandboxId) return null;
+
+  const all = await listSandboxes(normalizedSandboxId);
+  const ownMatch = all.find((s) => s.sandbox_id === normalizedSandboxId) ?? null;
   if (ownMatch) return ownMatch;
 
   try {
@@ -368,7 +390,7 @@ export async function getSandboxById(sandboxId: string): Promise<SandboxInfo | n
         createdAt: string;
         updatedAt: string;
       };
-    }>(`/admin/api/sandboxes/${sandboxId}`);
+    }>(`/admin/api/sandboxes/${normalizedSandboxId}`);
 
     const row = response.data?.sandbox;
     if (!row) return null;
@@ -392,9 +414,10 @@ export async function getSandboxById(sandboxId: string): Promise<SandboxInfo | n
 /**
  * List all sandboxes for the user's account.
  */
-export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> {
+export async function listSandboxes(sandboxId?: unknown): Promise<SandboxInfo[]> {
   try {
-    const qs = sandboxId ? `?sandbox_id=${encodeURIComponent(sandboxId)}` : '';
+    const normalizedSandboxId = normalizeSandboxId(sandboxId);
+    const qs = normalizedSandboxId ? `?sandbox_id=${encodeURIComponent(normalizedSandboxId)}` : '';
     const result = await platformFetch<SandboxInfo[]>(`/platform/sandbox/list${qs}`, {
       method: 'GET',
     });

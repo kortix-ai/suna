@@ -542,16 +542,19 @@ export default function DashboardLayoutContent({
 	const [routeSyncing, setRouteSyncing] = useState(false);
 	const openTab = useTabStore((s) => s.openTab);
 	const setActiveTab = useTabStore((s) => s.setActiveTab);
-	const tabs = useTabStore((s) => s.tabs);
+	const activeTabId = useTabStore((s) => s.activeTabId);
 
 	useEffect(() => {
 		const normalizedPath = normalizeAppPathname(pathname);
 		const descriptor = resolveTabFromPathname(normalizedPath);
 		if (!descriptor) return;
 
+		const { tabs } = useTabStore.getState();
 		const existing = tabs[descriptor.id];
 		if (existing) {
-			setActiveTab(descriptor.id);
+			if (activeTabId !== descriptor.id) {
+				setActiveTab(descriptor.id);
+			}
 			if (existing.href !== descriptor.href || existing.title !== descriptor.title) {
 				openTab({
 					id: descriptor.id,
@@ -571,7 +574,7 @@ export default function DashboardLayoutContent({
 			href: descriptor.href,
 			...(descriptor.metadata ? { metadata: descriptor.metadata } : {}),
 		});
-	}, [pathname, tabs, openTab, setActiveTab]);
+	}, [pathname, activeTabId, openTab, setActiveTab]);
 
 	useEffect(() => {
 		// When the instance changes, re-seed from that instance's cache.
