@@ -103,6 +103,9 @@ run_test "Frontend container running" \
 run_test "API container running" \
     "docker ps | grep -q 'kortix-kortix-api-1'"
 
+run_test "API container has docker CLI" \
+    "docker exec kortix-kortix-api-1 sh -lc 'command -v docker >/dev/null'"
+
 run_test "Sandbox container running" \
     "docker ps | grep -q 'kortix-sandbox'"
 
@@ -132,6 +135,9 @@ run_test "Supabase Kong responds on port 13740" \
 
 run_test "Sandbox responds on port 14000" \
     "curl -sf http://localhost:14000/kortix/health -o /dev/null"
+
+run_test "API logs do not contain docker CLI errors" \
+    "! docker logs kortix-kortix-api-1 2>&1 | grep -q '/bin/sh: 1: docker: not found'"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 section "STEP 5: Test Authentication Flow"

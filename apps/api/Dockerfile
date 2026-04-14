@@ -38,7 +38,10 @@ ARG SERVICE
 
 ENV NODE_ENV=production
 
-RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    docker.io \
+    openssh-client && \
+    rm -rf /var/lib/apt/lists/*
 
 # License
 COPY LICENSE /LICENSE
