@@ -126,10 +126,24 @@ function CommandPopover({
   );
 }
 
-/** Trigger for CommandPopover — wraps PopoverTrigger with asChild. */
-function CommandPopoverTrigger({ children }: { children: React.ReactNode }) {
-  return <PopoverTrigger asChild>{children}</PopoverTrigger>;
-}
+/**
+ * Trigger for CommandPopover — wraps PopoverTrigger with asChild.
+ *
+ * Important: this must forward Radix trigger props + refs. Components like
+ * TooltipTrigger clone their child and inject event handlers / refs; the old
+ * plain function component dropped those props, which could leave Radix in a
+ * ref attach/detach loop on session surfaces that nest Tooltip + Popover.
+ */
+const CommandPopoverTrigger = React.forwardRef<
+  React.ElementRef<typeof PopoverTrigger>,
+  Omit<React.ComponentPropsWithoutRef<typeof PopoverTrigger>, 'asChild'>
+>(function CommandPopoverTrigger({ children, ...props }, ref) {
+  return (
+    <PopoverTrigger ref={ref} asChild {...props}>
+      {children}
+    </PopoverTrigger>
+  );
+});
 
 /** Content pane for CommandPopover — PopoverContent + Command with shared styling. */
 function CommandPopoverContent({
