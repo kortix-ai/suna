@@ -943,16 +943,12 @@ function parseSystemNotifications(text: string): {
   return { cleanText, notifications };
 }
 
-/** True when text contains at least one XML block. */
-function hasXmlBlocks(text: string): boolean {
-  XML_BLOCK_REGEX.lastIndex = 0;
-  return XML_BLOCK_REGEX.test(text);
-}
-
 function stripSystemPtyText(text: string): string {
   if (!text) return '';
+  // Only strip kortix_system tags (backend-internal metadata).
+  // Notification XML is stripped later by parseSystemNotifications()
+  // which runs last in the parsing pipeline.
   return stripKortixSystemTags(text)
-    .replace(XML_BLOCK_REGEX, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -1332,11 +1328,11 @@ function isNotificationOnlyMessage(parts: Part[]): boolean {
       !(p as any).ignored,
   ) as TextPart[];
   if (textParts.length === 0) return false;
-  const combined = textParts
-    .map((p) => stripSystemPtyText(p.text))
-    .join('')
-    .trim();
-  return !combined && textParts.some((p) => hasXmlBlocks(p.text || ''));
+  const raw = textParts.map((p) => p.text || '').join('\n');
+  const { cleanText, notifications } = parseSystemNotifications(
+    stripKortixSystemTags(raw),
+  );
+  return notifications.length > 0 && !cleanText.trim();
 }
 
 // ============================================================================
@@ -1359,7 +1355,7 @@ function NotificationTurn({ turn }: { turn: Turn }) {
   }, [turn.userMessage.parts]);
 
   const { notifications } = useMemo(
-    () => parseSystemNotifications(rawText),
+    () => parseSystemNotifications(stripKortixSystemTags(rawText)),
     [rawText],
   );
 
@@ -3002,14 +2998,13 @@ function SessionTurn({
     // Parts not loaded yet (bridging / transient state) — assume visible
     // to prevent a flash where the bubble disappears momentarily.
     if (parts.length === 0) return true;
-    // Has any non-synthetic, non-ignored text?
+    // Has any non-synthetic, non-ignored text (including notification XML)?
     const hasVisibleText = parts.some(
       (p) =>
         isTextPart(p) &&
         !(p as TextPart).synthetic &&
         !(p as any).ignored &&
-        (!!stripSystemPtyText((p as TextPart).text || '') ||
-          hasXmlBlocks((p as TextPart).text || '')),
+        !!stripKortixSystemTags((p as TextPart).text || '').trim(),
     );
     if (hasVisibleText) return true;
     // Has any attachment (image/PDF)?
@@ -6093,24 +6088,10 @@ export function SessionChat({
                       msg.parts.some((p) => p.type === 'compaction'),
                     );
 
-                  const notificationOnly = isNotificationOnlyMessage(
-                    turn.userMessage.parts,
-                  );
-
-                  // Notification-only turns render as lightweight inline
-                  // cards with tight spacing — no user bubble, no logo,
-                  // no steps chrome.
-                  if (notificationOnly) {
-                    return (
-                      <div
-                        key={turn.userMessage.info.id}
-                        data-turn-id={turn.userMessage.info.id}
-                        className="mt-1.5"
-                      >
-                        <NotificationTurn turn={turn} />
-                      </div>
-                    );
-                  }
+                  // Notification-only early-return removed: it rendered the
+                  // user's pty_* card but skipped turn.assistantMessages,
+                  // hiding every subsequent assistant response in that turn.
+                  // Fall through to the normal turn renderer instead.
 
                   return (
                     <div
