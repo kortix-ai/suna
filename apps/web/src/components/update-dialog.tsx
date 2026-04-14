@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Check, XCircle, ArrowDownToLine, RotateCw, Sparkles, Bug, Zap, AlertTriangle, Shield, RefreshCw, Terminal, Copy } from 'lucide-react';
+import { Check, XCircle, ArrowDownToLine, RotateCw, Terminal, Copy } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertDialog,
@@ -18,31 +18,11 @@ import { authenticatedFetch } from '@/lib/auth-token';
 import { useServerStore } from '@/stores/server-store';
 import { getEnv } from '@/lib/env-config';
 import type { UpdatePhase } from '@/hooks/platform/use-sandbox-update';
-import type { ChangelogEntry, ChangelogChange } from '@/lib/platform-client';
+import type { ChangelogEntry } from '@/lib/platform-client';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { UpdateChangelogPreview } from '@/components/update-changelog-preview';
 
 type DialogStep = 'confirm' | 'updating' | 'done' | 'failed';
-
-const changeTypeConfig: Record<string, { icon: typeof Sparkles; color: string }> = {
-  feature:     { icon: Sparkles,      color: 'text-emerald-500' },
-  fix:         { icon: Bug,           color: 'text-red-400' },
-  improvement: { icon: Zap,           color: 'text-blue-400' },
-  breaking:    { icon: AlertTriangle, color: 'text-amber-500' },
-  upstream:    { icon: RefreshCw,     color: 'text-violet-400' },
-  security:    { icon: Shield,        color: 'text-rose-400' },
-  deprecation: { icon: AlertTriangle, color: 'text-orange-400' },
-};
-
-function ChangeItem({ change }: { change: ChangelogChange }) {
-  const config = changeTypeConfig[change.type] ?? changeTypeConfig.improvement;
-  const Icon = config.icon;
-  return (
-    <div className="flex items-start gap-2 py-0.5">
-      <Icon className={cn('h-3.5 w-3.5 mt-0.5 flex-shrink-0', config.color)} />
-      <span className="text-sm text-foreground/80">{change.text}</span>
-    </div>
-  );
-}
 
 const PHASE_LABEL: Record<string, string> = {
   idle: 'Preparing...',
@@ -96,7 +76,6 @@ export function UpdateDialog({
   isDev,
 }: UpdateDialogProps) {
   const [userRequested, setUserRequested] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const [isReconnected, setIsReconnected] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const healthPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -121,7 +100,6 @@ export function UpdateDialog({
       if (healthPollRef.current) clearTimeout(healthPollRef.current);
       return;
     }
-    setExpanded(false);
     setIsReconnected(false);
     setIsReconnecting(false);
     setUserRequested(phase !== 'idle' && phase !== 'failed');
@@ -204,8 +182,6 @@ export function UpdateDialog({
   };
 
   const changes = changelog?.changes ?? [];
-  const visibleChanges = expanded ? changes : changes.slice(0, 4);
-  const hasMore = changes.length > 4 && !expanded;
 
   const circularProgress = isReconnected ? 100 : isReconnecting ? 95 : phaseProgress;
   const activeLabel = isReconnected
@@ -344,23 +320,12 @@ export function UpdateDialog({
                   </AlertDescription>
                 </Alert>
               ) : changes.length > 0 && (
-                <div className="rounded-lg border border-border/50 bg-muted/30 mt-4">
-                  <div className="max-h-72 overflow-y-auto px-3 py-2.5 space-y-0.5">
-                    {visibleChanges.map((change, i) => (
-                      <ChangeItem key={i} change={change} />
-                    ))}
-                  </div>
-                  {hasMore && (
-                    <Button
-                      onClick={() => setExpanded(true)}
-                      variant="link"
-                      size="sm"
-                      className="w-full border-t border-border/30 rounded-none h-auto py-2"
-                    >
-                      Show {changes.length - 4} more changes
-                    </Button>
-                  )}
-                </div>
+                <UpdateChangelogPreview
+                  changes={changes}
+                  className="mt-4"
+                  variant="subtle"
+                  moreButtonVariant="link"
+                />
               )}
 
               <AlertDialogFooter className="mt-4">

@@ -10,7 +10,7 @@
  * computers. We render them uniformly.
  */
 
-import { Archive, ArrowDownToLine, ChevronRight, Loader2, RotateCw, Server } from 'lucide-react';
+import { ChevronRight, Loader2, Server, Settings2, type LucideIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type { SandboxInfo } from '@/lib/platform-client';
@@ -101,7 +101,7 @@ function CardAction({
   loading,
   disabled,
 }: {
-  icon: typeof RotateCw;
+  icon: LucideIcon;
   label: string;
   onClick: () => void;
   loading?: boolean;
@@ -145,17 +145,11 @@ function CardAction({
 export function InstanceCard({
   sandbox,
   onClick,
-  onRestart,
-  onChangelog,
-  onBackups,
-  restarting,
+  onSettings,
 }: {
   sandbox: SandboxInfo;
   onClick: () => void;
-  onRestart?: () => void;
-  onChangelog?: () => void;
-  onBackups?: () => void;
-  restarting?: boolean;
+  onSettings?: () => void;
 }) {
   const status = getStatusConfig(sandbox.status);
   const meta = sandbox.metadata as Record<string, unknown> | undefined;
@@ -165,19 +159,7 @@ export function InstanceCard({
   // Actions only make sense once the machine has settled — hide everything
   // while it's still provisioning so users can't poke at a half-built box.
   const actionable = ['active', 'stopped', 'error'].includes(sandbox.status);
-  const isJustAVPS = sandbox.provider === 'justavps';
-
-  // Backups + in-place updates are currently JustAVPS-only (those endpoints
-  // only implement the justavps provider path). Restart works on every
-  // provider that has a start/stop pair, so it's always shown when actionable.
-  const showRestart = actionable && !!onRestart;
-  const showChangelog = actionable && isJustAVPS && !!onChangelog;
-  const showBackups =
-    isJustAVPS &&
-    ['active', 'stopped'].includes(sandbox.status) &&
-    !!onBackups;
-
-  const hasActions = showRestart || showChangelog || showBackups;
+  const showSettings = actionable && !!onSettings;
 
   return (
     <div className={CARD_CLS}>
@@ -209,30 +191,13 @@ export function InstanceCard({
         </button>
 
         <div className="flex items-center flex-shrink-0 mt-1">
-          {hasActions && (
+          {showSettings && (
             <div className="flex items-center gap-0.5 mr-1 opacity-70 group-hover:opacity-100 transition-opacity">
-              {showRestart && (
-                <CardAction
-                  icon={RotateCw}
-                  label={sandbox.status === 'stopped' ? 'Start' : 'Restart'}
-                  onClick={onRestart!}
-                  loading={restarting}
-                />
-              )}
-              {showChangelog && (
-                <CardAction
-                  icon={ArrowDownToLine}
-                  label="Changelog & Update"
-                  onClick={onChangelog!}
-                />
-              )}
-              {showBackups && (
-                <CardAction
-                  icon={Archive}
-                  label="Backups"
-                  onClick={onBackups!}
-                />
-              )}
+              <CardAction
+                icon={Settings2}
+                label="Instance settings"
+                onClick={onSettings!}
+              />
             </div>
           )}
           <button

@@ -549,6 +549,143 @@ adminApp.delete('/api/sandboxes/:id', async (c) => {
   }
 });
 
+/** GET /v1/admin/api/accounts — list accounts with billing + credits summary */
+adminApp.get('/api/accounts', async (c) => {
+  try {
+    const { db } = await import('../shared/db');
+    const { accounts, creditAccounts, billingCustomers } = await import('@kortix/db');
+    const { and, desc, eq, ilike, or, sql } = await import('drizzle-orm');
+
+    const q = c.req.query('search') || '';
+    const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
+    const offset = (page - 1) * limit;
+
+    const ownerEmailSub = sql<string>`(
+      SELECT au.email FROM auth.users au
+      INNER JOIN kortix.account_members am ON am.user_id = au.id
+      WHERE am.account_id = ${accounts.accountId}
+      ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
+      LIMIT 1
+    )`;
+
+    const memberCountSub = sql<number>`(
+      SELECT count(*)::int FROM kortix.account_members am
+      WHERE am.account_id = ${accounts.accountId}
+    )`;
+
+    const conditions = [] as any[];
+    if (q) {
+      conditions.push(or(
+        ilike(accounts.name, `%${q}%`),
+        sql`cast(${accounts.accountId} as text) ilike ${'%' + q + '%'}`,
+        sql`EXISTS (
+          SELECT 1 FROM auth.users au
+          INNER JOIN kortix.account_members am ON am.user_id = au.id
+          WHERE am.account_id = ${accounts.accountId}
+          AND au.email ILIKE ${'%' + q + '%'}
+          LIMIT 1
+        )`,
+      )!);
+    }
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const [rows, [{ total }]] = await Promise.all([
+      db
+        .select({
+          accountId: accounts.accountId,
+          name: accounts.name,
+          ownerEmail: ownerEmailSub,
+          memberCount: memberCountSub,
+          balance: creditAccounts.balance,
+          expiringCredits: creditAccounts.expiringCredits,
+          nonExpiringCredits: creditAccounts.nonExpiringCredits,
+          dailyCreditsBalance: creditAccounts.dailyCreditsBalance,
+          tier: creditAccounts.tier,
+          paymentStatus: creditAccounts.paymentStatus,
+          provider: creditAccounts.provider,
+          planType: creditAccounts.planType,
+          stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
+          billingCustomerId: billingCustomers.id,
+          billingCustomerEmail: billingCustomers.email,
+          createdAt: accounts.createdAt,
+        })
+        .from(accounts)
+        .leftJoin(creditAccounts, eq(accounts.accountId, creditAccounts.accountId))
+        .leftJoin(billingCustomers, eq(accounts.accountId, billingCustomers.accountId))
+        .where(where)
+        .orderBy(desc(accounts.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(accounts)
+        .where(where),
+    ]);
+
+    return c.json({ accounts: rows, total, page, limit });
+  } catch (e: any) {
+    return c.json({ accounts: [], total: 0, page: 1, limit: 50, error: e?.message || String(e) }, 500);
+  }
+});
+
+/** GET /v1/admin/api/accounts/:id/users — list users for an account */
+adminApp.get('/api/accounts/:id/users', async (c) => {
+  try {
+    const accountId = c.req.param('id');
+    const { db } = await import('../shared/db');
+    const { sql } = await import('drizzle-orm');
+    const result = await db.execute(sql`
+      SELECT au.id AS user_id, au.email, am.account_role, am.created_at
+      FROM kortix.account_members am
+      INNER JOIN auth.users au ON au.id = am.user_id
+      WHERE am.account_id = ${accountId}
+      ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
+    `);
+    const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
+    return c.json({ users: rows });
+  } catch (e: any) {
+    return c.json({ users: [], error: e?.message || String(e) }, 500);
+  }
+});
+
+/** POST /v1/admin/api/accounts/:id/credits — grant credits to an account */
+adminApp.post('/api/accounts/:id/credits', async (c) => {
+  try {
+    const accountId = c.req.param('id');
+    const actorUserId = c.get('userId') as string | undefined;
+    const body = await c.req.json().catch(() => ({} as any));
+    const amount = Number(body?.amount ?? 0);
+    const description = String(body?.description ?? '').trim() || 'Admin credit adjustment';
+    const isExpiring = body?.isExpiring === true;
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return c.json({ error: 'amount must be a positive number' }, 400);
+    }
+
+    const { getCreditAccount, upsertCreditAccount } = await import('../billing/repositories/credit-accounts');
+    const { grantCredits } = await import('../billing/services/credits');
+    const existing = await getCreditAccount(accountId);
+    if (!existing) {
+      await upsertCreditAccount(accountId, {
+        balance: '0',
+        expiringCredits: '0',
+        nonExpiringCredits: '0',
+        dailyCreditsBalance: '0',
+        tier: 'free',
+      } as any);
+    }
+
+    await grantCredits(accountId, amount, 'admin_adjustment', description, isExpiring, undefined);
+
+    const { getCreditSummary } = await import('../billing/services/credits');
+    const summary = await getCreditSummary(accountId);
+    return c.json({ success: true, accountId, amount, description, isExpiring, summary, grantedBy: actorUserId ?? null });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 500);
+  }
+});
+
 /** GET /v1/admin/api/sandboxes/:id — full sandbox detail merged with provider data */
 adminApp.get('/api/sandboxes/:id', async (c) => {
   try {

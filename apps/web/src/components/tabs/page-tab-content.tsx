@@ -104,9 +104,6 @@ const AdminStatelessPage = lazy(() =>
 const AdminStressTestPage = lazy(() =>
 	import('@/app/(dashboard)/admin/stress-test/page'),
 );
-const AdminAccessRequestsPage = lazy(() =>
-	import('@/app/(dashboard)/admin/access-requests/page'),
-);
 const LegacyThreadPage = lazy(() =>
 	import('@/app/(dashboard)/legacy/[threadId]/page'),
 );
@@ -154,7 +151,6 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/admin/sandbox-pool': AdminSandboxPoolPage,
 	'/admin/stateless': AdminStatelessPage,
 	'/admin/stress-test': AdminStressTestPage,
-	'/admin/access-requests': AdminAccessRequestsPage,
 };
 
 function resolveComponent(routeKey: string): { Component: ComponentType<any>; params?: Record<string, string> } | null {

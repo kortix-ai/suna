@@ -212,12 +212,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     type: 'page',
     href: '/admin/stress-test',
   },
-  '/admin/access-requests': {
-    id: 'page:/admin/access-requests',
-    title: 'Access Requests',
-    type: 'page',
-    href: '/admin/access-requests',
-  },
 };
 
 // ---------------------------------------------------------------------------

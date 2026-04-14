@@ -106,6 +106,7 @@ import {
     getAccountTabs,
     type SettingsTabId,
 } from '@/lib/menu-registry';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
 
 type TabId = SettingsTabId;
 
@@ -299,8 +300,11 @@ export function UserSettingsModal({
 
 
 function GeneralTab({ onClose }: { onClose: () => void }) {
+    const router = useRouter();
     const t = useTranslations('settings.general');
     const tCommon = useTranslations('common');
+    const { data: adminRole } = useAdminRole();
+    const isAdmin = !!adminRole?.isAdmin;
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
     const [avatarUrl, setAvatarUrl] = useState('');
@@ -607,6 +611,55 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     {isSaving ? tCommon('saving') : t('saveChanges')}
                 </Button>
             </div>
+
+            {isAdmin && (
+                <div className="border-t border-border pt-6 space-y-3">
+                    <div>
+                        <h3 className="text-base font-medium mb-1">Admin Console</h3>
+                        <p className="text-sm text-muted-foreground">
+                            Open the standalone admin pages for fleet operations, account management, and allowlist reviews.
+                        </p>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        {[
+                            {
+                                title: 'Admin Home',
+                                description: 'Open the top-level admin dashboard.',
+                                href: '/admin',
+                            },
+                            {
+                                title: 'Instance Management',
+                                description: 'Open the admin dashboard focused on machine management.',
+                                href: '/admin?section=instances',
+                            },
+                            {
+                                title: 'Account Management',
+                                description: 'Open the admin dashboard focused on accounts, billing, and credits.',
+                                href: '/admin?section=accounts',
+                            },
+                            {
+                                title: 'Access Requests',
+                                description: 'Open the admin dashboard focused on allowlist requests.',
+                                href: '/admin?section=access-requests',
+                            },
+                        ].map((item) => (
+                            <button
+                                key={item.title}
+                                type="button"
+                                onClick={() => {
+                                    onClose();
+                                    window.location.assign(item.href);
+                                }}
+                                className="text-left rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-4 py-3"
+                            >
+                                <div className="text-sm font-medium text-foreground">{item.title}</div>
+                                <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{item.description}</div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {isBillingEnabled() && accountDeletionSupported && (
                 <>

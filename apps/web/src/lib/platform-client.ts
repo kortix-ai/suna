@@ -397,12 +397,12 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
 
     return {
       sandbox_id: row.sandboxId,
-      external_id: row.externalId,
-      name: row.name,
+      external_id: row.externalId || '',
+      name: row.name || row.sandboxId,
       provider: (row.provider || 'justavps') as SandboxProviderName,
-      base_url: row.baseUrl,
+      base_url: row.baseUrl || '',
       status: row.status || 'unknown',
-      metadata: row.metadata ?? null,
+      metadata: (row.metadata as Record<string, unknown> | undefined) ?? undefined,
       created_at: row.createdAt,
       updated_at: row.updatedAt,
     };
@@ -750,7 +750,16 @@ export async function getLatestSandboxVersion(channel?: VersionChannel): Promise
     headers: { 'Accept': 'application/json' },
   });
   if (!res.ok) throw new Error(`Version check failed: ${res.status}`);
-  return res.json();
+  const latest = await res.json() as SandboxVersionInfo & { title?: string };
+
+  try {
+    const changelogEntries = await getFullChangelog(channel || 'stable');
+    latest.changelog = changelogEntries.find((entry) => entry.version === latest.version) ?? changelogEntries[0] ?? null;
+  } catch {
+    latest.changelog = null;
+  }
+
+  return latest;
 }
 
 /**

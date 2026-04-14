@@ -297,7 +297,7 @@ function renderVariant(variant: Variant): React.ReactNode {
           <Header count={list.length} showNewButton />
           <div className="flex flex-col gap-2">
             {list.map((sb) => (
-              <InstanceCard key={sb.sandbox_id} sandbox={sb} onClick={() => {}} onBackups={() => {}} />
+              <InstanceCard key={sb.sandbox_id} sandbox={sb} onClick={() => {}} onSettings={() => {}} />
             ))}
           </div>
         </>
@@ -310,7 +310,7 @@ function renderVariant(variant: Variant): React.ReactNode {
           <Header count={MOCK_SANDBOXES_VARIETY.length} showNewButton />
           <div className="flex flex-col gap-2">
             {MOCK_SANDBOXES_VARIETY.map((sb) => (
-              <InstanceCard key={sb.sandbox_id} sandbox={sb} onClick={() => {}} onBackups={() => {}} />
+              <InstanceCard key={sb.sandbox_id} sandbox={sb} onClick={() => {}} onSettings={() => {}} />
             ))}
           </div>
         </>
@@ -330,7 +330,7 @@ function renderVariant(variant: Variant): React.ReactNode {
           <Header count={list.length} showNewButton />
           <div className="flex flex-col gap-2">
             {list.map((sb) => (
-              <InstanceCard key={sb.sandbox_id} sandbox={sb} onClick={() => {}} onBackups={() => {}} />
+              <InstanceCard key={sb.sandbox_id} sandbox={sb} onClick={() => {}} onSettings={() => {}} />
             ))}
           </div>
         </>
