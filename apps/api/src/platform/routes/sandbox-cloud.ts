@@ -26,6 +26,7 @@ import {
 import { config } from '../../config';
 import { justavpsFetch, listServerTypes as listJustAVPSServerTypes } from '../providers/justavps';
 import type { AuthVariables } from '../../types';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { resolveAccountId as defaultResolveAccountId } from '../../shared/resolve-account';
 import * as pool from '../../pool';
 import { generateSandboxName } from '../services/ensure-sandbox';
@@ -692,11 +693,19 @@ export function createCloudSandboxRouter(
 
     try {
       const accountId = await resolveAccountId(userId);
+      const requestedSandboxId = c.req.query('sandbox_id') || undefined;
+      const adminAccess = requestedSandboxId ? await isPlatformAdmin(accountId) : false;
+
+      const query = requestedSandboxId
+        ? (adminAccess
+            ? eq(sandboxes.sandboxId, requestedSandboxId)
+            : and(eq(sandboxes.accountId, accountId), eq(sandboxes.sandboxId, requestedSandboxId)))
+        : eq(sandboxes.accountId, accountId);
 
       const rows = await db
         .select()
         .from(sandboxes)
-        .where(eq(sandboxes.accountId, accountId))
+        .where(query)
         .orderBy(desc(sandboxes.createdAt));
 
       return c.json({ success: true, data: rows.map(serializeSandbox) });

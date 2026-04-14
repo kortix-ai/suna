@@ -131,6 +131,8 @@ export function useSandbox() {
         .filter((s) => s.id !== 'default')
         .filter((s) => !!s.provider && !!s.instanceId)
         .filter((s) => s.id === 'cloud-sandbox' || s.id.startsWith('sandbox-'))
+        .filter((s) => s.instanceId !== routeInstance)
+        .filter((s) => s.id !== store.activeServerId)
         .filter((s) => !activeInstanceIds.has(s.instanceId!))
         .map((s) => s.id);
 

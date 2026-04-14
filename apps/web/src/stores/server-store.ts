@@ -817,9 +817,8 @@ export async function switchToInstanceAsync(
   }
 
   // Not in store or validation requested — fetch from API
-  const { listSandboxes, extractMappedPorts } = await import('@/lib/platform-client');
-  const sandboxes = await listSandboxes();
-  const match = sandboxes.find((s) => s.sandbox_id === instanceId);
+  const { getSandboxById, extractMappedPorts } = await import('@/lib/platform-client');
+  const match = await getSandboxById(instanceId);
 
   if (!match || match.status !== 'active' || !match.external_id) {
     return null; // Not active — caller should redirect to /instances/:id

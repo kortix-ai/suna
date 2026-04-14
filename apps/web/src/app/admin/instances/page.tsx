@@ -215,7 +215,7 @@ export default function AdminInstancesPage() {
                   <TableHead>Provider</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Created</TableHead>
-                  <TableHead className="w-[50px]" />
+                  <TableHead className="w-[150px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -223,7 +223,7 @@ export default function AdminInstancesPage() {
                   <TableRow
                     key={sandbox.sandboxId}
                     className="group cursor-pointer"
-                    onClick={() => router.push(`/instances/${sandbox.sandboxId}`)}
+                    onClick={() => router.push(`/admin/instances/${sandbox.sandboxId}`)}
                   >
                     <TableCell className="font-mono text-xs text-muted-foreground" title={sandbox.sandboxId}>{sandbox.sandboxId.slice(0, 8)}</TableCell>
                     <TableCell className="text-sm max-w-[140px] truncate" title={sandbox.name ?? undefined}>{sandbox.name ?? <span className="text-muted-foreground">&mdash;</span>}</TableCell>
@@ -237,14 +237,24 @@ export default function AdminInstancesPage() {
                     <TableCell><StatusBadge status={sandbox.status} /></TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatDate(sandbox.createdAt)}</TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-500 hover:bg-red-500/10"
-                        onClick={() => setConfirmDelete(sandbox)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2"
+                          onClick={() => router.push(`/instances/${sandbox.sandboxId}`)}
+                        >
+                          Connect
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-500 hover:bg-red-500/10"
+                          onClick={() => setConfirmDelete(sandbox)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

@@ -24,8 +24,9 @@ import { getClient } from "@/lib/opencode-sdk";
 import { Button } from "@/components/ui/button";
 import { KortixLoader } from "@/components/ui/kortix-loader";
 import { featureFlags } from "@/lib/feature-flags";
-import { buildInstancePath, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname } from "@/lib/instance-routes";
+import { buildInstancePath, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname, normalizeAppPathname } from "@/lib/instance-routes";
 import { cn } from "@/lib/utils";
+import { resolveTabFromPathname } from "@/lib/tab-route-resolver";
 import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
 import { useOnboardingModeStore } from "@/stores/onboarding-mode-store";
 import { getActiveOpenCodeUrl, useServerStore, switchToInstance, switchToInstanceAsync } from "@/stores/server-store";
@@ -539,6 +540,38 @@ export default function DashboardLayoutContent({
 		}
 	});
 	const [routeSyncing, setRouteSyncing] = useState(false);
+	const openTab = useTabStore((s) => s.openTab);
+	const setActiveTab = useTabStore((s) => s.setActiveTab);
+	const tabs = useTabStore((s) => s.tabs);
+
+	useEffect(() => {
+		const normalizedPath = normalizeAppPathname(pathname);
+		const descriptor = resolveTabFromPathname(normalizedPath);
+		if (!descriptor) return;
+
+		const existing = tabs[descriptor.id];
+		if (existing) {
+			setActiveTab(descriptor.id);
+			if (existing.href !== descriptor.href || existing.title !== descriptor.title) {
+				openTab({
+					id: descriptor.id,
+					title: descriptor.title,
+					type: descriptor.type,
+					href: descriptor.href,
+					...(descriptor.metadata ? { metadata: descriptor.metadata } : {}),
+				});
+			}
+			return;
+		}
+
+		openTab({
+			id: descriptor.id,
+			title: descriptor.title,
+			type: descriptor.type,
+			href: descriptor.href,
+			...(descriptor.metadata ? { metadata: descriptor.metadata } : {}),
+		});
+	}, [pathname, tabs, openTab, setActiveTab]);
 
 	useEffect(() => {
 		// When the instance changes, re-seed from that instance's cache.

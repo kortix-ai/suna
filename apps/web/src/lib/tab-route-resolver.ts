@@ -218,18 +218,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     type: 'page',
     href: '/admin/access-requests',
   },
-  '/admin/instances': {
-    id: 'page:/admin/instances',
-    title: 'Instances',
-    type: 'page',
-    href: '/admin/instances',
-  },
-  '/admin/sandboxes': {
-    id: 'page:/admin/instances',
-    title: 'Instances',
-    type: 'page',
-    href: '/admin/instances',
-  },
 };
 
 // ---------------------------------------------------------------------------
@@ -239,34 +227,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
 type DynamicResolver = (pathname: string) => TabDescriptor | null;
 
 const DYNAMIC_RESOLVERS: DynamicResolver[] = [
-  // /admin/sandboxes/<id>
-  (pathname) => {
-    const instanceMatch = pathname.match(/^\/admin\/instances\/([^/]+)$/);
-    if (instanceMatch) {
-      const sandboxId = instanceMatch[1];
-      return {
-        id: `instance:${sandboxId}`,
-        title: `Instance · ${sandboxId.slice(0, 8)}`,
-        type: 'page',
-        href: `/admin/instances/${sandboxId}`,
-      };
-    }
-    return null;
-  },
-
-  // /admin/sandboxes/<id>
-  (pathname) => {
-    const m = pathname.match(/^\/admin\/sandboxes\/([^/]+)$/);
-    if (!m) return null;
-    const sandboxId = m[1];
-    return {
-      id: `instance:${sandboxId}`,
-      title: `Instance · ${sandboxId.slice(0, 8)}`,
-      type: 'page',
-      href: `/admin/instances/${sandboxId}`,
-    };
-  },
-
   // /sessions/<id>
   (pathname) => {
     const m = pathname.match(/^\/sessions\/([^/]+)$/);

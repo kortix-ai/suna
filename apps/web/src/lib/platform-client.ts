@@ -14,6 +14,7 @@
  */
 
 import { authenticatedFetch } from '@/lib/auth-token';
+import { backendApi } from '@/lib/api-client';
 import { getEnv } from '@/lib/env-config';
 import type { ServerEntry } from '@/stores/server-store';
 
@@ -350,16 +351,51 @@ export async function createSandbox(opts?: {
  * Avoids fetching the full list when only one sandbox is needed.
  */
 export async function getSandboxById(sandboxId: string): Promise<SandboxInfo | null> {
-  const all = await listSandboxes();
-  return all.find((s) => s.sandbox_id === sandboxId) ?? null;
+  const all = await listSandboxes(sandboxId);
+  const ownMatch = all.find((s) => s.sandbox_id === sandboxId) ?? null;
+  if (ownMatch) return ownMatch;
+
+  try {
+    const response = await backendApi.get<{
+      sandbox: {
+        sandboxId: string;
+        externalId: string | null;
+        name: string | null;
+        provider: SandboxProviderName | null;
+        baseUrl: string | null;
+        status: string | null;
+        metadata: unknown;
+        createdAt: string;
+        updatedAt: string;
+      };
+    }>(`/admin/api/sandboxes/${sandboxId}`);
+
+    const row = response.data?.sandbox;
+    if (!row) return null;
+
+    return {
+      sandbox_id: row.sandboxId,
+      external_id: row.externalId,
+      name: row.name,
+      provider: (row.provider || 'justavps') as SandboxProviderName,
+      base_url: row.baseUrl,
+      status: row.status || 'unknown',
+      metadata: row.metadata ?? null,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
  * List all sandboxes for the user's account.
  */
-export async function listSandboxes(): Promise<SandboxInfo[]> {
+export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> {
   try {
-    const result = await platformFetch<SandboxInfo[]>('/platform/sandbox/list', {
+    const qs = sandboxId ? `?sandbox_id=${encodeURIComponent(sandboxId)}` : '';
+    const result = await platformFetch<SandboxInfo[]>(`/platform/sandbox/list${qs}`, {
       method: 'GET',
     });
 
