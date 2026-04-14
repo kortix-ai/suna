@@ -26,6 +26,13 @@ OWNER_PASSWORD="testpass123"
 FRONTEND_URL="http://localhost:13737"
 API_URL="http://localhost:13738"
 SUPABASE_URL="http://localhost:13740"
+PREVIEW_COOKIE_JAR="$(mktemp -t kortix-preview-cookie.XXXXXX)"
+
+cleanup() {
+    rm -f "$PREVIEW_COOKIE_JAR"
+}
+
+trap cleanup EXIT
 
 # Track results
 TESTS_PASSED=0
@@ -139,6 +146,12 @@ run_test "Sandbox responds on port 14000" \
 run_test "API logs do not contain docker CLI errors" \
     "! docker logs kortix-kortix-api-1 2>&1 | grep -q '/bin/sh: 1: docker: not found'"
 
+run_test "API logs do not contain sandbox auth sync fatal retries" \
+    "! docker logs kortix-kortix-api-1 2>&1 | grep -q '\[LOCAL-PREVIEW\] Sandbox auth sync failed after 3 attempts, giving up'"
+
+run_test "API logs do not hit network-mode fallback dead end" \
+    "! docker logs kortix-kortix-api-1 2>&1 | grep -q '\[sandbox-health\] Cannot use docker exec fallback in network mode'"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 section "STEP 5: Test Authentication Flow"
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -147,6 +160,7 @@ info "Testing authentication API..."
 
 # Get anon key from .env
 ANON_KEY=$(grep -m1 '^SUPABASE_ANON_KEY=' "$INSTALL_DIR/.env" | cut -d= -f2-)
+SANDBOX_NAME=$(grep -m1 '^SANDBOX_CONTAINER_NAME=' "$INSTALL_DIR/.env" | cut -d= -f2- || echo "kortix-hosted-sandbox")
 
 # Test sign-in
 SESSION_RESPONSE=$(curl -sf "$SUPABASE_URL/auth/v1/token?grant_type=password" \
@@ -202,6 +216,18 @@ run_test "Install status endpoint works" \
 # Test sandbox status
 run_test "Sandbox status endpoint works" \
     "curl -sf '$API_URL/v1/platform/init/local/status' -H 'Authorization: Bearer $ACCESS_TOKEN' -o /dev/null"
+
+run_test "Preview auth endpoint sets sandbox session cookie" \
+    "curl -sf -X POST '$API_URL/v1/p/auth' -H 'Authorization: Bearer $ACCESS_TOKEN' -c '$PREVIEW_COOKIE_JAR' -o /dev/null"
+
+run_test "Sandbox preview proxy reaches authenticated internal endpoint" \
+    "curl -sf '$API_URL/v1/p/$SANDBOX_NAME/8000/global/health' -b '$PREVIEW_COOKIE_JAR' -o /dev/null"
+
+run_test "Setup env save works through sandbox secret store" \
+    "curl -sf '$API_URL/v1/setup/env' -H 'Authorization: Bearer $ACCESS_TOKEN' -H 'Content-Type: application/json' -d '{\"keys\":{\"TAVILY_API_KEY\":\"e2e-test-key\"}}' | grep -q '\"ok\":true'"
+
+run_test "Setup env read shows saved key configured" \
+    "curl -sf '$API_URL/v1/setup/env' -H 'Authorization: Bearer $ACCESS_TOKEN' | python3 -c \"import json,sys; print(str(json.load(sys.stdin)['configured'].get('TAVILY_API_KEY', False)).lower())\" | grep -q '^true$'"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 section "STEP 8: Verify Frontend Configuration"
