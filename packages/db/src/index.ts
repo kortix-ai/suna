@@ -86,6 +86,7 @@ export type {
 export {
   apiKeys,
   accountUser,
+  billingCustomersInBasejump,
 } from './schema/public';
 
 export type {
