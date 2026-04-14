@@ -17,7 +17,7 @@ export interface KortixProject {
   created_at: string;
   opencode_id: string | null;
   sessionCount?: number;
-  // Extended properties from OpenCode Project (ported from web 9e6b7c6)
+  // Extended properties from OpenCode Project
   worktree?: string;
   time?: {
     created: number;

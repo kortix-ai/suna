@@ -625,18 +625,19 @@ export function SessionChatInput({
     if (filesToUpload.length > 0 && sandboxUrl) {
       setIsUploading(true);
       try {
-        const batchTs = Date.now();
         const xmlParts: string[] = [];
 
+        // Upload files. The server (/file/upload) guarantees collision-free
+        // destinations — if two files share a name it auto-suffixes and
+        // returns the actual written path. (Ported from web 04f8296.)
         await Promise.all(
           filesToUpload.map(async (f, idx) => {
             const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            const uniqueName = `${batchTs}-${idx}-${safeName}`;
-            const targetPath = `/workspace/uploads/${uniqueName}`;
+            const optimisticPath = `/workspace/uploads/${safeName}`;
 
             const formData = new FormData();
             formData.append('path', '/workspace/uploads');
-            formData.append('file', { uri: f.uri, name: uniqueName, type: f.mimeType } as any);
+            formData.append('file', { uri: f.uri, name: safeName, type: f.mimeType } as any);
 
             const token = await getAuthToken();
             const res = await fetch(`${sandboxUrl}/file/upload`, {
@@ -645,9 +646,10 @@ export function SessionChatInput({
               body: formData,
             });
 
+            // Use the server-returned path (collision-free) or fall back to optimistic
             const uploadedPath = res.ok
-              ? ((await res.json() as Array<{ path: string }>)[0]?.path ?? targetPath)
-              : targetPath;
+              ? ((await res.json() as Array<{ path: string }>)[0]?.path ?? optimisticPath)
+              : optimisticPath;
 
             xmlParts[idx] = `<file path="${uploadedPath}" mime="${f.mimeType}" filename="${f.name}">\nThis file has been uploaded and is available at the path above.\n</file>`;
           }),
