@@ -1,6 +1,14 @@
 import type { ResolvedEndpoint } from '../platform/providers';
 import type { StepResult } from './types';
 import { execOnHost } from './exec';
+import {
+  buildDockerRunCommand,
+  buildManagedServiceStartScript,
+  isJustAVPSManagedConfig,
+  JUSTAVPS_SERVICE_NAME,
+  JUSTAVPS_STARTUP_PATCH_HOST,
+  type ContainerConfig,
+} from './container-config';
 
 export function getCurrentImage(endpoint: ResolvedEndpoint, containerName: string): Promise<StepResult> {
   return execOnHost(
@@ -183,14 +191,19 @@ export async function checkpointSqlite(endpoint: ResolvedEndpoint, containerName
 
 export async function stopAndStartContainer(
   endpoint: ResolvedEndpoint,
-  containerName: string,
-  runCommand: string,
+  config: ContainerConfig,
 ): Promise<StepResult> {
+  if (isJustAVPSManagedConfig(config)) {
+    return restartManagedJustAVPSContainer(endpoint, config);
+  }
+
+  const runCommand = buildDockerRunCommand(config);
+
   // Shell-quote the container name inside the generated bash script
-  const sqName = `'${containerName.replace(/'/g, "'\\''")}'`;
+  const sqName = `'${config.name.replace(/'/g, "'\\''")}'`;
   const scriptLines = [
     '#!/bin/bash',
-    'systemctl disable --now justavps-docker 2>/dev/null || true',
+    `systemctl disable --now ${JUSTAVPS_SERVICE_NAME} 2>/dev/null || true`,
     'systemctl disable --now kortix-sandbox 2>/dev/null || true',
     `docker stop -t 10 ${sqName} 2>/dev/null || true`,
     `docker rm -f ${sqName} 2>/dev/null || true`,
@@ -215,6 +228,67 @@ export async function stopAndStartContainer(
   );
 
   // The container restart kills the proxy connection, so 502/aborted/timeout is expected
+  if (!result.success && (result.stderr.includes('502') || result.stderr.includes('aborted') || result.stderr.includes('timed out'))) {
+    return { success: true, stdout: '', stderr: '', exitCode: 0, durationMs: result.durationMs };
+  }
+  return result;
+}
+
+async function restartManagedJustAVPSContainer(
+  endpoint: ResolvedEndpoint,
+  config: ContainerConfig,
+): Promise<StepResult> {
+  const startScript = buildManagedServiceStartScript(config);
+  const serviceUnit = [
+    '[Unit]',
+    'Description=Kortix sandbox workload',
+    'After=network-online.target docker.service',
+    'Requires=docker.service',
+    'Wants=network-online.target',
+    '[Service]',
+    'Type=simple',
+    `ExecStart=/usr/local/bin/${JUSTAVPS_SERVICE_NAME}-start.sh`,
+    'Restart=always',
+    'RestartSec=5',
+    'TimeoutStartSec=0',
+    '[Install]',
+    'WantedBy=multi-user.target',
+  ].join('\n');
+
+  const payload = Buffer.from(JSON.stringify({ startScript, serviceUnit })).toString('base64');
+  const script = [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    `PAYLOAD_B64='${payload}'`,
+    'PAYLOAD_JSON="$(mktemp)"',
+    'echo "$PAYLOAD_B64" | base64 -d > "$PAYLOAD_JSON"',
+    'python3 - "$PAYLOAD_JSON" <<\'PY\'',
+    'import json, pathlib, sys',
+    'payload = json.loads(pathlib.Path(sys.argv[1]).read_text())',
+    'start_path = pathlib.Path("/usr/local/bin/justavps-docker-start.sh")',
+    'start_path.write_text(payload["startScript"] + "\n")',
+    'start_path.chmod(0o755)',
+    'pathlib.Path("/etc/systemd/system/justavps-docker.service").write_text(payload["serviceUnit"] + "\n")',
+    'PY',
+    'rm -f "$PAYLOAD_JSON"',
+    `curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/main/core/startup.sh -o ${JUSTAVPS_STARTUP_PATCH_HOST}`,
+    `chmod +x ${JUSTAVPS_STARTUP_PATCH_HOST}`,
+    'systemctl daemon-reload',
+    `systemctl enable ${JUSTAVPS_SERVICE_NAME} >/dev/null 2>&1 || true`,
+    `docker stop -t 10 '${config.name.replace(/'/g, "'\\''")}' 2>/dev/null || true`,
+    `docker rm -f '${config.name.replace(/'/g, "'\\''")}' 2>/dev/null || true`,
+    `systemctl restart ${JUSTAVPS_SERVICE_NAME}`,
+  ].join('\n');
+
+  const b64 = Buffer.from(script).toString('base64');
+  const scriptPath = `/tmp/kortix-managed-restart-${Date.now()}.sh`;
+  await execOnHost(
+    endpoint,
+    `echo '${b64}' | base64 -d > ${scriptPath} && chmod +x ${scriptPath}`,
+    5,
+  );
+
+  const result = await execOnHost(endpoint, scriptPath, 30);
   if (!result.success && (result.stderr.includes('502') || result.stderr.includes('aborted') || result.stderr.includes('timed out'))) {
     return { success: true, stdout: '', stderr: '', exitCode: 0, durationMs: result.durationMs };
   }

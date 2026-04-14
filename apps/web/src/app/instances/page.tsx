@@ -18,6 +18,7 @@ import { isBillingEnabled } from '@/lib/config';
 import { useServerStore, type ServerEntry } from '@/stores/server-store';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { claimComputer } from '@/lib/api/billing';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
 
 import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
 import { Button } from '@/components/ui/button';
@@ -45,6 +46,8 @@ export default function InstancesPage() {
   const [updateTarget, setUpdateTarget] = useState<SandboxInfo | null>(null);
   const [restartTarget, setRestartTarget] = useState<SandboxInfo | null>(null);
   const isCloud = isBillingEnabled();
+  const { data: adminRole, isLoading: adminRoleLoading } = useAdminRole();
+  const isAdmin = !!adminRole?.isAdmin;
   const {
     data: accountState,
     isLoading: accountStateLoading,
@@ -108,6 +111,8 @@ export default function InstancesPage() {
   // Filter out archived — user shouldn't see those
   const visible = sandboxes?.filter((s) => s.status !== 'archived') ?? [];
   const fallbackServers = servers.filter((s) => !!s.provider || !!s.url);
+  const listError = error;
+  const refetchList = refetch;
 
   // ── Per-card action handlers ──
   //
@@ -206,7 +211,7 @@ export default function InstancesPage() {
   };
 
   const canClaimComputer = accountState?.can_claim_computer === true;
-  const pageLoading = isLoading || (isCloud && accountStateLoading);
+  const pageLoading = authLoading || adminRoleLoading || isLoading || (isCloud && accountStateLoading);
 
   // Single canonical loader until auth + initial sandbox list are ready.
   // Prevents showing the page shell with an inline spinner.
@@ -232,32 +237,39 @@ export default function InstancesPage() {
                 </span>
               )}
             </div>
-            {isCloud && visible.length > 0 && (
-              <Button
-                size="sm"
-                onClick={handleCreateInstance}
-                disabled={autoCreating}
-                className="gap-1.5"
-              >
-                {autoCreating ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Plus className="h-3.5 w-3.5" />
-                )}
-                {autoCreating ? 'Creating…' : 'New Instance'}
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {isAdmin && (
+                <Button size="sm" variant="outline" onClick={() => window.location.assign('/admin/instances')}>
+                  Admin Console
+                </Button>
+              )}
+              {isCloud && visible.length > 0 && (
+                <Button
+                  size="sm"
+                  onClick={handleCreateInstance}
+                  disabled={autoCreating}
+                  className="gap-1.5"
+                >
+                  {autoCreating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" />
+                  )}
+                  {autoCreating ? 'Creating…' : 'New Instance'}
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Error */}
-          {error && !pageLoading && fallbackServers.length === 0 && (
+          {listError && !pageLoading && fallbackServers.length === 0 && (
             <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-destructive font-medium">Failed to load instances</p>
-                <p className="text-xs text-destructive/70 mt-0.5">{(error as Error).message}</p>
+                <p className="text-xs text-destructive/70 mt-0.5">{(listError as Error).message}</p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
+              <Button variant="outline" size="sm" onClick={() => refetchList()}>
                 Retry
               </Button>
             </div>
@@ -291,7 +303,7 @@ export default function InstancesPage() {
           )}
 
           {/* Get your computer card for users with no instances (non-legacy) */}
-          {!pageLoading && !error && visible.length === 0 && fallbackServers.length === 0 && !canClaimComputer && (
+          {!pageLoading && !listError && visible.length === 0 && fallbackServers.length === 0 && !canClaimComputer && (
             <ComputerHeroCard
               title="Get Your Cloud Computer"
               description="A dedicated cloud computer that's always on, runs while you sleep, with full root access and persistent storage."

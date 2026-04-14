@@ -1053,6 +1053,24 @@ function getAdminHTML(): string {
       cursor: not-allowed;
     }
 
+    .btn-small {
+      padding: 6px 10px;
+      font-size: 12px;
+      line-height: 1;
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .section-hint {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
     .save-bar {
       display: flex;
       align-items: center;
@@ -1269,7 +1287,7 @@ function getAdminHTML(): string {
 
     <div class="tabs">
       <button class="tab active" onclick="switchTab('credentials')">Credentials</button>
-      <button class="tab" onclick="switchTab('instances')">Instances</button>
+      <button class="tab" onclick="switchTab('instances')">Machines</button>
       <button class="tab" onclick="switchTab('status')">System Status</button>
     </div>
 
@@ -1285,8 +1303,11 @@ function getAdminHTML(): string {
 
     <div id="section-instances" class="section">
       <div class="card">
+        <div class="card-body" style="display:block;padding-top:16px;">
+          <div class="section-hint">Admins can open any machine directly from here using the same terminal/proxy path regular users use.</div>
+        </div>
         <div id="instances-container">
-          <div class="empty-state"><span class="loading-spinner"></span> Loading instances...</div>
+          <div class="empty-state"><span class="loading-spinner"></span> Loading machines...</div>
         </div>
       </div>
     </div>
@@ -1307,6 +1328,7 @@ function getAdminHTML(): string {
     let envData = { masked: {}, configured: {} };
     let dirtyKeys = {};
     let activeTab = 'credentials';
+    let machineActionState = {};
 
     function escapeHtml(value) {
       return String(value ?? '')
@@ -1385,6 +1407,73 @@ function getAdminHTML(): string {
         throw new Error('Unauthorized');
       }
       return res.json();
+    }
+
+    function setMachineActionState(key, value) {
+      machineActionState[key] = value;
+      renderMachineActionState();
+    }
+
+    function renderMachineActionState() {
+      for (const [key, value] of Object.entries(machineActionState)) {
+        document.querySelectorAll('[data-machine-action="' + key + '"]').forEach((el) => {
+          el.disabled = !!value;
+          if (value) {
+            el.dataset.originalLabel = el.dataset.originalLabel || el.textContent;
+            el.textContent = value;
+          } else if (el.dataset.originalLabel) {
+            el.textContent = el.dataset.originalLabel;
+          }
+        });
+      }
+    }
+
+    async function fetchMachineLaunchData(sandboxId) {
+      const result = await apiFetch('/sandboxes/' + encodeURIComponent(sandboxId) + '/proxy-token', { method: 'POST' });
+      if (result.error) throw new Error(result.error);
+      return result;
+    }
+
+    async function openMachineTarget(sandboxId, kind) {
+      const actionKey = kind + ':' + sandboxId;
+      try {
+        setMachineActionState(actionKey, 'Opening...');
+        const data = await fetchMachineLaunchData(sandboxId);
+        const baseUrl = kind === 'terminal' ? data.terminal_url : data.proxy_url;
+        if (!baseUrl || !data.token) throw new Error('Machine URL not available yet');
+        const url = new URL(baseUrl);
+        url.searchParams.set('__proxy_token', data.token);
+        window.open(url.toString(), '_blank', 'noopener,noreferrer');
+        showToast((kind === 'terminal' ? 'Terminal' : 'Proxy') + ' opened', 'success');
+      } catch (e) {
+        showToast('Failed to open machine: ' + (e.message || e), 'error');
+      } finally {
+        setMachineActionState(actionKey, '');
+      }
+    }
+
+    async function copyMachineSshCommand(sandboxId) {
+      const actionKey = 'ssh:' + sandboxId;
+      try {
+        setMachineActionState(actionKey, 'Copying...');
+        const data = await apiFetch('/sandboxes/' + encodeURIComponent(sandboxId));
+        if (data.error) throw new Error(data.error);
+        const detail = data.provider_detail || {};
+        const sshCommand =
+          detail?.connect?.ssh_command ||
+          detail?.ssh?.command ||
+          detail?.connect?.setup_command ||
+          detail?.ssh?.setup_command ||
+          detail?.ssh_key?.setup_command ||
+          null;
+        if (!sshCommand) throw new Error('SSH command not available for this machine');
+        await navigator.clipboard.writeText(sshCommand);
+        showToast('SSH command copied', 'success');
+      } catch (e) {
+        showToast('Failed to copy SSH command: ' + (e.message || e), 'error');
+      } finally {
+        setMachineActionState(actionKey, '');
+      }
     }
 
     // ─── Data Loading ───────────────────────────────────────────
@@ -1517,33 +1606,41 @@ function getAdminHTML(): string {
     async function loadInstances() {
       const container = document.getElementById('instances-container');
       try {
-        const data = await apiFetch('/instances');
-        if (!data.instances || data.instances.length === 0) {
-          container.innerHTML = '<div class="empty-state">No sandbox instances found.</div>';
+        const data = await apiFetch('/sandboxes?limit=100');
+        if (!data.sandboxes || data.sandboxes.length === 0) {
+          container.innerHTML = '<div class="empty-state">No machines found.</div>';
           return;
         }
 
         let html = '<table class="instances-table"><thead><tr>';
-        html += '<th>Name</th><th>Provider</th><th>Status</th><th>External ID</th><th>Created</th>';
+        html += '<th>Name</th><th>Owner</th><th>Provider</th><th>Status</th><th>Access</th><th>Created</th>';
         html += '</tr></thead><tbody>';
 
-        for (const inst of data.instances) {
-          const statusClass = inst.status === 'active' ? 'active' :
+        for (const inst of data.sandboxes) {
+          const statusClass = inst.status === 'active' || inst.status === 'ready' ? 'active' :
                               inst.status === 'stopped' ? 'stopped' :
                               inst.status === 'archived' ? 'archived' : 'error';
+          const ownerLabel = inst.ownerEmail || inst.accountName || inst.accountId || '-';
+          const canLaunch = inst.provider === 'justavps';
           html += '<tr>';
-          html += '<td>' + escapeHtml(inst.name || inst.sandbox_id.slice(0, 8)) + '</td>';
+          html += '<td title="' + escapeHtml(inst.sandboxId || '') + '"><div style="font-weight:600;font-family:var(--font);">' + escapeHtml(inst.name || (inst.sandboxId || '').slice(0, 8)) + '</div><div style="color:var(--text-dim);font-size:11px;">' + escapeHtml(inst.externalId || inst.sandboxId || '-') + '</div></td>';
+          html += '<td title="' + escapeHtml(ownerLabel) + '">' + escapeHtml(ownerLabel) + '</td>';
           html += '<td>' + escapeHtml(inst.provider || '-') + '</td>';
-          html += '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(inst.status) + '</span></td>';
-          html += '<td title="' + escapeHtml(inst.external_id || '') + '">' + escapeHtml(inst.external_id ? inst.external_id.slice(0, 16) + '...' : '-') + '</td>';
-          html += '<td>' + new Date(inst.created_at).toLocaleDateString() + '</td>';
+          html += '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(inst.status || 'unknown') + '</span></td>';
+          html += '<td><div class="btn-row">';
+          html += '<button class="btn btn-small" data-machine-action="terminal:' + escapeHtml(inst.sandboxId) + '" onclick="openMachineTarget(\'' + escapeHtml(inst.sandboxId) + '\', \'terminal\')"' + (canLaunch ? '' : ' disabled') + '>Open Terminal</button>';
+          html += '<button class="btn btn-small" data-machine-action="proxy:' + escapeHtml(inst.sandboxId) + '" onclick="openMachineTarget(\'' + escapeHtml(inst.sandboxId) + '\', \'proxy\')"' + (canLaunch ? '' : ' disabled') + '>Open Proxy</button>';
+          html += '<button class="btn btn-small" data-machine-action="ssh:' + escapeHtml(inst.sandboxId) + '" onclick="copyMachineSshCommand(\'' + escapeHtml(inst.sandboxId) + '\')">Copy SSH</button>';
+          html += '</div></td>';
+          html += '<td>' + new Date(inst.createdAt).toLocaleDateString() + '</td>';
           html += '</tr>';
         }
 
         html += '</tbody></table>';
         container.innerHTML = html;
+        renderMachineActionState();
       } catch (e) {
-        container.innerHTML = '<div class="empty-state">Failed to load instances: ' + e.message + '</div>';
+        container.innerHTML = '<div class="empty-state">Failed to load machines: ' + escapeHtml(e.message || e) + '</div>';
       }
     }
 

@@ -73,6 +73,8 @@ beforeEach(() => {
     upsertCustomerCalls.push(data);
   };
 
+  mockRegistry.resolveAccountId = async (userId: string) => userId;
+
   // Credit service defaults
   mockRegistry.grantCredits = async (...args: any[]) => {
     grantCreditsCalls.push(args);
@@ -425,6 +427,22 @@ describe('RevenueCat', () => {
     expect(grantCreditsCalls[0][1]).toBe(5); // $5 machine bonus
     expect(grantCreditsCalls[0][2]).toBe('machine_bonus');
     expect(result.event_type).toBe('INITIAL_PURCHASE');
+  });
+
+  test('INITIAL_PURCHASE: resolves app_user_id to canonical account_id', async () => {
+    mockRegistry.resolveAccountId = async () => 'acc_canonical_123';
+
+    const body = createMockRevenueCatEvent('INITIAL_PURCHASE', {
+      app_user_id: 'user_legacy_123',
+      product_id: 'kortix_plus_monthly',
+    });
+
+    const result = await processRevenueCatWebhook(body);
+
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    expect(upsertCreditAccountCalls[0].accountId).toBe('acc_canonical_123');
+    expect(grantCreditsCalls[0][0]).toBe('acc_canonical_123');
+    expect((result as any).account_id).toBe('acc_canonical_123');
   });
 
   test('INITIAL_PURCHASE: legacy tier grants credits + machine bonus', async () => {

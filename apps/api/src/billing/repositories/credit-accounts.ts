@@ -63,6 +63,8 @@ export async function getSubscriptionInfo(accountId: string) {
       nextCreditGrant: creditAccounts.nextCreditGrant,
       lastDailyRefresh: creditAccounts.lastDailyRefresh,
       paymentStatus: creditAccounts.paymentStatus,
+      revenuecatCustomerId: creditAccounts.revenuecatCustomerId,
+      revenuecatSubscriptionId: creditAccounts.revenuecatSubscriptionId,
       revenuecatProductId: creditAccounts.revenuecatProductId,
       revenuecatPendingChangeProduct: creditAccounts.revenuecatPendingChangeProduct,
       revenuecatPendingChangeDate: creditAccounts.revenuecatPendingChangeDate,

@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
 
 export interface AdminSandbox {
@@ -33,7 +33,10 @@ interface AdminSandboxesResponse {
   error?: string;
 }
 
-export function useAdminSandboxes(params: AdminSandboxesParams = {}) {
+export function useAdminSandboxes(
+  params: AdminSandboxesParams = {},
+  options?: Partial<UseQueryOptions<AdminSandboxesResponse>>,
+) {
   const { search = '', status = '', provider = '', page = 1, limit = 50 } = params;
 
   return useQuery<AdminSandboxesResponse>({
@@ -54,6 +57,7 @@ export function useAdminSandboxes(params: AdminSandboxesParams = {}) {
     },
     staleTime: 15_000,
     placeholderData: (prev) => prev, // keep previous data while fetching next page
+    ...options,
   });
 }
 

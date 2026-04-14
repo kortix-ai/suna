@@ -15,6 +15,11 @@ export interface ContainerConfig {
 
 const CONFIG_PATH = '/workspace/.kortix/container.json';
 
+export const JUSTAVPS_ENV_FILE = '/etc/justavps/env';
+export const JUSTAVPS_SERVICE_NAME = 'justavps-docker';
+export const JUSTAVPS_STARTUP_PATCH_HOST = '/usr/local/bin/kortix-startup-patch.sh';
+export const JUSTAVPS_STARTUP_PATCH_MOUNT = `${JUSTAVPS_STARTUP_PATCH_HOST}:/ephemeral/startup.sh:ro`;
+
 // Port mapping for cloud/JustAVPS sandboxes.
 export const DEFAULT_PORTS = [
   '3000:3000', '8000:8000', '8080:8080',
@@ -33,6 +38,7 @@ export async function readContainerConfig(
   if (!result.success || !result.stdout.trim()) return null;
   try {
     const config = JSON.parse(result.stdout.trim()) as ContainerConfig;
+    normalizeManagedVolumes(config);
     const sanitizedPorts = sanitizePorts(config.ports || []);
     const portsChanged = JSON.stringify(sanitizedPorts) !== JSON.stringify(config.ports || []);
     config.ports = sanitizedPorts.length > 0 ? sanitizedPorts : DEFAULT_PORTS;
@@ -64,6 +70,7 @@ export async function writeContainerConfig(
   endpoint: ResolvedEndpoint,
   config: ContainerConfig,
 ): Promise<void> {
+  normalizeManagedVolumes(config);
   const json = JSON.stringify({
     ...config,
     ports: sanitizePorts(config.ports || []).length > 0 ? sanitizePorts(config.ports || []) : DEFAULT_PORTS,
@@ -140,8 +147,26 @@ function sq(val: string): string {
   return `'${val.replace(/'/g, "'\\''")}'`;
 }
 
+function normalizeManagedVolumes(config: ContainerConfig): void {
+  if (!isJustAVPSManagedConfig(config)) return;
+  const volumes = [...(config.volumes || [])];
+  if (!volumes.includes(JUSTAVPS_STARTUP_PATCH_MOUNT)) {
+    volumes.unshift(JUSTAVPS_STARTUP_PATCH_MOUNT);
+  }
+  config.volumes = volumes;
+}
+
 export function buildDockerRunCommand(config: ContainerConfig): string {
-  const args: string[] = ['docker run -d --rm'];
+  return buildDockerRunCommandWithMode(config, true);
+}
+
+export function buildForegroundDockerRunCommand(config: ContainerConfig): string {
+  return buildDockerRunCommandWithMode(config, false);
+}
+
+function buildDockerRunCommandWithMode(config: ContainerConfig, detached: boolean): string {
+  normalizeManagedVolumes(config);
+  const args: string[] = [detached ? 'docker run -d --rm' : 'docker run --rm'];
   args.push(`--name ${sq(config.name)}`);
   if (config.envFile) args.push(`--env-file ${sq(config.envFile)}`);
 
@@ -160,4 +185,38 @@ export function buildDockerRunCommand(config: ContainerConfig): string {
   for (const port of sanitizePorts(config.ports)) args.push(`-p ${sq(port)}`);
   args.push(sq(config.image));
   return args.join(' ');
+}
+
+export function isJustAVPSManagedConfig(config: ContainerConfig): boolean {
+  return config.envFile === JUSTAVPS_ENV_FILE || config.name === 'justavps-workload';
+}
+
+export function buildManagedServiceStartScript(config: ContainerConfig): string {
+  const runCommand = buildForegroundDockerRunCommand(config);
+  const envFile = sq(config.envFile || JUSTAVPS_ENV_FILE);
+  const name = sq(config.name);
+
+  return [
+    '#!/bin/bash',
+    'set -euo pipefail',
+    `ENV_FILE=${envFile}`,
+    `CONTAINER_NAME=${name}`,
+    'BOOT_TIME=$(stat -c %Y /proc/1 2>/dev/null || echo 0)',
+    'for i in $(seq 1 120); do',
+    '  if [ -s "$ENV_FILE" ]; then',
+    '    ENV_MTIME=$(stat -f %m "$ENV_FILE" 2>/dev/null || stat -c %Y "$ENV_FILE" 2>/dev/null || echo 0)',
+    '    if [ "$ENV_MTIME" -gt "$BOOT_TIME" ]; then',
+    '      break',
+    '    fi',
+    '    if grep -Eq "^(INTERNAL_SERVICE_KEY|KORTIX_TOKEN|KORTIX_API_URL)=" "$ENV_FILE" 2>/dev/null; then',
+    '      echo "[kortix] Reusing persisted env file $ENV_FILE"',
+    '      break',
+    '    fi',
+    '  fi',
+    '  sleep 1',
+    'done',
+    '[ -s "$ENV_FILE" ] || touch "$ENV_FILE"',
+    'docker rm -f "$CONTAINER_NAME" 2>/dev/null || true',
+    `exec ${runCommand}`,
+  ].join('\n');
 }

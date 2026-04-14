@@ -22,6 +22,7 @@ import { grantCredits, resetExpiringCredits } from './credits';
 import { grantMachineBonusOnce, getStripeMachineBonusKey } from './machine-bonus';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
+import { resolveAccountId } from '../../shared/resolve-account';
 
 // ─── Stripe Webhook Processing ──────────────────────────────────────────────
 
@@ -515,44 +516,46 @@ export async function processRevenueCatWebhook(body: any) {
     return { received: true, event_type: eventType, skipped: true };
   }
 
-  console.log(`[RevenueCat] Processing ${eventType} for ${appUserId}`);
+  const accountId = await resolveAccountId(appUserId);
+
+  console.log(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
 
   switch (eventType) {
     case 'INITIAL_PURCHASE':
-      await handleRevenueCatPurchase(appUserId, event);
+      await handleRevenueCatPurchase(accountId, event);
       break;
 
     case 'RENEWAL':
-      await handleRevenueCatRenewal(appUserId, event);
+      await handleRevenueCatRenewal(accountId, event);
       break;
 
     case 'CANCELLATION':
     case 'EXPIRATION':
-      await handleRevenueCatCancellation(appUserId, event);
+      await handleRevenueCatCancellation(accountId, event);
       break;
 
     case 'UNCANCELLATION':
-      await handleRevenueCatUncancellation(appUserId, event);
+      await handleRevenueCatUncancellation(accountId, event);
       break;
 
     case 'PRODUCT_CHANGE':
-      await handleRevenueCatProductChange(appUserId, event);
+      await handleRevenueCatProductChange(accountId, event);
       break;
 
     case 'NON_RENEWING_PURCHASE':
-      await handleRevenueCatTopup(appUserId, event);
+      await handleRevenueCatTopup(accountId, event);
       break;
 
     case 'SUBSCRIPTION_PAUSED':
     case 'BILLING_ISSUE':
-      await handleRevenueCatBillingIssue(appUserId, event);
+      await handleRevenueCatBillingIssue(accountId, event);
       break;
 
     default:
       console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
   }
 
-  return { received: true, event_type: eventType };
+  return { received: true, event_type: eventType, account_id: accountId };
 }
 
 async function handleRevenueCatPurchase(accountId: string, event: any) {
@@ -572,10 +575,13 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
   await upsertCreditAccount(accountId, {
     tier: tierKey,
     provider: 'revenuecat',
+    paymentStatus: 'active',
     planType: periodType === 'yearly_commitment' ? 'yearly' : periodType,
     revenuecatProductId: productId,
     revenuecatCustomerId: event.subscriber_id ?? null,
+    revenuecatSubscriptionId: event.original_transaction_id ?? event.subscriber_id ?? null,
     stripeSubscriptionId: null,
+    stripeSubscriptionStatus: null,
     // Auto-topup on by default: charge $5 when balance drops below $1
     autoTopupEnabled: true,
     autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
@@ -629,6 +635,8 @@ async function handleRevenueCatRenewal(accountId: string, event: any) {
   }
 
   await updateCreditAccount(accountId, {
+    provider: 'revenuecat',
+    paymentStatus: 'active',
     lastGrantDate: new Date().toISOString(),
   });
 
@@ -643,6 +651,7 @@ async function handleRevenueCatCancellation(accountId: string, event: any) {
   await updateCreditAccount(accountId, {
     revenuecatCancelledAt: new Date().toISOString(),
     revenuecatCancelAtPeriodEnd: expirationDate,
+    paymentStatus: event.type === 'EXPIRATION' ? 'failed' : 'active',
   });
 
   if (event.type === 'EXPIRATION') {
@@ -657,8 +666,10 @@ async function handleRevenueCatCancellation(accountId: string, event: any) {
 
 async function handleRevenueCatUncancellation(accountId: string, _event: any) {
   await updateCreditAccount(accountId, {
+    provider: 'revenuecat',
     revenuecatCancelledAt: null,
     revenuecatCancelAtPeriodEnd: null,
+    paymentStatus: 'active',
   });
 
   console.log(`[RevenueCat] Uncancellation: ${accountId}`);
@@ -681,6 +692,7 @@ async function handleRevenueCatProductChange(accountId: string, event: any) {
     if (tierKey) {
       await updateCreditAccount(accountId, {
         tier: tierKey,
+        provider: 'revenuecat',
         revenuecatProductId: newProductId,
         revenuecatPendingChangeProduct: null,
         revenuecatPendingChangeDate: null,
@@ -709,6 +721,7 @@ async function handleRevenueCatTopup(accountId: string, event: any) {
 
 async function handleRevenueCatBillingIssue(accountId: string, event: any) {
   await updateCreditAccount(accountId, {
+    provider: 'revenuecat',
     paymentStatus: 'past_due',
     lastPaymentFailure: new Date().toISOString(),
   });

@@ -1,6 +1,7 @@
 import { and, eq, ne, or } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { db } from './db';
+import { isPlatformAdmin } from './platform-roles';
 import { resolveAccountId } from './resolve-account';
 
 /**
@@ -84,6 +85,10 @@ export async function canAccessPreviewSandbox(input: {
     input.accountId ||
     (input.userId ? await resolveAccountId(input.userId) : null);
   if (!actorAccountId) return false;
+
+  if (await isPlatformAdmin(actorAccountId)) {
+    return true;
+  }
 
   const key = cacheKey(input.previewSandboxId, actorAccountId);
   const cached = ownershipCache.get(key);

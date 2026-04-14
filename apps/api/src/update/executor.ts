@@ -8,7 +8,6 @@ import {
   readContainerConfig,
   writeContainerConfig,
   buildFromInspect,
-  buildDockerRunCommand,
   type ContainerConfig,
 } from './container-config';
 import {
@@ -182,8 +181,7 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
     // ── Stop & restart ──
     await setPhase(sandboxId, 'restarting', 55, 'Restarting with new image...');
     const updatedConfig: ContainerConfig = { ...containerConfig, image: targetImage };
-    const runCmd = buildDockerRunCommand(updatedConfig);
-    const restartResult = await stopAndStartContainer(endpoint, containerConfig.name, runCmd);
+    const restartResult = await stopAndStartContainer(endpoint, updatedConfig);
     if (!restartResult.success) {
       console.warn(`[UPDATE] Restart warning (may be expected 502): ${restartResult.stderr}`);
     }

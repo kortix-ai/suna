@@ -18,6 +18,7 @@ PORTS_FILE="/etc/justavps/docker-host-ports"
 CONTAINER="justavps-workload"
 VOLUME="justavps-data"
 SERVICE="justavps-docker"
+STARTUP_PATCH="/usr/local/bin/kortix-startup-patch.sh"
 
 # ── Sandbox port map ─────────────────────────────────────────────────────
 PORTS=(
@@ -59,19 +60,31 @@ for mapping in "${PORTS[@]}"; do
 done
 
 # ── Write docker start script (baked into snapshot) ───────────────────────
+curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/main/core/startup.sh -o "${STARTUP_PATCH}"
+chmod +x "${STARTUP_PATCH}"
+
 cat > /usr/local/bin/${SERVICE}-start.sh << STARTEOF
 #!/bin/bash
-set -e
+set -euo pipefail
 BOOT_TIME=\$(stat -c %Y /proc/1 2>/dev/null || echo 0)
 for i in \$(seq 1 120); do
-  [ "\$(stat -c %Y "${ENV_FILE}" 2>/dev/null || echo 0)" -gt "\$BOOT_TIME" ] && break
+  if [ -s "${ENV_FILE}" ]; then
+    ENV_MTIME=\$(stat -c %Y "${ENV_FILE}" 2>/dev/null || echo 0)
+    if [ "\$ENV_MTIME" -gt "\$BOOT_TIME" ]; then
+      break
+    fi
+    if grep -Eq '^(INTERNAL_SERVICE_KEY|KORTIX_TOKEN|KORTIX_API_URL)=' "${ENV_FILE}" 2>/dev/null; then
+      echo "[kortix] Reusing persisted env file ${ENV_FILE}"
+      break
+    fi
+  fi
   sleep 1
 done
 [ -s "${ENV_FILE}" ] || touch "${ENV_FILE}"
 docker rm -f ${CONTAINER} 2>/dev/null || true
 exec docker run --rm --name ${CONTAINER} --env-file "${ENV_FILE}" \\
   --cap-add SYS_ADMIN --security-opt seccomp=unconfined --shm-size 2g \\
-  -v ${VOLUME}:/workspace -v ${VOLUME}:/config ${PORT_ARGS} \\
+  -v ${STARTUP_PATCH}:/ephemeral/startup.sh:ro -v ${VOLUME}:/workspace -v ${VOLUME}:/config ${PORT_ARGS} \\
   ${DOCKER_IMAGE}
 STARTEOF
 chmod +x /usr/local/bin/${SERVICE}-start.sh
@@ -104,7 +117,7 @@ cat > "${WS}/.kortix/container.json" << CFGEOF
 {
   "image": "${DOCKER_IMAGE}",
   "name": "${CONTAINER}",
-  "volumes": ["${VOLUME}:/workspace", "${VOLUME}:/config"],
+  "volumes": ["${STARTUP_PATCH}:/ephemeral/startup.sh:ro", "${VOLUME}:/workspace", "${VOLUME}:/config"],
   "ports": ["3000:3000", "8000:8000", "8080:8080", "6080:6080", "6081:6081", "3111:3111", "3210:3210", "3211:3211", "9223:9223", "9224:9224", "22222:22"],
   "caps": ["SYS_ADMIN"],
   "shmSize": "2g",

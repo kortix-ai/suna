@@ -78,6 +78,10 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   const isTrial = sub?.trialStatus === 'active';
   const isCancelled = sub?.stripeSubscriptionStatus === 'canceled'
     || (sub?.revenuecatCancelledAt != null);
+  const subscriptionStatus = getSubscriptionStatus(sub, tierName, isAdmin);
+  const subscriptionId = sub?.provider === 'revenuecat'
+    ? sub?.revenuecatSubscriptionId ?? sub?.revenuecatCustomerId ?? null
+    : sub?.stripeSubscriptionId ?? null;
 
   const commitment = extractCommitment(sub);
   const scheduledChange = extractScheduledChange(sub, tierName);
@@ -133,21 +137,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
 
   // Legacy paid users with no active machine can claim a free default computer
   const hasActiveMachine = instances.some((i: any) => i.status === 'active' || i.status === 'provisioning');
-  let canClaimComputer = isLegacyPaidTier(tierName) && !hasActiveMachine;
-
-  // Cloud-only: also check old public.credit_accounts for legacy tier
-  if (!canClaimComputer && !hasActiveMachine) {
-    try {
-      const { config } = await import('../../config');
-      if (config.isCloud()) {
-        const { getPublicSchemaTier } = await import('../repositories/credit-accounts');
-        const publicTier = await getPublicSchemaTier(accountId);
-        if (publicTier && isLegacyPaidTier(publicTier)) {
-          canClaimComputer = true;
-        }
-      }
-    } catch { /* local mode — no DB */ }
-  }
+  const canClaimComputer = isLegacyPaidTier(tierName) && !hasActiveMachine;
 
   const state = {
     credits: {
@@ -161,12 +151,10 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     subscription: {
       tier_key: tierName,
       tier_display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
-      status: isAdmin && tierName === 'none'
-        ? 'active'
-        : (sub?.stripeSubscriptionStatus ?? (tierName === 'free' ? 'active' : 'no_subscription')),
+      status: subscriptionStatus,
       billing_period: (sub?.planType as any) ?? null,
       provider: (sub?.provider as any) ?? 'stripe',
-      subscription_id: sub?.stripeSubscriptionId ?? null,
+      subscription_id: subscriptionId,
       current_period_end: null,
       cancel_at_period_end: false,
       is_trial: isTrial,
@@ -267,6 +255,23 @@ function extractCommitment(sub: Awaited<ReturnType<typeof getSubscriptionInfo>>)
     months_remaining: monthsRemaining,
     commitment_end_date: sub.commitmentEndDate,
   };
+}
+
+function getSubscriptionStatus(
+  sub: Awaited<ReturnType<typeof getSubscriptionInfo>>,
+  tierName: string,
+  isAdmin: boolean,
+): string {
+  if (isAdmin && tierName === 'none') return 'active';
+  if (!sub) return tierName === 'free' ? 'active' : 'no_subscription';
+  if (sub.provider === 'revenuecat') {
+    if (sub.revenuecatCancelledAt) return 'canceled';
+    if (tierName === 'free') return 'no_subscription';
+    if (sub.paymentStatus === 'past_due') return 'past_due';
+    return 'active';
+  }
+
+  return sub.stripeSubscriptionStatus ?? (tierName === 'free' ? 'active' : 'no_subscription');
 }
 
 function extractScheduledChange(

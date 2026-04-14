@@ -30,6 +30,7 @@ export const mockRegistry = {
   resetExpiringCredits: null as ((...args: any[]) => Promise<void>) | null,
 
   provisionSandboxFromCheckout: null as ((...args: any[]) => Promise<any>) | null,
+  resolveAccountId: null as ((userId: string) => Promise<string>) | null,
 
   getActiveDeletionRequest: null as ((id: string) => Promise<any>) | null,
   createDeletionRequest: null as ((...args: any[]) => Promise<any>) | null,
@@ -70,6 +71,11 @@ export function registerGlobalMocks() {
       ENV_MODE: 'cloud',
       INTERNAL_KORTIX_ENV: 'staging',
     },
+  }));
+
+  mock.module('../../shared/resolve-account', () => ({
+    resolveAccountId: async (userId: string) =>
+      mockRegistry.resolveAccountId ? mockRegistry.resolveAccountId(userId) : userId,
   }));
 
   mock.module('../../billing/repositories/credit-accounts', () => ({

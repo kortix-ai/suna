@@ -3,7 +3,7 @@
 import { use, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function AdminSandboxesDetailRedirectPage({
+export default function AdminInstanceRedirectPage({
   params,
 }: {
   params: Promise<{ sandboxId: string }>;
@@ -11,7 +11,7 @@ export default function AdminSandboxesDetailRedirectPage({
   const { sandboxId } = use(params);
   const router = useRouter();
   useEffect(() => {
-    router.replace(`/admin/instances/${sandboxId}`);
+    router.replace(`/instances/${sandboxId}`);
   }, [router, sandboxId]);
   return null;
 }

@@ -5,21 +5,26 @@ import { HTTPException } from 'hono/http-exception';
 let mockSandboxAccountId: string | null = 'acct-owner';
 let mockResolvedAccountId = 'acct-owner';
 let mockSupabaseUser: { id: string; email?: string } | null = null;
+let mockAdminAccounts = new Set<string>();
 
-mock.module('../shared/db', () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async () => (mockSandboxAccountId ? [{ accountId: mockSandboxAccountId }] : []),
-        }),
-      }),
-    }),
+mock.module('../shared/preview-ownership', () => ({
+  canAccessPreviewSandbox: async ({ accountId, userId }: { accountId?: string; userId?: string }) => {
+    if (!mockSandboxAccountId) return false;
+    if (accountId && mockAdminAccounts.has(accountId)) return true;
+    if (userId && mockAdminAccounts.has(mockResolvedAccountId)) return true;
+    if (accountId) return accountId === mockSandboxAccountId;
+    if (userId) return mockResolvedAccountId === mockSandboxAccountId;
+    return false;
   },
+  clearPreviewOwnershipCache: () => {},
 }));
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => mockResolvedAccountId,
+}));
+
+mock.module('../shared/platform-roles', () => ({
+  isPlatformAdmin: async (accountId: string) => mockAdminAccounts.has(accountId),
 }));
 
 mock.module('../repositories/api-keys', () => ({
@@ -64,7 +69,6 @@ mock.module('../shared/supabase', () => ({
 mock.module('../config', () => ({ config: {} }));
 
 const { combinedAuth } = await import('../middleware/auth');
-const { clearPreviewOwnershipCache } = await import('../shared/preview-ownership');
 
 function createApp() {
   const app = new Hono();
@@ -85,7 +89,7 @@ beforeEach(() => {
   mockSandboxAccountId = 'acct-owner';
   mockResolvedAccountId = 'acct-owner';
   mockSupabaseUser = null;
-  clearPreviewOwnershipCache();
+  mockAdminAccounts = new Set();
 });
 
 describe('preview auth ownership', () => {
@@ -151,6 +155,25 @@ describe('preview auth ownership', () => {
       headers: { Authorization: 'Bearer jwt-other' },
     });
     expect(res.status).toBe(403);
+  });
+
+  test('allows admin jwt user without direct ownership', async () => {
+    const app = createApp();
+    mockResolvedAccountId = 'acct-admin';
+    mockAdminAccounts = new Set(['acct-admin']);
+    const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
+      headers: { Authorization: 'Bearer jwt-other' },
+    });
+    expect(res.status).toBe(200);
+  });
+
+  test('allows admin kortix token without direct ownership', async () => {
+    const app = createApp();
+    mockAdminAccounts = new Set(['acct-other']);
+    const res = await app.request('/v1/p/8c70e5be-2f95-45ae-bd8d-5d07b65c631b/8000/session/status', {
+      headers: { Authorization: 'Bearer kortix_other' },
+    });
+    expect(res.status).toBe(200);
   });
 
   test('allows jwt owner via preview session cookie', async () => {

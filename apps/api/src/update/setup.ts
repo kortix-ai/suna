@@ -1,6 +1,14 @@
 import type { ResolvedEndpoint } from '../platform/providers';
 import { execOnHost } from './exec';
-import { writeContainerConfig, buildDockerRunCommand, DEFAULT_PORTS, sanitizePorts, type ContainerConfig } from './container-config';
+import {
+  JUSTAVPS_ENV_FILE,
+  JUSTAVPS_STARTUP_PATCH_MOUNT,
+  writeContainerConfig,
+  buildDockerRunCommand,
+  DEFAULT_PORTS,
+  sanitizePorts,
+  type ContainerConfig,
+} from './container-config';
 import { config } from '../config';
 
 export interface SetupOpts {
@@ -14,14 +22,19 @@ export interface SetupOpts {
 export function buildContainerConfig(opts: SetupOpts): ContainerConfig {
   const volumeName = opts.volumeName || 'kortix-data';
   const ports = sanitizePorts(opts.ports || DEFAULT_PORTS);
+  const envFile = opts.envFile || JUSTAVPS_ENV_FILE;
+  const volumes = [`${volumeName}:/workspace`, `${volumeName}:/config`];
+  if (envFile === JUSTAVPS_ENV_FILE && !volumes.includes(JUSTAVPS_STARTUP_PATCH_MOUNT)) {
+    volumes.unshift(JUSTAVPS_STARTUP_PATCH_MOUNT);
+  }
   return {
     image: opts.image,
     name: opts.containerName || config.SANDBOX_CONTAINER_NAME,
-    volumes: [`${volumeName}:/workspace`, `${volumeName}:/config`],
+    volumes,
     ports,
     caps: ['SYS_ADMIN'],
     shmSize: '2g',
-    envFile: opts.envFile || '/etc/justavps/env',
+    envFile,
     securityOpt: ['seccomp=unconfined'],
   };
 }

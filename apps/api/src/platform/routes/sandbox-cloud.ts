@@ -955,19 +955,13 @@ export function createCloudSandboxRouter(
     const userId = c.get('userId');
     try {
       const accountId = await resolveAccountId(userId);
-      // 1. Verify legacy paid tier (check kortix schema, then fallback to public schema in cloud)
-      const { getCreditAccount, getPublicSchemaTier } = await import('../../billing/repositories/credit-accounts');
+      // 1. Verify legacy paid tier from canonical kortix billing state only.
+      const { getCreditAccount } = await import('../../billing/repositories/credit-accounts');
       const { isLegacyPaidTier, getTier } = await import('../../billing/services/tiers');
 
       const account = await getCreditAccount(accountId);
-      let tier = account?.tier ?? 'free';
+      const tier = account?.tier ?? 'free';
 
-      if (!isLegacyPaidTier(tier) && config.isCloud()) {
-        const publicTier = await getPublicSchemaTier(accountId);
-        if (publicTier && isLegacyPaidTier(publicTier)) {
-          tier = publicTier;
-        }
-      }
       if (!isLegacyPaidTier(tier)) {
         return c.json({ success: false, error: 'Only legacy paid plan users can claim a computer' }, 403);
       }
@@ -985,23 +979,11 @@ export function createCloudSandboxRouter(
       // Lazy-migrate: create kortix.credit_accounts row with full credits.
       // Supabase RPCs can't access kortix schema, so set everything via drizzle directly.
       try {
-        const { upsertCreditAccount } = await import('../../billing/repositories/credit-accounts');
         const { MACHINE_CREDIT_BONUS } = await import('../../billing/services/tiers');
         const { grantMachineBonusOnce, getLegacyClaimMachineBonusKey } = await import('../../billing/services/machine-bonus');
 
         const tierConfig = getTier(tier);
         const monthlyCredits = tierConfig.monthlyCredits;
-
-        if (!account) {
-          await upsertCreditAccount(accountId, {
-            tier,
-            stripeSubscriptionStatus: 'active',
-            paymentStatus: 'active',
-            balance: String(monthlyCredits + MACHINE_CREDIT_BONUS),
-            expiringCredits: String(monthlyCredits),
-            nonExpiringCredits: String(MACHINE_CREDIT_BONUS),
-          });
-        }
 
         // Best-effort: ledger entries for audit trail (bonus uses drizzle fallback, works fine)
         await grantMachineBonusOnce({ accountId, idempotencyKey: getLegacyClaimMachineBonusKey(accountId) });

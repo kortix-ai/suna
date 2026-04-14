@@ -107,11 +107,11 @@ const AdminStressTestPage = lazy(() =>
 const AdminAccessRequestsPage = lazy(() =>
 	import('@/app/(dashboard)/admin/access-requests/page'),
 );
-const AdminSandboxesPage = lazy(() =>
-	import('@/app/(dashboard)/admin/sandboxes/page'),
+const AdminInstancesPage = lazy(() =>
+	import('@/app/(dashboard)/admin/instances/page'),
 );
-const AdminSandboxDetailPage = lazy(() =>
-	import('@/app/(dashboard)/admin/sandboxes/[sandboxId]/page'),
+const AdminInstanceDetailPage = lazy(() =>
+	import('@/app/(dashboard)/admin/instances/[sandboxId]/page'),
 );
 
 const LegacyThreadPage = lazy(() =>
@@ -162,7 +162,8 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/admin/stateless': AdminStatelessPage,
 	'/admin/stress-test': AdminStressTestPage,
 	'/admin/access-requests': AdminAccessRequestsPage,
-	'/admin/sandboxes': AdminSandboxesPage,
+	'/admin/instances': AdminInstancesPage,
+	'/admin/sandboxes': AdminInstancesPage,
 };
 
 function resolveComponent(routeKey: string): { Component: ComponentType<any>; params?: Record<string, string> } | null {
@@ -184,9 +185,9 @@ function resolveComponent(routeKey: string): { Component: ComponentType<any>; pa
 		return { Component: TaskDetailPage, params: { id: decodeURIComponent(taskMatch[1]) } };
 	}
 
-	const sandboxMatch = routeKey.match(/^\/admin\/sandboxes\/([^/]+)$/);
-	if (sandboxMatch) {
-		return { Component: AdminSandboxDetailPage, params: { sandboxId: decodeURIComponent(sandboxMatch[1]) } };
+	const instanceMatch = routeKey.match(/^\/admin\/(?:instances|sandboxes)\/([^/]+)$/);
+	if (instanceMatch) {
+		return { Component: AdminInstanceDetailPage, params: { sandboxId: decodeURIComponent(instanceMatch[1]) } };
 	}
 
 	return null;
