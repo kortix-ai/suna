@@ -646,6 +646,18 @@ export interface SandboxUpdateStatus {
   error: string | null;
   startedAt: string | null;
   updatedAt: string | null;
+  /** Provider-side backup ID while phase === 'backing_up'. Null otherwise. */
+  backupId?: string | null;
+}
+
+/** Phases where the sandbox is being modified and must not be used. */
+export const DESTRUCTIVE_PHASES: UpdatePhase[] = [
+  'pulling', 'patching', 'stopping', 'removing', 'recreating',
+  'restarting', 'verifying', 'starting', 'health_check',
+];
+
+export function isDestructivePhase(phase: UpdatePhase): boolean {
+  return DESTRUCTIVE_PHASES.includes(phase);
 }
 
 /**

@@ -23,6 +23,7 @@ import {
   triggerSandboxUpdate,
   getSandboxUpdateStatus,
   resetSandboxUpdateStatus,
+  isDestructivePhase,
   type SandboxUpdateStatus,
   type UpdatePhase,
   type VersionChannel,
@@ -111,18 +112,21 @@ export function useSandboxUpdate(currentVersion: string | null) {
     return entry ?? null;
   });
 
-  const sandbox: SandboxInfo | null = activeServer?.instanceId
-    ? {
-        sandbox_id: activeServer.instanceId,
-        external_id: activeServer.sandboxId ?? '',
-        name: activeServer.label,
-        provider: (activeServer.provider ?? 'local_docker') as SandboxInfo['provider'],
-        base_url: activeServer.url,
-        status: 'active',
-        created_at: '',
-        updated_at: '',
-      }
-    : null;
+  // Memoize so effect deps are stable (new object every render otherwise would
+  // reset interval timers that watch this value).
+  const sandbox: SandboxInfo | null = useMemo(() => {
+    if (!activeServer?.instanceId) return null;
+    return {
+      sandbox_id: activeServer.instanceId,
+      external_id: activeServer.sandboxId ?? '',
+      name: activeServer.label,
+      provider: (activeServer.provider ?? 'local_docker') as SandboxInfo['provider'],
+      base_url: activeServer.url,
+      status: 'active',
+      created_at: '',
+      updated_at: '',
+    };
+  }, [activeServer?.instanceId, activeServer?.sandboxId, activeServer?.label, activeServer?.provider, activeServer?.url]);
 
   // Detect which channel the running instance belongs to
   const currentChannel = useMemo(() => detectChannel(currentVersion), [currentVersion]);
@@ -207,6 +211,31 @@ export function useSandboxUpdate(currentVersion: string | null) {
     };
   }, []);
 
+  // Each `useSandboxUpdate` instance owns its own state (sidebar + dialog
+  // provider each mount one). When the user triggers an update from one
+  // instance, the other won't know unless it polls independently. A slow
+  // background check (every 4s) catches in-progress updates; refresh/logout
+  // and second-tab handoff all rely on this.
+  useEffect(() => {
+    if (!sandbox) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const status = await getSandboxUpdateStatus(sandbox);
+        if (cancelled) return;
+        if (!TERMINAL_PHASES.includes(status.phase) && status.phase !== 'idle' && !pollActiveRef.current) {
+          setLiveStatus(status);
+          startPolling();
+        }
+      } catch {
+        // Non-fatal — retry next tick.
+      }
+    };
+    check();
+    const iv = setInterval(check, 4_000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [sandbox, startPolling]);
+
   // ── Trigger mutation ─────────────────────────────────────────────────────
   const updateMutation = useMutation({
     mutationFn: async (targetVersion?: string) => {
@@ -237,6 +266,8 @@ export function useSandboxUpdate(currentVersion: string | null) {
 
   const isUpdating = updateMutation.isPending || isPolling;
   const phase: UpdatePhase = liveStatus?.phase ?? 'idle';
+  const isDestructive = isDestructivePhase(phase);
+  const isBackingUp = phase === 'backing_up';
   const phaseLabel = PHASE_LABELS[phase];
   // Use the real progress from the API if available, otherwise use phase-based progress
   const phaseProgress = liveStatus?.progress ?? PHASE_PROGRESS[phase];
@@ -263,6 +294,10 @@ export function useSandboxUpdate(currentVersion: string | null) {
     update,
     /** Whether an update is currently running */
     isUpdating,
+    /** True for phases that require a blocking dialog (pull/stop/restart/etc) */
+    isDestructive,
+    /** True while the pre-update backup is running (non-blocking) */
+    isBackingUp,
     /** Live update phase from API */
     phase,
     /** Human-readable phase label */
