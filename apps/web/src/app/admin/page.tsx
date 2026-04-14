@@ -1,107 +1,117 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Server, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { ArrowRight, LayoutDashboard, Server, Users } from 'lucide-react';
 
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { useAdminAccounts } from '@/hooks/admin/use-admin-accounts';
+import { useAdminSandboxes } from '@/hooks/admin/use-admin-sandboxes';
+
 import {
-  ADMIN_SECTION_META,
-  type AdminSection,
-  AdminInstancesSection,
-  AdminAccountsSection,
-  AdminAccessRequestsSection,
-} from '@/components/admin/admin-dashboard-sections';
+  SectionContainer,
+  SectionHeader,
+  StatPill,
+  StatRow,
+} from './_components/section-header';
 
-const sections: { id: AdminSection; icon: typeof Server }[] = [
-  { id: 'instances', icon: Server },
-  { id: 'accounts', icon: Users },
-  { id: 'access-requests', icon: UserPlus },
-];
+const LEGACY_SECTION_REDIRECTS: Record<string, string> = {
+  instances: '/admin/instances',
+  accounts: '/admin/accounts',
+};
 
-export default function AdminDashboardPage() {
+export default function AdminOverviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data: adminRole, isLoading } = useAdminRole();
-  const activeSection = (searchParams.get('section') as AdminSection | null) || 'instances';
-  const section = sections.some((s) => s.id === activeSection) ? activeSection : 'instances';
-  const meta = ADMIN_SECTION_META[section];
+  const legacySection = searchParams.get('section');
 
-  const content = useMemo(() => {
-    switch (section) {
-      case 'accounts':
-        return <AdminAccountsSection embedded />;
-      case 'access-requests':
-        return <AdminAccessRequestsSection embedded />;
-      case 'instances':
-      default:
-        return <AdminInstancesSection embedded />;
+  useEffect(() => {
+    if (legacySection && LEGACY_SECTION_REDIRECTS[legacySection]) {
+      router.replace(LEGACY_SECTION_REDIRECTS[legacySection]);
     }
-  }, [section]);
+  }, [legacySection, router]);
 
-  if (isLoading) {
-    return <div className="min-h-screen bg-background p-6 max-w-6xl mx-auto"><Skeleton className="h-96 w-full" /></div>;
-  }
+  const { data: accounts } = useAdminAccounts({ page: 1, limit: 100 });
+  const { data: sandboxes } = useAdminSandboxes({ page: 1, limit: 1 });
 
-  if (!adminRole?.isAdmin) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <ShieldCheck className="h-12 w-12 text-muted-foreground/40 mx-auto" />
-          <h2 className="text-lg font-medium">Admin access required</h2>
-        </div>
-      </div>
-    );
-  }
+  const totalAccounts = accounts?.total ?? 0;
+  const totalSandboxes = sandboxes?.total ?? 0;
+  const paidAccounts = (accounts?.accounts ?? []).filter(
+    (a) => a.tier && a.tier !== 'free',
+  ).length;
+  const totalCredits = (accounts?.accounts ?? []).reduce(
+    (sum, a) => sum + Number(a.balance ?? 0),
+    0,
+  );
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-6xl mx-auto p-6 space-y-6">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight flex items-center gap-2">
-              <ShieldCheck className="h-7 w-7" />
-              Admin Dashboard
-            </h1>
-            <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-              {meta.description}
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => router.push('/instances')} className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Instances
-          </Button>
-        </div>
+    <SectionContainer>
+      <SectionHeader
+        icon={LayoutDashboard}
+        title="Admin overview"
+        description="Fleet and account signals at a glance. Legacy tools are tucked away in the sidebar."
+      />
 
-        <div className="rounded-2xl border border-border/60 bg-muted/10 p-2 flex flex-col md:flex-row gap-2">
-          {sections.map(({ id, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => router.replace(`/admin?section=${id}`)}
-              className={cn(
-                'flex-1 rounded-xl px-4 py-3 text-left transition-colors border',
-                section === id
-                  ? 'bg-background border-foreground/15 shadow-sm'
-                  : 'bg-transparent border-transparent hover:bg-background/60',
-              )}
-            >
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Icon className="h-4 w-4" />
-                {ADMIN_SECTION_META[id].title}
-              </div>
-              <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                {ADMIN_SECTION_META[id].description}
-              </div>
-            </button>
-          ))}
-        </div>
+      <StatRow>
+        <StatPill label="Total accounts" value={totalAccounts.toLocaleString()} />
+        <StatPill label="Total instances" value={totalSandboxes.toLocaleString()} />
+        <StatPill
+          label="Paid accounts"
+          value={paidAccounts}
+          hint="On top 100 accounts"
+          tone="success"
+        />
+        <StatPill
+          label="Credits on ledger"
+          value={`$${totalCredits.toFixed(2)}`}
+          hint="Across top 100 accounts"
+        />
+      </StatRow>
 
-        {content}
+      <div className="grid gap-3 md:grid-cols-2">
+        <QuickLink
+          href="/admin/instances"
+          icon={Server}
+          title="Instances"
+          description="Inspect every machine, open shared settings, and manage lifecycle actions."
+        />
+        <QuickLink
+          href="/admin/accounts"
+          icon={Users}
+          title="Accounts"
+          description="Users, billing, credit balances, grants, debits, and ledger history."
+        />
       </div>
-    </div>
+    </SectionContainer>
+  );
+}
+
+function QuickLink({
+  href,
+  icon: Icon,
+  title,
+  description,
+}: {
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group relative flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/30"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+          <Icon className="h-4 w-4" />
+        </div>
+        <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 transition-all group-hover:translate-x-0.5 group-hover:opacity-100" />
+      </div>
+      <div className="space-y-1">
+        <div className="text-sm font-medium">{title}</div>
+        <p className="text-xs text-muted-foreground leading-relaxed">{description}</p>
+      </div>
+    </Link>
   );
 }

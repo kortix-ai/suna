@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/lib/toast";
 import { Badge } from "@/components/ui/badge";
+import { LegacyBanner } from "@/components/admin/legacy-banner";
 
 export default function NotificationManagementPage() {
   const [workflowId, setWorkflowId] = useState("");
@@ -91,6 +92,9 @@ export default function NotificationManagementPage() {
 
   return (
     <div className="flex flex-col h-screen">
+      <div className="max-w-6xl mx-auto px-6 pt-6 w-full">
+        <LegacyBanner feature="Notifications" />
+      </div>
       <div className="flex-none backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="max-w-6xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">

@@ -11,11 +11,13 @@ import {
   LLMAnalysisPanel,
 } from '@/components/admin/feedback';
 import { BarChart3, MessageSquare, Sparkles } from 'lucide-react';
+import { LegacyBanner } from '@/components/admin/legacy-banner';
 
 export default function AdminFeedbackPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto p-6 space-y-6">
+        <LegacyBanner feature="Feedback" />
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">

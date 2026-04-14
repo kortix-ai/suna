@@ -617,47 +617,28 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     <div>
                         <h3 className="text-base font-medium mb-1">Admin Console</h3>
                         <p className="text-sm text-muted-foreground">
-                            Open the standalone admin pages for fleet operations, account management, and allowlist reviews.
+                            Manage instances, accounts, access requests, analytics, and platform tools from one place.
                         </p>
                     </div>
 
-                    <div className="grid gap-2 sm:grid-cols-2">
-                        {[
-                            {
-                                title: 'Admin Home',
-                                description: 'Open the top-level admin dashboard.',
-                                href: '/admin',
-                            },
-                            {
-                                title: 'Instance Management',
-                                description: 'Open the admin dashboard focused on machine management.',
-                                href: '/admin?section=instances',
-                            },
-                            {
-                                title: 'Account Management',
-                                description: 'Open the admin dashboard focused on accounts, billing, and credits.',
-                                href: '/admin?section=accounts',
-                            },
-                            {
-                                title: 'Access Requests',
-                                description: 'Open the admin dashboard focused on allowlist requests.',
-                                href: '/admin?section=access-requests',
-                            },
-                        ].map((item) => (
-                            <button
-                                key={item.title}
-                                type="button"
-                                onClick={() => {
-                                    onClose();
-                                    window.location.assign(item.href);
-                                }}
-                                className="text-left rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors px-4 py-3"
-                            >
-                                <div className="text-sm font-medium text-foreground">{item.title}</div>
-                                <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{item.description}</div>
-                            </button>
-                        ))}
-                    </div>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            onClose();
+                            window.location.assign('/admin');
+                        }}
+                        className="group w-full text-left rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 hover:border-border transition-colors px-4 py-3 flex items-center justify-between gap-3"
+                    >
+                        <div className="min-w-0">
+                            <div className="text-sm font-medium text-foreground">Open admin console</div>
+                            <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                                Fleet, accounts, access, analytics, feedback, system status.
+                            </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5">
+                            →
+                        </span>
+                    </button>
                 </div>
             )}
 

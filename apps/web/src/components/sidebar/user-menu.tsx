@@ -43,7 +43,9 @@ import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { useTranslations } from 'next-intl';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
-import { ServerSelector } from '@/components/sidebar/server-selector';
+import { InstanceSwitcherList } from '@/components/sidebar/instance-switcher';
+import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
+import type { SandboxInfo } from '@/lib/platform-client';
 import {
   getItemsByGroup,
   themeOptions,
@@ -78,6 +80,8 @@ export function UserMenu({ user }: UserMenuProps) {
   const billingActive = isBillingEnabled();
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>('general');
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [instanceSettingsTarget, setInstanceSettingsTarget] = React.useState<SandboxInfo | null>(null);
   const { isOpen: isReferralDialogOpen, openDialog: openReferralDialog, closeDialog: closeReferralDialog } = useReferralDialog();
   const { theme, setTheme } = useTheme();
 
@@ -149,7 +153,7 @@ export function UserMenu({ user }: UserMenuProps) {
     <>
       <SidebarMenu>
         <SidebarMenuItem className="relative group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
-          <DropdownMenu>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
@@ -167,13 +171,16 @@ export function UserMenu({ user }: UserMenuProps) {
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 p-1.5"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-64 p-1.5"
               side={isMobile ? 'bottom' : 'top'}
               align="start"
               sideOffset={4}
             >
-              {/* Instances */}
-              <ServerSelector />
+              {/* Slack-style instance switcher — Kortix-neutral styling */}
+              <InstanceSwitcherList
+                onAfterSelect={() => setMenuOpen(false)}
+                onOpenSettings={setInstanceSettingsTarget}
+              />
 
               <DropdownMenuSeparator className="my-1" />
 
@@ -251,6 +258,15 @@ export function UserMenu({ user }: UserMenuProps) {
       <ReferralDialog
         open={isReferralDialogOpen}
         onOpenChange={closeReferralDialog}
+      />
+
+      {/* Hoisted out of the dropdown so it stays mounted after the menu closes. */}
+      <InstanceSettingsModal
+        sandbox={instanceSettingsTarget}
+        open={!!instanceSettingsTarget}
+        onOpenChange={(open) => {
+          if (!open) setInstanceSettingsTarget(null);
+        }}
       />
     </>
   );

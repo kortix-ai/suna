@@ -153,7 +153,6 @@ export function InstanceCard({
 }) {
   const status = getStatusConfig(sandbox.status);
   const meta = sandbox.metadata as Record<string, unknown> | undefined;
-  const location = (meta?.location as string) || null;
   const serverType = (meta?.serverType as string) || null;
 
   // Actions only make sense once the machine has settled — hide everything
@@ -177,9 +176,6 @@ export function InstanceCard({
 
             <div className="flex items-center gap-3 mt-1.5">
               <StatusPill status={status} animated={sandbox.status === 'provisioning'} />
-              {location && (
-                <span className="text-[11px] text-muted-foreground/50">{location}</span>
-              )}
               {serverType && (
                 <span className="text-[11px] text-muted-foreground/50 font-mono">{serverType}</span>
               )}

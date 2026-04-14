@@ -15,6 +15,7 @@ import {
   MaintenanceDialog,
   TechnicalIssueDialog,
 } from "./_components";
+import { LegacyBanner } from "@/components/admin/legacy-banner";
 
 export default function AdminUtilsPage() {
   const { data: status, isLoading } = useSystemStatus();
@@ -102,6 +103,9 @@ export default function AdminUtilsPage() {
 
   return (
     <div className="flex flex-col h-screen">
+      <div className="max-w-4xl mx-auto px-6 pt-6 w-full">
+        <LegacyBanner feature="System status" />
+      </div>
       <div className="flex-none">
         <div className="max-w-4xl mx-auto px-6 py-6">
           <div className="flex items-center gap-3">

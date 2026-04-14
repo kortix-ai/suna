@@ -31,6 +31,7 @@ import {
   useSandboxPoolCleanup,
   useSandboxPoolRestart,
 } from "@/hooks/admin/use-sandbox-pool";
+import { LegacyBanner } from "@/components/admin/legacy-banner";
 
 export default function SandboxPoolAdminPage() {
   const [createCount, setCreateCount] = useState(1);
@@ -131,6 +132,9 @@ export default function SandboxPoolAdminPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
+      <div className="max-w-7xl mx-auto px-6 pt-6 w-full">
+        <LegacyBanner feature="Sandbox pool" />
+      </div>
       {/* Header */}
       <div className="flex-none border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-5">

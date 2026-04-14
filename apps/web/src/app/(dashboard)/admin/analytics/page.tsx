@@ -43,6 +43,7 @@ import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-di
 import { useAdminUserList, useRefreshUserData, type UserSummary } from '@/hooks/admin/use-admin-users';
 
 import { UserEmailLink, MetricCard, ThreadBrowser, RetentionTab, ARRSimulator } from './components';
+import { LegacyBanner } from '@/components/admin/legacy-banner';
 
 // Get current date in Berlin timezone
 function getBerlinToday(): Date {
@@ -168,6 +169,9 @@ export default function AdminAnalyticsPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto px-6 py-8">
+        <div className="mb-6">
+          <LegacyBanner feature="Analytics" />
+        </div>
         {/* Header */}
         <header className="mb-8">
           <div className="flex items-center justify-between mb-4">

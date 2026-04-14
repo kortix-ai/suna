@@ -200,12 +200,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     type: 'page',
     href: '/admin/sandbox-pool',
   },
-  '/admin/stateless': {
-    id: 'page:/admin/stateless',
-    title: 'Stateless',
-    type: 'page',
-    href: '/admin/stateless',
-  },
   '/admin/stress-test': {
     id: 'page:/admin/stress-test',
     title: 'Stress Test',

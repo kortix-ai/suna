@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useStressTest, StressTestResult } from '@/hooks/admin/use-stress-test';
 import { cn } from '@/lib/utils';
+import { LegacyBanner } from '@/components/admin/legacy-banner';
 
 export default function AdminStressTestPage() {
   const [numRequestsInput, setNumRequestsInput] = useState('5');
@@ -100,6 +101,7 @@ export default function AdminStressTestPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto p-6 space-y-8">
+        <LegacyBanner feature="Stress test" />
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>

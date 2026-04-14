@@ -447,6 +447,9 @@ adminApp.get('/api/sandboxes', async (c) => {
     const validStatuses = ['provisioning', 'active', 'stopped', 'archived', 'pooled', 'error'] as const;
     const validProviders = ['daytona', 'local_docker', 'justavps'] as const;
 
+    const { membersTableSql } = await import('./members-table');
+    const mt = await membersTableSql();
+
     // Build WHERE conditions
     const conditions = [];
 
@@ -465,7 +468,7 @@ adminApp.get('/api/sandboxes', async (c) => {
         ilike(accounts.name, `%${q}%`),
         sql`EXISTS (
           SELECT 1 FROM auth.users au
-          INNER JOIN kortix.account_members am ON am.user_id = au.id
+          INNER JOIN ${mt} am ON am.user_id = au.id
           WHERE am.account_id = ${sandboxes.accountId}
           AND au.email ILIKE ${'%' + q + '%'}
           LIMIT 1
@@ -477,7 +480,7 @@ adminApp.get('/api/sandboxes', async (c) => {
 
     const ownerEmailSub = sql<string>`(
       SELECT au.email FROM auth.users au
-      INNER JOIN kortix.account_members am ON am.user_id = au.id
+      INNER JOIN ${mt} am ON am.user_id = au.id
       WHERE am.account_id = ${sandboxes.accountId}
       LIMIT 1
     )`;
@@ -553,44 +556,120 @@ adminApp.delete('/api/sandboxes/:id', async (c) => {
 adminApp.get('/api/accounts', async (c) => {
   try {
     const { db } = await import('../shared/db');
-    const { accounts, creditAccounts, billingCustomers } = await import('@kortix/db');
-    const { and, desc, eq, ilike, or, sql } = await import('drizzle-orm');
+    const { accounts, creditAccounts } = await import('@kortix/db');
+    const { and, asc, desc, eq, gte, ilike, inArray, isNotNull, lte, not, or, sql } =
+      await import('drizzle-orm');
 
     const q = c.req.query('search') || '';
+    const tierParam = c.req.query('tier') || '';
+    const paymentStatusParam = c.req.query('paymentStatus') || '';
+    const paidOnly = c.req.query('paid') === 'true';
+    const hasSubscription = c.req.query('hasSubscription'); // 'true' | 'false' | undefined
+    const minBalanceRaw = c.req.query('minBalance');
+    const maxBalanceRaw = c.req.query('maxBalance');
+    const sortByParam = c.req.query('sortBy') || 'created';
+    const sortDir = c.req.query('sortDir') === 'asc' ? 'asc' : 'desc';
     const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
     const offset = (page - 1) * limit;
 
+    const tierValues = tierParam
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const paymentStatusValues = paymentStatusParam
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const minBalance = minBalanceRaw && minBalanceRaw.length ? Number(minBalanceRaw) : null;
+    const maxBalance = maxBalanceRaw && maxBalanceRaw.length ? Number(maxBalanceRaw) : null;
+
+    const { membersTableSql } = await import('./members-table');
+    const mt = await membersTableSql();
+
     const ownerEmailSub = sql<string>`(
       SELECT au.email FROM auth.users au
-      INNER JOIN kortix.account_members am ON am.user_id = au.id
+      INNER JOIN ${mt} am ON am.user_id = au.id
       WHERE am.account_id = ${accounts.accountId}
       ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
       LIMIT 1
     )`;
 
     const memberCountSub = sql<number>`(
-      SELECT count(*)::int FROM kortix.account_members am
+      SELECT count(*)::int FROM ${mt} am
       WHERE am.account_id = ${accounts.accountId}
     )`;
 
-    const conditions = [] as any[];
+    // Scalar subqueries instead of leftJoin — billing_customers can have
+    // multiple rows per account (one per Stripe customer / provider), which
+    // would otherwise duplicate accounts in the result set.
+    const billingCustomerIdSub = sql<string>`(
+      SELECT id FROM kortix.billing_customers
+      WHERE account_id = ${accounts.accountId}
+      ORDER BY active DESC NULLS LAST
+      LIMIT 1
+    )`;
+
+    const billingCustomerEmailSub = sql<string>`(
+      SELECT email FROM kortix.billing_customers
+      WHERE account_id = ${accounts.accountId}
+      ORDER BY active DESC NULLS LAST
+      LIMIT 1
+    )`;
+
+    const conditions: any[] = [];
     if (q) {
       conditions.push(or(
         ilike(accounts.name, `%${q}%`),
         sql`cast(${accounts.accountId} as text) ilike ${'%' + q + '%'}`,
         sql`EXISTS (
           SELECT 1 FROM auth.users au
-          INNER JOIN kortix.account_members am ON am.user_id = au.id
+          INNER JOIN ${mt} am ON am.user_id = au.id
           WHERE am.account_id = ${accounts.accountId}
           AND au.email ILIKE ${'%' + q + '%'}
           LIMIT 1
         )`,
       )!);
     }
+    if (tierValues.length) {
+      conditions.push(inArray(creditAccounts.tier, tierValues));
+    }
+    if (paymentStatusValues.length) {
+      conditions.push(inArray(creditAccounts.paymentStatus, paymentStatusValues));
+    }
+    if (paidOnly) {
+      // tier IS NOT NULL AND tier NOT IN ('free','none')
+      conditions.push(
+        and(
+          isNotNull(creditAccounts.tier),
+          not(inArray(creditAccounts.tier, ['free', 'none'])),
+        )!,
+      );
+    }
+    if (hasSubscription === 'true') {
+      conditions.push(isNotNull(creditAccounts.stripeSubscriptionId));
+    } else if (hasSubscription === 'false') {
+      conditions.push(sql`${creditAccounts.stripeSubscriptionId} IS NULL`);
+    }
+    if (minBalance !== null && Number.isFinite(minBalance)) {
+      conditions.push(gte(creditAccounts.balance, String(minBalance)));
+    }
+    if (maxBalance !== null && Number.isFinite(maxBalance)) {
+      conditions.push(lte(creditAccounts.balance, String(maxBalance)));
+    }
     const where = conditions.length ? and(...conditions) : undefined;
 
-    const [rows, [{ total }]] = await Promise.all([
+    const sortCol =
+      sortByParam === 'balance'
+        ? creditAccounts.balance
+        : sortByParam === 'members'
+        ? memberCountSub
+        : sortByParam === 'name'
+        ? accounts.name
+        : accounts.createdAt;
+    const orderBy = sortDir === 'asc' ? asc(sortCol as any) : desc(sortCol as any);
+
+    const [rows, totalRow, summaryRow] = await Promise.all([
       db
         .select({
           accountId: accounts.accountId,
@@ -606,47 +685,186 @@ adminApp.get('/api/accounts', async (c) => {
           provider: creditAccounts.provider,
           planType: creditAccounts.planType,
           stripeSubscriptionId: creditAccounts.stripeSubscriptionId,
-          billingCustomerId: billingCustomers.id,
-          billingCustomerEmail: billingCustomers.email,
+          billingCustomerId: billingCustomerIdSub,
+          billingCustomerEmail: billingCustomerEmailSub,
           createdAt: accounts.createdAt,
         })
         .from(accounts)
         .leftJoin(creditAccounts, eq(accounts.accountId, creditAccounts.accountId))
-        .leftJoin(billingCustomers, eq(accounts.accountId, billingCustomers.accountId))
         .where(where)
-        .orderBy(desc(accounts.createdAt))
+        .orderBy(orderBy)
         .limit(limit)
         .offset(offset),
       db
         .select({ total: sql<number>`count(*)::int` })
         .from(accounts)
+        .leftJoin(creditAccounts, eq(accounts.accountId, creditAccounts.accountId))
+        .where(where),
+      // Summary aggregates across the filtered set — for stat pills.
+      db
+        .select({
+          totalCredits: sql<string>`coalesce(sum(${creditAccounts.balance}), 0)`,
+          paidCount: sql<number>`count(*) FILTER (WHERE ${creditAccounts.tier} IS NOT NULL AND ${creditAccounts.tier} NOT IN ('free','none'))::int`,
+          negativeCount: sql<number>`count(*) FILTER (WHERE ${creditAccounts.balance} < 0)::int`,
+          pastDueCount: sql<number>`count(*) FILTER (WHERE ${creditAccounts.paymentStatus} = 'past_due')::int`,
+        })
+        .from(accounts)
+        .leftJoin(creditAccounts, eq(accounts.accountId, creditAccounts.accountId))
         .where(where),
     ]);
 
-    return c.json({ accounts: rows, total, page, limit });
+    const total = totalRow[0]?.total ?? 0;
+    const summary = summaryRow[0] ?? {
+      totalCredits: '0',
+      paidCount: 0,
+      negativeCount: 0,
+      pastDueCount: 0,
+    };
+
+    return c.json({ accounts: rows, total, page, limit, summary });
   } catch (e: any) {
-    return c.json({ accounts: [], total: 0, page: 1, limit: 50, error: e?.message || String(e) }, 500);
+    return c.json(
+      { accounts: [], total: 0, page: 1, limit: 50, summary: null, error: e?.message || String(e) },
+      500,
+    );
   }
 });
 
-/** GET /v1/admin/api/accounts/:id/users — list users for an account */
+/** GET /v1/admin/api/accounts/:id/users — list users for an account (with auth info) */
 adminApp.get('/api/accounts/:id/users', async (c) => {
-  try {
-    const accountId = c.req.param('id');
-    const { db } = await import('../shared/db');
-    const { sql } = await import('drizzle-orm');
-    const result = await db.execute(sql`
-      SELECT au.id AS user_id, au.email, am.account_role, am.created_at
-      FROM kortix.account_members am
+  const accountId = c.req.param('id');
+  const { db } = await import('../shared/db');
+  const { sql } = await import('drizzle-orm');
+
+  // Try kortix.account_members first, fall back to legacy basejump.account_user.
+  // Pulls auth.users extras so the admin UI can show activity context.
+  async function run(table: 'kortix.account_members' | 'basejump.account_user') {
+    const mt = sql.raw(table);
+    return db.execute(sql`
+      SELECT
+        au.id AS user_id,
+        au.email,
+        am.account_role,
+        au.created_at           AS signed_up_at,
+        au.last_sign_in_at      AS last_sign_in_at,
+        au.email_confirmed_at   AS email_confirmed_at,
+        au.banned_until         AS banned_until,
+        au.raw_app_meta_data->>'provider'  AS provider,
+        au.raw_app_meta_data->'providers'  AS providers
+      FROM ${mt} am
       INNER JOIN auth.users au ON au.id = am.user_id
       WHERE am.account_id = ${accountId}
       ORDER BY CASE am.account_role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, au.email ASC
     `);
+  }
+
+  try {
+    let result;
+    try {
+      result = await run('kortix.account_members');
+    } catch {
+      result = await run('basejump.account_user');
+    }
     const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
     return c.json({ users: rows });
   } catch (e: any) {
     return c.json({ users: [], error: e?.message || String(e) }, 500);
   }
+});
+
+/** GET /v1/admin/api/accounts/:id/sandboxes — all sandboxes for an account */
+adminApp.get('/api/accounts/:id/sandboxes', async (c) => {
+  try {
+    const accountId = c.req.param('id');
+    const { db } = await import('../shared/db');
+    const { sandboxes } = await import('@kortix/db');
+    const { eq, desc } = await import('drizzle-orm');
+
+    const rows = await db
+      .select({
+        sandboxId: sandboxes.sandboxId,
+        name: sandboxes.name,
+        provider: sandboxes.provider,
+        externalId: sandboxes.externalId,
+        status: sandboxes.status,
+        baseUrl: sandboxes.baseUrl,
+        metadata: sandboxes.metadata,
+        createdAt: sandboxes.createdAt,
+        updatedAt: sandboxes.updatedAt,
+        lastUsedAt: sandboxes.lastUsedAt,
+      })
+      .from(sandboxes)
+      .where(eq(sandboxes.accountId, accountId))
+      .orderBy(desc(sandboxes.createdAt));
+
+    return c.json({ sandboxes: redactAdminSecrets(rows) });
+  } catch (e: any) {
+    return c.json({ sandboxes: [], error: e?.message || String(e) }, 500);
+  }
+});
+
+/** GET /v1/admin/api/accounts/:id/activity — recent auth events + credit usage */
+adminApp.get('/api/accounts/:id/activity', async (c) => {
+  const accountId = c.req.param('id');
+  const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '30', 10)));
+  const { db } = await import('../shared/db');
+  const { sql, eq, desc } = await import('drizzle-orm');
+  const { creditUsage } = await import('@kortix/db');
+
+  async function runAuditEvents(table: 'kortix.account_members' | 'basejump.account_user') {
+    const mt = sql.raw(table);
+    return db.execute(sql`
+      SELECT
+        ale.id,
+        ale.created_at,
+        ale.ip_address,
+        ale.payload->>'action'          AS action,
+        ale.payload->>'actor_id'        AS actor_id,
+        ale.payload->>'actor_username'  AS actor_username,
+        ale.payload->'traits'           AS traits
+      FROM auth.audit_log_entries ale
+      WHERE (ale.payload->>'actor_id') IN (
+        SELECT am.user_id::text FROM ${mt} am WHERE am.account_id = ${accountId}
+      )
+      ORDER BY ale.created_at DESC
+      LIMIT ${limit}
+    `);
+  }
+
+  let auditEvents: any[] = [];
+  try {
+    let r: any;
+    try {
+      r = await runAuditEvents('kortix.account_members');
+    } catch {
+      r = await runAuditEvents('basejump.account_user');
+    }
+    auditEvents = Array.isArray(r) ? r : r.rows ?? [];
+  } catch {
+    // auth.audit_log_entries can be unavailable depending on Supabase permissions.
+    auditEvents = [];
+  }
+
+  let usage: any[] = [];
+  try {
+    usage = await db
+      .select({
+        id: creditUsage.id,
+        amountDollars: creditUsage.amountDollars,
+        description: creditUsage.description,
+        usageType: creditUsage.usageType,
+        subscriptionTier: creditUsage.subscriptionTier,
+        createdAt: creditUsage.createdAt,
+      })
+      .from(creditUsage)
+      .where(eq(creditUsage.accountId, accountId))
+      .orderBy(desc(creditUsage.createdAt))
+      .limit(limit);
+  } catch {
+    usage = [];
+  }
+
+  return c.json({ auditEvents, usage });
 });
 
 /** POST /v1/admin/api/accounts/:id/credits — grant credits to an account */
@@ -686,6 +904,58 @@ adminApp.post('/api/accounts/:id/credits', async (c) => {
   }
 });
 
+/** POST /v1/admin/api/accounts/:id/credits/debit — deduct credits from an account */
+adminApp.post('/api/accounts/:id/credits/debit', async (c) => {
+  try {
+    const accountId = c.req.param('id');
+    const actorUserId = c.get('userId') as string | undefined;
+    const body = await c.req.json().catch(() => ({} as any));
+    const amount = Number(body?.amount ?? 0);
+    const description = String(body?.description ?? '').trim() || 'Admin credit debit';
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return c.json({ error: 'amount must be a positive number' }, 400);
+    }
+
+    const { deductCredits, getCreditSummary } = await import('../billing/services/credits');
+    await deductCredits(accountId, amount, `[admin:${actorUserId ?? 'unknown'}] ${description}`);
+    const summary = await getCreditSummary(accountId);
+    return c.json({ success: true, accountId, amount, description, summary, actorUserId: actorUserId ?? null });
+  } catch (e: any) {
+    const status = e?.name === 'InsufficientCreditsError' ? 400 : 500;
+    return c.json({ error: e?.message || String(e) }, status);
+  }
+});
+
+/** GET /v1/admin/api/accounts/:id/ledger — recent credit ledger entries */
+adminApp.get('/api/accounts/:id/ledger', async (c) => {
+  try {
+    const accountId = c.req.param('id');
+    const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
+    const { db } = await import('../shared/db');
+    const { creditLedger } = await import('@kortix/db');
+    const { eq, desc } = await import('drizzle-orm');
+    const rows = await db
+      .select({
+        id: creditLedger.id,
+        amount: creditLedger.amount,
+        balanceAfter: creditLedger.balanceAfter,
+        type: creditLedger.type,
+        description: creditLedger.description,
+        isExpiring: creditLedger.isExpiring,
+        createdAt: creditLedger.createdAt,
+        createdBy: creditLedger.createdBy,
+      })
+      .from(creditLedger)
+      .where(eq(creditLedger.accountId, accountId))
+      .orderBy(desc(creditLedger.createdAt))
+      .limit(limit);
+    return c.json({ entries: rows });
+  } catch (e: any) {
+    return c.json({ entries: [], error: e?.message || String(e) }, 500);
+  }
+});
+
 /** GET /v1/admin/api/sandboxes/:id — full sandbox detail merged with provider data */
 adminApp.get('/api/sandboxes/:id', async (c) => {
   try {
@@ -693,10 +963,12 @@ adminApp.get('/api/sandboxes/:id', async (c) => {
     const { db } = await import('../shared/db');
     const { sandboxes, accounts } = await import('@kortix/db');
     const { eq, sql } = await import('drizzle-orm');
+    const { membersTableSql } = await import('./members-table');
+    const mt = await membersTableSql();
 
     const ownerEmailSub = sql<string>`(
       SELECT au.email FROM auth.users au
-      INNER JOIN kortix.account_members am ON am.user_id = au.id
+      INNER JOIN ${mt} am ON am.user_id = au.id
       WHERE am.account_id = ${sandboxes.accountId}
       LIMIT 1
     )`;

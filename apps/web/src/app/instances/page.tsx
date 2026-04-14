@@ -20,6 +20,7 @@ import { useAdminRole } from '@/hooks/admin/use-admin-role';
 
 import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import {
   ComputerHeroCard,
   InstancesTopBar,
@@ -175,12 +176,14 @@ export default function InstancesPage() {
     return <ConnectingScreen forceConnecting overrideStage="routing" />;
   }
 
+  const containerWidth = 'max-w-lg';
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <InstancesTopBar user={user} />
 
       <main className="flex-1 flex items-start justify-center px-4 pt-12 pb-20">
-        <div className="w-full max-w-lg">
+        <div className={cn('w-full', containerWidth)}>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-baseline gap-2.5">
               <h1 className="text-xl font-semibold text-foreground">Instances</h1>
@@ -255,12 +258,12 @@ export default function InstancesPage() {
             />
           )}
 
-          {/* Get your computer card for users with no instances (non-legacy) */}
+          {/* Empty state */}
           {!pageLoading && !listError && visible.length === 0 && fallbackServers.length === 0 && !canClaimComputer && (
             <ComputerHeroCard
-              title="Get Your Cloud Computer"
+              title="Get your cloud computer"
               description="A dedicated cloud computer that's always on, runs while you sleep, with full root access and persistent storage."
-              ctaLabel="Get Started"
+              ctaLabel="Get started"
               ctaLoadingLabel="Setting up…"
               onCta={handleCreateInstance}
               loading={autoCreating}
@@ -268,19 +271,17 @@ export default function InstancesPage() {
             />
           )}
 
-          {/* Instance list */}
+          {/* Instance list — one row per instance, OG style */}
           {!pageLoading && visible.length > 0 && (
             <div className="flex flex-col gap-2">
-              {visible.map((sandbox) => {
-                return (
-                  <InstanceCard
-                    key={sandbox.sandbox_id}
-                    sandbox={sandbox}
-                    onClick={() => handleInstanceClick(sandbox)}
-                    onSettings={() => handleOpenSettings(sandbox)}
-                  />
-                );
-              })}
+              {visible.map((sandbox) => (
+                <InstanceCard
+                  key={sandbox.sandbox_id}
+                  sandbox={sandbox}
+                  onClick={() => handleInstanceClick(sandbox)}
+                  onSettings={() => handleOpenSettings(sandbox)}
+                />
+              ))}
             </div>
           )}
 
@@ -313,3 +314,4 @@ export default function InstancesPage() {
     </div>
   );
 }
+

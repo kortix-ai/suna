@@ -82,7 +82,7 @@ const DeploymentsPage = lazy(() =>
 	})),
 );
 
-// Admin pages
+// Admin pages (currently live under the dashboard route group)
 const AdminAnalyticsPage = lazy(() =>
 	import('@/app/(dashboard)/admin/analytics/page'),
 );
@@ -97,9 +97,6 @@ const AdminUtilsPage = lazy(() =>
 );
 const AdminSandboxPoolPage = lazy(() =>
 	import('@/app/(dashboard)/admin/sandbox-pool/page'),
-);
-const AdminStatelessPage = lazy(() =>
-	import('@/app/(dashboard)/admin/stateless/page'),
 );
 const AdminStressTestPage = lazy(() =>
 	import('@/app/(dashboard)/admin/stress-test/page'),
@@ -149,7 +146,6 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/admin/notifications': AdminNotificationsPage,
 	'/admin/utils': AdminUtilsPage,
 	'/admin/sandbox-pool': AdminSandboxPoolPage,
-	'/admin/stateless': AdminStatelessPage,
 	'/admin/stress-test': AdminStressTestPage,
 };
 
