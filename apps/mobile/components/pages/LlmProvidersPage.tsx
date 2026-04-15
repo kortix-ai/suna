@@ -48,6 +48,15 @@ import { useOpenCodeProviders, flattenModels } from '@/lib/opencode/hooks/use-op
 import type { ProviderInfo, FlatModel } from '@/lib/opencode/hooks/use-opencode-data';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
+import {
+  EMPTY_CUSTOM_FORM,
+  validateCustomProviderForm,
+  normalizeCustomProviderForm,
+  isEnvReference,
+  buildCustomProviderConfigUpdate,
+  type CustomProviderFormValues,
+} from '@/lib/kortix/custom-provider-config';
+import { Globe } from 'lucide-react-native';
 import { SearchBar } from '@/components/ui/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
 import { useThemeColors } from '@/lib/theme-colors';
@@ -260,6 +269,11 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   // Sheets
   const connectSheetRef = useRef<BottomSheetModal>(null);
   const disconnectSheetRef = useRef<BottomSheetModal>(null);
+  const customSheetRef = useRef<BottomSheetModal>(null);
+
+  // Custom provider form state
+  const [customForm, setCustomForm] = useState<CustomProviderFormValues>(EMPTY_CUSTOM_FORM);
+  const [isCustomSaving, setIsCustomSaving] = useState(false);
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -359,6 +373,65 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
     }
   }, [sandboxUrl, disconnectTarget, refetch]);
 
+  // Custom provider
+  const openCustomSheet = useCallback(() => {
+    setCustomForm(EMPTY_CUSTOM_FORM);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    customSheetRef.current?.present();
+  }, []);
+
+  const handleCustomConnect = useCallback(async () => {
+    if (!sandboxUrl) return;
+    const error = validateCustomProviderForm(customForm);
+    if (error) {
+      Alert.alert('Validation Error', error);
+      return;
+    }
+
+    setIsCustomSaving(true);
+    const form = normalizeCustomProviderForm(customForm);
+
+    try {
+      const token = await getAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      // 1. Fetch existing config
+      const configRes = await fetch(`${sandboxUrl}/config`, { headers });
+      const existingConfig = configRes.ok ? await configRes.json() : {};
+
+      // 2. Build merged config with new provider
+      const configUpdate = buildCustomProviderConfigUpdate(existingConfig, form);
+
+      // 3. Write config
+      const updateRes = await fetch(`${sandboxUrl}/config`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ config: configUpdate }),
+      });
+      if (!updateRes.ok) throw new Error(`Config update failed: ${updateRes.status}`);
+
+      // 4. Save API key (unless it's an env reference)
+      if (form.apiKey && !isEnvReference(form.apiKey)) {
+        await connectProvider(sandboxUrl, form.providerID, form.apiKey);
+      } else {
+        // Still need to reload
+        await fetch(`${sandboxUrl}/global/dispose`, { method: 'POST', headers }).catch(() => {});
+      }
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      customSheetRef.current?.dismiss();
+      setCustomForm(EMPTY_CUSTOM_FORM);
+      refetch();
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to add custom provider');
+    } finally {
+      setIsCustomSaving(false);
+    }
+  }, [sandboxUrl, customForm, refetch]);
+
   // Section header
   const SectionHeader = ({ title }: { title: string }) => (
     <View style={{ paddingHorizontal: 16, paddingVertical: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)' }}>
@@ -448,6 +521,45 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         {/* ── Providers tab ── */}
         {activeTab === 'providers' && (
           <>
+            {/* Custom Provider — add any OpenAI-compatible endpoint (matches web) */}
+            {(!searchQuery || 'custom'.includes(searchQuery.toLowerCase())) && (
+              <TouchableOpacity
+                onPress={openCustomSheet}
+                activeOpacity={0.7}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                  borderBottomWidth: 1,
+                  borderBottomColor: borderColor,
+                  gap: 12,
+                }}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    backgroundColor: isDark ? 'rgba(96,165,250,0.12)' : 'rgba(37,99,235,0.08)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Globe size={18} color={isDark ? '#60a5fa' : '#2563eb'} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fgColor }}>
+                    Custom Provider
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedColor, marginTop: 1 }}>
+                    Add any OpenAI-compatible endpoint
+                  </Text>
+                </View>
+                <Plus size={18} color={themeColors.primary} />
+              </TouchableOpacity>
+            )}
+
             {popularProviders.length > 0 && (
               <>
                 <SectionHeader title="Popular" />
@@ -659,6 +771,167 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             </BottomSheetTouchable>
           </View>
         </BottomSheetView>
+      </BottomSheetModal>
+
+      {/* ── Custom Provider Sheet ── */}
+      <BottomSheetModal
+        ref={customSheetRef}
+        snapPoints={['80%']}
+        enableDynamicSizing={false}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
+        onDismiss={() => { setCustomForm(EMPTY_CUSTOM_FORM); setIsCustomSaving(false); }}
+        {...sheetStyles}
+      >
+        <BottomSheetScrollView
+          contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(96,165,250,0.12)' : 'rgba(37,99,235,0.08)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+              <Globe size={20} color={isDark ? '#60a5fa' : '#2563eb'} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
+                Add Custom Provider
+              </Text>
+              <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedColor, marginTop: 2 }}>
+                OpenAI-compatible endpoint
+              </Text>
+            </View>
+          </View>
+
+          {/* Provider ID */}
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: mutedColor, marginBottom: 6 }}>Provider ID</Text>
+          <BottomSheetTextInput
+            value={customForm.providerID}
+            onChangeText={(v) => setCustomForm((f) => ({ ...f, providerID: v }))}
+            placeholder="my-provider"
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholderTextColor={mutedColor}
+            style={{
+              borderWidth: 1, borderColor: inputBorder, borderRadius: 14,
+              paddingHorizontal: 16, paddingVertical: 12, fontSize: 15,
+              fontFamily: monoFont, color: fgColor, marginBottom: 14,
+            }}
+          />
+
+          {/* Display Name */}
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: mutedColor, marginBottom: 6 }}>Display Name</Text>
+          <BottomSheetTextInput
+            value={customForm.name}
+            onChangeText={(v) => setCustomForm((f) => ({ ...f, name: v }))}
+            placeholder="My Provider"
+            placeholderTextColor={mutedColor}
+            style={{
+              borderWidth: 1, borderColor: inputBorder, borderRadius: 14,
+              paddingHorizontal: 16, paddingVertical: 12, fontSize: 15,
+              fontFamily: 'Roobert', color: fgColor, marginBottom: 14,
+            }}
+          />
+
+          {/* Base URL */}
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: mutedColor, marginBottom: 6 }}>Base URL</Text>
+          <BottomSheetTextInput
+            value={customForm.baseURL}
+            onChangeText={(v) => setCustomForm((f) => ({ ...f, baseURL: v }))}
+            placeholder="https://api.example.com/v1"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            placeholderTextColor={mutedColor}
+            style={{
+              borderWidth: 1, borderColor: inputBorder, borderRadius: 14,
+              paddingHorizontal: 16, paddingVertical: 12, fontSize: 15,
+              fontFamily: monoFont, color: fgColor, marginBottom: 14,
+            }}
+          />
+
+          {/* API Key */}
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: mutedColor, marginBottom: 6 }}>API Key</Text>
+          <BottomSheetTextInput
+            value={customForm.apiKey}
+            onChangeText={(v) => setCustomForm((f) => ({ ...f, apiKey: v }))}
+            placeholder="sk-... or {env:MY_API_KEY}"
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={!customForm.apiKey.startsWith('{env:')}
+            placeholderTextColor={mutedColor}
+            style={{
+              borderWidth: 1, borderColor: inputBorder, borderRadius: 14,
+              paddingHorizontal: 16, paddingVertical: 12, fontSize: 15,
+              fontFamily: monoFont, color: fgColor, marginBottom: 4,
+            }}
+          />
+          <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginBottom: 14 }}>
+            Optional. Use {'{env:VAR_NAME}'} to reference an environment variable.
+          </Text>
+
+          {/* Model ID + Name (side by side) */}
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: mutedColor, marginBottom: 6 }}>Model</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+            <View style={{ flex: 1 }}>
+              <BottomSheetTextInput
+                value={customForm.modelId}
+                onChangeText={(v) => setCustomForm((f) => ({ ...f, modelId: v }))}
+                placeholder="gpt-4o"
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholderTextColor={mutedColor}
+                style={{
+                  borderWidth: 1, borderColor: inputBorder, borderRadius: 14,
+                  paddingHorizontal: 14, paddingVertical: 12, fontSize: 14,
+                  fontFamily: monoFont, color: fgColor,
+                }}
+              />
+              <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: mutedColor, marginTop: 4, paddingLeft: 4 }}>Model ID</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <BottomSheetTextInput
+                value={customForm.modelName}
+                onChangeText={(v) => setCustomForm((f) => ({ ...f, modelName: v }))}
+                placeholder="GPT-4o"
+                placeholderTextColor={mutedColor}
+                style={{
+                  borderWidth: 1, borderColor: inputBorder, borderRadius: 14,
+                  paddingHorizontal: 14, paddingVertical: 12, fontSize: 14,
+                  fontFamily: 'Roobert', color: fgColor,
+                }}
+              />
+              <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: mutedColor, marginTop: 4, paddingLeft: 4 }}>Display Name</Text>
+            </View>
+          </View>
+
+          {/* Submit */}
+          <BottomSheetTouchable
+            onPress={handleCustomConnect}
+            disabled={isCustomSaving || !customForm.providerID.trim() || !customForm.name.trim() || !customForm.baseURL.trim() || !customForm.modelId.trim() || !customForm.modelName.trim()}
+            style={{
+              backgroundColor: (customForm.providerID.trim() && customForm.name.trim() && customForm.baseURL.trim() && customForm.modelId.trim() && customForm.modelName.trim())
+                ? themeColors.primary
+                : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
+              borderRadius: 14,
+              paddingVertical: 15,
+              alignItems: 'center',
+              opacity: isCustomSaving ? 0.5 : 1,
+            }}
+          >
+            <Text style={{
+              fontSize: 16,
+              fontFamily: 'Roobert-SemiBold',
+              color: (customForm.providerID.trim() && customForm.name.trim() && customForm.baseURL.trim() && customForm.modelId.trim() && customForm.modelName.trim())
+                ? themeColors.primaryForeground
+                : mutedColor,
+            }}>
+              {isCustomSaving ? 'Adding Provider...' : 'Add Provider'}
+            </Text>
+          </BottomSheetTouchable>
+        </BottomSheetScrollView>
       </BottomSheetModal>
     </View>
   );
