@@ -40,29 +40,29 @@
   }
 
   /* Dark Mode - Kortix Brand
-   * Aligned with web b77b685: darker background for content,
-   * even darker chrome for visual separation. */
+   * Softened contrast (aligned with web 31bec7a):
+   * Lifted bg, trimmed fg, brighter borders, elevated chrome. */
   .dark:root {
-    --background: 240 8% 8%;           /* #121215 - Kortix Off-Black (content) */
-    --foreground: 240 11% 97%;         /* #F8F8F8 - Kortix White */
-    --card: 240 4% 11%;                /* #1a1a1d - Slightly lifted cards */
-    --card-foreground: 240 11% 97%;    /* #F8F8F8 - Card text */
-    --popover: 240 4% 11%;             /* #1a1a1d - Popover background */
-    --popover-foreground: 240 11% 97%; /* #F8F8F8 - Popover text */
-    --primary: 240 11% 97%;            /* #F8F8F8 - Primary (white) */
+    --background: 240 6% 10%;          /* ~oklch(0.16) - Lifted from 8% for softer contrast */
+    --foreground: 240 5% 92%;          /* ~oklch(0.92) - Trimmed from 97% to reduce harshness */
+    --card: 240 4% 12%;                /* ~oklch(0.195) - Deepened card, closer to bg for layering */
+    --card-foreground: 240 5% 92%;     /* Match trimmed foreground */
+    --popover: 240 4% 14%;             /* Slightly lifted popover */
+    --popover-foreground: 240 5% 92%;  /* Match trimmed foreground */
+    --primary: 240 5% 92%;             /* Match trimmed foreground */
     --primary-foreground: 218 12% 7%;  /* #121215 - Text on primary */
     --secondary: 220 4% 17%;           /* #2A2A2C - Secondary surfaces */
-    --secondary-foreground: 240 11% 97%;/* #F8F8F8 - Text on secondary */
-    --muted: 240 2% 14%;               /* #232324 - Muted */
+    --secondary-foreground: 240 5% 92%;/* Match trimmed foreground */
+    --muted: 240 2% 15%;               /* Slightly brighter muted */
     --muted-foreground: 0 0% 60%;      /* Muted text */
     --accent: 220 4% 17%;              /* #2A2A2C - Accent */
-    --accent-foreground: 240 11% 97%;  /* #F8F8F8 - Text on accent */
+    --accent-foreground: 240 5% 92%;   /* Match trimmed foreground */
     --destructive: 0 70.9% 59.4%;
-    --border: 240 1% 14%;              /* #232324 - Borders */
-    --input: 220 6% 9%;                /* #161618 - Inputs */
-    --ring: 240 11% 97%;               /* #F8F8F8 - Focus rings */
-    /* Chrome colors — darker for headers/drawers/outer areas to separate from content */
-    --chrome-background: 240 9% 5%;    /* #0a0a0d - Darker than background for chrome */
+    --border: 240 2% 22%;              /* ~oklch(0.35) - Brighter borders for visibility */
+    --input: 220 6% 11%;               /* Slightly lifted inputs */
+    --ring: 240 5% 92%;                /* Match trimmed foreground */
+    /* Chrome colors — elevated above background (reversed old inverted hierarchy) */
+    --chrome-background: 240 7% 8%;    /* ~oklch(0.14) - Above bg, not below */
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
