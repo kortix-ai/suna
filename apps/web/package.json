@@ -231,6 +231,7 @@
     "require-in-the-middle": "8.0.1",
     "rimraf": "^6.1.3",
     "server-only": "^0.0.1",
+    "shaders": "^2.5.94",
     "sonner": "^2.0.3",
     "sql.js": "^1.14.1",
     "streamdown": "^1.6.11",

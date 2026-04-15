@@ -178,29 +178,33 @@ export function DashboardContent() {
         </div>
       )}
 
-      {/* Wallpaper area — flex-1 above input, same structure as session-chat.
-          Emphasized-exit curve accelerates the content away on send, so it
-          reads as "yanked" rather than "faded". */}
+      {/* Full-bleed wallpaper — spans the entire dashboard so the chat input
+          and project selector overlay the same backdrop instead of sitting on
+          a separate opaque block. Emphasized-exit curve yanks it on send. */}
       <div
         className={cn(
-          "relative flex-1 min-h-0 transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.3,0,0.8,0.15)]",
+          "absolute inset-0 z-0 pointer-events-none transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.3,0,0.8,0.15)]",
           isSending ? "opacity-0 -translate-y-1" : "opacity-100 translate-y-0",
         )}
       >
-        <div className="absolute inset-0">
-          <div className="relative w-full h-full overflow-hidden">
-            <WallpaperBackground />
-          </div>
+        <div className="relative w-full h-full overflow-hidden">
+          <WallpaperBackground />
         </div>
       </div>
 
-      {/* Project selector — sits above the chat input, pill style */}
-      <ProjectSelector
-        selectedProjectId={selectedProjectId}
-        onSelect={setSelectedProjectId}
-      />
+      {/* Spacer — keeps the input anchored to the bottom while the wallpaper
+          is absolute-positioned behind. */}
+      <div className="relative flex-1 min-h-0 z-10" />
 
-      {/* Chat Input — pinned to bottom */}
+      {/* Project selector — sits above the chat input, pill style */}
+      <div className="relative z-10">
+        <ProjectSelector
+          selectedProjectId={selectedProjectId}
+          onSelect={setSelectedProjectId}
+        />
+      </div>
+
+      {/* Chat Input — pinned to bottom, overlays the wallpaper */}
       <SessionChatInput
         onSend={handleSend}
         disabled={isSending}

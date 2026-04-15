@@ -10,13 +10,6 @@ import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { WALLPAPERS, DEFAULT_WALLPAPER_ID, type Wallpaper } from '@/lib/wallpapers';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 
-// Reference "real page" size that WallpaperBackground is tuned for.
-// The preview renders the component at this size inside a card and scales
-// it down via CSS transform so the thumbnail is an exact, identical
-// representation of what users see on real pages.
-const PREVIEW_REF_WIDTH = 1280;
-const PREVIEW_REF_HEIGHT = 720;
-
 function WallpaperCard({
   wallpaper,
   isActive,
@@ -26,22 +19,6 @@ function WallpaperCard({
   isActive: boolean;
   onSelect: () => void;
 }) {
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const [scale, setScale] = React.useState(0.15);
-
-  React.useLayoutEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const update = () => {
-      const w = el.getBoundingClientRect().width;
-      if (w > 0) setScale(w / PREVIEW_REF_WIDTH);
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   return (
     <button
       type="button"
@@ -49,25 +26,16 @@ function WallpaperCard({
       className="group relative cursor-pointer rounded-lg text-left"
     >
       <div
-        ref={containerRef}
         className={cn(
           'relative w-full aspect-video bg-background overflow-hidden rounded-md isolate border transition-colors duration-200',
           isActive ? 'border-primary' : 'border-border group-hover:border-border/80'
         )}
       >
-        {/* Render the real WallpaperBackground at its native reference size
-            (1280×720) and scale it down to fit the thumbnail. This guarantees
-            the preview is pixel-identical to what the user sees on real pages. */}
-        <div
-          className="absolute top-0 left-0"
-          style={{
-            width: PREVIEW_REF_WIDTH,
-            height: PREVIEW_REF_HEIGHT,
-            transformOrigin: 'top left',
-            transform: `scale(${scale})`,
-          }}
-          aria-hidden="true"
-        >
+        {/* Render the wallpaper directly at thumbnail size. Every
+            WallpaperBackground variant uses `absolute inset-0` as its
+            root, so it fills the card edge-to-edge; shader canvases also
+            render at native thumbnail resolution for crisp previews. */}
+        <div className="absolute inset-0" aria-hidden="true">
           <WallpaperBackground wallpaperId={wallpaper.id} />
         </div>
         {/* Hover overlay */}
@@ -104,8 +72,13 @@ const BASE_MODES = [
   { value: 'system', label: 'System', icon: Monitor },
 ] as const;
 
+// Wallpapers that don't have a light-mode treatment — hidden from the
+// picker (and auto-swapped away if currently active) when the resolved
+// theme is light.
+const DARK_ONLY_WALLPAPER_IDS = new Set(['matrix', 'ascii-tunnel']);
+
 export function AppearanceTab() {
-  const { theme: baseMode, setTheme: setBaseMode } = useTheme();
+  const { theme: baseMode, setTheme: setBaseMode, resolvedTheme } = useTheme();
   const wallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID
   );
@@ -115,6 +88,21 @@ export function AppearanceTab() {
   React.useEffect(() => {
     setMounted(true);
   }, []);
+
+  const isLight = mounted && resolvedTheme === 'light';
+
+  const visibleWallpapers = React.useMemo(
+    () => (isLight ? WALLPAPERS.filter((w) => !DARK_ONLY_WALLPAPER_IDS.has(w.id)) : WALLPAPERS),
+    [isLight],
+  );
+
+  // If a dark-only wallpaper is active and the user switches to light,
+  // fall back to the default so the page doesn't keep rendering it.
+  React.useEffect(() => {
+    if (isLight && DARK_ONLY_WALLPAPER_IDS.has(wallpaperId)) {
+      setWallpaperId(DEFAULT_WALLPAPER_ID);
+    }
+  }, [isLight, wallpaperId, setWallpaperId]);
 
   return (
     <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
@@ -163,7 +151,7 @@ export function AppearanceTab() {
             </label>
           </div>
           <div className="grid grid-cols-3 gap-2">
-            {WALLPAPERS.map((wp) => (
+            {visibleWallpapers.map((wp) => (
               <WallpaperCard
                 key={wp.id}
                 wallpaper={wp}

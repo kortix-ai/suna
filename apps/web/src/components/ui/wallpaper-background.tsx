@@ -5,6 +5,9 @@ import Image from 'next/image';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { getWallpaperById, DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { AnimatedBg } from '@/components/ui/animated-bg';
+import { ShaderWallpaper } from '@/components/ui/shader-wallpaper';
+import { AsciiTunnelShader } from '@/components/ui/ascii-tunnel-shader';
+import { MatrixShader } from '@/components/ui/matrix-shader';
 
 interface WallpaperBackgroundProps {
   /** Override the active wallpaper (e.g. for preview thumbnails). When omitted, reads from the user preferences store. */
@@ -35,7 +38,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
           // Sized relative to the wallpaper container (not the viewport), so this
           // looks identical whether rendered full-bleed on a real page or scaled
           // inside an appearance-tab preview thumbnail.
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[140%] sm:w-[160%] lg:w-[162%] h-auto object-contain select-none invert dark:invert-0"
+          className="absolute left-1/2 top-[42%] -translate-x-1/2 -translate-y-1/2 w-[140%] sm:w-[160%] lg:w-[162%] h-auto object-contain select-none invert dark:invert-0"
           draggable={false}
         />
       </div>
@@ -54,7 +57,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
         <img
           src={wallpaper.symbolUrl}
           alt=""
-          className="w-[80px] sm:w-[105px] md:w-[130px] h-auto object-contain select-none opacity-100 dark:invert translate-y-[10%]"
+          className="w-[clamp(36px,9%,130px)] h-auto object-contain select-none opacity-100 dark:invert -translate-y-[18%]"
           draggable={false}
         />
       </div>
@@ -63,15 +66,31 @@ export const WallpaperBackground = memo(function WallpaperBackground({
 
   // ── Variant 3: Aurora ─────────────────────────────────────────────────
   // Layered composition: background symbol watermark + animated arcs
-  // breathing on the edges + logomark center + grain overlay
+  // breathing on the edges + logomark center + grain overlay.
+  //
+  // The arcs use fixed pixel positions tuned for a 1280×720 frame, so we
+  // render them at that reference size inside a container-query box and
+  // scale the whole layer to fit the actual wallpaper container. This
+  // makes the layout look identical at full-page and at thumbnail sizes
+  // without any JS measurement.
   if (wallpaper.type === 'aurora') {
     return (
       <div
         className="absolute inset-0 pointer-events-none overflow-hidden"
         aria-hidden="true"
+        style={{ containerType: 'size' }}
       >
-        {/* L1 — Animated arcs breathing on the edges */}
-        <AnimatedBg
+        <div
+          className="absolute top-0 left-0 origin-top-left"
+          style={{
+            width: 1280,
+            height: 720,
+            transform:
+              'scaleX(calc(100cqw / 1280px)) scaleY(calc(100cqh / 720px))',
+          }}
+        >
+          {/* L1 — Animated arcs breathing on the edges */}
+          <AnimatedBg
           variant="hero"
           blurMultiplier={1.4}
           sizeMultiplier={1}
@@ -126,19 +145,51 @@ export const WallpaperBackground = memo(function WallpaperBackground({
               },
             ],
           }}
-        />
+          />
+        </div>
 
-        {/* L2 — Kortix logomark, small, full opacity, dead center */}
+        {/* L2 — Kortix logomark, sized relative to the actual container so
+             it stays the right size in both real-page and thumbnail
+             contexts (independent of the 1280×720 arc scaler above). */}
         <div className="absolute inset-0 flex items-center justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={wallpaper.svgUrl}
             alt=""
-            className="w-[120px] sm:w-[150px] md:w-[170px] h-auto object-contain select-none invert dark:invert-0 translate-y-[10%]"
+            className="w-[clamp(48px,13%,170px)] h-auto object-contain select-none invert dark:invert-0 -translate-y-[18%]"
             draggable={false}
           />
         </div>
 
+      </div>
+    );
+  }
+
+  // ── Variants 4+: WebGL shader compositions ───────────────────────────
+  // Each shader wallpaper has its own preset picked by id. Common wrapper
+  // and logomark overlay keep the UX identical across shader variants.
+  if (wallpaper.type === 'shader') {
+    return (
+      <div
+        className="absolute inset-0 pointer-events-none overflow-hidden"
+        aria-hidden="true"
+      >
+        {wallpaper.id === 'ascii-tunnel' ? (
+          <AsciiTunnelShader />
+        ) : wallpaper.id === 'matrix' ? (
+          <MatrixShader />
+        ) : (
+          <ShaderWallpaper />
+        )}
+        <div className="absolute inset-0 flex items-center justify-center">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={wallpaper.svgUrl}
+            alt=""
+            className="w-[clamp(48px,13%,170px)] h-auto object-contain select-none opacity-90 drop-shadow-[0_2px_20px_rgba(0,0,0,0.35)] invert dark:invert-0 -translate-y-[18%]"
+            draggable={false}
+          />
+        </div>
       </div>
     );
   }

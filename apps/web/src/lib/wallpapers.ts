@@ -1,4 +1,4 @@
-export type WallpaperType = 'svg' | 'symbol' | 'aurora' | 'image';
+export type WallpaperType = 'svg' | 'symbol' | 'aurora' | 'shader' | 'image';
 
 export interface Wallpaper {
   id: string;
@@ -37,6 +37,27 @@ export const WALLPAPERS: Wallpaper[] = [
     id: 'aurora',
     name: 'Aurora',
     type: 'aurora',
+    svgUrl: '/kortix-logomark-white.svg',
+    thumbnailUrl: '/kortix-logomark-white.svg',
+  },
+  {
+    id: 'nebula',
+    name: 'Pixel Beams',
+    type: 'shader',
+    svgUrl: '/kortix-logomark-white.svg',
+    thumbnailUrl: '/kortix-logomark-white.svg',
+  },
+  {
+    id: 'ascii-tunnel',
+    name: 'ASCII Tunnel',
+    type: 'shader',
+    svgUrl: '/kortix-logomark-white.svg',
+    thumbnailUrl: '/kortix-logomark-white.svg',
+  },
+  {
+    id: 'matrix',
+    name: 'Enter the Matrix',
+    type: 'shader',
     svgUrl: '/kortix-logomark-white.svg',
     thumbnailUrl: '/kortix-logomark-white.svg',
   },

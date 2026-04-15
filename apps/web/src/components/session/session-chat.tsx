@@ -5878,6 +5878,21 @@ export function SessionChat({
 
   return (
     <div className="relative flex flex-col h-full bg-background">
+      {/* Full-bleed welcome wallpaper — spans the entire session (behind header,
+          messages, project selector, and chat input). Input renders as frosted
+          glass so the wallpaper reads through uninterrupted. */}
+      {shouldShowWelcomeOverlay && (
+        <div
+          className={cn(
+            'absolute inset-0 z-0 pointer-events-none transition-opacity ease-out',
+            hasChatContent ? 'opacity-0' : 'opacity-100',
+          )}
+          style={{ transitionDuration: `${WELCOME_FADE_MS}ms` }}
+        >
+          <SessionWelcome />
+        </div>
+      )}
+
       {/* Session header — always mounted */}
       {!hideHeader && (
         <SessionSiteHeader
@@ -5910,18 +5925,7 @@ export function SessionChat({
           Session not found
         </div>
       ) : (
-        <div ref={chatAreaRef} className="relative flex-1 min-h-0">
-          {shouldShowWelcomeOverlay && (
-            <div
-              className={cn(
-                'absolute inset-0 z-0 pointer-events-none transition-opacity ease-out',
-                hasChatContent ? 'opacity-0' : 'opacity-100',
-              )}
-              style={{ transitionDuration: `${WELCOME_FADE_MS}ms` }}
-            >
-              <SessionWelcome />
-            </div>
-          )}
+        <div ref={chatAreaRef} className="relative flex-1 min-h-0 z-10">
           <div
             ref={scrollContainerCallbackRef}
             className={cn(
@@ -6219,10 +6223,12 @@ export function SessionChat({
           via the selected-project store. The preamble is injected on first
           send inside handleSend. */}
       {!readOnly && !hasChatContent && (
-        <ProjectSelector
-          selectedProjectId={selectedProjectId}
-          onSelect={setSelectedProjectId}
-        />
+        <div className="relative z-10">
+          <ProjectSelector
+            selectedProjectId={selectedProjectId}
+            onSelect={setSelectedProjectId}
+          />
+        </div>
       )}
 
       {/* Input — hidden in read-only mode (sub-session modal) */}

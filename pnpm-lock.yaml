@@ -1103,6 +1103,9 @@ importers:
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
+      shaders:
+        specifier: ^2.5.94
+        version: 2.5.94(react-dom@18.3.1)(react@18.3.1)(solid-js@1.9.11)
       sonner:
         specifier: ^2.0.3
         version: 2.0.7(react-dom@18.3.1)(react@18.3.1)
@@ -29117,6 +29120,35 @@ packages:
   /sf-symbols-typescript@2.2.0:
     resolution: {integrity: sha512-TPbeg0b7ylrswdGCji8FRGFAKuqbpQlLbL8SOle3j1iHSs5Ob5mhvMAxWN2UItOjgALAB5Zp3fmMfj8mbWvXKw==}
     engines: {node: '>=10'}
+
+  /shaders@2.5.94(react-dom@18.3.1)(react@18.3.1)(solid-js@1.9.11):
+    resolution: {integrity: sha512-iKN7hyOA8S5t/pEFNjs0/BBZ26IIwAzegoMB7CGB5wytTM4WzGYryd7cs8UIom6BnGnBjiaN2nBo6IaV+/zezw==}
+    peerDependencies:
+      pixi.js: ^8.0.0
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+      solid-js: ^1.8.0
+      svelte: ^5
+      vue: ^3.5.0
+    peerDependenciesMeta:
+      pixi.js:
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      solid-js:
+        optional: true
+      svelte:
+        optional: true
+      vue:
+        optional: true
+    dependencies:
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      solid-js: 1.9.11
+      three: 0.183.2
+    dev: false
 
   /shallowequal@1.1.0:
     resolution: {integrity: sha512-y0m1JoUZSlPAjXVtPPW70aZWfIL/dSP7AFkRnniLCrK/8MDKog3TySTBmckD+RObVxH0v4Tox67+F14PdED2oQ==}
