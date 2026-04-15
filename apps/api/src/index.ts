@@ -645,16 +645,21 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
     if (config.ENV_MODE !== 'cloud') return true;
     return (await readSandboxEnvValue('KORTIX_YOLO_API_KEY')) === token;
   };
+  const sandboxAlreadyHasYoloUrl = async (): Promise<boolean> => {
+    if (config.ENV_MODE !== 'cloud') return true;
+    return (await readSandboxEnvValue('KORTIX_YOLO_URL')) === config.KORTIX_YOLO_URL;
+  };
 
   // Fast path: if the sandbox already has the correct token AND URL, skip sync.
   // This is the common case on normal startup — no restart, no downtime.
-  const [hasToken, hasUrl, hasInboundKey, hasYoloKey] = await Promise.all([
+  const [hasToken, hasUrl, hasInboundKey, hasYoloKey, hasYoloUrl] = await Promise.all([
     sandboxAlreadyHasToken(),
     sandboxAlreadyHasUrl(),
     sandboxAlreadyHasInboundKey(),
     sandboxAlreadyHasYoloKey(),
+    sandboxAlreadyHasYoloUrl(),
   ]);
-  if (hasToken && hasUrl && hasInboundKey && hasYoloKey) {
+  if (hasToken && hasUrl && hasInboundKey && hasYoloKey && hasYoloUrl) {
     console.log('[startup] Sandbox already has correct auth bundle + API URL — skipping sync');
     // Still ensure ONBOARDING_COMPLETE is set for self-hosted mode
     if (config.SANDBOX_NETWORK) {
@@ -680,7 +685,7 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
     return token;
   }
 
-  console.log(`[startup] Sandbox needs token sync (hasToken=${hasToken}, hasUrl=${hasUrl}, hasInboundKey=${hasInboundKey}, hasYoloKey=${hasYoloKey})`);
+  console.log(`[startup] Sandbox needs token sync (hasToken=${hasToken}, hasUrl=${hasUrl}, hasInboundKey=${hasInboundKey}, hasYoloKey=${hasYoloKey}, hasYoloUrl=${hasYoloUrl})`);
 
   // ─── Sync token to sandbox ─────────────────────────────────────────────
   // Primary: POST to sandbox's /env API (handles triple-write + restart)
@@ -693,8 +698,7 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
     TUNNEL_TOKEN: token,
     KORTIX_API_URL: kortixApiUrl,
     TUNNEL_API_URL: kortixApiUrl,
-    ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token } : {}),
-    // Self-hosted: skip onboarding wizard (no setup needed for local Docker)
+    ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token, KORTIX_YOLO_URL: config.KORTIX_YOLO_URL } : {}),
     ...(config.SANDBOX_NETWORK ? { ONBOARDING_COMPLETE: 'true' } : {}),
   };
 
@@ -752,7 +756,7 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
             KORTIX_API_URL: kortixApiUrl,
             INTERNAL_SERVICE_KEY: token,
             TUNNEL_TOKEN: token,
-            ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token } : {}),
+            ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token, KORTIX_YOLO_URL: config.KORTIX_YOLO_URL } : {}),
           }))}`,
           { stdio: 'pipe', timeout: 15_000, env: dockerEnv },
         ).toString();

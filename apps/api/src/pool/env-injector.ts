@@ -32,6 +32,8 @@ function buildEnvPayload(serviceKey: string, metadata?: Record<string, unknown>)
     INTERNAL_SERVICE_KEY: serviceKey,
     KORTIX_TOKEN: serviceKey,
     KORTIX_SANDBOX_VERSION: SANDBOX_VERSION,
+    KORTIX_YOLO_API_KEY: serviceKey,
+    KORTIX_YOLO_URL: config.KORTIX_YOLO_URL,
     TAVILY_API_URL: `${routerBase}/tavily`,
     REPLICATE_API_URL: `${routerBase}/replicate`,
     SERPER_API_URL: `${routerBase}/serper`,

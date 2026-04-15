@@ -32,6 +32,7 @@ import json
 
 token = ${JSON.stringify(token)}
 api_url = ${JSON.stringify(apiUrl)}
+yolo_url = ${JSON.stringify(config.KORTIX_YOLO_URL)}
 env_mode = ${JSON.stringify(config.ENV_MODE)}
 
 s6_dir = Path("/run/s6/container_environment")
@@ -48,6 +49,7 @@ values = {
 }
 if env_mode == "cloud":
     values["KORTIX_YOLO_API_KEY"] = token
+    values["KORTIX_YOLO_URL"] = yolo_url
 for key, value in values.items():
     (s6_dir / key).write_text(value)
 
@@ -68,6 +70,7 @@ data.update({
 })
 if env_mode == "cloud":
     data["KORTIX_YOLO_API_KEY"] = token
+    data["KORTIX_YOLO_URL"] = yolo_url
 bootstrap.write_text(json.dumps(data))
 PY`
 }
