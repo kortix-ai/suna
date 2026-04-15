@@ -30,7 +30,7 @@ import { resolveTabFromPathname } from "@/lib/tab-route-resolver";
 import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
 import { useOnboardingModeStore } from "@/stores/onboarding-mode-store";
 import { getActiveOpenCodeUrl, useServerStore, switchToInstance, switchToInstanceAsync } from "@/stores/server-store";
-import { useTabStore } from "@/stores/tab-store";
+import { useTabStore, isTabRecentlyClosed } from "@/stores/tab-store";
 import { AnnouncementDialog } from "../announcements/announcement-dialog";
 import { NovuInboxProvider } from "../notifications/novu-inbox-provider";
 import { FilePreviewDialog } from "../common/file-preview-dialog";
@@ -542,27 +542,21 @@ export default function DashboardLayoutContent({
 	const [routeSyncing, setRouteSyncing] = useState(false);
 	const openTab = useTabStore((s) => s.openTab);
 	const setActiveTab = useTabStore((s) => s.setActiveTab);
-	const activeTabId = useTabStore((s) => s.activeTabId);
 
 	useEffect(() => {
 		const normalizedPath = normalizeAppPathname(pathname);
 		const descriptor = resolveTabFromPathname(normalizedPath);
 		if (!descriptor) return;
 
-		const { tabs } = useTabStore.getState();
+		// Skip if this tab was just closed via the UI — pathname can race behind
+		// the close action and we'd spuriously re-open the tab the user just closed.
+		if (isTabRecentlyClosed(descriptor.id)) return;
+
+		const { tabs, activeTabId: currentActive } = useTabStore.getState();
 		const existing = tabs[descriptor.id];
 		if (existing) {
-			if (activeTabId !== descriptor.id) {
+			if (currentActive !== descriptor.id) {
 				setActiveTab(descriptor.id);
-			}
-			if (existing.href !== descriptor.href || existing.title !== descriptor.title) {
-				openTab({
-					id: descriptor.id,
-					title: descriptor.title,
-					type: descriptor.type,
-					href: descriptor.href,
-					...(descriptor.metadata ? { metadata: descriptor.metadata } : {}),
-				});
 			}
 			return;
 		}
@@ -574,7 +568,7 @@ export default function DashboardLayoutContent({
 			href: descriptor.href,
 			...(descriptor.metadata ? { metadata: descriptor.metadata } : {}),
 		});
-	}, [pathname, activeTabId, openTab, setActiveTab]);
+	}, [pathname, openTab, setActiveTab]);
 
 	useEffect(() => {
 		// When the instance changes, re-seed from that instance's cache.

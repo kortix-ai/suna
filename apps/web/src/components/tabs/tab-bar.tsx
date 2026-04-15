@@ -26,7 +26,7 @@ import {
   PanelRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useTabStore, type Tab, type TabType, DASHBOARD_TAB_ID } from '@/stores/tab-store';
+import { useTabStore, isTabRecentlyClosed, type Tab, type TabType, DASHBOARD_TAB_ID } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { useOpenCodeSessionStatusStore } from '@/stores/opencode-session-status-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
@@ -592,9 +592,6 @@ export function TabBar() {
   const [dragSide, setDragSide] = useState<'left' | 'right' | null>(null);
   const [dragTabId, setDragTabId] = useState<string | null>(null);
 
-  // Track recently closed tab IDs so the route-sync effect doesn't reopen them
-  const closingTabIds = useRef<Set<string>>(new Set());
-
   // Tab store
   const tabs = useTabStore((s) => s.tabs) || {};
   const tabOrder = useTabStore((s) => s.tabOrder) || [];
@@ -691,37 +688,25 @@ export function TabBar() {
     [tabs, tabOrder]
   );
 
-  // Sync active tab with current route
+  // Sync active tab with current route. Only re-runs when pathname or sessions
+  // change — not on tab-store changes — so closing a tab doesn't re-trigger
+  // this effect with a stale pathname and reopen the just-closed tab.
   useEffect(() => {
     if (!pathname) return;
 
-    closingTabIds.current.forEach((id) => {
-      // Derive the href that corresponds to this tab's ID so we can tell
-      // whether the browser is still on the closed tab's route.
-      let closedHref: string;
-      if (id.startsWith('page:')) {
-        closedHref = id.slice(5);
-      } else if (id.startsWith('project:')) {
-        closedHref = `/projects/${encodeURIComponent(id.slice(8))}`;
-      } else if (id.startsWith('file:')) {
-        closedHref = `/files/${encodeURIComponent(id.slice(5))}`;
-      } else if (id.startsWith('terminal:')) {
-        closedHref = `/terminal/${id.slice(9)}`;
-      } else {
-        closedHref = `/sessions/${id}`;
-      }
-      // Only remove from the set once we've navigated away.
-      // Compare decoded to handle %2F vs / mismatches from Next.js.
-      if (pathname !== closedHref && decodeURIComponent(closedHref) !== pathname) {
-        closingTabIds.current.delete(id);
-      }
-    });
+    const store = useTabStore.getState();
+    const currentTabs = store.tabs;
+    const currentOrder = store.tabOrder;
+    const currentActiveId = store.activeTabId;
 
     // If the current URL matches an existing tab, activate it.
     // Compare both raw and decoded hrefs since Next.js decodes %2F in pathnames.
-    const matchingTab = orderedTabs.find((t) => t.href === pathname || decodeURIComponent(t.href) === pathname);
-    if (matchingTab && matchingTab.id !== activeTabId) {
-      setActiveTab(matchingTab.id);
+    const matchingId = currentOrder.find((id) => {
+      const t = currentTabs[id];
+      return t && (t.href === pathname || decodeURIComponent(t.href) === pathname);
+    });
+    if (matchingId) {
+      if (matchingId !== currentActiveId) setActiveTab(matchingId);
       return;
     }
 
@@ -729,12 +714,12 @@ export function TabBar() {
     const sessionMatch = pathname.match(/^\/sessions\/([^/]+)$/);
     if (sessionMatch) {
       const sessionId = sessionMatch[1];
-      if (closingTabIds.current.has(sessionId)) return;
-      if (!tabs[sessionId]) {
+      if (isTabRecentlyClosed(sessionId)) return;
+      if (!currentTabs[sessionId]) {
         // Only open a tab if the session still exists on the server to avoid
         // re-opening a tab for a just-deleted session (which causes an
         // infinite setState loop with the prune effect).
-        const session = sessions?.find(s => s.id === sessionId);
+        const session = sessions?.find((s) => s.id === sessionId);
         if (!session && sessions) return;
         openTab({
           id: sessionId,
@@ -751,14 +736,11 @@ export function TabBar() {
     }
 
     // Auto-open tabs for all other dashboard routes
-    if (!matchingTab) {
-      const routeTab = resolveRouteTab(pathname);
-      if (routeTab && !closingTabIds.current.has(routeTab.id)) {
-        openTab(routeTab);
-      }
+    const routeTab = resolveRouteTab(pathname);
+    if (routeTab && !isTabRecentlyClosed(routeTab.id)) {
+      openTab(routeTab);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, orderedTabs, activeTabId, tabs, openTab, setActiveTab, sessions]);
+  }, [pathname, openTab, setActiveTab, sessions, activeServerId]);
 
   // Build child map for permission aggregation across sub-sessions
   const childMap = useMemo(
@@ -813,28 +795,28 @@ export function TabBar() {
 
   const handleClose = useCallback(
     (tabId: string) => {
-      const state = useTabStore.getState();
-      const tab = state.tabs[tabId];
+      const store = useTabStore.getState();
+      const tab = store.tabs[tabId];
+      if (!tab) return;
 
       // Guard: confirm before closing a dirty (unsaved) file tab
-      if (tab?.dirty && tab.type === 'file') {
+      if (tab.dirty && tab.type === 'file') {
         const confirmed = window.confirm(
           'You have unsaved changes. Are you sure you want to close this file?'
         );
         if (!confirmed) return;
       }
 
-      closingTabIds.current.add(tabId);
-      const nextTabId = state.closeTab(tabId);
-      if (nextTabId) {
-        const nextTab = useTabStore.getState().tabs[nextTabId];
-        if (nextTab) {
-          // All tab types are pre-mounted — use pushState to switch without unmounting.
-          window.history.pushState(null, '', toInstanceAwarePath(nextTab.href, currentInstanceId));
-        }
-      } else {
-        window.history.pushState(null, '', toInstanceAwarePath('/dashboard', currentInstanceId));
-      }
+      const wasActive = store.activeTabId === tabId;
+      const nextTabId = store.closeTab(tabId);
+
+      // Only navigate when the active tab changed — closing an inactive tab
+      // leaves the URL alone.
+      if (!wasActive) return;
+
+      const nextTab = nextTabId ? useTabStore.getState().tabs[nextTabId] : null;
+      const nextHref = nextTab?.href ?? '/dashboard';
+      window.history.pushState(null, '', toInstanceAwarePath(nextHref, currentInstanceId));
     },
     [currentInstanceId]
   );

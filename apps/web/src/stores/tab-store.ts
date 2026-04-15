@@ -19,6 +19,24 @@ const MAX_RECENTLY_CLOSED = 20;
 
 /** Maximum depth for tab focus history (VS Code-like back-navigation) */
 const MAX_FOCUS_HISTORY = 50;
+
+/**
+ * Short-TTL set of tab IDs that were just closed via the UI. Route-sync
+ * effects consult this before auto-opening a tab whose URL matches the
+ * current pathname — otherwise the just-closed tab would be reopened
+ * immediately because pathname state races behind the close action.
+ */
+const _recentlyClosedTabIds = new Set<string>();
+const RECENTLY_CLOSED_TTL_MS = 1500;
+
+export function isTabRecentlyClosed(id: string): boolean {
+  return _recentlyClosedTabIds.has(id);
+}
+
+function markTabClosed(id: string): void {
+  _recentlyClosedTabIds.add(id);
+  setTimeout(() => _recentlyClosedTabIds.delete(id), RECENTLY_CLOSED_TTL_MS);
+}
 export const DASHBOARD_TAB: Omit<Tab, 'openedAt'> & { openedAt: number } = {
   id: DASHBOARD_TAB_ID,
   title: '',
@@ -201,6 +219,9 @@ export const useTabStore = create<TabState>()(
         // Prevent closing dashboard tab or any pinned tab
         if (!tab || tab.pinned || tabId === DASHBOARD_TAB_ID) return activeTabId;
 
+        // Mark as just-closed so route-sync effects don't immediately reopen
+        markTabClosed(tabId);
+
         // Push closed tab onto recently-closed stack
         const updatedClosedTabs = [tab, ...recentlyClosedTabs].slice(0, MAX_RECENTLY_CLOSED);
 
@@ -339,6 +360,8 @@ export const useTabStore = create<TabState>()(
           }
         }
 
+        removedIds.forEach(markTabClosed);
+
         const ensured = ensureDashboardTab(remainingTabs, newOrder);
         set({
           ...ensured,
@@ -366,6 +389,7 @@ export const useTabStore = create<TabState>()(
         }
 
         const removedIds = new Set(tabOrder.filter((id) => !remainingSet.has(id)));
+        removedIds.forEach(markTabClosed);
         const ensured = ensureDashboardTab(remainingTabs, newOrder);
         set({
           ...ensured,
@@ -388,6 +412,8 @@ export const useTabStore = create<TabState>()(
             removedIds.add(id);
           }
         }
+
+        removedIds.forEach(markTabClosed);
 
         const ensured = ensureDashboardTab(remainingTabs, newOrder);
         set({
