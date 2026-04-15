@@ -300,7 +300,7 @@ function SessionListItem({
           { text: 'Cancel', style: 'cancel' },
         ]);
       }}
-      className={`rounded-lg px-3 py-2.5 mb-0.5 ${isActive ? 'bg-accent' : ''}`}
+      className={`rounded-2xl px-3 py-2.5 mb-1 ${isActive ? 'bg-background' : ''}`}
       activeOpacity={0.6}
     >
       <View className="flex-row items-center">
@@ -1070,25 +1070,42 @@ export default function HomeScreen() {
 
     return (
       <View
-        className="flex-1 bg-background"
+        className="flex-1 bg-muted border-r border-border"
         style={{ paddingTop: insets.top }}
       >
-        {/* Search + New session */}
-        <View className="flex-row items-center px-3 pt-2 pb-2">
-          <TouchableOpacity
-            onPress={() => { setDrawerOpen(false); setCommandPaletteOpen(true); }}
-            className="flex-1 flex-row items-center rounded-xl bg-card border border-border px-3 py-2 mr-2"
-            activeOpacity={0.6}
-          >
-            <Ionicons name="search-outline" size={18} color={mutedColor} />
-            <Text className="text-sm ml-2 text-muted-foreground">Search</Text>
-          </TouchableOpacity>
+        {/* Kortix wordmark */}
+        <View className="flex-row items-center justify-between px-5 pt-3 pb-4">
+          <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
+        </View>
+
+        {/* Top-level actions: New session / Search / Files */}
+        <View className="px-2 mb-2">
           <TouchableOpacity
             onPress={handleNewSession}
-            className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border"
+            className="flex-row items-center rounded-lg px-3 py-2.5"
             activeOpacity={0.6}
           >
             <Ionicons name="create-outline" size={18} color={iconColor} />
+            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">New session</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { setDrawerOpen(false); setCommandPaletteOpen(true); }}
+            className="flex-row items-center rounded-lg px-3 py-2.5"
+            activeOpacity={0.6}
+          >
+            <Ionicons name="search-outline" size={18} color={iconColor} />
+            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Search</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              setDrawerOpen(false);
+              useTabStore.getState().navigateToPage('page:files');
+            }}
+            className="flex-row items-center rounded-lg px-3 py-2.5"
+            activeOpacity={0.6}
+          >
+            <Ionicons name="folder-outline" size={18} color={iconColor} />
+            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Files</Text>
           </TouchableOpacity>
         </View>
 
@@ -1237,19 +1254,19 @@ export default function HomeScreen() {
           </ScrollView>
         )}
 
-        {/* Bottom: user info */}
+        {/* Bottom: user info — card style matching desktop */}
         <View
-          className="border-t border-border px-4 pt-3"
+          className="px-3 pt-2"
           style={{ paddingBottom: insets.bottom + 8 }}
         >
           <TouchableOpacity
             onPress={handleUserMenuOpen}
             activeOpacity={0.8}
-            className="flex-row items-center"
+            className="flex-row items-center rounded-xl border border-border bg-card px-2.5 py-2"
           >
             <View className="relative mr-3">
-              <View className="h-11 w-11 rounded-full bg-muted items-center justify-center">
-                <Text className="text-base font-semibold text-muted-foreground uppercase">
+              <View className="h-9 w-9 rounded-full bg-muted items-center justify-center">
+                <Text className="text-sm font-semibold text-muted-foreground uppercase">
                   {userDisplayName.charAt(0)}
                 </Text>
               </View>
@@ -1258,14 +1275,14 @@ export default function HomeScreen() {
               )}
             </View>
             <View className="flex-1">
-              <Text className="text-sm text-foreground" numberOfLines={1}>
+              <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
                 {userDisplayName}
               </Text>
               <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                {planLabel}
+                {userEmail || planLabel}
               </Text>
             </View>
-            <Ionicons name="chevron-up" size={18} color={mutedColor} />
+            <Ionicons name="chevron-expand-outline" size={16} color={mutedColor} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1287,6 +1304,7 @@ export default function HomeScreen() {
     handleProjectPress,
     activeSessionId,
     userDisplayName,
+    userEmail,
     planLabel,
     hasUpdate,
     handleUserMenuOpen,
@@ -1367,10 +1385,16 @@ export default function HomeScreen() {
         onOpen={handleDrawerOpen}
         onClose={handleDrawerClose}
         drawerType="slide"
-        drawerStyle={{ width: '80%', backgroundColor: 'transparent' }}
-        overlayStyle={{
-          backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.2)',
+        drawerStyle={{
+          width: '80%',
+          backgroundColor: 'transparent',
+          shadowColor: 'transparent',
+          shadowOpacity: 0,
+          shadowRadius: 0,
+          shadowOffset: { width: 0, height: 0 },
+          elevation: 0,
         }}
+        overlayStyle={{ backgroundColor: 'transparent' }}
         swipeEnabled
         swipeEdgeWidth={80}
         swipeMinDistance={30}
@@ -1382,10 +1406,16 @@ export default function HomeScreen() {
           onClose={handleRightDrawerClose}
           drawerPosition="right"
           drawerType="slide"
-          drawerStyle={{ width: '80%', backgroundColor: 'transparent' }}
-          overlayStyle={{
-            backgroundColor: isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.2)',
+          drawerStyle={{
+            width: '80%',
+            backgroundColor: 'transparent',
+            shadowColor: 'transparent',
+            shadowOpacity: 0,
+            shadowRadius: 0,
+            shadowOffset: { width: 0, height: 0 },
+            elevation: 0,
           }}
+          overlayStyle={{ backgroundColor: 'transparent' }}
           swipeEnabled={false}
           renderDrawerContent={renderRightDrawerContent}
         >
@@ -1605,7 +1635,7 @@ export default function HomeScreen() {
 
           /* Active session */
           ) : activeSessionId && !showTabsOverview ? (
-            <SessionPage sessionId={activeSessionId} onBack={handleBack} onOpenDrawer={handleDrawerOpen} onOpenRightDrawer={handleRightDrawerOpen} />
+            <SessionPage sessionId={activeSessionId} onBack={handleBack} onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen} onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen} isDrawerOpen={drawerOpen} isRightDrawerOpen={rightDrawerOpen} />
 
           /* Tabs overview */
           ) : showTabsOverview ? (

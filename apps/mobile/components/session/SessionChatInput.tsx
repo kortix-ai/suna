@@ -699,7 +699,7 @@ export function SessionChatInput({
 
         {/* Text input area */}
         <View className="px-3 pt-1 pb-2">
-          <View className="rounded-2xl px-3 pt-2 pb-1 bg-card border border-border">
+          <View className="rounded-2xl px-3 pt-2 pb-1 bg-background border border-border">
             {/* Queue / question slot — rendered above textarea */}
             {inputSlot}
 
