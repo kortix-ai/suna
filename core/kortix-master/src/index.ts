@@ -85,6 +85,11 @@ initShareStore()
     if (!val && key === 'KORTIX_YOLO_URL') {
       val = 'https://api-yolo.kortix.com/v1'
     }
+    // Ensure defaulted values are in process.env so saveBootstrapEnv() persists them
+    // and downstream code (YOLO client, OpenCode config) can read them.
+    if (val && !process.env[key]) {
+      process.env[key] = val
+    }
     if (val) {
       try {
         if (!existsSync(S6_ENV_DIR)) mkdirSync(S6_ENV_DIR, { recursive: true })
