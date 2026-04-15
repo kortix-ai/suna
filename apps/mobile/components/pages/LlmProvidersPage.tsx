@@ -407,11 +407,14 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
 
       // 3. Write config
       const updateRes = await fetch(`${sandboxUrl}/config`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers,
-        body: JSON.stringify({ config: configUpdate }),
+        body: JSON.stringify(configUpdate),
       });
-      if (!updateRes.ok) throw new Error(`Config update failed: ${updateRes.status}`);
+      if (!updateRes.ok) {
+        const text = await updateRes.text().catch(() => '');
+        throw new Error(text || `Config update failed: ${updateRes.status}`);
+      }
 
       // 4. Save API key (unless it's an env reference)
       if (form.apiKey && !isEnvReference(form.apiKey)) {

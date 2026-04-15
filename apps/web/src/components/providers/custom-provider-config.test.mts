@@ -56,6 +56,7 @@ test('buildCustomProviderConfigUpdate preserves existing providers and adds cust
       },
     },
   });
+  assert.equal('models' in config, false);
 });
 
 test('buildCustomProviderConfigUpdate persists env api keys into provider options', () => {

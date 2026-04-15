@@ -224,16 +224,18 @@ export function InstanceSettingsModal({
   sandbox,
   open,
   onOpenChange,
+  defaultTab = 'overview',
 }: {
   sandbox: SandboxInfo | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultTab?: TabId;
 }) {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const { data: adminRole } = useAdminRole();
   const isAdmin = !!adminRole?.isAdmin;
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [backupDescription, setBackupDescription] = useState('');
   const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
@@ -289,14 +291,19 @@ export function InstanceSettingsModal({
 
   useEffect(() => {
     if (!open) {
-      setActiveTab('overview');
+      setActiveTab(defaultTab);
       setSetupResult(null);
       setBackupDescription('');
       setRestoreTarget(null);
       setDeleteTarget(null);
       setUpdateDialogOpen(false);
     }
-  }, [open]);
+  }, [defaultTab, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setActiveTab(defaultTab);
+  }, [defaultTab, open, sandbox?.sandbox_id]);
 
   useEffect(() => {
     if (!open) return;
