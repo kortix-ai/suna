@@ -4,6 +4,11 @@ import { createMDX } from 'fumadocs-mdx/next';
 import { withSentryConfig } from '@sentry/nextjs';
 import { withBetterStack } from '@logtail/next';
 
+const shadersReactEntry = path.join(
+  __dirname,
+  'node_modules/shaders/dist/react/index.js',
+);
+
 const nextConfig = (): NextConfig => ({
   output: 'standalone',
   // Pin tracing root to monorepo root so standalone preserves
@@ -18,6 +23,10 @@ const nextConfig = (): NextConfig => ({
   // Webpack configuration to make Konva work with Next.js
   webpack: (config) => {
     config.externals = [...config.externals, { canvas: 'canvas' }]; // required to make Konva & react-konva work
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      'shaders/react': shadersReactEntry,
+    };
     return config;
   },
 
@@ -29,6 +38,7 @@ const nextConfig = (): NextConfig => ({
       canvas: {
         browser: './src/lib/empty-module.ts', // Exclude canvas from browser builds
       },
+      'shaders/react': shadersReactEntry,
     },
   },
 
