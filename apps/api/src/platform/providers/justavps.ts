@@ -526,6 +526,8 @@ export class JustAVPSProvider implements SandboxProvider {
       ENV_MODE: 'cloud',
       INTERNAL_SERVICE_KEY: serviceKey,
       KORTIX_TOKEN: serviceKey,
+      KORTIX_YOLO_API_KEY: serviceKey,
+      KORTIX_YOLO_URL: config.KORTIX_YOLO_URL,
       SANDBOX_VERSION: SANDBOX_VERSION,
       KORTIX_SANDBOX_VERSION: SANDBOX_VERSION,
       TUNNEL_API_URL: sandboxApiBase,
