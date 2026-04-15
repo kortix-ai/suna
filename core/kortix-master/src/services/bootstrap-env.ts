@@ -1,7 +1,8 @@
 /**
  * Bootstrap environment persistence.
  *
- * Core vars (KORTIX_TOKEN, KORTIX_API_URL, INTERNAL_SERVICE_KEY, TUNNEL_TOKEN) are the
+ * Core vars (KORTIX_TOKEN, KORTIX_YOLO_API_KEY, KORTIX_API_URL, INTERNAL_SERVICE_KEY,
+ * TUNNEL_TOKEN) are the
  * sandbox's identity credentials. They arrive as Docker env vars at container
  * creation and are synced to the s6 env dir on boot.
  *
@@ -20,7 +21,7 @@ import { dirname } from 'path'
 const WORKSPACE_ROOT = process.env.KORTIX_WORKSPACE_ROOT || '/workspace'
 const BOOTSTRAP_PATH = process.env.BOOTSTRAP_PATH || `${WORKSPACE_ROOT}/.secrets/.bootstrap-env.json`
 
-const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const
+const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_YOLO_API_KEY', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const
 
 /**
  * Load bootstrap env vars into process.env.
@@ -63,8 +64,9 @@ export function loadBootstrapEnv(): number {
 /**
  * Canonicalize sandbox auth aliases to the sandbox token.
  *
- * Older builds allowed KORTIX_TOKEN, INTERNAL_SERVICE_KEY, and TUNNEL_TOKEN to
- * drift apart. The refactored model uses one sandbox token for all three.
+ * Older builds allowed KORTIX_TOKEN, KORTIX_YOLO_API_KEY, INTERNAL_SERVICE_KEY,
+ * and TUNNEL_TOKEN to drift apart. The refactored model uses one sandbox token
+ * for all four.
  * Normalize process.env before any other startup code reads these values.
  */
 export function normalizeBootstrapAuthAliases(): number {
@@ -72,7 +74,7 @@ export function normalizeBootstrapAuthAliases(): number {
   if (!canonical) return 0
 
   let updated = 0
-  for (const key of ['INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const) {
+  for (const key of ['KORTIX_YOLO_API_KEY', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const) {
     if (process.env[key] !== canonical) {
       process.env[key] = canonical
       updated++

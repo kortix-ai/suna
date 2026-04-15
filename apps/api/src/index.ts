@@ -641,15 +641,20 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
   // Also check KORTIX_API_URL
   const sandboxAlreadyHasUrl = async (): Promise<boolean> => (await readSandboxEnvValue('KORTIX_API_URL')) === kortixApiUrl;
   const sandboxAlreadyHasInboundKey = async (): Promise<boolean> => (await readSandboxEnvValue('INTERNAL_SERVICE_KEY')) === token;
+  const sandboxAlreadyHasYoloKey = async (): Promise<boolean> => {
+    if (config.ENV_MODE !== 'cloud') return true;
+    return (await readSandboxEnvValue('KORTIX_YOLO_API_KEY')) === token;
+  };
 
   // Fast path: if the sandbox already has the correct token AND URL, skip sync.
   // This is the common case on normal startup — no restart, no downtime.
-  const [hasToken, hasUrl, hasInboundKey] = await Promise.all([
+  const [hasToken, hasUrl, hasInboundKey, hasYoloKey] = await Promise.all([
     sandboxAlreadyHasToken(),
     sandboxAlreadyHasUrl(),
     sandboxAlreadyHasInboundKey(),
+    sandboxAlreadyHasYoloKey(),
   ]);
-  if (hasToken && hasUrl && hasInboundKey) {
+  if (hasToken && hasUrl && hasInboundKey && hasYoloKey) {
     console.log('[startup] Sandbox already has correct auth bundle + API URL — skipping sync');
     // Still ensure ONBOARDING_COMPLETE is set for self-hosted mode
     if (config.SANDBOX_NETWORK) {
@@ -675,7 +680,7 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
     return token;
   }
 
-  console.log(`[startup] Sandbox needs token sync (hasToken=${hasToken}, hasUrl=${hasUrl}, hasInboundKey=${hasInboundKey})`);
+  console.log(`[startup] Sandbox needs token sync (hasToken=${hasToken}, hasUrl=${hasUrl}, hasInboundKey=${hasInboundKey}, hasYoloKey=${hasYoloKey})`);
 
   // ─── Sync token to sandbox ─────────────────────────────────────────────
   // Primary: POST to sandbox's /env API (handles triple-write + restart)

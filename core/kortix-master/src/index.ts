@@ -72,7 +72,7 @@ initShareStore()
 // to ensure they're always available regardless of how the process was started.
 {
   const S6_ENV_DIR = process.env.S6_ENV_DIR || '/run/s6/container_environment'
-  const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const
+  const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_YOLO_API_KEY', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const
   let synced = 0
   for (const key of CORE_VARS) {
     // Use injected env var, but fall back to a sane default for KORTIX_API_URL
