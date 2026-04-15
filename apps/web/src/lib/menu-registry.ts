@@ -74,16 +74,8 @@ import {
   PanelLeftIcon,
   LogOut,
 
-  // Admin
+  // Role-gated
   BarChart3,
-  AlertTriangle,
-  Database,
-  Server,
-  TestTube,
-  BarChart2,
-  MessageCircle,
-  Wrench,
-  ShieldCheck,
 } from 'lucide-react';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
@@ -779,97 +771,6 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'log out sign out logout signout disconnect',
   },
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // ADMIN
-  // ──────────────────────────────────────────────────────────────────────────
-  {
-    id: 'admin-instances',
-    label: 'Admin: Instances',
-    icon: Server,
-    group: 'admin',
-    showIn: ['userMenu', 'commandPalette'],
-    kind: 'navigate',
-    href: '/admin/instances',
-    requiresAdmin: true,
-    keywords: 'admin instances sandboxes all containers machines pool warm',
-  },
-  {
-    id: 'admin-accounts',
-    label: 'Admin: Accounts',
-    icon: Users,
-    group: 'admin',
-    showIn: ['userMenu', 'commandPalette'],
-    kind: 'navigate',
-    href: '/admin/accounts',
-    requiresAdmin: true,
-    keywords: 'admin accounts users billing credits reimbursements subscriptions customers',
-  },
-  {
-    id: 'admin-analytics',
-    label: 'Admin: Analytics',
-    icon: BarChart2,
-    group: 'admin',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/admin/analytics',
-    requiresAdmin: true,
-    keywords: 'admin analytics dashboard metrics statistics',
-  },
-  {
-    id: 'admin-feedback',
-    label: 'Admin: Feedback',
-    icon: MessageCircle,
-    group: 'admin',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/admin/feedback',
-    requiresAdmin: true,
-    keywords: 'admin feedback user reports',
-  },
-  {
-    id: 'admin-notifications',
-    label: 'Admin: Notifications',
-    icon: Bell,
-    group: 'admin',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/admin/notifications',
-    requiresAdmin: true,
-    keywords: 'admin notifications push broadcast',
-  },
-  {
-    id: 'admin-utils',
-    label: 'Admin: Utils',
-    icon: Wrench,
-    group: 'admin',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/admin/utils',
-    requiresAdmin: true,
-    keywords: 'admin utils utilities tools maintenance',
-  },
-  {
-    id: 'admin-sandbox-pool',
-    label: 'Admin: Sandbox Pool',
-    icon: Database,
-    group: 'admin',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/admin/sandbox-pool',
-    requiresAdmin: true,
-    keywords: 'admin sandbox pool warm instances',
-  },
-  {
-    id: 'admin-stress-test',
-    label: 'Admin: Stress Test',
-    icon: TestTube,
-    group: 'admin',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/admin/stress-test',
-    requiresAdmin: true,
-    keywords: 'admin stress test load performance',
-  },
 ];
 
 // ============================================================================

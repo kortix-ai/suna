@@ -3,12 +3,10 @@
 import { cn } from '@/lib/utils';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import {
   ChevronsUpDown,
   CreditCard,
   Settings as SettingsIcon,
-  ShieldCheck,
 } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -18,11 +16,7 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -32,7 +26,6 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { createClient } from '@/lib/supabase/client';
-import { openTabAndNavigate } from '@/stores/tab-store';
 import { useTheme } from 'next-themes';
 import { isBillingEnabled } from '@/lib/config';
 import { transitionFromElement } from '@/lib/view-transition';
@@ -47,9 +40,7 @@ import { InstanceSwitcherList } from '@/components/sidebar/instance-switcher';
 import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
 import type { SandboxInfo } from '@/lib/platform-client';
 import {
-  getItemsByGroup,
   themeOptions,
-  type MenuItemDef,
   type SettingsTabId,
 } from '@/lib/menu-registry';
 
@@ -62,7 +53,6 @@ interface UserMenuProps {
     name: string;
     email: string;
     avatar: string;
-    isAdmin?: boolean;
     planName?: string;
   };
 }
@@ -107,47 +97,6 @@ export function UserMenu({ user }: UserMenuProps) {
 
   const getInitials = (name: string) =>
     name.split(' ').map((p) => p.charAt(0)).join('').toUpperCase().substring(0, 2);
-
-  // ── Registry-driven menu items (admin only) ──
-  const adminItems = getItemsByGroup('userMenu', 'admin').filter((item) => {
-    if (item.requiresAdmin && !user.isAdmin) return false;
-    return true;
-  });
-
-  const handleMenuNav = (href: string, label: string) => {
-    const type = href.startsWith('/settings') ? 'settings' as const : 'page' as const;
-    openTabAndNavigate({
-      id: `page:${href}`,
-      title: label,
-      type,
-      href,
-    }, router);
-  };
-
-  const handleRegistryItem = (item: MenuItemDef) => {
-    switch (item.kind) {
-      case 'navigate':
-        handleMenuNav(item.href!, item.label);
-        break;
-      case 'settings':
-        openSettings(item.settingsTab!);
-        break;
-      case 'action':
-        if (item.actionId === 'logout') handleLogout();
-        break;
-    }
-  };
-
-  const renderRegistryItem = (item: MenuItemDef, stripAdminPrefix = false) => {
-    const Icon = item.icon;
-    const label = stripAdminPrefix ? item.label.replace(/^Admin:\s*/, '') : item.label;
-    return (
-      <DropdownMenuItem key={item.id} onClick={() => handleRegistryItem(item)} className="gap-2 p-2 cursor-pointer">
-        <Icon className="h-4 w-4" />
-        <span>{label}</span>
-      </DropdownMenuItem>
-    );
-  };
 
   return (
     <>
@@ -195,23 +144,6 @@ export function UserMenu({ user }: UserMenuProps) {
                   <span>Settings</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
-
-              {/* Admin submenu */}
-              {adminItems.length > 0 && (
-                <>
-                  <DropdownMenuSeparator className="my-1" />
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger className="gap-2 p-2 cursor-pointer">
-                      <ShieldCheck className="size-4" />
-                      <span>Admin</span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="min-w-52 p-1.5">
-                      {adminItems.map((item) => renderRegistryItem(item, true))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                </>
-              )}
-
               <DropdownMenuSeparator className="my-1" />
 
               {/* Theme toggle + Log out */}

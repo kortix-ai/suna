@@ -525,13 +525,6 @@ export function InstanceSettingsModal({
 
               <div className="flex-1 min-h-0 w-full max-w-full bg-background flex flex-col">
                 <div className="flex-1 overflow-y-auto min-h-0">{renderContent()}</div>
-                {sandbox ? (
-                  <div className="border-t border-border bg-background/95 px-4 py-3 flex justify-end">
-                    <Button onClick={() => router.push(`/instances/${sandbox.sandbox_id}`)}>
-                      Open instance
-                    </Button>
-                  </div>
-                ) : null}
               </div>
             </div>
           )}

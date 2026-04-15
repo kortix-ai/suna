@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import {
     Dialog,
     DialogContent,
@@ -106,7 +105,6 @@ import {
     getAccountTabs,
     type SettingsTabId,
 } from '@/lib/menu-registry';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
 
 type TabId = SettingsTabId;
 
@@ -130,7 +128,6 @@ export function UserSettingsModal({
     defaultTab = 'general',
     returnUrl = typeof window !== 'undefined' ? window?.location?.href || '/' : '/',
 }: UserSettingsModalProps) {
-    const router = useRouter();
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
     const billingActive = isBillingEnabled();
@@ -300,11 +297,8 @@ export function UserSettingsModal({
 
 
 function GeneralTab({ onClose }: { onClose: () => void }) {
-    const router = useRouter();
     const t = useTranslations('settings.general');
     const tCommon = useTranslations('common');
-    const { data: adminRole } = useAdminRole();
-    const isAdmin = !!adminRole?.isAdmin;
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
     const [avatarUrl, setAvatarUrl] = useState('');
@@ -611,37 +605,6 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                     {isSaving ? tCommon('saving') : t('saveChanges')}
                 </Button>
             </div>
-
-            {isAdmin && (
-                <div className="border-t border-border pt-6 space-y-3">
-                    <div>
-                        <h3 className="text-base font-medium mb-1">Admin Console</h3>
-                        <p className="text-sm text-muted-foreground">
-                            Manage instances, accounts, access requests, analytics, and platform tools from one place.
-                        </p>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={() => {
-                            onClose();
-                            window.location.assign('/admin');
-                        }}
-                        className="group w-full text-left rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 hover:border-border transition-colors px-4 py-3 flex items-center justify-between gap-3"
-                    >
-                        <div className="min-w-0">
-                            <div className="text-sm font-medium text-foreground">Open admin console</div>
-                            <div className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                                Fleet, accounts, access, analytics, feedback, system status.
-                            </div>
-                        </div>
-                        <span className="text-xs text-muted-foreground shrink-0 transition-transform group-hover:translate-x-0.5">
-                            →
-                        </span>
-                    </button>
-                </div>
-            )}
-
             {isBillingEnabled() && accountDeletionSupported && (
                 <>
                     <div className="pt-8 space-y-4">

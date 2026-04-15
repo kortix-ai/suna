@@ -62,7 +62,6 @@ import { createClient } from '@/lib/supabase/client';
 import { isBillingEnabled } from '@/lib/config';
 import { useTheme } from 'next-themes';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
-import { useAdminRole } from '@/hooks/admin';
 import { flattenModels } from '@/components/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import {
@@ -373,8 +372,6 @@ export function CommandPalette() {
   const createPty = useCreatePty();
   const { theme, setTheme } = useTheme();
   const billingEnabled = isBillingEnabled();
-  const { data: adminRoleData } = useAdminRole();
-  const isAdmin = adminRoleData?.isAdmin ?? false;
 
   // ── Data hooks ──
   const { data: sessions } = useOpenCodeSessions();
@@ -521,10 +518,9 @@ export function CommandPalette() {
     return getItemsForSurface('commandPalette').filter((item) => {
       if (item.requiresBilling && !billingEnabled) return false;
       if (item.requiresSession && !currentSessionId) return false;
-      if (item.requiresAdmin && !isAdmin) return false;
       return true;
     });
-  }, [billingEnabled, currentSessionId, isAdmin]);
+  }, [billingEnabled, currentSessionId]);
 
   // Filter navigation items client-side
   const filteredNavItems = useMemo(() => {
