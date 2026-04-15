@@ -83,7 +83,7 @@ initShareStore()
     }
     // Default YOLO URL so {env:KORTIX_YOLO_URL} in opencode.jsonc always resolves
     if (!val && key === 'KORTIX_YOLO_URL') {
-      val = 'https://yolo.kortix.com/api/v1'
+      val = 'https://api-yolo.kortix.com/v1'
     }
     if (val) {
       try {
