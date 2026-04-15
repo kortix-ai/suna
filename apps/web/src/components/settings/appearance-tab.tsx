@@ -36,7 +36,7 @@ function WallpaperCard({
             root, so it fills the card edge-to-edge; shader canvases also
             render at native thumbnail resolution for crisp previews. */}
         <div className="absolute inset-0" aria-hidden="true">
-          <WallpaperBackground wallpaperId={wallpaper.id} />
+          <WallpaperBackground wallpaperId={wallpaper.id} preview />
         </div>
         {/* Hover overlay */}
         <div

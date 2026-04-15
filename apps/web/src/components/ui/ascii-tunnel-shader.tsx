@@ -2,6 +2,7 @@
 
 import { memo } from 'react';
 import dynamic from 'next/dynamic';
+import { useTheme } from 'next-themes';
 
 const Shader = dynamic(() => import('shaders/react').then((m) => m.Shader), {
   ssr: false,
@@ -25,11 +26,21 @@ const StudioBackground = dynamic(
   { ssr: false },
 );
 
-// Dark-only wallpaper — the picker hides this in light mode. The cool
-// violet-black tunnel relies on the studio's dramatic ambient/key
-// lighting subtracting toward true black, which can't be inverted to
-// look right on a white page.
+// Palette identical to Pixel Beams (Kortix monochrome brand): pure
+// white in light mode, near-black in dark mode. The studio's directional
+// lighting is flattened in light mode so the white page reads as flat
+// (otherwise key/back lights subtract toward grey, leaving smudges).
 export const AsciiTunnelShader = memo(function AsciiTunnelShader() {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
+
+  const bgColor = isDark ? '#121214' : '#ffffff';
+  const lineColorA = isDark ? '#ffffff' : '#c9c9cd';
+  const lineColorB = isDark ? '#202124' : '#ffffff';
+  const ambientIntensity = isDark ? 98 : 0;
+  const keyIntensity = isDark ? 5 : 0;
+  const backIntensity = isDark ? 25 : 0;
+
   return (
     <div
       className="absolute inset-0 pointer-events-none overflow-hidden"
@@ -45,19 +56,20 @@ export const AsciiTunnelShader = memo(function AsciiTunnelShader() {
       >
         <RadialGradient
           center={{ x: 0.5, y: 1 }}
-          colorA="#180726"
-          colorB="#0f0f17"
+          colorA={bgColor}
+          colorB={bgColor}
           radius={0.8}
           visible={false}
         />
         <StudioBackground
-          ambientIntensity={98}
+          ambientIntensity={ambientIntensity}
           ambientSpeed={5}
           brightness={100}
           center={{ x: 0.5, y: 1 }}
-          color="#0e1214"
+          color={bgColor}
           fillIntensity={0}
-          keyIntensity={5}
+          keyIntensity={keyIntensity}
+          {...({ backIntensity } as Record<string, number>)}
           lightTarget={0}
         />
         <Ascii
@@ -89,7 +101,8 @@ export const AsciiTunnelShader = memo(function AsciiTunnelShader() {
             zoom={92}
           >
             <FallingLines
-              colorB="#000000"
+              colorA={lineColorA}
+              colorB={lineColorB}
               density={17}
               speed={0.25}
               speedVariance={0.55}
