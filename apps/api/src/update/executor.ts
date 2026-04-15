@@ -222,6 +222,17 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
     // ── Persist config only after verified ──
     await writeContainerConfig(endpoint, updatedConfig);
 
+    // ── Re-inject env so updated sandboxes get latest platform vars (e.g. YOLO) ──
+    const serviceKey = (row.config as Record<string, unknown>)?.serviceKey as string || '';
+    if (serviceKey) {
+      try {
+        const { inject } = await import('../pool/env-injector');
+        await inject({ baseUrl: row.baseUrl, metadata: row.metadata ?? {}, externalId: row.externalId! }, serviceKey);
+      } catch (envErr) {
+        console.warn(`[UPDATE] Env re-injection failed (non-fatal):`, envErr);
+      }
+    }
+
     // ── Complete ──
     await setPhase(sandboxId, 'complete', 100, `Updated to v${targetVersion}`, {
       currentVersion: targetVersion,
