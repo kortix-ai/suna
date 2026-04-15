@@ -479,7 +479,7 @@ export function InstanceSettingsModal({
             </div>
           ) : (
             <div className="flex flex-row h-[700px]">
-              <div className="bg-background flex-shrink-0 w-56 p-4 border-r border-border">
+              <div className="bg-background flex-shrink-0 w-56 p-4 border-r border-border flex flex-col">
                 <div className="flex justify-start mb-3">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onOpenChange(false)}>
                     <X className="h-4 w-4" />
@@ -513,6 +513,14 @@ export function InstanceSettingsModal({
                     );
                   })}
                 </div>
+
+                {sandbox ? (
+                  <div className="mt-auto pt-4">
+                    <Button className="w-full" onClick={() => router.push(`/instances/${sandbox.sandbox_id}`)}>
+                      Open instance
+                    </Button>
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex-1 min-h-0 w-full max-w-full bg-background flex flex-col">
