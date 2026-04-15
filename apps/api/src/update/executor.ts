@@ -2,8 +2,10 @@ import { eq } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { config } from '../config';
-import { getProvider, type ProviderName } from '../platform/providers';
+import { getProvider, type ProviderName, type SandboxProvider } from '../platform/providers';
+import { JustAVPSProvider } from '../platform/providers/justavps';
 import { setPhase, clearUpdateStatus } from './status';
+import { isUpdateCancellationRequested } from './status';
 import {
   readContainerConfig,
   writeContainerConfig,
@@ -44,12 +46,21 @@ async function resolveContainerConfig(
   throw new Error('Cannot determine container config — no config file and no running container found');
 }
 
-const BACKUP_POLL_INTERVAL_MS = 30_000;
-const BACKUP_TIMEOUT_MS = 20 * 60_000;
+function buildSafeBackupDescription(previousVersion: string | null, targetVersion: string): string {
+  const from = previousVersion ? `v${previousVersion.replace(/^v/, '')}` : 'unknown';
+  const to = `v${targetVersion.replace(/^v/, '')}`;
+  return `Kortix pre-update backup ${from} -> ${to}`;
+}
+
+class UpdateCancelledError extends Error {
+  constructor(message = 'Update cancelled before destructive changes started') {
+    super(message);
+    this.name = 'UpdateCancelledError';
+  }
+}
 
 /**
- * Kick off a provider-side backup and wait for it to finish. Soft-fails on
- * timeout or error so a flaky provider can never block a legitimate update.
+ * Kick off a provider-side backup and wait for it to finish.
  *
  * While waiting we stay in the `backing_up` phase (0–10% progress). The
  * client reads that phase and shows a non-blocking indicator so the user
@@ -57,57 +68,55 @@ const BACKUP_TIMEOUT_MS = 20 * 60_000;
  */
 async function runBackup(
   sandboxId: string,
-  provider: string,
+  provider: SandboxProvider,
   externalId: string,
   previousVersion: string | null,
   targetVersion: string,
 ): Promise<void> {
-  if (provider !== 'justavps') return;
+  if (!(provider instanceof JustAVPSProvider)) return;
 
-  const { justavpsFetch } = await import('../platform/providers/justavps');
+  const description = buildSafeBackupDescription(previousVersion, targetVersion);
 
-  const from = previousVersion ? `v${previousVersion.replace(/^v/, '')}` : 'unknown';
-  const to = `v${targetVersion.replace(/^v/, '')}`;
-  const description = `Kortix pre-update backup ${from} → ${to}`;
+  await setPhase(sandboxId, 'backing_up', 5, 'Requesting backup from provider…', {
+    backupId: null,
+    diagnostics: {
+      stage: 'backup_request_started',
+      machineId: externalId,
+      backupDescription: description,
+    },
+  });
 
-  let backupId: string | null = null;
-  try {
-    const started = await justavpsFetch<{ backup_id: string; status: string }>(
-      `/machines/${externalId}/backups`,
-      { method: 'POST', body: { description } },
-    );
-    backupId = started.backup_id;
-    await setPhase(sandboxId, 'backing_up', 5, 'Creating backup…', { backupId });
-    console.log(`[UPDATE] Backup ${backupId} started for machine ${externalId}`);
-  } catch (err) {
-    console.warn(`[UPDATE] Backup start failed (non-fatal):`, err instanceof Error ? err.message : err);
-    return;
+  if (await isUpdateCancellationRequested(sandboxId)) {
+    throw new UpdateCancelledError();
   }
 
-  const start = Date.now();
-  while (Date.now() - start < BACKUP_TIMEOUT_MS) {
-    await new Promise((r) => setTimeout(r, BACKUP_POLL_INTERVAL_MS));
-    try {
-      const list = await justavpsFetch<{ backups: Array<{ id: string; status: string }> }>(
-        `/machines/${externalId}/backups`,
-      );
-      const match = list.backups.find((b) => b.id === backupId);
-      if (!match) {
-        console.warn(`[UPDATE] Backup ${backupId} vanished from list — proceeding`);
-        return;
-      }
-      if (match.status !== 'creating') {
-        console.log(`[UPDATE] Backup ${backupId} finished with status=${match.status}`);
-        return;
-      }
-      const elapsed = Date.now() - start;
-      const progress = Math.min(10, 5 + Math.floor((elapsed / BACKUP_TIMEOUT_MS) * 5));
-      await setPhase(sandboxId, 'backing_up', progress, 'Creating backup…', { backupId });
-    } catch (err) {
-      console.warn(`[UPDATE] Backup poll error (continuing):`, err instanceof Error ? err.message : err);
-    }
-  }
-  console.warn(`[UPDATE] Backup ${backupId} did not finish within ${BACKUP_TIMEOUT_MS / 60_000}min — proceeding with update anyway`);
+  const started = await provider.createBackup(externalId, description);
+  const backupId = started.backup_id;
+  await setPhase(sandboxId, 'backing_up', 5, 'Creating backup…', {
+    backupId,
+    diagnostics: {
+      stage: 'backup_requested',
+      machineId: externalId,
+      backupId,
+      providerStatus: started.status ?? 'unknown',
+      backupDescription: description,
+    },
+  });
+  console.log(`[UPDATE] Backup ${backupId} started for machine ${externalId}`);
+
+  // Manual backups in JustAVPS are asynchronous and remain "creating" for a
+  // while even when they are usable. Match the manual backup UX: once the
+  // provider accepts the request and gives us a backup id, proceed.
+  await setPhase(sandboxId, 'backing_up', 10, 'Backup requested successfully', {
+    backupId,
+    diagnostics: {
+      stage: 'backup_request_accepted',
+      machineId: externalId,
+      backupId,
+      providerStatus: started.status ?? 'creating',
+      backupDescription: description,
+    },
+  });
 }
 
 export async function executeUpdate(sandboxId: string, targetVersion: string): Promise<void> {
@@ -159,7 +168,7 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
       currentVersion: previousVersion,
       backupId: null,
     });
-    await runBackup(sandboxId, row.provider, row.externalId, previousVersion, targetVersion);
+    await runBackup(sandboxId, provider, row.externalId, previousVersion, targetVersion);
 
     // ── Pull ──
     await setPhase(sandboxId, 'pulling', 15, `Pulling ${targetImage}...`);
@@ -208,7 +217,21 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
     }, 30_000);
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    await setPhase(sandboxId, 'failed', 0, `Update failed: ${errorMsg}`, { error: errorMsg });
+    const isCancelled = err instanceof UpdateCancelledError;
+    await setPhase(
+      sandboxId,
+      'failed',
+      0,
+      isCancelled ? errorMsg : `Update failed: ${errorMsg}`,
+      {
+        error: errorMsg,
+        cancelRequested: false,
+        diagnostics: {
+          stage: 'update_failed',
+          reason: errorMsg,
+        },
+      },
+    );
     console.error(`[UPDATE] Sandbox ${sandboxId} update failed:`, errorMsg);
     throw err;
   }

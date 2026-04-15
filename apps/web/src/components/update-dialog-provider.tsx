@@ -21,7 +21,7 @@ export function UpdateDialogProvider() {
   const {
     phase, phaseMessage, phaseProgress, latestVersion,
     changelog, updateResult, update, updateErrorMessage,
-    isDestructive, isUpdating,
+    isDestructive, isUpdating, canCancel, isCancelling, cancel,
   } = useGlobalSandboxUpdate();
 
   useEffect(() => {
@@ -79,9 +79,12 @@ export function UpdateDialogProvider() {
       isLocalSelfHosted={isLocalSelfHosted}
       errorMessage={updateErrorMessage}
       updateResult={devMode && devPhase === 'complete' ? { success: true, currentVersion: '0.8.20' } : updateResult}
+      canCancel={!devMode && canCancel}
+      isCancelling={!devMode && isCancelling}
       onClose={() => { if (devMode) setDevMode(false); closeDialog(); }}
       onConfirm={() => { if (devMode) { setDevPhaseIdx(1); return; } update(targetVersion ?? undefined); }}
       onRetry={() => { if (devMode) { setDevPhaseIdx(1); return; } update(targetVersion ?? undefined); }}
+      onCancel={() => { if (!devMode) cancel(); }}
       isDev={devMode}
     />
   );

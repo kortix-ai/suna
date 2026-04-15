@@ -110,7 +110,17 @@ export async function justavpsFetch<T = any>(
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`JustAVPS API ${options.method || 'GET'} ${path} returned ${res.status}: ${text.slice(0, 300)}`);
+    const debugHeaders = [
+      ['x-request-id', res.headers.get('x-request-id')],
+      ['x-correlation-id', res.headers.get('x-correlation-id')],
+      ['cf-ray', res.headers.get('cf-ray')],
+      ['content-type', res.headers.get('content-type')],
+    ].filter(([, value]) => !!value).map(([key, value]) => `${key}=${value}`).join(', ');
+    const bodySnippet = text.slice(0, 1000);
+    throw new Error(
+      `JustAVPS API ${options.method || 'GET'} ${path} returned ${res.status}`
+      + `${debugHeaders ? ` [${debugHeaders}]` : ''}: ${bodySnippet}`,
+    );
   }
 
   if (res.status === 204) return {} as T;

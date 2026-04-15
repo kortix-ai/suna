@@ -1,5 +1,12 @@
 export { executeUpdate } from './executor';
-export { getUpdateStatus, resetUpdateStatus, setPhase, clearUpdateStatus } from './status';
+export {
+  getUpdateStatus,
+  resetUpdateStatus,
+  setPhase,
+  clearUpdateStatus,
+  isUpdateCancellationRequested,
+  requestUpdateCancellation,
+} from './status';
 export { execOnHost } from './exec';
 export {
   readContainerConfig,

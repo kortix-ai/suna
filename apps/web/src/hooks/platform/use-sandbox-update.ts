@@ -23,6 +23,7 @@ import {
   triggerSandboxUpdate,
   getSandboxUpdateStatus,
   resetSandboxUpdateStatus,
+  cancelSandboxUpdate,
   isDestructivePhase,
   type SandboxUpdateStatus,
   type UpdatePhase,
@@ -50,6 +51,11 @@ export const PHASE_LABELS: Record<UpdatePhase, string> = {
   complete:     'Update complete',
   failed:       'Update failed',
 };
+
+export const ACTIVE_UPDATE_PHASES: UpdatePhase[] = [
+  'backing_up', 'pulling', 'patching', 'stopping', 'removing',
+  'recreating', 'restarting', 'verifying', 'starting', 'health_check', 'failed',
+];
 
 export const PHASE_PROGRESS: Record<UpdatePhase, number> = {
   idle:         0,
@@ -212,10 +218,9 @@ export function useSandboxUpdate(currentVersion: string | null) {
   }, []);
 
   // Each `useSandboxUpdate` instance owns its own state (sidebar + dialog
-  // provider each mount one). When the user triggers an update from one
-  // instance, the other won't know unless it polls independently. A slow
-  // background check (every 4s) catches in-progress updates; refresh/logout
-  // and second-tab handoff all rely on this.
+  // provider each mount one). We do a one-shot status sync on mount and when
+  // the tab regains focus so refresh / second-tab handoff can recover active
+  // updates without hammering /update/status forever after terminal states.
   useEffect(() => {
     if (!sandbox) return;
     let cancelled = false;
@@ -223,6 +228,7 @@ export function useSandboxUpdate(currentVersion: string | null) {
       try {
         const status = await getSandboxUpdateStatus(sandbox);
         if (cancelled) return;
+        setLiveStatus(status);
         if (!TERMINAL_PHASES.includes(status.phase) && status.phase !== 'idle' && !pollActiveRef.current) {
           setLiveStatus(status);
           startPolling();
@@ -231,9 +237,21 @@ export function useSandboxUpdate(currentVersion: string | null) {
         // Non-fatal — retry next tick.
       }
     };
-    check();
-    const iv = setInterval(check, 4_000);
-    return () => { cancelled = true; clearInterval(iv); };
+    const handleFocus = () => { void check(); };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void check();
+      }
+    };
+
+    void check();
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [sandbox, startPolling]);
 
   // ── Trigger mutation ─────────────────────────────────────────────────────
@@ -264,10 +282,23 @@ export function useSandboxUpdate(currentVersion: string | null) {
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      if (!sandbox) throw new Error('No sandbox');
+      await cancelSandboxUpdate(sandbox);
+    },
+    onSuccess: async () => {
+      await pollStatus();
+    },
+  });
+
   const isUpdating = updateMutation.isPending || isPolling;
   const phase: UpdatePhase = liveStatus?.phase ?? 'idle';
   const isDestructive = isDestructivePhase(phase);
   const isBackingUp = phase === 'backing_up';
+  const hasActiveUpdate = ACTIVE_UPDATE_PHASES.includes(phase) || isUpdating;
+  const canCancel = isBackingUp && liveStatus?.cancelRequested !== true;
+  const isCancelling = cancelMutation.isPending || liveStatus?.cancelRequested === true;
   const phaseLabel = PHASE_LABELS[phase];
   // Use the real progress from the API if available, otherwise use phase-based progress
   const phaseProgress = liveStatus?.progress ?? PHASE_PROGRESS[phase];
@@ -276,6 +307,9 @@ export function useSandboxUpdate(currentVersion: string | null) {
   const update = useCallback((targetVersion?: string) => {
     updateMutation.mutate(targetVersion);
   }, [updateMutation]);
+  const cancel = useCallback(() => {
+    cancelMutation.mutate();
+  }, [cancelMutation]);
 
   return {
     /** Whether a newer version is available */
@@ -294,10 +328,13 @@ export function useSandboxUpdate(currentVersion: string | null) {
     update,
     /** Whether an update is currently running */
     isUpdating,
+    hasActiveUpdate,
     /** True for phases that require a blocking dialog (pull/stop/restart/etc) */
     isDestructive,
     /** True while the pre-update backup is running (non-blocking) */
     isBackingUp,
+    canCancel,
+    isCancelling,
     /** Live update phase from API */
     phase,
     /** Human-readable phase label */
@@ -318,5 +355,7 @@ export function useSandboxUpdate(currentVersion: string | null) {
     refetch: () => latestQuery.refetch(),
     /** Reset update status (e.g. after a failed update to allow retry) */
     resetStatus: () => resetSandboxUpdateStatus(sandbox ?? undefined),
+    /** Cancel a still-safe preflight update (currently backup phase only) */
+    cancel,
   };
 }

@@ -707,6 +707,8 @@ export interface SandboxUpdateStatus {
   updatedAt: string | null;
   /** Provider-side backup ID while phase === 'backing_up'. Null otherwise. */
   backupId?: string | null;
+  cancelRequested?: boolean;
+  diagnostics?: Record<string, string | number | boolean | null>;
 }
 
 /** Phases where the sandbox is being modified and must not be used. */
@@ -831,4 +833,20 @@ export async function resetSandboxUpdateStatus(sandbox?: SandboxInfo): Promise<v
     },
   });
   if (!res.ok) throw new Error(`Reset failed: ${res.status}`);
+}
+
+export async function cancelSandboxUpdate(sandbox?: SandboxInfo): Promise<void> {
+  const url = sandbox?.sandbox_id
+    ? `${getPlatformUrl()}/platform/sandbox/${sandbox.sandbox_id}/update/cancel`
+    : `${getPlatformUrl()}/platform/sandbox/update/cancel`;
+  const res = await authenticatedFetch(url, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+    },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Cancel failed: ${res.status}`);
+  }
 }

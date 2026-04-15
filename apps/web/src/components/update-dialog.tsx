@@ -48,9 +48,12 @@ interface UpdateDialogProps {
   isLocalSelfHosted?: boolean;
   errorMessage: string | null;
   updateResult: { success: boolean; currentVersion: string } | null;
+  canCancel?: boolean;
+  isCancelling?: boolean;
   onClose: () => void;
   onConfirm: () => void;
   onRetry: () => void;
+  onCancel?: () => void;
   isDev?: boolean;
 }
 
@@ -70,9 +73,12 @@ export function UpdateDialog({
   isLocalSelfHosted,
   errorMessage,
   updateResult,
+  canCancel,
+  isCancelling,
   onClose,
   onConfirm,
   onRetry,
+  onCancel,
   isDev,
 }: UpdateDialogProps) {
   const [userRequested, setUserRequested] = useState(false);
@@ -82,8 +88,8 @@ export function UpdateDialog({
 
   const step: DialogStep = useMemo(() => {
     if (isReconnected) return 'done';
-    if (userRequested && phase !== 'complete') return 'updating';
     if (phase === 'failed') return 'failed';
+    if (userRequested && phase !== 'complete') return 'updating';
     if (phase !== 'idle') return 'updating';
     return 'confirm';
   }, [phase, userRequested, isReconnected]);
@@ -210,6 +216,12 @@ export function UpdateDialog({
               className="flex flex-col items-center"
             >
               <KortixLogo size={28} variant="symbol" />
+              <p className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight">
+                {activeLabel}
+              </p>
+              <p className="mt-1 max-w-[340px] text-center text-[11px] text-muted-foreground/70">
+                {phaseMessage || 'Preparing update...'}
+              </p>
               <div className="mt-8 h-[2px] w-[240px] rounded-full bg-foreground/10 overflow-hidden">
                 <motion.div
                   className="h-full bg-foreground"
@@ -217,6 +229,17 @@ export function UpdateDialog({
                   transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
                 />
               </div>
+              {(canCancel || isCancelling) && onCancel && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onCancel}
+                  disabled={isCancelling}
+                  className="mt-5"
+                >
+                  {isCancelling ? 'Cancelling…' : 'Cancel update'}
+                </Button>
+              )}
             </motion.div>
           )}
 

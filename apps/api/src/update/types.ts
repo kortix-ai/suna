@@ -20,6 +20,8 @@ export interface UpdateStatus {
   startedAt: string | null;
   updatedAt: string | null;
   backupId: string | null;
+  cancelRequested?: boolean;
+  diagnostics?: Record<string, string | number | boolean | null>;
 }
 
 export const IDLE_STATUS: UpdateStatus = {
@@ -33,6 +35,8 @@ export const IDLE_STATUS: UpdateStatus = {
   startedAt: null,
   updatedAt: null,
   backupId: null,
+  cancelRequested: false,
+  diagnostics: {},
 };
 
 export type StepResult = {

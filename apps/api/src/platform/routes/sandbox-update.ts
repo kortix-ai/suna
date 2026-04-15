@@ -23,12 +23,17 @@ import {
 import { getProvider, type ProviderName } from '../providers';
 import { combinedAuth as authMiddleware } from '../../middleware/auth';
 import { resolveAccountId } from '../../shared/resolve-account';
-import { executeUpdate, getUpdateStatus, resetUpdateStatus } from '../../update';
+import {
+  executeUpdate,
+  getUpdateStatus,
+  resetUpdateStatus,
+  requestUpdateCancellation,
+} from '../../update';
 import type { AuthVariables } from '../../types';
 
 // ── Per-sandbox routes: /sandbox/:id/update/* ────────────────────────────────
 
-const sandboxIdUpdateRouter = new Hono<{ Variables: AuthVariables }>();
+export const sandboxIdUpdateRouter = new Hono<{ Variables: AuthVariables }>();
 sandboxIdUpdateRouter.use('/*', authMiddleware);
 
 async function findOwnedSandbox(accountId: string, sandboxId: string) {
@@ -152,6 +157,33 @@ sandboxIdUpdateRouter.post('/reset', async (c) => {
   return c.json({ success: true, message: 'Update status reset' });
 });
 
+sandboxIdUpdateRouter.post('/cancel', async (c) => {
+  const sandboxId = c.req.param('id') ?? '';
+  const userId = c.get('userId');
+  const accountId = await resolveAccountId(userId);
+  const sandbox = await findOwnedSandbox(accountId, sandboxId);
+
+  if (!sandbox) {
+    return c.json({ success: false, error: 'Sandbox not found' }, 404);
+  }
+
+  if (sandbox.provider === 'local_docker') {
+    return c.json({ success: false, error: 'Cancelling local updates is not supported' }, 400);
+  }
+
+  const status = await getUpdateStatus(sandbox.sandboxId);
+  if (status.phase !== 'backing_up') {
+    return c.json({
+      success: false,
+      error: 'Cancellation is only available while the pre-update backup is running',
+      status,
+    }, 409);
+  }
+
+  const next = await requestUpdateCancellation(sandbox.sandboxId);
+  return c.json({ success: true, message: 'Cancellation requested', status: next });
+});
+
 // ── Legacy routes: /sandbox/update/* (no sandbox ID, picks most recent) ──────
 
 const sandboxUpdateRouter = new Hono<{ Variables: AuthVariables }>();
@@ -207,4 +239,8 @@ sandboxUpdateRouter.post('/reset', async (c) => {
   return c.json({ success: true, message: 'Update status reset to idle' });
 });
 
-export { sandboxUpdateRouter, sandboxIdUpdateRouter };
+sandboxUpdateRouter.post('/cancel', async (c) => {
+  return c.json({ success: false, error: 'Cancelling local updates is not supported' }, 400);
+});
+
+export { sandboxUpdateRouter };

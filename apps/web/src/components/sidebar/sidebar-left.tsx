@@ -331,6 +331,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
   const {
     updateAvailable, latestVersion, currentChannel, changelog,
     isUpdating, updateResult, isBackingUp, isDestructive, phaseProgress,
+    hasActiveUpdate, phase, phaseMessage, updateErrorMessage, canCancel, isCancelling, cancel,
   } = useGlobalSandboxUpdate();
   const openDialog = useUpdateDialogStore((s) => s.openDialog);
   const router = useRouter();
@@ -363,18 +364,18 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
   // dismissed, and no in-progress work. An active backup must keep this card
   // visible even if the user previously dismissed the "update available" toast.
   const showBackupCard = isBackingUp;
-  if (!mounted || (!updateAvailable && !showBackupCard) || (dismissed && !showBackupCard) || updateResult?.success) return null;
+  if (!mounted || (!updateAvailable && !hasActiveUpdate) || (dismissed && !hasActiveUpdate) || updateResult?.success) return null;
 
   // ── Collapsed state: icon with pulse dot ──
   if (collapsed) {
     return (
       <div className="flex justify-center">
         <button
-          onClick={showBackupCard ? undefined : navigateToChangelog}
+          onClick={hasActiveUpdate ? undefined : navigateToChangelog}
           className="relative p-2 rounded-lg hover:bg-primary/10 transition-colors cursor-pointer"
-          title={showBackupCard ? `Backing up… ${phaseProgress}%` : `v${latestVersion} available`}
+          title={hasActiveUpdate ? `${phaseMessage || phase} (${phaseProgress}%)` : `v${latestVersion} available`}
         >
-          {showBackupCard
+          {hasActiveUpdate
             ? <Loader2 className="h-4 w-4 text-primary animate-spin" />
             : <ArrowDownToLine className="h-4 w-4 text-primary" />}
           <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary animate-pulse" />
@@ -395,8 +396,40 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
           <span className="text-[10px] text-muted-foreground flex-shrink-0">v{latestVersion}</span>
         </div>
         <p className="px-3 pb-2 text-[11px] text-muted-foreground leading-tight">
-          You can keep using your machine. Update will continue automatically once the backup completes.
+          {phaseMessage || 'You can keep using your machine. Update will continue automatically once the backup completes.'}
         </p>
+        <div className="flex items-center gap-2 px-3 pb-2.5">
+          <div className="h-1.5 flex-1 rounded-full bg-foreground/10 overflow-hidden">
+            <div className="h-full bg-primary transition-all" style={{ width: `${phaseProgress}%` }} />
+          </div>
+          {canCancel && (
+            <Button size="toolbar" variant="muted" onClick={() => cancel()} disabled={isCancelling}>
+              {isCancelling ? 'Cancelling…' : 'Cancel'}
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'failed') {
+    return (
+      <div className="rounded-xl border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
+        <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
+          <Bug className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+          <span className="text-xs font-semibold text-foreground truncate min-w-0">Update failed</span>
+          <span className="flex-1" />
+          <span className="text-[10px] text-muted-foreground flex-shrink-0">v{latestVersion}</span>
+        </div>
+        <p className="px-3 pb-2 text-[11px] text-muted-foreground leading-tight line-clamp-3">
+          {updateErrorMessage || phaseMessage || 'Something went wrong during the update.'}
+        </p>
+        <div className="flex items-center gap-1.5 px-2.5 pb-2.5 pt-1">
+          <Button onClick={() => openDialog()} variant="default" size="toolbar" className="flex-1">
+            Retry
+          </Button>
+          <Button onClick={navigateToChangelog} variant="muted" size="toolbar">Details</Button>
+        </div>
       </div>
     );
   }
@@ -405,9 +438,14 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
     return (
       <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] px-3 py-2.5 flex items-center gap-2">
         <Loader2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 animate-spin flex-shrink-0" />
-        <span className="text-xs font-medium text-amber-700 dark:text-amber-300 truncate">
-          Installing v{latestVersion}…
-        </span>
+        <div className="min-w-0 flex-1">
+          <span className="block text-xs font-medium text-amber-700 dark:text-amber-300 truncate">
+            {phaseMessage || `Installing v${latestVersion}…`}
+          </span>
+          <span className="block text-[10px] text-amber-700/70 dark:text-amber-300/70 truncate">
+            {phase} · {phaseProgress}%
+          </span>
+        </div>
       </div>
     );
   }
@@ -465,7 +503,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
 
       {/* Actions */}
       <div className="flex items-center gap-1.5 px-2.5 pb-2.5 pt-1">
-        {!isUpdating ? (
+        {!hasActiveUpdate ? (
           <Button
             onClick={() => openDialog()}
             variant="default"
@@ -478,7 +516,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
         ) : (
           <div className="flex-1 flex items-center justify-center gap-1.5 h-7 text-[11px] font-medium text-amber-600 dark:text-amber-400">
             <Loader2 className="h-3 w-3 animate-spin" />
-            Updating...
+            {phase === 'failed' ? 'Failed' : 'Updating...'}
           </div>
         )}
         <Button
