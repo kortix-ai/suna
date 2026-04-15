@@ -87,12 +87,6 @@ initShareStore()
     if (!val && key === 'KORTIX_YOLO_API_KEY') {
       val = process.env.KORTIX_TOKEN
     }
-    // Default YOLO URL — derive from KORTIX_API_URL so dev sandboxes hit the dev
-    // YOLO API and prod sandboxes hit the prod one, without needing the env var.
-    if (!val && key === 'KORTIX_YOLO_URL') {
-      const apiUrl = process.env.KORTIX_API_URL || ''
-      val = apiUrl.includes('dev') ? 'https://api-dev-yolo.kortix.com/v1' : 'https://api-yolo.kortix.com/v1'
-    }
     // Ensure defaulted values are in process.env so saveBootstrapEnv() persists them
     // and downstream code (YOLO client, OpenCode config) can read them.
     if (val && !process.env[key]) {
