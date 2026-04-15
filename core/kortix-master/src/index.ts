@@ -81,6 +81,12 @@ initShareStore()
     if (!val && key === 'KORTIX_API_URL') {
       val = 'http://localhost:8008'
     }
+    // Default YOLO API key to KORTIX_TOKEN — they're always the same service key.
+    // Existing sandboxes that update to a new image won't have YOLO in their Docker
+    // env or host env file, so this ensures YOLO auth works after image update.
+    if (!val && key === 'KORTIX_YOLO_API_KEY') {
+      val = process.env.KORTIX_TOKEN
+    }
     // Default YOLO URL so {env:KORTIX_YOLO_URL} in opencode.jsonc always resolves
     if (!val && key === 'KORTIX_YOLO_URL') {
       val = 'https://api-yolo.kortix.com/v1'
