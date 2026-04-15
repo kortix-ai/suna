@@ -10,6 +10,8 @@ import {
   type ContainerConfig,
 } from './container-config';
 
+export const VERIFY_CONTAINER_MAX_RETRIES = 5;
+
 export function getCurrentImage(endpoint: ResolvedEndpoint, containerName: string): Promise<StepResult> {
   return execOnHost(
     endpoint,
@@ -299,24 +301,59 @@ export async function verifyContainer(
   endpoint: ResolvedEndpoint,
   expectedImage: string,
   containerName: string,
-  retries = 50,
+  retries = VERIFY_CONTAINER_MAX_RETRIES,
 ): Promise<StepResult> {
+  let lastObserved = 'container missing';
   for (let i = 0; i < retries; i++) {
     const result = await execOnHost(
       endpoint,
-      `docker inspect --format='{{.Config.Image}}' '${containerName}'`,
+      `docker inspect --format='{{.Config.Image}}|{{.State.Status}}|{{.State.ExitCode}}|{{.State.Error}}' '${containerName}'`,
       10,
     );
-    const running = result.stdout.trim().replace(/'/g, '');
-    if (result.success && running === expectedImage) return result;
+    if (result.success) {
+      const [runningImage = '', state = '', exitCode = '', stateError = ''] = result.stdout
+        .trim()
+        .replace(/'/g, '')
+        .split('|');
+      lastObserved = `image=${runningImage || 'unknown'}, state=${state || 'unknown'}, exitCode=${exitCode || 'unknown'}${stateError ? `, error=${stateError}` : ''}`;
+      if (runningImage === expectedImage && state === 'running') {
+        return result;
+      }
+    } else if (result.stderr.trim()) {
+      lastObserved = result.stderr.trim();
+    }
     const delay = Math.min(2000 * Math.pow(1.5, i), 15000);
     await new Promise((r) => setTimeout(r, delay));
   }
+
+  const diagnostics = await collectContainerDiagnostics(endpoint, containerName);
   return {
     success: false,
     stdout: '',
-    stderr: `Container not running expected image ${expectedImage} after ${retries} retries`,
+    stderr: `Container not running expected image ${expectedImage} after ${retries} retries. Last observed: ${lastObserved}${diagnostics ? `\n\nDiagnostics:\n${diagnostics}` : ''}`,
     exitCode: -1,
     durationMs: 0,
   };
+}
+
+async function collectContainerDiagnostics(endpoint: ResolvedEndpoint, containerName: string): Promise<string> {
+  const diagnostics = await execOnHost(
+    endpoint,
+    [
+      `echo 'docker ps:'`,
+      `docker ps -a --filter name='^/${containerName}$' --format '{{.Names}}|{{.Image}}|{{.Status}}' 2>/dev/null || true`,
+      `echo ''`,
+      `echo 'docker inspect:'`,
+      `docker inspect --format='{{.Name}}|{{.Config.Image}}|{{.State.Status}}|{{.State.ExitCode}}|{{.State.Error}}|{{.State.StartedAt}}|{{.State.FinishedAt}}' '${containerName}' 2>/dev/null || true`,
+      `echo ''`,
+      `echo 'justavps-docker logs:'`,
+      `journalctl -u ${JUSTAVPS_SERVICE_NAME} --no-pager -n 30 2>/dev/null || true`,
+      `echo ''`,
+      `echo 'kortix-sandbox logs:'`,
+      `journalctl -u kortix-sandbox --no-pager -n 30 2>/dev/null || true`,
+    ].join('; '),
+    15,
+  );
+
+  return (diagnostics.stdout || diagnostics.stderr || '').trim().slice(0, 2000);
 }

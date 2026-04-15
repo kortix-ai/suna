@@ -190,7 +190,7 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
     await setPhase(sandboxId, 'verifying', 80, 'Verifying new container...');
     const verifyResult = await verifyContainer(endpoint, targetImage, updatedConfig.name);
     if (!verifyResult.success) {
-      throw new Error(`Container failed to start with ${targetImage}. Expected image not running after restart. ${verifyResult.stderr}`);
+      throw new Error(`Container failed to start with ${targetImage}. ${verifyResult.stderr}`);
     }
 
     // ── Persist config only after verified ──
