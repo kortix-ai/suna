@@ -682,6 +682,27 @@
     let connected = false;
     let eventSource = null;
 
+    function markConnected() {
+      if (connected) return;
+      connected = true;
+      statusEl.textContent = activeSession;
+      statusEl.className = 'connected';
+      updateNavButtons();
+      if (canvas.style.display === 'none') {
+        setEmptyState('Connected', `Waiting for first frame from session ${activeSession}…`, false);
+      }
+      if (isFocusMode) canvas.focus();
+      renderTabs();
+    }
+
+    function markReconnecting() {
+      connected = false;
+      statusEl.textContent = 'reconnecting…';
+      statusEl.className = 'connecting';
+      updateNavButtons();
+      renderTabs();
+    }
+
     function reconnect() {
       if (eventSource) { eventSource.close(); eventSource = null; }
       connected = false;
@@ -715,8 +736,8 @@
           };
           img.src = 'data:image/jpeg;base64,' + msg.data;
         } else if (msg.type === 'status') {
-          if (msg.connected && canvas.style.display === 'none') {
-            setEmptyState('Connected', `Waiting for first frame from session ${activeSession}…`, false);
+          if (msg.connected) {
+            markConnected();
           }
         }
       } catch (e) {}
@@ -738,35 +759,25 @@
       // The viewer Bun server on port 9224 bridges SSE→WS internally.
       const streamUrl = apiUrl('/stream', { port: activePort });
       eventSource = new EventSource(streamUrl);
+      eventSource.onopen = () => {
+        markConnected();
+      };
       eventSource.addEventListener('status', (event) => {
         try {
           const payload = JSON.parse(event.data || '{}');
-          if (payload.connected === false) {
-            connected = false;
-            statusEl.textContent = 'reconnecting…';
-            statusEl.className = 'connecting';
-            updateNavButtons();
-            renderTabs();
+          if (payload.connected === true) {
+            markConnected();
+          } else if (payload.connected === false) {
+            markReconnecting();
           }
         } catch {}
       });
       eventSource.onmessage = (event) => {
-        if (!connected) {
-          connected = true;
-          statusEl.textContent = activeSession;
-          statusEl.className = 'connected';
-          updateNavButtons();
-          if (isFocusMode) canvas.focus();
-          renderTabs();
-        }
+        markConnected();
         handleMessage(event.data);
       };
       eventSource.onerror = () => {
-        connected = false;
-        statusEl.textContent = 'reconnecting…';
-        statusEl.className = 'connecting';
-        updateNavButtons();
-        renderTabs();
+        markReconnecting();
       };
     }
 
