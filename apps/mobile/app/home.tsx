@@ -774,6 +774,27 @@ export default function HomeScreen() {
     [sessions],
   );
 
+  // Tabs shown as pills in the BottomBar (session tabs + page tabs)
+  const bottomBarTabs = useMemo(() => {
+    const sessionPills = openTabIds.map((id) => {
+      const s = sessions.find((sess) => sess.id === id);
+      return {
+        id,
+        label: s?.title || 'Session',
+        icon: 'chatbubble-outline' as const,
+      };
+    });
+    const pagePills = openPageIds.map((id) => {
+      const p = PAGE_TABS[id];
+      return {
+        id,
+        label: p?.label || id,
+        icon: (p?.icon as any) || 'document-outline',
+      };
+    });
+    return [...sessionPills, ...pagePills];
+  }, [openTabIds, openPageIds, sessions]);
+
   // Collapsible state
   const [sessionsExpanded, setSessionsExpanded] = useState(true);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
@@ -1736,11 +1757,15 @@ export default function HomeScreen() {
                     setFilesSelectedName(null);
                   }
                 }}
-                tabCount={openTabIds.length + openPageIds.length}
-                canGoBack={canGoBack}
-                canGoForward={canGoForward}
-                onBack={handleHistoryBack}
-                onForward={handleHistoryForward}
+                tabs={bottomBarTabs}
+                activeTabId={activePageId || activeSessionId}
+                onSelectTab={(tabId) => {
+                  if (tabId.startsWith('page:')) {
+                    useTabStore.getState().navigateToPage(tabId);
+                  } else {
+                    useTabStore.getState().navigateToSession(tabId);
+                  }
+                }}
                 onNewSession={handleNewSession}
                 onOpenTabs={handleOpenTabsOverview}
                 onCompactSession={() => {
