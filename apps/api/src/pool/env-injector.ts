@@ -11,14 +11,14 @@ function buildToolboxUrl(baseUrl: string): string {
   return `${parsed.protocol}//${parsed.hostname}/toolbox/process/execute`;
 }
 
-function buildHeaders(metadata: Record<string, unknown>): Record<string, string> {
+function buildHeaders(metadata: Record<string, unknown>, serviceKey?: string): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
   const proxyToken = metadata.justavpsProxyToken as string | undefined;
   if (proxyToken) headers['X-Proxy-Token'] = proxyToken;
 
-  const placeholderToken = metadata.poolPlaceholderToken as string | undefined;
-  if (placeholderToken) headers['Authorization'] = `Bearer ${placeholderToken}`;
+  const authToken = serviceKey || (metadata.poolPlaceholderToken as string | undefined);
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
   return headers;
 }
@@ -65,7 +65,7 @@ function buildEnvPayload(serviceKey: string, metadata?: Record<string, unknown>)
 export async function inject(poolSandbox: Pick<PoolSandbox, 'baseUrl' | 'metadata' | 'externalId'>, serviceKey: string): Promise<void> {
   const meta = (poolSandbox.metadata as Record<string, unknown>) ?? {};
   const url = buildKortixMasterUrl(poolSandbox.baseUrl);
-  const headers = buildHeaders(meta);
+  const headers = buildHeaders(meta, serviceKey);
   const keys = buildEnvPayload(serviceKey, meta);
 
   // Step 1: Inject into the running container
