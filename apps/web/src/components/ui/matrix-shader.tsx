@@ -3,25 +3,25 @@
 import { memo } from 'react';
 import dynamic from 'next/dynamic';
 
-const Shader = dynamic(() => import('shaders/react').then((m) => m.Shader), {
+const Shader = dynamic(() => import('@/lib/shaders-react').then((m) => m.Shader), {
   ssr: false,
 });
-const Ascii = dynamic(() => import('shaders/react').then((m) => m.Ascii), {
+const Ascii = dynamic(() => import('@/lib/shaders-react').then((m) => m.Ascii), {
   ssr: false,
 });
 const CRTScreen = dynamic(
-  () => import('shaders/react').then((m) => m.CRTScreen),
+  () => import('@/lib/shaders-react').then((m) => m.CRTScreen),
   { ssr: false },
 );
 const FallingLines = dynamic(
-  () => import('shaders/react').then((m) => m.FallingLines),
+  () => import('@/lib/shaders-react').then((m) => m.FallingLines),
   { ssr: false },
 );
-const Glow = dynamic(() => import('shaders/react').then((m) => m.Glow), {
+const Glow = dynamic(() => import('@/lib/shaders-react').then((m) => m.Glow), {
   ssr: false,
 });
 const SolidColor = dynamic(
-  () => import('shaders/react').then((m) => m.SolidColor),
+  () => import('@/lib/shaders-react').then((m) => m.SolidColor),
   { ssr: false },
 );
 
