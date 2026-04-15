@@ -803,7 +803,10 @@ export function createCloudSandboxRouter(
       if (sandbox.provider === 'justavps') {
         const { JustAVPSProvider } = await import('../providers/justavps');
         const justavpsProvider = provider as InstanceType<typeof JustAVPSProvider>;
-        void justavpsProvider.ensureRunning(sandbox.externalId).catch((error: unknown) => {
+        const serviceKey = (sandbox.config as Record<string, unknown>)?.serviceKey as string || '';
+        void justavpsProvider.ensureRunning(sandbox.externalId).then(() => {
+          if (serviceKey) return pool.injectEnv({ baseUrl: sandbox.baseUrl, metadata: sandbox.metadata ?? {}, externalId: sandbox.externalId! }, serviceKey);
+        }).catch((error: unknown) => {
           console.error(`[PLATFORM] Async workload recovery failed for ${sandbox.sandboxId}:`, error);
         });
 

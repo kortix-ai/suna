@@ -62,7 +62,7 @@ function buildEnvPayload(serviceKey: string, metadata?: Record<string, unknown>)
  * 2. Update /etc/justavps/env on the host via toolbox (persists across restarts).
  * Throws on failure so callers can handle broken sandboxes.
  */
-export async function inject(poolSandbox: PoolSandbox, serviceKey: string): Promise<void> {
+export async function inject(poolSandbox: Pick<PoolSandbox, 'baseUrl' | 'metadata' | 'externalId'>, serviceKey: string): Promise<void> {
   const meta = (poolSandbox.metadata as Record<string, unknown>) ?? {};
   const url = buildKortixMasterUrl(poolSandbox.baseUrl);
   const headers = buildHeaders(meta);
