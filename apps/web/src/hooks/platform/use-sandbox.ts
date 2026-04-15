@@ -18,6 +18,7 @@ import {
   listSandboxes,
   getProviders,
   extractMappedPorts,
+  discoverLocalSandboxBridge,
   type SandboxInfo,
   type SandboxProviderName,
 } from '@/lib/platform-client';
@@ -90,6 +91,16 @@ export function useSandbox() {
     refetchOnWindowFocus: false,
   });
 
+  const localBridgeQuery = useQuery({
+    queryKey: ['platform', 'sandbox', 'local-bridge'],
+    queryFn: discoverLocalSandboxBridge,
+    enabled: !!user,
+    staleTime: 30_000,
+    retry: false,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
   // Register ALL sandboxes in server store whenever primary sandbox loads.
   // Do NOT auto-switch if the user already has an active instance route
   // (e.g. navigated from /instances to /instances/:id/dashboard).
@@ -141,6 +152,26 @@ export function useSandbox() {
       }
     }).catch(() => {});
   }, [query.data, pathname]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const store = useServerStore.getState();
+
+    if (query.data?.provider === 'local_docker') {
+      store.removeLocalBridgeServer();
+      return;
+    }
+
+    if (localBridgeQuery.data) {
+      store.upsertLocalBridgeServer(localBridgeQuery.data);
+      return;
+    }
+
+    if (localBridgeQuery.isFetched) {
+      store.removeLocalBridgeServer();
+    }
+  }, [user, query.data?.provider, localBridgeQuery.data, localBridgeQuery.isFetched]);
 
   return {
     sandbox: query.data ?? null,

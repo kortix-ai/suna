@@ -1121,6 +1121,11 @@ function parsePreviewSubdomain(host: string): { port: number; sandboxId: string 
   return { port, sandboxId: match[2] };
 }
 
+function isLocalPreviewHost(host: string): boolean {
+  const hostname = host.split(':')[0]?.toLowerCase() || '';
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
+}
+
 function extractCookieToken(req: Request): string | null {
   const cookieHeader = req.headers.get('Cookie') || '';
   const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${PREVIEW_SESSION_COOKIE}=([^;]+)`));
@@ -1294,6 +1299,9 @@ export default {
 
     if (subdomain) {
       const { port, sandboxId } = subdomain;
+      const allowLocalPreviewBridge =
+        sandboxId === config.SANDBOX_CONTAINER_NAME &&
+        isLocalPreviewHost(host);
 
       // ── CORS preflight must be handled BEFORE auth ──────────────────
       // Browsers send OPTIONS without Authorization headers. If we block
@@ -1317,7 +1325,7 @@ export default {
       // Bearer header or cookie on first load proves you're legit,
       // then all subsequent requests (sub-resources, WS, etc.) pass through.
       // This avoids third-party cookie issues in iframes.
-      if (!isSubdomainAuthenticated(sandboxId, port)) {
+      if (!allowLocalPreviewBridge && !isSubdomainAuthenticated(sandboxId, port)) {
         const authHeader = req.headers.get('Authorization');
         const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
         const kortixTokenHeader = req.headers.get('X-Kortix-Token');
@@ -1338,6 +1346,8 @@ export default {
           });
         }
         // Auth succeeded — mark this subdomain as authenticated
+        markSubdomainAuthenticated(sandboxId, port);
+      } else if (allowLocalPreviewBridge) {
         markSubdomainAuthenticated(sandboxId, port);
       }
 

@@ -130,6 +130,48 @@ interface PlatformResponse<T> {
   created?: boolean;
 }
 
+export interface LocalSandboxBridgeInfo {
+  label: string;
+  url: string;
+  mappedPorts?: Record<string, string>;
+}
+
+interface LocalBridgeStatusResponse {
+  success: boolean;
+  status?: string;
+  data?: {
+    name?: string;
+    mappedPorts?: Record<string, string>;
+  };
+}
+
+const LOCAL_PLATFORM_CANDIDATES = [
+  'http://localhost:8008/v1',
+  'http://127.0.0.1:8008/v1',
+];
+
+function getLocalBridgeStatusUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}/platform/local-bridge/status`;
+}
+
+async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 1500): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) {
+      throw new Error(`Request failed: ${res.status}`);
+    }
+    return await res.json() as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ─── Fetch helper ────────────────────────────────────────────────────────────
 
 async function platformFetch<T>(
@@ -430,6 +472,35 @@ export async function listSandboxes(sandboxId?: unknown): Promise<SandboxInfo[]>
   } catch {
     return [];
   }
+}
+
+export async function discoverLocalSandboxBridge(): Promise<LocalSandboxBridgeInfo | null> {
+  if (typeof window === 'undefined') return null;
+
+  const currentPlatformUrl = getPlatformUrl();
+  const candidateBases = Array.from(new Set([currentPlatformUrl, ...LOCAL_PLATFORM_CANDIDATES]));
+
+  for (const baseUrl of candidateBases) {
+    try {
+      const bridgeStatus = await fetchJsonWithTimeout<LocalBridgeStatusResponse>(
+        getLocalBridgeStatusUrl(baseUrl),
+      );
+
+      if (!bridgeStatus.success || bridgeStatus.status !== 'ready' || !bridgeStatus.data?.name) {
+        continue;
+      }
+
+      return {
+        label: 'Local Sandbox',
+        url: `${baseUrl}/p/${bridgeStatus.data.name}/${SANDBOX_PORTS.KORTIX_MASTER}`,
+        mappedPorts: bridgeStatus.data.mappedPorts,
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 /**

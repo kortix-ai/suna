@@ -42,6 +42,12 @@ export interface ServerEntry {
   mappedPorts?: Record<string, string>;
 }
 
+export interface LocalBridgeServerInput {
+  label: string;
+  url: string;
+  mappedPorts?: Record<string, string>;
+}
+
 interface ServerStore {
   servers: ServerEntry[];
   activeServerId: string;
@@ -115,6 +121,8 @@ interface ServerStore {
     /** Optional stable ID to use for cloud sandboxes (e.g. "sandbox-<sandboxId>") */
     stableId?: string;
   }) => string;
+  upsertLocalBridgeServer: (entry: LocalBridgeServerInput) => void;
+  removeLocalBridgeServer: () => void;
 
 }
 
@@ -157,6 +165,42 @@ export function resolveServerUrl(server: ServerEntry): string {
 
 const DEFAULT_SERVER_ID = 'default';
 const CLOUD_SANDBOX_SERVER_ID = 'cloud-sandbox';
+export const LOCAL_BRIDGE_SERVER_ID = 'local-bridge';
+
+export function isLocalBridgeServer(server: ServerEntry): boolean {
+  return server.id === LOCAL_BRIDGE_SERVER_ID;
+}
+
+const PATH_PROXY_URL_REGEX =
+  /^https?:\/\/[^/]+\/v1\/p\/([^/]+)\/(\d+)(\/.*)?$/;
+
+function deriveProxyBaseFromServerUrl(url: string): { sandboxId: string; backendPort: number; apiBaseUrl: string } | null {
+  try {
+    const parsed = new URL(url);
+    const subdomainMatch = parsed.hostname.match(/^p(\d+)-([^.]+)\.localhost$/);
+    if (subdomainMatch) {
+      const backendPort = parseInt(parsed.port, 10) || (parsed.protocol === 'https:' ? 443 : 80);
+      return {
+        sandboxId: subdomainMatch[2],
+        backendPort,
+        apiBaseUrl: `http://localhost:${backendPort}/v1`,
+      };
+    }
+
+    const pathMatch = url.match(PATH_PROXY_URL_REGEX);
+    if (pathMatch) {
+      return {
+        sandboxId: pathMatch[1],
+        backendPort: parseInt(parsed.port, 10) || (parsed.protocol === 'https:' ? 443 : 80),
+        apiBaseUrl: `${parsed.protocol}//${parsed.host}/v1`,
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
 
 function generateId(): string {
   return `srv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -168,7 +212,7 @@ function generateId(): string {
 // sandboxes table via useSandbox() — they live in zustand/localStorage only.
 
 /** IDs of managed entries that should NOT be synced to the servers API. */
-const MANAGED_IDS = new Set([DEFAULT_SERVER_ID, CLOUD_SANDBOX_SERVER_ID]);
+const MANAGED_IDS = new Set([DEFAULT_SERVER_ID, CLOUD_SANDBOX_SERVER_ID, LOCAL_BRIDGE_SERVER_ID]);
 
 /** True if this entry is a managed sandbox (not a custom user entry). */
 function isManagedEntry(s: ServerEntry | string): boolean {
@@ -532,6 +576,41 @@ export const useServerStore = create<ServerStore>()(
         return targetId;
       },
 
+      upsertLocalBridgeServer: (entry) => {
+        const normalizedUrl = entry.url.replace(/\/+$/, '');
+        const existing = get().servers.find((s) => s.id === LOCAL_BRIDGE_SERVER_ID);
+
+        if (existing) {
+          get().updateServerSilent(LOCAL_BRIDGE_SERVER_ID, {
+            label: entry.label || existing.label,
+            url: normalizedUrl,
+            mappedPorts: entry.mappedPorts,
+            provider: 'local_docker',
+            sandboxId: undefined,
+            instanceId: undefined,
+          });
+          return;
+        }
+
+        const newEntry: ServerEntry = {
+          id: LOCAL_BRIDGE_SERVER_ID,
+          label: entry.label || 'Local Sandbox',
+          url: normalizedUrl,
+          provider: 'local_docker',
+          mappedPorts: entry.mappedPorts,
+        };
+
+        set((state) => ({
+          servers: [...state.servers, newEntry],
+        }));
+      },
+
+      removeLocalBridgeServer: () => {
+        const existing = get().servers.find((s) => s.id === LOCAL_BRIDGE_SERVER_ID);
+        if (!existing) return;
+        get().removeServer(LOCAL_BRIDGE_SERVER_ID);
+      },
+
     }),
     {
       name: 'opencode-servers-v6', // v6: sandbox URLs derived at runtime, never persisted
@@ -656,6 +735,12 @@ export function getSubdomainOpts(): { sandboxId: string; backendPort: number; ap
 export function getInstanceSubdomainOpts(
   backendPort = 8000,
 ): { sandboxId: string; backendPort: number; apiBaseUrl: string } {
+  const active = getActiveServer();
+  const fromUrl = active?.url ? deriveProxyBaseFromServerUrl(active.url) : null;
+  if (fromUrl) {
+    return fromUrl;
+  }
+
   return {
     sandboxId: getActiveSandboxId() ?? getEnv().SANDBOX_ID ?? 'kortix-sandbox',
     backendPort,
@@ -682,6 +767,11 @@ export function getInstanceSubdomainOpts(
 export function deriveSubdomainOpts(
   server: ServerEntry | null | undefined,
 ): { sandboxId: string; backendPort: number; apiBaseUrl: string } {
+  const fromUrl = server?.url ? deriveProxyBaseFromServerUrl(server.url) : null;
+  if (fromUrl) {
+    return fromUrl;
+  }
+
   // Fall back to the configured sandbox ID (from runtime env) or 'kortix-sandbox'.
   // This ensures proxy rewriting NEVER silently degrades to raw localhost URLs
   // just because the store hasn't hydrated the sandboxId yet, or because the

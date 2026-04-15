@@ -7,6 +7,7 @@ import { apiKeysRouter } from './routes/api-keys';
 import { sshRouter } from './routes/ssh';
 import { sandboxWebhookRouter } from './routes/sandbox-webhooks';
 import { backupRouter } from './routes/sandbox-backups';
+import { localBridgeRouter } from './routes/local-bridge';
 
 const platformApp = new Hono();
 
@@ -23,6 +24,10 @@ platformApp.route('/sandbox/update', sandboxUpdateRouter);
 // SSH key management
 // Full path: /v1/platform/sandbox/ssh/*
 platformApp.route('/sandbox/ssh', sshRouter);
+
+// Local sandbox discovery bridge (public read-only)
+// Full path: /v1/platform/local-bridge/status
+platformApp.route('/', localBridgeRouter);
 
 // API key management (sandbox-scoped, DB-backed)
 // Full path: /v1/platform/api-keys/*

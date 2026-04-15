@@ -1,30 +1,91 @@
 #!/usr/bin/with-contenv bash
-# Agent Browser Session — monitor-only service.
+# Agent Browser Session — keep the primary `kortix` browser session alive.
 #
-# Does NOT start its own daemon. Instead:
-# 1. Patches stream-server.js (screencast watchdog)
-# 2. Waits for the agent to start a daemon (via agent-browser CLI)
-# 3. Ensures the .stream file exists so the viewer can discover it
-# 4. Monitors the daemon — restarts the service if it dies
-#
-# The agent's daemon is the primary one. It launches its own Playwright
-# browser and serves the stream on port 9223.
+# The visible browser window is provided by svc-chromium-persistent on DISPLAY=:1.
+# This service attaches agent-browser to that Chromium instance via CDP on 9222,
+# keeps the stream registration fresh for the 9224 viewer, and restarts cleanly
+# if the daemon disappears.
 
+set -euo pipefail
 
-echo "[agent-browser-session] Starting (monitor mode)"
+echo "[agent-browser-session] Starting"
 
 SOCKET_DIR="${AGENT_BROWSER_SOCKET_DIR:-/dev/shm/agent-browser}"
 STREAM_PORT="${AGENT_BROWSER_STREAM_PORT:-9223}"
+SESSION_NAME="${AGENT_BROWSER_PRIMARY_SESSION:-${AGENT_BROWSER_SESSION:-kortix}}"
+CDP_PORT="${AGENT_BROWSER_CDP_PORT:-9222}"
+LOG_FILE="/tmp/agent-browser-session.log"
+PRIMARY_PID_FILE="$SOCKET_DIR/${SESSION_NAME}.pid"
+PRIMARY_STREAM_FILE="$SOCKET_DIR/${SESSION_NAME}.stream"
+
 mkdir -p "$SOCKET_DIR"
 if [ "$(id -u)" -eq 0 ]; then
   chown abc:users "$SOCKET_DIR" 2>/dev/null || true
 fi
 
+locate_stream_server() {
+  local candidates=(
+    "/usr/lib/node_modules/agent-browser/dist/stream-server.js"
+    "/usr/local/lib/node_modules/agent-browser/dist/stream-server.js"
+    "/workspace/.npm-global/lib/node_modules/agent-browser/dist/stream-server.js"
+  )
+
+  if [ -n "${NPM_CONFIG_PREFIX:-}" ]; then
+    candidates+=("${NPM_CONFIG_PREFIX}/lib/node_modules/agent-browser/dist/stream-server.js")
+  fi
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [ -f "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+daemon_pid() {
+  local pid
+  pid="$(recorded_primary_pid || true)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    printf '%s\n' "$pid"
+    return 0
+  fi
+
+  pgrep -n -f "node.*dist/daemon.js" 2>/dev/null || true
+}
+
+socket_alive() {
+  grep -q "${SESSION_NAME}\\.sock" /proc/net/unix 2>/dev/null
+}
+
+stream_alive() {
+  node -e "const s=require('net').createConnection({port:${STREAM_PORT},host:'127.0.0.1'});s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))" 2>/dev/null
+}
+
+port_free() {
+  node -e "const s=require('net').createServer();s.listen(${STREAM_PORT},'127.0.0.1',()=>{s.close();process.exit(0)});s.on('error',()=>process.exit(1))" 2>/dev/null
+}
+
+write_discovery_files() {
+  local pid="$1"
+  printf '%s\n' "$pid" > "$PRIMARY_PID_FILE" 2>/dev/null || true
+  printf '%s\n' "$STREAM_PORT" > "$PRIMARY_STREAM_FILE" 2>/dev/null || true
+}
+
+recorded_primary_pid() {
+  if [ -f "$PRIMARY_PID_FILE" ]; then
+    tr -dc '0-9' < "$PRIMARY_PID_FILE"
+  fi
+}
+
 # ── Patch stream-server.js if not already patched ────────────────────────
-# Fixes screencast dying silently on page/tab switch.
-STREAM_SERVER="/usr/local/lib/node_modules/agent-browser/dist/stream-server.js"
-if [ -f "$STREAM_SERVER" ] && ! grep -q '_lastFrameAt' "$STREAM_SERVER" 2>/dev/null; then
-  echo "[agent-browser-session] Patching stream-server.js (screencast watchdog)"
+# Fixes screencast dying silently on page/tab switch and allows daemon reuse
+# when a healthy stream server is already bound to the shared port.
+STREAM_SERVER="$(locate_stream_server || true)"
+if [ -n "$STREAM_SERVER" ] && ! grep -q '_lastFrameAt' "$STREAM_SERVER" 2>/dev/null; then
+  echo "[agent-browser-session] Patching ${STREAM_SERVER##*/}"
   node -e "
     const fs = require('fs');
     let c = fs.readFileSync('$STREAM_SERVER', 'utf8');
@@ -55,8 +116,6 @@ if [ -f "$STREAM_SERVER" ] && ! grep -q '_lastFrameAt' "$STREAM_SERVER" 2>/dev/n
         '                });',
       ].join('\n')
     );
-    // 4. EADDRINUSE: don't crash if another daemon already has the stream port.
-    //    Just skip the stream server and let the existing one handle streaming.
     c = c.replace(
       \"this.wss.on('error', (error) => {\\n                    console.error('[StreamServer] WebSocket error:', error);\\n                    reject(error);\\n                });\",
       \"this.wss.on('error', (error) => {\\n                    if (error.code === 'EADDRINUSE') {\\n                        console.log('[StreamServer] Port ' + this.port + ' in use, reusing existing stream server');\\n                        this.wss = null;\\n                        resolve();\\n                        return;\\n                    }\\n                    console.error('[StreamServer] WebSocket error:', error);\\n                    reject(error);\\n                });\"
@@ -66,27 +125,115 @@ if [ -f "$STREAM_SERVER" ] && ! grep -q '_lastFrameAt' "$STREAM_SERVER" 2>/dev/n
   " 2>&1 || echo "[agent-browser-session] WARNING: patch failed"
 fi
 
-# ── Monitor loop ─────────────────────────────────────────────────────────
-# Wait for a daemon to appear, then keep .stream file alive and monitor.
-echo "[agent-browser-session] Waiting for agent daemon..."
+adopt_existing_daemon() {
+  local pid="$1"
+  echo "[agent-browser-session] Adopting existing daemon (pid $pid)"
+  write_discovery_files "$pid"
+}
 
-while true; do
-  # Look for a running daemon
-  DAEMON_PID=$(pgrep -n -f "node.*dist/daemon.js" 2>/dev/null)
-
-  if [ -n "$DAEMON_PID" ] && kill -0 "$DAEMON_PID" 2>/dev/null; then
-    # Daemon is running — ensure discovery files exist
-    echo "$DAEMON_PID" > "$SOCKET_DIR/kortix.pid" 2>/dev/null || true
-
-    # Check if stream port is listening
-    if node -e "const s=require('net').createConnection({port:$STREAM_PORT,host:'127.0.0.1'});s.on('connect',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))" 2>/dev/null; then
-      # Stream server is up — write .stream file if missing
-      if [ ! -f "$SOCKET_DIR/kortix.stream" ]; then
-        echo "$STREAM_PORT" > "$SOCKET_DIR/kortix.stream" 2>/dev/null || true
-        echo "[agent-browser-session] Registered stream port $STREAM_PORT for daemon $DAEMON_PID"
-      fi
+wait_for_cdp() {
+  local i
+  for i in $(seq 1 60); do
+    if curl -sf "http://127.0.0.1:${CDP_PORT}/json/version" >/dev/null 2>&1; then
+      echo "[agent-browser-session] Chrome CDP ready"
+      return 0
     fi
+    sleep 1
+  done
+
+  echo "[agent-browser-session] ERROR: Chrome CDP not ready on ${CDP_PORT}"
+  return 1
+}
+
+wait_for_stream_port_free() {
+  local i
+  for i in $(seq 1 15); do
+    if port_free; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "[agent-browser-session] WARNING: stream port ${STREAM_PORT} still busy after 15s"
+  return 0
+}
+
+start_daemon() {
+  : > "$LOG_FILE"
+  echo "[agent-browser-session] Starting daemon via CDP ${CDP_PORT}"
+
+  if [ "$(id -u)" -eq 0 ]; then
+    s6-setuidgid abc env \
+      HOME=/workspace \
+      DISPLAY=:1 \
+      AGENT_BROWSER_SOCKET_DIR="$SOCKET_DIR" \
+      AGENT_BROWSER_STREAM_PORT="$STREAM_PORT" \
+      AGENT_BROWSER_IDLE_TIMEOUT_MS=0 \
+      AGENT_BROWSER_SESSION="$SESSION_NAME" \
+      agent-browser --cdp "$CDP_PORT" --session "$SESSION_NAME" open about:blank \
+      >> "$LOG_FILE" 2>&1
+    return $?
   fi
 
+  env \
+    HOME=/workspace \
+    DISPLAY=:1 \
+    AGENT_BROWSER_SOCKET_DIR="$SOCKET_DIR" \
+    AGENT_BROWSER_STREAM_PORT="$STREAM_PORT" \
+    AGENT_BROWSER_IDLE_TIMEOUT_MS=0 \
+    AGENT_BROWSER_SESSION="$SESSION_NAME" \
+    agent-browser --cdp "$CDP_PORT" --session "$SESSION_NAME" open about:blank \
+    >> "$LOG_FILE" 2>&1
+}
+
+ensure_primary_daemon() {
+  local pid
+  pid="$(daemon_pid)"
+
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && socket_alive && stream_alive; then
+    adopt_existing_daemon "$pid"
+    return 0
+  fi
+
+  local recorded_pid
+  recorded_pid="$(recorded_primary_pid || true)"
+  if [ -n "$recorded_pid" ] && kill -0 "$recorded_pid" 2>/dev/null; then
+    kill -9 "$recorded_pid" 2>/dev/null || true
+  fi
+  rm -f "$PRIMARY_PID_FILE" "$PRIMARY_STREAM_FILE" 2>/dev/null || true
+
+  wait_for_cdp
+  wait_for_stream_port_free
+  start_daemon || true
+
+  local i
+  for i in $(seq 1 20); do
+    pid="$(daemon_pid)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && socket_alive && stream_alive; then
+      echo "[agent-browser-session] Daemon running (pid $pid)"
+      write_discovery_files "$pid"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "[agent-browser-session] ERROR: daemon failed to become healthy"
+  if [ -s "$LOG_FILE" ]; then
+    sed -n '1,120p' "$LOG_FILE"
+  fi
+  return 1
+}
+
+ensure_primary_daemon
+
+while true; do
+  pid="$(daemon_pid)"
+  if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null || ! socket_alive || ! stream_alive; then
+    echo "[agent-browser-session] Primary daemon unhealthy, restarting service"
+    sleep 2
+    exit 1
+  fi
+
+  write_discovery_files "$pid"
   sleep 5
 done

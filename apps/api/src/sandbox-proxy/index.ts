@@ -40,6 +40,42 @@ interface ProviderCacheEntry {
 const providerCache = new Map<string, ProviderCacheEntry>();
 const PROVIDER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+interface ParsedProxyRequest {
+  method: string;
+  remainingPath: string;
+  queryString: string;
+  body?: ArrayBuffer;
+  origin: string;
+  headers: Headers;
+}
+
+function isLocalBridgeSandboxId(sandboxId: string): boolean {
+  return sandboxId === config.SANDBOX_CONTAINER_NAME;
+}
+
+async function parseProxyRequest(c: { req: { url: string; method: string; raw: Request; header: (name: string) => string | undefined } }, sandboxId: string, port: number): Promise<ParsedProxyRequest> {
+  const fullPath = new URL(c.req.url).pathname;
+  const prefix = `/${sandboxId}/${port}`;
+  const idx = fullPath.indexOf(prefix);
+  const remainingPath = idx !== -1 ? fullPath.slice(idx + prefix.length) || '/' : '/';
+  const queryString = new URL(c.req.url).search;
+  const method = c.req.method;
+
+  let body: ArrayBuffer | undefined;
+  if (method !== 'GET' && method !== 'HEAD') {
+    body = await c.req.raw.arrayBuffer();
+  }
+
+  return {
+    method,
+    remainingPath,
+    queryString,
+    body,
+    origin: c.req.header('Origin') || '',
+    headers: c.req.raw.headers,
+  };
+}
+
 /**
  * Drop a sandbox from the in-process provider cache so the next request
  * re-reads from the DB. Used after a proxy-token refresh so cached stale
@@ -68,7 +104,27 @@ export async function resolveProvider(externalId: string): Promise<{ provider: C
       )
       .limit(1);
 
-    if (!sandbox) return null;
+    if (!sandbox) {
+      if (isLocalBridgeSandboxId(externalId)) {
+        const fallbackServiceKey = config.INTERNAL_SERVICE_KEY;
+        providerCache.set(externalId, {
+          provider: 'local_docker',
+          baseUrl: '',
+          serviceKey: fallbackServiceKey,
+          proxyToken: '',
+          slug: '',
+          expiresAt: Date.now() + PROVIDER_CACHE_TTL_MS,
+        });
+        return {
+          provider: 'local_docker',
+          baseUrl: '',
+          serviceKey: fallbackServiceKey,
+          proxyToken: '',
+          slug: '',
+        };
+      }
+      return null;
+    }
 
     const provider = sandbox.provider as CachedProviderName;
     const baseUrl = sandbox.baseUrl || '';
@@ -118,28 +174,14 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
     if (isNaN(port) || port < 1 || port > 65535) {
       return c.json({ error: `Invalid port: ${c.req.param('port')}` }, 400);
     }
-
-    const fullPath = new URL(c.req.url).pathname;
-    const prefix = `/${sandboxId}/${port}`;
-    const idx = fullPath.indexOf(prefix);
-    const remainingPath = idx !== -1 ? fullPath.slice(idx + prefix.length) || '/' : '/';
-
-    const queryString = new URL(c.req.url).search;
-
-    const method = c.req.method;
-    let body: ArrayBuffer | undefined;
-    if (method !== 'GET' && method !== 'HEAD') {
-      body = await c.req.raw.arrayBuffer();
-    }
-
-    const origin = c.req.header('Origin') || '';
+    const request = await parseProxyRequest(c, sandboxId, port);
 
     const resolved = await resolveProvider(sandboxId);
     if (!resolved || resolved.provider !== 'local_docker') {
       return c.json({ error: 'Sandbox not found' }, 404);
     }
 
-    return proxyToSandbox(sandboxId, port, method, remainingPath, queryString, c.req.raw.headers, body, false, origin, undefined, resolved.serviceKey);
+    return proxyToSandbox(sandboxId, port, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, undefined, resolved.serviceKey);
   });
 
   localOnlyProxy.all('/:sandboxId/:port', async (c) => {
@@ -159,6 +201,11 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
     if (isNaN(port) || port < 1 || port > 65535) {
       return c.json({ error: `Invalid port: ${c.req.param('port')}` }, 400);
     }
+    const request = await parseProxyRequest(c, sandboxId, port);
+
+    if (isLocalBridgeSandboxId(sandboxId)) {
+      return proxyToSandbox(sandboxId, port, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, undefined, config.INTERNAL_SERVICE_KEY);
+    }
 
     const resolved = await resolveProvider(sandboxId);
     if (!resolved?.slug) {
@@ -169,27 +216,13 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
     const proxyDomain = config.JUSTAVPS_PROXY_DOMAIN;
     const cfProxyUrl = `https://${port}--${resolved.slug}.${proxyDomain}`;
 
-    const fullPath = new URL(c.req.url).pathname;
-    const prefix = `/${sandboxId}/${port}`;
-    const idx = fullPath.indexOf(prefix);
-    const remainingPath = idx !== -1 ? fullPath.slice(idx + prefix.length) || '/' : '/';
-
-    const queryString = new URL(c.req.url).search;
-    const method = c.req.method;
-    let body: ArrayBuffer | undefined;
-    if (method !== 'GET' && method !== 'HEAD') {
-      body = await c.req.raw.arrayBuffer();
-    }
-
-    const origin = c.req.header('Origin') || '';
-
     // Auth: proxy token for CF Worker, service key for core/kortix-master
     const extraHeaders: Record<string, string> = {};
     if (resolved.proxyToken) {
       extraHeaders['X-Proxy-Token'] = resolved.proxyToken;
     }
 
-    return proxyToSandbox(sandboxId, 8000, method, remainingPath, queryString, c.req.raw.headers, body, false, origin, cfProxyUrl, resolved.serviceKey, extraHeaders);
+    return proxyToSandbox(sandboxId, 8000, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, cfProxyUrl, resolved.serviceKey, extraHeaders);
   });
 
   justavpsOnlyProxy.all('/:sandboxId/:port', async (c) => {
@@ -215,25 +248,10 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
     }
 
     const resolved = await resolveProvider(sandboxId);
-
-    // Extract common request data
-    const fullPath = new URL(c.req.url).pathname;
-    const prefix = `/${sandboxId}/${port}`;
-    const idx = fullPath.indexOf(prefix);
-    const remainingPath = idx !== -1 ? fullPath.slice(idx + prefix.length) || '/' : '/';
-
-    const queryString = new URL(c.req.url).search;
-
-    const method = c.req.method;
-    let body: ArrayBuffer | undefined;
-    if (method !== 'GET' && method !== 'HEAD') {
-      body = await c.req.raw.arrayBuffer();
-    }
-
-    const origin = c.req.header('Origin') || '';
+    const request = await parseProxyRequest(c, sandboxId, port);
 
     if (resolved?.provider === 'local_docker') {
-      return proxyToSandbox(sandboxId, port, method, remainingPath, queryString, c.req.raw.headers, body, false, origin, undefined, resolved.serviceKey);
+      return proxyToSandbox(sandboxId, port, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, undefined, resolved.serviceKey);
     }
 
     if (resolved?.provider === 'justavps') {
@@ -244,12 +262,12 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
       if (resolved.proxyToken) {
         extra['X-Proxy-Token'] = resolved.proxyToken;
       }
-      return proxyToSandbox(sandboxId, 8000, method, remainingPath, queryString, c.req.raw.headers, body, false, origin, cfProxyUrl, resolved.serviceKey, extra);
+      return proxyToSandbox(sandboxId, 8000, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, cfProxyUrl, resolved.serviceKey, extra);
     }
 
     // Default: route to Daytona preview handler
     const userId = (c.get('userId') as string) || '';
-    return proxyToDaytona(sandboxId, port, userId, method, remainingPath, queryString, c.req.raw.headers, body, origin);
+    return proxyToDaytona(sandboxId, port, userId, request.method, request.remainingPath, request.queryString, request.headers, request.body, request.origin);
   });
 
   multiProxy.all('/:sandboxId/:port', async (c) => {
