@@ -19,6 +19,7 @@ import {
   checkDiskSpace,
   checkImageExistsOnHub,
   checkpointSqlite,
+  ensureContainerRunning,
   stopAndStartContainer,
   verifyContainer,
 } from './steps';
@@ -153,6 +154,14 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
     const dockerCheck = await checkDockerDaemon(endpoint);
     if (!dockerCheck.success) throw new Error(dockerCheck.stderr);
 
+    const containerReady = await ensureContainerRunning(endpoint, containerConfig);
+    if (!containerReady.success) {
+      throw new Error(`Sandbox container is missing and auto-recovery failed: ${containerReady.stderr || containerReady.stdout || 'unknown error'}`);
+    }
+    if (containerReady.stdout === 'recovered') {
+      console.log(`[UPDATE] Recovered missing sandbox container ${containerConfig.name} before update`);
+    }
+
     // Check disk space (need ~6GB for the image)
     const diskCheck = await checkDiskSpace(endpoint);
     if (!diskCheck.success) throw new Error(diskCheck.stderr);
@@ -182,7 +191,15 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
 
     // ── Checkpoint ──
     await setPhase(sandboxId, 'stopping', 40, 'Saving state...');
-    const checkpointResult = await checkpointSqlite(endpoint, containerConfig.name);
+    let checkpointResult = await checkpointSqlite(endpoint, containerConfig.name);
+    if (!checkpointResult.success && /No such container/i.test(`${checkpointResult.stderr}\n${checkpointResult.stdout}`)) {
+      console.warn(`[UPDATE] Container ${containerConfig.name} disappeared before checkpoint, attempting recovery...`);
+      const recovered = await ensureContainerRunning(endpoint, containerConfig);
+      if (!recovered.success) {
+        throw new Error(`State sync failed before update and container recovery failed: ${recovered.stderr || recovered.stdout || 'unknown error'}`);
+      }
+      checkpointResult = await checkpointSqlite(endpoint, containerConfig.name);
+    }
     if (!checkpointResult.success) {
       throw new Error(`State sync failed before update: ${checkpointResult.stderr || checkpointResult.stdout || 'unknown error'}`);
     }

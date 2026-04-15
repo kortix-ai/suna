@@ -23,11 +23,14 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { restartSandbox } from '@/lib/platform-client';
+import { getActiveInstanceIdFromCookie, getCurrentInstanceIdFromWindow } from '@/lib/instance-routes';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useAdminSandboxHealth, useAdminSandboxRepair, type AdminInstanceLayerAction } from '@/hooks/admin/use-admin-sandboxes';
 import {
   STAGE_LABELS,
   type ProvisioningStageInfo,
 } from '@/lib/provisioning-stages';
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { markRecoveryRequested, type SandboxRecoveryPhase, useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useServerStore } from '@/stores/server-store';
 
 /**
@@ -64,6 +67,8 @@ export function ConnectingScreen({
   provisioning,
   error,
   stopped,
+  sandboxId,
+  provider,
   backHref,
   minimal = false,
 }: ConnectingScreenProps = {}) {
@@ -72,6 +77,9 @@ export function ConnectingScreen({
   const initialCheckDone = useSandboxConnectionStore((s) => s.initialCheckDone);
   const reconnectAttempts = useSandboxConnectionStore((s) => s.reconnectAttempts);
   const disconnectedAt = useSandboxConnectionStore((s) => s.disconnectedAt);
+  const recoveryPhase = useSandboxConnectionStore((s) => s.recoveryPhase);
+  const restartRequestedAt = useSandboxConnectionStore((s) => s.restartRequestedAt);
+  const healthy = useSandboxConnectionStore((s) => s.healthy);
 
   const activeServerId = useServerStore((s) => s.activeServerId);
   const servers = useServerStore((s) => s.servers);
@@ -80,15 +88,42 @@ export function ConnectingScreen({
   const router = useRouter();
   const [restarting, setRestarting] = useState(false);
 
-  const isCloudProvider =
-    activeServer?.provider && activeServer.provider !== 'local_docker';
+  const effectiveProvider = provider || activeServer?.provider;
+  const isCloudProvider = effectiveProvider && effectiveProvider !== 'local_docker';
+  const resolvedSandboxId = sandboxId || getCurrentInstanceIdFromWindow() || activeServer?.instanceId || getActiveInstanceIdFromCookie() || undefined;
+  const { data: adminRole } = useAdminRole({ enabled: !!resolvedSandboxId });
+  const isAdmin = !!adminRole?.isAdmin;
+  const adminHealthQuery = useAdminSandboxHealth(isAdmin && resolvedSandboxId ? resolvedSandboxId : null, !!resolvedSandboxId && isAdmin);
+  const adminRepairMutation = useAdminSandboxRepair();
+  const adminHealth = adminHealthQuery.data;
+
+  const primaryRepairAction: AdminInstanceLayerAction['action'] = adminHealth?.recommended_action || 'restart_workload';
+  const primaryRepairLabel =
+    primaryRepairAction === 'restart_runtime' ? 'Restart runtime'
+      : primaryRepairAction === 'restart_workload' ? 'Restart workload'
+      : primaryRepairAction === 'start_workload' ? 'Start workload'
+      : primaryRepairAction === 'start_host' ? 'Start host'
+      : primaryRepairAction === 'reboot_host' ? 'Reboot host'
+      : primaryRepairAction === 'stop_host' ? 'Stop host'
+      : 'Repair';
 
   const handleRestart = useCallback(async () => {
     if (restarting) return;
     setRestarting(true);
+    const adminAction = isAdmin && resolvedSandboxId ? primaryRepairAction : null;
+    const phase = adminAction === 'restart_runtime'
+      ? 'restarting_runtime'
+      : adminAction === 'reboot_host' || adminAction === 'start_host'
+        ? 'restarting_host'
+        : 'restarting_workload';
+    markRecoveryRequested(phase);
     try {
-      await restartSandbox();
-      toast.success('Machine restart initiated. Reconnecting…', {
+      if (adminAction && resolvedSandboxId) {
+        await adminRepairMutation.mutateAsync({ sandboxId: resolvedSandboxId, action: adminAction });
+      } else {
+        await restartSandbox(resolvedSandboxId);
+      }
+      toast.success(`${adminAction === 'restart_runtime' ? 'Runtime restart' : adminAction === 'start_host' ? 'Host start' : adminAction === 'reboot_host' ? 'Host reboot' : stopped ? 'Host start' : 'Workload restart'} initiated.`, {
         duration: 5000,
       });
     } catch (err) {
@@ -99,7 +134,7 @@ export function ConnectingScreen({
     } finally {
       setTimeout(() => setRestarting(false), 15_000);
     }
-  }, [restarting]);
+  }, [adminRepairMutation, isAdmin, primaryRepairAction, restarting, resolvedSandboxId, stopped]);
 
   const handleSwitch = useCallback(
     () => router.push(backHref || '/instances'),
@@ -131,6 +166,7 @@ export function ConnectingScreen({
         <StoppedView
           label={stopped.name || labelOverride || serverLabel}
           onBack={handleSwitch}
+          onRestart={isCloudProvider ? handleRestart : undefined}
         />
       </FullScreenShell>
     );
@@ -155,7 +191,7 @@ export function ConnectingScreen({
 
   // ── Store-driven modes (used by the dashboard overlay) ──────────────────
 
-  if (!forceConnecting && status === 'connected') return null;
+  if (!forceConnecting && status === 'connected' && healthy !== false) return null;
 
   const isMidSessionDrop =
     !forceConnecting &&
@@ -163,7 +199,13 @@ export function ConnectingScreen({
     initialCheckDone &&
     status !== 'connected';
 
-  if (isMidSessionDrop) {
+  const shouldEscalateToOverlay =
+    isMidSessionDrop &&
+    status === 'unreachable' &&
+    !!disconnectedAt &&
+    Date.now() - disconnectedAt > 12_000;
+
+  if (isMidSessionDrop && !shouldEscalateToOverlay) {
     return (
       <ReconnectPill
         status={status}
@@ -175,16 +217,22 @@ export function ConnectingScreen({
     );
   }
 
-  if (!forceConnecting && status === 'unreachable') {
+  if ((!forceConnecting && (status === 'unreachable' || healthy === false)) || shouldEscalateToOverlay) {
     return (
       <FullScreenShell>
         <UnreachableView
           label={serverLabel}
           reconnectAttempts={reconnectAttempts}
-          provider={activeServer?.provider}
+          provider={effectiveProvider}
           restarting={restarting}
+          recoveryPhase={recoveryPhase}
+          restartRequestedAt={restartRequestedAt}
+          degraded={healthy === false && status === 'connected'}
+          adminHealth={adminHealth}
+          primaryRepairLabel={primaryRepairLabel}
           onRestart={isCloudProvider ? handleRestart : undefined}
           onSwitch={handleSwitch}
+          sandboxId={resolvedSandboxId}
         />
       </FullScreenShell>
     );
@@ -236,6 +284,8 @@ export interface ConnectingScreenProps {
   stopped?: {
     name?: string;
   };
+  sandboxId?: string;
+  provider?: string;
   /** Where "Back" / "Switch instance" buttons should navigate. */
   backHref?: string;
   /**
@@ -394,7 +444,7 @@ function ConnectingView({
           className="rounded-full"
         >
           <RotateCw className={cn('h-3.5 w-3.5', restarting && 'animate-spin')} />
-          {restarting ? 'Restarting…' : 'Restart'}
+          {restarting ? 'Restarting workload…' : 'Restart workload'}
         </Button>
       )}
 
@@ -561,9 +611,11 @@ function ErrorView({
 function StoppedView({
   label,
   onBack,
+  onRestart,
 }: {
   label: string;
   onBack: () => void;
+  onRestart?: () => void;
 }) {
   return (
     <>
@@ -583,14 +635,26 @@ function StoppedView({
         </p>
       </div>
 
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-[12px] font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        Back to instances
-      </button>
+      <div className="flex items-center gap-2">
+        {onRestart && (
+          <button
+            type="button"
+            onClick={onRestart}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-[12px] font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
+          >
+            <Power className="h-3 w-3" />
+            Start host
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/40 px-4 text-[12px] font-medium text-foreground/70 transition-colors hover:border-border/70 hover:text-foreground cursor-pointer"
+        >
+          <ArrowLeft className="h-3 w-3" />
+          Back to instances
+        </button>
+      </div>
     </>
   );
 }
@@ -621,17 +685,34 @@ function UnreachableView({
   reconnectAttempts,
   provider,
   restarting,
+  recoveryPhase,
+  restartRequestedAt,
+  degraded,
+  adminHealth,
+  primaryRepairLabel,
   onRestart,
   onSwitch,
+  sandboxId,
 }: {
   label: string;
   reconnectAttempts: number;
   provider?: string;
   restarting: boolean;
+  recoveryPhase: SandboxRecoveryPhase;
+  restartRequestedAt: number | null;
+  degraded?: boolean;
+  adminHealth?: ReturnType<typeof useAdminSandboxHealth>['data'];
+  primaryRepairLabel?: string;
   onRestart?: () => void;
   onSwitch: () => void;
+  sandboxId?: string;
 }) {
   const isLocalDocker = provider === 'local_docker';
+  const isRestartRecovering = recoveryPhase !== 'idle';
+  const secondsSinceRestart = restartRequestedAt ? Math.max(1, Math.floor((Date.now() - restartRequestedAt) / 1000)) : null;
+  const adminRuntimeDegraded = adminHealth?.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy';
+  const adminWorkloadBroken = adminHealth?.layers.workload.status !== 'healthy';
+  const adminHostOffline = adminHealth?.layers.host.status === 'offline';
 
   return (
     <>
@@ -644,13 +725,33 @@ function UnreachableView({
 
       <div className="flex flex-col items-center gap-1.5">
         <h1 className="text-[14px] font-medium text-foreground/90">
-          {isLocalDocker ? 'Local sandbox unreachable' : `Can't reach ${label}`}
+          {isLocalDocker ? 'Local sandbox unreachable' : recoveryPhase === 'restarting_host' ? 'Rebooting host' : recoveryPhase === 'restarting_runtime' ? 'Restarting runtime services' : recoveryPhase === 'restarting_workload' ? 'Restarting workload' : adminRuntimeDegraded ? 'Runtime services unavailable' : adminWorkloadBroken ? 'Workspace container unavailable' : adminHostOffline ? 'Host offline' : degraded ? 'Workspace services unavailable' : 'Workspace offline'}
         </h1>
         <p className="max-w-[300px] text-center text-[12px] leading-relaxed text-muted-foreground/55">
           {isLocalDocker
             ? 'Make sure Docker is running and the container has started.'
-            : 'It may be starting up or temporarily offline.'}
+            : recoveryPhase === 'restarting_host'
+              ? 'The host reboot was accepted. Waiting for the machine and services to come back online.'
+              : recoveryPhase === 'restarting_runtime'
+                ? 'The runtime restart was accepted. Waiting for core services to come back online.'
+              : recoveryPhase === 'restarting_workload'
+                ? 'The workload restart was accepted. Waiting for the container and core services to come back online.'
+              : adminRuntimeDegraded
+                ? 'The host and workload are healthy, but the managed runtime services inside the container are failing. Restart the runtime layer first.'
+              : adminWorkloadBroken
+                ? 'The host is up, but the managed workload service or container is unhealthy. Restart the workload layer first.'
+              : adminHostOffline
+                ? 'The JustAVPS machine itself is offline. Start or reboot the host layer to recover the instance.'
+              : degraded
+                ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
+              : 'This instance is fully unreachable. Restart the workload first. Reboot the host only if the machine itself is offline.'}
         </p>
+        {!isLocalDocker && sandboxId ? (
+          <p className="text-[10px] font-mono text-muted-foreground/35">Instance {sandboxId.slice(0, 8)}</p>
+        ) : null}
+        {!isLocalDocker && isRestartRecovering && secondsSinceRestart ? (
+          <p className="text-[10px] font-mono text-muted-foreground/35">recovering · {secondsSinceRestart}s</p>
+        ) : null}
       </div>
 
       <div className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/45">
@@ -660,9 +761,9 @@ function UnreachableView({
           <RefreshCw className="h-3 w-3 animate-spin" />
         )}
         <span>
-          {restarting ? 'Restarting machine' : 'Retrying automatically'}
+          {recoveryPhase === 'restarting_host' ? 'Waiting for host and services' : recoveryPhase === 'restarting_runtime' ? 'Waiting for core runtime' : recoveryPhase === 'restarting_workload' ? 'Waiting for workload and services' : restarting ? 'Restarting workload' : 'Retrying automatically'}
         </span>
-        {reconnectAttempts > 0 && !restarting && (
+        {reconnectAttempts > 0 && !restarting && !isRestartRecovering && (
           <span className="font-mono tabular-nums text-muted-foreground/35">
             · {reconnectAttempts}
           </span>
@@ -680,7 +781,7 @@ function UnreachableView({
             <RotateCw
               className={cn('h-3 w-3', restarting && 'animate-spin')}
             />
-            {restarting ? 'Restarting' : 'Restart'}
+            {restarting ? 'Restarting workload' : 'Restart workload'}
           </button>
         )}
         <button
@@ -747,7 +848,7 @@ function ReconnectPill({
             <RotateCw
               className={cn('h-2.5 w-2.5', restarting && 'animate-spin')}
             />
-            {restarting ? 'Restarting…' : 'Restart'}
+            {restarting ? `${primaryRepairLabel || 'Repair'}…` : primaryRepairLabel || 'Restart workload'}
           </Button>
         )}
 

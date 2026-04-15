@@ -23,6 +23,7 @@ import {
 import { getProvider, type ProviderName } from '../providers';
 import { combinedAuth as authMiddleware } from '../../middleware/auth';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import {
   executeUpdate,
   getUpdateStatus,
@@ -37,10 +38,13 @@ export const sandboxIdUpdateRouter = new Hono<{ Variables: AuthVariables }>();
 sandboxIdUpdateRouter.use('/*', authMiddleware);
 
 async function findOwnedSandbox(accountId: string, sandboxId: string) {
+  const admin = await isPlatformAdmin(accountId);
   const [row] = await db
     .select()
     .from(sandboxes)
-    .where(and(eq(sandboxes.sandboxId, sandboxId), eq(sandboxes.accountId, accountId)))
+    .where(admin
+      ? eq(sandboxes.sandboxId, sandboxId)
+      : and(eq(sandboxes.sandboxId, sandboxId), eq(sandboxes.accountId, accountId)))
     .limit(1);
   return row ?? null;
 }

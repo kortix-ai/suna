@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, startTransition, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { normalizeAppPathname, getActiveInstanceIdFromCookie, buildInstancePath } from '@/lib/instance-routes';
+import { normalizeAppPathname, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname, buildInstancePath } from '@/lib/instance-routes';
 import {
   MoreHorizontal,
   Trash2,
@@ -16,6 +16,11 @@ import {
   Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { restartSandbox } from '@/lib/platform-client';
+import { toast } from '@/lib/toast';
+import { markRecoveryRequested, useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useAdminSandboxHealth, useAdminSandboxRepair } from '@/hooks/admin/use-admin-sandboxes';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,7 +66,6 @@ import {
 } from '@/components/ui/tooltip';
 import { useTabStore, openTabAndNavigate } from '@/stores/tab-store';
 import { useServerStore } from '@/stores/server-store';
-import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { childMapByParent, sortSessions, allDescendantIds } from '@/ui';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
 import Link from 'next/link';
@@ -399,13 +403,15 @@ interface SessionListProps {
 
 export function SessionList({ projectId }: SessionListProps = {}) {
   const { isMobile, state, setOpenMobile } = useSidebar();
-  const pathname = normalizeAppPathname(usePathname());
+  const rawPathname = usePathname();
+  const pathname = normalizeAppPathname(rawPathname);
   const router = useRouter();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
   const [sessionToArchive, setSessionToArchive] = useState<{ id: string; name: string } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [recoveringHost, setRecoveringHost] = useState(false);
   const SESSION_PAGE_SIZE = 50;
   const [displayLimit, setDisplayLimit] = useState(SESSION_PAGE_SIZE);
 
@@ -415,6 +421,23 @@ export function SessionList({ projectId }: SessionListProps = {}) {
 
   // Auto-refetch sessions when connection recovers from error state
   const connectionStatus = useSandboxConnectionStore((s) => s.status);
+  const recoveryPhase = useSandboxConnectionStore((s) => s.recoveryPhase);
+  const activeServer = useServerStore((s) => s.servers.find((server) => server.id === s.activeServerId));
+  const routeInstanceId = getCurrentInstanceIdFromPathname(rawPathname);
+  const activeInstanceId = routeInstanceId || getActiveInstanceIdFromCookie() || activeServer?.instanceId || '';
+  const { data: adminRole } = useAdminRole({ enabled: !!activeInstanceId });
+  const isAdmin = !!adminRole?.isAdmin;
+  const adminHealthQuery = useAdminSandboxHealth(isAdmin && activeInstanceId ? activeInstanceId : null, !!activeInstanceId && isAdmin);
+  const adminRepairMutation = useAdminSandboxRepair();
+  const adminHealth = adminHealthQuery.data;
+  const primaryRepairAction = adminHealth?.recommended_action || 'restart_workload';
+  const primaryRepairLabel =
+    primaryRepairAction === 'restart_runtime' ? 'Restart runtime'
+      : primaryRepairAction === 'restart_workload' ? 'Restart workload'
+      : primaryRepairAction === 'start_workload' ? 'Start workload'
+      : primaryRepairAction === 'start_host' ? 'Start host'
+      : primaryRepairAction === 'reboot_host' ? 'Reboot host'
+      : 'Repair';
   const prevConnectionRef = useRef(connectionStatus);
   useEffect(() => {
     const prev = prevConnectionRef.current;
@@ -640,6 +663,30 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     setCompactSessionId(sessionId);
   };
 
+  const handleRecoverHost = useCallback(async () => {
+    if (!activeInstanceId || recoveringHost) return;
+    setRecoveringHost(true);
+    const phase = primaryRepairAction === 'restart_runtime'
+      ? 'restarting_runtime'
+      : primaryRepairAction === 'reboot_host' || primaryRepairAction === 'start_host'
+        ? 'restarting_host'
+        : 'restarting_workload';
+    markRecoveryRequested(phase);
+    try {
+      if (isAdmin && activeInstanceId) {
+        await adminRepairMutation.mutateAsync({ sandboxId: activeInstanceId, action: primaryRepairAction });
+      } else {
+        await restartSandbox(activeInstanceId);
+      }
+      toast.success(`${primaryRepairLabel} initiated.`);
+      refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to run repair action');
+    } finally {
+      setTimeout(() => setRecoveringHost(false), 15_000);
+    }
+  }, [activeInstanceId, adminRepairMutation, isAdmin, primaryRepairAction, primaryRepairLabel, recoveringHost, refetch]);
+
   const confirmDelete = () => {
     if (!sessionToDelete) return;
     setIsDeleteDialogOpen(false);
@@ -755,16 +802,55 @@ export function SessionList({ projectId }: SessionListProps = {}) {
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
             <Frown className="h-8 w-8 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">Failed to connect</p>
-            <p className="text-xs text-muted-foreground mt-1">Could not reach server</p>
-            <Button
-              onClick={() => refetch()}
-              variant="muted"
-              size="sm"
-              className="mt-3"
-            >
-              Retry
-            </Button>
+            <p className="text-sm text-muted-foreground">
+              {recoveryPhase === 'restarting_host'
+                ? 'Rebooting host'
+                : recoveryPhase === 'restarting_workload'
+                  ? 'Restarting workload'
+                  : recoveryPhase === 'restarting_runtime'
+                    ? 'Restarting runtime services'
+                : adminHealth?.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy'
+                  ? 'Runtime services unavailable'
+                : adminHealth?.layers.workload.status !== 'healthy'
+                  ? 'Workspace container unavailable'
+                : connectionStatus === 'unreachable'
+                  ? 'Workspace offline'
+                  : 'Failed to connect'}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-[220px] leading-relaxed">
+              {recoveryPhase === 'restarting_host'
+                ? 'Host reboot accepted. Waiting for the machine and workspace services to come back online.'
+                : recoveryPhase === 'restarting_workload'
+                  ? 'Workload restart accepted. Waiting for the container and workspace services to come back online.'
+                : recoveryPhase === 'restarting_runtime'
+                    ? 'Runtime restart accepted. Waiting for core services to come back online.'
+                : adminHealth?.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy'
+                  ? 'Host and workload are healthy, but runtime services inside the workspace are failing. Restart the runtime layer first.'
+                : adminHealth?.layers.workload.status !== 'healthy'
+                  ? 'The host is up, but the managed workload service or container is unhealthy. Restart the workload layer first.'
+                : connectionStatus === 'unreachable'
+                ? 'We cannot reach this instance right now. Restart the workload to bring the sandbox services back online.'
+                : 'Could not reach server'}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {connectionStatus === 'unreachable' && activeServer?.provider === 'justavps' && activeInstanceId ? (
+                <Button
+                  onClick={() => void handleRecoverHost()}
+                  variant="default"
+                  size="sm"
+                  disabled={recoveringHost}
+                >
+                  {recoveringHost ? 'Restarting…' : primaryRepairLabel}
+                </Button>
+              ) : null}
+              <Button
+                onClick={() => refetch()}
+                variant="muted"
+                size="sm"
+              >
+                Retry
+              </Button>
+            </div>
           </div>
         ) : rootSessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">

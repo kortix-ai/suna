@@ -20,6 +20,7 @@ import { accounts } from '@kortix/db';
 import { db, hasDatabase } from '../shared/db';
 import { resolveAccountId } from '../shared/resolve-account';
 import { getSupabase } from '../shared/supabase';
+import { checkLocalSandboxHealth, type LocalSandboxHealthCheck } from '../platform/services/local-sandbox-health';
 
 export const setupApp = new Hono<AppEnv>();
 
@@ -610,7 +611,7 @@ setupApp.post('/env', async (c) => {
  */
 setupApp.get('/health', async (c) => {
   const repoRoot = findRepoRoot();
-  const checks: Record<string, { ok: boolean; error?: string }> = {};
+  const checks: Record<string, LocalSandboxHealthCheck> = {};
 
   // Check API (self)
   checks.api = { ok: true };
@@ -632,24 +633,9 @@ setupApp.get('/health', async (c) => {
     return c.json(checks);
   }
 
-  // Check Docker
-  try {
-    execSync('docker info', { stdio: 'pipe', timeout: 5000 });
-    checks.docker = { ok: true };
-  } catch {
-    checks.docker = { ok: false, error: 'Docker not running' };
-  }
-
-  // Check sandbox container
-  try {
-    const out = execSync(`docker inspect ${config.SANDBOX_CONTAINER_NAME} --format "{{.State.Status}}"`, {
-      stdio: 'pipe',
-      timeout: 5000,
-    }).toString().trim();
-    checks.sandbox = { ok: out === 'running', error: out !== 'running' ? `Status: ${out}` : undefined };
-  } catch {
-    checks.sandbox = { ok: false, error: 'Container not found' };
-  }
+  const localChecks = checkLocalSandboxHealth();
+  checks.docker = localChecks.docker;
+  checks.sandbox = localChecks.sandbox;
 
   return c.json(checks);
 });

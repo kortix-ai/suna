@@ -27,6 +27,7 @@ import type { AuthVariables } from '../../types';
 import { supabaseAuth } from '../../middleware/auth';
 import { db } from '../../shared/db';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { isPlatformAdmin } from '../../shared/platform-roles';
 import { buildSSHConnectionInfo, buildSSHSetupPayload, resolvePublicSSHHost, type SSHConnectionInfo } from '../services/ssh-access';
 
 const sshRouter = new Hono<{ Variables: AuthVariables }>();
@@ -59,11 +60,14 @@ type SandboxRecord = typeof sandboxes.$inferSelect;
 
 async function resolveSandboxRecord(userId: string, requestedSandboxId?: string): Promise<SandboxRecord | null> {
   const accountId = await resolveAccountId(userId);
+  const admin = requestedSandboxId ? await isPlatformAdmin(accountId) : false;
   let sandbox: SandboxRecord | undefined;
 
   if (requestedSandboxId) {
     [sandbox] = await db.select().from(sandboxes)
-      .where(and(eq(sandboxes.accountId, accountId), eq(sandboxes.sandboxId, requestedSandboxId)))
+      .where(admin
+        ? eq(sandboxes.sandboxId, requestedSandboxId)
+        : and(eq(sandboxes.accountId, accountId), eq(sandboxes.sandboxId, requestedSandboxId)))
       .limit(1);
   } else {
     [sandbox] = await db.select().from(sandboxes)

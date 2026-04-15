@@ -106,6 +106,29 @@ export function createCloudSandboxRouter(
   const deps = { ...defaultDeps, ...overrides };
   const { db, getProvider, getDefaultProviderName, resolveAccountId } = deps;
 
+  async function resolveSandboxAccess(userId: string) {
+    const accountId = await resolveAccountId(userId);
+    const admin = await isPlatformAdmin(accountId);
+    return { accountId, isAdmin: admin };
+  }
+
+  async function findAccessibleSandbox(userId: string, sandboxId?: string, options: { defaultStatus?: string } = {}) {
+    const access = await resolveSandboxAccess(userId);
+
+    if (sandboxId) {
+      const query = access.isAdmin
+        ? and(eq(sandboxes.sandboxId, sandboxId), sql`${sandboxes.status} != 'archived'`)
+        : and(eq(sandboxes.accountId, access.accountId), eq(sandboxes.sandboxId, sandboxId), sql`${sandboxes.status} != 'archived'`);
+      const [sandbox] = await db.select().from(sandboxes).where(query).limit(1);
+      return { access, sandbox: sandbox ?? null };
+    }
+
+    const clauses = [eq(sandboxes.accountId, access.accountId), sql`${sandboxes.status} != 'archived'`];
+    if (options.defaultStatus) clauses.push(eq(sandboxes.status, options.defaultStatus as any));
+    const [sandbox] = await db.select().from(sandboxes).where(and(...clauses)).orderBy(desc(sandboxes.createdAt)).limit(1);
+    return { access, sandbox: sandbox ?? null };
+  }
+
   const router = new Hono<{ Variables: AuthVariables }>();
 
   // ── Public routes (no auth required) ──
@@ -724,21 +747,9 @@ export function createCloudSandboxRouter(
     const userId = c.get('userId');
 
     try {
-      const accountId = await resolveAccountId(userId);
       const body = await c.req.json().catch(() => ({}));
       const requestedSandboxId = body?.sandbox_id as string | undefined;
-
-      const query = requestedSandboxId
-        ? and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.sandboxId, requestedSandboxId),
-          )
-        : and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.status, 'active'),
-          );
-
-      const [sandbox] = await db.select().from(sandboxes).where(query).limit(1);
+      const { sandbox } = await findAccessibleSandbox(userId, requestedSandboxId, { defaultStatus: 'active' });
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No active sandbox to stop' }, 404);
@@ -774,29 +785,43 @@ export function createCloudSandboxRouter(
     const userId = c.get('userId');
 
     try {
-      const accountId = await resolveAccountId(userId);
       const body = await c.req.json().catch(() => ({}));
       const requestedSandboxId = body?.sandbox_id as string | undefined;
-
-      const query = requestedSandboxId
-        ? and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.sandboxId, requestedSandboxId),
-          )
-        : eq(sandboxes.accountId, accountId);
-
-      const [sandbox] = await db
-        .select()
-        .from(sandboxes)
-        .where(query)
-        .orderBy(desc(sandboxes.createdAt))
-        .limit(1);
+      const { access, sandbox } = await findAccessibleSandbox(userId, requestedSandboxId);
 
       if (!sandbox || !sandbox.externalId) {
+        console.warn('[SANDBOX-CLOUD] restart target not found', {
+          accountId: access.accountId,
+          isAdmin: access.isAdmin,
+          requestedSandboxId,
+        });
         return c.json({ success: false, error: 'No sandbox to restart' }, 404);
       }
 
       const provider = getProvider(sandbox.provider);
+
+      if (sandbox.provider === 'justavps') {
+        const { JustAVPSProvider } = await import('../providers/justavps');
+        const justavpsProvider = provider as InstanceType<typeof JustAVPSProvider>;
+        void justavpsProvider.ensureRunning(sandbox.externalId).catch((error: unknown) => {
+          console.error(`[PLATFORM] Async workload recovery failed for ${sandbox.sandboxId}:`, error);
+        });
+
+        await db
+          .update(sandboxes)
+          .set({ status: 'active', updatedAt: new Date() })
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+
+        const [refreshed] = await db
+          .select()
+          .from(sandboxes)
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId))
+          .limit(1);
+
+        console.log(`[PLATFORM] Dispatched workload recovery for sandbox ${sandbox.sandboxId} via ${sandbox.provider}`);
+
+        return c.json({ success: true, data: { ...(refreshed ? serializeSandbox(refreshed) : {}), recovery_state: 'restarting_workload', action: 'restart_workload' } });
+      }
 
       // Stop if running
       if (sandbox.status === 'active') {

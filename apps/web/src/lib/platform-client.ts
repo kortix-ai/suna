@@ -433,17 +433,37 @@ export async function listSandboxes(sandboxId?: unknown): Promise<SandboxInfo[]>
 }
 
 /**
- * Restart a sandbox (stop + start). Pass `sandboxId` to target a specific
- * instance; omit to restart the user's most recently created sandbox.
+ * Restart a sandbox workload. For JustAVPS this repairs the managed workload
+ * container/service and only starts the host if it is currently stopped.
  */
 export async function restartSandbox(sandboxId?: string): Promise<void> {
-  const result = await platformFetch<void>('/platform/sandbox/restart', {
-    method: 'POST',
-    body: sandboxId ? JSON.stringify({ sandbox_id: sandboxId }) : undefined,
-  });
+  if (!sandboxId) {
+    throw new Error('No sandbox selected for workload restart');
+  }
+  try {
+    const result = await platformFetch<void>('/platform/sandbox/restart', {
+      method: 'POST',
+      body: JSON.stringify({ sandbox_id: sandboxId }),
+    });
 
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to restart sandbox');
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to restart sandbox');
+    }
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/No sandbox to restart/i.test(message)) {
+      throw error;
+    }
+
+    const adminFallback = await backendApi.post(`/admin/api/sandboxes/${sandboxId}/repair`, { action: 'restart_workload' }, {
+      showErrors: false,
+    });
+    if (adminFallback.success) {
+      return;
+    }
+
+    throw error;
   }
 }
 

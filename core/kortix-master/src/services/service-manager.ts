@@ -185,6 +185,7 @@ const PORT_MIN = 10_000;
 const PORT_MAX = 60_000;
 const PERSISTED_SOURCE_ROOT = WORKSPACE_ROOT;
 const ECONNRESET_GUARD_PATH = "/ephemeral/kortix-master/econnreset-guard.cjs";
+const INNER_DOCKER_ENABLED = process.env.KORTIX_ENABLE_INNER_DOCKER !== "0";
 
 function s6svc(
   id: string,
@@ -306,9 +307,13 @@ const BUILTIN_SERVICES: RegisteredServiceSpec[] = [
     processPatterns: ["sshd -D"],
     healthCheck: { type: "none" },
   }),
-  s6svc("docker", "Docker Daemon", "bootstrap", "svc-docker", {
-    processPatterns: ["dockerd"],
-  }),
+  ...(INNER_DOCKER_ENABLED
+    ? [
+        s6svc("docker", "Docker Daemon", "bootstrap", "svc-docker", {
+          processPatterns: ["dockerd"],
+        }),
+      ]
+    : []),
 ];
 
 const SERVICE_TEMPLATES: ServiceTemplate[] = [

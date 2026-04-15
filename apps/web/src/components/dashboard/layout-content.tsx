@@ -522,6 +522,10 @@ export default function DashboardLayoutContent({
 	const obRetries = useRef(0);
 
 	const activeServerId = useServerStore((s) => s.activeServerId);
+	const servers = useServerStore((s) => s.servers);
+	const routeInstanceProvider = routeInstanceId
+		? servers.find((server) => server.instanceId === routeInstanceId)?.provider
+		: undefined;
 
 	// Seed `onboardingChecked` from localStorage so users who have already
 	// completed onboarding on this instance skip the 100-300 ms round-trip
@@ -999,6 +1003,8 @@ export default function DashboardLayoutContent({
 			<ConnectingScreen
 				forceConnecting={gateActive}
 				overrideStage={gateStage}
+				sandboxId={routeInstanceId || undefined}
+				provider={routeInstanceProvider}
 			/>
 			{!gateActive && maintenanceBlock && (
 				<Suspense fallback={null}>
