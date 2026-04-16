@@ -18,7 +18,6 @@ import {
   listSandboxes,
   getProviders,
   extractMappedPorts,
-  discoverLocalSandboxBridge,
   type SandboxInfo,
   type SandboxProviderName,
 } from '@/lib/platform-client';
@@ -30,12 +29,13 @@ import { getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie } from 
 
 /**
  * Derive a stable, deterministic server-store ID for a sandbox.
- * - Local docker: always 'default' (single local sandbox)
+ * - Local docker primary: 'default' (single local sandbox in local mode)
+ * - Local docker discovered alongside cloud: 'sandbox-<sandboxId>'
  * - Cloud primary: 'cloud-sandbox' (backward-compat with existing persisted activeServerId)
  * - Cloud additional: 'sandbox-<sandboxId>'
  */
 function stableIdForSandbox(sandbox: SandboxInfo, isPrimary: boolean): string {
-  if (sandbox.provider === 'local_docker') return 'default';
+  if (sandbox.provider === 'local_docker') return isPrimary ? 'default' : `sandbox-${sandbox.sandbox_id}`;
   if (isPrimary) return 'cloud-sandbox';
   return `sandbox-${sandbox.sandbox_id}`;
 }
@@ -91,16 +91,6 @@ export function useSandbox() {
     refetchOnWindowFocus: false,
   });
 
-  const localBridgeQuery = useQuery({
-    queryKey: ['platform', 'sandbox', 'local-bridge'],
-    queryFn: discoverLocalSandboxBridge,
-    enabled: !!user,
-    staleTime: 30_000,
-    retry: false,
-    refetchInterval: 60_000,
-    refetchOnWindowFocus: false,
-  });
-
   // Register ALL sandboxes in server store whenever primary sandbox loads.
   // Do NOT auto-switch if the user already has an active instance route
   // (e.g. navigated from /instances to /instances/:id/dashboard).
@@ -152,26 +142,6 @@ export function useSandbox() {
       }
     }).catch(() => {});
   }, [query.data, pathname]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const store = useServerStore.getState();
-
-    if (query.data?.provider === 'local_docker') {
-      store.removeLocalBridgeServer();
-      return;
-    }
-
-    if (localBridgeQuery.data) {
-      store.upsertLocalBridgeServer(localBridgeQuery.data);
-      return;
-    }
-
-    if (localBridgeQuery.isFetched) {
-      store.removeLocalBridgeServer();
-    }
-  }, [user, query.data?.provider, localBridgeQuery.data, localBridgeQuery.isFetched]);
 
   return {
     sandbox: query.data ?? null,

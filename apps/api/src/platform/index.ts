@@ -25,7 +25,7 @@ platformApp.route('/sandbox/update', sandboxUpdateRouter);
 // Full path: /v1/platform/sandbox/ssh/*
 platformApp.route('/sandbox/ssh', sshRouter);
 
-// Local sandbox discovery bridge (public read-only)
+// Local sandbox discovery bridge (auth-gated, returns regular sandbox payload)
 // Full path: /v1/platform/local-bridge/status
 platformApp.route('/', localBridgeRouter);
 

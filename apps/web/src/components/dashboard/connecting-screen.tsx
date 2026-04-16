@@ -94,12 +94,16 @@ export function ConnectingScreen({
 
   const effectiveProvider = provider || activeServer?.provider;
   const isCloudProvider = effectiveProvider && effectiveProvider !== 'local_docker';
+  const supportsLayeredHealth = effectiveProvider === 'justavps';
   const resolvedSandboxId = sandboxId || getCurrentInstanceIdFromWindow() || activeServer?.instanceId || getActiveInstanceIdFromCookie() || undefined;
   const { data: adminRole } = useAdminRole({ enabled: !!resolvedSandboxId });
   const isAdmin = !!adminRole?.isAdmin;
-  const adminHealthQuery = useAdminSandboxHealth(isAdmin && resolvedSandboxId ? resolvedSandboxId : null, !!resolvedSandboxId && isAdmin);
+  const adminHealthQuery = useAdminSandboxHealth(
+    isAdmin && resolvedSandboxId ? resolvedSandboxId : null,
+    !!resolvedSandboxId && isAdmin && supportsLayeredHealth,
+  );
   const adminRepairMutation = useAdminSandboxRepair();
-  const adminHealth = adminHealthQuery.data;
+  const adminHealth = supportsLayeredHealth ? adminHealthQuery.data : undefined;
   const healthModalQuery = useQuery({
     queryKey: ['platform', 'sandbox', 'detail', resolvedSandboxId, 'connecting-screen-health'],
     queryFn: () => getSandboxById(resolvedSandboxId!),
@@ -107,12 +111,18 @@ export function ConnectingScreen({
     staleTime: 30_000,
   });
 
-  const primaryRepairAction: AdminInstanceLayerAction['action'] = adminHealth?.recommended_action || 'restart_workload';
+  const runtimeOnlyDegraded = !forceConnecting && healthy === false && status === 'connected';
+  const runtimeSummary = adminHealth?.layers.runtime.summary || 'Runtime services degraded';
+
+  const primaryRepairAction: AdminInstanceLayerAction['action'] =
+    supportsLayeredHealth
+      ? (adminHealth?.recommended_action || 'restart_workload')
+      : 'restart_workload';
 
   const handleRestart = useCallback(async () => {
     if (restarting) return;
     setRestarting(true);
-    const adminAction = isAdmin && resolvedSandboxId ? primaryRepairAction : null;
+    const adminAction = supportsLayeredHealth && isAdmin && resolvedSandboxId ? primaryRepairAction : null;
     const phase = adminAction === 'restart_runtime'
       ? 'restarting_runtime'
       : adminAction === 'reboot_host' || adminAction === 'start_host'
@@ -136,7 +146,7 @@ export function ConnectingScreen({
     } finally {
       setTimeout(() => setRestarting(false), 15_000);
     }
-  }, [adminRepairMutation, isAdmin, primaryRepairAction, restarting, resolvedSandboxId, stopped]);
+  }, [adminRepairMutation, isAdmin, primaryRepairAction, restarting, resolvedSandboxId, stopped, supportsLayeredHealth]);
 
   const handleSwitch = useCallback(
     () => router.push(backHref || '/instances'),
@@ -230,7 +240,26 @@ export function ConnectingScreen({
     );
   }
 
-  if ((!forceConnecting && (status === 'unreachable' || healthy === false)) || shouldEscalateToOverlay) {
+  if (runtimeOnlyDegraded) {
+    return (
+      <>
+        <HealthPill
+          title="Runtime degraded"
+          detail={runtimeSummary}
+          onHealth={resolvedSandboxId ? handleOpenHealth : undefined}
+          onSwitch={handleSwitch}
+        />
+        <InstanceSettingsModal
+          sandbox={healthModalQuery.data ?? null}
+          open={healthOpen && !!healthModalQuery.data}
+          onOpenChange={setHealthOpen}
+          defaultTab="host"
+        />
+      </>
+    );
+  }
+
+  if ((!forceConnecting && status === 'unreachable') || shouldEscalateToOverlay) {
     return (
       <>
         <FullScreenShell>
@@ -842,9 +871,9 @@ function ReconnectPill({
 
         <span className="whitespace-nowrap text-xs text-muted-foreground">
           {label}
-          {elapsed && !restarting && (
+          {elapsed ? (
             <span className="text-muted-foreground/40"> · {elapsed}</span>
-          )}
+          ) : null}
         </span>
 
         {onHealth && (
@@ -863,6 +892,58 @@ function ReconnectPill({
         <Button
           type="button"
           onClick={onSwitchInstance}
+          variant="muted"
+          size="xs"
+          className="rounded-full"
+        >
+          <ArrowLeftRight className="h-2.5 w-2.5" />
+          Switch
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function HealthPill({
+  title,
+  detail,
+  onHealth,
+  onSwitch,
+}: {
+  title: string;
+  detail?: string;
+  onHealth?: () => void;
+  onSwitch: () => void;
+}) {
+  return (
+    <div className="fixed bottom-6 right-6 z-[60] animate-in slide-in-from-bottom-3 fade-in duration-300">
+      <div className="flex items-center gap-2.5 rounded-full border border-border/50 bg-background/95 pl-3 pr-1.5 py-1.5 shadow-lg shadow-black/5 backdrop-blur-xl">
+        <span className="relative flex h-2 w-2 flex-shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+        </span>
+
+        <span className="max-w-[220px] truncate whitespace-nowrap text-xs text-muted-foreground">
+          {title}
+          {detail ? <span className="text-muted-foreground/40"> · {detail}</span> : null}
+        </span>
+
+        {onHealth && (
+          <Button
+            type="button"
+            onClick={onHealth}
+            variant="muted"
+            size="xs"
+            className="rounded-full"
+          >
+            <AlertCircle className="h-2.5 w-2.5" />
+            Health
+          </Button>
+        )}
+
+        <Button
+          type="button"
+          onClick={onSwitch}
           variant="muted"
           size="xs"
           className="rounded-full"

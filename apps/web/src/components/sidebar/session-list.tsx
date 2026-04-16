@@ -425,12 +425,18 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const activeServer = useServerStore((s) => s.servers.find((server) => server.id === s.activeServerId));
   const routeInstanceId = getCurrentInstanceIdFromPathname(rawPathname);
   const activeInstanceId = routeInstanceId || getActiveInstanceIdFromCookie() || activeServer?.instanceId || '';
+  const supportsLayeredHealth = activeServer?.provider === 'justavps';
   const { data: adminRole } = useAdminRole({ enabled: !!activeInstanceId });
   const isAdmin = !!adminRole?.isAdmin;
-  const adminHealthQuery = useAdminSandboxHealth(isAdmin && activeInstanceId ? activeInstanceId : null, !!activeInstanceId && isAdmin);
+  const adminHealthQuery = useAdminSandboxHealth(
+    isAdmin && activeInstanceId ? activeInstanceId : null,
+    !!activeInstanceId && isAdmin && supportsLayeredHealth,
+  );
   const adminRepairMutation = useAdminSandboxRepair();
-  const adminHealth = adminHealthQuery.data;
-  const primaryRepairAction = adminHealth?.recommended_action || 'restart_workload';
+  const adminHealth = supportsLayeredHealth ? adminHealthQuery.data : undefined;
+  const primaryRepairAction = supportsLayeredHealth
+    ? (adminHealth?.recommended_action || 'restart_workload')
+    : 'restart_workload';
   const primaryRepairLabel =
     primaryRepairAction === 'restart_runtime' ? 'Restart runtime'
       : primaryRepairAction === 'restart_workload' ? 'Restart workload'
@@ -673,7 +679,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
         : 'restarting_workload';
     markRecoveryRequested(phase);
     try {
-      if (isAdmin && activeInstanceId) {
+      if (supportsLayeredHealth && isAdmin && activeInstanceId) {
         await adminRepairMutation.mutateAsync({ sandboxId: activeInstanceId, action: primaryRepairAction });
       } else {
         await restartSandbox(activeInstanceId);
@@ -685,7 +691,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     } finally {
       setTimeout(() => setRecoveringHost(false), 15_000);
     }
-  }, [activeInstanceId, adminRepairMutation, isAdmin, primaryRepairAction, primaryRepairLabel, recoveringHost, refetch]);
+  }, [activeInstanceId, adminRepairMutation, isAdmin, primaryRepairAction, primaryRepairLabel, recoveringHost, refetch, supportsLayeredHealth]);
 
   const confirmDelete = () => {
     if (!sessionToDelete) return;

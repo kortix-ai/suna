@@ -4,6 +4,12 @@ import { persist } from 'zustand/middleware';
 import { authenticatedFetch, getSupabaseAccessToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
+import {
+  buildInstancePath,
+  INSTANCE_SCOPED_ROUTES,
+  normalizeAppPathname,
+  setActiveInstanceCookie,
+} from '@/lib/instance-routes';
 
 /**
  * SDK client reset callback — set by opencode-sdk.ts to break the circular
@@ -39,12 +45,6 @@ export interface ServerEntry {
    * e.g. { "6080": "32001", "8000": "32005", "9223": "32007" }
    * For Daytona, ports are accessed via subdomain routing, so this is unused.
    */
-  mappedPorts?: Record<string, string>;
-}
-
-export interface LocalBridgeServerInput {
-  label: string;
-  url: string;
   mappedPorts?: Record<string, string>;
 }
 
@@ -121,8 +121,6 @@ interface ServerStore {
     /** Optional stable ID to use for cloud sandboxes (e.g. "sandbox-<sandboxId>") */
     stableId?: string;
   }) => string;
-  upsertLocalBridgeServer: (entry: LocalBridgeServerInput) => void;
-  removeLocalBridgeServer: () => void;
 
 }
 
@@ -165,11 +163,6 @@ export function resolveServerUrl(server: ServerEntry): string {
 
 const DEFAULT_SERVER_ID = 'default';
 const CLOUD_SANDBOX_SERVER_ID = 'cloud-sandbox';
-export const LOCAL_BRIDGE_SERVER_ID = 'local-bridge';
-
-export function isLocalBridgeServer(server: ServerEntry): boolean {
-  return server.id === LOCAL_BRIDGE_SERVER_ID;
-}
 
 const PATH_PROXY_URL_REGEX =
   /^https?:\/\/[^/]+\/v1\/p\/([^/]+)\/(\d+)(\/.*)?$/;
@@ -212,7 +205,7 @@ function generateId(): string {
 // sandboxes table via useSandbox() — they live in zustand/localStorage only.
 
 /** IDs of managed entries that should NOT be synced to the servers API. */
-const MANAGED_IDS = new Set([DEFAULT_SERVER_ID, CLOUD_SANDBOX_SERVER_ID, LOCAL_BRIDGE_SERVER_ID]);
+const MANAGED_IDS = new Set([DEFAULT_SERVER_ID, CLOUD_SANDBOX_SERVER_ID]);
 
 /** True if this entry is a managed sandbox (not a custom user entry). */
 function isManagedEntry(s: ServerEntry | string): boolean {
@@ -443,11 +436,16 @@ export const useServerStore = create<ServerStore>()(
       setActiveServer: (id: string, options?: { auto?: boolean }) => {
         const state = get();
         const isSameId = state.activeServerId === id;
+        const target = state.servers.find((s) => s.id === id) ?? null;
 
-        if (isSameId && !(options as { auto?: boolean; force?: boolean } | undefined)?.force) return; // true no-op — same server, no data change
+        if (isSameId && !(options as { auto?: boolean; force?: boolean } | undefined)?.force) {
+          syncActiveInstanceCookie(target);
+          return;
+        } // true no-op — same server, no data change
 
         // Force SDK client to recreate for the new server URL
         resetSDKClient();
+        syncActiveInstanceCookie(target);
 
         set({
           activeServerId: id,
@@ -489,9 +487,11 @@ export const useServerStore = create<ServerStore>()(
         const state = get();
         const isLocal = options?.isLocal ?? false;
         const autoSwitch = options?.autoSwitch ?? false;
+        const targetId = options?.stableId ?? (isLocal ? DEFAULT_SERVER_ID : CLOUD_SANDBOX_SERVER_ID);
 
-        // In local mode, upsert the default entry (create if missing after rehydration).
-        if (isLocal) {
+        // In pure local mode, keep using the default entry. Discovered local sandboxes
+        // with their own stable IDs flow through the generic managed-sandbox branch.
+        if (isLocal && targetId === DEFAULT_SERVER_ID) {
           const defaultEntry = state.servers.find((s) => s.id === DEFAULT_SERVER_ID);
           if (defaultEntry) {
             get().updateServerSilent(DEFAULT_SERVER_ID, {
@@ -534,8 +534,8 @@ export const useServerStore = create<ServerStore>()(
         const existingByInstance = sandbox.instanceId
           ? state.servers.find((s) => s.instanceId === sandbox.instanceId && isManagedEntry(s))
           : null;
-        const targetId = existingByInstance?.id ?? options?.stableId ?? CLOUD_SANDBOX_SERVER_ID;
-        const existing = existingByInstance ?? state.servers.find((s) => s.id === targetId);
+        const resolvedTargetId = existingByInstance?.id ?? targetId;
+        const existing = existingByInstance ?? state.servers.find((s) => s.id === resolvedTargetId);
 
         if (existing) {
           get().updateServerSilent(existing.id, {
@@ -547,7 +547,7 @@ export const useServerStore = create<ServerStore>()(
           });
         } else {
           const newEntry: ServerEntry = {
-            id: targetId,
+            id: resolvedTargetId,
             label: sandbox.label,
             url: '',  // Sandbox URLs are derived at runtime via getSandboxServerUrl()
             provider: sandbox.provider,
@@ -569,46 +569,11 @@ export const useServerStore = create<ServerStore>()(
           const currentId = fresh.activeServerId;
           const noActiveServer = !currentId || !fresh.servers.some((s) => s.id === currentId);
           if (!fresh.userSelected && (noActiveServer || currentId === DEFAULT_SERVER_ID)) {
-            get().setActiveServer(isLocal ? DEFAULT_SERVER_ID : targetId, { auto: true });
+            get().setActiveServer(isLocal && resolvedTargetId === DEFAULT_SERVER_ID ? DEFAULT_SERVER_ID : resolvedTargetId, { auto: true });
           }
         }
 
-        return targetId;
-      },
-
-      upsertLocalBridgeServer: (entry) => {
-        const normalizedUrl = entry.url.replace(/\/+$/, '');
-        const existing = get().servers.find((s) => s.id === LOCAL_BRIDGE_SERVER_ID);
-
-        if (existing) {
-          get().updateServerSilent(LOCAL_BRIDGE_SERVER_ID, {
-            label: entry.label || existing.label,
-            url: normalizedUrl,
-            mappedPorts: entry.mappedPorts,
-            provider: 'local_docker',
-            sandboxId: undefined,
-            instanceId: undefined,
-          });
-          return;
-        }
-
-        const newEntry: ServerEntry = {
-          id: LOCAL_BRIDGE_SERVER_ID,
-          label: entry.label || 'Local Sandbox',
-          url: normalizedUrl,
-          provider: 'local_docker',
-          mappedPorts: entry.mappedPorts,
-        };
-
-        set((state) => ({
-          servers: [...state.servers, newEntry],
-        }));
-      },
-
-      removeLocalBridgeServer: () => {
-        const existing = get().servers.find((s) => s.id === LOCAL_BRIDGE_SERVER_ID);
-        if (!existing) return;
-        get().removeServer(LOCAL_BRIDGE_SERVER_ID);
+        return resolvedTargetId;
       },
 
     }),
@@ -639,6 +604,9 @@ export const useServerStore = create<ServerStore>()(
           state.activeServerId = state.servers[0]?.id ?? '';
           state.userSelected = false;
         }
+
+        const active = state.servers.find((s) => s.id === state.activeServerId) ?? null;
+        syncActiveInstanceCookie(active);
 
         // Load custom entries from API (user-added URLs).
         // Sandbox entries come from useSandbox hook, not from here.
@@ -821,9 +789,12 @@ function getTabStore() {
  * - Local docker → 'default'
  */
 function stableServerIdForInstance(instanceId: string, provider?: string): string {
-  if (provider === 'local_docker') return DEFAULT_SERVER_ID;
-  // Reuse 'cloud-sandbox' if it's already mapped to this instance
   const state = useServerStore.getState();
+  if (provider === 'local_docker') {
+    const existingLocal = state.servers.find((s) => s.instanceId === instanceId);
+    return existingLocal?.id ?? `sandbox-${instanceId}`;
+  }
+  // Reuse 'cloud-sandbox' if it's already mapped to this instance
   const cloud = state.servers.find((s) => s.id === CLOUD_SANDBOX_SERVER_ID);
   if (cloud?.instanceId === instanceId) return CLOUD_SANDBOX_SERVER_ID;
   return `sandbox-${instanceId}`;
@@ -858,6 +829,43 @@ export interface SwitchToInstanceOptions {
   validate?: boolean;
 }
 
+export interface ActivateServerSelectionOptions {
+  pathname?: string | null;
+}
+
+export interface ActivateInstanceSelectionOptions extends SwitchToInstanceOptions, ActivateServerSelectionOptions {}
+
+export interface ActivateServerSelectionResult extends SwitchToInstanceResult {
+  href: string;
+}
+
+const PRESERVABLE_INSTANCE_PATHS = new Set<string>(INSTANCE_SCOPED_ROUTES);
+
+function deriveSelectionHref(server: ServerEntry | undefined, pathname?: string | null): string {
+  const tabStore = getTabStore().getState();
+  const activeTab = tabStore.activeTabId ? tabStore.tabs[tabStore.activeTabId] : null;
+  const tabHref = activeTab?.href ? normalizeAppPathname(activeTab.href) : '';
+  const normalizedPath = pathname ? normalizeAppPathname(pathname) : '';
+  const preserveCurrentPath =
+    normalizedPath !== ''
+    && normalizedPath !== '/dashboard'
+    && PRESERVABLE_INSTANCE_PATHS.has(normalizedPath)
+    && (!activeTab || activeTab.type === 'dashboard' || tabHref === '/dashboard');
+
+  const fallbackPath = PRESERVABLE_INSTANCE_PATHS.has(normalizedPath)
+    ? normalizedPath
+    : '/dashboard';
+
+  const nextPath = preserveCurrentPath
+    ? normalizedPath
+    : tabHref || fallbackPath || '/dashboard';
+  return server?.instanceId ? buildInstancePath(server.instanceId, nextPath) : nextPath;
+}
+
+function syncActiveInstanceCookie(server: ServerEntry | null | undefined): void {
+  setActiveInstanceCookie(server?.instanceId ?? null);
+}
+
 /**
  * Switch the entire app to a specific instance by instanceId.
  *
@@ -887,6 +895,43 @@ export function switchToInstance(
   }
 
   return null; // Not in store — caller should use switchToInstanceAsync
+}
+
+export function activateServerSelection(
+  serverId: string,
+  options?: ActivateServerSelectionOptions,
+): ActivateServerSelectionResult | null {
+  const state = useServerStore.getState();
+  const target = state.servers.find((s) => s.id === serverId);
+  if (!target) return null;
+
+  const alreadyActive = state.activeServerId === serverId;
+  if (!alreadyActive) {
+    switchToServerEntry(serverId);
+  }
+
+  const next = useServerStore.getState().servers.find((s) => s.id === serverId) ?? target;
+  return {
+    serverId,
+    alreadyActive,
+    href: deriveSelectionHref(next, options?.pathname),
+  };
+}
+
+export async function activateInstanceSelection(
+  instanceId: string,
+  options?: ActivateInstanceSelectionOptions,
+): Promise<ActivateServerSelectionResult | null> {
+  const result = switchToInstance(instanceId)
+    ?? await switchToInstanceAsync(instanceId, { validate: options?.validate });
+
+  if (!result) return null;
+
+  const server = useServerStore.getState().servers.find((s) => s.id === result.serverId);
+  return {
+    ...result,
+    href: deriveSelectionHref(server, options?.pathname),
+  };
 }
 
 /**

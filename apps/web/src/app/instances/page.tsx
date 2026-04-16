@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Loader2, Plus } from 'lucide-react';
@@ -13,8 +13,11 @@ import {
   type SandboxInfo,
 } from '@/lib/platform-client';
 import { isBillingEnabled } from '@/lib/config';
-import { isLocalBridgeServer, useServerStore, type ServerEntry } from '@/stores/server-store';
-import { useTabStore } from '@/stores/tab-store';
+import {
+  activateServerSelection,
+  useServerStore,
+  type ServerEntry,
+} from '@/stores/server-store';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { claimComputer } from '@/lib/api/billing';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
@@ -36,8 +39,9 @@ import { InstanceSettingsModal } from './_components/instance-settings-modal';
 
 export default function InstancesPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, isLoading: authLoading } = useAuth();
-  const { servers, activeServerId, setActiveServer } = useServerStore();
+  const { servers, activeServerId } = useServerStore();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [autoCreating, setAutoCreating] = useState(false);
   const [claiming, setClaiming] = useState(false);
@@ -108,7 +112,6 @@ export default function InstancesPage() {
   // Filter out archived — user shouldn't see those
   const visible = sandboxes?.filter((s) => s.status !== 'archived') ?? [];
   const fallbackServers = servers.filter((s) => !!s.provider || !!s.url);
-  const localBridgeServers = fallbackServers.filter(isLocalBridgeServer);
   const listError = error;
   const refetchList = refetch;
 
@@ -129,14 +132,12 @@ export default function InstancesPage() {
   }
 
   function handleFallbackServerClick(server: ServerEntry) {
-    useTabStore.getState().swapForServer(server.id, activeServerId);
-    setActiveServer(server.id);
+    const result = activateServerSelection(server.id, { pathname });
     if (server.instanceId) {
-      // Fallback servers are assumed to already be warm.
-      router.push(`/instances/${server.instanceId}/dashboard`);
-    } else {
-      router.push('/dashboard');
+      router.push(result?.href ?? `/instances/${server.instanceId}/dashboard`);
+      return;
     }
+    router.push(result?.href ?? '/dashboard');
   }
 
   function handleCreateInstance() {
@@ -284,22 +285,6 @@ export default function InstancesPage() {
                   sandbox={sandbox}
                   onClick={() => handleInstanceClick(sandbox)}
                   onSettings={() => handleOpenSettings(sandbox)}
-                />
-              ))}
-            </div>
-          )}
-
-          {!pageLoading && visible.length > 0 && localBridgeServers.length > 0 && (
-            <div className="flex flex-col gap-2 mt-4">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70 px-1">
-                Local
-              </p>
-              {localBridgeServers.map((server) => (
-                <FallbackInstanceCard
-                  key={server.id}
-                  server={server}
-                  isActive={server.id === activeServerId}
-                  onClick={() => handleFallbackServerClick(server)}
                 />
               ))}
             </div>

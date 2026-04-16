@@ -68,13 +68,17 @@ export function getProvider(name: ProviderName): SandboxProvider {
   const existing = providers.get(name);
   if (existing) return existing;
 
-  if (!config.ALLOWED_SANDBOX_PROVIDERS.includes(name)) {
+  if (!config.ALLOWED_SANDBOX_PROVIDERS.includes(name) && name !== 'local_docker') {
     throw new Error(
       `Sandbox provider '${name}' is not allowed. ` +
       `Allowed: ${config.ALLOWED_SANDBOX_PROVIDERS.join(', ')}. ` +
       `Set ALLOWED_SANDBOX_PROVIDERS in your .env.`
     );
   }
+
+  // Local Docker may still exist as a discovered runtime even when sandbox
+  // creation is disabled in ALLOWED_SANDBOX_PROVIDERS. Existing local instances
+  // must remain operable (status/restart/ssh/preview) once surfaced in the UI.
 
   let provider: SandboxProvider;
 

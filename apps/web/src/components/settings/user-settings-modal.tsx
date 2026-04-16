@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import {
     Dialog,
     DialogContent,
@@ -95,7 +96,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Keyboard, CheckCircle2, HelpCircle, ShieldCheck, Volume2, EyeOff, Globe } from 'lucide-react';
 import CreditTransactions from '@/components/billing/credit-transactions';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
-import { useServerStore } from '@/stores/server-store';
+import { activateInstanceSelection, useServerStore } from '@/stores/server-store';
 import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
 import { useSoundStore, type SoundPack, type SoundEvent } from '@/stores/sound-store';
 import { previewSound } from '@/lib/sounds';
@@ -1164,7 +1165,9 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
     const instances = accountState?.instances ?? [];
     const canAddInstances = accountState?.can_add_instances ?? false;
     const [loading, setLoading] = useState<string | null>(null);
-    const { servers, activeServerId, setActiveServer } = useServerStore();
+    const { servers, activeServerId } = useServerStore();
+    const router = useRouter();
+    const pathname = usePathname();
 
     const handleCancel = async (sandboxId: string) => {
         setLoading(sandboxId);
@@ -1180,9 +1183,11 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
         finally { setLoading(null); }
     };
 
-    const handleSwitch = (inst: any) => {
-        const entry = servers.find((s) => s.sandboxId === inst.external_id);
-        if (entry) setActiveServer(entry.id);
+    const handleSwitch = async (inst: any) => {
+        const result = await activateInstanceSelection(inst.sandbox_id, { pathname });
+        if (result) {
+            router.push(result.href);
+        }
     };
 
     return (

@@ -130,19 +130,10 @@ interface PlatformResponse<T> {
   created?: boolean;
 }
 
-export interface LocalSandboxBridgeInfo {
-  label: string;
-  url: string;
-  mappedPorts?: Record<string, string>;
-}
-
-interface LocalBridgeStatusResponse {
+interface LocalBridgeSandboxResponse {
   success: boolean;
   status?: string;
-  data?: {
-    name?: string;
-    mappedPorts?: Record<string, string>;
-  };
+  data?: SandboxInfo | null;
 }
 
 const LOCAL_PLATFORM_CANDIDATES = [
@@ -152,24 +143,6 @@ const LOCAL_PLATFORM_CANDIDATES = [
 
 function getLocalBridgeStatusUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/platform/local-bridge/status`;
-}
-
-async function fetchJsonWithTimeout<T>(url: string, timeoutMs = 1500): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) {
-      throw new Error(`Request failed: ${res.status}`);
-    }
-    return await res.json() as T;
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 // ─── Fetch helper ────────────────────────────────────────────────────────────
@@ -457,24 +430,34 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
  * List all sandboxes for the user's account.
  */
 export async function listSandboxes(sandboxId?: unknown): Promise<SandboxInfo[]> {
+  const normalizedSandboxId = normalizeSandboxId(sandboxId);
+
   try {
-    const normalizedSandboxId = normalizeSandboxId(sandboxId);
     const qs = normalizedSandboxId ? `?sandbox_id=${encodeURIComponent(normalizedSandboxId)}` : '';
     const result = await platformFetch<SandboxInfo[]>(`/platform/sandbox/list${qs}`, {
       method: 'GET',
     });
 
-    if (!result.success || !result.data) {
-      return [];
+    const rows = result.success && result.data ? result.data : [];
+    const discoveredLocal = await discoverLocalSandbox();
+    if (!discoveredLocal) return rows;
+    if (normalizedSandboxId && discoveredLocal.sandbox_id !== normalizedSandboxId) {
+      return rows;
     }
 
-    return result.data;
+    const withoutDuplicate = rows.filter((sandbox) => sandbox.sandbox_id !== discoveredLocal.sandbox_id);
+    return [discoveredLocal, ...withoutDuplicate];
   } catch {
-    return [];
+    const discoveredLocal = await discoverLocalSandbox().catch(() => null);
+    if (!discoveredLocal) return [];
+    if (normalizedSandboxId && discoveredLocal.sandbox_id !== normalizedSandboxId) {
+      return [];
+    }
+    return [discoveredLocal];
   }
 }
 
-export async function discoverLocalSandboxBridge(): Promise<LocalSandboxBridgeInfo | null> {
+export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
   if (typeof window === 'undefined') return null;
 
   const currentPlatformUrl = getPlatformUrl();
@@ -482,19 +465,23 @@ export async function discoverLocalSandboxBridge(): Promise<LocalSandboxBridgeIn
 
   for (const baseUrl of candidateBases) {
     try {
-      const bridgeStatus = await fetchJsonWithTimeout<LocalBridgeStatusResponse>(
-        getLocalBridgeStatusUrl(baseUrl),
-      );
+      const response = await fetch(getLocalBridgeStatusUrl(baseUrl), {
+        method: 'GET',
+        signal: AbortSignal.timeout(1500),
+        headers: { Accept: 'application/json' },
+      });
 
-      if (!bridgeStatus.success || bridgeStatus.status !== 'ready' || !bridgeStatus.data?.name) {
+      if (!response.ok) {
         continue;
       }
 
-      return {
-        label: 'Local Sandbox',
-        url: `${baseUrl}/p/${bridgeStatus.data.name}/${SANDBOX_PORTS.KORTIX_MASTER}`,
-        mappedPorts: bridgeStatus.data.mappedPorts,
-      };
+      const bridgeStatus = await response.json() as LocalBridgeSandboxResponse;
+
+      if (!bridgeStatus.success || bridgeStatus.status !== 'ready' || !bridgeStatus.data?.sandbox_id) {
+        continue;
+      }
+
+      return bridgeStatus.data;
     } catch {
       continue;
     }
