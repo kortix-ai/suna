@@ -101,7 +101,7 @@ export function PlanPage({ visible = true, onClose }: PlanPageProps) {
 
           <Pressable
             onPress={handleOpenWeb}
-            className="flex-row items-center gap-2 rounded-xl bg-primary px-6 py-3">
+            className="flex-row items-center gap-2 rounded-full bg-primary px-6 py-3">
             <Text className="font-roobert-medium text-base text-primary-foreground">
               {t('billing.goToWeb', 'Go to kortix.com')}
             </Text>

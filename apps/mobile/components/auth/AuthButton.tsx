@@ -59,7 +59,7 @@ export function AuthButton({
       className="w-full"
     >
       <View
-        className={`h-[52px] rounded-2xl ${
+        className={`h-[52px] rounded-full ${
           isPrimary ? 'bg-primary' : 'bg-card border border-border'
         } ${isDisabled ? 'opacity-70' : ''}`}
       >

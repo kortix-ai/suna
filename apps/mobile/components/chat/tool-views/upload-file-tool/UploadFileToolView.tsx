@@ -228,7 +228,7 @@ export function UploadFileToolView({ toolCall, toolResult, isStreaming = false, 
                 <View className="flex-row gap-2">
                   <TouchableOpacity
                     onPress={handleOpenUrl}
-                    className="flex-1 bg-primary rounded-xl p-3 flex-row items-center justify-center gap-2"
+                    className="flex-1 bg-primary rounded-full p-3 flex-row items-center justify-center gap-2"
                   >
                     <Icon as={ExternalLink} className="text-primary-foreground" size={16} />
                     <Text className="text-sm font-roobert-medium text-primary-foreground">
@@ -239,7 +239,7 @@ export function UploadFileToolView({ toolCall, toolResult, isStreaming = false, 
                     <TouchableOpacity
                       onPress={regenerateLink}
                       disabled={isRegenerating}
-                      className="flex-1 bg-secondary rounded-xl p-3 flex-row items-center justify-center gap-2"
+                      className="flex-1 bg-secondary rounded-full p-3 flex-row items-center justify-center gap-2"
                     >
                       {isRegenerating ? (
                         <ActivityIndicator size="small" />

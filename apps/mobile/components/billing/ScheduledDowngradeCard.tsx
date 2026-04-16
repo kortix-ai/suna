@@ -224,7 +224,7 @@ function ConfirmDialog({
               <Pressable
               onPress={onClose}
               disabled={isPending}
-                className="flex-1 h-10 border border-border rounded-xl items-center justify-center"
+                className="flex-1 h-10 border border-border rounded-full items-center justify-center"
               >
                 <Text className="text-sm font-roobert-medium text-foreground">
                 Never Mind
@@ -233,7 +233,7 @@ function ConfirmDialog({
               <Pressable
               onPress={onConfirm}
               disabled={isPending}
-                className="flex-1 h-10 bg-primary rounded-xl items-center justify-center"
+                className="flex-1 h-10 bg-primary rounded-full items-center justify-center"
               >
                 <Text className="text-sm font-roobert-medium text-primary-foreground">
                 {isPending ? 'Cancelling...' : 'Keep Current Plan'}

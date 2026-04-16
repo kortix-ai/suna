@@ -39,7 +39,7 @@ export function EmptyState({
       {actionLabel && onActionPress && (
         <Pressable
           onPress={onActionPress}
-          className="rounded-xl bg-primary px-4 py-2 active:opacity-80">
+          className="rounded-full bg-primary px-4 py-2 active:opacity-80">
           <Text className="font-roobert-semibold text-sm text-primary-foreground">
             {actionLabel}
           </Text>

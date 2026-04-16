@@ -99,7 +99,7 @@ function TriggerCard({
           <Pressable
             onPress={onToggle}
             disabled={isLoading}
-            className="h-10 w-10 items-center justify-center rounded-xl bg-primary active:opacity-80"
+            className="h-10 w-10 items-center justify-center rounded-full bg-primary active:opacity-80"
             style={{ opacity: isLoading ? 0.5 : 1 }}>
             {isToggling ? (
               <ActivityIndicator

@@ -418,7 +418,7 @@ const ContinueButton = React.memo(({
       onPressOut={handlePressOut}
       style={animatedStyle}
       disabled={disabled}
-      className={`w-full py-4 items-center ${rounded === 'full' ? 'rounded-full' : 'rounded-2xl'} ${disabled ? 'bg-muted/20' : 'bg-foreground'
+      className={`w-full py-4 items-center rounded-full ${disabled ? 'bg-muted/20' : 'bg-foreground'
         }`}
     >
       <View className="flex-row items-center gap-2">

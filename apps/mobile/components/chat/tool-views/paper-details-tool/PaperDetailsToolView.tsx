@@ -214,7 +214,7 @@ export function PaperDetailsToolView({ toolCall, toolResult, isStreaming = false
             {paper.pdf_url && (
               <Pressable
                 onPress={() => handleOpenUrl(paper.pdf_url!)}
-                className="bg-primary/10 border border-primary/20 rounded-xl p-3 flex-row items-center justify-center gap-2 active:opacity-70"
+                className="bg-primary/10 border border-primary/20 rounded-full p-3 flex-row items-center justify-center gap-2 active:opacity-70"
               >
                 <Icon as={FileText} size={16} className="text-primary" />
                 <Text className="text-sm font-roobert-medium text-primary">
