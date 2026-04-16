@@ -168,6 +168,105 @@ export function useSessionSync(sessionId: string) {
 		};
 	}, [sessionId]);
 
+	// ── Polling fallback ──
+	// When the session is busy, SSE should deliver streaming events. But if
+	// SSE is broken (502, ERR_QUIC_PROTOCOL_ERROR, etc.), no events arrive
+	// and the UI is stuck on "Considering next steps..." forever. As a
+	// fallback, poll for messages every 3s while the session is busy.
+	// The poll stops as soon as the session goes idle or the component unmounts.
+	const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	const lastPartCountRef = useRef(0);
+
+	useEffect(() => {
+		if (!sessionId) return;
+
+		const state = useSyncStore.getState();
+		const currentStatus = state.sessionStatus[sessionId];
+		const isBusyNow = currentStatus?.type === "busy" || currentStatus?.type === "retry";
+
+		if (isBusyNow) {
+			// Start polling if not already active
+			if (!pollTimerRef.current) {
+				// Track part count to detect SSE liveness — if parts are
+				// growing between polls, SSE is working and we skip the fetch.
+				const countParts = () => {
+					const s = useSyncStore.getState();
+					const msgs = s.messages[sessionId] ?? [];
+					let count = 0;
+					for (const m of msgs) {
+						const parts = s.parts[m.id];
+						if (parts) count += parts.length;
+					}
+					return count;
+				};
+				lastPartCountRef.current = countParts();
+
+				pollTimerRef.current = setInterval(async () => {
+					const s = useSyncStore.getState();
+					const st = s.sessionStatus[sessionId];
+					if (st?.type !== "busy" && st?.type !== "retry") {
+						// Session went idle — stop polling
+						if (pollTimerRef.current) {
+							clearInterval(pollTimerRef.current);
+							pollTimerRef.current = null;
+						}
+						return;
+					}
+
+					// Skip fetch if SSE is delivering data (part count grew)
+					const currentCount = countParts();
+					if (currentCount > lastPartCountRef.current) {
+						lastPartCountRef.current = currentCount;
+						return;
+					}
+
+					// SSE appears stalled — fetch messages AND session status
+					try {
+						const [msgRes, statusRes] = await Promise.all([
+							getClient().session.messages({ sessionID: sessionId }),
+							getClient().session.status().catch(() => null),
+						]);
+						if (msgRes.data) {
+							useSyncStore.getState().hydrate(sessionId, msgRes.data as any);
+						}
+						// Update session status from server — without this,
+						// a dead SSE means session.idle never arrives and the
+						// UI stays stuck on "busy" forever.
+						if (statusRes?.data) {
+							const statuses = statusRes.data as Record<string, any>;
+							const serverStatus = statuses[sessionId];
+							if (serverStatus) {
+								useSyncStore.getState().setStatus(sessionId, serverStatus);
+							} else {
+								// Session not in busy statuses map → it's idle
+								useSyncStore.getState().setStatus(sessionId, { type: "idle" } as SessionStatus);
+							}
+						}
+					} catch {
+						// Silently ignore — will retry on next interval
+					}
+					lastPartCountRef.current = countParts();
+				}, 3000);
+			}
+		} else {
+			// Session is idle — stop polling
+			if (pollTimerRef.current) {
+				clearInterval(pollTimerRef.current);
+				pollTimerRef.current = null;
+			}
+		}
+	});
+
+	// Cleanup polling on unmount
+	useEffect(() => {
+		return () => {
+			if (pollTimerRef.current) {
+				clearInterval(pollTimerRef.current);
+				pollTimerRef.current = null;
+			}
+		};
+	}, []);
+
 	// Single selector that derives MessageWithParts[] with reference caching.
 	// The buildMessages function returns the same array reference if nothing
 	// relevant to this session changed — preventing unnecessary re-renders.
