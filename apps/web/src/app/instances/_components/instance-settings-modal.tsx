@@ -6,6 +6,7 @@ import {
   AlertCircle,
   Archive,
   ArrowDownToLine,
+  Copy,
   HardDrive,
   KeyRound,
   Loader2,
@@ -23,6 +24,7 @@ import {
 import { toast as sonnerToast } from 'sonner';
 
 import {
+  getSandboxUrl,
   createBackup,
   getLatestSandboxVersion,
   getSSHConnection,
@@ -40,6 +42,7 @@ import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxAction, useAdminSandboxDetail, useAdminSandboxHealth, useAdminSandboxRepair, type AdminInstanceLayerAction, type AdminInstanceLayerHealth } from '@/hooks/admin/use-admin-sandboxes';
 import { useBackups } from '@/hooks/instance/use-backups';
 import { getServerTypes, type ServerType } from '@/lib/api/billing';
+import { authenticatedFetch } from '@/lib/auth-token';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
@@ -59,6 +62,189 @@ interface TabDef {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   hidden?: boolean;
+}
+
+interface SandboxConfigProblem {
+  source: string;
+  scope: 'global' | 'local' | 'env' | 'managed' | 'remote' | string;
+  kind: 'json' | 'schema' | 'substitution' | string;
+  message?: string;
+  issues?: Array<{ message?: string }>;
+}
+
+interface SandboxConfigStatus {
+  valid: boolean;
+  loadedSources: string[];
+  skippedSources: string[];
+  problems: SandboxConfigProblem[];
+}
+
+interface SandboxProjectSummary {
+  id: string;
+  name: string;
+  path: string;
+}
+
+function isSandboxConfigStatus(value: unknown): value is SandboxConfigStatus {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.valid === 'boolean'
+    && Array.isArray(candidate.loadedSources)
+    && Array.isArray(candidate.skippedSources)
+    && Array.isArray(candidate.problems);
+}
+
+async function requestSandboxJson<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
+  const response = await authenticatedFetch(`${sandboxUrl.replace(/\/+$/, '')}${path}`, {
+    signal: AbortSignal.timeout(10_000),
+    ...init,
+  }, { retryOnAuthError: false });
+
+  const text = await response.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+
+  if (!response.ok) {
+    const message = typeof data === 'object' && data && 'error' in data
+      ? String((data as Record<string, unknown>).error)
+      : `Request failed with status ${response.status}`;
+    throw new Error(message);
+  }
+
+  return data as T;
+}
+
+function formatProblemLabel(problem: SandboxConfigProblem): string {
+  return `${problem.scope} · ${problem.kind}`;
+}
+
+function buildConfigFixPrompt(sandbox: SandboxInfo, status: SandboxConfigStatus): string {
+  const header = `Inspect and repair the ignored OpenCode config sources for instance "${sandbox.name || sandbox.sandbox_id}".`;
+  const explanation = 'OpenCode is running in fail-soft mode and skipped the invalid sources below instead of crashing the runtime.';
+  const problems = status.problems.map((problem, index) => {
+    const issueLines = (problem.issues ?? []).map((issue) => issue.message).filter(Boolean);
+    return [
+      `${index + 1}. Source: ${problem.source}`,
+      `   Scope: ${problem.scope}`,
+      `   Kind: ${problem.kind}`,
+      `   Message: ${problem.message || 'No message provided.'}`,
+      ...(issueLines.length ? issueLines.map((line) => `   Detail: ${line}`) : []),
+    ].join('\n');
+  }).join('\n\n');
+
+  return [
+    header,
+    explanation,
+    '',
+    problems,
+    '',
+    'Repair the invalid source in place. If the problem is a legacy top-level `models` array, migrate it to valid `provider` config.',
+    'When finished, verify `GET /config/status` returns `{"valid": true, "skippedSources": []}` and the runtime stays healthy.',
+  ].join('\n');
+}
+
+function getConfigFixTaskTitle(status: SandboxConfigStatus): string {
+  return status.problems.length > 1
+    ? 'Fix ignored OpenCode config sources'
+    : 'Fix ignored OpenCode config source';
+}
+
+function pickConfigFixProject(projects: SandboxProjectSummary[]): SandboxProjectSummary | null {
+  return projects.find((project) => project.path === '/workspace') ?? projects[0] ?? null;
+}
+
+function ConfigDegradationPanel({
+  status,
+  loading,
+  error,
+  onCopyPrompt,
+  onStartTask,
+  taskPending,
+  taskTargetLabel,
+}: {
+  status?: SandboxConfigStatus;
+  loading: boolean;
+  error?: string | null;
+  onCopyPrompt: () => void;
+  onStartTask: () => void;
+  taskPending: boolean;
+  taskTargetLabel?: string | null;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-border/60 bg-muted/10 p-4 flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading config diagnostics…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-2">
+        <div className="text-sm font-medium">Config diagnostics unavailable</div>
+        <div className="text-xs text-muted-foreground break-words">{error}</div>
+      </div>
+    );
+  }
+
+  if (!status || status.valid || status.problems.length === 0) return null;
+
+  return (
+    <section className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-4">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="mt-0.5 h-4 w-4 text-amber-400 shrink-0" />
+        <div className="min-w-0 space-y-1">
+          <div className="text-sm font-medium text-foreground">Config degraded — runtime still healthy</div>
+          <div className="text-xs text-muted-foreground">
+            OpenCode ignored {status.problems.length} invalid config source{status.problems.length === 1 ? '' : 's'} so the workspace stays online.
+            Fix the skipped source{status.problems.length === 1 ? '' : 's'} to restore a clean config state.
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {status.problems.map((problem, index) => (
+          <div key={`${problem.source}-${index}`} className="rounded-lg border border-amber-500/20 bg-background/70 px-3 py-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <span>{formatProblemLabel(problem)}</span>
+              <span className="rounded-full border border-border/60 px-2 py-0.5 font-mono normal-case tracking-normal text-foreground/80">{problem.source}</span>
+            </div>
+            <div className="text-sm text-foreground">{problem.message || 'Unknown config problem.'}</div>
+            {problem.issues && problem.issues.length > 0 ? (
+              <ul className="space-y-1 text-xs text-muted-foreground list-disc pl-4">
+                {problem.issues.slice(0, 3).map((issue, issueIndex) => (
+                  <li key={`${problem.source}-issue-${issueIndex}`}>{issue.message || 'Unknown issue'}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={onCopyPrompt}>
+          <Copy className="h-3.5 w-3.5 mr-2" />
+          Copy fix prompt
+        </Button>
+        <Button size="sm" onClick={onStartTask} disabled={taskPending}>
+          {taskPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Cpu className="h-3.5 w-3.5 mr-2" />}
+          Start fix task
+        </Button>
+      </div>
+
+      <div className="text-[11px] text-muted-foreground">
+        {taskTargetLabel
+          ? `The fix task will be created and started in ${taskTargetLabel}.`
+          : 'If this instance has no project yet, Kortix will create a Workspace project automatically before starting the fix task.'}
+      </div>
+    </section>
+  );
 }
 
 function formatBytes(bytes: number): string {
@@ -288,6 +474,98 @@ export function InstanceSettingsModal({
   ], [supportsBackups, supportsUpdates]);
 
   const visibleTabs = tabs.filter((tab) => !tab.hidden);
+  const sandboxUrl = useMemo(() => {
+    if (!sandbox) return null;
+    try {
+      return getSandboxUrl(sandbox);
+    } catch {
+      return null;
+    }
+  }, [sandbox]);
+
+  const configStatusQuery = useQuery<SandboxConfigStatus>({
+    queryKey: ['sandbox', 'config-status', sandbox?.sandbox_id, sandboxUrl],
+    enabled: open && !!sandboxUrl,
+    queryFn: async () => {
+      const data = await requestSandboxJson<unknown>(sandboxUrl!, '/config/status');
+      if (!isSandboxConfigStatus(data)) {
+        throw new Error('This runtime does not expose config diagnostics yet.');
+      }
+      return data;
+    },
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const sandboxProjectsQuery = useQuery<SandboxProjectSummary[]>({
+    queryKey: ['sandbox', 'config-status-projects', sandbox?.sandbox_id, sandboxUrl],
+    enabled: open && !!sandboxUrl && !!configStatusQuery.data && !configStatusQuery.data.valid,
+    queryFn: async () => {
+      const data = await requestSandboxJson<unknown>(sandboxUrl!, '/kortix/projects');
+      return Array.isArray(data) ? data as SandboxProjectSummary[] : [];
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const configFixPrompt = useMemo(() => {
+    if (!sandbox || !configStatusQuery.data || configStatusQuery.data.valid) return null;
+    return buildConfigFixPrompt(sandbox, configStatusQuery.data);
+  }, [sandbox, configStatusQuery.data]);
+
+  const configFixProject = useMemo(
+    () => pickConfigFixProject(sandboxProjectsQuery.data ?? []),
+    [sandboxProjectsQuery.data],
+  );
+
+  const configFixTaskMutation = useMutation({
+    mutationFn: async () => {
+      if (!sandbox || !sandboxUrl) throw new Error('Sandbox URL unavailable');
+      if (!configStatusQuery.data || configStatusQuery.data.valid) {
+        throw new Error('No invalid config source is currently being skipped.');
+      }
+      const targetProject = configFixProject ?? await requestSandboxJson<SandboxProjectSummary>(sandboxUrl, '/kortix/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Workspace',
+          path: '/workspace',
+          description: 'Default workspace project for runtime repair tasks.',
+        }),
+      });
+
+      const task = await requestSandboxJson<{ id: string }>(sandboxUrl, '/kortix/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: targetProject.id,
+          title: getConfigFixTaskTitle(configStatusQuery.data),
+          description: buildConfigFixPrompt(sandbox, configStatusQuery.data),
+          verification_condition: 'GET /config/status returns {"valid":true,"skippedSources":[]} for this instance.',
+          status: 'todo',
+        }),
+      });
+
+      await requestSandboxJson(sandboxUrl, `/kortix/tasks/${encodeURIComponent(task.id)}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      return {
+        taskId: task.id,
+        project: targetProject,
+      };
+    },
+    onSuccess: ({ taskId, project }) => {
+      sonnerToast.success('Fix task started', {
+        description: `Task ${taskId} is running in ${project.name || project.path}.`,
+      });
+    },
+    onError: (error) => {
+      sonnerToast.error(error instanceof Error ? error.message : 'Failed to start fix task');
+    },
+  });
 
   useEffect(() => {
     if (!open) {
@@ -483,6 +761,22 @@ export function InstanceSettingsModal({
     return action === 'reboot_host' ? 'default' as const : 'outline' as const;
   }
 
+  async function handleCopyConfigFixPrompt() {
+    if (!configFixPrompt) return;
+    try {
+      await navigator.clipboard.writeText(configFixPrompt);
+      sonnerToast.success('Fix prompt copied', {
+        description: 'Share it with the agent or paste it into a task to repair the skipped source.',
+      });
+    } catch (error) {
+      sonnerToast.error(error instanceof Error ? error.message : 'Failed to copy fix prompt');
+    }
+  }
+
+  function handleStartConfigFixTask() {
+    configFixTaskMutation.mutate();
+  }
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -639,6 +933,15 @@ export function InstanceSettingsModal({
               <h2 className="text-lg font-semibold">General</h2>
               <p className="text-sm text-muted-foreground">Core details and entry points for this instance.</p>
             </div>
+            <ConfigDegradationPanel
+              status={configStatusQuery.data}
+              loading={configStatusQuery.isLoading}
+              error={configStatusQuery.error instanceof Error ? configStatusQuery.error.message : null}
+              onCopyPrompt={handleCopyConfigFixPrompt}
+              onStartTask={handleStartConfigFixTask}
+              taskPending={configFixTaskMutation.isPending}
+              taskTargetLabel={configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null}
+            />
             {showRecoveryCallout && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
                 <div className="flex items-start gap-3">
@@ -744,6 +1047,16 @@ export function InstanceSettingsModal({
               </div>
             </div>
           </div>
+
+          <ConfigDegradationPanel
+            status={configStatusQuery.data}
+            loading={configStatusQuery.isLoading}
+            error={configStatusQuery.error instanceof Error ? configStatusQuery.error.message : null}
+            onCopyPrompt={handleCopyConfigFixPrompt}
+            onStartTask={handleStartConfigFixTask}
+            taskPending={configFixTaskMutation.isPending}
+            taskTargetLabel={configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null}
+          />
 
           {isAdmin ? (
             adminHealthQuery.isLoading ? (
@@ -1016,6 +1329,21 @@ export function InstanceSettingsModal({
         {backups.isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading backups…
+          </div>
+        ) : backups.error ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="space-y-3">
+                <div>
+                  <div className="font-medium">Unable to load backups</div>
+                  <div className="text-amber-100/80">{backups.error instanceof Error ? backups.error.message : 'Failed to load backups for this instance.'}</div>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => void backups.refetch()}>
+                  Retry
+                </Button>
+              </div>
+            </div>
           </div>
         ) : backups.backups.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border/60 bg-muted/10 p-8 text-center text-sm text-muted-foreground">

@@ -23,6 +23,9 @@ import {
   CheckCircle2,
   FolderOpen,
   FolderKanban,
+  AlertCircle,
+  Copy,
+  ShieldAlert,
 } from 'lucide-react';
 import posthog from 'posthog-js';
 
@@ -78,9 +81,95 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { buildInstancePath, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, normalizeAppPathname } from '@/lib/instance-routes';
 import { createClient } from '@/lib/supabase/client';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
-import { reactivateSandbox, listSandboxes } from '@/lib/platform-client';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getSandboxUrl, reactivateSandbox, listSandboxes, type SandboxInfo } from '@/lib/platform-client';
+import { authenticatedFetch } from '@/lib/auth-token';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
+
+interface SidebarSandboxConfigProblem {
+  source: string;
+  scope: 'global' | 'local' | 'env' | 'managed' | 'remote' | string;
+  kind: 'json' | 'schema' | 'substitution' | string;
+  message?: string;
+  issues?: Array<{ message?: string }>;
+}
+
+interface SidebarSandboxConfigStatus {
+  valid: boolean;
+  loadedSources: string[];
+  skippedSources: string[];
+  problems: SidebarSandboxConfigProblem[];
+}
+
+interface SidebarProjectSummary {
+  id: string;
+  name: string;
+  path: string;
+}
+
+function isSidebarSandboxConfigStatus(value: unknown): value is SidebarSandboxConfigStatus {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.valid === 'boolean'
+    && Array.isArray(candidate.loadedSources)
+    && Array.isArray(candidate.skippedSources)
+    && Array.isArray(candidate.problems);
+}
+
+async function sidebarSandboxRequestJson<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
+  const response = await authenticatedFetch(`${sandboxUrl.replace(/\/+$/, '')}${path}`, {
+    signal: AbortSignal.timeout(10_000),
+    ...init,
+  }, { retryOnAuthError: false });
+
+  const text = await response.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+
+  if (!response.ok) {
+    const message = typeof data === 'object' && data && 'error' in data
+      ? String((data as Record<string, unknown>).error)
+      : `Request failed with status ${response.status}`;
+    throw new Error(message);
+  }
+
+  return data as T;
+}
+
+function pickSidebarConfigFixProject(projects: SidebarProjectSummary[]): SidebarProjectSummary | null {
+  return projects.find((project) => project.path === '/workspace') ?? projects[0] ?? null;
+}
+
+function buildSidebarConfigFixPrompt(sandbox: SandboxInfo, status: SidebarSandboxConfigStatus): string {
+  const header = `Inspect and repair the ignored OpenCode config sources for instance "${sandbox.name || sandbox.sandbox_id}".`;
+  const explanation = 'OpenCode is running in fail-soft mode and skipped the invalid sources below instead of crashing the runtime.';
+  const problems = status.problems.map((problem, index) => {
+    const issueLines = (problem.issues ?? []).map((issue) => issue.message).filter(Boolean);
+    return [
+      `${index + 1}. Source: ${problem.source}`,
+      `   Scope: ${problem.scope}`,
+      `   Kind: ${problem.kind}`,
+      `   Message: ${problem.message || 'No message provided.'}`,
+      ...(issueLines.length ? issueLines.map((line) => `   Detail: ${line}`) : []),
+    ].join('\n');
+  }).join('\n\n');
+
+  return [
+    header,
+    explanation,
+    '',
+    problems,
+    '',
+    'Repair the invalid source in place. If the problem is a legacy top-level `models` array, migrate it to valid `provider` config.',
+    'When finished, verify `GET /config/status` returns `{"valid": true, "skippedSources": []}` and the runtime stays healthy.',
+  ].join('\n');
+}
 
 // ============================================================================
 // Floating Mobile Menu Button
@@ -851,6 +940,219 @@ function ScheduledDeletionCard() {
   );
 }
 
+function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: boolean; onExpand: () => void }) {
+  const { sandbox } = useSandbox();
+  const activeServerId = useServerStore((s) => s.activeServerId);
+  const servers = useServerStore((s) => s.servers);
+  const activeServer = servers.find((s) => s.id === activeServerId);
+  const activeInstanceId = activeServer?.instanceId;
+
+  const { data: sandboxList } = useQuery({
+    queryKey: ['platform', 'sandbox', 'list'],
+    queryFn: listSandboxes,
+    staleTime: 30_000,
+  });
+
+  const activeSandbox = React.useMemo(() => {
+    if (activeInstanceId && sandboxList) {
+      return sandboxList.find((entry) => entry.sandbox_id === activeInstanceId) ?? sandbox ?? null;
+    }
+    return sandbox ?? null;
+  }, [activeInstanceId, sandboxList, sandbox]);
+
+  const sandboxUrl = React.useMemo(() => {
+    if (!activeSandbox) return null;
+    try {
+      return getSandboxUrl(activeSandbox);
+    } catch {
+      return null;
+    }
+  }, [activeSandbox]);
+
+  const configStatusQuery = useQuery<SidebarSandboxConfigStatus>({
+    queryKey: ['sidebar', 'sandbox-config-status', activeSandbox?.sandbox_id, sandboxUrl],
+    enabled: !!sandboxUrl,
+    queryFn: async () => {
+      const data = await sidebarSandboxRequestJson<unknown>(sandboxUrl!, '/config/status');
+      if (!isSidebarSandboxConfigStatus(data)) {
+        throw new Error('This runtime does not expose config diagnostics yet.');
+      }
+      return data;
+    },
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const projectsQuery = useQuery<SidebarProjectSummary[]>({
+    queryKey: ['sidebar', 'sandbox-config-projects', activeSandbox?.sandbox_id, sandboxUrl],
+    enabled: !!sandboxUrl && !!configStatusQuery.data && !configStatusQuery.data.valid,
+    queryFn: async () => {
+      const data = await sidebarSandboxRequestJson<unknown>(sandboxUrl!, '/kortix/projects');
+      return Array.isArray(data) ? data as SidebarProjectSummary[] : [];
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const configStatus = configStatusQuery.data;
+  const hasProblem = !!configStatus && !configStatus.valid && configStatus.problems.length > 0;
+  const configFixPrompt = React.useMemo(() => {
+    if (!activeSandbox || !configStatus || configStatus.valid) return null;
+    return buildSidebarConfigFixPrompt(activeSandbox, configStatus);
+  }, [activeSandbox, configStatus]);
+  const configFixProject = React.useMemo(
+    () => pickSidebarConfigFixProject(projectsQuery.data ?? []),
+    [projectsQuery.data],
+  );
+
+  const startTaskMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeSandbox || !sandboxUrl || !configStatus || configStatus.valid) {
+        throw new Error('No invalid config source is currently being skipped.');
+      }
+      const targetProject = configFixProject ?? await sidebarSandboxRequestJson<SidebarProjectSummary>(sandboxUrl, '/kortix/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Workspace',
+          path: '/workspace',
+          description: 'Default workspace project for runtime repair tasks.',
+        }),
+      });
+
+      const task = await sidebarSandboxRequestJson<{ id: string }>(sandboxUrl, '/kortix/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: targetProject.id,
+          title: configStatus.problems.length > 1 ? 'Fix ignored OpenCode config sources' : 'Fix ignored OpenCode config source',
+          description: buildSidebarConfigFixPrompt(activeSandbox, configStatus),
+          verification_condition: 'GET /config/status returns {"valid":true,"skippedSources":[]} for this instance.',
+          status: 'todo',
+        }),
+      });
+
+      await sidebarSandboxRequestJson(sandboxUrl, `/kortix/tasks/${encodeURIComponent(task.id)}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      return { taskId: task.id, project: targetProject };
+    },
+    onSuccess: ({ taskId, project }) => {
+      toast.success('Fix task started', {
+        description: `Task ${taskId} is running in ${project.name || project.path}.`,
+      });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to start fix task');
+    },
+  });
+
+  const handleCopyPrompt = React.useCallback(async () => {
+    if (!configFixPrompt) return;
+    try {
+      await navigator.clipboard.writeText(configFixPrompt);
+      toast.success('Fix prompt copied', {
+        description: 'Paste it into a chat or task to repair the skipped config source.',
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to copy fix prompt');
+    }
+  }, [configFixPrompt]);
+
+  if (!hasProblem) return null;
+
+  if (collapsed) {
+    return (
+      <div className="w-full px-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onExpand}
+              className="relative flex items-center justify-center w-full py-2 rounded-lg cursor-pointer text-amber-400/90 hover:bg-amber-500/10 transition-colors duration-150"
+            >
+              <ShieldAlert className="h-4 w-4" />
+              <span className="absolute top-1.5 right-2 flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
+              </span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={12} className="max-w-64 text-xs">
+            <div className="font-medium">Config degraded — runtime still healthy</div>
+            <div className="mt-1 text-muted-foreground">{primaryProblem.message || 'Invalid config source ignored.'}</div>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
+  const primaryProblem = configStatus.problems[0];
+  const taskTargetLabel = configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null;
+
+  return (
+    <div className="rounded-xl border border-amber-500/18 bg-sidebar-accent/45 px-3 py-2.5 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
+      <div className="flex items-start gap-2.5">
+        <div className="relative mt-0.5 shrink-0 text-amber-400/90">
+          <ShieldAlert className="h-4 w-4" />
+          <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400/80 opacity-75 animate-ping" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
+          </span>
+        </div>
+
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-medium text-foreground">Config ignored</span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/18 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+              <CheckCircle2 className="h-2.5 w-2.5" />
+              Runtime healthy
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            <div className="text-[11px] leading-relaxed text-muted-foreground">
+              {primaryProblem.message || 'An invalid config source is being ignored.'}
+            </div>
+            <div className="truncate text-[10px] font-mono text-muted-foreground/80">
+              {primaryProblem.source}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Button
+              type="button"
+              size="toolbar"
+              className="h-7 rounded-lg bg-foreground text-background hover:bg-foreground/90"
+              onClick={() => startTaskMutation.mutate()}
+              disabled={startTaskMutation.isPending}
+            >
+              {startTaskMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <SquarePen className="h-3 w-3" />}
+              Fix
+            </Button>
+            <Button type="button" size="toolbar" variant="outline" className="h-7 rounded-lg border-border/60 bg-background/40" onClick={handleCopyPrompt}>
+              <Copy className="h-3 w-3" />
+              Prompt
+            </Button>
+            {configStatus.problems.length > 1 ? (
+              <span className="text-[10px] text-muted-foreground">+{configStatus.problems.length - 1} more source{configStatus.problems.length === 2 ? '' : 's'}</span>
+            ) : null}
+          </div>
+
+          <div className="text-[10px] text-muted-foreground/70 leading-relaxed">
+            {taskTargetLabel
+              ? `Fix task target: ${taskTargetLabel}`
+              : 'Fix tasks will create a Workspace project automatically if needed.'}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
@@ -1173,13 +1475,19 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
             {/* Sessions — expandable, default open */}
             </nav>
 
-
           <SidebarSections />
         </div>
       </SidebarContent>
 
       {/* ====== FOOTER ====== */}
       <SidebarFooter className="px-3 pb-3 pt-0 group-data-[collapsible=icon]:px-0 gap-2">
+        <SidebarConfigDegradationNotice
+          collapsed={effectiveState === 'collapsed'}
+          onExpand={() => {
+            setOpen(true);
+            window.dispatchEvent(new CustomEvent('sidebar-left-toggled', { detail: { expanded: true } }));
+          }}
+        />
         <ScheduledDeletionCard />
         <SidebarUpdateIndicator collapsed={effectiveState === 'collapsed'} />
         <UserProfileSection user={user} />

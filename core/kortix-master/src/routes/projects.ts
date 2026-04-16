@@ -10,7 +10,7 @@
 import { Hono } from 'hono'
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
-import { dirname, join } from 'path'
+import { basename, dirname, join } from 'path'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,6 +70,37 @@ function getDb(): Database {
 // ── Router ───────────────────────────────────────────────────────────────────
 
 const projectsRouter = new Hono()
+
+// POST / — create or ensure a project exists
+projectsRouter.post('/', async (c) => {
+  try {
+    const db = getDb()
+    const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string }>().catch(() => ({}))
+    const projectPath = body.path?.trim() || '/workspace'
+    const existing = db.prepare('SELECT * FROM projects WHERE path=$path').get({ $path: projectPath }) as ProjectRow | null
+    if (existing) return c.json(existing)
+
+    const fallbackName = projectPath === '/workspace' ? 'Workspace' : basename(projectPath) || 'Project'
+    const name = body.name?.trim() || fallbackName
+    const id = body.id?.trim() || `project_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+    const description = body.description ?? ''
+    const createdAt = new Date().toISOString()
+
+    db.prepare(`INSERT INTO projects (id, name, path, description, created_at, opencode_id, maintainer_session_id)
+      VALUES ($id, $name, $path, $description, $createdAt, NULL, NULL)`)
+      .run({
+        $id: id,
+        $name: name,
+        $path: projectPath,
+        $description: description,
+        $createdAt: createdAt,
+      })
+
+    return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }))
+  } catch (e) {
+    return c.json({ error: String(e) }, 400)
+  }
+})
 
 // GET / — list all projects with stats
 projectsRouter.get('/', async (c) => {

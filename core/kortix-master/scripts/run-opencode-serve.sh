@@ -12,6 +12,9 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-${KORTIX_PERSISTENT_ROOT}}"
 export OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 export OPENCODE_FILE_ROOT=/
 export PATH="/opt/bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+if [ -x "/usr/local/bin/opencode-kortix" ]; then
+  export OPENCODE_BIN_PATH="/usr/local/bin/opencode-kortix"
+fi
 OPENCODE_BIN="$(command -v opencode || true)"
 
 if [ -z "$OPENCODE_BIN" ]; then
