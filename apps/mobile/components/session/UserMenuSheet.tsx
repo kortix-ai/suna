@@ -14,8 +14,8 @@ import {
   LogOut,
   Monitor,
   Moon,
-  Plus,
   Settings,
+  SlidersHorizontal,
   Sun,
   X,
 } from 'lucide-react-native';
@@ -107,19 +107,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
       >
         {/* Instances */}
         <View className="px-1">
-          <View className="flex-row items-center mb-2">
-            <Text className="text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
-              Instances
-            </Text>
-            <Pressable
-              onPress={onManageInstances}
-              className="ml-auto flex-row items-center active:opacity-70"
-            >
-              <Text className="text-[11px] font-roobert-medium text-muted-foreground">Manage</Text>
-              <Icon as={ChevronRight} size={12} className="ml-0.5 text-muted-foreground/50" strokeWidth={2.2} />
-            </Pressable>
-          </View>
-
           {/* Active instance */}
           <View className="py-3.5">
             <View className="flex-row items-center">
@@ -178,14 +165,14 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
             </>
           )}
 
-          {/* Add instance */}
+          {/* Manage instances */}
           <Pressable
-            onPress={onAddInstance}
+            onPress={onManageInstances}
             className="py-3.5 active:opacity-85"
           >
             <View className="flex-row items-center">
-              <Icon as={Plus} size={16} className="text-muted-foreground mr-3" strokeWidth={2.2} />
-              <Text className="font-roobert text-[14px] text-muted-foreground">Add instance...</Text>
+              <Icon as={SlidersHorizontal} size={16} className="text-muted-foreground mr-3" strokeWidth={2.2} />
+              <Text className="font-roobert text-[14px] text-muted-foreground">Manage instances</Text>
             </View>
           </Pressable>
         </View>
@@ -286,10 +273,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
 
         {/* General */}
         <View className="px-1">
-          <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
-            General
-          </Text>
-
           <Pressable
             onPress={onOpenSettings}
             className="active:opacity-85"
@@ -353,9 +336,9 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
           >
             <View className="py-3.5">
               <View className="flex-row items-center">
-                <Icon as={LogOut} size={18} className="text-destructive" strokeWidth={2.2} />
+                <Icon as={LogOut} size={18} className="text-foreground/80" strokeWidth={2.2} />
                 <Text
-                  className="ml-4 font-roobert-medium text-[15px] text-destructive"
+                  className="ml-4 font-roobert-medium text-[15px] text-foreground"
                   style={{ opacity: isSigningOut ? 0.6 : 1 }}
                 >
                   {isSigningOut ? 'Signing out...' : 'Log Out'}
