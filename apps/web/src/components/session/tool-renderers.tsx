@@ -2583,28 +2583,17 @@ function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const hasDiff = before !== '' || after !== '';
   const isStreaming = partStatus(part) === 'pending';
   const running = useContext(ToolRunningContext);
+  const { openPreview } = useFilePreviewStore();
 
   return (
     <BasicTool
       icon={<FileCode2 className="size-3.5 flex-shrink-0" />}
-      trigger={
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Edit
-          </span>
-          <span className="text-xs text-foreground font-mono truncate">
-            {filename}
-          </span>
-          {directory && (
-            <span className="text-muted-foreground text-[10px] font-mono truncate hidden sm:inline">
-              {directory}
-            </span>
-          )}
-          {filediff && (
-            <DiffChanges additions={additions} deletions={deletions} />
-          )}
-        </div>
-      }
+      trigger={{
+        title: 'Edit',
+        subtitle: filename,
+        args: directory ? [directory] : undefined,
+      }}
+      onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
@@ -2666,32 +2655,17 @@ function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     !running && !filename && (status === 'pending' || status === 'running');
   const isStreaming = status === 'pending' && running;
 
+  const { openPreview } = useFilePreviewStore();
+
   return (
     <BasicTool
       icon={<FileCode2 className="size-3.5 flex-shrink-0" />}
-      trigger={
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Write
-          </span>
-          {filename ? (
-            <>
-              <span className="text-xs text-foreground font-mono truncate">
-                {filename}
-              </span>
-              {directory && (
-                <span className="text-muted-foreground text-[10px] font-mono truncate hidden sm:inline">
-                  {directory}
-                </span>
-              )}
-            </>
-          ) : isStalePending ? (
-            <TextShimmer duration={1} spread={2} className="text-xs italic">
-              Working...
-            </TextShimmer>
-          ) : null}
-        </div>
-      }
+      trigger={{
+        title: 'Write',
+        subtitle: filename || (isStalePending ? 'Working...' : undefined),
+        args: directory ? [directory] : undefined,
+      }}
+      onSubtitleClick={filePath ? () => openPreview(filePath) : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
@@ -4560,7 +4534,7 @@ function ShowTool({ part }: ToolProps) {
   // Loading state
   if (running && !type && !items) {
     return (
-      <div className="overflow-hidden">
+      <div className="rounded-xl border border-border/50 overflow-hidden bg-card">
         <div className="flex items-center gap-3 px-5 py-4">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
           <TextShimmer duration={1} spread={2} className="text-sm">
@@ -4584,7 +4558,7 @@ function ShowTool({ part }: ToolProps) {
 
   return (
     <div
-      className={cn('overflow-hidden', borderStyle)}
+      className={cn('rounded-xl border overflow-hidden bg-card', borderStyle)}
     >
       {/* ── Header — always neutral colors, never themed ── */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-border/15">
@@ -4602,7 +4576,7 @@ function ShowTool({ part }: ToolProps) {
           )}
         </div>
         {isCarousel && (
-          <span className="text-[10px] text-muted-foreground/60 font-medium flex-shrink-0">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground/60 font-medium flex-shrink-0">
             {items!.length} items
           </span>
         )}
@@ -4612,7 +4586,7 @@ function ShowTool({ part }: ToolProps) {
             disabled={!navigationEnabled}
             onClick={openInTab}
             className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors flex-shrink-0 text-muted-foreground',
+              'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex-shrink-0 bg-muted/50 text-muted-foreground',
               navigationEnabled
                 ? 'hover:bg-muted hover:text-foreground'
                 : 'opacity-60 cursor-default',
