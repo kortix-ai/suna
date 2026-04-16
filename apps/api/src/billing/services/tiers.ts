@@ -217,6 +217,18 @@ export function getTierByPriceId(priceId: string): TierConfig | null {
   return name ? TIERS[name] ?? null : null;
 }
 
+export function getBillingPeriodByPriceId(priceId: string): 'monthly' | 'yearly' | 'yearly_commitment' | null {
+  for (const priceConfig of [STRIPE_PRICES_PROD, STRIPE_PRICES_STAGING]) {
+    for (const tierPrices of Object.values(priceConfig.subscriptions)) {
+      if (tierPrices.monthly === priceId) return 'monthly';
+      if (tierPrices.yearly === priceId) return 'yearly';
+      if (tierPrices.yearlyCommitment === priceId) return 'yearly_commitment';
+    }
+  }
+
+  return null;
+}
+
 export function getAllTiers(): TierConfig[] {
   return Object.values(TIERS);
 }
