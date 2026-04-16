@@ -510,11 +510,7 @@ function TabItem({
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">Home</TooltipContent>
         </Tooltip>
-      ) : tab.type === 'file' ? (
-        getFileIcon(tab.title || 'file', { className: 'h-3 w-3 flex-shrink-0' })
-      ) : (
-        <Icon className={cn('h-3 w-3 flex-shrink-0 transition-colors', isActive ? 'text-foreground/50' : 'text-muted-foreground/40')} />
-      )}
+      ) : null}
 
       {/* Title — hidden for dashboard tab */}
       {!isDashboard && (
