@@ -12,6 +12,7 @@ import {
   View,
   FlatList,
   ScrollView,
+  StyleSheet,
   TouchableOpacity,
   useWindowDimensions,
   Animated,
@@ -840,6 +841,10 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
           overflow: 'hidden',
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderLeftWidth: StyleSheet.hairlineWidth,
+          borderRightWidth: StyleSheet.hairlineWidth,
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
         }}
         className="bg-background"
       >

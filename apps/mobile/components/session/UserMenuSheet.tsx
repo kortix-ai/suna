@@ -249,7 +249,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                 <View className="flex-row mt-3" style={{ gap: 8 }}>
                   <Pressable
                     onPress={onOpenChangelog}
-                    className="flex-row items-center justify-center rounded-xl px-4 py-2 active:opacity-90"
+                    className="flex-row items-center justify-center rounded-full px-4 py-2 active:opacity-90"
                     style={{ backgroundColor: isDark ? '#F8F8F8' : '#121215' }}
                   >
                     <Icon as={ArrowDownToLine} size={13} className={isDark ? 'text-[#121215]' : 'text-[#F8F8F8]'} strokeWidth={2.5} />
@@ -259,7 +259,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                   </Pressable>
                   <Pressable
                     onPress={onOpenChangelog}
-                    className="flex-row items-center justify-center rounded-xl bg-muted/60 px-4 py-2 active:opacity-80"
+                    className="flex-row items-center justify-center rounded-full bg-muted/60 px-4 py-2 active:opacity-80"
                   >
                     <Text className="font-roobert-medium text-xs text-foreground">Details</Text>
                   </Pressable>
@@ -290,14 +290,14 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
           <View className="h-px bg-border/35" />
 
           {/* Theme toggle */}
-          <View className="mt-3 flex-row rounded-xl bg-muted/55 p-1">
+          <View className="mt-3 flex-row rounded-full bg-muted/55 p-1">
             {THEME_OPTIONS.map((option) => {
               const active = option.value === activeTheme;
               return (
                 <Pressable
                   key={option.value}
                   onPress={() => onSelectTheme(option.value)}
-                  className="flex-1 rounded-lg active:opacity-85"
+                  className="flex-1 rounded-full active:opacity-85"
                   style={{
                     backgroundColor: active
                       ? isDark ? '#1F1F1F' : '#FFFFFF'
