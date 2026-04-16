@@ -86,8 +86,6 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
         flex: 1,
         backgroundColor: bgColor,
         paddingTop: insets.top,
-        borderLeftWidth: 1,
-        borderLeftColor: isDark ? '#232324' : '#DCDDDE',
       }}
     >
       <ScrollView

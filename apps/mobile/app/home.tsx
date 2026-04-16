@@ -1091,7 +1091,7 @@ export default function HomeScreen() {
 
     return (
       <View
-        className="flex-1 bg-muted border-r border-border"
+        className="flex-1 bg-muted"
         style={{ paddingTop: insets.top }}
       >
         {/* Kortix wordmark */}
@@ -1416,7 +1416,7 @@ export default function HomeScreen() {
           elevation: 0,
         }}
         overlayStyle={{ backgroundColor: 'transparent' }}
-        swipeEnabled
+        swipeEnabled={!rightDrawerOpen}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
         renderDrawerContent={renderDrawerContent}
@@ -1437,7 +1437,7 @@ export default function HomeScreen() {
             elevation: 0,
           }}
           overlayStyle={{ backgroundColor: 'transparent' }}
-          swipeEnabled={false}
+          swipeEnabled={rightDrawerOpen}
           renderDrawerContent={renderRightDrawerContent}
         >
         {React.createElement(
