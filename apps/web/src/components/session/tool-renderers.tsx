@@ -278,7 +278,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
   const scaledHeight = viewportScale > 0 ? Math.round(1080 * viewportScale) : 0;
 
   return (
-    <div className="rounded-lg border border-border/50 overflow-hidden">
+    <div className="overflow-hidden">
       {/* Mini browser toolbar */}
       <div className="flex items-center gap-1.5 h-8 px-2.5 bg-muted/40 border-b border-border/30 shrink-0">
         <div className="flex-1 flex items-center gap-1.5 min-w-0">
@@ -740,14 +740,14 @@ function JsonFailureOutputCard({
   toolName?: string;
 }) {
   return (
-    <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 overflow-hidden text-xs">
+    <div className="text-xs overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-rose-500/20">
         <CircleAlert className="size-3.5 text-rose-500/80 flex-shrink-0" />
         <span className="font-medium text-rose-600 dark:text-rose-400">
           Integration request failed
         </span>
         {typeof failure.status === 'number' && (
-          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-300 font-mono">
+          <span className="ml-auto text-[10px] text-rose-600 dark:text-rose-400 font-mono">
             HTTP {failure.status}
           </span>
         )}
@@ -757,7 +757,7 @@ function JsonFailureOutputCard({
           {failure.errorSummary}
         </p>
         {failure.nestedMessage && (
-          <div className="rounded-md border border-border/40 bg-background/60 px-2 py-1.5">
+          <div className="px-2 py-1.5 text-xs">
             <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-1">
               Details
             </div>
@@ -886,12 +886,33 @@ interface BasicToolProps {
   forceOpen?: boolean;
   locked?: boolean;
   onSubtitleClick?: () => void;
+  /**
+   * Right-edge badge (e.g. "3 steps") shown between the trigger content and
+   * the chevron/spinner. Keeps cross-tool badges visually consistent.
+   */
+  badge?: ReactNode;
+  /**
+   * Right-edge accessory icon/element shown before the chevron (or in its
+   * place, when the card has no collapsible body). Used for e.g. the
+   * ExternalLink cue on clickable spawn cards.
+   */
+  rightAccessory?: ReactNode;
+  /**
+   * If provided, the trigger becomes a button-style clickable card that
+   * invokes this handler — no expand/collapse. Used by TaskTool /
+   * SessionSpawnTool which open a modal instead of an inline body.
+   */
+  onClick?: () => void;
+  /** Duration in ms — shown as compact seconds label on the right. */
+  durationMs?: number;
 }
 
 /** Context to pass running state from ToolPartRenderer into BasicTool without prop drilling */
 const ToolRunningContext = createContext(false);
 /** Context to pass stale-pending state from ToolPartRenderer into BasicTool */
 const StalePendingContext = createContext(false);
+/** Context to pass computed duration (ms) from ToolPartRenderer into BasicTool */
+const ToolDurationContext = createContext<number | undefined>(undefined);
 
 export function BasicTool({
   icon,
@@ -901,21 +922,15 @@ export function BasicTool({
   forceOpen,
   locked,
   onSubtitleClick,
+  badge,
+  rightAccessory,
+  onClick,
+  durationMs: durationMsProp,
 }: BasicToolProps) {
   const running = useContext(ToolRunningContext);
+  const contextDuration = useContext(ToolDurationContext);
+  const durationMs = durationMsProp ?? contextDuration;
   const [open, setOpen] = useState(defaultOpen);
-
-  // Track if this tool just finished (running → not running) so we can
-  // play a single completion shimmer. If it was already completed on mount
-  // (e.g. reopening a session), don't shimmer.
-  const wasRunningRef = useRef(running);
-  const [justCompleted, setJustCompleted] = useState(false);
-  useEffect(() => {
-    if (wasRunningRef.current && !running) {
-      setJustCompleted(true);
-    }
-    wasRunningRef.current = running;
-  }, [running]);
 
   useEffect(() => {
     if (forceOpen) setOpen(true);
@@ -934,108 +949,142 @@ export function BasicTool({
     ? !trigger.title && !trigger.subtitle
     : false;
 
+  // One canonical header row, shared by both the collapsible variant and
+  // the onClick "button" variant (TaskTool / SessionSpawnTool). Keeping
+  // this a single block guarantees the two surfaces stay pixel-identical.
+  const header = (
+    <div
+      data-component="tool-trigger"
+      onClick={
+        onClick
+          ? (e) => {
+              e.stopPropagation();
+              onClick();
+            }
+          : undefined
+      }
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      className={cn(
+        'flex items-center gap-1.5 py-0.5',
+        'text-xs text-muted-foreground/70 transition-colors select-none max-w-full group',
+        '[&>span:first-child>svg]:size-3.5 [&>span:first-child>svg]:text-muted-foreground/50',
+        (children || onClick) && !locked && 'cursor-pointer',
+      )}
+    >
+      {/* Icon */}
+      <span className="flex-shrink-0">{icon}</span>
+
+      {/* Trigger content */}
+      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+        {isTriggerTitle(trigger) ? (
+          <>
+            <span className="text-xs whitespace-nowrap">
+              {trigger.title}
+            </span>
+            {trigger.subtitle &&
+              (running ? (
+                <TextShimmer
+                  duration={1}
+                  spread={2}
+                  className="text-xs truncate font-mono"
+                >
+                  {trigger.subtitle}
+                </TextShimmer>
+              ) : (
+                <span
+                  className={cn(
+                    'text-muted-foreground text-xs truncate font-mono',
+                    onSubtitleClick &&
+                      'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
+                  )}
+                  onClick={
+                    onSubtitleClick
+                      ? (e) => {
+                          e.stopPropagation();
+                          onSubtitleClick();
+                        }
+                      : undefined
+                  }
+                >
+                  {trigger.subtitle}
+                </span>
+              ))}
+            {!running &&
+              trigger.args &&
+              trigger.args.length > 0 &&
+              trigger.args.map((arg, i) => (
+                <span
+                  key={i}
+                  className="text-xs text-muted-foreground/60 font-mono whitespace-nowrap"
+                >
+                  {arg}
+                </span>
+              ))}
+          </>
+        ) : (
+          trigger
+        )}
+        {/* Skeleton placeholders when running but trigger has no content yet */}
+        {running && triggerIsEmpty && (
+          <>
+            <span className="h-3 w-16 rounded bg-muted-foreground/10 animate-pulse" />
+            <span className="h-3 w-28 rounded bg-muted-foreground/10 animate-pulse" />
+          </>
+        )}
+      </div>
+
+      {/* Right-edge cluster: duration → badge → spinner → chevron/accessory */}
+      {!running && durationMs !== undefined && durationMs >= 1000 && (
+        <span className="text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+          {Math.round(durationMs / 1000)}s
+        </span>
+      )}
+      {badge && (
+        <span className="text-[10px] text-muted-foreground/60 font-mono whitespace-nowrap flex-shrink-0">
+          {badge}
+        </span>
+      )}
+      {running && (
+        <Loader2 className="size-3 animate-spin text-muted-foreground/40 flex-shrink-0" />
+      )}
+      {!running && rightAccessory && (
+        <span className="flex-shrink-0 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors [&>svg]:size-3">
+          {rightAccessory}
+        </span>
+      )}
+      {!onClick && (
+        <ChevronRight
+          className={cn(
+            'size-3 transition-transform flex-shrink-0',
+            'text-muted-foreground/30',
+            children && !locked ? 'opacity-0 group-hover:opacity-100' : 'opacity-0',
+            open && children && 'rotate-90 !opacity-100',
+          )}
+        />
+      )}
+    </div>
+  );
+
+  // onClick variant: no collapsible at all, just the clickable header.
+  if (onClick) return header;
+
   return (
     <Collapsible open={open} onOpenChange={handleOpenChange}>
-      <CollapsibleTrigger asChild>
-        <div
-          data-component="tool-trigger"
-          className={cn(
-            'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
-            'bg-muted/20 border border-border/40',
-            'text-xs transition-colors select-none',
-            'cursor-pointer hover:bg-muted/40',
-            'max-w-full group',
-          )}
-        >
-          {/* Icon */}
-          <span className="flex-shrink-0">{icon}</span>
-
-          {/* Trigger content */}
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            {isTriggerTitle(trigger) ? (
-              <>
-                <span className="font-medium text-xs text-foreground whitespace-nowrap">
-                  {trigger.title}
-                </span>
-                {trigger.subtitle &&
-                  (running ? (
-                    <TextShimmer
-                      duration={1}
-                      spread={2}
-                      className="text-xs truncate font-mono"
-                    >
-                      {trigger.subtitle}
-                    </TextShimmer>
-                  ) : (
-                    <span
-                      className={cn(
-                        'text-muted-foreground text-xs truncate font-mono',
-                        onSubtitleClick &&
-                          'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
-                      )}
-                      onClick={
-                        onSubtitleClick
-                          ? (e) => {
-                              e.stopPropagation();
-                              onSubtitleClick();
-                            }
-                          : undefined
-                      }
-                    >
-                      {justCompleted ? (
-                        <TextShimmer
-                          duration={1}
-                          spread={2}
-                          repeat={1}
-                          className="text-xs font-mono"
-                        >
-                          {trigger.subtitle}
-                        </TextShimmer>
-                      ) : (
-                        trigger.subtitle
-                      )}
-                    </span>
-                  ))}
-                {trigger.args &&
-                  trigger.args.length > 0 &&
-                  trigger.args.map((arg, i) => (
-                    <span
-                      key={i}
-                      className="text-[10px] px-1 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono whitespace-nowrap"
-                    >
-                      {arg}
-                    </span>
-                  ))}
-              </>
-            ) : (
-              trigger
-            )}
-            {/* Skeleton placeholders when running but trigger has no content yet */}
-            {running && triggerIsEmpty && (
-              <>
-                <span className="h-3 w-16 rounded bg-muted-foreground/10 animate-pulse" />
-                <span className="h-3 w-28 rounded bg-muted-foreground/10 animate-pulse" />
-              </>
-            )}
-          </div>
-
-          {/* Right side: spinner when running (+ chevron if expandable), chevron when done */}
-          {running && (
-            <Loader2 className="size-3 animate-spin text-muted-foreground/40 flex-shrink-0" />
-          )}
-          {children && !locked && (
-            <ChevronRight
-              className={cn(
-                'size-3 transition-transform flex-shrink-0 text-muted-foreground/50',
-                open && 'rotate-90',
-              )}
-            />
-          )}
-        </div>
-      </CollapsibleTrigger>
+      <CollapsibleTrigger asChild>{header}</CollapsibleTrigger>
 
       {children && open && (
-        <div className="mt-1.5 mb-2 rounded-lg bg-muted/20 border border-border/30 text-xs overflow-hidden">
+        <div className="mt-1 mb-1 text-xs overflow-hidden">
           {children}
         </div>
       )}
@@ -1361,7 +1410,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
                   </span>
                 </button>
                 {showTrace && (
-                  <div className="mt-1 rounded-md bg-muted/20 border border-border/30 overflow-hidden">
+                  <div className="mt-1 overflow-hidden">
                     <pre className="p-2.5 font-mono text-[10px] leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all max-h-64 overflow-auto">
                       {section.lines.map((line, li) => {
                         // Highlight File "..." lines within the trace
@@ -1455,18 +1504,18 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     >
       <div className="p-2.5 space-y-2.5">
         {(source || memoryId) && (
-          <div className="rounded-xl border border-sky-200/50 dark:border-sky-900/50 bg-gradient-to-r from-sky-50/60 via-background to-background dark:from-sky-950/20 p-2.5">
+          <div className="py-1.5">
             <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-sky-700/80 dark:text-sky-300/80 mb-1.5">
               Request
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {source && (
-                <span className="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium border border-sky-200/70 dark:border-sky-800/50 bg-sky-100/70 text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">
+                <span className="text-[11px] font-medium text-muted-foreground">
                   Source: {source}
                 </span>
               )}
               {memoryId && (
-                <span className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[11px] font-semibold border border-sky-200/80 dark:border-sky-800/60 bg-background text-foreground/85 font-mono">
+                <span className="text-[11px] font-semibold font-mono text-foreground/70">
                   <Hash className="size-3.5" />
                   {memoryId}
                 </span>
@@ -1480,15 +1529,15 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             <div className="rounded-2xl border border-border/60 bg-gradient-to-b from-background via-background to-amber-50/20 dark:to-amber-950/10 overflow-hidden shadow-sm">
               <div className="px-3 py-2.5 border-b border-border/50 bg-gradient-to-r from-amber-50/70 to-background dark:from-amber-950/20">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 h-5 px-1.5 rounded-full text-[10px] border border-amber-200/80 dark:border-amber-800/60 bg-background/90">
+                  <span className="text-[10px] text-muted-foreground">
                     <Fingerprint className="size-3" />
                     Observation #{report.id}
                   </span>
-                  <span className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] border border-amber-200/80 dark:border-amber-800/60 bg-amber-100/70 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100 uppercase tracking-wide">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
                     {report.type}
                   </span>
                   {report.created && (
-                    <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-background/70 border border-border/60 rounded-full px-2 py-1">
+                    <span className="ml-auto text-[10px] text-muted-foreground">
                       <CalendarClock className="size-3" />
                       {report.created}
                     </span>
@@ -1500,7 +1549,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               </div>
               <div className="p-3 space-y-2.5">
                 {report.narrative && (
-                  <div className="rounded-xl border border-border/50 bg-gradient-to-b from-background to-muted/10 p-2.5">
+                  <div className="py-1.5">
                     <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                       <FileText className="size-3" />
                       Narrative
@@ -1511,13 +1560,13 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   </div>
                 )}
                 {report.facts.length > 0 && (
-                  <div className="rounded-xl border border-border/50 bg-gradient-to-b from-background to-muted/10 p-2.5">
+                  <div className="py-1.5">
                     <div className="flex items-center gap-2 mb-1.5">
                       <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                         <ListTree className="size-3" />
                         Facts
                       </div>
-                      <span className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] font-medium bg-muted/60 border border-border/60">
+                      <span className="text-[10px] font-medium text-muted-foreground">
                         {report.facts.length}
                       </span>
                     </div>
@@ -1535,7 +1584,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   </div>
                 )}
                 {report.concepts.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/50 bg-gradient-to-r from-background to-muted/20 p-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5 py-1.5">
                     <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mr-0.5">
                       <Tags className="size-3" />
                       Concepts
@@ -1543,7 +1592,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     {report.concepts.map((concept) => (
                       <span
                         key={concept}
-                        className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] font-medium bg-emerald-100/60 text-emerald-800 border border-emerald-200/70 dark:bg-emerald-900/25 dark:text-emerald-100 dark:border-emerald-800/60"
+                        className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
                       >
                         {concept}
                       </span>
@@ -1554,20 +1603,20 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   report.prompt ||
                   report.session ||
                   report.filesRead.length > 0) && (
-                  <div className="rounded-xl border border-border/50 bg-gradient-to-b from-muted/10 to-background p-2.5 space-y-1.5">
+                  <div className="py-1.5 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {report.tool && (
-                        <span className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] border border-border/60 bg-background/80 font-medium">
+                        <span className="text-[10px] font-medium text-muted-foreground">
                           Tool: {report.tool}
                         </span>
                       )}
                       {report.prompt && (
-                        <span className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] border border-border/60 bg-background/80 font-medium">
+                        <span className="text-[10px] font-medium text-muted-foreground">
                           Prompt #{report.prompt}
                         </span>
                       )}
                       {report.session && (
-                        <span className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] border border-border/60 bg-background/80 font-mono font-medium">
+                        <span className="text-[10px] font-mono font-medium text-muted-foreground">
                           {report.session}
                         </span>
                       )}
@@ -1597,15 +1646,15 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             <div className="rounded-2xl border border-border/60 bg-gradient-to-b from-background via-background to-amber-50/20 dark:to-amber-950/10 overflow-hidden shadow-sm">
               <div className="px-3 py-2.5 border-b border-border/50 bg-gradient-to-r from-amber-50/70 to-background dark:from-amber-950/20">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="inline-flex items-center gap-1 h-5 px-1.5 rounded-full text-[10px] border border-amber-200/80 dark:border-amber-800/60 bg-background/90">
+                  <span className="text-[10px] text-muted-foreground">
                     <Fingerprint className="size-3" />
                     LTM #{report.id}
                   </span>
-                  <span className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] border border-amber-200/80 dark:border-amber-800/60 bg-amber-100/70 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100 uppercase tracking-wide">
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
                     {report.type}
                   </span>
                   {report.created && (
-                    <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-background/70 border border-border/60 rounded-full px-2 py-1">
+                    <span className="ml-auto text-[10px] text-muted-foreground">
                       <CalendarClock className="size-3" />
                       {report.created}
                     </span>
@@ -1614,7 +1663,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               </div>
               <div className="p-3 space-y-2.5">
                 {report.caption && (
-                  <div className="rounded-xl border border-border/50 bg-gradient-to-b from-background to-muted/10 p-2.5">
+                  <div className="py-1.5">
                     <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                       <FileText className="size-3" />
                       Caption
@@ -1625,7 +1674,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   </div>
                 )}
                 {report.content && (
-                  <div className="rounded-xl border border-border/50 bg-gradient-to-b from-background to-muted/10 p-2.5">
+                  <div className="py-1.5">
                     <div className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                       <ListTree className="size-3" />
                       Content
@@ -1636,7 +1685,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   </div>
                 )}
                 {report.tags.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-border/50 bg-gradient-to-r from-background to-muted/20 p-2.5">
+                  <div className="flex flex-wrap items-center gap-1.5 py-1.5">
                     <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground mr-0.5">
                       <Tags className="size-3" />
                       Tags
@@ -1644,7 +1693,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     {report.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] font-medium bg-emerald-100/60 text-emerald-800 border border-emerald-200/70 dark:bg-emerald-900/25 dark:text-emerald-100 dark:border-emerald-800/60"
+                        className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
                       >
                         {tag}
                       </span>
@@ -1652,15 +1701,15 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   </div>
                 )}
                 {(report.session || report.updated) && (
-                  <div className="rounded-xl border border-border/50 bg-gradient-to-b from-muted/10 to-background p-2.5 space-y-1.5">
+                  <div className="py-1.5 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {report.session && (
-                        <span className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] border border-border/60 bg-background/80 font-mono font-medium">
+                        <span className="text-[10px] font-mono font-medium text-muted-foreground">
                           {report.session}
                         </span>
                       )}
                       {report.updated && (
-                        <span className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] border border-border/60 bg-background/80 font-medium">
+                        <span className="text-[10px] font-medium text-muted-foreground">
                           Updated: {report.updated}
                         </span>
                       )}
@@ -1721,18 +1770,18 @@ function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     >
       <div className="p-2.5 space-y-2.5">
         {(query || source) && (
-          <div className="rounded-xl border border-sky-200/50 dark:border-sky-900/50 bg-gradient-to-r from-sky-50/60 via-background to-background dark:from-sky-950/20 p-2.5">
+          <div className="py-1.5">
             <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-sky-700/80 dark:text-sky-300/80 mb-1.5">
               Request
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {source && (
-                <span className="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-medium border border-sky-200/70 dark:border-sky-800/50 bg-sky-100/70 text-sky-800 dark:bg-sky-900/30 dark:text-sky-200">
+                <span className="text-[11px] font-medium text-muted-foreground">
                   Source: {source}
                 </span>
               )}
               {query && (
-                <span className="inline-flex items-center h-6 px-2 rounded-full text-[11px] font-mono border border-border/60 bg-background text-foreground/85">
+                <span className="text-[11px] font-mono text-foreground/70">
                   {query}
                 </span>
               )}
@@ -1741,7 +1790,7 @@ function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         )}
 
         {parsed.hits.length > 0 ? (
-          <div className="rounded-xl border border-border/60 bg-gradient-to-b from-background to-muted/10 p-2.5 space-y-2">
+          <div className="py-1.5 space-y-2">
             {parsed.hits.map((hit) => {
               const sourceLabel =
                 hit.source === 'ltm'
@@ -1752,10 +1801,10 @@ function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               return (
                 <div
                   key={`${hit.source}-${hit.id}-${hit.type}`}
-                  className="rounded-lg border border-border/60 bg-background/80 px-2.5 py-2"
+                  className="px-2 py-1.5 text-xs"
                 >
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className="inline-flex items-center h-5 px-1.5 rounded-full text-[10px] border border-border/60 bg-muted/30">
+                    <span className="text-[10px] text-muted-foreground">
                       {sourceLabel} / {hit.type}
                     </span>
                     <span className="text-[10px] text-muted-foreground/60 font-mono">
@@ -2800,6 +2849,94 @@ function parseGrepOutput(
 }
 
 // ============================================================================
+// ToolListRow — shared row primitive for file/grep result lists
+// ============================================================================
+// Canonical row layout used by InlineFileList, InlineGrepResults, and any
+// future list-style tool body. Handles the icon/name/dir/trailing layout
+// plus hover, truncation, and optional leading chevron for group rows.
+
+function ToolListRow({
+  icon,
+  name,
+  dir,
+  trailing,
+  chevron,
+  onClick,
+  onNameClick,
+  disabled = false,
+  title,
+}: {
+  icon: ReactNode;
+  name: string;
+  dir?: string;
+  trailing?: ReactNode;
+  chevron?: 'collapsed' | 'expanded';
+  /** Click anywhere on the row (row-level action, e.g. expand). */
+  onClick?: () => void;
+  /** Click specifically on the name (e.g. open file); stops row click. */
+  onNameClick?: () => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-1.5 px-3 py-1 transition-colors group',
+        disabled
+          ? 'cursor-default opacity-70'
+          : onClick
+            ? 'cursor-pointer hover:bg-muted/50'
+            : undefined,
+      )}
+      onClick={onClick && !disabled ? onClick : undefined}
+      title={title}
+    >
+      {chevron && (
+        <ChevronRight
+          className={cn(
+            'size-3 text-muted-foreground flex-shrink-0 transition-transform',
+            chevron === 'expanded' && 'rotate-90',
+          )}
+        />
+      )}
+      <span className="flex-shrink-0 text-muted-foreground/50 group-hover:text-foreground/60 transition-colors [&>svg]:size-3">
+        {icon}
+      </span>
+      <span className="text-[11px] min-w-0 flex items-baseline gap-1.5 overflow-hidden flex-1">
+        <span
+          className={cn(
+            'text-foreground font-medium font-mono whitespace-nowrap flex-shrink-0',
+            onNameClick &&
+              !disabled &&
+              'cursor-pointer hover:text-blue-500 transition-colors',
+          )}
+          onClick={
+            onNameClick && !disabled
+              ? (e) => {
+                  e.stopPropagation();
+                  onNameClick();
+                }
+              : undefined
+          }
+        >
+          {name}
+        </span>
+        {dir && (
+          <span className="text-muted-foreground/40 truncate text-[10px]">
+            {dir}
+          </span>
+        )}
+      </span>
+      {trailing !== undefined && trailing !== null && (
+        <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">
+          {trailing}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // InlineFileList — styled file path list for Glob/List
 // ============================================================================
 
@@ -2818,35 +2955,16 @@ function InlineFileList({
     <div className="py-0.5">
       {paths.map((fp, i) => {
         const dp = toDisplayPath(fp);
-        const name = getFilename(dp);
-        const dir = getDirectory(dp);
         return (
-          <div
+          <ToolListRow
             key={i}
-            className={cn(
-              'flex items-center gap-2 px-3 py-1 transition-colors group',
-              disabled
-                ? 'cursor-default opacity-70'
-                : 'cursor-pointer hover:bg-muted/50',
-            )}
-            onClick={() => {
-              if (disabled) return;
-              onFileClick(fp);
-            }}
+            icon={<FileText />}
+            name={getFilename(dp) ?? dp}
+            dir={getDirectory(dp)}
             title={dp}
-          >
-            <FileText className="size-3 text-muted-foreground/50 flex-shrink-0 group-hover:text-foreground/60 transition-colors" />
-            <span className="text-[11px] min-w-0 flex items-baseline gap-1.5 overflow-hidden">
-              <span className="text-foreground font-medium font-mono whitespace-nowrap flex-shrink-0">
-                {name}
-              </span>
-              {dir && (
-                <span className="text-muted-foreground/40 truncate text-[10px]">
-                  {dir}
-                </span>
-              )}
-            </span>
-          </div>
+            disabled={disabled}
+            onClick={() => onFileClick(fp)}
+          />
         );
       })}
     </div>
@@ -2876,50 +2994,21 @@ function InlineGrepResults({
     <div className="py-0.5">
       {groups.map((group, i) => {
         const dp = toDisplayPath(group.filePath);
-        const name = getFilename(dp);
-        const dir = getDirectory(dp);
         const isExpanded = expandedIndex === i;
 
         return (
           <div key={i}>
-            <div
-              className="flex items-center gap-1.5 px-3 py-1.5 cursor-pointer hover:bg-muted/50 transition-colors group"
+            <ToolListRow
+              icon={<FileText />}
+              name={getFilename(dp) ?? dp}
+              dir={getDirectory(dp)}
+              title={group.filePath}
+              chevron={isExpanded ? 'expanded' : 'collapsed'}
+              trailing={group.matches.length}
               onClick={() => setExpandedIndex(isExpanded ? null : i)}
-            >
-              <ChevronRight
-                className={cn(
-                  'size-3 text-muted-foreground flex-shrink-0 transition-transform',
-                  isExpanded && 'rotate-90',
-                )}
-              />
-              <FileText className="size-3 text-muted-foreground/50 flex-shrink-0" />
-              <span className="text-[11px] min-w-0 flex items-baseline gap-1.5 overflow-hidden flex-1">
-                <span
-                  className={cn(
-                    'text-foreground font-medium font-mono whitespace-nowrap flex-shrink-0 transition-colors',
-                    disabled
-                      ? 'cursor-default'
-                      : 'cursor-pointer hover:text-blue-500',
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (disabled) return;
-                    onFileClick(group.filePath);
-                  }}
-                  title={group.filePath}
-                >
-                  {name}
-                </span>
-                {dir && (
-                  <span className="text-muted-foreground/40 truncate text-[10px]">
-                    {dir}
-                  </span>
-                )}
-              </span>
-              <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">
-                {group.matches.length}
-              </span>
-            </div>
+              onNameClick={disabled ? undefined : () => onFileClick(group.filePath)}
+              disabled={disabled}
+            />
             {isExpanded && (
               <div className="border-t border-border/20 bg-muted/10">
                 {group.matches.map((match, j) => (
@@ -3130,26 +3219,13 @@ function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Globe className="size-3.5 flex-shrink-0" />}
-      trigger={
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Web Fetch
-          </span>
-          <span className="text-muted-foreground text-xs truncate font-mono">
-            {url}
-          </span>
-          {args.map((arg, i) => (
-            <span
-              key={i}
-              className="text-[10px] px-1 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono whitespace-nowrap"
-            >
-              {arg}
-            </span>
-          ))}
-          <ExternalLink className="size-3 text-muted-foreground/60 flex-shrink-0" />
-        </div>
-      }
+      icon={<Globe />}
+      trigger={{
+        title: 'Web Fetch',
+        subtitle: url,
+        args,
+      }}
+      rightAccessory={url ? <ExternalLink /> : undefined}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
@@ -3402,7 +3478,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             {query}
           </span>
           {triggerBadge && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium whitespace-nowrap ml-auto flex-shrink-0">
+            <span className="text-[10px] text-primary/70 font-medium whitespace-nowrap ml-auto flex-shrink-0">
               {triggerBadge}
             </span>
           )}
@@ -3435,7 +3511,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                       {qr.query}
                     </span>
                     {qr.sources.length > 0 && (
-                      <span className="text-[0.5625rem] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground flex-shrink-0">
+                      <span className="text-[0.5625rem] text-muted-foreground/60 flex-shrink-0">
                         {qr.sources.length}
                       </span>
                     )}
@@ -3477,7 +3553,7 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                               href={src.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="group flex items-start gap-2 p-2 -mx-1 rounded-lg hover:bg-muted/40 transition-colors"
+                              className="group flex items-start gap-2 p-2 -mx-1 transition-colors hover:bg-muted/30"
                             >
                               {/* Favicon */}
                               <div className="size-5 rounded bg-muted/60 flex items-center justify-center flex-shrink-0 mt-0.5 overflow-hidden">
@@ -3640,7 +3716,7 @@ function ScrapeWebpageTool({
             {domain || firstUrl}
           </span>
           {triggerBadge && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium whitespace-nowrap ml-auto flex-shrink-0">
+            <span className="text-[10px] text-primary/70 font-medium whitespace-nowrap ml-auto flex-shrink-0">
               {triggerBadge}
             </span>
           )}
@@ -3675,7 +3751,7 @@ function ScrapeWebpageTool({
                   href={result.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex items-start gap-2 p-2 rounded-lg hover:bg-muted/40 transition-colors"
+                  className="group flex items-start gap-2 p-2 transition-colors hover:bg-muted/30"
                 >
                   {/* Favicon */}
                   <div className="size-5 rounded bg-muted/60 flex items-center justify-center flex-shrink-0 mt-0.5 overflow-hidden">
@@ -3832,7 +3908,7 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             {displayQuery}
           </span>
           {imageResults.length > 0 && (
-            <span className="text-[10px] px-1 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono whitespace-nowrap ml-auto flex-shrink-0">
+            <span className="text-[10px] text-muted-foreground/60 font-mono whitespace-nowrap ml-auto flex-shrink-0">
               {isBatch ? `${batchCount}q, ` : ''}
               {imageResults.length} images
             </span>
@@ -3859,7 +3935,7 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   href={imgUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="relative group overflow-hidden rounded border border-border/30 bg-muted/20 aspect-square"
+                  className="relative group overflow-hidden overflow-hidden aspect-square"
                   title={title}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -3996,14 +4072,14 @@ function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             <img
               src={displayImageSrc}
               alt={String(prompt || 'Generated image')}
-              className="rounded border border-border/30 max-h-64 object-contain"
+              className="max-h-64 object-contain"
             />
           ) : isImageLoading ? (
-            <div className="rounded border border-border/30 bg-muted/20 px-2.5 py-2 text-[11px] text-muted-foreground">
+            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
               Loading image preview...
             </div>
           ) : (
-            <div className="rounded border border-border/30 bg-muted/20 px-2.5 py-2 text-[11px] text-muted-foreground font-mono break-all">
+            <div className="px-2 py-1.5 text-[11px] text-muted-foreground font-mono break-all">
               {imagePath}
             </div>
           )}
@@ -4160,7 +4236,7 @@ function PresentationGenTool({
           {parsed?.success &&
             action === 'create_slide' &&
             parsed.total_slides && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground font-mono whitespace-nowrap ml-auto flex-shrink-0">
+              <span className="text-[10px] text-muted-foreground/60 font-mono whitespace-nowrap ml-auto flex-shrink-0">
                 {parsed.total_slides}{' '}
                 {parsed.total_slides === 1 ? 'slide' : 'slides'}
               </span>
@@ -4484,7 +4560,7 @@ function ShowTool({ part }: ToolProps) {
   // Loading state
   if (running && !type && !items) {
     return (
-      <div className="rounded-xl border border-border/50 overflow-hidden bg-card">
+      <div className="overflow-hidden">
         <div className="flex items-center gap-3 px-5 py-4">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
           <TextShimmer duration={1} spread={2} className="text-sm">
@@ -4508,7 +4584,7 @@ function ShowTool({ part }: ToolProps) {
 
   return (
     <div
-      className={cn('rounded-xl border overflow-hidden bg-card', borderStyle)}
+      className={cn('overflow-hidden', borderStyle)}
     >
       {/* ── Header — always neutral colors, never themed ── */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-border/15">
@@ -4526,7 +4602,7 @@ function ShowTool({ part }: ToolProps) {
           )}
         </div>
         {isCarousel && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground/60 font-medium flex-shrink-0">
+          <span className="text-[10px] text-muted-foreground/60 font-medium flex-shrink-0">
             {items!.length} items
           </span>
         )}
@@ -4536,7 +4612,7 @@ function ShowTool({ part }: ToolProps) {
             disabled={!navigationEnabled}
             onClick={openInTab}
             className={cn(
-              'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors flex-shrink-0 bg-muted/50 text-muted-foreground',
+              'flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium transition-colors flex-shrink-0 text-muted-foreground',
               navigationEnabled
                 ? 'hover:bg-muted hover:text-foreground'
                 : 'opacity-60 cursor-default',
@@ -4604,7 +4680,7 @@ function DCPPruneTool({ part }: ToolProps) {
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
             Prune
           </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-medium whitespace-nowrap">
+          <span className="text-[10px] text-amber-500 font-medium whitespace-nowrap">
             DCP
           </span>
           {reason && (
@@ -4613,7 +4689,7 @@ function DCPPruneTool({ part }: ToolProps) {
             </span>
           )}
           {ids && ids.length > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70 ml-auto">
+            <span className="text-[10px] text-muted-foreground/60 ml-auto">
               {ids.length} tools
             </span>
           )}
@@ -4649,11 +4725,11 @@ function DCPDistillTool({ part }: ToolProps) {
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
             Distill
           </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500 font-medium whitespace-nowrap">
+          <span className="text-[10px] text-blue-500 font-medium whitespace-nowrap">
             DCP
           </span>
           {ids && ids.length > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70 ml-auto">
+            <span className="text-[10px] text-muted-foreground/60 ml-auto">
               {ids.length} tools
             </span>
           )}
@@ -4689,7 +4765,7 @@ function DCPCompressTool({ part }: ToolProps) {
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
             Compress
           </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-500 font-medium whitespace-nowrap">
+          <span className="text-[10px] text-purple-500 font-medium whitespace-nowrap">
             DCP
           </span>
           {topic && (
@@ -4730,7 +4806,7 @@ function ContextInfoTool({ part }: ToolProps) {
           <span className="font-medium text-xs text-muted-foreground/70 whitespace-nowrap">
             Context Info
           </span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/50 font-medium whitespace-nowrap">
+          <span className="text-[10px] text-muted-foreground/50 font-medium whitespace-nowrap">
             DCP
           </span>
         </div>
@@ -4799,7 +4875,7 @@ function IntegrationListTool({
           {badge && (
             <span
               className={cn(
-                'text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ml-auto flex-shrink-0',
+                'text-[10px] font-medium whitespace-nowrap ml-auto flex-shrink-0',
                 integrations.length > 0
                   ? 'bg-emerald-500/10 text-emerald-600'
                   : 'bg-muted/60 text-muted-foreground',
@@ -4834,7 +4910,7 @@ function IntegrationListTool({
               {intg.status && (
                 <span
                   className={cn(
-                    'text-[0.5625rem] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0',
+                    'text-[0.5625rem] font-medium flex-shrink-0',
                     intg.status === 'connected'
                       ? 'bg-emerald-500/10 text-emerald-600'
                       : 'bg-muted/60 text-muted-foreground',
@@ -4925,7 +5001,7 @@ function IntegrationConnectTool({
           {status === 'completed' && (
             <span
               className={cn(
-                'text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ml-auto flex-shrink-0',
+                'text-[10px] font-medium whitespace-nowrap ml-auto flex-shrink-0',
                 success
                   ? 'bg-primary/10 text-primary'
                   : 'bg-destructive/10 text-destructive',
@@ -4950,7 +5026,7 @@ function IntegrationConnectTool({
             onClick={handleClick}
             disabled={isConnecting}
             className={cn(
-              'group flex items-center gap-2 p-2.5 rounded-lg border transition-colors w-full text-left',
+              'group flex items-center gap-2 p-2.5 transition-colors w-full text-left',
               isConnecting
                 ? 'bg-muted/40 border-muted cursor-wait'
                 : 'bg-primary/5 border-primary/20 hover:bg-primary/10 cursor-pointer',
@@ -5028,7 +5104,7 @@ function IntegrationSearchTool({
           {badge && (
             <span
               className={cn(
-                'text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ml-auto flex-shrink-0',
+                'text-[10px] font-medium whitespace-nowrap ml-auto flex-shrink-0',
                 apps.length > 0
                   ? 'bg-primary/10 text-primary'
                   : 'bg-muted/60 text-muted-foreground',
@@ -5055,7 +5131,7 @@ function IntegrationSearchTool({
                   <span className="text-[11px] font-medium text-foreground">
                     {app.name}
                   </span>
-                  <span className="text-[0.5625rem] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70 font-mono">
+                  <span className="text-[0.5625rem] text-muted-foreground/60 font-mono">
                     {app.slug}
                   </span>
                 </div>
@@ -5134,7 +5210,7 @@ function IntegrationActionsTool({
             {query ? ` · ${query}` : ''}
           </span>
           {badge && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium whitespace-nowrap ml-auto flex-shrink-0">
+            <span className="text-[10px] text-primary/70 font-medium whitespace-nowrap ml-auto flex-shrink-0">
               {badge}
             </span>
           )}
@@ -5173,7 +5249,7 @@ function IntegrationActionsTool({
                   </div>
                   {action.required_params &&
                     action.required_params.length > 0 && (
-                      <span className="text-[0.5625rem] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/60 flex-shrink-0">
+                      <span className="text-[0.5625rem] text-muted-foreground/60 flex-shrink-0">
                         {action.required_params.length} req
                       </span>
                     )}
@@ -5295,7 +5371,7 @@ function IntegrationRunTool({
           {status === 'completed' && success !== undefined && (
             <span
               className={cn(
-                'text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ml-auto flex-shrink-0',
+                'text-[10px] font-medium whitespace-nowrap ml-auto flex-shrink-0',
                 success
                   ? 'bg-emerald-500/10 text-emerald-600'
                   : 'bg-destructive/10 text-destructive',
@@ -5314,7 +5390,7 @@ function IntegrationRunTool({
         <div className="px-3 py-2.5 space-y-2">
           {success === false && errorMsg ? (
             <>
-              <div className="flex items-start gap-2 p-2 rounded-lg bg-destructive/5 border border-destructive/20">
+              <div className="flex items-start gap-2 p-2 text-destructive/80">
                 <AlertTriangle className="size-3.5 text-destructive flex-shrink-0 mt-0.5" />
                 <div className="min-w-0">
                   <p className="text-[11px] text-destructive font-medium">
@@ -5332,7 +5408,7 @@ function IntegrationRunTool({
               )}
             </>
           ) : success === true ? (
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+            <div className="flex items-center gap-2 p-2 text-emerald-600 dark:text-emerald-400">
               <CheckCircle className="size-3.5 text-emerald-600 flex-shrink-0" />
               <p className="text-[11px] text-emerald-700 font-medium">
                 Action completed successfully
@@ -5420,7 +5496,7 @@ function IntegrationRequestTool({
           {status === 'completed' && (
             <span
               className={cn(
-                'text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ml-auto flex-shrink-0',
+                'text-[10px] font-medium whitespace-nowrap ml-auto flex-shrink-0',
                 isOk
                   ? 'bg-emerald-500/10 text-emerald-600'
                   : 'bg-destructive/10 text-destructive',
@@ -5440,7 +5516,7 @@ function IntegrationRequestTool({
           {success === false ||
           (httpStatus !== undefined && httpStatus >= 400) ? (
             <>
-              <div className="flex items-start gap-2 p-2 rounded-lg bg-destructive/5 border border-destructive/20">
+              <div className="flex items-start gap-2 p-2 text-destructive/80">
                 <AlertTriangle className="size-3.5 text-destructive flex-shrink-0 mt-0.5" />
                 <div className="min-w-0">
                   <p className="text-[11px] text-destructive font-medium">
@@ -5462,7 +5538,7 @@ function IntegrationRequestTool({
           ) : body !== undefined ? (
             <div
               className={cn(
-                'max-h-[300px] overflow-auto rounded-lg bg-muted/40 border border-border/40 p-2',
+                'max-h-[300px] overflow-auto text-xs font-mono',
                 MD_FLUSH_CLASSES,
               )}
             >
@@ -5473,7 +5549,7 @@ function IntegrationRequestTool({
               </pre>
             </div>
           ) : (
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/20">
+            <div className="flex items-center gap-2 p-2 text-emerald-600 dark:text-emerald-400">
               <CheckCircle className="size-3.5 text-emerald-600 flex-shrink-0" />
               <p className="text-[11px] text-emerald-700 font-medium">
                 Request successful
@@ -5544,7 +5620,7 @@ function IntegrationExecTool({
           {status === 'completed' && exitCode !== undefined && (
             <span
               className={cn(
-                'text-[10px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ml-auto flex-shrink-0',
+                'text-[10px] font-medium whitespace-nowrap ml-auto flex-shrink-0',
                 isOk
                   ? 'bg-emerald-500/10 text-emerald-600'
                   : 'bg-destructive/10 text-destructive',
@@ -5569,7 +5645,7 @@ function IntegrationExecTool({
               </div>
               <div
                 className={cn(
-                  'rounded-lg bg-muted/40 border border-border/40 p-2 max-h-[200px] overflow-auto',
+                  'text-xs font-mono max-h-[200px] overflow-auto',
                   MD_FLUSH_CLASSES,
                 )}
               >
@@ -5585,7 +5661,7 @@ function IntegrationExecTool({
               <div className="text-[0.5625rem] font-semibold uppercase tracking-wider text-muted-foreground/40 mb-1">
                 Output
               </div>
-              <div className="rounded-lg bg-muted/40 border border-border/40 p-2 max-h-[200px] overflow-auto">
+              <div className="text-xs font-mono max-h-[200px] overflow-auto">
                 <pre className="text-[10px] font-mono text-foreground/80 whitespace-pre-wrap">
                   {stdout}
                 </pre>
@@ -5598,7 +5674,7 @@ function IntegrationExecTool({
               <div className="text-[0.5625rem] font-semibold uppercase tracking-wider text-destructive/50 mb-1">
                 Stderr
               </div>
-              <div className="rounded-lg bg-destructive/5 border border-destructive/20 p-2 max-h-[150px] overflow-auto">
+              <div className="text-destructive/80 p-2 max-h-[150px] overflow-auto">
                 <pre className="text-[10px] font-mono text-destructive/80 whitespace-pre-wrap">
                   {stderr}
                 </pre>
@@ -5609,7 +5685,7 @@ function IntegrationExecTool({
             <div className="px-3 py-2.5">
               <div
                 className={cn(
-                  'flex items-center gap-2 p-2 rounded-lg border',
+                  'flex items-center gap-2 p-2',
                   isOk
                     ? 'bg-emerald-500/5 border-emerald-500/20'
                     : 'bg-destructive/5 border-destructive/20',
@@ -5688,77 +5764,26 @@ function TaskTool({ part, forceOpen }: ToolProps) {
     return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
   }, [childToolParts]);
 
-  const running = useContext(ToolRunningContext);
+  const subtitle = isRunning
+    ? lastActivity ?? description
+    : description || undefined;
 
   return (
     <>
-      {/* Clickable card — entire row opens modal */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => childSessionId && setModalOpen(true)}
-        onKeyDown={(e) =>
-          e.key === 'Enter' && childSessionId && setModalOpen(true)
+      <BasicTool
+        icon={<SquareKanban />}
+        trigger={{
+          title: `Agent · ${subagentType}`,
+          subtitle,
+        }}
+        onClick={childSessionId ? () => setModalOpen(true) : undefined}
+        badge={
+          isCompleted && childToolParts.length > 0
+            ? `${childToolParts.length} steps`
+            : undefined
         }
-        className={cn(
-          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
-          'bg-muted/20 border border-border/40',
-          'text-xs transition-colors select-none',
-          childSessionId
-            ? 'cursor-pointer hover:bg-muted/40'
-            : 'cursor-default',
-          'max-w-full group',
-        )}
-      >
-        {/* Icon */}
-        <SquareKanban className="size-3.5 flex-shrink-0 text-muted-foreground" />
-
-        {/* Title + subtitle */}
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Agent · {subagentType}
-          </span>
-
-          {isRunning && lastActivity ? (
-            <TextShimmer
-              duration={1}
-              spread={2}
-              className="text-xs truncate font-mono"
-            >
-              {lastActivity}
-            </TextShimmer>
-          ) : isRunning && description ? (
-            <TextShimmer
-              duration={1}
-              spread={2}
-              className="text-xs truncate font-mono"
-            >
-              {description}
-            </TextShimmer>
-          ) : description ? (
-            <span className="text-muted-foreground text-xs truncate font-mono">
-              {description}
-            </span>
-          ) : null}
-
-          {/* Step count badge when done */}
-          {isCompleted && childToolParts.length > 0 && (
-            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70 font-mono whitespace-nowrap flex-shrink-0">
-              {childToolParts.length} steps
-            </span>
-          )}
-        </div>
-
-        {/* Right side */}
-        {running && (
-          <Loader2 className="size-3 animate-spin text-muted-foreground/40 flex-shrink-0" />
-        )}
-        {childSessionId && !running && (
-          <ExternalLink className="size-3 flex-shrink-0 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors" />
-        )}
-      </div>
-
-      {/* Modal */}
+        rightAccessory={childSessionId ? <ExternalLink /> : undefined}
+      />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -5813,81 +5838,30 @@ function SessionSpawnTool({ part, forceOpen }: ToolProps) {
     return info.title + (info.subtitle ? ` · ${info.subtitle}` : '');
   }, [childToolParts]);
 
-  const running = useContext(ToolRunningContext);
-
   // Label: project name or description or first line of prompt
   const label =
     description || projectName || fullPrompt.split('\n')[0]?.slice(0, 80) || '';
 
+  const subtitle = isRunning
+    ? lastActivity ?? label
+    : label || undefined;
+
   return (
     <>
-      {/* Clickable card — identical to TaskTool */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => childSessionId && setModalOpen(true)}
-        onKeyDown={(e) =>
-          e.key === 'Enter' && childSessionId && setModalOpen(true)
+      <BasicTool
+        icon={<Cpu />}
+        trigger={{
+          title: `Worker · ${agentName}`,
+          subtitle,
+        }}
+        onClick={childSessionId ? () => setModalOpen(true) : undefined}
+        badge={
+          isCompleted && childToolParts.length > 0
+            ? `${childToolParts.length} steps`
+            : undefined
         }
-        className={cn(
-          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
-          'bg-muted/20 border border-border/40',
-          'text-xs transition-colors select-none',
-          childSessionId
-            ? 'cursor-pointer hover:bg-muted/40'
-            : 'cursor-default',
-          'max-w-full group',
-        )}
-      >
-        {/* Icon */}
-        <Cpu className="size-3.5 flex-shrink-0 text-muted-foreground" />
-
-        {/* Title + subtitle */}
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Worker · {agentName}
-          </span>
-
-          {isRunning && lastActivity ? (
-            <TextShimmer
-              duration={1}
-              spread={2}
-              className="text-xs truncate font-mono"
-            >
-              {lastActivity}
-            </TextShimmer>
-          ) : isRunning && label ? (
-            <TextShimmer
-              duration={1}
-              spread={2}
-              className="text-xs truncate font-mono"
-            >
-              {label}
-            </TextShimmer>
-          ) : label ? (
-            <span className="text-muted-foreground text-xs truncate font-mono">
-              {label}
-            </span>
-          ) : null}
-
-          {/* Step count badge when done */}
-          {isCompleted && childToolParts.length > 0 && (
-            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70 font-mono whitespace-nowrap flex-shrink-0">
-              {childToolParts.length} steps
-            </span>
-          )}
-        </div>
-
-        {/* Right side */}
-        {running && (
-          <Loader2 className="size-3 animate-spin text-muted-foreground/40 flex-shrink-0" />
-        )}
-        {childSessionId && !running && (
-          <ExternalLink className="size-3 flex-shrink-0 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors" />
-        )}
-      </div>
-
-      {/* Modal */}
+        rightAccessory={childSessionId ? <ExternalLink /> : undefined}
+      />
       {childSessionId && (
         <SubSessionModal
           open={modalOpen}
@@ -6152,7 +6126,7 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 								<span className="text-[11px] font-medium">
 									Todos
 								</span>
-								<span className="text-[9px] bg-muted/50 text-muted-foreground/60 px-1.5 py-0.5 rounded-full ml-auto">
+								<span className="text-[9px] text-muted-foreground/50 ml-auto">
 									{parsed.todos.length}
 								</span>
 							</button>
@@ -6222,7 +6196,7 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 								<span className="text-[11px] font-medium">
 									Conversation
 								</span>
-								<span className="text-[9px] bg-muted/50 text-muted-foreground/60 px-1.5 py-0.5 rounded-full ml-auto">
+								<span className="text-[9px] text-muted-foreground/50 ml-auto">
 									{parsed.msgCount} msgs · {parsed.toolCount}{" "}
 									tools
 								</span>
@@ -6722,7 +6696,7 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
     <>
       <div
         className={cn(
-          'rounded-lg border border-border/40 bg-muted/20 transition-colors select-none w-full group overflow-hidden',
+          'w-full overflow-hidden text-xs',
         )}
       >
         {/* Clickable header area */}
@@ -6951,7 +6925,7 @@ function AgentMessageTool({ part }: ToolProps) {
   return (
     <>
       <div className={cn(
-        'rounded-lg border border-border/40 bg-muted/20 w-full overflow-hidden group',
+        'w-full overflow-hidden text-xs',
         hasSession && 'cursor-pointer',
       )}>
         <div
@@ -7031,7 +7005,7 @@ function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
     case 'approve': {
       const taskId = (input.id as string) || '';
       return (
-        <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg bg-muted/20 border border-border/40">
+        <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70">
           <Check className="size-3 text-emerald-500 flex-shrink-0" />
           <span className="text-foreground/80 truncate flex-1">
             Task approved{taskId ? ` · ${taskId.slice(-12)}` : ''}
@@ -7064,7 +7038,7 @@ function AgentStopTool({ part }: ToolProps) {
   const input = partInput(part);
   const agentId = (input.agent_id as string) || '';
   return (
-    <div className="rounded-lg border border-border/40 bg-muted/20 w-full overflow-hidden">
+    <div className="w-full overflow-hidden text-xs">
       <div className="p-3">
         <div className="flex items-center gap-2.5">
           <StopCircle className="size-4 text-muted-foreground flex-shrink-0" />
@@ -7116,7 +7090,7 @@ function AgentStatusTool({ part }: ToolProps) {
 
   return (
     <>
-      <div className="rounded-lg border border-border/40 bg-muted/20 w-full overflow-hidden">
+      <div className="w-full overflow-hidden text-xs">
         <div className="p-3">
           <div className="flex items-center gap-2.5">
             <Layers className="size-4 text-muted-foreground flex-shrink-0" />
@@ -7229,7 +7203,7 @@ function TaskCreateTool({ part }: ToolProps) {
   const title = (input.title as string) || '';
   const priority = (input.priority as string) || 'medium';
   return (
-    <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg bg-muted/20 border border-border/40">
+    <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70">
       <Circle className="size-3 text-muted-foreground/40 flex-shrink-0" />
       <span className="text-foreground/80 truncate flex-1">{title}</span>
       {priority === 'high' && (
@@ -7279,7 +7253,7 @@ function TaskDoneTool({ part }: ToolProps) {
   const input = partInput(part);
   const result = (input.result as string) || '';
   return (
-    <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg bg-muted/20 border border-border/40">
+    <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70">
       <Check className="size-3 text-muted-foreground/50 flex-shrink-0" />
       <span className="text-muted-foreground truncate flex-1">
         {result || 'Completed'}
@@ -7371,65 +7345,31 @@ function SkillTool({ part, forceOpen }: ToolProps) {
     return firstPara;
   }, [markdownContent]);
 
-  const running = useContext(ToolRunningContext);
-
   // Clean skill content for the modal display
   const modalContent = useMemo(() => {
     return `# ${skillName}\n\n${skillDir ? `*Location: ${skillDir}*\n\n` : ''}${markdownContent}${skillFiles.length > 0 ? `\n\n---\n\n**Skill Files:**\n${skillFiles.map((f) => `- \`${f}\``).join('\n')}` : ''}`;
   }, [skillName, skillDir, markdownContent, skillFiles]);
 
+  const subtitle = isRunning
+    ? 'Loading skill instructions'
+    : description || locationLabel || undefined;
+
   return (
     <>
-      {/* Skill card */}
-      <div
-        role="button"
-        tabIndex={0}
+      <BasicTool
+        icon={<BookOpen />}
+        trigger={{
+          title: `Skill · ${skillName}`,
+          subtitle,
+        }}
         onClick={() => setModalOpen(true)}
-        onKeyDown={(e) => e.key === 'Enter' && setModalOpen(true)}
-        className={cn(
-          'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
-          'bg-muted/20 border border-border/40',
-          'text-xs transition-colors select-none cursor-pointer hover:bg-muted/40',
-          'max-w-full group',
-        )}
-      >
-        <BookOpen className="size-3.5 flex-shrink-0 text-muted-foreground" />
-
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          <span className="font-medium text-xs text-foreground whitespace-nowrap">
-            Skill · {skillName}
-          </span>
-          {isRunning ? (
-            <TextShimmer
-              duration={1}
-              spread={2}
-              className="text-xs truncate font-mono"
-            >
-              Loading skill instructions
-            </TextShimmer>
-          ) : description ? (
-            <span className="text-muted-foreground text-xs truncate font-mono">
-              {description}
-            </span>
-          ) : locationLabel ? (
-            <span className="text-muted-foreground text-xs truncate font-mono">
-              {locationLabel}
-            </span>
-          ) : null}
-
-          {isCompleted && skillFiles.length > 0 && (
-            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70 font-mono whitespace-nowrap flex-shrink-0">
-              {skillFiles.length} files
-            </span>
-          )}
-        </div>
-
-        {running ? (
-          <Loader2 className="size-3 animate-spin text-muted-foreground/40 flex-shrink-0" />
-        ) : (
-          <ExternalLink className="size-3 flex-shrink-0 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors" />
-        )}
-      </div>
+        badge={
+          isCompleted && skillFiles.length > 0
+            ? `${skillFiles.length} files`
+            : undefined
+        }
+        rightAccessory={<ExternalLink />}
+      />
 
       {/* Modal with full skill content */}
       {modalOpen && (
@@ -7456,7 +7396,7 @@ function SkillTool({ part, forceOpen }: ToolProps) {
                 )}
               </div>
               {isCompleted && skillFiles.length > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70 font-mono">
+                <span className="text-[10px] text-muted-foreground/60 font-mono">
                   {skillFiles.length} file{skillFiles.length !== 1 ? 's' : ''}
                 </span>
               )}
@@ -7504,56 +7444,37 @@ function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Folder className="size-3.5 text-muted-foreground" />}
+      icon={<Folder />}
       trigger={{
         title: 'Project List',
         subtitle:
           projects.length > 0
             ? `${projects.length} project${projects.length !== 1 ? 's' : ''}`
-            : 'All projects',
+            : undefined,
       }}
       defaultOpen={defaultOpen || projects.length === 0}
       forceOpen={forceOpen}
     >
       {projects.length > 0 ? (
-        <div className="p-2 space-y-1">
+        <div className="space-y-0.5">
           {projects.map((project: ProjectEntry) => (
             <div
               key={project.path}
-              className="flex items-start gap-2 text-xs py-1 px-2 rounded hover:bg-muted/30"
+              className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70"
             >
-              <Folder className="size-3.5 mt-0.5 flex-shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="font-medium text-foreground truncate">
-                  {project.name}
-                </div>
-                <div className="text-muted-foreground/60 font-mono truncate">
-                  {project.path}
-                </div>
-                {project.description && project.description !== '—' && (
-                  <div className="text-muted-foreground/50 truncate">
-                    {project.description}
-                  </div>
-                )}
-              </div>
-              {project.sessions > 0 && (
-                <Badge
-                  variant="outline"
-                  className="h-5 py-0 text-[10px] flex-shrink-0"
-                >
-                  {project.sessions}
-                </Badge>
-              )}
+              <Folder className="size-3.5 flex-shrink-0 text-muted-foreground/50" />
+              <span className="truncate">{project.name}</span>
+              <span className="text-muted-foreground/40 font-mono truncate text-[10px]">
+                {project.path}
+              </span>
             </div>
           ))}
         </div>
       ) : output ? (
-        <div className="p-3 text-xs text-muted-foreground whitespace-pre-wrap">
+        <div className="text-xs text-muted-foreground/60 whitespace-pre-wrap">
           {output.slice(0, 2000)}
         </div>
-      ) : (
-        <div className="p-3 text-xs text-muted-foreground">Loading...</div>
-      )}
+      ) : null}
     </BasicTool>
   );
 }
@@ -7601,56 +7522,18 @@ ToolRegistry.register('oc-project-update', ProjectGetTool);
 function ProjectSelectTool({ part }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
-  const { enabled: navigationEnabled, openTab } = useToolNavigation();
   const project = (input.project as string) || '';
   const data = useMemo(() => parseProjectSelectOutput(output || ''), [output]);
   const name = data?.name || project;
-  const path = data?.path || '';
-  const projectId = useMemo(() => {
-    const m = (output || '').match(/\(proj-[a-z0-9-]+\)/);
-    return m ? m[0].slice(1, -1) : name;
-  }, [output, name]);
 
   return (
-    <div
-      role="button"
-      tabIndex={navigationEnabled ? 0 : -1}
-      aria-disabled={!navigationEnabled}
-      onClick={() =>
-        openTab({
-          id: `project:${projectId}`,
-          title: name,
-          type: 'page' as any,
-          href: `/projects/${encodeURIComponent(projectId)}`,
-        })
-      }
-      onKeyDown={(e) =>
-        e.key === 'Enter' &&
-        openTab({
-          id: `project:${projectId}`,
-          title: name,
-          type: 'page' as any,
-          href: `/projects/${encodeURIComponent(projectId)}`,
-        })
-      }
-      className={cn(
-        'flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg bg-muted/20 border border-border/40 transition-colors group',
-        navigationEnabled
-          ? 'cursor-pointer hover:bg-accent/50'
-          : 'cursor-default opacity-70',
-      )}
-    >
-      <Folder className="size-3.5 text-muted-foreground/50 flex-shrink-0" />
-      <span className="text-[13px] font-medium text-foreground truncate flex-1">
-        {name}
-      </span>
-      {path && (
-        <span className="text-[10px] text-muted-foreground/40 font-mono truncate hidden group-hover:inline">
-          {path}
-        </span>
-      )}
-      <ChevronRight className="size-3 text-muted-foreground/20 group-hover:text-muted-foreground/40 flex-shrink-0" />
-    </div>
+    <BasicTool
+      icon={<Folder />}
+      trigger={{
+        title: 'Project Select',
+        subtitle: name,
+      }}
+    />
   );
 }
 ToolRegistry.register('project_select', ProjectSelectTool);
@@ -7661,56 +7544,18 @@ ToolRegistry.register('oc-project-select', ProjectSelectTool);
 function ProjectCreateTool({ part }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
-  const { enabled: navigationEnabled, openTab } = useToolNavigation();
   const name = (input.name as string) || '';
   const data = useMemo(() => parseProjectCreateOutput(output || ''), [output]);
   const displayName = data?.name || name;
-  const path = data?.path || (input.path as string) || '';
-  const projectId = useMemo(() => {
-    const m = (output || '').match(/proj-[a-z0-9-]+/);
-    return m ? m[0] : displayName;
-  }, [output, displayName]);
 
   return (
-    <div
-      role="button"
-      tabIndex={navigationEnabled ? 0 : -1}
-      aria-disabled={!navigationEnabled}
-      onClick={() =>
-        openTab({
-          id: `project:${projectId}`,
-          title: displayName,
-          type: 'page' as any,
-          href: `/projects/${encodeURIComponent(projectId)}`,
-        })
-      }
-      onKeyDown={(e) =>
-        e.key === 'Enter' &&
-        openTab({
-          id: `project:${projectId}`,
-          title: displayName,
-          type: 'page' as any,
-          href: `/projects/${encodeURIComponent(projectId)}`,
-        })
-      }
-      className={cn(
-        'flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg bg-muted/20 border border-border/40 transition-colors group',
-        navigationEnabled
-          ? 'cursor-pointer hover:bg-accent/50'
-          : 'cursor-default opacity-70',
-      )}
-    >
-      <Plus className="size-3.5 text-muted-foreground/50 flex-shrink-0" />
-      <span className="text-[13px] font-medium text-foreground truncate flex-1">
-        {displayName}
-      </span>
-      {path && (
-        <span className="text-[10px] text-muted-foreground/40 font-mono truncate hidden group-hover:inline">
-          {path}
-        </span>
-      )}
-      <ChevronRight className="size-3 text-muted-foreground/20 group-hover:text-muted-foreground/40 flex-shrink-0" />
-    </div>
+    <BasicTool
+      icon={<Plus />}
+      trigger={{
+        title: 'Project Create',
+        subtitle: displayName,
+      }}
+    />
   );
 }
 ToolRegistry.register('project_create', ProjectCreateTool);
@@ -8066,7 +7911,7 @@ function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
                   </span>
                   <span
                     className={cn(
-                      'text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0',
+                      'text-[10px] font-medium flex-shrink-0',
                       t.status === 'active'
                         ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                         : t.status === 'paused'
@@ -8310,7 +8155,7 @@ export function ToolError({
   // Render validation issues with structured layout
   if (validationIssues && validationIssues.length > 0) {
     return (
-      <div className="rounded-lg border border-border/60 bg-muted/30 overflow-hidden text-xs">
+      <div className="text-xs overflow-hidden">
         {/* Header */}
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40">
           <Ban className="size-3 flex-shrink-0 text-muted-foreground/70" />
@@ -8369,31 +8214,15 @@ export function ToolError({
   }
 
   return (
-    <div className="rounded-lg border border-border/60 bg-muted/30 overflow-hidden text-xs">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40">
-        <Ban className="size-3 flex-shrink-0 text-muted-foreground/70" />
-        <span className="font-medium text-muted-foreground">{displayType}</span>
-        {toolName && (
-          <span className="text-muted-foreground/50 font-mono text-[10px] ml-auto">
-            {toolName}
-          </span>
-        )}
-      </div>
-
-      {/* Summary */}
-      <div className="px-3 py-2.5">
-        <p className="text-foreground/80 leading-relaxed break-words whitespace-pre-wrap font-mono text-[11px]">
-          {summary}
-        </p>
-      </div>
-
-      {/* Stack trace toggle */}
+    <div className="text-xs overflow-hidden">
+      <p className="text-muted-foreground/80 leading-relaxed break-words whitespace-pre-wrap font-mono text-[11px] px-2 py-1.5">
+        {summary}
+      </p>
       {traceback && (
         <>
           <button
             onClick={() => setShowTrace((v) => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 w-full text-left border-t border-border/40 text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-2 py-1 w-full text-left text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
           >
             <ChevronRight
               className={cn(
@@ -8404,8 +8233,8 @@ export function ToolError({
             <span className="text-[10px] font-medium">Stack trace</span>
           </button>
           {showTrace && (
-            <div className="px-3 pb-2.5 max-h-64 overflow-auto">
-              <pre className="font-mono text-[10px] leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all">
+            <div className="px-2 pb-2 max-h-48 overflow-auto">
+              <pre className="font-mono text-[10px] leading-relaxed text-muted-foreground/50 whitespace-pre-wrap break-all">
                 {traceback}
               </pre>
             </div>
@@ -8442,58 +8271,48 @@ function parseToolName(tool: string): {
 
 export function GenericTool({ part }: ToolProps) {
   const output = partOutput(part);
-  const strippedGenericOutput = output ? stripAnsi(output) : '';
-  const running = useContext(ToolRunningContext);
   const input = partInput(part);
   const { server, display } = useMemo(
     () => parseToolName(part.tool),
     [part.tool],
   );
 
-  // Try to detect structured log-like output (warnings, tracebacks, etc.)
-  const genericStructuredSections = useMemo(() => {
-    if (!strippedGenericOutput) return null;
-    const normalized = normalizeToolOutput(strippedGenericOutput);
-    if (!hasStructuredContent(normalized)) return null;
-    return parseStructuredOutput(normalized);
-  }, [strippedGenericOutput]);
+  // Primary arg: first meaningful input value (matches reference's label() helper)
+  const subtitle = useMemo(() => {
+    const keys = ['description', 'query', 'url', 'filePath', 'file_path', 'path', 'pattern', 'name', 'prompt'];
+    for (const k of keys) {
+      const v = input[k];
+      if (typeof v === 'string' && v.length > 0)
+        return v.length > 80 ? v.slice(0, 77) + '…' : v;
+    }
+    return undefined;
+  }, [input]);
 
-  // Build trigger title with optional server badge
-  const triggerNode = (
-    <div className="flex items-center gap-1.5 min-w-0 flex-1">
-      <span className="font-medium text-xs text-foreground whitespace-nowrap">
-        {display}
-      </span>
-      {server && (
-        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70 font-mono whitespace-nowrap">
-          {server}
-        </span>
-      )}
-      {genericStructuredSections && (
-        <span className="text-[10px] px-1 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono whitespace-nowrap">
-          {genericStructuredSections[0]?.type}
-        </span>
-      )}
-      {running && (
-        <Loader2 className="size-3 animate-spin text-muted-foreground ml-auto flex-shrink-0" />
-      )}
-    </div>
-  );
-
-  const bodyContent = genericStructuredSections ? (
-    <div className="p-2.5 max-h-72 overflow-auto">
-      <StructuredOutput sections={genericStructuredSections} />
-    </div>
-  ) : output ? (
-    <ToolOutputFallback output={output} toolName={part.tool} />
-  ) : null;
+  // Extra args: remaining non-primary input keys (max 3)
+  const args = useMemo(() => {
+    const skip = new Set(['description', 'query', 'url', 'filePath', 'file_path', 'path', 'pattern', 'name', 'prompt']);
+    return Object.entries(input)
+      .filter(([k]) => !skip.has(k))
+      .flatMap(([k, v]) => {
+        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')
+          return [`${k}=${v}`];
+        return [];
+      })
+      .slice(0, 3);
+  }, [input]);
 
   return (
     <BasicTool
-      icon={<Cpu className="size-3.5 flex-shrink-0" />}
-      trigger={triggerNode}
+      icon={<Cpu />}
+      trigger={{
+        title: display,
+        subtitle,
+        args: server ? [server, ...args] : args.length > 0 ? args : undefined,
+      }}
     >
-      {bodyContent}
+      {output ? (
+        <ToolOutputFallback output={output} toolName={part.tool} />
+      ) : null}
     </BasicTool>
   );
 }
@@ -8534,7 +8353,7 @@ function PermissionPromptInline({
   if (!visible) return null;
 
   return (
-    <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-amber-500/30 bg-amber-500/5">
+    <div className="flex items-center gap-2 px-2.5 py-2 text-amber-600 dark:text-amber-400">
       <span className="text-xs text-foreground flex-1">
         Permission: <span className="font-medium">{label}</span>
       </span>
@@ -8616,24 +8435,13 @@ export function ToolPartRenderer({
 
     return (
       <BasicTool
-        icon={
-          <CircleAlert className="size-3.5 flex-shrink-0 text-muted-foreground/70" />
-        }
-        trigger={
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <span className="font-medium text-xs text-foreground whitespace-nowrap">
-              {display}
-            </span>
-            {server && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70 font-mono whitespace-nowrap">
-                {server}
-              </span>
-            )}
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground font-medium ml-auto flex-shrink-0">
-              Error
-            </span>
-          </div>
-        }
+        icon={<CircleAlert />}
+        trigger={{
+          title: display,
+          subtitle: 'failed',
+          args: server ? [server] : undefined,
+        }}
+        badge="error"
       >
         <div className="p-0">
           <ToolError error={errorStr} toolName={part.tool} />
@@ -8659,6 +8467,13 @@ export function ToolPartRenderer({
     !isStalePending &&
     (part.state.status === 'running' || part.state.status === 'pending');
 
+  const toolDurationMs = useMemo(() => {
+    const s = (part.state as any)?.time?.start;
+    const e = (part.state as any)?.time?.end;
+    if (typeof s === 'number' && typeof e === 'number' && e > s) return e - s;
+    return undefined;
+  }, [part.state]);
+
   const toolElement = RegisteredComponent ? (
     <RegisteredComponent
       part={part}
@@ -8676,6 +8491,7 @@ export function ToolPartRenderer({
   return (
     <ToolNavigationContext.Provider value={!disableNavigation}>
       <ToolRunningContext.Provider value={isRunning}>
+        <ToolDurationContext.Provider value={toolDurationMs}>
         <StalePendingContext.Provider value={isStalePending}>
           <div className="relative">
             {toolElement}
@@ -8702,6 +8518,7 @@ export function ToolPartRenderer({
             )}
           </div>
         </StalePendingContext.Provider>
+        </ToolDurationContext.Provider>
       </ToolRunningContext.Provider>
     </ToolNavigationContext.Provider>
   );

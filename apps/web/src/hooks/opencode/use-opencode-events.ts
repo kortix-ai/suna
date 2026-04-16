@@ -305,7 +305,6 @@ export function useOpenCodeEventStream() {
 		// Using only "last event" causes hydrate storms when the server rotates
 		// idle SSE connections that carried no events.
 		let lastStreamActivityTime = Date.now();
-		let lastReconnectHydrateAt = 0;
 		// Track when the stream connected and whether it delivered any events.
 		// We reset reconnect backoff only after a healthy connection (events received
 		// or sustained >10s). Brief connect→drop loops keep backoff growth.
@@ -365,6 +364,7 @@ export function useOpenCodeEventStream() {
 			while (!abortController.signal.aborted) {
 				let streamHadEvents = false;
 				let stableConnection = false;
+				let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
 				try {
 					const result = await client.global.event({
 						signal: abortController.signal,
@@ -375,28 +375,28 @@ export function useOpenCodeEventStream() {
 					streamConnectedAt = Date.now();
 					lastStreamActivityTime = streamConnectedAt;
 
-				// On reconnect, re-hydrate if the gap was significant (>5s).
-				// Short reconnects (<5s) don't call hydrate because it would
-				// clobber SSE-driven streaming state with a stale server
-				// snapshot — causing visible content resets. The stale content
-				// watchdog in session-chat.tsx handles recovery for short gaps
-				// by polling when the last message is still a user message.
-				if (retryCount > 0) {
-					const now = Date.now();
-					const reconnectGap = now - lastStreamActivityTime;
-					const shouldHydrate =
-						reconnectGap > 5000 && now - lastReconnectHydrateAt > 15000;
-					if (shouldHydrate) {
-						lastReconnectHydrateAt = now;
-						hydrateCore({ refetchSessions: true, rehydrateMessages: true });
-					}
-				}
-					// Consume stream exactly like OpenCode global-sdk.tsx:
-					// queue + coalesce + 16ms flush + yield every 8ms
+					// Heartbeat timeout — matching the reference. If no events
+					// arrive for 15s, abort and reconnect. This is the ONLY
+					// recovery mechanism we need — replaces the stall watchdog,
+					// reconciler, and visibility handler.
+					let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
+					const HEARTBEAT_MS = 15_000;
+					const heartbeatAbort = new AbortController();
+					const resetHeartbeat = () => {
+						clearTimeout(heartbeatTimer);
+						heartbeatTimer = setTimeout(() => {
+							logger.warn("SSE heartbeat timeout, forcing reconnect");
+							heartbeatAbort.abort();
+						}, HEARTBEAT_MS);
+					};
+					resetHeartbeat();
+
+					// Consume stream: queue + coalesce + 16ms flush + yield every 8ms
 					let yieldedAt = Date.now();
 					for await (const event of stream) {
-						if (abortController.signal.aborted) break;
+						if (abortController.signal.aborted || heartbeatAbort.signal.aborted) break;
 						streamHadEvents = true;
+						resetHeartbeat();
 						const raw = event as any;
 						const e = (
 							raw && typeof raw === "object" && "payload" in raw
@@ -453,6 +453,7 @@ export function useOpenCodeEventStream() {
 						}
 					}
 				} finally {
+					clearTimeout(heartbeatTimer);
 					flush();
 				}
 
@@ -986,137 +987,10 @@ export function useOpenCodeEventStream() {
 			}
 		}
 
-		// ---- Visibility change recovery ----
-		// When the tab goes to background, browsers aggressively throttle or
-		// freeze SSE connections. Events are silently dropped. When the user
-		// returns, re-fetch session statuses + messages so the UI catches up.
-		// Debounce to avoid re-fetching on rapid focus/blur cycles.
-		let visibilityTimer: ReturnType<typeof setTimeout> | null = null;
-		const handleVisibilityChange = () => {
-			if (document.visibilityState !== "visible") return;
-			if (visibilityTimer) clearTimeout(visibilityTimer);
-			visibilityTimer = setTimeout(() => {
-				visibilityTimer = null;
-				// Only rehydrate if the last SSE event was >3s ago — if events
-				// are still flowing normally, the stream is healthy.
-				if (Date.now() - lastStreamActivityTime > 3000) {
-					hydrateCore({ rehydrateMessages: true });
-				}
-			}, 500);
-		};
-		document.addEventListener("visibilitychange", handleVisibilityChange);
-
-		// ---- SSE stall watchdog ----
-		// Some environments keep the SSE request open but stop delivering events
-		// (network blip, proxy idle edge case, browser transport hiccup).
-		// If we're in an active/incomplete session and no events arrive for a
-		// while, reconcile from REST so the UI recovers without manual refresh.
-		let stallRecoveryInFlight = false;
-		const stallWatchdog = setInterval(() => {
-			if (abortController.signal.aborted) return;
-			if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-				return;
-			}
-			if (Date.now() - lastStreamActivityTime < 12_000) return;
-
-			if (stallRecoveryInFlight) return;
-
-			stallRecoveryInFlight = true;
-			lastStreamActivityTime = Date.now();
-
-			void (async () => {
-				const collectLocalCandidates = () => {
-					const sync = useSyncStore.getState();
-					const busySessionIds = Object.entries(sync.sessionStatus)
-						.filter(([, status]) => status?.type === "busy" || status?.type === "retry")
-						.map(([sid]) => sid);
-					const incompleteSessionIds = Object.entries(sync.messages)
-						.filter(([, msgs]) => {
-							if (!msgs || msgs.length === 0) return false;
-							for (let i = msgs.length - 1; i >= 0; i--) {
-								if (msgs[i].role === "assistant") {
-									return !(msgs[i] as any).time?.completed;
-								}
-							}
-							return false;
-						})
-						.map(([sid]) => sid);
-					return { busySessionIds, incompleteSessionIds };
-				};
-
-				const getHotSessionIds = () => {
-					const sync = useSyncStore.getState();
-					const scored: Array<{ sid: string; ts: number }> = [];
-					for (const [sid, msgs] of Object.entries(sync.messages)) {
-						if (!msgs || msgs.length === 0) continue;
-						const last = msgs[msgs.length - 1] as any;
-						const ts =
-							last?.time?.updated ??
-							last?.time?.completed ??
-							last?.time?.created ??
-							0;
-						scored.push({ sid, ts });
-					}
-					return scored
-						.sort((a, b) => b.ts - a.ts)
-						.slice(0, 3)
-						.map((x) => x.sid);
-				};
-
-				const { busySessionIds, incompleteSessionIds } = collectLocalCandidates();
-				const serverBusyIds: string[] = [];
-
-				try {
-					const res = await client.session.status();
-					if (res.data) {
-						const statuses = res.data as Record<string, any>;
-						for (const [sessionID, status] of Object.entries(statuses)) {
-							applySyncEvent({
-								type: "session.status",
-								properties: { sessionID, status },
-							} as any);
-							if ((status as any)?.type === "busy" || (status as any)?.type === "retry") {
-								serverBusyIds.push(sessionID);
-							}
-						}
-					}
-				} catch {
-					// ignore
-				}
-
-				const candidateSessionIds = Array.from(
-					new Set([
-						...busySessionIds,
-						...incompleteSessionIds,
-						...serverBusyIds,
-						...getHotSessionIds(),
-					]),
-				);
-
-				if (candidateSessionIds.length > 0) {
-					await Promise.allSettled(
-						candidateSessionIds.map((sid) =>
-							client.session
-								.messages({ sessionID: sid })
-								.then((res) => {
-									if (res.data) useSyncStore.getState().hydrate(sid, res.data as any);
-								})
-								.catch(() => {}),
-						),
-					);
-				}
-			})().finally(() => {
-				stallRecoveryInFlight = false;
-			});
-		}, 5_000);
-
 		return () => {
 			abortController.abort();
 			abortRef.current = null;
 			if (flushTimer) clearTimeout(flushTimer);
-			document.removeEventListener("visibilitychange", handleVisibilityChange);
-			if (visibilityTimer) clearTimeout(visibilityTimer);
-			clearInterval(stallWatchdog);
 		};
 		// NOTE: urlVersion is intentionally excluded from deps. We only reconnect
 		// when the resolved activeServerUrl actually changes, which avoids

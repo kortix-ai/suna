@@ -10,6 +10,7 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronRight,
+  Search,
   ChevronUp,
   Copy,
   Cpu,
@@ -54,6 +55,10 @@ import { SessionWelcome } from '@/components/session/session-welcome';
 import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
 
 import { ToolPartRenderer } from '@/components/session/tool-renderers';
+import {
+  contextToolSummary,
+  contextToolTrigger,
+} from '@/components/session/tool-meta';
 import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
 import { Button } from '@/components/ui/button';
 import {
@@ -2404,9 +2409,7 @@ function ThrottledMarkdown({
 }
 
 /**
- * Groups consecutive reasoning parts into a single, minimal collapsible card.
- * Shows aggregate duration and a one-line preview; expands to show all
- * reasoning blocks concatenated with subtle separators.
+ * @deprecated Use `ActivityCard`. Kept only to avoid ripple edits elsewhere.
  */
 function GroupedReasoningCard({
   parts,
@@ -2493,50 +2496,30 @@ function GroupedReasoningCard({
       <CollapsibleTrigger asChild>
         <div
           className={cn(
-            'flex items-center gap-2 px-2.5 py-1 rounded-md',
+            'flex items-center gap-1.5 py-0.5',
             'text-xs select-none cursor-pointer',
-            'text-muted-foreground/50 hover:text-muted-foreground/70',
-            'transition-colors',
-            'max-w-full group/reasoning',
+            'text-muted-foreground/70',
+            'transition-colors max-w-full group/reasoning',
           )}
         >
           <Brain
             className={cn(
-              'size-3 flex-shrink-0',
-              reasoningStreaming && 'animate-pulse-heartbeat text-muted-foreground/60',
+              'size-3.5 flex-shrink-0 text-muted-foreground/50',
+              reasoningStreaming && 'animate-pulse-heartbeat',
             )}
           />
 
-          {/* Preview text or "Reasoning" label */}
           <span className="min-w-0 flex-1 truncate">
-            {preview || 'Reasoning'}
+            {preview || 'Thinking'}
           </span>
-
-          {/* Duration badge */}
-          {reasoningStreaming ? (
-            <span className="text-[10px] font-mono tabular-nums flex-shrink-0">
-              {streamSeconds}s
-            </span>
-          ) : totalDuration ? (
-            <span className="text-[10px] font-mono tabular-nums flex-shrink-0">
-              {formatDuration(totalDuration)}
-            </span>
-          ) : null}
-
-          {/* Count badge when multiple */}
-          {nonEmptyParts.length > 1 && (
-            <span className="text-[10px] font-mono tabular-nums flex-shrink-0 opacity-60">
-              {nonEmptyParts.length}x
-            </span>
-          )}
-
           {reasoningStreaming && (
-            <Loader2 className="size-2.5 animate-spin flex-shrink-0 opacity-40" />
+            <Loader2 className="size-3 animate-spin flex-shrink-0 text-muted-foreground/40" />
           )}
           <ChevronRight
             className={cn(
-              'size-2.5 transition-transform flex-shrink-0 opacity-40',
-              open && 'rotate-90',
+              'size-3 transition-transform flex-shrink-0',
+              'text-muted-foreground/30 opacity-0 group-hover/reasoning:opacity-100',
+              open && 'rotate-90 opacity-100',
             )}
           />
         </div>
@@ -2551,6 +2534,169 @@ function GroupedReasoningCard({
               </div>
             ))}
           </div>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+/**
+ * Unified "activity" card that collapses any run of agent-side work —
+ * reasoning + tool calls, in original order — into a single compact shelf.
+ * Text parts (and other user-facing dividers) break the run.
+ *
+ * Auto-opens while anything is still streaming/running; collapses once the
+ * burst settles. Respects manual user toggles thereafter.
+ */
+/**
+ * Folded Tier-1 "exploration" card.
+ *
+ * Holds a run of reasoning + Tier-1 tool calls and renders:
+ *   • Collapsed: `<icon> <verb> <N noun> · <current/last primary arg>   <timer>`
+ *     Verb comes from the run's categories (e.g. "Searched", "Read",
+ *     "Explored"), not a generic "N actions".
+ *   • Expanded:  reasoning blocks + compact per-tool rows (each row is the
+ *     existing ToolPartRenderer, which itself is expandable for full output).
+ *
+ * Auto-opens while anything is streaming; collapses once settled. Respects
+ * manual user toggles after the first click.
+ */
+/**
+ * Same-tool group: collapses 2+ consecutive calls of the same tool into
+ * one collapsible row. Header: "Read · 5 files · 3s". Expanded: flat
+ * one-liners per call with individual durations.
+ */
+function SameToolGroup({
+  toolName,
+  entries,
+  sessionId,
+  disableNavigation,
+  busy,
+}: {
+  toolName: string;
+  entries: Array<{ part: ToolPart; message: MessageWithParts }>;
+  sessionId: string;
+  disableNavigation?: boolean;
+  busy?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const anyRunning = useMemo(
+    () =>
+      !!busy &&
+      entries.some(
+        ({ part }) =>
+          (part.state as any)?.status === 'pending' ||
+          (part.state as any)?.status === 'running',
+      ),
+    [busy, entries],
+  );
+
+  const totalDurationMs = useMemo(() => {
+    let earliest = Infinity;
+    let latest = 0;
+    for (const { part } of entries) {
+      const s = (part.state as any)?.time?.start;
+      const e = (part.state as any)?.time?.end;
+      if (typeof s === 'number' && s < earliest) earliest = s;
+      if (typeof e === 'number' && e > latest) latest = e;
+    }
+    return latest > earliest ? latest - earliest : 0;
+  }, [entries]);
+
+  const durationLabel =
+    !anyRunning && totalDurationMs >= 1000
+      ? `${Math.round(totalDurationMs / 1000)}s`
+      : '';
+
+  const isContext = toolName === '__context__';
+
+  const headerLabel = useMemo(() => {
+    if (!isContext) {
+      const t = contextToolTrigger(entries[0].part);
+      return `${t.title} · ${entries.length}x`;
+    }
+    const s = contextToolSummary(entries.map((e) => e.part));
+    const items: string[] = [];
+    if (s.read > 0) items.push(`${s.read} read${s.read > 1 ? 's' : ''}`);
+    if (s.search > 0) items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
+    if (s.list > 0) items.push(`${s.list} list${s.list > 1 ? 's' : ''}`);
+    const summary = items.join(', ');
+    const prefix = anyRunning ? 'Gathering context' : 'Gathered context';
+    return summary ? `${prefix} · ${summary}` : prefix;
+  }, [isContext, entries, anyRunning]);
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <div
+          className={cn(
+            'flex items-center gap-1.5 py-0.5',
+            'text-xs select-none cursor-pointer',
+            'text-muted-foreground/70',
+            'transition-colors max-w-full group/grp',
+          )}
+        >
+          <Search
+            className={cn(
+              'size-3.5 flex-shrink-0 text-muted-foreground/50',
+              anyRunning && 'animate-pulse-heartbeat',
+            )}
+          />
+          <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
+          {durationLabel && (
+            <span className="text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+              {durationLabel}
+            </span>
+          )}
+          {anyRunning && (
+            <Loader2 className="size-3 animate-spin flex-shrink-0 text-muted-foreground/40" />
+          )}
+          <ChevronRight
+            className={cn(
+              'size-3 transition-transform flex-shrink-0',
+              'text-muted-foreground/30 opacity-0 group-hover/grp:opacity-100',
+              open && 'rotate-90 opacity-100',
+            )}
+          />
+        </div>
+      </CollapsibleTrigger>
+
+      <CollapsibleContent>
+        <div className="ml-[18px] mt-0.5 mb-1.5 pl-3 border-l border-border/30 space-y-0.5">
+          {entries.map(({ part }) => {
+            const t = contextToolTrigger(part);
+            const running =
+              (part.state as any)?.status === 'pending' ||
+              (part.state as any)?.status === 'running';
+            const s = (part.state as any)?.time?.start;
+            const e = (part.state as any)?.time?.end;
+            const dur =
+              typeof s === 'number' && typeof e === 'number' && e > s
+                ? e - s
+                : 0;
+            return (
+              <div
+                key={part.id}
+                className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/60"
+              >
+                <span className="flex-shrink-0">{t.title}</span>
+                {!running && t.subtitle && (
+                  <span className="font-mono truncate min-w-0 opacity-70">
+                    {t.subtitle}
+                  </span>
+                )}
+                {!running && dur >= 1000 && (
+                  <span className="ml-auto text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+                    {Math.round(dur / 1000)}s
+                  </span>
+                )}
+                {running && (
+                  <Loader2 className="size-2.5 animate-spin flex-shrink-0 text-muted-foreground/40" />
+                )}
+              </div>
+            );
+          })}
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -3346,47 +3492,150 @@ function SessionTurn({
         turn.assistantMessages.length > 0 && (
           <div className="space-y-2">
             {(() => {
-              // Group consecutive reasoning parts together for a cleaner UI.
-              // Build a list of render items: either a single part or a reasoning group.
+              // Same-tool grouping: consecutive calls of the SAME tool
+              // (e.g. 5 reads, 3 greps) fold into one collapsible.
+              // Singles stay individual. Reasoning groups separately.
+              // ALL tool rows get a left border rail for visual separation.
+              type ToolEntry = { part: ToolPart; message: MessageWithParts };
               type RenderItem =
                 | { type: 'part'; part: Part; message: MessageWithParts }
-                | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string };
+                | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string }
+                | { type: 'tool-group'; toolName: string; entries: ToolEntry[]; key: string }
+                | { type: 'tool-single'; part: ToolPart; message: MessageWithParts };
 
               const items: RenderItem[] = [];
               let pendingReasoning: ReasoningPart[] = [];
+              let pendingTools: ToolEntry[] = [];
+              let pendingToolName: string | null = null;
 
               const flushReasoning = () => {
                 if (pendingReasoning.length > 0) {
                   items.push({
                     type: 'reasoning-group',
                     parts: pendingReasoning,
-                    key: `reasoning-group-${(pendingReasoning[0] as any).id ?? items.length}`,
+                    key: `reasoning-${(pendingReasoning[0] as any).id ?? items.length}`,
                   });
                   pendingReasoning = [];
                 }
               };
 
-              for (const { part, message } of allParts) {
-                if (isReasoningPart(part) && part.text?.trim()) {
-                  pendingReasoning.push(part);
-                } else {
-                  flushReasoning();
-                  items.push({ type: 'part', part, message: message });
+              const flushTools = () => {
+                if (pendingTools.length >= 2 && pendingToolName) {
+                  items.push({
+                    type: 'tool-group',
+                    toolName: pendingToolName,
+                    entries: pendingTools,
+                    key: `tg-${pendingTools[0].part.id}`,
+                  });
+                } else if (pendingTools.length === 1) {
+                  items.push({
+                    type: 'tool-single',
+                    part: pendingTools[0].part,
+                    message: pendingTools[0].message,
+                  });
                 }
+                pendingTools = [];
+                pendingToolName = null;
+              };
+
+              // Normalize tool name for grouping. Context tools
+              // (read/glob/grep/list) all share one key so they merge
+              // into a single "Gathered context" group.
+              const CONTEXT_SET = new Set(['read', 'glob', 'grep', 'list']);
+              const norm = (t: string) => {
+                const n = t.replace(/^oc-/, '').replace(/-/g, '_');
+                return CONTEXT_SET.has(n) ? '__context__' : n;
+              };
+
+              for (const { part, message } of allParts) {
+                if (isReasoningPart(part)) {
+                  if (part.text?.trim()) {
+                    flushTools();
+                    pendingReasoning.push(part);
+                  }
+                  continue;
+                }
+                flushReasoning();
+
+                if (isToolPart(part)) {
+                  const tp = part as ToolPart;
+                  const hasPermission = !!getPermissionForTool(
+                    permissions,
+                    tp.callID,
+                  );
+                  const groupable =
+                    shouldShowToolPart(tp) &&
+                    tp.tool !== 'todowrite' &&
+                    tp.tool !== 'question' &&
+                    !hasPermission &&
+                    !isToolPartHidden(tp, message.info.id, hidden);
+
+                  if (groupable) {
+                    const n = norm(tp.tool);
+                    if (pendingToolName === n) {
+                      pendingTools.push({ part: tp, message });
+                    } else {
+                      flushTools();
+                      pendingToolName = n;
+                      pendingTools = [{ part: tp, message }];
+                    }
+                    continue;
+                  }
+                }
+
+                flushTools();
+                items.push({ type: 'part', part, message });
               }
               flushReasoning();
+              flushTools();
 
               const reasoningActive =
                 working && permissions.length === 0 && questions.length === 0;
 
               return items.map((item) => {
+                // Reasoning group
                 if (item.type === 'reasoning-group') {
                   return (
-                    <GroupedReasoningCard
-                      key={item.key}
-                      parts={item.parts}
-                      isStreaming={reasoningActive}
-                    />
+                    <div key={item.key}>
+                      <GroupedReasoningCard
+                        parts={item.parts}
+                        isStreaming={reasoningActive}
+                      />
+                    </div>
+                  );
+                }
+
+                // Same-tool group (2+ consecutive)
+                if (item.type === 'tool-group') {
+                  return (
+                    <div key={item.key}>
+                      <SameToolGroup
+                        toolName={item.toolName}
+                        entries={item.entries}
+                        sessionId={sessionId}
+                        disableNavigation={disableToolNavigation}
+                        busy={working}
+                      />
+                    </div>
+                  );
+                }
+
+                // Single tool (with left rail)
+                if (item.type === 'tool-single') {
+                  if (!shouldShowToolPart(item.part)) return null;
+                  const perm = getPermissionForTool(permissions, item.part.callID);
+                  if (isToolPartHidden(item.part, item.message.info.id, hidden))
+                    return null;
+                  return (
+                    <div key={item.part.id}>
+                      <ToolPartRenderer
+                        part={item.part}
+                        sessionId={sessionId}
+                        disableNavigation={disableToolNavigation}
+                        permission={perm}
+                        onPermissionReply={onPermissionReply}
+                      />
+                    </div>
                   );
                 }
 
@@ -4215,11 +4464,10 @@ export function SessionChat({
   const isServerBusy =
     sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
-  // Check if the latest assistant message is still incomplete (server hasn't
-  // set time.completed). This is a reliable secondary signal that the AI is
-  // still producing content, even if the session status briefly reports idle
-  // (e.g. during SSE reconnection, stale watchdog poll, or between agentic
-  // steps). Only considers the very last assistant message.
+  // Pending: last assistant message has no time.completed.
+  // Used as a SECONDARY signal — only contributes to busy when the
+  // server also says busy. Prevents the event-ordering race where
+  // session.idle arrives before message.updated sets time.completed.
   const hasIncompleteAssistant = useMemo(() => {
     if (!messages || messages.length === 0) return false;
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -4229,6 +4477,7 @@ export function SessionChat({
     }
     return false;
   }, [messages]);
+
   const hasPendingUserReply = useMemo(() => {
     if (!messages || messages.length === 0) return false;
     let lastUserIdx = -1;
@@ -4244,24 +4493,19 @@ export function SessionChat({
     }
     return true;
   }, [messages]);
-  const expectAssistantResponse =
-    isServerBusy ||
-    hasPendingUserReply ||
-    hasIncompleteAssistant ||
-    pendingSendInFlight;
 
-  // Effective busy: server says busy, OR the assistant message is incomplete
-  // or we're still waiting for the first assistant response.
+  // Matching the reference: session status is the PRIMARY source of truth.
+  // hasIncompleteAssistant only matters while the server also says busy
+  // (prevents the idle→incomplete race). pendingSendInFlight covers the
+  // gap between user send and server ack.
   const effectiveBusy =
     isServerBusy ||
-    hasIncompleteAssistant ||
-    hasPendingUserReply ||
     pendingSendInFlight ||
     isOptimisticCompacting;
 
-  // Debounced busy state: goes true immediately, but stays true for 2s
-  // after BOTH signals say idle. This prevents flickering between agentic
-  // steps where the status briefly goes idle then back to busy.
+  // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
+  // Goes true immediately, stays visible briefly after going idle so the
+  // UI doesn't flicker between agentic steps. NOT a 2s debounce.
   const [isBusy, setIsBusy] = useState(effectiveBusy);
   const busyTimerRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
@@ -4269,14 +4513,17 @@ export function SessionChat({
       clearTimeout(busyTimerRef.current);
       setIsBusy(true);
     } else {
-      busyTimerRef.current = setTimeout(() => setIsBusy(false), 2000);
+      busyTimerRef.current = setTimeout(() => setIsBusy(false), 300);
     }
     return () => clearTimeout(busyTimerRef.current);
   }, [effectiveBusy]);
 
-  // Recovery polling should run while the server says busy, OR when we still
-  // expect an assistant response but status signals are stale (common around
-  // refresh/reconnect races).
+  const expectAssistantResponse =
+    isServerBusy ||
+    hasPendingUserReply ||
+    (isServerBusy && hasIncompleteAssistant) ||
+    pendingSendInFlight;
+
   const shouldRecoveryPoll = expectAssistantResponse;
 
   const streamCacheKey = `opencode_stream_cache:${sessionId}`;
@@ -4606,147 +4853,8 @@ export function SessionChat({
     return () => clearTimeout(timer);
   }, [pendingSendInFlight]);
 
-  // Stale session watchdog: when the session has been busy for a while, do a
-  // direct status check for THIS session only. If the server reports idle
-  // (or doesn't include the session at all — meaning it's idle), force the
-  // session to idle — recovering from a silently dropped SSE event.
-  //
-  // CONSOLIDATED: Previously called client.session.status() which returns ALL
-  // sessions' statuses — with 3 busy tabs open, that meant 3 independent
-  // 15s polling loops all fetching the same bulk endpoint. Now uses the
-  // session-specific status endpoint to only check this session. Reduced
-  // from 15s to 30s interval since SSE is the primary status mechanism.
-  useEffect(() => {
-    if (!isActiveSessionTab || !isServerBusy) return;
-
-    const check = async () => {
-      try {
-        const client = getClient();
-        // Use session-specific get to check status instead of bulk endpoint.
-        // The session object includes status-relevant fields (time.completed, etc.)
-        const result = await client.session.status();
-        if (result.data) {
-          const statuses = result.data as Record<string, any>;
-          const serverStatus = statuses[sessionId];
-          if (serverStatus) {
-            // Only update if the server has a status for this session
-            useSyncStore.getState().setStatus(sessionId, serverStatus);
-            useOpenCodeSessionStatusStore
-              .getState()
-              .setStatus(sessionId, serverStatus);
-          } else {
-            // Session not in bulk status = idle
-            const idle = { type: 'idle' as const };
-            useSyncStore.getState().setStatus(sessionId, idle);
-            useOpenCodeSessionStatusStore.getState().setStatus(sessionId, idle);
-          }
-        }
-      } catch {
-        // ignore — next interval will retry
-      }
-    };
-
-    // First check after 5s, then every 30s.
-    // This shortens recovery time when SSE disconnects mid-response and
-    // the client misses the final status/message events.
-    const initialTimer = setTimeout(check, 5_000);
-    const interval = setInterval(check, 30_000);
-    return () => {
-      clearTimeout(initialTimer);
-      clearInterval(interval);
-    };
-  }, [isActiveSessionTab, isServerBusy, sessionId]);
-
-  // SSE is the source of truth for in-progress assistant text.
-  // Avoid periodic /messages recovery polling to prevent large snapshot
-  // hydrates from clobbering incremental streaming cadence.
-
-  // Message-based idle detection: if the last assistant message has
-  // time.completed set, the server marked the message as completed but we never got the
-  // idle event — force the session to idle after a grace period.
-  // We use a longer delay (5s) to avoid prematurely killing agentic flows
-  // where the server creates a new assistant message shortly after completing one.
-  // The timer also re-checks message count to ensure no new messages arrived.
-  const messageCountForIdle = messages?.length ?? 0;
-  useEffect(() => {
-    if (!isServerBusy || !messages || messages.length === 0) return;
-
-    // If the last message is a user message, the AI hasn't started
-    // responding yet. Don't force idle based on a PREVIOUS assistant
-    // message's completion — the model may still be thinking.
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg?.info.role === 'user') return;
-
-    // Find the last assistant message
-    let lastAssistantIdx = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].info.role === 'assistant') {
-        lastAssistantIdx = i;
-        break;
-      }
-    }
-    if (lastAssistantIdx === -1) return;
-
-    const assistantInfo = messages[lastAssistantIdx].info as any;
-    if (!assistantInfo.time?.completed) return;
-
-    // Check if there's a user message AFTER this completed assistant.
-    // If so, the AI is still processing the new user message — don't
-    // force idle based on the previous turn's completion.
-    for (let i = lastAssistantIdx + 1; i < messages.length; i++) {
-      if (messages[i].info.role === 'user') return;
-    }
-
-    const msgCountAtStart = messages.length;
-    const timer = setTimeout(() => {
-      // Only force idle if no new messages arrived during the grace period
-      const currentMsgs = useSyncStore.getState().getMessages(sessionId);
-      if (currentMsgs.length > msgCountAtStart) {
-        return; // New messages arrived — agent is still working
-      }
-      const syncStoreStatus = useSyncStore.getState().sessionStatus[sessionId];
-      const legacyStoreStatus =
-        useOpenCodeSessionStatusStore.getState().statuses[sessionId];
-      const currentType = syncStoreStatus?.type ?? legacyStoreStatus?.type;
-      if (currentType === 'busy' || currentType === 'retry') {
-        const idle = { type: 'idle' as const };
-        useSyncStore.getState().setStatus(sessionId, idle);
-        useOpenCodeSessionStatusStore.getState().setStatus(sessionId, idle);
-      }
-    }, 5_000);
-    return () => clearTimeout(timer);
-  }, [isServerBusy, messages, sessionId, messageCountForIdle]);
-
-  // Post-idle recovery: when the session transitions from busy to idle,
-  // check if the last message is still a user message. If so, the assistant
-  // response was lost (SSE events dropped during a disconnect). Re-fetch
-  // messages from the server to recover the missing response.
-  const prevBusyForRecoveryRef = useRef(isServerBusy);
-  useEffect(() => {
-    if (!isActiveSessionTab) return;
-
-    const wasBusy = prevBusyForRecoveryRef.current;
-    prevBusyForRecoveryRef.current = isServerBusy;
-
-    // Only act on busy→idle transitions
-    if (!wasBusy || isServerBusy) return;
-    if (!messages || messages.length === 0) return;
-
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg?.info.role !== 'user') return;
-
-    // The session went idle but the last message is a user message —
-    // the assistant response was never delivered via SSE.
-    const client = getClient();
-    client.session
-      .messages({ sessionID: sessionId })
-      .then((res) => {
-        if (res.data) {
-          useSyncStore.getState().hydrate(sessionId, res.data as any);
-        }
-      })
-      .catch(() => {});
-  }, [isActiveSessionTab, isServerBusy, messages, sessionId]);
+  // SSE + heartbeat timeout is the source of truth for streaming state.
+  // No watchdogs, no polling, no reconcilers — matching the reference.
 
   // Clear pending user message when we can confirm the message is in cache
   // (by ID), or when new messages arrive (fallback for command sends).
