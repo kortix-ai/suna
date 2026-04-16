@@ -463,6 +463,16 @@ export function useOpenCodeEventStream() {
 			// Minimum 1s delay even on first retry to avoid reconnection storms
 			// when the server is flapping (connect → immediate disconnect loops).
 			if (abortController.signal.aborted) break;
+
+			// Re-hydrate messages for loaded sessions when the SSE gap was
+			// significant (>5s). Events missed during the gap (e.g. streaming
+			// assistant response) would never arrive, leaving the UI stale
+			// until the user manually refreshes.
+			const gap = Date.now() - lastStreamActivityTime;
+			if (gap > 5_000) {
+				hydrateCore({ rehydrateMessages: true });
+			}
+
 			if (stableConnection) {
 				// Fast reconnect after healthy streams so live streaming resumes immediately.
 				retryCount = 0;

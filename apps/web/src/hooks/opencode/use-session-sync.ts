@@ -103,7 +103,6 @@ export function useSessionSync(sessionId: string) {
 		let cancelled = false;
 		const fetchWithRetry = async (attempt = 0) => {
 			try {
-				const store = useSyncStore.getState();
 				const res = await getClient().session.messages({
 					sessionID: sessionId,
 				});
@@ -119,15 +118,30 @@ export function useSessionSync(sessionId: string) {
 						sessionExists = false;
 					}
 
-					const currentStatus = store.sessionStatus[sessionId] ?? IDLE_STATUS;
+					// Read fresh state AFTER the awaits — the pending-prompt
+					// effect may have set status to "busy" and added an
+					// optimistic message while the fetch was in flight.
+					// Using a stale pre-await snapshot would see "idle" and
+					// incorrectly call clearSession, wiping the optimistic
+					// message and reverting the UI to the welcome screen.
+					const freshState = useSyncStore.getState();
+					const currentStatus = freshState.sessionStatus[sessionId] ?? IDLE_STATUS;
 					if (!sessionExists || currentStatus.type === "idle") {
-						store.clearSession(sessionId);
+						// Double-check: don't clear if there are already messages
+						// in the store (e.g. optimistic messages added by the
+						// pending-prompt effect while this fetch was in flight).
+						const existingMsgs = freshState.messages[sessionId];
+						if (existingMsgs && existingMsgs.length > 0) {
+							// Messages exist (likely optimistic) — skip clearing
+							return;
+						}
+						freshState.clearSession(sessionId);
 						return;
 					}
 				}
 
 				if (res.data) {
-					store.hydrate(sessionId, res.data as any);
+					useSyncStore.getState().hydrate(sessionId, res.data as any);
 				}
 			} catch {
 				if (cancelled) return;
