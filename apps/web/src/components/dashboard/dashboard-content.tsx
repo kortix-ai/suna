@@ -127,6 +127,7 @@ export function DashboardContent() {
         setIsSending(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [isSending, createSession, local.agent.current, local.model.currentKey, local.model.variant.current, selectedProject],
   );
 

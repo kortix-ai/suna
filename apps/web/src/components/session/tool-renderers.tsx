@@ -8425,6 +8425,13 @@ export function ToolPartRenderer({
   defaultOpen,
   disableNavigation = false,
 }: ToolPartRendererProps & { sessionId?: string }) {
+  const toolDurationMs = useMemo(() => {
+    const s = (part.state as any)?.time?.start;
+    const e = (part.state as any)?.time?.end;
+    if (typeof s === 'number' && typeof e === 'number' && e > s) return e - s;
+    return undefined;
+  }, [part.state]);
+
   // Skip todoread
   if (part.tool === 'todoread') return null;
 
@@ -8474,13 +8481,6 @@ export function ToolPartRenderer({
   const isRunning =
     !isStalePending &&
     (part.state.status === 'running' || part.state.status === 'pending');
-
-  const toolDurationMs = useMemo(() => {
-    const s = (part.state as any)?.time?.start;
-    const e = (part.state as any)?.time?.end;
-    if (typeof s === 'number' && typeof e === 'number' && e > s) return e - s;
-    return undefined;
-  }, [part.state]);
 
   const toolElement = RegisteredComponent ? (
     <RegisteredComponent
