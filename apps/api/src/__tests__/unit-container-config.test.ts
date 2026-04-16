@@ -19,6 +19,7 @@ describe('sandbox container port config', () => {
   test('buildContainerConfig inherits non-conflicting default ports', () => {
     const config = buildContainerConfig({ image: 'kortix/computer:0.8.20' });
     expect(config.ports).toEqual(DEFAULT_PORTS);
+    expect(config.privileged).toBe(true);
     expect(config.ports).not.toContain('3456:3456');
     expect(config.volumes).toContain(JUSTAVPS_STARTUP_PATCH_MOUNT);
   });
@@ -27,6 +28,7 @@ describe('sandbox container port config', () => {
     const config = buildContainerConfig({ image: 'kortix/computer:0.8.20' });
     const command = buildDockerRunCommand(config);
     expect(command).not.toContain('-p 3456:3456');
+    expect(command).toContain('--privileged');
     expect(command).toContain("-p '8000:8000'");
   });
 
@@ -63,6 +65,7 @@ describe('sandbox container port config', () => {
     expect(script).toContain('Reusing persisted env file');
     expect(script).toContain('grep -Eq "^(INTERNAL_SERVICE_KEY|KORTIX_TOKEN|KORTIX_API_URL)="');
     expect(script).toContain('exec docker run --rm');
+    expect(script).toContain('--privileged');
     expect(script).toContain('KORTIX_ENABLE_INNER_DOCKER=0');
     expect(script).toContain(JUSTAVPS_STARTUP_PATCH_MOUNT);
   });

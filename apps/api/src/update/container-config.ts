@@ -7,6 +7,7 @@ export interface ContainerConfig {
   name: string;
   volumes: string[];
   ports: string[];
+  privileged: boolean;
   caps: string[];
   shmSize: string;
   envFile: string;
@@ -117,6 +118,7 @@ export async function buildFromInspect(
         name,
         volumes: volumes.length > 0 ? volumes : ['kortix-data:/workspace', 'kortix-data:/config'],
         ports: sanitizePorts(ports).length > 0 ? sanitizePorts(ports) : DEFAULT_PORTS,
+        privileged: Boolean(hostConfig.Privileged),
         caps: (hostConfig.CapAdd || []) as string[],
         shmSize: formatShmSize(hostConfig.ShmSize),
         envFile: envFile || '/etc/justavps/env',
@@ -177,6 +179,7 @@ function buildDockerRunCommandWithMode(config: ContainerConfig, detached: boolea
   if (isJustAVPSManagedConfig(config)) {
     args.push('-e KORTIX_ENABLE_INNER_DOCKER=0');
   }
+  if (config.privileged) args.push('--privileged');
 
   for (const cap of config.caps) {
     const stripped = cap.replace(/^CAP_/, '');
