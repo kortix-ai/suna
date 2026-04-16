@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
-import { eq, and } from 'drizzle-orm';
-import { sandboxes, type Database } from '@kortix/db';
+import { type Database } from '@kortix/db';
 import { db as defaultDb } from '../../shared/db';
 import { supabaseAuth as authMiddleware } from '../../middleware/auth';
 import { resolveAccountId as defaultResolveAccountId } from '../../shared/resolve-account';
 import { JustAVPSProvider } from '../providers/justavps';
 import { getProvider as defaultGetProvider, type ProviderName, type SandboxProvider } from '../providers';
 import type { AuthVariables } from '../../types';
+import { findAccessibleSandboxForUser } from '../services/sandbox-access';
 
 interface BackupRouterDeps {
   db: Database;
@@ -22,22 +22,19 @@ const defaultDeps: BackupRouterDeps = {
   useAuth: true,
 };
 
-async function requireOwnedJustavpsSandbox(
+async function requireAccessibleJustavpsSandbox(
   db: Database,
-  accountId: string,
+  userId: string,
   sandboxId: string,
   getProvider: (name: ProviderName) => SandboxProvider,
+  resolveAccountId: (userId: string) => Promise<string>,
 ) {
-  const [sandbox] = await db
-    .select()
-    .from(sandboxes)
-    .where(
-      and(
-        eq(sandboxes.accountId, accountId),
-        eq(sandboxes.sandboxId, sandboxId),
-      ),
-    )
-    .limit(1);
+  const { sandbox } = await findAccessibleSandboxForUser({
+    db,
+    userId,
+    sandboxId,
+    resolveAccountId,
+  });
 
   if (!sandbox) return { error: 'Sandbox not found', status: 404 as const };
   if (!sandbox.externalId) return { error: 'Sandbox has no external ID', status: 400 as const };
@@ -66,8 +63,7 @@ export function createBackupRouter(
     const sandboxId = c.req.param('sandboxId');
 
     try {
-      const accountId = await resolveAccountId(userId);
-      const result = await requireOwnedJustavpsSandbox(db, accountId, sandboxId, getProvider);
+      const result = await requireAccessibleJustavpsSandbox(db, userId, sandboxId, getProvider, resolveAccountId);
       if ('error' in result) return c.json({ success: false, error: result.error }, result.status);
 
       const { provider, externalId } = result;
@@ -93,8 +89,7 @@ export function createBackupRouter(
     const sandboxId = c.req.param('sandboxId');
 
     try {
-      const accountId = await resolveAccountId(userId);
-      const result = await requireOwnedJustavpsSandbox(db, accountId, sandboxId, getProvider);
+      const result = await requireAccessibleJustavpsSandbox(db, userId, sandboxId, getProvider, resolveAccountId);
       if ('error' in result) return c.json({ success: false, error: result.error }, result.status);
 
       const { provider, externalId } = result;
@@ -118,8 +113,7 @@ export function createBackupRouter(
     const backupId = c.req.param('backupId');
 
     try {
-      const accountId = await resolveAccountId(userId);
-      const result = await requireOwnedJustavpsSandbox(db, accountId, sandboxId, getProvider);
+      const result = await requireAccessibleJustavpsSandbox(db, userId, sandboxId, getProvider, resolveAccountId);
       if ('error' in result) return c.json({ success: false, error: result.error }, result.status);
 
       const { provider, externalId } = result;
@@ -140,8 +134,7 @@ export function createBackupRouter(
     const backupId = c.req.param('backupId');
 
     try {
-      const accountId = await resolveAccountId(userId);
-      const result = await requireOwnedJustavpsSandbox(db, accountId, sandboxId, getProvider);
+      const result = await requireAccessibleJustavpsSandbox(db, userId, sandboxId, getProvider, resolveAccountId);
       if ('error' in result) return c.json({ success: false, error: result.error }, result.status);
 
       const { provider, externalId } = result;

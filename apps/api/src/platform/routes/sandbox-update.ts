@@ -12,8 +12,6 @@
  */
 
 import { Hono } from 'hono';
-import { eq, and } from 'drizzle-orm';
-import { sandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
   LocalDockerProvider,
@@ -23,7 +21,6 @@ import {
 import { getProvider, type ProviderName } from '../providers';
 import { combinedAuth as authMiddleware } from '../../middleware/auth';
 import { resolveAccountId } from '../../shared/resolve-account';
-import { isPlatformAdmin } from '../../shared/platform-roles';
 import {
   executeUpdate,
   getUpdateStatus,
@@ -31,22 +28,21 @@ import {
   requestUpdateCancellation,
 } from '../../update';
 import type { AuthVariables } from '../../types';
+import { findAccessibleSandboxForUser } from '../services/sandbox-access';
 
 // ── Per-sandbox routes: /sandbox/:id/update/* ────────────────────────────────
 
 export const sandboxIdUpdateRouter = new Hono<{ Variables: AuthVariables }>();
 sandboxIdUpdateRouter.use('/*', authMiddleware);
 
-async function findOwnedSandbox(accountId: string, sandboxId: string) {
-  const admin = await isPlatformAdmin(accountId);
-  const [row] = await db
-    .select()
-    .from(sandboxes)
-    .where(admin
-      ? eq(sandboxes.sandboxId, sandboxId)
-      : and(eq(sandboxes.sandboxId, sandboxId), eq(sandboxes.accountId, accountId)))
-    .limit(1);
-  return row ?? null;
+async function findOwnedSandbox(userId: string, sandboxId: string) {
+  const { sandbox } = await findAccessibleSandboxForUser({
+    db,
+    userId,
+    sandboxId,
+    resolveAccountId,
+  });
+  return sandbox;
 }
 
 sandboxIdUpdateRouter.post('/', async (c) => {
@@ -59,8 +55,7 @@ sandboxIdUpdateRouter.post('/', async (c) => {
   }
 
   const userId = c.get('userId');
-  const accountId = await resolveAccountId(userId);
-  const sandbox = await findOwnedSandbox(accountId, sandboxId);
+  const sandbox = await findOwnedSandbox(userId, sandboxId);
 
   if (!sandbox) {
     return c.json({ success: false, error: 'Sandbox not found' }, 404);
@@ -128,8 +123,7 @@ sandboxIdUpdateRouter.post('/', async (c) => {
 sandboxIdUpdateRouter.get('/status', async (c) => {
   const sandboxId = c.req.param('id') ?? '';
   const userId = c.get('userId');
-  const accountId = await resolveAccountId(userId);
-  const sandbox = await findOwnedSandbox(accountId, sandboxId);
+  const sandbox = await findOwnedSandbox(userId, sandboxId);
 
   if (!sandbox) {
     return c.json({ success: false, error: 'Sandbox not found' }, 404);
@@ -145,8 +139,7 @@ sandboxIdUpdateRouter.get('/status', async (c) => {
 sandboxIdUpdateRouter.post('/reset', async (c) => {
   const sandboxId = c.req.param('id') ?? '';
   const userId = c.get('userId');
-  const accountId = await resolveAccountId(userId);
-  const sandbox = await findOwnedSandbox(accountId, sandboxId);
+  const sandbox = await findOwnedSandbox(userId, sandboxId);
 
   if (!sandbox) {
     return c.json({ success: false, error: 'Sandbox not found' }, 404);
@@ -164,8 +157,7 @@ sandboxIdUpdateRouter.post('/reset', async (c) => {
 sandboxIdUpdateRouter.post('/cancel', async (c) => {
   const sandboxId = c.req.param('id') ?? '';
   const userId = c.get('userId');
-  const accountId = await resolveAccountId(userId);
-  const sandbox = await findOwnedSandbox(accountId, sandboxId);
+  const sandbox = await findOwnedSandbox(userId, sandboxId);
 
   if (!sandbox) {
     return c.json({ success: false, error: 'Sandbox not found' }, 404);

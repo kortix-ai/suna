@@ -19,7 +19,6 @@ import { readFileSync, unlinkSync, mkdirSync, rmdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import Docker from 'dockerode';
-import { and, eq } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { execOnHost } from '../../update/exec';
@@ -27,8 +26,8 @@ import type { AuthVariables } from '../../types';
 import { supabaseAuth } from '../../middleware/auth';
 import { db } from '../../shared/db';
 import { resolveAccountId } from '../../shared/resolve-account';
-import { isPlatformAdmin } from '../../shared/platform-roles';
 import { buildSSHConnectionInfo, buildSSHSetupPayload, resolvePublicSSHHost, type SSHConnectionInfo } from '../services/ssh-access';
+import { findAccessibleSandboxForUser } from '../services/sandbox-access';
 
 const sshRouter = new Hono<{ Variables: AuthVariables }>();
 sshRouter.use('/*', supabaseAuth);
@@ -59,23 +58,15 @@ function generateKeypair(comment = 'kortix-sandbox'): { privateKey: string; publ
 type SandboxRecord = typeof sandboxes.$inferSelect;
 
 async function resolveSandboxRecord(userId: string, requestedSandboxId?: string): Promise<SandboxRecord | null> {
-  const accountId = await resolveAccountId(userId);
-  const admin = requestedSandboxId ? await isPlatformAdmin(accountId) : false;
-  let sandbox: SandboxRecord | undefined;
+  const { sandbox } = await findAccessibleSandboxForUser({
+    db,
+    userId,
+    sandboxId: requestedSandboxId,
+    defaultStatus: requestedSandboxId ? undefined : 'active',
+    resolveAccountId,
+  });
 
-  if (requestedSandboxId) {
-    [sandbox] = await db.select().from(sandboxes)
-      .where(admin
-        ? eq(sandboxes.sandboxId, requestedSandboxId)
-        : and(eq(sandboxes.accountId, accountId), eq(sandboxes.sandboxId, requestedSandboxId)))
-      .limit(1);
-  } else {
-    [sandbox] = await db.select().from(sandboxes)
-      .where(and(eq(sandboxes.accountId, accountId), eq(sandboxes.status, 'active')))
-      .limit(1);
-  }
-
-  return sandbox ?? null;
+  return sandbox;
 }
 
 // ─── Shared: authorized_keys injection via remote host toolbox exec ──────────
