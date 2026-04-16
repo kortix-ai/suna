@@ -20,7 +20,7 @@ const BREADCRUMBS: Record<string, string> = {
   '/admin/notifications': 'Notifications',
   '/admin/sandbox-pool': 'Sandbox pool',
   '/admin/stress-test': 'Stress test',
-  '/admin/utils': 'System status',
+  '/admin/utils': 'Maintenance',
 };
 
 export function AdminShell({

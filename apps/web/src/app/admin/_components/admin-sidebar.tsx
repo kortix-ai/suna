@@ -52,7 +52,6 @@ const LEGACY_ITEMS: NavItem[] = [
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart2 },
   { href: '/admin/feedback', label: 'Feedback', icon: MessageCircle },
   { href: '/admin/notifications', label: 'Notifications', icon: Bell },
-  { href: '/admin/utils', label: 'System status', icon: Wrench },
   { href: '/admin/stress-test', label: 'Stress test', icon: TestTube },
 ];
 
@@ -75,6 +74,11 @@ export function AdminSidebar() {
       label: 'Accounts',
       icon: Users,
       badge: accounts?.total ? formatCount(accounts.total) : undefined,
+    },
+    {
+      href: '/admin/utils',
+      label: 'Maintenance',
+      icon: Wrench,
     },
   ];
 

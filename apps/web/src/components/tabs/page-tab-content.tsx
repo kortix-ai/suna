@@ -92,9 +92,6 @@ const AdminFeedbackPage = lazy(() =>
 const AdminNotificationsPage = lazy(() =>
 	import('@/app/(dashboard)/admin/notifications/page'),
 );
-const AdminUtilsPage = lazy(() =>
-	import('@/app/(dashboard)/admin/utils/page'),
-);
 const AdminSandboxPoolPage = lazy(() =>
 	import('@/app/(dashboard)/admin/sandbox-pool/page'),
 );
@@ -144,7 +141,6 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/admin/analytics': AdminAnalyticsPage,
 	'/admin/feedback': AdminFeedbackPage,
 	'/admin/notifications': AdminNotificationsPage,
-	'/admin/utils': AdminUtilsPage,
 	'/admin/sandbox-pool': AdminSandboxPoolPage,
 	'/admin/stress-test': AdminStressTestPage,
 };
