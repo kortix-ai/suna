@@ -84,18 +84,15 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   const sheetRef = useRef<BottomSheetModal>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  // Expansion animation: 0 = side buttons visible, 1 = collapsed.
+  // Expansion animation: 0 = side buttons visible, 1 = collapsed (during hold).
   const expansion = useSharedValue(0);
-  // Vertical lift: drives the strip rising up when the user drags upward
-  // during a hold — hints that releasing will open the tabs overview.
-  const liftY = useSharedValue(0);
   // Peek panel height: driven by upward swipes from the bar. Rises from 0 as
   // the user drags their finger up, previewing the tabs overview.
   const peekHeight = useSharedValue(0);
   const [isHolding, setIsHolding] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
 
-  // Layout refs — pill x positions (in content coords) + widths.
+  // Layout refs — used for auto-scroll + pill-under-finger hit testing.
   const pillLayoutsRef = useRef<Record<string, { x: number; width: number }>>({});
   const scrollOffsetRef = useRef(0);
   const viewportWidthRef = useRef(0);
@@ -138,6 +135,9 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     scrollRef.current?.scrollTo({ x: target, animated: true });
   }, [activeTabId, tabs]);
 
+  const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
+  const EASE_IN_OUT = Easing.bezier(0.4, 0, 0.2, 1);
+
   // Given a finger x (relative to strip viewport), return the pill id under it.
   const pillIdAtX = useCallback((fingerX: number): string | null => {
     const contentX = fingerX + scrollOffsetRef.current;
@@ -164,22 +164,14 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     scrollRef.current?.scrollTo({ x: next, animated: false });
   }, []);
 
-  // Eased curves: slower, smoother expand; slightly snappier collapse.
-  const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
-  const EASE_IN_OUT = Easing.bezier(0.4, 0, 0.2, 1);
-
-  const commitPreview = useCallback((id: string | null, openOverview = false) => {
+  const endHold = useCallback((id: string | null) => {
     setIsHolding(false);
     setPreviewId(null);
     expansion.value = withTiming(0, { duration: 260, easing: EASE_IN_OUT });
-    if (openOverview) {
-      onOpenTabs();
-    } else if (id && id !== activeTabId) {
+    if (id && id !== activeTabId) {
       onSelectTab(id);
-    } else if (id && id === activeTabId) {
-      onOpenTabs();
     }
-  }, [activeTabId, onOpenTabs, onSelectTab, expansion, EASE_IN_OUT]);
+  }, [activeTabId, onSelectTab, expansion, EASE_IN_OUT]);
 
   const beginHold = useCallback((fingerX: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -193,14 +185,14 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     setPreviewId(pillIdAtX(fingerX));
   }, [scrollBy, pillIdAtX]);
 
-  const handleDragEnd = useCallback((fingerX: number, success: boolean, openOverview: boolean) => {
-    commitPreview(success ? pillIdAtX(fingerX) : null, openOverview);
-  }, [commitPreview, pillIdAtX]);
+  const handleDragEnd = useCallback((fingerX: number, success: boolean) => {
+    endHold(success ? pillIdAtX(fingerX) : null);
+  }, [endHold, pillIdAtX]);
 
-  // Long-press + drag gesture. Pan activates only after a hold so single taps
-  // still propagate to the pill TouchableOpacities beneath. All JS-side logic
-  // runs via a single runOnJS call per callback — the gesture callbacks are
-  // worklets and cannot invoke regular JS functions directly.
+  // Long-press + drag: after 180ms hold, the side buttons collapse and the
+  // user can drag horizontally to scrub through pills. Release selects the
+  // pill under the finger. Unlike the old version this does NOT open the tabs
+  // overview when releasing on the already-active pill.
   const lastTx = useSharedValue(0);
   const dragGesture = useMemo(
     () => Gesture.Pan()
@@ -214,17 +206,13 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
         'worklet';
         const dx = e.translationX - lastTx.value;
         lastTx.value = e.translationX;
-        // Upward lift hint: as the user drags up past 10px, the strip rises a
-        // little — capped at 40px so the motion stays subtle.
-        liftY.value = Math.min(0, Math.max(-40, e.translationY + 10));
         runOnJS(handleDragUpdate)(dx, e.x);
       })
       .onEnd((e, success) => {
         'worklet';
-        liftY.value = withTiming(0, { duration: 220 });
-        runOnJS(handleDragEnd)(e.x, !!success, false);
+        runOnJS(handleDragEnd)(e.x, !!success);
       }),
-    [beginHold, handleDragUpdate, handleDragEnd, lastTx, liftY],
+    [beginHold, handleDragUpdate, handleDragEnd, lastTx],
   );
 
   // Swipe-up from the bar → a peek panel rises from the bottom, growing with
@@ -243,10 +231,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
       .onEnd((e, success) => {
         'worklet';
         if (success && -e.translationY > PEEK_COMMIT) {
-          // Animate peek to full (feels like it's becoming the overview)
-          peekHeight.value = withTiming(360, { duration: 220, easing: EASE_OUT }, () => {
-            peekHeight.value = 0;
-          });
+          peekHeight.value = withTiming(0, { duration: 180, easing: EASE_OUT });
           runOnJS(onOpenTabs)();
         } else {
           peekHeight.value = withTiming(0, { duration: 220 });
@@ -260,15 +245,11 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     const collapsed = expansion.value;
     return {
       opacity: 1 - collapsed,
-      width: 36 * (1 - collapsed),
+      width: 40 * (1 - collapsed),
       marginHorizontal: 2 * (1 - collapsed),
       transform: [{ scale: 1 - 0.15 * collapsed }],
     };
   });
-
-  const stripStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: liftY.value }],
-  }));
 
   const peekStyle = useAnimatedStyle(() => ({
     height: peekHeight.value,
@@ -372,7 +353,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
         className="flex-row items-center bg-card border-t border-border px-2 pt-1.5"
         style={{ paddingBottom: insets.bottom + 2 }}
       >
-        {/* New Session (+) */}
+        {/* New Session (+) — collapses when the pill strip is held */}
         <Reanimated.View style={[sideButtonStyle, { overflow: 'hidden' }]}>
           <TouchableOpacity
             onPress={onNewSession}
@@ -383,27 +364,27 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
           </TouchableOpacity>
         </Reanimated.View>
 
-        {/* Tab pills — horizontally scrollable + long-press drag */}
+        {/* Tab pills — tap to switch, long-press + drag to scrub iPhone-camera style */}
         <GestureDetector gesture={dragGesture}>
-          <Reanimated.View
-            className="border border-border rounded-full mx-1 overflow-hidden"
-            style={[{ flex: 1, height: 36 }, stripStyle]}
+        <View
+          className="border border-border rounded-full mx-1 overflow-hidden"
+          style={{ flex: 1, height: 36 }}
+        >
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            scrollEnabled={!isHolding}
+            onLayout={(e: LayoutChangeEvent) => {
+              viewportWidthRef.current = e.nativeEvent.layout.width;
+            }}
+            onContentSizeChange={(w) => { contentWidthRef.current = w; }}
+            onScroll={(e) => {
+              scrollOffsetRef.current = e.nativeEvent.contentOffset.x;
+            }}
+            scrollEventThrottle={16}
+            contentContainerStyle={{ paddingHorizontal: STRIP_PADDING, alignItems: 'center' }}
           >
-            <ScrollView
-              ref={scrollRef}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              scrollEnabled={!isHolding}
-              onLayout={(e: LayoutChangeEvent) => {
-                viewportWidthRef.current = e.nativeEvent.layout.width;
-              }}
-              onContentSizeChange={(w) => { contentWidthRef.current = w; }}
-              onScroll={(e) => {
-                scrollOffsetRef.current = e.nativeEvent.contentOffset.x;
-              }}
-              scrollEventThrottle={16}
-              contentContainerStyle={{ paddingHorizontal: STRIP_PADDING, alignItems: 'center' }}
-            >
               {tabs.length === 0 ? (
                 <TouchableOpacity onPress={onOpenTabs} activeOpacity={0.7} className="px-3 py-2">
                   <Text className="text-sm text-muted-foreground">No tabs</Text>
@@ -416,7 +397,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
                   return (
                     <TouchableOpacity
                       key={tab.id}
-                      onPress={() => (isActive ? onOpenTabs() : onSelectTab(tab.id))}
+                      onPress={() => onSelectTab(tab.id)}
                       activeOpacity={0.7}
                       onLayout={(e) => {
                         pillLayoutsRef.current[tab.id] = {
@@ -469,10 +450,10 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
               end={{ x: 1, y: 0.5 }}
               style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 48 }}
             />
-          </Reanimated.View>
+        </View>
         </GestureDetector>
 
-        {/* More (...) */}
+        {/* More (...) — collapses when the pill strip is held */}
         <Reanimated.View style={[sideButtonStyle, { overflow: 'hidden' }]}>
           <TouchableOpacity
             onPress={handleMore}
