@@ -1,7 +1,7 @@
 /**
  * E2E tests for deployment routes — CRUD, lifecycle, cross-user isolation.
  *
- * Requires DATABASE_URL to be set (tests touch the DB).
+ * Requires TEST_DATABASE_URL + KORTIX_TEST_DB_CONFIRM for DB-backed deployment tests.
  *
  * Freestyle API calls will fail (no real API key in tests) — deployments are
  * created in DB with status 'failed'. This tests the full request/response
@@ -12,6 +12,7 @@ import {
   createTestApp,
   createMockProvider,
   cleanupTestData,
+  HAS_SAFE_TEST_DB,
   jsonPost,
   jsonGet,
   jsonDelete,
@@ -20,7 +21,7 @@ import {
   OTHER_USER_EMAIL,
 } from './helpers';
 
-const HAS_DB = !!process.env.DATABASE_URL;
+const HAS_DB = HAS_SAFE_TEST_DB;
 
 describe.skipIf(!HAS_DB)('Deployments — CRUD & Lifecycle (Freestyle-backed)', () => {
   const dockerProvider = createMockProvider('local_docker');

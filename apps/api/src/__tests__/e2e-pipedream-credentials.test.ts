@@ -11,19 +11,23 @@
  *   - credential-routes: PUT/GET/DELETE /v1/pipedream/credentials
  *   - provider resolution: getProviderFromRequest with all 3 tiers
  *   - e2e flow: sandbox pushes creds → API stores → frontend resolves
+ *
+ * Requires TEST_DATABASE_URL + KORTIX_TEST_DB_CONFIRM for DB-backed cases.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { sql, eq, and } from 'drizzle-orm';
+import { sql, eq, and, inArray } from 'drizzle-orm';
 import { integrationCredentials } from '@kortix/db';
 import {
   getTestDb,
+  getTestAccountIds,
+  HAS_SAFE_TEST_DB,
   TEST_USER_ID,
   OTHER_USER_ID,
 } from './helpers';
 
-const HAS_DB = !!process.env.DATABASE_URL;
+const HAS_DB = HAS_SAFE_TEST_DB;
 const HAS_DEFAULT_PIPEDREAM_ENV = Boolean(
   process.env.PIPEDREAM_CLIENT_ID &&
   process.env.PIPEDREAM_CLIENT_SECRET &&
@@ -100,7 +104,9 @@ function createPipedreamTestApp(opts: { userId?: string; accountId?: string } = 
 
 async function cleanupCredentials() {
   const db = getTestDb();
-  await db.execute(sql`DELETE FROM kortix.integration_credentials`);
+  const accountIds = await getTestAccountIds();
+  if (accountIds.length === 0) return;
+  await db.delete(integrationCredentials).where(inArray(integrationCredentials.accountId, accountIds));
 }
 
 // =============================================================================
