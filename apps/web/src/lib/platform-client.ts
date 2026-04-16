@@ -130,6 +130,21 @@ interface PlatformResponse<T> {
   created?: boolean;
 }
 
+interface LocalBridgeSandboxResponse {
+  success: boolean;
+  status?: string;
+  data?: SandboxInfo | null;
+}
+
+const LOCAL_PLATFORM_CANDIDATES = [
+  'http://localhost:8008/v1',
+  'http://127.0.0.1:8008/v1',
+];
+
+function getLocalBridgeStatusUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}/platform/local-bridge/status`;
+}
+
 // ─── Fetch helper ────────────────────────────────────────────────────────────
 
 async function platformFetch<T>(
@@ -415,35 +430,98 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
  * List all sandboxes for the user's account.
  */
 export async function listSandboxes(sandboxId?: unknown): Promise<SandboxInfo[]> {
+  const normalizedSandboxId = normalizeSandboxId(sandboxId);
+
   try {
-    const normalizedSandboxId = normalizeSandboxId(sandboxId);
     const qs = normalizedSandboxId ? `?sandbox_id=${encodeURIComponent(normalizedSandboxId)}` : '';
     const result = await platformFetch<SandboxInfo[]>(`/platform/sandbox/list${qs}`, {
       method: 'GET',
     });
 
-    if (!result.success || !result.data) {
-      return [];
+    const rows = result.success && result.data ? result.data : [];
+    const discoveredLocal = await discoverLocalSandbox();
+    if (!discoveredLocal) return rows;
+    if (normalizedSandboxId && discoveredLocal.sandbox_id !== normalizedSandboxId) {
+      return rows;
     }
 
-    return result.data;
+    const withoutDuplicate = rows.filter((sandbox) => sandbox.sandbox_id !== discoveredLocal.sandbox_id);
+    return [discoveredLocal, ...withoutDuplicate];
   } catch {
-    return [];
+    const discoveredLocal = await discoverLocalSandbox().catch(() => null);
+    if (!discoveredLocal) return [];
+    if (normalizedSandboxId && discoveredLocal.sandbox_id !== normalizedSandboxId) {
+      return [];
+    }
+    return [discoveredLocal];
   }
 }
 
+export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
+  if (typeof window === 'undefined') return null;
+
+  const currentPlatformUrl = getPlatformUrl();
+  const candidateBases = Array.from(new Set([currentPlatformUrl, ...LOCAL_PLATFORM_CANDIDATES]));
+
+  for (const baseUrl of candidateBases) {
+    try {
+      const response = await fetch(getLocalBridgeStatusUrl(baseUrl), {
+        method: 'GET',
+        signal: AbortSignal.timeout(1500),
+        headers: { Accept: 'application/json' },
+      });
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const bridgeStatus = await response.json() as LocalBridgeSandboxResponse;
+
+      if (!bridgeStatus.success || bridgeStatus.status !== 'ready' || !bridgeStatus.data?.sandbox_id) {
+        continue;
+      }
+
+      return bridgeStatus.data;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 /**
- * Restart a sandbox (stop + start). Pass `sandboxId` to target a specific
- * instance; omit to restart the user's most recently created sandbox.
+ * Restart a sandbox workload. For JustAVPS this repairs the managed workload
+ * container/service and only starts the host if it is currently stopped.
  */
 export async function restartSandbox(sandboxId?: string): Promise<void> {
-  const result = await platformFetch<void>('/platform/sandbox/restart', {
-    method: 'POST',
-    body: sandboxId ? JSON.stringify({ sandbox_id: sandboxId }) : undefined,
-  });
+  if (!sandboxId) {
+    throw new Error('No sandbox selected for workload restart');
+  }
+  try {
+    const result = await platformFetch<void>('/platform/sandbox/restart', {
+      method: 'POST',
+      body: JSON.stringify({ sandbox_id: sandboxId }),
+    });
 
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to restart sandbox');
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to restart sandbox');
+    }
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!/No sandbox to restart/i.test(message)) {
+      throw error;
+    }
+
+    const adminFallback = await backendApi.post(`/admin/api/sandboxes/${sandboxId}/repair`, { action: 'restart_workload' }, {
+      showErrors: false,
+    });
+    if (adminFallback.success) {
+      return;
+    }
+
+    throw error;
   }
 }
 

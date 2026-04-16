@@ -2,7 +2,7 @@
  * E2E tests for the platform (sandbox lifecycle) routes.
  *
  * Uses mock providers via DI — no Docker or Daytona needed.
- * Requires DATABASE_URL to be set (tests touch the DB for sandbox CRUD).
+ * Requires TEST_DATABASE_URL + KORTIX_TEST_DB_CONFIRM for sandbox CRUD tests.
  *
  * Routes tested (sandbox-cloud router mounted at /v1/platform/sandbox):
  *   GET    /v1/platform/providers
@@ -18,6 +18,7 @@ import {
   createTestApp,
   createMockProvider,
   cleanupTestData,
+  HAS_SAFE_TEST_DB,
   jsonPost,
   jsonGet,
   jsonDelete,
@@ -26,7 +27,7 @@ import {
   OTHER_USER_EMAIL,
 } from './helpers';
 
-const HAS_DB = !!process.env.DATABASE_URL;
+const HAS_DB = HAS_SAFE_TEST_DB;
 
 describe.skipIf(!HAS_DB)('Platform — Sandbox Lifecycle', () => {
   const dockerProvider = createMockProvider('local_docker');

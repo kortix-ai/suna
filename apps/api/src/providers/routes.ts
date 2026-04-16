@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { execSync } from 'child_process';
 import { config } from '../config';
+import { checkLocalSandboxHealth, type LocalSandboxHealthCheck } from '../platform/services/local-sandbox-health';
 import {
   PROVIDER_REGISTRY,
   PROVIDER_BY_ID,
@@ -415,7 +416,7 @@ providersApp.delete('/:id/disconnect', async (c) => {
  */
 providersApp.get('/health', async (c) => {
   const repoRoot = findRepoRoot();
-  const checks: Record<string, { ok: boolean; error?: string }> = {};
+  const checks: Record<string, LocalSandboxHealthCheck> = {};
 
   checks.api = { ok: true };
 
@@ -436,23 +437,9 @@ providersApp.get('/health', async (c) => {
     return c.json(checks);
   }
 
-  // Dev mode: check Docker + sandbox container
-  try {
-    execSync('docker info', { stdio: 'pipe', timeout: 5000 });
-    checks.docker = { ok: true };
-  } catch {
-    checks.docker = { ok: false, error: 'Docker not running' };
-  }
-
-  try {
-    const out = execSync(`docker inspect ${config.SANDBOX_CONTAINER_NAME} --format "{{.State.Status}}"`, {
-      stdio: 'pipe',
-      timeout: 5000,
-    }).toString().trim();
-    checks.sandbox = { ok: out === 'running', error: out !== 'running' ? `Status: ${out}` : undefined };
-  } catch {
-    checks.sandbox = { ok: false, error: 'Container not found' };
-  }
+  const localChecks = checkLocalSandboxHealth();
+  checks.docker = localChecks.docker;
+  checks.sandbox = localChecks.sandbox;
 
   return c.json(checks);
 });

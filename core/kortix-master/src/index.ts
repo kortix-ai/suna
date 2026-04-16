@@ -72,7 +72,7 @@ initShareStore()
 // to ensure they're always available regardless of how the process was started.
 {
   const S6_ENV_DIR = process.env.S6_ENV_DIR || '/run/s6/container_environment'
-  const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_YOLO_API_KEY', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const
+  const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_YOLO_API_KEY', 'KORTIX_YOLO_URL', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const
   let synced = 0
   for (const key of CORE_VARS) {
     // Use injected env var, but fall back to a sane default for KORTIX_API_URL
@@ -80,6 +80,17 @@ initShareStore()
     let val: string | undefined = process.env[key]
     if (!val && key === 'KORTIX_API_URL') {
       val = 'http://localhost:8008'
+    }
+    if (!val && key === 'KORTIX_YOLO_API_KEY') {
+      val = process.env.KORTIX_TOKEN
+    }
+    if (!val && key === 'KORTIX_YOLO_URL') {
+      val = 'https://api-yolo.kortix.com/v1'
+    }
+    // Ensure defaulted values are in process.env so saveBootstrapEnv() persists them
+    // and downstream code (YOLO client, OpenCode config) can read them.
+    if (val && !process.env[key]) {
+      process.env[key] = val
     }
     if (val) {
       try {

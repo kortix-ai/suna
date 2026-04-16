@@ -191,6 +191,32 @@ export async function checkpointSqlite(endpoint: ResolvedEndpoint, containerName
   );
 }
 
+export async function ensureContainerRunning(
+  endpoint: ResolvedEndpoint,
+  config: ContainerConfig,
+): Promise<StepResult> {
+  const inspect = await execOnHost(
+    endpoint,
+    `docker inspect --format='{{.State.Status}}' '${config.name}' 2>/dev/null`,
+    10,
+  );
+  if (inspect.success && inspect.stdout.trim().replace(/'/g, '') === 'running') {
+    return { success: true, stdout: 'running', stderr: '', exitCode: 0, durationMs: inspect.durationMs };
+  }
+
+  const restart = await stopAndStartContainer(endpoint, config);
+  if (!restart.success) {
+    return restart;
+  }
+
+  const verified = await verifyContainer(endpoint, config.image, config.name, 3);
+  if (!verified.success) {
+    return verified;
+  }
+
+  return { success: true, stdout: 'recovered', stderr: '', exitCode: 0, durationMs: restart.durationMs + verified.durationMs };
+}
+
 export async function stopAndStartContainer(
   endpoint: ResolvedEndpoint,
   config: ContainerConfig,
@@ -249,9 +275,13 @@ async function restartManagedJustAVPSContainer(
     'Wants=network-online.target',
     '[Service]',
     'Type=simple',
+    `ExecStartPre=/bin/sh -lc 'systemctl reset-failed docker.service ${JUSTAVPS_SERVICE_NAME}.service >/dev/null 2>&1 || true'`,
+    'ExecStartPre=/bin/systemctl start docker.service',
+    `ExecStartPre=/bin/sh -lc '/usr/bin/docker rm -f ${config.name.replace(/'/g, "'\\''")} >/dev/null 2>&1 || true'`,
     `ExecStart=/usr/local/bin/${JUSTAVPS_SERVICE_NAME}-start.sh`,
     'Restart=always',
-    'RestartSec=5',
+    'RestartSec=3',
+    'StartLimitIntervalSec=0',
     'TimeoutStartSec=0',
     '[Install]',
     'WantedBy=multi-user.target',

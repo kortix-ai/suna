@@ -11,6 +11,7 @@ import {
   isInstanceDetailPath,
   isInstanceScopedAppPath,
 } from '@/lib/instance-routes';
+import { getMaintenanceConfig, type MaintenanceLevel } from '@/lib/maintenance-store';
 
 // Marketing pages that support locale routing for SEO (/de, /it, etc.)
 const MARKETING_ROUTES = [
@@ -53,6 +54,7 @@ const PUBLIC_ROUTES = [
   '/countryerror', // Country restriction error page should be public
   '/landing', // Three.js landing page should be public
   '/variant-2', // Landing page variant should be public
+  '/maintenance', // Maintenance page must be accessible without auth
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 
@@ -122,6 +124,25 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_betterstack')     // Better Stack browser telemetry proxy
   ) {
     return NextResponse.next();
+  }
+
+  // ── Blocking maintenance mode ──────────────────────────────────────────
+  // When maintenance level is "blocking", redirect all traffic to /maintenance
+  // except the maintenance page itself and the admin panel (so admins can disable it).
+  const MAINTENANCE_BYPASS = ['/maintenance', '/admin', '/auth'];
+  const bypassesMaintenance = MAINTENANCE_BYPASS.some(
+    (route) => pathname === route || pathname.startsWith(route + '/'),
+  );
+
+  if (!bypassesMaintenance) {
+    try {
+      const config = await getMaintenanceConfig();
+      if (config.level === 'blocking') {
+        return NextResponse.redirect(new URL('/maintenance', request.url));
+      }
+    } catch {
+      // If Edge Config is unreachable, don't block traffic
+    }
   }
 
   // Handle Supabase verification redirects at root level

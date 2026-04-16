@@ -150,7 +150,7 @@ export default function AdminInstancesPage() {
   const [selectedSandbox, setSelectedSandbox] = useState<SandboxInfo | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const list = data?.sandboxes ?? [];
+  const list = useMemo(() => data?.sandboxes ?? [], [data?.sandboxes]);
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 

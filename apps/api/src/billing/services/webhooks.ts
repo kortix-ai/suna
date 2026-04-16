@@ -10,6 +10,7 @@ import {
 import { getCustomerByStripeId, upsertCustomer } from '../repositories/customers';
 import { updatePurchaseStatus, getPurchaseByPaymentIntent } from '../repositories/transactions';
 import {
+  getBillingPeriodByPriceId,
   getTier,
   getTierByPriceId,
   getMonthlyCredits,
@@ -226,26 +227,13 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
 }
 
 async function handleSubscriptionChange(subscription: Stripe.Subscription) {
-  const accountId = subscription.metadata?.account_id;
+  const accountId = await resolveCanonicalStripeAccountId(subscription.metadata?.account_id, subscription.customer);
   if (!accountId) {
-    const customerId = typeof subscription.customer === 'string'
-      ? subscription.customer
-      : subscription.customer?.id;
-    if (!customerId) {
-      console.warn('[Webhook] subscription change: no account_id or customer_id');
-      return;
-    }
-
-    const customer = await getCustomerByStripeId(customerId);
-    if (!customer) {
-      console.warn(`[Webhook] subscription change: no billing customer for stripe_id=${customerId}`);
-      return;
-    }
-
-    await syncSubscriptionState(customer.accountId, subscription);
+    console.warn('[Webhook] subscription change: no canonical account_id');
     return;
   }
 
+  await repairStripeSubscriptionAccountMetadata(subscription, accountId);
   await syncSubscriptionState(accountId, subscription);
 }
 
@@ -276,6 +264,10 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   const tierKey = subscription.metadata?.tier_key;
   const priceId = subscription.items.data[0]?.price?.id;
   const resolvedTier = tierKey ?? getTierByPriceId(priceId ?? '')?.name ?? null;
+  const billingPeriod = getBillingPeriodByPriceId(priceId ?? '') ?? (subscription.metadata?.commitment_type as any) ?? 'monthly';
+  const shouldGrantRecoveryCredits =
+    !!resolvedTier &&
+    (!account || (!account.stripeSubscriptionId && (!account.tier || account.tier === 'free' || account.tier === 'none')));
 
   console.log(`[Webhook] syncSubscriptionState: account=${accountId} tier_meta=${tierKey} price=${priceId} resolved=${resolvedTier} status=${subscription.status}`);
 
@@ -283,6 +275,12 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     stripeSubscriptionId: subscription.id,
     stripeSubscriptionStatus: subscription.status,
     billingCycleAnchor: new Date(subscription.billing_cycle_anchor * 1000).toISOString(),
+    provider: 'stripe',
+    planType: billingPeriod === 'yearly_commitment' ? 'yearly' : billingPeriod,
+    commitmentType: billingPeriod === 'yearly_commitment' ? 'yearly_commitment' : null,
+    commitmentEndDate: billingPeriod === 'yearly_commitment'
+      ? new Date(subscription.current_period_end * 1000).toISOString()
+      : null,
   };
 
   if (resolvedTier) {
@@ -295,22 +293,28 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     updates.paymentStatus = 'active';
   }
 
-  await updateCreditAccount(accountId, updates);
+  if (!account) {
+    await upsertCreditAccount(accountId, updates);
+  } else {
+    await updateCreditAccount(accountId, updates);
+  }
+
+  if (shouldGrantRecoveryCredits && resolvedTier) {
+    const credits = getMonthlyCredits(resolvedTier);
+    if (credits > 0) {
+      await resetExpiringCredits(
+        accountId,
+        credits,
+        `Recovered Stripe subscription: ${credits} credits`,
+        `legacy_sync:${subscription.id}`,
+      );
+    }
+  }
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
-  let accountId = subscription.metadata?.account_id;
-  if (!accountId) {
-    const customerId = typeof subscription.customer === 'string'
-      ? subscription.customer
-      : subscription.customer?.id;
-    if (!customerId) return;
-
-    const customer = await getCustomerByStripeId(customerId);
-    if (!customer) return;
-
-    accountId = customer.accountId;
-  }
+  const accountId = await resolveCanonicalStripeAccountId(subscription.metadata?.account_id, subscription.customer);
+  if (!accountId) return;
 
   await revertToFree(accountId, subscription.id);
 }
@@ -373,8 +377,10 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 
   const stripe = getStripe();
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  const accountId = subscription.metadata?.account_id;
+  const accountId = await resolveCanonicalStripeAccountId(subscription.metadata?.account_id, subscription.customer);
   if (!accountId) return;
+
+  await repairStripeSubscriptionAccountMetadata(subscription, accountId);
 
   const account = await getCreditAccount(accountId);
   if (!account) return;
@@ -492,8 +498,10 @@ async function handleInvoiceFailed(invoice: Stripe.Invoice) {
 
   const stripe = getStripe();
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  const accountId = subscription.metadata?.account_id;
+  const accountId = await resolveCanonicalStripeAccountId(subscription.metadata?.account_id, subscription.customer);
   if (!accountId) return;
+
+  await repairStripeSubscriptionAccountMetadata(subscription, accountId);
 
   await updateCreditAccount(accountId, {
     paymentStatus: 'past_due',
@@ -501,6 +509,43 @@ async function handleInvoiceFailed(invoice: Stripe.Invoice) {
   });
 
   console.log(`[Webhook] Payment failed for ${accountId}`);
+}
+
+async function resolveCanonicalStripeAccountId(
+  rawAccountId: string | undefined,
+  customer: string | Stripe.Customer | Stripe.DeletedCustomer | null | undefined,
+): Promise<string | null> {
+  const customerId = typeof customer === 'string'
+    ? customer
+    : ('id' in (customer ?? {}) ? (customer as Stripe.Customer | Stripe.DeletedCustomer).id : null);
+
+  if (customerId) {
+    const mappedCustomer = await getCustomerByStripeId(customerId);
+    if (mappedCustomer?.accountId) {
+      return mappedCustomer.accountId;
+    }
+  }
+
+  return rawAccountId ?? null;
+}
+
+async function repairStripeSubscriptionAccountMetadata(subscription: Stripe.Subscription, canonicalAccountId: string) {
+  const rawAccountId = subscription.metadata?.account_id;
+  if (!rawAccountId || rawAccountId === canonicalAccountId) return;
+
+  try {
+    const stripe = getStripe();
+    await stripe.subscriptions.update(subscription.id, {
+      metadata: {
+        ...subscription.metadata,
+        account_id: canonicalAccountId,
+        legacy_account_id: rawAccountId,
+      },
+    });
+    console.log(`[Webhook] Repaired subscription ${subscription.id} account_id ${rawAccountId} -> ${canonicalAccountId}`);
+  } catch (err) {
+    console.error(`[Webhook] Failed to repair subscription ${subscription.id} account metadata:`, err);
+  }
 }
 
 export async function processRevenueCatWebhook(body: any) {

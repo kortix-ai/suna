@@ -193,6 +193,8 @@ export default function InstanceDetailPage() {
     return (
       <ConnectingScreen
         stopped={{ name: sandbox.name || 'workspace' }}
+        sandboxId={sandbox.sandbox_id}
+        provider={sandbox.provider}
       />
     );
   }
@@ -203,7 +205,8 @@ export default function InstanceDetailPage() {
       forceConnecting
       overrideStage="reaching"
       labelOverride={sandbox.name || 'workspace'}
+      sandboxId={sandbox.sandbox_id}
+      provider={sandbox.provider}
     />
   );
 }
-

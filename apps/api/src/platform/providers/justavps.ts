@@ -2,6 +2,8 @@ import { eq } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config, SANDBOX_VERSION } from '../../config';
+import { execOnHost } from '../../update/exec';
+import { JUSTAVPS_SERVICE_NAME } from '../../update/container-config';
 import type {
   SandboxProvider,
   ProviderName,
@@ -17,6 +19,8 @@ const KORTIX_MASTER_PORT = 8000;
 const API_TIMEOUT_MS = 300_000;
 const PROVISION_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 3_000;
+const RECOVERY_ENDPOINT_RETRIES = 20;
+const RECOVERY_ENDPOINT_RETRY_MS = 5_000;
 
 interface JustAVPSMachine {
   id: string;
@@ -92,7 +96,7 @@ interface JustAVPSWebhook {
 
 export async function justavpsFetch<T = any>(
   path: string,
-  options: { method?: string; body?: unknown } = {},
+  options: { method?: string; body?: unknown; timeoutMs?: number } = {},
 ): Promise<T> {
   const baseUrl = config.JUSTAVPS_API_URL.replace(/\/$/, '');
   const headers: Record<string, string> = {
@@ -105,7 +109,7 @@ export async function justavpsFetch<T = any>(
     method: options.method || 'GET',
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: AbortSignal.timeout(options.timeoutMs ?? API_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -413,6 +417,40 @@ export function buildCustomerCloudInitScript(dockerImage: string): string {
   ].join('\n');
 }
 
+export function buildJustAVPSHostRecoveryCommand(): string {
+  return [
+    'set -euo pipefail',
+    'systemctl daemon-reload',
+    `systemctl reset-failed docker.service ${JUSTAVPS_SERVICE_NAME} >/dev/null 2>&1 || true`,
+    'systemctl start docker.service',
+    `systemctl enable ${JUSTAVPS_SERVICE_NAME} >/dev/null 2>&1 || true`,
+    `systemctl restart ${JUSTAVPS_SERVICE_NAME}`,
+    'for i in $(seq 1 30); do',
+    '  systemctl is-active docker.service >/dev/null 2>&1 && break',
+    '  sleep 1',
+    'done',
+    'for i in $(seq 1 45); do',
+    '  STATUS=$(docker inspect --format="{{.State.Status}}" justavps-workload 2>/dev/null || true)',
+    '  if [ "$STATUS" = "running" ]; then break; fi',
+    '  sleep 2',
+    'done',
+    'for i in $(seq 1 60); do',
+    '  if curl -fsS http://localhost:8000/kortix/health >/dev/null 2>&1; then',
+    '    echo ready',
+    '    exit 0',
+    '  fi',
+    '  sleep 2',
+    'done',
+    'echo "justavps-docker service:"',
+    `systemctl status ${JUSTAVPS_SERVICE_NAME} --no-pager -n 20 2>/dev/null || true`,
+    'echo "docker ps:"',
+    'docker ps -a --filter name="^/justavps-workload$" --format "{{.Names}}|{{.Image}}|{{.Status}}" 2>/dev/null || true',
+    'echo "health:"',
+    'curl -sS -i http://localhost:8000/kortix/health 2>/dev/null || true',
+    'exit 1',
+  ].join('; ');
+}
+
 export class JustAVPSProvider implements SandboxProvider {
   readonly name: ProviderName = 'justavps';
 
@@ -488,6 +526,8 @@ export class JustAVPSProvider implements SandboxProvider {
       ENV_MODE: 'cloud',
       INTERNAL_SERVICE_KEY: serviceKey,
       KORTIX_TOKEN: serviceKey,
+      KORTIX_YOLO_API_KEY: serviceKey,
+      KORTIX_YOLO_URL: config.KORTIX_YOLO_URL,
       SANDBOX_VERSION: SANDBOX_VERSION,
       KORTIX_SANDBOX_VERSION: SANDBOX_VERSION,
       TUNNEL_API_URL: sandboxApiBase,
@@ -555,6 +595,8 @@ export class JustAVPSProvider implements SandboxProvider {
 
   async start(externalId: string): Promise<void> {
     await justavpsFetch(`/machines/${externalId}/start`, { method: 'POST' });
+    await this.waitForStatus(externalId, 'ready');
+    await this.recoverHostWorkload(externalId, 'start');
     console.log(`[JUSTAVPS] Started machine ${externalId}`);
   }
 
@@ -647,10 +689,14 @@ export class JustAVPSProvider implements SandboxProvider {
   async ensureRunning(externalId: string): Promise<void> {
     try {
       const machine = await justavpsFetch<JustAVPSMachine>(`/machines/${externalId}`);
-      if (machine.status === 'ready') return;
+      if (machine.status === 'ready') {
+        await this.recoverHostWorkload(externalId, 'ensure-running');
+        return;
+      }
       if (machine.status === 'provisioning') {
         console.log(`[JUSTAVPS] Machine ${externalId} still provisioning, waiting...`);
         await this.waitForStatus(externalId, 'ready');
+        await this.recoverHostWorkload(externalId, 'ensure-running');
         return;
       }
       if (machine.status === 'error' || machine.status === 'deleted') {
@@ -658,13 +704,60 @@ export class JustAVPSProvider implements SandboxProvider {
       }
       console.log(`[JUSTAVPS] Machine ${externalId} is '${machine.status}', rebooting...`);
       await this.start(externalId);
-      await this.waitForStatus(externalId, 'ready');
     } catch (err: any) {
       if (err.message?.includes('404')) {
         throw new Error(`[JUSTAVPS] Machine ${externalId} not found`);
       }
       throw err;
     }
+  }
+
+  async dispatchHostRestart(externalId: string): Promise<'start' | 'reboot' | 'recover'> {
+    try {
+      const machine = await justavpsFetch<JustAVPSMachine>(`/machines/${externalId}`);
+
+      if (machine.status === 'deleted' || machine.status === 'error') {
+        throw new Error(`[JUSTAVPS] Machine ${externalId} is in '${machine.status}' state`);
+      }
+
+      if (machine.status === 'stopped') {
+        await justavpsFetch(`/machines/${externalId}/start`, { method: 'POST' });
+        return 'start';
+      }
+
+      if (machine.status === 'provisioning') {
+        return 'recover';
+      }
+
+      try {
+        await justavpsFetch(`/machines/${externalId}/reboot`, { method: 'POST' });
+        return 'reboot';
+      } catch (error) {
+        console.warn(`[JUSTAVPS] Reboot failed for ${externalId}, falling back to stop/start:`, error);
+      }
+
+      try {
+        await this.stop(externalId);
+      } catch (error) {
+        console.warn(`[JUSTAVPS] Stop during restart fallback failed for ${externalId}:`, error);
+      }
+      await justavpsFetch(`/machines/${externalId}/start`, { method: 'POST' });
+      return 'start';
+    } catch (err: any) {
+      if (err.message?.includes('404')) {
+        throw new Error(`[JUSTAVPS] Machine ${externalId} not found`);
+      }
+      throw err;
+    }
+  }
+
+  async waitForHostRecovery(externalId: string, reason = 'manual-recovery'): Promise<void> {
+    await this.recoverHostWorkload(externalId, reason);
+  }
+
+  async restartHost(externalId: string): Promise<void> {
+    const action = await this.dispatchHostRestart(externalId);
+    await this.waitForHostRecovery(externalId, `restartHost:${action}`);
   }
 
   // ─── Backups ──────────────────────────────────────────────────────────────
@@ -721,5 +814,31 @@ export class JustAVPSProvider implements SandboxProvider {
       await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
     throw new Error(`[JUSTAVPS] Machine ${machineId} did not reach '${target}' within ${timeoutMs / 1000}s`);
+  }
+
+  async recoverHostWorkload(externalId: string, reason = 'manual-recovery'): Promise<void> {
+    await this.waitForStatus(externalId, 'ready');
+    const command = buildJustAVPSHostRecoveryCommand();
+    let lastError: string | null = null;
+
+    for (let attempt = 0; attempt < RECOVERY_ENDPOINT_RETRIES; attempt++) {
+      try {
+        const endpoint = await this.resolveEndpoint(externalId);
+        const result = await execOnHost(endpoint, command, 180);
+        if (result.success) {
+          console.log(`[JUSTAVPS] Host workload recovered for ${externalId} (${reason})`);
+          return;
+        }
+        lastError = result.stderr || result.stdout || 'unknown recovery error';
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+
+      if (attempt < RECOVERY_ENDPOINT_RETRIES - 1) {
+        await new Promise((resolve) => setTimeout(resolve, RECOVERY_ENDPOINT_RETRY_MS));
+      }
+    }
+
+    throw new Error(`Host workload recovery failed after ${RECOVERY_ENDPOINT_RETRIES} attempts: ${lastError || 'unknown error'}`);
   }
 }

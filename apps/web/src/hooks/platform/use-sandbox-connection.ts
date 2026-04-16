@@ -35,6 +35,10 @@ const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
 /** Timeout for each health check request */
 const CHECK_TIMEOUT = 5_000;
 
+function isImmediateOfflineStatus(status: number): boolean {
+	return status === 502 || status === 503 || status === 504;
+}
+
 /**
  * useSandboxConnection — monitors the active server's reachability.
  *
@@ -95,10 +99,10 @@ export function useSandboxConnection() {
 			try {
 				const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT);
 
-			const res = await authenticatedFetch(`${url}/global/health`, {
-				method: "GET",
-				signal: controller.signal,
-			});
+				const res = await authenticatedFetch(`${url}/global/health`, {
+					method: "GET",
+					signal: controller.signal,
+				});
 				clearTimeout(timer);
 
 				if (!alive) return;
@@ -113,6 +117,18 @@ export function useSandboxConnection() {
 
 				if (res.status === 403) {
 					throw new Error(`Auth error: ${res.status}`);
+				}
+
+				if (!res.ok) {
+					const body = await res.text().catch(() => "");
+					const offlineSignal =
+						isImmediateOfflineStatus(res.status) ||
+						/no service is responding|not reachable/i.test(body);
+					const error = new Error(
+						`Sandbox health check failed: ${res.status}${body ? ` ${body.slice(0, 120)}` : ""}`,
+					) as Error & { immediateOffline?: boolean };
+					error.immediateOffline = offlineSignal;
+					throw error;
 				}
 
 				resetSandboxFail();
@@ -156,6 +172,19 @@ export function useSandboxConnection() {
 				// Fetch sandbox version on every successful connect (detects upgrades/downgrades)
 				{
 					try {
+						const coreRes = await authenticatedFetch(`${url}/session/status`, {
+							signal: AbortSignal.timeout(3000),
+						}, { retryOnAuthError: false });
+						if (!coreRes.ok) {
+							setOpenCodeHealth(false);
+							const body = await coreRes.text().catch(() => "");
+							const coreError = new Error(
+								`Core runtime unhealthy: ${coreRes.status}${body ? ` ${body.slice(0, 120)}` : ""}`,
+							) as Error & { immediateOffline?: boolean };
+							coreError.immediateOffline = coreRes.status >= 500;
+							throw coreError;
+						}
+
 						const hRes = await authenticatedFetch(`${url}/kortix/health`, {
 							signal: AbortSignal.timeout(3000),
 						}, { retryOnAuthError: false });
@@ -169,18 +198,23 @@ export function useSandboxConnection() {
 						/* non-critical */
 					}
 				}
-			} catch {
+			} catch (error) {
 				if (!alive) return;
-				incrementSandboxFail();
-
-				const { failCount, wasConnected } =
-					useSandboxConnectionStore.getState();
-				const threshold = wasConnected
-					? FAIL_THRESHOLD_RECONNECT
-					: FAIL_THRESHOLD_FIRST;
-
-				if (failCount >= threshold) {
+				if ((error as { immediateOffline?: boolean } | undefined)?.immediateOffline) {
+					incrementSandboxFail();
 					setSandboxStatus("unreachable");
+				} else {
+					incrementSandboxFail();
+
+					const { failCount, wasConnected } =
+						useSandboxConnectionStore.getState();
+					const threshold = wasConnected
+						? FAIL_THRESHOLD_RECONNECT
+						: FAIL_THRESHOLD_FIRST;
+
+					if (failCount >= threshold) {
+						setSandboxStatus("unreachable");
+					}
 				}
 			} finally {
 				if (alive) {

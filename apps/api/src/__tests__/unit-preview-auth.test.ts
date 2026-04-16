@@ -66,7 +66,12 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
-mock.module('../config', () => ({ config: {} }));
+mock.module('../config', () => ({
+  config: {
+    isLocalDockerEnabled: () => true,
+    SANDBOX_CONTAINER_NAME: 'kortix-sandbox',
+  },
+}));
 
 const { combinedAuth } = await import('../middleware/auth');
 
@@ -222,5 +227,17 @@ describe('preview auth ownership', () => {
       headers: { Authorization: 'Bearer kortix_owner' },
     });
     expect(res.status).toBe(200);
+  });
+
+  test('allows localhost local-sandbox preview without auth', async () => {
+    const app = createApp();
+    const res = await app.request('http://localhost/v1/p/kortix-sandbox/8000/session/status');
+    expect(res.status).toBe(200);
+  });
+
+  test('still requires auth for remote hosts hitting the local sandbox route', async () => {
+    const app = createApp();
+    const res = await app.request('https://app.kortix.com/v1/p/kortix-sandbox/8000/session/status');
+    expect(res.status).toBe(401);
   });
 });

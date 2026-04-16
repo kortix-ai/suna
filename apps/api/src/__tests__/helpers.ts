@@ -8,15 +8,24 @@
  * - Mock provider factories
  * - Request helpers (jsonPost, jsonGet, jsonPatch, jsonDelete)
  *
- * IMPORTANT: This file must be importable WITHOUT DATABASE_URL being set.
+ * IMPORTANT: This file must be importable WITHOUT TEST_DATABASE_URL being set.
  * DB-dependent modules (routes/platform, routes/channels, etc.) are loaded dynamically
- * in createTestApp() only when DATABASE_URL is available.
+ * in createTestApp() only when TEST_DATABASE_URL is available.
  */
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
-import { createDb, type Database, sandboxes, deployments, kortixApiKeys } from '@kortix/db';
-import { sql } from 'drizzle-orm';
+import {
+  createDb,
+  type Database,
+  sandboxes,
+  deployments,
+  kortixApiKeys,
+  accounts,
+  accountMembers,
+  integrationCredentials,
+} from '@kortix/db';
+import { sql, inArray } from 'drizzle-orm';
 import { BillingError } from '../errors';
 import type { AuthVariables } from '../types';
 
@@ -59,15 +68,51 @@ export const OTHER_USER_EMAIL = 'other@kortix.dev';
 
 let testDb: Database | null = null;
 
+const TEST_DB_CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
+
+export const HAS_SAFE_TEST_DB = Boolean(
+  process.env.TEST_DATABASE_URL
+  && process.env.KORTIX_TEST_DB_CONFIRM === TEST_DB_CONFIRMATION,
+);
+
+function getSafeTestDbUrl(): string {
+  const url = process.env.TEST_DATABASE_URL;
+  if (!url) {
+    throw new Error('TEST_DATABASE_URL must be set for integration tests');
+  }
+
+  if (process.env.KORTIX_TEST_DB_CONFIRM !== TEST_DB_CONFIRMATION) {
+    throw new Error(`KORTIX_TEST_DB_CONFIRM must equal ${TEST_DB_CONFIRMATION}`);
+  }
+
+  if (process.env.INTERNAL_KORTIX_ENV === 'prod') {
+    throw new Error('Refusing to run integration tests against prod environment');
+  }
+
+  if (process.env.DATABASE_URL && process.env.DATABASE_URL === url) {
+    throw new Error('Refusing to run integration tests against the primary DATABASE_URL');
+  }
+
+  return url;
+}
+
 export function getTestDb(): Database {
   if (!testDb) {
-    const url = process.env.DATABASE_URL;
-    if (!url) {
-      throw new Error('DATABASE_URL must be set for integration tests');
-    }
-    testDb = createDb(url);
+    testDb = createDb(getSafeTestDbUrl());
   }
   return testDb;
+}
+
+export async function getTestAccountIds(): Promise<string[]> {
+  const db = getTestDb();
+  const baseIds = [TEST_USER_ID, OTHER_USER_ID];
+
+  const memberships = await db
+    .select({ accountId: accountMembers.accountId })
+    .from(accountMembers)
+    .where(inArray(accountMembers.userId, baseIds));
+
+  return Array.from(new Set([...baseIds, ...memberships.map((row) => row.accountId)]));
 }
 
 // ─── Mock Provider Factory ───────────────────────────────────────────────────
@@ -170,12 +215,12 @@ export interface TestAppOptions {
 
 /**
  * Build the Hono app shell with health, system-status, version, 404, and error handlers.
- * Platform routes are mounted only when DATABASE_URL is available.
+ * Platform routes are mounted only when TEST_DATABASE_URL is explicitly configured.
  */
 export function createTestApp(opts: TestAppOptions = {}) {
   const userId = opts.userId || TEST_USER_ID;
   const userEmail = opts.userEmail || TEST_USER_EMAIL;
-  const hasDb = !!process.env.DATABASE_URL;
+  const hasDb = HAS_SAFE_TEST_DB;
 
   const app = new Hono<{ Variables: AuthVariables }>();
   app.use('*', cors());
@@ -329,14 +374,20 @@ export function createTestApp(opts: TestAppOptions = {}) {
 // ─── Cleanup ─────────────────────────────────────────────────────────────────
 
 /**
- * Delete all test data from kortix schema tables.
- * Order respects FK constraints: children before parents.
+ * Delete only test-scoped data from kortix schema tables.
+ * Never performs whole-table deletes.
  */
 export async function cleanupTestData(): Promise<void> {
   const db = getTestDb();
-  await db.delete(kortixApiKeys).execute();
-  await db.delete(deployments).execute();
-  await db.delete(sandboxes).execute();
+  const accountIds = await getTestAccountIds();
+  if (accountIds.length === 0) return;
+
+  await db.delete(kortixApiKeys).where(inArray(kortixApiKeys.accountId, accountIds));
+  await db.delete(deployments).where(inArray(deployments.accountId, accountIds));
+  await db.delete(sandboxes).where(inArray(sandboxes.accountId, accountIds));
+  await db.delete(integrationCredentials).where(inArray(integrationCredentials.accountId, accountIds));
+  await db.delete(accountMembers).where(inArray(accountMembers.userId, [TEST_USER_ID, OTHER_USER_ID]));
+  await db.delete(accounts).where(inArray(accounts.accountId, accountIds));
 }
 
 // ─── Request Helpers ─────────────────────────────────────────────────────────

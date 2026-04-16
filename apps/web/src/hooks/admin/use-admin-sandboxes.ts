@@ -67,6 +67,34 @@ export interface AdminSandboxDetail {
   provider_error: string | null;
 }
 
+export type AdminInstanceLayerStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
+
+export interface AdminInstanceLayerAction {
+  action: 'start_host' | 'reboot_host' | 'stop_host' | 'start_workload' | 'restart_workload' | 'stop_workload' | 'restart_runtime' | 'restart_service';
+  label: string;
+  serviceId?: string;
+}
+
+export interface AdminInstanceLayerHealth {
+  key: 'host' | 'workload' | 'runtime';
+  label: string;
+  status: AdminInstanceLayerStatus;
+  summary: string;
+  actions: AdminInstanceLayerAction[];
+  details: Record<string, unknown>;
+}
+
+export interface AdminSandboxHealth {
+  sandbox_id: string;
+  overall_status: 'healthy' | 'degraded' | 'offline' | 'unknown';
+  recommended_action: AdminInstanceLayerAction['action'] | null;
+  layers: {
+    host: AdminInstanceLayerHealth;
+    workload: AdminInstanceLayerHealth;
+    runtime: AdminInstanceLayerHealth;
+  };
+}
+
 export interface ProviderMachineDetail {
   id: string;
   slug: string;
@@ -102,6 +130,19 @@ export function useAdminSandboxDetail(sandboxId: string | null) {
     enabled: !!sandboxId,
     queryFn: async () => {
       const response = await backendApi.get<AdminSandboxDetail>(`/admin/api/sandboxes/${sandboxId}`);
+      if (response.error) throw new Error(response.error.message);
+      return response.data!;
+    },
+    refetchInterval: 10_000,
+  });
+}
+
+export function useAdminSandboxHealth(sandboxId: string | null, enabled = true) {
+  return useQuery<AdminSandboxHealth>({
+    queryKey: ['admin', 'sandbox-health', sandboxId],
+    enabled: !!sandboxId && enabled,
+    queryFn: async () => {
+      const response = await backendApi.get<AdminSandboxHealth>(`/admin/api/sandboxes/${sandboxId}/health`);
       if (response.error) throw new Error(response.error.message);
       return response.data!;
     },
@@ -155,6 +196,23 @@ export function useAdminSandboxAction() {
     onSuccess: (_data, { sandboxId }) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'sandboxes'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'sandbox-detail', sandboxId] });
+    },
+  });
+}
+
+export function useAdminSandboxRepair() {
+  const queryClient = useQueryClient();
+  return useMutation<unknown, Error, { sandboxId: string; action: AdminInstanceLayerAction['action']; serviceId?: string }>({
+    mutationFn: async ({ sandboxId, action, serviceId }) => {
+      const response = await backendApi.post(`/admin/api/sandboxes/${sandboxId}/repair`, { action, serviceId });
+      if (response.error) throw new Error(response.error.message);
+      return response.data;
+    },
+    onSuccess: (_data, { sandboxId }) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sandboxes'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sandbox-detail', sandboxId] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sandbox-health', sandboxId] });
+      queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] });
     },
   });
 }

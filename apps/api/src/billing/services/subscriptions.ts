@@ -625,9 +625,23 @@ export async function releaseSubscriptionSchedule(subscriptionId: string): Promi
 }
 
 export async function syncSubscription(accountId: string) {
-  const account = await getCreditAccount(accountId);
+  let account = await getCreditAccount(accountId);
   if (!account?.stripeSubscriptionId) {
-    return { success: true, message: 'No subscription to sync' };
+    const { syncLegacyStripeSubscription } = await import('./legacy-stripe-sync');
+    const reconciliation = await syncLegacyStripeSubscription(accountId);
+    if (reconciliation.status === 'error') {
+      throw new BillingError(reconciliation.error ?? 'Legacy subscription sync failed');
+    }
+
+    account = await getCreditAccount(accountId);
+    if (!account?.stripeSubscriptionId) {
+      return {
+        success: true,
+        message: reconciliation.status === 'no_active_paid_subscription'
+          ? 'No active paid subscription found to sync'
+          : 'No subscription to sync',
+      };
+    }
   }
 
   const stripe = getStripe();

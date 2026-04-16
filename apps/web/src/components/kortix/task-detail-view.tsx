@@ -108,6 +108,7 @@ export function TaskDetailView({
       setDescVal(task.description || '');
       setVerVal(task.verification_condition || '');
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id, task?.title, task?.description, task?.verification_condition]);
 
   const projectName = projectNameOverride || project?.name;

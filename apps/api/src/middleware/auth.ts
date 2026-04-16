@@ -12,6 +12,18 @@ import { setContextField } from '../lib/request-context';
 // ─── Cookie name for preview session auth ────────────────────────────────────
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
+function isLocalPreviewBypassRequest(c: Context, previewSandboxId: string | null): boolean {
+  if (!previewSandboxId) return false;
+  if (previewSandboxId !== config.SANDBOX_CONTAINER_NAME) return false;
+
+  try {
+    const { hostname } = new URL(c.req.url);
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Auth Middleware (3 middlewares — one per auth strategy)
 //
@@ -151,6 +163,11 @@ export async function combinedAuth(c: Context, next: Next) {
   }
 
   const previewSandboxId = extractPreviewSandboxId(c.req.path);
+
+  if (isLocalPreviewBypassRequest(c, previewSandboxId)) {
+    await next();
+    return;
+  }
 
   // Extract token: header → X-Kortix-Token (preview only) → cookie → query param
   const authHeader = c.req.header('Authorization');

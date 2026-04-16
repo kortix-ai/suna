@@ -645,16 +645,21 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
     if (config.ENV_MODE !== 'cloud') return true;
     return (await readSandboxEnvValue('KORTIX_YOLO_API_KEY')) === token;
   };
+  const sandboxAlreadyHasYoloUrl = async (): Promise<boolean> => {
+    if (config.ENV_MODE !== 'cloud') return true;
+    return (await readSandboxEnvValue('KORTIX_YOLO_URL')) === config.KORTIX_YOLO_URL;
+  };
 
   // Fast path: if the sandbox already has the correct token AND URL, skip sync.
   // This is the common case on normal startup — no restart, no downtime.
-  const [hasToken, hasUrl, hasInboundKey, hasYoloKey] = await Promise.all([
+  const [hasToken, hasUrl, hasInboundKey, hasYoloKey, hasYoloUrl] = await Promise.all([
     sandboxAlreadyHasToken(),
     sandboxAlreadyHasUrl(),
     sandboxAlreadyHasInboundKey(),
     sandboxAlreadyHasYoloKey(),
+    sandboxAlreadyHasYoloUrl(),
   ]);
-  if (hasToken && hasUrl && hasInboundKey && hasYoloKey) {
+  if (hasToken && hasUrl && hasInboundKey && hasYoloKey && hasYoloUrl) {
     console.log('[startup] Sandbox already has correct auth bundle + API URL — skipping sync');
     // Still ensure ONBOARDING_COMPLETE is set for self-hosted mode
     if (config.SANDBOX_NETWORK) {
@@ -680,7 +685,7 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
     return token;
   }
 
-  console.log(`[startup] Sandbox needs token sync (hasToken=${hasToken}, hasUrl=${hasUrl}, hasInboundKey=${hasInboundKey}, hasYoloKey=${hasYoloKey})`);
+  console.log(`[startup] Sandbox needs token sync (hasToken=${hasToken}, hasUrl=${hasUrl}, hasInboundKey=${hasInboundKey}, hasYoloKey=${hasYoloKey}, hasYoloUrl=${hasYoloUrl})`);
 
   // ─── Sync token to sandbox ─────────────────────────────────────────────
   // Primary: POST to sandbox's /env API (handles triple-write + restart)
@@ -693,8 +698,7 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
     TUNNEL_TOKEN: token,
     KORTIX_API_URL: kortixApiUrl,
     TUNNEL_API_URL: kortixApiUrl,
-    ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token } : {}),
-    // Self-hosted: skip onboarding wizard (no setup needed for local Docker)
+    ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token, KORTIX_YOLO_URL: config.KORTIX_YOLO_URL } : {}),
     ...(config.SANDBOX_NETWORK ? { ONBOARDING_COMPLETE: 'true' } : {}),
   };
 
@@ -752,7 +756,7 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
             KORTIX_API_URL: kortixApiUrl,
             INTERNAL_SERVICE_KEY: token,
             TUNNEL_TOKEN: token,
-            ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token } : {}),
+            ...(config.ENV_MODE === 'cloud' ? { KORTIX_YOLO_API_KEY: token, KORTIX_YOLO_URL: config.KORTIX_YOLO_URL } : {}),
           }))}`,
           { stdio: 'pipe', timeout: 15_000, env: dockerEnv },
         ).toString();
@@ -1117,6 +1121,11 @@ function parsePreviewSubdomain(host: string): { port: number; sandboxId: string 
   return { port, sandboxId: match[2] };
 }
 
+function isLocalPreviewHost(host: string): boolean {
+  const hostname = host.split(':')[0]?.toLowerCase() || '';
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
+}
+
 function extractCookieToken(req: Request): string | null {
   const cookieHeader = req.headers.get('Cookie') || '';
   const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${PREVIEW_SESSION_COOKIE}=([^;]+)`));
@@ -1290,6 +1299,9 @@ export default {
 
     if (subdomain) {
       const { port, sandboxId } = subdomain;
+      const allowLocalPreviewBridge =
+        sandboxId === config.SANDBOX_CONTAINER_NAME &&
+        isLocalPreviewHost(host);
 
       // ── CORS preflight must be handled BEFORE auth ──────────────────
       // Browsers send OPTIONS without Authorization headers. If we block
@@ -1313,7 +1325,7 @@ export default {
       // Bearer header or cookie on first load proves you're legit,
       // then all subsequent requests (sub-resources, WS, etc.) pass through.
       // This avoids third-party cookie issues in iframes.
-      if (!isSubdomainAuthenticated(sandboxId, port)) {
+      if (!allowLocalPreviewBridge && !isSubdomainAuthenticated(sandboxId, port)) {
         const authHeader = req.headers.get('Authorization');
         const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
         const kortixTokenHeader = req.headers.get('X-Kortix-Token');
@@ -1334,6 +1346,8 @@ export default {
           });
         }
         // Auth succeeded — mark this subdomain as authenticated
+        markSubdomainAuthenticated(sandboxId, port);
+      } else if (allowLocalPreviewBridge) {
         markSubdomainAuthenticated(sandboxId, port);
       }
 

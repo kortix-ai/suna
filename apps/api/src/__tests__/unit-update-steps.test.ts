@@ -18,7 +18,7 @@ mock.module('../update/exec', () => ({
   },
 }));
 
-const { VERIFY_CONTAINER_MAX_RETRIES, verifyContainer } = await import('../update/steps');
+const { VERIFY_CONTAINER_MAX_RETRIES, verifyContainer, ensureContainerRunning } = await import('../update/steps');
 
 describe('verifyContainer', () => {
   beforeEach(() => {
@@ -72,5 +72,45 @@ describe('verifyContainer', () => {
     expect(result.stderr).toContain('Diagnostics:');
     expect(result.stderr).toContain('docker ps:');
     expect(execCalls).toHaveLength(VERIFY_CONTAINER_MAX_RETRIES + 1);
+  });
+});
+
+describe('ensureContainerRunning', () => {
+  beforeEach(() => {
+    execCalls.length = 0;
+    queuedResults = [];
+    globalThis.setTimeout = ((callback: TimerHandler) => {
+      if (typeof callback === 'function') callback();
+      return 0 as never;
+    }) as typeof setTimeout;
+  });
+
+  afterEach(() => {
+    globalThis.setTimeout = realSetTimeout;
+  });
+
+  test('restarts and verifies the container when it is missing', async () => {
+    queuedResults = [
+      { success: false, stdout: '', stderr: 'No such container', exitCode: 1, durationMs: 0 },
+      { success: true, stdout: '', stderr: '', exitCode: 0, durationMs: 0 },
+      { success: true, stdout: '', stderr: '', exitCode: 0, durationMs: 0 },
+      { success: true, stdout: 'kortix/computer:0.8.41|running|0|', stderr: '', exitCode: 0, durationMs: 0 },
+    ];
+
+    const result = await ensureContainerRunning({} as never, {
+      image: 'kortix/computer:0.8.41',
+      name: 'justavps-workload',
+      volumes: [],
+      ports: [],
+      caps: [],
+      shmSize: '2g',
+      envFile: '/etc/justavps/env',
+      securityOpt: [],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.stdout).toBe('recovered');
+    expect(execCalls).toHaveLength(4);
+    expect(execCalls[1]).toContain('kortix-managed-restart');
   });
 });

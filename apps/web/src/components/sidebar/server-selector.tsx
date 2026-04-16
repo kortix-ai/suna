@@ -24,14 +24,18 @@ import {
   CalendarX2,
   Power,
 } from 'lucide-react';
-import { useServerStore, resolveServerUrl, type ServerEntry } from '@/stores/server-store';
+import {
+  activateServerSelection,
+  resolveServerUrl,
+  useServerStore,
+  type ServerEntry,
+} from '@/stores/server-store';
 import { buildInstancePath } from '@/lib/instance-routes';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { useSubscriptionStore } from '@/stores/subscription-store';
-import { useTabStore } from '@/stores/tab-store';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { useAuth } from '@/components/AuthProvider';
@@ -541,11 +545,12 @@ export function InstanceManagerDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { servers, activeServerId, addServer, updateServer, setActiveServer } =
+  const { servers, activeServerId, addServer, updateServer } =
     useServerStore();
   const { user, isLoading: isAuthLoading } = useAuth();
   const accountState = useSubscriptionStore((s) => s.accountState);
   const router = useRouter();
+  const pathname = usePathname();
   const queryClient = useQueryClient();
   const [search, setSearch] = React.useState('');
   const [mode, setMode] = React.useState<'list' | 'add' | 'edit' | 'ssh' | 'custom'>('list');
@@ -705,9 +710,8 @@ export function InstanceManagerDialog({
 
     if (mode === 'custom') {
       const newServer = addServer(label, url);
-      useTabStore.getState().swapForServer(newServer.id, activeServerId);
-      setActiveServer(newServer.id);
-      router.push(newServer.instanceId ? buildInstancePath(newServer.instanceId, '/dashboard') : '/dashboard');
+      const result = activateServerSelection(newServer.id, { pathname });
+      router.push(result?.href ?? (newServer.instanceId ? buildInstancePath(newServer.instanceId, '/dashboard') : '/dashboard'));
       onOpenChange(false);
     } else if (mode === 'edit' && editingId) {
       updateServer(editingId, { label: label || url.replace(/^https?:\/\//, ''), url });
@@ -850,9 +854,8 @@ export function InstanceManagerDialog({
 
       // Invalidate sandbox query so useSandbox picks up the latest state.
       queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox'] });
-      useTabStore.getState().swapForServer(serverId, activeServerId);
-      setActiveServer(serverId);
-      router.push(sandbox.sandbox_id ? `/instances/${sandbox.sandbox_id}` : '/dashboard');
+      const result = activateServerSelection(serverId, { pathname });
+      router.push(result?.href ?? (sandbox.sandbox_id ? buildInstancePath(sandbox.sandbox_id, '/dashboard') : '/dashboard'));
       onOpenChange(false);
     } catch (err: any) {
       let message = err?.message || 'Failed to create sandbox';
@@ -883,10 +886,9 @@ export function InstanceManagerDialog({
 
   function handleSelect(id: string) {
     if (id === activeServerId) return;
-    useTabStore.getState().swapForServer(id, activeServerId);
-    setActiveServer(id);
     const server = servers.find((s) => s.id === id);
-    router.push(server?.instanceId ? `/instances/${server.instanceId}` : '/dashboard');
+    const result = activateServerSelection(id, { pathname });
+    router.push(result?.href ?? (server?.instanceId ? buildInstancePath(server.instanceId, '/dashboard') : '/dashboard'));
     onOpenChange(false);
   }
 
@@ -1433,11 +1435,12 @@ export function InstanceManagerDialog({
 export function ServerSelector() {
   const { servers, activeServerId } = useServerStore();
   const router = useRouter();
+  const pathname = usePathname();
 
   const handleSelect = (id: string) => {
-    const server = servers.find((s) => s.id === id);
-    if (!server?.instanceId) return;
-    router.push(`/instances/${server.instanceId}`);
+    const result = activateServerSelection(id, { pathname });
+    if (!result) return;
+    router.push(result.href);
   };
 
   return (

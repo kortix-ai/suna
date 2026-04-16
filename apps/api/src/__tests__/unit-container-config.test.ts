@@ -63,6 +63,7 @@ describe('sandbox container port config', () => {
     expect(script).toContain('Reusing persisted env file');
     expect(script).toContain('grep -Eq "^(INTERNAL_SERVICE_KEY|KORTIX_TOKEN|KORTIX_API_URL)="');
     expect(script).toContain('exec docker run --rm');
+    expect(script).toContain('KORTIX_ENABLE_INNER_DOCKER=0');
     expect(script).toContain(JUSTAVPS_STARTUP_PATCH_MOUNT);
   });
 });

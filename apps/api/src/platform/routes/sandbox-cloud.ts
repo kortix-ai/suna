@@ -26,10 +26,13 @@ import {
 import { config } from '../../config';
 import { justavpsFetch, listServerTypes as listJustAVPSServerTypes } from '../providers/justavps';
 import type { AuthVariables } from '../../types';
-import { isPlatformAdmin } from '../../shared/platform-roles';
 import { resolveAccountId as defaultResolveAccountId } from '../../shared/resolve-account';
 import * as pool from '../../pool';
 import { generateSandboxName } from '../services/ensure-sandbox';
+import {
+  findAccessibleSandboxForUser,
+  listAccessibleSandboxesForUser,
+} from '../services/sandbox-access';
 
 // ─── Dependency Injection ────────────────────────────────────────────────────
 
@@ -617,18 +620,12 @@ export function createCloudSandboxRouter(
     const sandboxId = c.req.param('sandboxId');
 
     try {
-      const accountId = await resolveAccountId(userId);
-
-      const [sandbox] = await db
-        .select()
-        .from(sandboxes)
-        .where(
-          and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.sandboxId, sandboxId),
-          ),
-        )
-        .limit(1);
+      const { sandbox } = await findAccessibleSandboxForUser({
+        db,
+        userId,
+        sandboxId,
+        resolveAccountId,
+      });
 
       if (!sandbox) {
         return c.json({ status: 'not_found', error: 'Sandbox not found' }, 404);
@@ -692,21 +689,14 @@ export function createCloudSandboxRouter(
     const userId = c.get('userId');
 
     try {
-      const accountId = await resolveAccountId(userId);
       const requestedSandboxId = c.req.query('sandbox_id') || undefined;
-      const adminAccess = requestedSandboxId ? await isPlatformAdmin(accountId) : false;
-
-      const query = requestedSandboxId
-        ? (adminAccess
-            ? eq(sandboxes.sandboxId, requestedSandboxId)
-            : and(eq(sandboxes.accountId, accountId), eq(sandboxes.sandboxId, requestedSandboxId)))
-        : eq(sandboxes.accountId, accountId);
-
-      const rows = await db
-        .select()
-        .from(sandboxes)
-        .where(query)
-        .orderBy(desc(sandboxes.createdAt));
+      const { sandboxes: rows } = await listAccessibleSandboxesForUser({
+        db,
+        userId,
+        sandboxId: requestedSandboxId,
+        includeArchived: true,
+        resolveAccountId,
+      });
 
       return c.json({ success: true, data: rows.map(serializeSandbox) });
     } catch (err) {
@@ -724,21 +714,15 @@ export function createCloudSandboxRouter(
     const userId = c.get('userId');
 
     try {
-      const accountId = await resolveAccountId(userId);
       const body = await c.req.json().catch(() => ({}));
       const requestedSandboxId = body?.sandbox_id as string | undefined;
-
-      const query = requestedSandboxId
-        ? and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.sandboxId, requestedSandboxId),
-          )
-        : and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.status, 'active'),
-          );
-
-      const [sandbox] = await db.select().from(sandboxes).where(query).limit(1);
+      const { sandbox } = await findAccessibleSandboxForUser({
+        db,
+        userId,
+        sandboxId: requestedSandboxId,
+        defaultStatus: 'active',
+        resolveAccountId,
+      });
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No active sandbox to stop' }, 404);
@@ -774,29 +758,48 @@ export function createCloudSandboxRouter(
     const userId = c.get('userId');
 
     try {
-      const accountId = await resolveAccountId(userId);
       const body = await c.req.json().catch(() => ({}));
       const requestedSandboxId = body?.sandbox_id as string | undefined;
-
-      const query = requestedSandboxId
-        ? and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.sandboxId, requestedSandboxId),
-          )
-        : eq(sandboxes.accountId, accountId);
-
-      const [sandbox] = await db
-        .select()
-        .from(sandboxes)
-        .where(query)
-        .orderBy(desc(sandboxes.createdAt))
-        .limit(1);
+      const { access, sandbox } = await findAccessibleSandboxForUser({
+        db,
+        userId,
+        sandboxId: requestedSandboxId,
+        resolveAccountId,
+      });
 
       if (!sandbox || !sandbox.externalId) {
+        console.warn('[SANDBOX-CLOUD] restart target not found', {
+          accountId: access.accountId,
+          isAdmin: access.isAdmin,
+          requestedSandboxId,
+        });
         return c.json({ success: false, error: 'No sandbox to restart' }, 404);
       }
 
       const provider = getProvider(sandbox.provider);
+
+      if (sandbox.provider === 'justavps') {
+        const { JustAVPSProvider } = await import('../providers/justavps');
+        const justavpsProvider = provider as InstanceType<typeof JustAVPSProvider>;
+        void justavpsProvider.ensureRunning(sandbox.externalId).catch((error: unknown) => {
+          console.error(`[PLATFORM] Async workload recovery failed for ${sandbox.sandboxId}:`, error);
+        });
+
+        await db
+          .update(sandboxes)
+          .set({ status: 'active', updatedAt: new Date() })
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+
+        const [refreshed] = await db
+          .select()
+          .from(sandboxes)
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId))
+          .limit(1);
+
+        console.log(`[PLATFORM] Dispatched workload recovery for sandbox ${sandbox.sandboxId} via ${sandbox.provider}`);
+
+        return c.json({ success: true, data: { ...(refreshed ? serializeSandbox(refreshed) : {}), recovery_state: 'restarting_workload', action: 'restart_workload' } });
+      }
 
       // Stop if running
       if (sandbox.status === 'active') {
@@ -838,15 +841,14 @@ export function createCloudSandboxRouter(
     const userId = c.get('userId');
 
     try {
-      const accountId = await resolveAccountId(userId);
       const body = await c.req.json().catch(() => ({}));
       const sandboxId = body?.sandbox_id as string | undefined;
-
-      const query = sandboxId
-        ? and(eq(sandboxes.accountId, accountId), eq(sandboxes.sandboxId, sandboxId), sql`${sandboxes.status} != 'archived'`)
-        : and(eq(sandboxes.accountId, accountId), sql`${sandboxes.status} != 'archived'`);
-
-      const [sandbox] = await db.select().from(sandboxes).where(query).limit(1);
+      const { sandbox } = await findAccessibleSandboxForUser({
+        db,
+        userId,
+        sandboxId,
+        resolveAccountId,
+      });
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No sandbox found' }, 404);
@@ -909,15 +911,14 @@ export function createCloudSandboxRouter(
     const userId = c.get('userId');
 
     try {
-      const accountId = await resolveAccountId(userId);
       const body = await c.req.json().catch(() => ({}));
       const sandboxId = body?.sandbox_id as string | undefined;
-
-      const query = sandboxId
-        ? and(eq(sandboxes.accountId, accountId), eq(sandboxes.sandboxId, sandboxId), sql`${sandboxes.status} != 'archived'`)
-        : and(eq(sandboxes.accountId, accountId), sql`${sandboxes.status} != 'archived'`);
-
-      const [sandbox] = await db.select().from(sandboxes).where(query).limit(1);
+      const { sandbox } = await findAccessibleSandboxForUser({
+        db,
+        userId,
+        sandboxId,
+        resolveAccountId,
+      });
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No sandbox found' }, 404);
@@ -1022,7 +1023,6 @@ export function createCloudSandboxRouter(
 
   router.post('/mark-error', async (c) => {
     const userId = c.get('userId');
-    const accountId = await resolveAccountId(userId);
     const body = await c.req.json().catch(() => ({}));
     const sandboxId = body?.sandbox_id as string | undefined;
     const errorMessage = (body?.error_message as string | undefined) || 'Health check timed out after provisioning.';
@@ -1031,11 +1031,12 @@ export function createCloudSandboxRouter(
       return c.json({ error: 'sandbox_id required' }, 400);
     }
 
-    const [row] = await db
-      .select()
-      .from(sandboxes)
-      .where(and(eq(sandboxes.sandboxId, sandboxId), eq(sandboxes.accountId, accountId)))
-      .limit(1);
+    const { sandbox: row } = await findAccessibleSandboxForUser({
+      db,
+      userId,
+      sandboxId,
+      resolveAccountId,
+    });
 
     if (!row) {
       return c.json({ error: 'Sandbox not found' }, 404);

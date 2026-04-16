@@ -6,6 +6,12 @@ export type SandboxConnectionStatus =
 	| "connected"
 	| "unreachable";
 
+export type SandboxRecoveryPhase =
+	| "idle"
+	| "restarting_workload"
+	| "restarting_runtime"
+	| "restarting_host";
+
 interface SandboxConnectionStore {
 	status: SandboxConnectionStatus;
 	/** How many consecutive health-check failures */
@@ -26,6 +32,8 @@ interface SandboxConnectionStore {
 	openCodeVersion: string | null;
 	/** Whether the OpenCode server reports healthy */
 	healthy: boolean | null;
+	recoveryPhase: SandboxRecoveryPhase;
+	restartRequestedAt: number | null;
 }
 
 // ── Persist wasConnected across hard refreshes via sessionStorage ──
@@ -82,6 +90,8 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	sandboxVersion: null,
 	openCodeVersion: null,
 	healthy: null,
+	recoveryPhase: "idle",
+	restartRequestedAt: null,
 }));
 
 // ── Static actions (stable references, no re-render loops) ──
@@ -99,6 +109,8 @@ export function setSandboxStatus(next: SandboxConnectionStatus) {
 		updates.wasConnected = true;
 		updates.reconnectAttempts = 0;
 		updates.disconnectedAt = null;
+		updates.recoveryPhase = "idle";
+		updates.restartRequestedAt = null;
 		saveWasConnected(true);
 
 		if (state.status === "unreachable") {
@@ -174,7 +186,9 @@ export function resetForServerSwitch() {
 			disconnectedAt: null,
 			sandboxVersion: null,
 			openCodeVersion: null,
-			healthy: null,
+		healthy: null,
+		recoveryPhase: "idle",
+		restartRequestedAt: null,
 		});
 		saveWasConnected(true);
 		return;
@@ -190,8 +204,24 @@ export function resetForServerSwitch() {
 		sandboxVersion: null,
 		openCodeVersion: null,
 		healthy: null,
+		recoveryPhase: "idle",
+		restartRequestedAt: null,
 	});
 	saveWasConnected(false);
+}
+
+export function markRecoveryRequested(phase: Exclude<SandboxRecoveryPhase, 'idle'>) {
+	const now = Date.now();
+	useSandboxConnectionStore.setState((state) => ({
+		recoveryPhase: phase,
+		restartRequestedAt: now,
+		status: state.status === "connected" ? "connecting" : state.status,
+		disconnectedAt: state.disconnectedAt ?? now,
+	}));
+}
+
+export function markHostRestartRequested() {
+	markRecoveryRequested("restarting_host");
 }
 
 /**

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useQuery } from '@tanstack/react-query';
 import { AlertCircle, Loader2, Plus } from 'lucide-react';
@@ -13,7 +13,11 @@ import {
   type SandboxInfo,
 } from '@/lib/platform-client';
 import { isBillingEnabled } from '@/lib/config';
-import { useServerStore, type ServerEntry } from '@/stores/server-store';
+import {
+  activateServerSelection,
+  useServerStore,
+  type ServerEntry,
+} from '@/stores/server-store';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { claimComputer } from '@/lib/api/billing';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
@@ -35,6 +39,7 @@ import { InstanceSettingsModal } from './_components/instance-settings-modal';
 
 export default function InstancesPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { user, isLoading: authLoading } = useAuth();
   const { servers, activeServerId } = useServerStore();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -127,12 +132,12 @@ export default function InstancesPage() {
   }
 
   function handleFallbackServerClick(server: ServerEntry) {
+    const result = activateServerSelection(server.id, { pathname });
     if (server.instanceId) {
-      // Fallback servers are assumed to already be warm.
-      router.push(`/instances/${server.instanceId}/dashboard`);
-    } else {
-      router.push('/dashboard');
+      router.push(result?.href ?? `/instances/${server.instanceId}/dashboard`);
+      return;
     }
+    router.push(result?.href ?? '/dashboard');
   }
 
   function handleCreateInstance() {

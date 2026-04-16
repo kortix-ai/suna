@@ -83,6 +83,39 @@ assert_http_ok() {
   fi
 }
 
+capture_stream_event() {
+  python3 - <<'PY'
+import sys
+import time
+import urllib.request
+
+url = "http://127.0.0.1:9224/stream?port=9223"
+req = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
+
+try:
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        deadline = time.time() + 10
+        chunks = []
+        while time.time() < deadline:
+            line = resp.readline().decode("utf-8", "ignore")
+            if not line:
+                continue
+            chunks.append(line)
+            joined = "".join(chunks)
+            if (
+                "event: status" in joined
+                or '"connected":true' in joined
+                or '"type":"frame"' in joined
+            ):
+                sys.stdout.write(joined)
+                sys.exit(0)
+except Exception:
+    pass
+
+sys.exit(1)
+PY
+}
+
 # ── Tests ───────────────────────────────────────────────────────────────────
 
 echo ""
@@ -185,7 +218,7 @@ assert_contains "Sessions API returns kortix" "kortix" "$SESSIONS"
 assert_contains "Sessions API has port 9223" "9223" "$SESSIONS"
 
 # Test SSE stream endpoint
-STREAM_RESPONSE=$(curl -sS -N "http://127.0.0.1:9224/stream?port=9223" --max-time 10 2>/dev/null || true)
+STREAM_RESPONSE=$(capture_stream_event || true)
 if echo "$STREAM_RESPONSE" | grep -qE 'status|"connected":true|"type":"frame"'; then
   pass "Stream endpoint connects"
 else
@@ -205,6 +238,7 @@ echo "▸ 7. Environment Variables"
 # --------------------------------------------------------------------------
 
 assert_eq "AGENT_BROWSER_SESSION=kortix" "kortix" "${AGENT_BROWSER_SESSION:-}"
+assert_eq "AGENT_BROWSER_HEADED=0" "0" "${AGENT_BROWSER_HEADED:-}"
 assert_eq "AGENT_BROWSER_SOCKET_DIR set" "/dev/shm/agent-browser" "${AGENT_BROWSER_SOCKET_DIR:-}"
 assert_eq "AGENT_BROWSER_IDLE_TIMEOUT_MS=0" "0" "${AGENT_BROWSER_IDLE_TIMEOUT_MS:-}"
 assert_not_empty "AGENT_BROWSER_EXECUTABLE_PATH set" "${AGENT_BROWSER_EXECUTABLE_PATH:-}"

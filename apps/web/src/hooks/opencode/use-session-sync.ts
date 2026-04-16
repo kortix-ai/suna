@@ -103,7 +103,6 @@ export function useSessionSync(sessionId: string) {
 		let cancelled = false;
 		const fetchWithRetry = async (attempt = 0) => {
 			try {
-				const store = useSyncStore.getState();
 				const res = await getClient().session.messages({
 					sessionID: sessionId,
 				});
@@ -119,15 +118,30 @@ export function useSessionSync(sessionId: string) {
 						sessionExists = false;
 					}
 
-					const currentStatus = store.sessionStatus[sessionId] ?? IDLE_STATUS;
+					// Read fresh state AFTER the awaits — the pending-prompt
+					// effect may have set status to "busy" and added an
+					// optimistic message while the fetch was in flight.
+					// Using a stale pre-await snapshot would see "idle" and
+					// incorrectly call clearSession, wiping the optimistic
+					// message and reverting the UI to the welcome screen.
+					const freshState = useSyncStore.getState();
+					const currentStatus = freshState.sessionStatus[sessionId] ?? IDLE_STATUS;
 					if (!sessionExists || currentStatus.type === "idle") {
-						store.clearSession(sessionId);
+						// Double-check: don't clear if there are already messages
+						// in the store (e.g. optimistic messages added by the
+						// pending-prompt effect while this fetch was in flight).
+						const existingMsgs = freshState.messages[sessionId];
+						if (existingMsgs && existingMsgs.length > 0) {
+							// Messages exist (likely optimistic) — skip clearing
+							return;
+						}
+						freshState.clearSession(sessionId);
 						return;
 					}
 				}
 
 				if (res.data) {
-					store.hydrate(sessionId, res.data as any);
+					useSyncStore.getState().hydrate(sessionId, res.data as any);
 				}
 			} catch {
 				if (cancelled) return;
@@ -153,6 +167,105 @@ export function useSessionSync(sessionId: string) {
 			messageCache.delete(sessionId);
 		};
 	}, [sessionId]);
+
+	// ── Polling fallback ──
+	// When the session is busy, SSE should deliver streaming events. But if
+	// SSE is broken (502, ERR_QUIC_PROTOCOL_ERROR, etc.), no events arrive
+	// and the UI is stuck on "Considering next steps..." forever. As a
+	// fallback, poll for messages every 3s while the session is busy.
+	// The poll stops as soon as the session goes idle or the component unmounts.
+	const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+	const lastPartCountRef = useRef(0);
+
+	useEffect(() => {
+		if (!sessionId) return;
+
+		const state = useSyncStore.getState();
+		const currentStatus = state.sessionStatus[sessionId];
+		const isBusyNow = currentStatus?.type === "busy" || currentStatus?.type === "retry";
+
+		if (isBusyNow) {
+			// Start polling if not already active
+			if (!pollTimerRef.current) {
+				// Track part count to detect SSE liveness — if parts are
+				// growing between polls, SSE is working and we skip the fetch.
+				const countParts = () => {
+					const s = useSyncStore.getState();
+					const msgs = s.messages[sessionId] ?? [];
+					let count = 0;
+					for (const m of msgs) {
+						const parts = s.parts[m.id];
+						if (parts) count += parts.length;
+					}
+					return count;
+				};
+				lastPartCountRef.current = countParts();
+
+				pollTimerRef.current = setInterval(async () => {
+					const s = useSyncStore.getState();
+					const st = s.sessionStatus[sessionId];
+					if (st?.type !== "busy" && st?.type !== "retry") {
+						// Session went idle — stop polling
+						if (pollTimerRef.current) {
+							clearInterval(pollTimerRef.current);
+							pollTimerRef.current = null;
+						}
+						return;
+					}
+
+					// Skip fetch if SSE is delivering data (part count grew)
+					const currentCount = countParts();
+					if (currentCount > lastPartCountRef.current) {
+						lastPartCountRef.current = currentCount;
+						return;
+					}
+
+					// SSE appears stalled — fetch messages AND session status
+					try {
+						const [msgRes, statusRes] = await Promise.all([
+							getClient().session.messages({ sessionID: sessionId }),
+							getClient().session.status().catch(() => null),
+						]);
+						if (msgRes.data) {
+							useSyncStore.getState().hydrate(sessionId, msgRes.data as any);
+						}
+						// Update session status from server — without this,
+						// a dead SSE means session.idle never arrives and the
+						// UI stays stuck on "busy" forever.
+						if (statusRes?.data) {
+							const statuses = statusRes.data as Record<string, any>;
+							const serverStatus = statuses[sessionId];
+							if (serverStatus) {
+								useSyncStore.getState().setStatus(sessionId, serverStatus);
+							} else {
+								// Session not in busy statuses map → it's idle
+								useSyncStore.getState().setStatus(sessionId, { type: "idle" } as SessionStatus);
+							}
+						}
+					} catch {
+						// Silently ignore — will retry on next interval
+					}
+					lastPartCountRef.current = countParts();
+				}, 3000);
+			}
+		} else {
+			// Session is idle — stop polling
+			if (pollTimerRef.current) {
+				clearInterval(pollTimerRef.current);
+				pollTimerRef.current = null;
+			}
+		}
+	});
+
+	// Cleanup polling on unmount
+	useEffect(() => {
+		return () => {
+			if (pollTimerRef.current) {
+				clearInterval(pollTimerRef.current);
+				pollTimerRef.current = null;
+			}
+		};
+	}, []);
 
 	// Single selector that derives MessageWithParts[] with reference caching.
 	// The buildMessages function returns the same array reference if nothing

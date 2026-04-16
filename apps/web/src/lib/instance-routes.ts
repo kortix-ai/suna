@@ -57,7 +57,11 @@ export function stripInstancePrefix(pathname: string): string {
 export function buildInstancePath(instanceId: string, pathname: string): string {
   if (!instanceId) return pathname;
   if (!pathname.startsWith('/')) pathname = `/${pathname}`;
-  if (pathname.startsWith('/instances/')) return pathname;
+  if (pathname.startsWith('/instances/')) {
+    const parsed = extractInstanceRoute(pathname);
+    if (!parsed) return pathname;
+    return `/instances/${encodeURIComponent(instanceId)}${parsed.innerPath}`;
+  }
   if (!isInstanceScopedAppPath(pathname)) return pathname;
   return `/instances/${encodeURIComponent(instanceId)}${pathname}`;
 }
@@ -77,6 +81,17 @@ export function getActiveInstanceIdFromCookie(): string | null {
   if (typeof document === 'undefined') return null;
   const match = document.cookie.match(new RegExp(`(?:^|; )${ACTIVE_INSTANCE_COOKIE}=([^;]+)`));
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+export function setActiveInstanceCookie(instanceId?: string | null): void {
+  if (typeof document === 'undefined') return;
+
+  if (!instanceId) {
+    document.cookie = `${ACTIVE_INSTANCE_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
+    return;
+  }
+
+  document.cookie = `${ACTIVE_INSTANCE_COOKIE}=${encodeURIComponent(instanceId)}; Path=/; SameSite=Lax`;
 }
 
 export function toInstanceAwarePath(pathname: string, instanceId?: string | null): string {

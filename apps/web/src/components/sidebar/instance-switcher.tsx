@@ -17,6 +17,10 @@ import { Loader2, Settings2 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { listSandboxes, type SandboxInfo } from '@/lib/platform-client';
 import { cn } from '@/lib/utils';
+import {
+  activateInstanceSelection,
+  useServerStore,
+} from '@/stores/server-store';
 
 function displayName(s: SandboxInfo): string {
   if (s.name && s.name.trim()) return s.name;
@@ -121,7 +125,7 @@ export function InstanceSwitcherList({
     [sandboxes],
   );
 
-  const handleSelect = (sandbox: SandboxInfo) => {
+  const handleSelect = async (sandbox: SandboxInfo) => {
     if (sandbox.sandbox_id === currentInstanceId) {
       onAfterSelect?.();
       onOpenSettings?.(sandbox);
@@ -129,7 +133,8 @@ export function InstanceSwitcherList({
     }
     onAfterSelect?.();
     if (sandbox.status === 'active') {
-      router.push(`/instances/${sandbox.sandbox_id}/dashboard`);
+      const result = await activateInstanceSelection(sandbox.sandbox_id, { pathname });
+      router.push(result?.href ?? `/instances/${sandbox.sandbox_id}/dashboard`);
     } else {
       router.push(`/instances/${sandbox.sandbox_id}`);
     }

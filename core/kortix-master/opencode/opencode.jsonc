@@ -18,9 +18,9 @@
   "provider": {
     "kortix-yolo": {
       "npm": "@ai-sdk/anthropic",
-      "env": ["KORTIX_YOLO_API_KEY"],
+      "env": ["KORTIX_YOLO_API_KEY", "KORTIX_YOLO_URL"],
       "options": {
-        "baseURL": "https://yolo.kortix.com/api/v1",
+        "baseURL": "{env:KORTIX_YOLO_URL}",
         "apiKey": "{env:KORTIX_YOLO_API_KEY}"
       },
       "models": {

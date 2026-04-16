@@ -12,6 +12,7 @@ import {
   createTestApp,
   createMockProvider,
   cleanupTestData,
+  HAS_SAFE_TEST_DB,
   jsonPost,
   jsonGet,
   jsonPatch,
@@ -21,7 +22,7 @@ import {
   OTHER_USER_EMAIL,
 } from './helpers';
 
-const HAS_DB = !!process.env.DATABASE_URL;
+const HAS_DB = HAS_SAFE_TEST_DB;
 
 describe.skipIf(!HAS_DB)('Platform — API Keys (kortix schema)', () => {
   const app = createTestApp({

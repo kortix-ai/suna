@@ -97,16 +97,10 @@ const SleepOverlay = lazy(() =>
 	})),
 );
 
-const TechnicalIssueBanner = lazy(() =>
-	import("@/components/announcements/technical-issue-banner").then((mod) => ({
-		default: mod.TechnicalIssueBanner,
+const MaintenanceBanner = lazy(() =>
+	import("@/components/announcements/maintenance-banner").then((mod) => ({
+		default: mod.MaintenanceBanner,
 	})),
-);
-
-const MaintenanceCountdownBanner = lazy(() =>
-	import("@/components/announcements/maintenance-countdown-banner").then(
-		(mod) => ({ default: mod.MaintenanceCountdownBanner }),
-	),
 );
 
 
@@ -473,6 +467,7 @@ export default function DashboardLayoutContent({
 	const maintenanceNotice = systemStatus?.maintenanceNotice;
 	const technicalIssue = systemStatus?.technicalIssue;
 	const statusUpdatedAt = systemStatus?.updatedAt;
+	const maintenanceConfig = systemStatus?.maintenanceConfig;
 	// NOTE: useApiHealth was removed from the layout guards. Its momentary
 	// failures were unmounting the ENTIRE component tree (including session
 	// tabs and chat input), causing the "random refresh/flicker" bug.
@@ -522,6 +517,10 @@ export default function DashboardLayoutContent({
 	const obRetries = useRef(0);
 
 	const activeServerId = useServerStore((s) => s.activeServerId);
+	const servers = useServerStore((s) => s.servers);
+	const routeInstanceProvider = routeInstanceId
+		? servers.find((server) => server.instanceId === routeInstanceId)?.provider
+		: undefined;
 
 	// Seed `onboardingChecked` from localStorage so users who have already
 	// completed onboarding on this instance skip the 100-300 ms round-trip
@@ -907,33 +906,9 @@ export default function DashboardLayoutContent({
 		};
 	}, [routeInstanceId, user, router]);
 
-	const isMaintenanceActive = (() => {
-		if (
-			!maintenanceNotice?.enabled ||
-			!maintenanceNotice.startTime ||
-			!maintenanceNotice.endTime
-		) {
-			return false;
-		}
-		const now = new Date();
-		const start = new Date(maintenanceNotice.startTime);
-		const end = new Date(maintenanceNotice.endTime);
-		return now >= start && now <= end;
-	})();
-
-	const isMaintenanceScheduled = (() => {
-		if (
-			!maintenanceNotice?.enabled ||
-			!maintenanceNotice.startTime ||
-			!maintenanceNotice.endTime
-		) {
-			return false;
-		}
-		const now = new Date();
-		const start = new Date(maintenanceNotice.startTime);
-		const end = new Date(maintenanceNotice.endTime);
-		return now < start && now < end;
-	})();
+	// Maintenance blocking: the middleware redirects to /maintenance for
+	// "blocking" level, but as a client-side fallback we also check here.
+	const isMaintenanceActive = maintenanceConfig?.level === 'blocking';
 
 	// ── Unified initial-load gate ───────────────────────────────────────────
 	// On the VERY first render, show the single canonical ConnectingScreen
@@ -999,6 +974,8 @@ export default function DashboardLayoutContent({
 			<ConnectingScreen
 				forceConnecting={gateActive}
 				overrideStage={gateStage}
+				sandboxId={routeInstanceId || undefined}
+				provider={routeInstanceProvider}
 			/>
 			{!gateActive && maintenanceBlock && (
 				<Suspense fallback={null}>
@@ -1103,27 +1080,12 @@ export default function DashboardLayoutContent({
 					</Suspense>
 				</div>
 
-				{/* Fixed-position notification toasts — rendered outside main flex to not affect layout */}
-				{technicalIssue?.enabled && technicalIssue.message && (
+				{/* Fixed-position maintenance / notification banner */}
+				{maintenanceConfig && maintenanceConfig.level !== 'none' && maintenanceConfig.level !== 'blocking' && (
 					<Suspense fallback={null}>
-						<TechnicalIssueBanner
-							message={technicalIssue.message}
-							statusUrl={technicalIssue.statusUrl}
-							updatedAt={statusUpdatedAt}
-						/>
+						<MaintenanceBanner config={maintenanceConfig} />
 					</Suspense>
 				)}
-				{isMaintenanceScheduled &&
-					maintenanceNotice?.startTime &&
-					maintenanceNotice?.endTime && (
-						<Suspense fallback={null}>
-							<MaintenanceCountdownBanner
-								startTime={maintenanceNotice.startTime}
-								endTime={maintenanceNotice.endTime}
-								updatedAt={statusUpdatedAt}
-							/>
-						</Suspense>
-					)}
 				{!featureFlags.disableMobileAdvertising ? (
 					<Suspense fallback={null}>
 						<MobileAppInterstitial />

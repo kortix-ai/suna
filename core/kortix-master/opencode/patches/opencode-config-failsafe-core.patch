@@ -1,0 +1,459 @@
+--- /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-grep-dnlpi43f/anomalyco-opencode-bfb736e/packages/opencode/src/config/config.ts	2026-03-13 00:34:11
++++ /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-clean-3hti6bsd/anomalyco-opencode-bfb736e/packages/opencode/src/config/config.ts	2026-04-15 21:02:50
+@@ -5,7 +5,7 @@
+ import os from "os"
+ import z from "zod"
+ import { ModelsDev } from "../provider/models"
+-import { mergeDeep, pipe, unique } from "remeda"
++import { mergeDeep, unique } from "remeda"
+ import { Global } from "../global"
+ import fs from "fs/promises"
+ import { lazy } from "../util/lazy"
+@@ -71,8 +71,201 @@
+       merged.instructions = Array.from(new Set([...target.instructions, ...source.instructions]))
+     }
+     return merged
++  }
++
++  export const ConfigProblemScope = z.enum(["global", "local", "env", "managed", "remote"])
++  export type ConfigProblemScope = z.infer<typeof ConfigProblemScope>
++
++  export const ConfigProblemKind = z.enum(["json", "schema", "substitution"])
++  export type ConfigProblemKind = z.infer<typeof ConfigProblemKind>
++
++  export const ConfigProblem = z
++    .object({
++      source: z.string(),
++      scope: ConfigProblemScope,
++      kind: ConfigProblemKind,
++      message: z.string().optional(),
++      issues: z.array(z.unknown()).optional(),
++    })
++    .meta({ ref: "ConfigProblem" })
++  export type ConfigProblem = z.infer<typeof ConfigProblem>
++
++  export const Status = z
++    .object({
++      valid: z.boolean(),
++      loadedSources: z.array(z.string()),
++      skippedSources: z.array(z.string()),
++      problems: z.array(ConfigProblem),
++    })
++    .meta({ ref: "ConfigStatus" })
++  export type Status = z.infer<typeof Status>
++
++  function createStatus(): Status {
++    return {
++      valid: true,
++      loadedSources: [],
++      skippedSources: [],
++      problems: [],
++    }
++  }
++
++  function pushUnique(list: string[], value: string) {
++    if (!list.includes(value)) list.push(value)
++  }
++
++  function sourceExists(source: string) {
++    if (source === "OPENCODE_CONFIG_CONTENT") return true
++    if (source.startsWith("http://") || source.startsWith("https://")) return true
++    return existsSync(source)
++  }
++
++  function classifyScope(source: string, scope?: ConfigProblemScope): ConfigProblemScope {
++    if (scope) return scope
++    if (source === "OPENCODE_CONFIG_CONTENT") return "env"
++    if (source.startsWith("http://") || source.startsWith("https://")) return "remote"
++    return Instance.containsPath(source) ? "local" : "global"
++  }
++
++  function normalizeLegacyConfig(data: unknown, source: string) {
++    if (!data || typeof data !== "object" || Array.isArray(data)) return data
++    const copy = { ...(data as Record<string, unknown>) }
++
++    const hadLegacyTui = "theme" in copy || "keybinds" in copy || "tui" in copy
++    if (hadLegacyTui) {
++      delete copy.theme
++      delete copy.keybinds
++      delete copy.tui
++      log.warn("tui keys in opencode config are deprecated; move them to tui.json", { path: source })
++    }
++
++    if (Array.isArray(copy.models)) {
++      const legacyProviders: Record<string, Record<string, unknown>> = {}
++      for (const [index, rawModel] of copy.models.entries()) {
++        if (!rawModel || typeof rawModel !== "object" || Array.isArray(rawModel)) continue
++        const model = rawModel as Record<string, unknown>
++        const providerId =
++          typeof model.name === "string" && model.name.trim() ? model.name.trim() : `legacy-model-${index + 1}`
++        const modelId = typeof model.model === "string" && model.model.trim() ? model.model.trim() : providerId
++        const baseURL = typeof model.endpoint === "string" ? model.endpoint : undefined
++        const apiKey = typeof model.api_key === "string" ? model.api_key : undefined
++
++        legacyProviders[providerId] = {
++          name: providerId,
++          npm: "@ai-sdk/openai-compatible",
++          ...(baseURL || apiKey
++            ? {
++                options: {
++                  ...(baseURL ? { baseURL } : {}),
++                  ...(apiKey ? { apiKey } : {}),
++                },
++              }
++            : {}),
++          models: {
++            default: {
++              name: providerId,
++              id: modelId,
++              family: providerId,
++            },
++          },
++        }
++      }
++
++      delete copy.models
++      copy.provider = mergeDeep((copy.provider as Record<string, unknown> | undefined) ?? {}, legacyProviders)
++      log.warn("legacy top-level models config was migrated to provider config", {
++        path: source,
++        count: Object.keys(legacyProviders).length,
++      })
++    }
++
++    return copy
++  }
++
++  function toProblem(source: string, error: unknown, scope?: ConfigProblemScope): ConfigProblem {
++    if (JsonError.isInstance(error)) {
++      return {
++        source,
++        scope: classifyScope(source, scope),
++        kind: "json",
++        message: error.data.message,
++      }
++    }
++
++    if (InvalidError.isInstance(error)) {
++      const message = error.data.message ?? error.data.issues?.[0]?.message
++      return {
++        source,
++        scope: classifyScope(source, scope),
++        kind: message?.includes("bad file reference") ? "substitution" : "schema",
++        message,
++        issues: error.data.issues,
++      }
++    }
++
++    return {
++      source,
++      scope: classifyScope(source, scope),
++      kind: "schema",
++      message: error instanceof Error ? error.message : String(error),
++    }
++  }
++
++  function isSoftConfigError(error: unknown): error is InstanceType<typeof JsonError> | InstanceType<typeof InvalidError> {
++    return JsonError.isInstance(error) || InvalidError.isInstance(error)
++  }
++
++  async function loadSoft(
++    status: Status,
++    source: string,
++    loadValue: () => Promise<Info>,
++    scope?: ConfigProblemScope,
++  ): Promise<Info> {
++    try {
++      const next = await loadValue()
++      if (sourceExists(source)) pushUnique(status.loadedSources, source)
++      return next
++    } catch (error) {
++      if (!isSoftConfigError(error)) throw error
++      pushUnique(status.skippedSources, source)
++      status.problems.push(toProblem(source, error, scope))
++      status.valid = false
++      log.warn("invalid config source ignored", { source, scope: classifyScope(source, scope), error })
++      return {}
++    }
++  }
++
++  async function loadGlobalWithStatus(status?: Status) {
++    let result: Info = {}
++    for (const file of [
++      path.join(Global.Path.config, "config.json"),
++      path.join(Global.Path.config, "opencode.json"),
++      path.join(Global.Path.config, "opencode.jsonc"),
++    ]) {
++      const next = status ? await loadSoft(status, file, () => loadFile(file), "global") : await loadFile(file)
++      result = mergeConfigConcatArrays(result, next)
++    }
++
++    const legacy = path.join(Global.Path.config, "config")
++    if (existsSync(legacy)) {
++      await import(pathToFileURL(legacy).href, {
++        with: {
++          type: "toml",
++        },
++      })
++        .then(async (mod) => {
++          const { provider, model, ...rest } = mod.default
++          if (provider && model) result.model = `${provider}/${model}`
++          result["$schema"] = "https://opencode.ai/config.json"
++          result = mergeDeep(result, rest)
++          await Filesystem.writeJson(path.join(Global.Path.config, "config.json"), result)
++          await fs.unlink(legacy)
++        })
++        .catch(() => {})
++    }
++
++    return result
+   }
+ 
+   export const state = Instance.state(async () => {
+     const auth = await Auth.all()
+ 
+@@ -85,43 +278,54 @@
+     // 6) Inline config (OPENCODE_CONFIG_CONTENT)
+     // Managed config directory is enterprise-only and always overrides everything above.
+     let result: Info = {}
++    const status = createStatus()
+     for (const [key, value] of Object.entries(auth)) {
+       if (value.type === "wellknown") {
+         const url = key.replace(/\/+$/, "")
+         process.env[value.key] = value.token
+         log.debug("fetching remote config", { url: `${url}/.well-known/opencode` })
+-        const response = await fetch(`${url}/.well-known/opencode`)
+-        if (!response.ok) {
+-          throw new Error(`failed to fetch remote config from ${url}: ${response.status}`)
+-        }
+-        const wellknown = (await response.json()) as any
+-        const remoteConfig = wellknown.config ?? {}
+-        // Add $schema to prevent load() from trying to write back to a non-existent file
+-        if (!remoteConfig.$schema) remoteConfig.$schema = "https://opencode.ai/config.json"
++        const source = `${url}/.well-known/opencode`
+         result = mergeConfigConcatArrays(
+           result,
+-          await load(JSON.stringify(remoteConfig), {
+-            dir: path.dirname(`${url}/.well-known/opencode`),
+-            source: `${url}/.well-known/opencode`,
+-          }),
++          await loadSoft(
++            status,
++            source,
++            async () => {
++              const response = await fetch(source)
++              if (!response.ok) {
++                throw new Error(`failed to fetch remote config from ${url}: ${response.status}`)
++              }
++              const wellknown = (await response.json()) as any
++              const remoteConfig = wellknown.config ?? {}
++              if (!remoteConfig.$schema) remoteConfig.$schema = "https://opencode.ai/config.json"
++              return load(JSON.stringify(remoteConfig), {
++                dir: path.dirname(source),
++                source,
++              })
++            },
++            "remote",
++          ),
+         )
+         log.debug("loaded remote config from well-known", { url })
+       }
+     }
+ 
+     // Global user config overrides remote config.
+-    result = mergeConfigConcatArrays(result, await global())
++    result = mergeConfigConcatArrays(result, await loadGlobalWithStatus(status))
+ 
+     // Custom config path overrides global config.
+     if (Flag.OPENCODE_CONFIG) {
+-      result = mergeConfigConcatArrays(result, await loadFile(Flag.OPENCODE_CONFIG))
++      result = mergeConfigConcatArrays(
++        result,
++        await loadSoft(status, Flag.OPENCODE_CONFIG, () => loadFile(Flag.OPENCODE_CONFIG), "env"),
++      )
+       log.debug("loaded custom config", { path: Flag.OPENCODE_CONFIG })
+     }
+ 
+     // Project config overrides global and remote config.
+     if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
+       for (const file of await ConfigPaths.projectFiles("opencode", Instance.directory, Instance.worktree)) {
+-        result = mergeConfigConcatArrays(result, await loadFile(file))
++        result = mergeConfigConcatArrays(result, await loadSoft(status, file, () => loadFile(file), "local"))
+       }
+     }
+ 
+@@ -141,8 +345,9 @@
+     for (const dir of unique(directories)) {
+       if (dir.endsWith(".opencode") || dir === Flag.OPENCODE_CONFIG_DIR) {
+         for (const file of ["opencode.jsonc", "opencode.json"]) {
+-          log.debug(`loading config from ${path.join(dir, file)}`)
+-          result = mergeConfigConcatArrays(result, await loadFile(path.join(dir, file)))
++          const source = path.join(dir, file)
++          log.debug(`loading config from ${source}`)
++          result = mergeConfigConcatArrays(result, await loadSoft(status, source, () => loadFile(source)))
+           // to satisfy the type checker
+           result.agent ??= {}
+           result.mode ??= {}
+@@ -167,10 +372,16 @@
+     if (process.env.OPENCODE_CONFIG_CONTENT) {
+       result = mergeConfigConcatArrays(
+         result,
+-        await load(process.env.OPENCODE_CONFIG_CONTENT, {
+-          dir: Instance.directory,
+-          source: "OPENCODE_CONFIG_CONTENT",
+-        }),
++        await loadSoft(
++          status,
++          "OPENCODE_CONFIG_CONTENT",
++          () =>
++            load(process.env.OPENCODE_CONFIG_CONTENT!, {
++              dir: Instance.directory,
++              source: "OPENCODE_CONFIG_CONTENT",
++            }),
++          "env",
++        ),
+       )
+       log.debug("loaded custom config from OPENCODE_CONFIG_CONTENT")
+     }
+@@ -188,12 +399,19 @@
+         }
+ 
+         if (config) {
++          const source = `${active.url}/api/config`
+           result = mergeConfigConcatArrays(
+             result,
+-            await load(JSON.stringify(config), {
+-              dir: path.dirname(`${active.url}/api/config`),
+-              source: `${active.url}/api/config`,
+-            }),
++            await loadSoft(
++              status,
++              source,
++              () =>
++                load(JSON.stringify(config), {
++                  dir: path.dirname(source),
++                  source,
++                }),
++              "remote",
++            ),
+           )
+         }
+       } catch (err: any) {
+@@ -207,7 +425,8 @@
+     // This way it only loads config file and not skills/plugins/commands
+     if (existsSync(managedDir)) {
+       for (const file of ["opencode.jsonc", "opencode.json"]) {
+-        result = mergeConfigConcatArrays(result, await loadFile(path.join(managedDir, file)))
++        const source = path.join(managedDir, file)
++        result = mergeConfigConcatArrays(result, await loadSoft(status, source, () => loadFile(source), "managed"))
+       }
+     }
+ 
+@@ -255,11 +474,13 @@
+     }
+ 
+     result.plugin = deduplicatePlugins(result.plugin ?? [])
++    status.valid = status.problems.length === 0
+ 
+     return {
+       config: result,
+       directories,
+       deps,
++      status,
+     }
+   })
+ 
+@@ -1208,32 +1429,7 @@
+   export type Info = z.output<typeof Info>
+ 
+   export const global = lazy(async () => {
+-    let result: Info = pipe(
+-      {},
+-      mergeDeep(await loadFile(path.join(Global.Path.config, "config.json"))),
+-      mergeDeep(await loadFile(path.join(Global.Path.config, "opencode.json"))),
+-      mergeDeep(await loadFile(path.join(Global.Path.config, "opencode.jsonc"))),
+-    )
+-
+-    const legacy = path.join(Global.Path.config, "config")
+-    if (existsSync(legacy)) {
+-      await import(pathToFileURL(legacy).href, {
+-        with: {
+-          type: "toml",
+-        },
+-      })
+-        .then(async (mod) => {
+-          const { provider, model, ...rest } = mod.default
+-          if (provider && model) result.model = `${provider}/${model}`
+-          result["$schema"] = "https://opencode.ai/config.json"
+-          result = mergeDeep(result, rest)
+-          await Filesystem.writeJson(path.join(Global.Path.config, "config.json"), result)
+-          await fs.unlink(legacy)
+-        })
+-        .catch(() => {})
+-    }
+-
+-    return result
++    return loadGlobalWithStatus()
+   })
+ 
+   export const { readFile } = ConfigPaths
+@@ -1254,17 +1450,7 @@
+       "path" in options ? options.path : { source: options.source, dir: options.dir },
+     )
+ 
+-    const normalized = (() => {
+-      if (!data || typeof data !== "object" || Array.isArray(data)) return data
+-      const copy = { ...(data as Record<string, unknown>) }
+-      const hadLegacy = "theme" in copy || "keybinds" in copy || "tui" in copy
+-      if (!hadLegacy) return copy
+-      delete copy.theme
+-      delete copy.keybinds
+-      delete copy.tui
+-      log.warn("tui keys in opencode config are deprecated; move them to tui.json", { path: source })
+-      return copy
+-    })()
++    const normalized = normalizeLegacyConfig(data, source)
+ 
+     const parsed = Info.safeParse(normalized)
+     if (parsed.success) {
+@@ -1314,6 +1500,10 @@
+     return state().then((x) => x.config)
+   }
+ 
++  export async function status() {
++    return state().then((x) => x.status)
++  }
++
+   export async function getGlobal() {
+     return global()
+   }
+
+--- /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-grep-dnlpi43f/anomalyco-opencode-bfb736e/packages/opencode/src/server/routes/config.ts	2026-03-13 00:34:11
++++ /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-clean-3hti6bsd/anomalyco-opencode-bfb736e/packages/opencode/src/server/routes/config.ts	2026-04-15 21:03:01
+@@ -33,6 +33,27 @@
+         return c.json(await Config.get())
+       },
+     )
++    .get(
++      "/status",
++      describeRoute({
++        summary: "Get configuration status",
++        description: "Retrieve configuration diagnostics, including skipped invalid sources.",
++        operationId: "config.status",
++        responses: {
++          200: {
++            description: "Config diagnostics",
++            content: {
++              "application/json": {
++                schema: resolver(Config.Status),
++              },
++            },
++          },
++        },
++      }),
++      async (c) => {
++        return c.json(await Config.status())
++      },
++    )
+     .patch(
+       "/",
+       describeRoute({

@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertCircle,
   Archive,
   ArrowDownToLine,
+  Copy,
   HardDrive,
   KeyRound,
   Loader2,
@@ -17,11 +18,13 @@ import {
   Settings2,
   Shield,
   TriangleAlert,
+  WifiOff,
   X,
 } from 'lucide-react';
 import { toast as sonnerToast } from 'sonner';
 
 import {
+  getSandboxUrl,
   createBackup,
   getLatestSandboxVersion,
   getSSHConnection,
@@ -36,9 +39,10 @@ import {
 import { hasNewerVersion, InstanceUpdateDialog } from './instance-update-dialog';
 import { VersionHistoryPanel } from '@/components/changelog/version-history-panel';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { useAdminSandboxAction, useAdminSandboxDetail } from '@/hooks/admin/use-admin-sandboxes';
+import { useAdminSandboxAction, useAdminSandboxDetail, useAdminSandboxHealth, useAdminSandboxRepair, type AdminInstanceLayerAction, type AdminInstanceLayerHealth } from '@/hooks/admin/use-admin-sandboxes';
 import { useBackups } from '@/hooks/instance/use-backups';
 import { getServerTypes, type ServerType } from '@/lib/api/billing';
+import { authenticatedFetch } from '@/lib/auth-token';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
@@ -58,6 +62,189 @@ interface TabDef {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   hidden?: boolean;
+}
+
+interface SandboxConfigProblem {
+  source: string;
+  scope: 'global' | 'local' | 'env' | 'managed' | 'remote' | string;
+  kind: 'json' | 'schema' | 'substitution' | string;
+  message?: string;
+  issues?: Array<{ message?: string }>;
+}
+
+interface SandboxConfigStatus {
+  valid: boolean;
+  loadedSources: string[];
+  skippedSources: string[];
+  problems: SandboxConfigProblem[];
+}
+
+interface SandboxProjectSummary {
+  id: string;
+  name: string;
+  path: string;
+}
+
+function isSandboxConfigStatus(value: unknown): value is SandboxConfigStatus {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.valid === 'boolean'
+    && Array.isArray(candidate.loadedSources)
+    && Array.isArray(candidate.skippedSources)
+    && Array.isArray(candidate.problems);
+}
+
+async function requestSandboxJson<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
+  const response = await authenticatedFetch(`${sandboxUrl.replace(/\/+$/, '')}${path}`, {
+    signal: AbortSignal.timeout(10_000),
+    ...init,
+  }, { retryOnAuthError: false });
+
+  const text = await response.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
+    }
+  }
+
+  if (!response.ok) {
+    const message = typeof data === 'object' && data && 'error' in data
+      ? String((data as Record<string, unknown>).error)
+      : `Request failed with status ${response.status}`;
+    throw new Error(message);
+  }
+
+  return data as T;
+}
+
+function formatProblemLabel(problem: SandboxConfigProblem): string {
+  return `${problem.scope} · ${problem.kind}`;
+}
+
+function buildConfigFixPrompt(sandbox: SandboxInfo, status: SandboxConfigStatus): string {
+  const header = `Inspect and repair the ignored OpenCode config sources for instance "${sandbox.name || sandbox.sandbox_id}".`;
+  const explanation = 'OpenCode is running in fail-soft mode and skipped the invalid sources below instead of crashing the runtime.';
+  const problems = status.problems.map((problem, index) => {
+    const issueLines = (problem.issues ?? []).map((issue) => issue.message).filter(Boolean);
+    return [
+      `${index + 1}. Source: ${problem.source}`,
+      `   Scope: ${problem.scope}`,
+      `   Kind: ${problem.kind}`,
+      `   Message: ${problem.message || 'No message provided.'}`,
+      ...(issueLines.length ? issueLines.map((line) => `   Detail: ${line}`) : []),
+    ].join('\n');
+  }).join('\n\n');
+
+  return [
+    header,
+    explanation,
+    '',
+    problems,
+    '',
+    'Repair the invalid source in place. If the problem is a legacy top-level `models` array, migrate it to valid `provider` config.',
+    'When finished, verify `GET /config/status` returns `{"valid": true, "skippedSources": []}` and the runtime stays healthy.',
+  ].join('\n');
+}
+
+function getConfigFixTaskTitle(status: SandboxConfigStatus): string {
+  return status.problems.length > 1
+    ? 'Fix ignored OpenCode config sources'
+    : 'Fix ignored OpenCode config source';
+}
+
+function pickConfigFixProject(projects: SandboxProjectSummary[]): SandboxProjectSummary | null {
+  return projects.find((project) => project.path === '/workspace') ?? projects[0] ?? null;
+}
+
+function ConfigDegradationPanel({
+  status,
+  loading,
+  error,
+  onCopyPrompt,
+  onStartTask,
+  taskPending,
+  taskTargetLabel,
+}: {
+  status?: SandboxConfigStatus;
+  loading: boolean;
+  error?: string | null;
+  onCopyPrompt: () => void;
+  onStartTask: () => void;
+  taskPending: boolean;
+  taskTargetLabel?: string | null;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-border/60 bg-muted/10 p-4 flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading config diagnostics…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-2">
+        <div className="text-sm font-medium">Config diagnostics unavailable</div>
+        <div className="text-xs text-muted-foreground break-words">{error}</div>
+      </div>
+    );
+  }
+
+  if (!status || status.valid || status.problems.length === 0) return null;
+
+  return (
+    <section className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-4">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="mt-0.5 h-4 w-4 text-amber-400 shrink-0" />
+        <div className="min-w-0 space-y-1">
+          <div className="text-sm font-medium text-foreground">Config degraded — runtime still healthy</div>
+          <div className="text-xs text-muted-foreground">
+            OpenCode ignored {status.problems.length} invalid config source{status.problems.length === 1 ? '' : 's'} so the workspace stays online.
+            Fix the skipped source{status.problems.length === 1 ? '' : 's'} to restore a clean config state.
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {status.problems.map((problem, index) => (
+          <div key={`${problem.source}-${index}`} className="rounded-lg border border-amber-500/20 bg-background/70 px-3 py-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <span>{formatProblemLabel(problem)}</span>
+              <span className="rounded-full border border-border/60 px-2 py-0.5 font-mono normal-case tracking-normal text-foreground/80">{problem.source}</span>
+            </div>
+            <div className="text-sm text-foreground">{problem.message || 'Unknown config problem.'}</div>
+            {problem.issues && problem.issues.length > 0 ? (
+              <ul className="space-y-1 text-xs text-muted-foreground list-disc pl-4">
+                {problem.issues.slice(0, 3).map((issue, issueIndex) => (
+                  <li key={`${problem.source}-issue-${issueIndex}`}>{issue.message || 'Unknown issue'}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={onCopyPrompt}>
+          <Copy className="h-3.5 w-3.5 mr-2" />
+          Copy fix prompt
+        </Button>
+        <Button size="sm" onClick={onStartTask} disabled={taskPending}>
+          {taskPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Cpu className="h-3.5 w-3.5 mr-2" />}
+          Start fix task
+        </Button>
+      </div>
+
+      <div className="text-[11px] text-muted-foreground">
+        {taskTargetLabel
+          ? `The fix task will be created and started in ${taskTargetLabel}.`
+          : 'If this instance has no project yet, Kortix will create a Workspace project automatically before starting the fix task.'}
+      </div>
+    </section>
+  );
 }
 
 function formatBytes(bytes: number): string {
@@ -223,19 +410,19 @@ export function InstanceSettingsModal({
   sandbox,
   open,
   onOpenChange,
+  defaultTab = 'overview',
 }: {
   sandbox: SandboxInfo | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultTab?: TabId;
 }) {
-  const router = useRouter();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const { data: adminRole } = useAdminRole();
   const isAdmin = !!adminRole?.isAdmin;
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
   const [backupDescription, setBackupDescription] = useState('');
   const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -244,12 +431,15 @@ export function InstanceSettingsModal({
   const isJustAVPS = sandbox?.provider === 'justavps';
   const supportsBackups = !!sandbox && isJustAVPS && ['active', 'stopped'].includes(sandbox.status);
   const supportsUpdates = !!sandbox && isJustAVPS && ['active', 'stopped', 'error'].includes(sandbox.status);
-  const actionable = !!sandbox && ['active', 'stopped', 'error'].includes(sandbox.status);
 
   const adminDetailQuery = useAdminSandboxDetail(open && isAdmin && sandbox?.sandbox_id ? sandbox.sandbox_id : null);
+  const adminHealthQuery = useAdminSandboxHealth(open && isAdmin && sandbox?.sandbox_id ? sandbox.sandbox_id : null, open && !!sandbox && isAdmin && isJustAVPS);
   const adminActionMutation = useAdminSandboxAction();
+  const adminRepairMutation = useAdminSandboxRepair();
   const adminDetail = adminDetailQuery.data;
+  const adminHealth = adminHealthQuery.data;
   const providerDetail = adminDetail?.provider_detail;
+  const providerError = adminDetail?.provider_error ?? null;
   const effectiveStatus = providerDetail?.status ?? sandbox?.status ?? null;
   const effectiveIp = providerDetail?.ip ?? null;
   const effectiveRegion = providerDetail?.region ?? null;
@@ -278,22 +468,126 @@ export function InstanceSettingsModal({
 
   const tabs = useMemo<TabDef[]>(() => [
     { id: 'overview', label: 'General', icon: Settings2 },
-    { id: 'host', label: 'Host', icon: Server },
+    { id: 'host', label: 'Health', icon: Server },
     { id: 'updates', label: 'Updates', icon: ArrowDownToLine, hidden: !supportsUpdates },
     { id: 'backups', label: 'Backups', icon: Archive, hidden: !supportsBackups },
   ], [supportsBackups, supportsUpdates]);
 
   const visibleTabs = tabs.filter((tab) => !tab.hidden);
+  const sandboxUrl = useMemo(() => {
+    if (!sandbox) return null;
+    try {
+      return getSandboxUrl(sandbox);
+    } catch {
+      return null;
+    }
+  }, [sandbox]);
+
+  const configStatusQuery = useQuery<SandboxConfigStatus>({
+    queryKey: ['sandbox', 'config-status', sandbox?.sandbox_id, sandboxUrl],
+    enabled: open && !!sandboxUrl,
+    queryFn: async () => {
+      const data = await requestSandboxJson<unknown>(sandboxUrl!, '/config/status');
+      if (!isSandboxConfigStatus(data)) {
+        throw new Error('This runtime does not expose config diagnostics yet.');
+      }
+      return data;
+    },
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const sandboxProjectsQuery = useQuery<SandboxProjectSummary[]>({
+    queryKey: ['sandbox', 'config-status-projects', sandbox?.sandbox_id, sandboxUrl],
+    enabled: open && !!sandboxUrl && !!configStatusQuery.data && !configStatusQuery.data.valid,
+    queryFn: async () => {
+      const data = await requestSandboxJson<unknown>(sandboxUrl!, '/kortix/projects');
+      return Array.isArray(data) ? data as SandboxProjectSummary[] : [];
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const configFixPrompt = useMemo(() => {
+    if (!sandbox || !configStatusQuery.data || configStatusQuery.data.valid) return null;
+    return buildConfigFixPrompt(sandbox, configStatusQuery.data);
+  }, [sandbox, configStatusQuery.data]);
+
+  const configFixProject = useMemo(
+    () => pickConfigFixProject(sandboxProjectsQuery.data ?? []),
+    [sandboxProjectsQuery.data],
+  );
+
+  const configFixTaskMutation = useMutation({
+    mutationFn: async () => {
+      if (!sandbox || !sandboxUrl) throw new Error('Sandbox URL unavailable');
+      if (!configStatusQuery.data || configStatusQuery.data.valid) {
+        throw new Error('No invalid config source is currently being skipped.');
+      }
+      const targetProject = configFixProject ?? await requestSandboxJson<SandboxProjectSummary>(sandboxUrl, '/kortix/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Workspace',
+          path: '/workspace',
+          description: 'Default workspace project for runtime repair tasks.',
+        }),
+      });
+
+      const task = await requestSandboxJson<{ id: string }>(sandboxUrl, '/kortix/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: targetProject.id,
+          title: getConfigFixTaskTitle(configStatusQuery.data),
+          description: buildConfigFixPrompt(sandbox, configStatusQuery.data),
+          verification_condition: 'GET /config/status returns {"valid":true,"skippedSources":[]} for this instance.',
+          status: 'todo',
+        }),
+      });
+
+      await requestSandboxJson(sandboxUrl, `/kortix/tasks/${encodeURIComponent(task.id)}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      return {
+        taskId: task.id,
+        project: targetProject,
+      };
+    },
+    onSuccess: ({ taskId, project }) => {
+      sonnerToast.success('Fix task started', {
+        description: `Task ${taskId} is running in ${project.name || project.path}.`,
+      });
+    },
+    onError: (error) => {
+      sonnerToast.error(error instanceof Error ? error.message : 'Failed to start fix task');
+    },
+  });
 
   useEffect(() => {
     if (!open) {
-      setActiveTab('overview');
+      setActiveTab(defaultTab);
       setSetupResult(null);
       setBackupDescription('');
       setRestoreTarget(null);
       setDeleteTarget(null);
       setUpdateDialogOpen(false);
-      setRestartConfirmOpen(false);
+    }
+  }, [defaultTab, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setActiveTab(defaultTab);
+  }, [defaultTab, open, sandbox?.sandbox_id]);
+
+  useEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) {
+      window.requestAnimationFrame(() => active.blur());
     }
   }, [open]);
 
@@ -322,12 +616,11 @@ export function InstanceSettingsModal({
   const restartMutation = useMutation({
     mutationFn: () => restartSandbox(sandbox!.sandbox_id),
     onSuccess: () => {
-      sonnerToast.success('Instance restarted');
+      sonnerToast.success('Workload restart initiated');
       queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] });
-      setRestartConfirmOpen(false);
     },
     onError: (error) => {
-      sonnerToast.error(error instanceof Error ? error.message : 'Failed to restart instance');
+      sonnerToast.error(error instanceof Error ? error.message : 'Failed to restart workload');
     },
   });
 
@@ -342,7 +635,22 @@ export function InstanceSettingsModal({
     },
   });
 
-  const hostActionPending = restartMutation.isPending || stopMutation.isPending || adminActionMutation.isPending;
+  const hostActionPending = restartMutation.isPending || stopMutation.isPending || adminActionMutation.isPending || adminRepairMutation.isPending;
+  const showRecoveryCallout = isJustAVPS && (adminHealth?.overall_status === 'offline' || adminHealth?.overall_status === 'degraded' || effectiveStatus === 'stopped' || effectiveStatus === 'error' || !!providerError);
+
+  function actionSuccessMessage(action: AdminInstanceLayerAction['action'], serviceId?: string) {
+    switch (action) {
+      case 'start_host': return 'Host start initiated';
+      case 'reboot_host': return 'Host reboot initiated';
+      case 'stop_host': return 'Host stop initiated';
+      case 'start_workload': return 'Workload start initiated';
+      case 'restart_workload': return 'Workload restart initiated';
+      case 'stop_workload': return 'Workload stop initiated';
+      case 'restart_runtime': return 'Core runtime restart initiated';
+      case 'restart_service': return `${serviceId || 'Service'} restart initiated`;
+      default: return 'Action initiated';
+    }
+  }
 
   function triggerHostAction(action: 'start' | 'stop' | 'reboot') {
     if (!sandbox) return;
@@ -351,10 +659,9 @@ export function InstanceSettingsModal({
         { sandboxId: sandbox.sandbox_id, action },
         {
           onSuccess: () => {
-            sonnerToast.success(`${action === 'reboot' ? 'Host reboot' : action === 'start' ? 'Host start' : 'Host stop'} initiated`);
+            sonnerToast.success(`${action === 'reboot' ? 'Host restart' : action === 'start' ? 'Host start' : 'Host stop'} initiated`);
             queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] });
             adminDetailQuery.refetch();
-            setRestartConfirmOpen(false);
           },
           onError: (error) => {
             sonnerToast.error(error instanceof Error ? error.message : `Failed to ${action} host`);
@@ -370,6 +677,23 @@ export function InstanceSettingsModal({
     }
 
     restartMutation.mutate();
+  }
+
+  function triggerRepairAction(action: AdminInstanceLayerAction['action'], serviceId?: string) {
+    if (!sandbox || !isAdmin) return;
+    adminRepairMutation.mutate(
+      { sandboxId: sandbox.sandbox_id, action, serviceId },
+      {
+        onSuccess: () => {
+          sonnerToast.success(actionSuccessMessage(action, serviceId));
+          void adminHealthQuery.refetch();
+          void adminDetailQuery.refetch();
+        },
+        onError: (error) => {
+          sonnerToast.error(error instanceof Error ? error.message : `Failed to run ${action}`);
+        },
+      },
+    );
   }
 
   const setupSshMutation = useMutation({
@@ -419,6 +743,39 @@ export function InstanceSettingsModal({
 
   const latestVersion = latestVersionQuery.data?.version ?? null;
   const updateAvailable = sandbox?.version && latestVersion ? hasNewerVersion(sandbox.version, latestVersion) : false;
+  const runtimeServices = Array.isArray(adminHealth?.layers.runtime.details.services)
+    ? adminHealth.layers.runtime.details.services as Array<{ id: string; name: string; status: string; scope?: string; lastError?: string | null }>
+    : [];
+
+  function layerTone(status: AdminInstanceLayerHealth['status']) {
+    switch (status) {
+      case 'healthy': return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
+      case 'degraded': return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+      case 'offline': return 'border-red-500/30 bg-red-500/10 text-red-200';
+      default: return 'border-border/60 bg-muted/10 text-muted-foreground';
+    }
+  }
+
+  function actionButtonVariant(action: AdminInstanceLayerAction['action']) {
+    if (action === 'stop_host' || action === 'stop_workload') return 'ghost' as const;
+    return action === 'reboot_host' ? 'default' as const : 'outline' as const;
+  }
+
+  async function handleCopyConfigFixPrompt() {
+    if (!configFixPrompt) return;
+    try {
+      await navigator.clipboard.writeText(configFixPrompt);
+      sonnerToast.success('Fix prompt copied', {
+        description: 'Share it with the agent or paste it into a task to repair the skipped source.',
+      });
+    } catch (error) {
+      sonnerToast.error(error instanceof Error ? error.message : 'Failed to copy fix prompt');
+    }
+  }
+
+  function handleStartConfigFixTask() {
+    configFixTaskMutation.mutate();
+  }
 
   return (
     <>
@@ -428,7 +785,7 @@ export function InstanceSettingsModal({
             'p-0 gap-0',
             isMobile
               ? 'fixed inset-0 w-screen h-screen max-w-none max-h-none rounded-none m-0 translate-x-0 translate-y-0 left-0 top-0'
-              : 'max-w-5xl max-h-[90vh] overflow-hidden',
+              : 'max-w-5xl h-[min(700px,90vh)] max-h-[90vh] overflow-hidden',
           )}
           hideCloseButton
         >
@@ -471,15 +828,15 @@ export function InstanceSettingsModal({
 
               {sandbox ? (
                 <div className="border-t border-border bg-background/95 px-4 py-3 flex justify-end">
-                  <Button onClick={() => router.push(`/instances/${sandbox.sandbox_id}`)}>
+                  <Button onClick={() => window.open(`/instances/${sandbox.sandbox_id}`, '_blank', 'noopener,noreferrer')}>
                     Open instance
                   </Button>
                 </div>
               ) : null}
             </div>
           ) : (
-            <div className="flex flex-row h-[700px]">
-              <div className="bg-background flex-shrink-0 w-56 p-4 border-r border-border flex flex-col">
+            <div className="flex h-full min-h-0 flex-row">
+              <div className="bg-background flex-shrink-0 w-56 p-4 border-r border-border flex flex-col min-h-0">
                 <div className="flex justify-start mb-3">
                   <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onOpenChange(false)}>
                     <X className="h-4 w-4" />
@@ -516,7 +873,7 @@ export function InstanceSettingsModal({
 
                 {sandbox ? (
                   <div className="mt-auto pt-4">
-                    <Button className="w-full" onClick={() => router.push(`/instances/${sandbox.sandbox_id}`)}>
+                    <Button className="w-full" onClick={() => window.open(`/instances/${sandbox.sandbox_id}`, '_blank', 'noopener,noreferrer')}>
                       Open instance
                     </Button>
                   </div>
@@ -530,22 +887,6 @@ export function InstanceSettingsModal({
           )}
         </DialogContent>
       </Dialog>
-
-      <ConfirmDialog
-        open={restartConfirmOpen}
-        onOpenChange={setRestartConfirmOpen}
-        title={effectiveStatus === 'stopped' ? 'Start this host?' : 'Reboot this host?'}
-        description={
-          <>
-            This will {effectiveStatus === 'stopped' ? 'start' : 'reboot'}{' '}
-            <span className="font-medium text-foreground">{sandbox?.name || sandbox?.sandbox_id || 'this instance'}</span>.
-            {effectiveStatus === 'stopped' ? ' The host will boot back up.' : ' Any unsaved in-memory state will be lost.'}
-          </>
-        }
-        confirmLabel={effectiveStatus === 'stopped' ? 'Start host' : 'Reboot host'}
-        onConfirm={() => triggerHostAction(effectiveStatus === 'stopped' ? 'start' : 'reboot')}
-        isPending={hostActionPending}
-      />
 
       <ConfirmDialog
         open={!!restoreTarget}
@@ -592,6 +933,57 @@ export function InstanceSettingsModal({
               <h2 className="text-lg font-semibold">General</h2>
               <p className="text-sm text-muted-foreground">Core details and entry points for this instance.</p>
             </div>
+            <ConfigDegradationPanel
+              status={configStatusQuery.data}
+              loading={configStatusQuery.isLoading}
+              error={configStatusQuery.error instanceof Error ? configStatusQuery.error.message : null}
+              onCopyPrompt={handleCopyConfigFixPrompt}
+              onStartTask={handleStartConfigFixTask}
+              taskPending={configFixTaskMutation.isPending}
+              taskTargetLabel={configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null}
+            />
+            {showRecoveryCallout && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5">
+                    {adminHealth?.overall_status === 'offline' ? (
+                      <WifiOff className="h-4 w-4 text-amber-400" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-amber-400" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="text-sm font-medium text-foreground">
+                      {adminHealth
+                        ? `Instance ${adminHealth.overall_status}`
+                        : effectiveStatus === 'stopped'
+                          ? 'This host is offline'
+                          : 'This machine needs attention'}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {adminHealth
+                        ? 'Health is split into host, workload, and runtime layers. Use the Health tab to inspect and repair the failing layer directly.'
+                        : 'Refresh the health data to inspect the failing layer directly.'}
+                    </div>
+                    {providerError ? <div className="text-[11px] text-muted-foreground break-words">{providerError}</div> : null}
+                  </div>
+                </div>
+                {adminHealth ? (
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {(['host', 'workload', 'runtime'] as const).map((key) => {
+                      const layer = adminHealth.layers[key];
+                      return (
+                        <div key={key} className={cn('rounded-lg border px-3 py-2', layerTone(layer.status))}>
+                          <div className="text-[11px] uppercase tracking-wide opacity-80">{layer.label}</div>
+                          <div className="mt-1 text-sm font-medium capitalize">{layer.status}</div>
+                          <div className="mt-1 text-[11px] text-muted-foreground">{layer.summary}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Name</div>
@@ -631,7 +1023,7 @@ export function InstanceSettingsModal({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Use the Host tab for machine-level access and power actions.
+              Use the Health tab to inspect host, workload, and runtime layers separately.
             </p>
           </section>
         </div>
@@ -642,39 +1034,138 @@ export function InstanceSettingsModal({
       return (
         <div className="p-6 space-y-6">
           <div>
-            <h2 className="text-lg font-semibold">Host</h2>
-            <p className="text-sm text-muted-foreground">Access and host-level power controls for this instance.</p>
+            <h2 className="text-lg font-semibold">Health</h2>
+            <p className="text-sm text-muted-foreground">Three explicit layers: host machine, workload container, and core runtime services.</p>
           </div>
 
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-start gap-3">
             <TriangleAlert className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
             <div>
-              <div className="text-sm font-medium text-foreground">This tab controls the host machine</div>
+              <div className="text-sm font-medium text-foreground">Choose the smallest repair level first</div>
               <div className="text-xs text-muted-foreground mt-1">
-                Start, stop, reboot, and SSH actions here affect the actual host backing this instance.
+                Runtime restart is cheapest, workload restart is next, and host reboot is last resort.
               </div>
             </div>
           </div>
 
-          <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
-            <div className="text-sm font-medium">Host actions</div>
-            <div className="flex flex-wrap gap-2">
-              {actionable && (
-                <Button variant="outline" onClick={() => setRestartConfirmOpen(true)} disabled={hostActionPending}>
+          <ConfigDegradationPanel
+            status={configStatusQuery.data}
+            loading={configStatusQuery.isLoading}
+            error={configStatusQuery.error instanceof Error ? configStatusQuery.error.message : null}
+            onCopyPrompt={handleCopyConfigFixPrompt}
+            onStartTask={handleStartConfigFixTask}
+            taskPending={configFixTaskMutation.isPending}
+            taskTargetLabel={configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null}
+          />
+
+          {isAdmin ? (
+            adminHealthQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading layered health…
+              </div>
+            ) : adminHealth ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">Overall status</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {adminHealth.recommended_action
+                        ? `Recommended action: ${adminHealth.recommended_action.replace(/_/g, ' ')}`
+                        : 'All layers healthy'}
+                    </div>
+                  </div>
+                  <div className={cn('rounded-full border px-3 py-1 text-xs font-medium capitalize', layerTone(adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy' && adminHealth.layers.runtime.status === 'healthy' ? 'healthy' : adminHealth.overall_status === 'offline' ? 'offline' : adminHealth.overall_status === 'degraded' ? 'degraded' : 'unknown'))}>
+                    {adminHealth.overall_status}
+                  </div>
+                </div>
+
+                {(['host', 'workload', 'runtime'] as const).map((key) => {
+                  const layer = adminHealth.layers[key];
+                  const layerServices = key === 'runtime' ? runtimeServices : [];
+                  return (
+                    <section key={key} className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-medium">{layer.label}</div>
+                            <div className={cn('rounded-full border px-2.5 py-0.5 text-[11px] font-medium capitalize', layerTone(layer.status))}>
+                              {layer.status}
+                            </div>
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">{layer.summary}</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {layer.actions
+                            .filter((action) => key !== 'runtime' || action.action !== 'restart_service')
+                            .map((action) => (
+                              <Button
+                                key={`${key}-${action.action}`}
+                                size="sm"
+                                variant={actionButtonVariant(action.action)}
+                                onClick={() => triggerRepairAction(action.action, action.serviceId)}
+                                disabled={adminRepairMutation.isPending}
+                              >
+                                {adminRepairMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : null}
+                                {action.label}
+                              </Button>
+                            ))}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 text-xs">
+                        {Object.entries(layer.details).filter(([detailKey]) => detailKey !== 'services').map(([detailKey, value]) => (
+                          <div key={detailKey} className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+                            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{detailKey.replace(/_/g, ' ')}</div>
+                            <div className="mt-1 break-words font-mono text-foreground/85">{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—')}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {key === 'runtime' && layerServices.length > 0 ? (
+                        <div className="space-y-2">
+                          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Managed services</div>
+                          <div className="space-y-2">
+                            {layerServices.map((service) => (
+                              <div key={service.id} className="rounded-lg border border-border/60 bg-background/60 px-3 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-medium">{service.name}</div>
+                                  <div className="mt-1 text-xs text-muted-foreground font-mono">{service.id} · {service.status}</div>
+                                  {service.lastError ? <div className="mt-1 text-[11px] text-muted-foreground break-words">{service.lastError}</div> : null}
+                                </div>
+                                <Button size="sm" variant="outline" onClick={() => triggerRepairAction('restart_service', service.id)} disabled={adminRepairMutation.isPending}>
+                                  {adminRepairMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <RotateCw className="h-3.5 w-3.5 mr-2" />}
+                                  Restart service
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
+                Health data unavailable.
+              </div>
+            )
+          ) : (
+            <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
+              <div className="text-sm font-medium">Recovery</div>
+              <div className="text-xs text-muted-foreground">Detailed host/workload/runtime controls are available to admins. You can still restart the workload and manage SSH access here.</div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => restartMutation.mutate()} disabled={hostActionPending}>
                   {hostActionPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCw className="h-4 w-4 mr-2" />}
-                  {effectiveStatus === 'stopped' ? 'Start host' : 'Reboot host'}
+                  Restart workload
                 </Button>
-              )}
-              <Button variant="outline" onClick={() => triggerHostAction('stop')} disabled={effectiveStatus === 'stopped' || hostActionPending}>
-                {hostActionPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Stop host
-              </Button>
-              <Button variant="ghost" onClick={() => adminDetailQuery.refetch()} disabled={adminDetailQuery.isFetching}>
-                <RefreshCw className={cn('h-4 w-4 mr-2', adminDetailQuery.isFetching ? 'animate-spin' : '')} />
-                Refresh host
-              </Button>
+                <Button variant="outline" onClick={() => triggerHostAction('stop')} disabled={effectiveStatus === 'stopped' || hostActionPending}>
+                  {hostActionPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Stop host
+                </Button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="space-y-4">
               {isAdmin && adminDetailQuery.isLoading ? (
@@ -738,7 +1229,7 @@ export function InstanceSettingsModal({
               ) : null}
 
               <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
-                <div className="text-sm font-medium">Host details</div>
+                <div className="text-sm font-medium">Provider details</div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
                     <div className="text-xs text-muted-foreground">Status</div>
@@ -838,6 +1329,21 @@ export function InstanceSettingsModal({
         {backups.isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading backups…
+          </div>
+        ) : backups.error ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="space-y-3">
+                <div>
+                  <div className="font-medium">Unable to load backups</div>
+                  <div className="text-amber-100/80">{backups.error instanceof Error ? backups.error.message : 'Failed to load backups for this instance.'}</div>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => void backups.refetch()}>
+                  Retry
+                </Button>
+              </div>
+            </div>
           </div>
         ) : backups.backups.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border/60 bg-muted/10 p-8 text-center text-sm text-muted-foreground">

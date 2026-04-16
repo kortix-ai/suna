@@ -21,7 +21,7 @@ import { dirname } from 'path'
 const WORKSPACE_ROOT = process.env.KORTIX_WORKSPACE_ROOT || '/workspace'
 const BOOTSTRAP_PATH = process.env.BOOTSTRAP_PATH || `${WORKSPACE_ROOT}/.secrets/.bootstrap-env.json`
 
-const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_YOLO_API_KEY', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const
+const CORE_VARS = ['KORTIX_TOKEN', 'KORTIX_YOLO_API_KEY', 'KORTIX_YOLO_URL', 'KORTIX_API_URL', 'INTERNAL_SERVICE_KEY', 'TUNNEL_TOKEN'] as const
 
 /**
  * Load bootstrap env vars into process.env.

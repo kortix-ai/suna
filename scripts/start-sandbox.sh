@@ -82,7 +82,7 @@ for i in \$(seq 1 120); do
 done
 [ -s "${ENV_FILE}" ] || touch "${ENV_FILE}"
 docker rm -f ${CONTAINER} 2>/dev/null || true
-exec docker run --rm --name ${CONTAINER} --env-file "${ENV_FILE}" \\
+exec docker run --rm --name ${CONTAINER} --env-file "${ENV_FILE}" -e KORTIX_ENABLE_INNER_DOCKER=0 \\
   --cap-add SYS_ADMIN --security-opt seccomp=unconfined --shm-size 2g \\
   -v ${STARTUP_PATCH}:/ephemeral/startup.sh:ro -v ${VOLUME}:/workspace -v ${VOLUME}:/config ${PORT_ARGS} \\
   ${DOCKER_IMAGE}
@@ -98,9 +98,13 @@ Requires=docker.service
 Wants=network-online.target
 [Service]
 Type=simple
+ExecStartPre=/bin/sh -lc 'systemctl reset-failed docker.service ${SERVICE}.service >/dev/null 2>&1 || true'
+ExecStartPre=/bin/systemctl start docker.service
+ExecStartPre=/bin/sh -lc '/usr/bin/docker rm -f ${CONTAINER} >/dev/null 2>&1 || true'
 ExecStart=/usr/local/bin/${SERVICE}-start.sh
 Restart=always
-RestartSec=5
+RestartSec=3
+StartLimitIntervalSec=0
 TimeoutStartSec=0
 [Install]
 WantedBy=multi-user.target

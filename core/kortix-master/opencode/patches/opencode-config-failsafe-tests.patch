@@ -1,0 +1,236 @@
+--- /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-grep-dnlpi43f/anomalyco-opencode-bfb736e/packages/opencode/test/config/config.test.ts	2026-03-13 00:34:11
++++ /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-clean-3hti6bsd/anomalyco-opencode-bfb736e/packages/opencode/test/config/config.test.ts	2026-04-15 21:03:43
+@@ -328,7 +328,7 @@
+   })
+ })
+ 
+-test("validates config schema and throws on invalid fields", async () => {
++test("skips invalid project schema config and reports diagnostics", async () => {
+   await using tmp = await tmpdir({
+     init: async (dir) => {
+       await writeConfig(dir, {
+@@ -340,13 +340,24 @@
+   await Instance.provide({
+     directory: tmp.path,
+     fn: async () => {
+-      // Strict schema should throw an error for invalid fields
+-      await expect(Config.get()).rejects.toThrow()
++      const config = await Config.get()
++      const status = await Config.status()
++
++      expect(config.username).toBeDefined()
++      expect(status.valid).toBe(false)
++      expect(status.skippedSources).toContain(path.join(tmp.path, "opencode.json"))
++      expect(status.problems).toContainEqual(
++        expect.objectContaining({
++          source: path.join(tmp.path, "opencode.json"),
++          scope: "local",
++          kind: "schema",
++        }),
++      )
+     },
+   })
+ })
+ 
+-test("throws error for invalid JSON", async () => {
++test("skips invalid JSON config and reports diagnostics", async () => {
+   await using tmp = await tmpdir({
+     init: async (dir) => {
+       await Filesystem.write(path.join(dir, "opencode.json"), "{ invalid json }")
+@@ -355,11 +366,55 @@
+   await Instance.provide({
+     directory: tmp.path,
+     fn: async () => {
+-      await expect(Config.get()).rejects.toThrow()
++      const config = await Config.get()
++      const status = await Config.status()
++
++      expect(config.username).toBeDefined()
++      expect(status.valid).toBe(false)
++      expect(status.problems).toContainEqual(
++        expect.objectContaining({
++          source: path.join(tmp.path, "opencode.json"),
++          scope: "local",
++          kind: "json",
++        }),
++      )
+     },
+   })
+ })
+ 
++test("migrates legacy top-level models config instead of failing", async () => {
++  await using tmp = await tmpdir({
++    init: async (dir) => {
++      await writeConfig(dir, {
++        $schema: "https://opencode.ai/config.json",
++        models: [
++          {
++            name: "qwen-local",
++            endpoint: "https://engine.example.com/v1",
++            api_key: "secret-key",
++            model: "qwen-35b",
++          },
++        ],
++      })
++    },
++  })
++
++  await Instance.provide({
++    directory: tmp.path,
++    fn: async () => {
++      const config = await Config.get()
++      const status = await Config.status()
++
++      expect(config.provider?.["qwen-local"]?.npm).toBe("@ai-sdk/openai-compatible")
++      expect(config.provider?.["qwen-local"]?.options?.baseURL).toBe("https://engine.example.com/v1")
++      expect(config.provider?.["qwen-local"]?.options?.apiKey).toBe("secret-key")
++      expect(config.provider?.["qwen-local"]?.models?.default?.id).toBe("qwen-35b")
++      expect(status.valid).toBe(true)
++      expect(status.problems).toHaveLength(0)
++    },
++  })
++})
++
+ test("handles agent configuration", async () => {
+   await using tmp = await tmpdir({
+     init: async (dir) => {
+@@ -2031,6 +2086,41 @@
+         fn: async () => {
+           const config = await Config.get()
+           expect(config.username).toBe("secret_key_from_file")
++        },
++      })
++    } finally {
++      if (originalEnv !== undefined) {
++        process.env["OPENCODE_CONFIG_CONTENT"] = originalEnv
++      } else {
++        delete process.env["OPENCODE_CONFIG_CONTENT"]
++      }
++    }
++  })
++
++  test("skips invalid OPENCODE_CONFIG_CONTENT and reports env diagnostics", async () => {
++    const originalEnv = process.env["OPENCODE_CONFIG_CONTENT"]
++    process.env["OPENCODE_CONFIG_CONTENT"] = JSON.stringify({
++      $schema: "https://opencode.ai/config.json",
++      invalid_field: true,
++    })
++
++    try {
++      await using tmp = await tmpdir()
++      await Instance.provide({
++        directory: tmp.path,
++        fn: async () => {
++          const config = await Config.get()
++          const status = await Config.status()
++
++          expect(config.username).toBeDefined()
++          expect(status.valid).toBe(false)
++          expect(status.problems).toContainEqual(
++            expect.objectContaining({
++              source: "OPENCODE_CONFIG_CONTENT",
++              scope: "env",
++              kind: "schema",
++            }),
++          )
+         },
+       })
+     } finally {
+@@ -2042,3 +2132,53 @@
+     }
+   })
+ })
++
++test("skips invalid remote account config and reports diagnostics", async () => {
++  const originalActive = Account.active
++  const originalConfig = Account.config
++  const originalToken = Account.token
++  const originalControlToken = process.env["OPENCODE_CONSOLE_TOKEN"]
++
++  Account.active = mock(() => ({
++    id: AccountID.make("account-1"),
++    email: "user@example.com",
++    url: "https://control.example.com",
++    active_org_id: OrgID.make("org-1"),
++  }))
++
++  Account.config = mock(async () => ({
++    invalid_field: true,
++  }))
++
++  Account.token = mock(async () => AccessToken.make("st_test_token"))
++
++  try {
++    await using tmp = await tmpdir()
++    await Instance.provide({
++      directory: tmp.path,
++      fn: async () => {
++        const config = await Config.get()
++        const status = await Config.status()
++
++        expect(config.username).toBeDefined()
++        expect(status.valid).toBe(false)
++        expect(status.problems).toContainEqual(
++          expect.objectContaining({
++            source: "https://control.example.com/api/config",
++            scope: "remote",
++            kind: "schema",
++          }),
++        )
++      },
++    })
++  } finally {
++    Account.active = originalActive
++    Account.config = originalConfig
++    Account.token = originalToken
++    if (originalControlToken !== undefined) {
++      process.env["OPENCODE_CONSOLE_TOKEN"] = originalControlToken
++    } else {
++      delete process.env["OPENCODE_CONSOLE_TOKEN"]
++    }
++  }
++})
+
+--- /dev/null	2026-04-15 21:04:39
++++ /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-clean-3hti6bsd/anomalyco-opencode-bfb736e/packages/opencode/test/server/config-routes.test.ts	2026-04-15 21:03:54
+@@ -0,0 +1,40 @@
++import { describe, expect, test } from "bun:test"
++import path from "path"
++
++import { Server } from "../../src/server/server"
++import { tmpdir } from "../fixture/fixture"
++import { Filesystem } from "../../src/util/filesystem"
++
++describe("config status route", () => {
++  test("returns config diagnostics without failing the instance", async () => {
++    await using tmp = await tmpdir({
++      init: async (dir) => {
++        await Filesystem.write(
++          path.join(dir, "opencode.json"),
++          JSON.stringify({
++            $schema: "https://opencode.ai/config.json",
++            invalid_field: true,
++          }),
++        )
++      },
++    })
++
++    const app = Server.createApp({})
++    const response = await app.request(`/config/status?directory=${encodeURIComponent(tmp.path)}`)
++    expect(response.status).toBe(200)
++
++    const payload = await response.json()
++    expect(payload).toEqual(
++      expect.objectContaining({
++        valid: false,
++      }),
++    )
++    expect(payload.problems).toContainEqual(
++      expect.objectContaining({
++        source: path.join(tmp.path, "opencode.json"),
++        scope: "local",
++        kind: "schema",
++      }),
++    )
++  })
++})

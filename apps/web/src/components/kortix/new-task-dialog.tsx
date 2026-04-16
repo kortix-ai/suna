@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Dialog,
@@ -269,7 +270,7 @@ export function NewTaskDialog({
                       {/* Thumbnail */}
                       <div className="h-[72px] relative flex items-center justify-center overflow-hidden bg-muted/20">
                         {preview ? (
-                          <img src={preview} alt={file.name} className="h-full w-full object-cover" />
+                          <Image src={preview} alt={file.name} fill className="object-cover" unoptimized />
                         ) : (
                           <div className="flex flex-col items-center gap-1">
                             {getFileIcon(file.name, { className: 'h-6 w-6', variant: 'monochrome' })}

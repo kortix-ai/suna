@@ -174,6 +174,9 @@ function buildDockerRunCommandWithMode(config: ContainerConfig, detached: boolea
   // reports the correct version. This overrides any stale value in the env file.
   const imageTag = config.image.includes(':') ? config.image.split(':').pop() : 'unknown';
   args.push(`-e SANDBOX_VERSION=${sq(imageTag!)}`);
+  if (isJustAVPSManagedConfig(config)) {
+    args.push('-e KORTIX_ENABLE_INNER_DOCKER=0');
+  }
 
   for (const cap of config.caps) {
     const stripped = cap.replace(/^CAP_/, '');
@@ -204,7 +207,7 @@ export function buildManagedServiceStartScript(config: ContainerConfig): string 
     'BOOT_TIME=$(stat -c %Y /proc/1 2>/dev/null || echo 0)',
     'for i in $(seq 1 120); do',
     '  if [ -s "$ENV_FILE" ]; then',
-    '    ENV_MTIME=$(stat -f %m "$ENV_FILE" 2>/dev/null || stat -c %Y "$ENV_FILE" 2>/dev/null || echo 0)',
+    '    ENV_MTIME=$(stat -c %Y "$ENV_FILE" 2>/dev/null || stat -f %m "$ENV_FILE" 2>/dev/null || echo 0)',
     '    if [ "$ENV_MTIME" -gt "$BOOT_TIME" ]; then',
     '      break',
     '    fi',
