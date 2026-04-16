@@ -1053,10 +1053,7 @@ export default function HomeScreen() {
   }, [setColorScheme]);
 
   const handleUserMenuOpen = useCallback(() => {
-    setDrawerOpen(false);
-    setTimeout(() => {
-      userMenuSheetRef.current?.present();
-    }, 220);
+    userMenuSheetRef.current?.present();
   }, []);
 
   const handleSignOut = useCallback(() => {
