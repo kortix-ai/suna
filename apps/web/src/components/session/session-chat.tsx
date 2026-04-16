@@ -2402,9 +2402,13 @@ function ThrottledMarkdown({
   content: string;
   isStreaming: boolean;
 }) {
+  // During streaming, only close unterminated code fences (safe — just
+  // appends closing backticks). Do NOT trim table rows — that strips
+  // real content mid-stream and causes garbled text until completion.
+  // The reference (opencode PacedMarkdown) does zero content modification.
   const displayContent = isStreaming
-    ? closeUnterminatedCodeFence(trimIncompleteTableRow(content))
-    : content;
+    ? closeUnterminatedCodeFence(content)
+    : trimIncompleteTableRow(content);
   return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} />;
 }
 
