@@ -7496,9 +7496,14 @@ ToolRegistry.register('oc-project-update', ProjectGetTool);
 function ProjectSelectTool({ part }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  const { enabled: navigationEnabled, openTab } = useToolNavigation();
   const project = (input.project as string) || '';
   const data = useMemo(() => parseProjectSelectOutput(output || ''), [output]);
   const name = data?.name || project;
+  const projectId = useMemo(() => {
+    const m = (output || '').match(/\(proj-[a-z0-9-]+\)/);
+    return m ? m[0].slice(1, -1) : name;
+  }, [output, name]);
 
   return (
     <BasicTool
@@ -7507,6 +7512,18 @@ function ProjectSelectTool({ part }: ToolProps) {
         title: 'Project Select',
         subtitle: name,
       }}
+      onClick={
+        navigationEnabled
+          ? () =>
+              openTab({
+                id: `project:${projectId}`,
+                title: name,
+                type: 'page' as any,
+                href: `/projects/${encodeURIComponent(projectId)}`,
+              })
+          : undefined
+      }
+      rightAccessory={navigationEnabled ? <ChevronRight /> : undefined}
     />
   );
 }
@@ -7518,9 +7535,14 @@ ToolRegistry.register('oc-project-select', ProjectSelectTool);
 function ProjectCreateTool({ part }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  const { enabled: navigationEnabled, openTab } = useToolNavigation();
   const name = (input.name as string) || '';
   const data = useMemo(() => parseProjectCreateOutput(output || ''), [output]);
   const displayName = data?.name || name;
+  const projectId = useMemo(() => {
+    const m = (output || '').match(/proj-[a-z0-9-]+/);
+    return m ? m[0] : displayName;
+  }, [output, displayName]);
 
   return (
     <BasicTool
@@ -7529,6 +7551,18 @@ function ProjectCreateTool({ part }: ToolProps) {
         title: 'Project Create',
         subtitle: displayName,
       }}
+      onClick={
+        navigationEnabled
+          ? () =>
+              openTab({
+                id: `project:${projectId}`,
+                title: displayName,
+                type: 'page' as any,
+                href: `/projects/${encodeURIComponent(projectId)}`,
+              })
+          : undefined
+      }
+      rightAccessory={navigationEnabled ? <ChevronRight /> : undefined}
     />
   );
 }
