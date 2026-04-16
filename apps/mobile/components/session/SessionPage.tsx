@@ -26,6 +26,8 @@ import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
+import { Icon } from '@/components/ui/icon';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Text as RNText } from 'react-native';
 
@@ -73,7 +75,7 @@ function AnimatedToggleIcon({
 }: {
   open: boolean;
   color: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: keyof typeof Ionicons.glyphMap | 'menu-lucide';
   size?: number;
 }) {
   const progress = useSharedValue(open ? 1 : 0);
@@ -93,14 +95,24 @@ function AnimatedToggleIcon({
     transform: [{ rotate: `${interpolate(progress.value, [0, 1], [-90, 0])}deg` }],
   }));
 
+  const renderBase = () => {
+    if (icon === 'menu-lucide') {
+      return <Icon as={MenuIcon} size={size} color={color} strokeWidth={2} />;
+    }
+    return <Ionicons name={icon} size={size} color={color} />;
+  };
+
+  const renderClose = () => {
+    if (icon === 'menu-lucide') {
+      return <Icon as={CloseIcon} size={size} color={color} strokeWidth={2} />;
+    }
+    return <Ionicons name="close" size={size} color={color} />;
+  };
+
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Reanimated.View style={baseStyle}>
-        <Ionicons name={icon} size={size} color={color} />
-      </Reanimated.View>
-      <Reanimated.View style={closeStyle}>
-        <Ionicons name="close" size={size} color={color} />
-      </Reanimated.View>
+      <Reanimated.View style={baseStyle}>{renderBase()}</Reanimated.View>
+      <Reanimated.View style={closeStyle}>{renderClose()}</Reanimated.View>
     </View>
   );
 }
@@ -774,7 +786,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
               className="mr-3 p-1"
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <AnimatedToggleIcon open={!!isDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="menu" />
+              <AnimatedToggleIcon open={!!isDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="menu-lucide" size={20} />
             </TouchableOpacity>
           )}
           <View className="flex-1 flex-row items-center">
