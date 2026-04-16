@@ -138,9 +138,9 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
   const EASE_IN_OUT = Easing.bezier(0.4, 0, 0.2, 1);
 
-  // Given a finger x (relative to strip viewport), return the pill id under it.
-  const pillIdAtX = useCallback((fingerX: number): string | null => {
-    const contentX = fingerX + scrollOffsetRef.current;
+  // Given a viewport x, return the pill id under it in content coords.
+  const pillIdAtX = useCallback((viewportX: number): string | null => {
+    const contentX = viewportX + scrollOffsetRef.current;
     for (const tab of tabs) {
       const layout = pillLayoutsRef.current[tab.id];
       if (!layout) continue;
@@ -150,6 +150,40 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     }
     return null;
   }, [tabs]);
+
+  // Find the pill whose center is closest to a given viewport x.
+  const pillNearestCenter = useCallback((): string | null => {
+    const center = viewportWidthRef.current / 2 + scrollOffsetRef.current;
+    let bestId: string | null = null;
+    let bestDist = Infinity;
+    for (const tab of tabs) {
+      const layout = pillLayoutsRef.current[tab.id];
+      if (!layout) continue;
+      const pillCenter = layout.x + layout.width / 2;
+      const dist = Math.abs(pillCenter - center);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestId = tab.id;
+      }
+    }
+    return bestId;
+  }, [tabs]);
+
+  // Smoothly scroll the strip so the given pill is centered in the viewport.
+  const snapPillToCenter = useCallback((pillId: string) => {
+    const layout = pillLayoutsRef.current[pillId];
+    const viewport = viewportWidthRef.current;
+    if (!layout || !viewport) return;
+    const target = Math.max(
+      0,
+      Math.min(
+        contentWidthRef.current - viewport,
+        layout.x + layout.width / 2 - viewport / 2,
+      ),
+    );
+    scrollOffsetRef.current = target;
+    scrollRef.current?.scrollTo({ x: target, animated: true });
+  }, []);
 
   // Scroll the strip by a delta, clamped to content bounds.
   const scrollBy = useCallback((delta: number) => {
@@ -168,26 +202,27 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     setIsHolding(false);
     setPreviewId(null);
     expansion.value = withTiming(0, { duration: 260, easing: EASE_IN_OUT });
-    if (id && id !== activeTabId) {
-      onSelectTab(id);
+    if (id) {
+      snapPillToCenter(id);
+      if (id !== activeTabId) onSelectTab(id);
     }
-  }, [activeTabId, onSelectTab, expansion, EASE_IN_OUT]);
+  }, [activeTabId, onSelectTab, expansion, EASE_IN_OUT, snapPillToCenter]);
 
-  const beginHold = useCallback((fingerX: number) => {
+  const beginHold = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setIsHolding(true);
     expansion.value = withTiming(1, { duration: 340, easing: EASE_OUT });
-    setPreviewId(pillIdAtX(fingerX));
-  }, [pillIdAtX, expansion, EASE_OUT]);
+    setPreviewId(pillNearestCenter());
+  }, [pillNearestCenter, expansion, EASE_OUT]);
 
-  const handleDragUpdate = useCallback((dx: number, fingerX: number) => {
+  const handleDragUpdate = useCallback((dx: number) => {
     scrollBy(-dx);
-    setPreviewId(pillIdAtX(fingerX));
-  }, [scrollBy, pillIdAtX]);
+    setPreviewId(pillNearestCenter());
+  }, [scrollBy, pillNearestCenter]);
 
-  const handleDragEnd = useCallback((fingerX: number, success: boolean) => {
-    endHold(success ? pillIdAtX(fingerX) : null);
-  }, [endHold, pillIdAtX]);
+  const handleDragEnd = useCallback((success: boolean) => {
+    endHold(success ? pillNearestCenter() : null);
+  }, [endHold, pillNearestCenter]);
 
   // Long-press + drag: after 180ms hold, the side buttons collapse and the
   // user can drag horizontally to scrub through pills. Release selects the
@@ -197,20 +232,20 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   const dragGesture = useMemo(
     () => Gesture.Pan()
       .activateAfterLongPress(180)
-      .onStart((e) => {
+      .onStart(() => {
         'worklet';
         lastTx.value = 0;
-        runOnJS(beginHold)(e.x);
+        runOnJS(beginHold)();
       })
       .onUpdate((e) => {
         'worklet';
         const dx = e.translationX - lastTx.value;
         lastTx.value = e.translationX;
-        runOnJS(handleDragUpdate)(dx, e.x);
+        runOnJS(handleDragUpdate)(dx);
       })
-      .onEnd((e, success) => {
+      .onEnd((_e, success) => {
         'worklet';
-        runOnJS(handleDragEnd)(e.x, !!success);
+        runOnJS(handleDragEnd)(!!success);
       }),
     [beginHold, handleDragUpdate, handleDragEnd, lastTx],
   );
@@ -450,6 +485,24 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
               end={{ x: 1, y: 0.5 }}
               style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 48 }}
             />
+            {/* Center selection marker — subtle rounded underline at the
+                viewport center, visible while the user is scrubbing. */}
+            {isHolding && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  bottom: 4,
+                  width: 22,
+                  height: 2,
+                  marginLeft: -11,
+                  borderRadius: 1,
+                  backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                  opacity: 0.6,
+                }}
+              />
+            )}
         </View>
         </GestureDetector>
 
