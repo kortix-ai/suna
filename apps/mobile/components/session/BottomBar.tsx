@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, runOnJS } from 'react-native-reanimated';
+import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -86,6 +86,12 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
 
   // Expansion animation: 0 = side buttons visible, 1 = collapsed.
   const expansion = useSharedValue(0);
+  // Vertical lift: drives the strip rising up when the user drags upward
+  // during a hold — hints that releasing will open the tabs overview.
+  const liftY = useSharedValue(0);
+  // Peek panel height: driven by upward swipes from the bar. Rises from 0 as
+  // the user drags their finger up, previewing the tabs overview.
+  const peekHeight = useSharedValue(0);
   const [isHolding, setIsHolding] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
 
@@ -158,31 +164,37 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     scrollRef.current?.scrollTo({ x: next, animated: false });
   }, []);
 
-  const commitPreview = useCallback((id: string | null) => {
+  // Eased curves: slower, smoother expand; slightly snappier collapse.
+  const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
+  const EASE_IN_OUT = Easing.bezier(0.4, 0, 0.2, 1);
+
+  const commitPreview = useCallback((id: string | null, openOverview = false) => {
     setIsHolding(false);
     setPreviewId(null);
-    expansion.value = withTiming(0, { duration: 180 });
-    if (id && id !== activeTabId) {
+    expansion.value = withTiming(0, { duration: 260, easing: EASE_IN_OUT });
+    if (openOverview) {
+      onOpenTabs();
+    } else if (id && id !== activeTabId) {
       onSelectTab(id);
     } else if (id && id === activeTabId) {
       onOpenTabs();
     }
-  }, [activeTabId, onOpenTabs, onSelectTab, expansion]);
+  }, [activeTabId, onOpenTabs, onSelectTab, expansion, EASE_IN_OUT]);
 
   const beginHold = useCallback((fingerX: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setIsHolding(true);
-    expansion.value = withTiming(1, { duration: 180 });
+    expansion.value = withTiming(1, { duration: 340, easing: EASE_OUT });
     setPreviewId(pillIdAtX(fingerX));
-  }, [pillIdAtX, expansion]);
+  }, [pillIdAtX, expansion, EASE_OUT]);
 
   const handleDragUpdate = useCallback((dx: number, fingerX: number) => {
     scrollBy(-dx);
     setPreviewId(pillIdAtX(fingerX));
   }, [scrollBy, pillIdAtX]);
 
-  const handleDragEnd = useCallback((fingerX: number, success: boolean) => {
-    commitPreview(success ? pillIdAtX(fingerX) : null);
+  const handleDragEnd = useCallback((fingerX: number, success: boolean, openOverview: boolean) => {
+    commitPreview(success ? pillIdAtX(fingerX) : null, openOverview);
   }, [commitPreview, pillIdAtX]);
 
   // Long-press + drag gesture. Pan activates only after a hold so single taps
@@ -202,14 +214,47 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
         'worklet';
         const dx = e.translationX - lastTx.value;
         lastTx.value = e.translationX;
+        // Upward lift hint: as the user drags up past 10px, the strip rises a
+        // little — capped at 40px so the motion stays subtle.
+        liftY.value = Math.min(0, Math.max(-40, e.translationY + 10));
         runOnJS(handleDragUpdate)(dx, e.x);
       })
       .onEnd((e, success) => {
         'worklet';
-        runOnJS(handleDragEnd)(e.x, !!success);
+        liftY.value = withTiming(0, { duration: 220 });
+        runOnJS(handleDragEnd)(e.x, !!success, false);
       }),
-    [beginHold, handleDragUpdate, handleDragEnd, lastTx],
+    [beginHold, handleDragUpdate, handleDragEnd, lastTx, liftY],
   );
+
+  // Swipe-up from the bar → a peek panel rises from the bottom, growing with
+  // the user's finger. Release past the threshold commits to the full tabs
+  // overview; under the threshold, the peek slides back down. The bar itself
+  // stays still.
+  const PEEK_COMMIT = 90;
+  const swipeUpGesture = useMemo(
+    () => Gesture.Pan()
+      .activeOffsetY(-10)
+      .failOffsetX([-12, 12])
+      .onUpdate((e) => {
+        'worklet';
+        peekHeight.value = Math.min(240, Math.max(0, -e.translationY));
+      })
+      .onEnd((e, success) => {
+        'worklet';
+        if (success && -e.translationY > PEEK_COMMIT) {
+          // Animate peek to full (feels like it's becoming the overview)
+          peekHeight.value = withTiming(360, { duration: 220, easing: EASE_OUT }, () => {
+            peekHeight.value = 0;
+          });
+          runOnJS(onOpenTabs)();
+        } else {
+          peekHeight.value = withTiming(0, { duration: 220 });
+        }
+      }),
+    [peekHeight, onOpenTabs, EASE_OUT],
+  );
+
 
   const sideButtonStyle = useAnimatedStyle(() => {
     const collapsed = expansion.value;
@@ -217,8 +262,26 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
       opacity: 1 - collapsed,
       width: 36 * (1 - collapsed),
       marginHorizontal: 2 * (1 - collapsed),
+      transform: [{ scale: 1 - 0.15 * collapsed }],
     };
   });
+
+  const stripStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: liftY.value }],
+  }));
+
+  const peekStyle = useAnimatedStyle(() => ({
+    height: peekHeight.value,
+    opacity: Math.min(1, peekHeight.value / 40),
+  }));
+
+  const peekContentStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: Math.max(0, 40 - peekHeight.value / 2) },
+      { scale: 0.85 + Math.min(0.15, peekHeight.value / 800) },
+    ],
+    opacity: Math.min(1, peekHeight.value / 60),
+  }));
 
   const renderBackdrop = useCallback(
     (props: any) => (
@@ -234,6 +297,77 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
 
   return (
     <>
+      <GestureDetector gesture={swipeUpGesture}>
+      <View>
+      {/* Peek panel — rises above the bar as the user swipes up */}
+      <Reanimated.View
+        pointerEvents="none"
+        style={[
+          {
+            backgroundColor: isDark ? '#161618' : '#FFFFFF',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            borderTopWidth: 1,
+            borderLeftWidth: 1,
+            borderRightWidth: 1,
+            borderColor: isDark ? '#2a2a2c' : '#E5E7EB',
+            overflow: 'hidden',
+          },
+          peekStyle,
+        ]}
+      >
+        <Reanimated.View style={[{ padding: 16, alignItems: 'center' }, peekContentStyle]}>
+          <View
+            style={{
+              width: 40,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: isDark ? '#3f3f46' : '#d4d4d8',
+              marginBottom: 12,
+            }}
+          />
+          <RNText
+            style={{
+              fontSize: 13,
+              fontFamily: 'Roobert-Medium',
+              color: isDark ? '#aaa' : '#666',
+              letterSpacing: 0.3,
+            }}
+          >
+            {tabs.length} {tabs.length === 1 ? 'tab' : 'tabs'} — release to open
+          </RNText>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 14 }}>
+            {tabs.slice(0, 6).map((tab) => (
+              <View
+                key={tab.id}
+                style={{
+                  width: 78,
+                  height: 54,
+                  borderRadius: 10,
+                  margin: 4,
+                  backgroundColor: isDark ? '#232324' : '#F1F1F2',
+                  borderWidth: 1,
+                  borderColor: isDark ? '#2a2a2c' : '#E5E7EB',
+                  padding: 6,
+                  justifyContent: 'flex-end',
+                }}
+              >
+                <RNText
+                  numberOfLines={2}
+                  style={{
+                    fontSize: 9,
+                    fontFamily: 'Roobert',
+                    color: isDark ? '#aaa' : '#666',
+                  }}
+                >
+                  {tab.label}
+                </RNText>
+              </View>
+            ))}
+          </View>
+        </Reanimated.View>
+      </Reanimated.View>
+
       <View
         className="flex-row items-center bg-card border-t border-border px-2 pt-1.5"
         style={{ paddingBottom: insets.bottom + 2 }}
@@ -251,9 +385,9 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
 
         {/* Tab pills — horizontally scrollable + long-press drag */}
         <GestureDetector gesture={dragGesture}>
-          <View
+          <Reanimated.View
             className="border border-border rounded-full mx-1 overflow-hidden"
-            style={{ flex: 1, height: 36 }}
+            style={[{ flex: 1, height: 36 }, stripStyle]}
           >
             <ScrollView
               ref={scrollRef}
@@ -335,7 +469,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
               end={{ x: 1, y: 0.5 }}
               style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 48 }}
             />
-          </View>
+          </Reanimated.View>
         </GestureDetector>
 
         {/* More (...) */}
@@ -354,6 +488,8 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
           </TouchableOpacity>
         </Reanimated.View>
       </View>
+      </View>
+      </GestureDetector>
 
       {/* More menu — bottom sheet */}
       <BottomSheetModal
