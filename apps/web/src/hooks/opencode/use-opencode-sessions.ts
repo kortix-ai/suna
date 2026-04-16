@@ -656,7 +656,7 @@ export function useSummarizeOpenCodeSession() {
       // 1. Try config default model
       if (!providerID || !modelID) {
         try {
-          const configResult = await client.config.get();
+          const configResult = await client.global.config.get();
           const config = configResult.data as any;
           if (config?.model) {
             const parts = (config.model as string).split('/');

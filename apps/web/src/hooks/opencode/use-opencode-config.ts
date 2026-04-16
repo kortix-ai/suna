@@ -23,7 +23,7 @@ export function useOpenCodeConfig() {
     queryKey: configKeys.all,
     queryFn: async () => {
       const client = getClient();
-      const result = await client.config.get();
+      const result = await client.global.config.get();
       return unwrap(result);
     },
     staleTime: Infinity,
@@ -37,7 +37,7 @@ export function useUpdateOpenCodeConfig() {
   return useMutation({
     mutationFn: async (config: Partial<Config>) => {
       const client = getClient();
-      const result = await client.config.update({ config } as any);
+      const result = await client.global.config.update({ config } as any);
       return unwrap(result) as Config;
     },
     onMutate: async (config) => {
