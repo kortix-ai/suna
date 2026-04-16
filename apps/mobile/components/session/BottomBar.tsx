@@ -270,8 +270,11 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
       .onEnd((e, success) => {
         'worklet';
         if (success && -e.translationY > PEEK_COMMIT) {
-          peekHeight.value = withTiming(0, { duration: 180, easing: EASE_OUT });
+          // Fire the overview open immediately — TabsOverview animates from
+          // the bottom to meet the peek. Peek holds then fades out so the
+          // handoff looks continuous.
           runOnJS(onOpenTabs)();
+          peekHeight.value = withTiming(0, { duration: 320, easing: EASE_OUT });
         } else {
           peekHeight.value = withTiming(0, { duration: 220 });
         }
