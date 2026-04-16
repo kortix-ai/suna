@@ -265,7 +265,7 @@ function highlightAsync(code: string, language: string, theme: string): Promise<
 
   const normalizedLang = normalizeLanguage(language);
   const truncated = code.length > SHIKI_MAX_LENGTH
-    ? code.slice(0, SHIKI_MAX_LENGTH) + '\n// ... (truncated for highlighting)'
+    ? code.slice(0, SHIKI_MAX_LENGTH)
     : code;
 
   const p = codeToHtml(truncated, {
