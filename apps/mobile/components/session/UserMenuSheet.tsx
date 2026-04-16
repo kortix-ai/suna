@@ -92,7 +92,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
         borderRadius: 3,
       }}
       backgroundStyle={{
-        backgroundColor: isDark ? '#161618' : '#FFFFFF',
+        backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
@@ -300,7 +300,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                   className="flex-1 rounded-lg active:opacity-85"
                   style={{
                     backgroundColor: active
-                      ? isDark ? '#1E1E22' : '#FFFFFF'
+                      ? isDark ? '#1F1F1F' : '#FFFFFF'
                       : 'transparent',
                   }}
                 >

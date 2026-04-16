@@ -15,9 +15,11 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Modal,
   Platform,
   StyleSheet,
 } from 'react-native';
+import { captureScreen } from 'react-native-view-shot';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text } from '@/components/ui/text';
 import { Stack, useRouter } from 'expo-router';
@@ -1044,13 +1046,49 @@ export default function HomeScreen() {
     useTabStore.getState().navigateToPage('page:updates');
   }, [closeUserMenuSheet]);
 
+  // Theme transition overlay — snapshot + crossfade to mirror web's view-transition blur effect
+  const [themeTransitionUri, setThemeTransitionUri] = useState<string | null>(null);
+  const themeTransitionOpacity = useRef(new Animated.Value(1)).current;
+
   const handleThemeSelect = useCallback(async (value: ThemePreference) => {
+    if (value === themePreference) return;
+
+    // Capture the current screen so we can crossfade from old theme to new
+    let snapshotUri: string | null = null;
+    try {
+      snapshotUri = await captureScreen({
+        format: 'jpg',
+        quality: 0.8,
+        result: 'tmpfile',
+      });
+    } catch {
+      // Capture failed — fall through to instant switch
+    }
+
+    if (snapshotUri) {
+      themeTransitionOpacity.setValue(1);
+      setThemeTransitionUri(snapshotUri);
+    }
+
     setThemePreference(value);
     try {
       await AsyncStorage.setItem(THEME_PREFERENCE_KEY, value);
     } catch {}
     setColorScheme(value === 'system' ? 'system' : value);
-  }, [setColorScheme]);
+
+    if (snapshotUri) {
+      // Let the new theme paint a frame before fading the snapshot out
+      requestAnimationFrame(() => {
+        Animated.timing(themeTransitionOpacity, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }).start(() => {
+          setThemeTransitionUri(null);
+        });
+      });
+    }
+  }, [themePreference, setColorScheme, themeTransitionOpacity]);
 
   const handleUserMenuOpen = useCallback(() => {
     userMenuSheetRef.current?.present();
@@ -1968,6 +2006,25 @@ export default function HomeScreen() {
           setPendingFilePath(path);
         }}
       />
+
+      {/* Theme transition overlay — crossfade snapshot of previous theme */}
+      {themeTransitionUri && (
+        <Modal
+          visible
+          transparent
+          statusBarTranslucent
+          animationType="none"
+          hardwareAccelerated
+        >
+          <Animated.Image
+            source={{ uri: themeTransitionUri }}
+            resizeMode="cover"
+            fadeDuration={0}
+            style={[StyleSheet.absoluteFillObject, { opacity: themeTransitionOpacity }]}
+            pointerEvents="none"
+          />
+        </Modal>
+      )}
     </>
   );
 }
