@@ -919,7 +919,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       {/* Fade gradient above input — only when textarea is shown */}
       {!hasQuestion && (
         <LinearGradient
-          colors={isDark ? ['rgba(18,18,21,0)', 'rgba(18,18,21,1)'] : ['rgba(245,245,245,0)', 'rgba(245,245,245,1)']}
+          colors={isDark ? ['rgba(18,18,21,0)', 'rgba(18,18,21,1)'] : ['rgba(255,255,255,0)', 'rgba(255,255,255,1)']}
           style={{ height: 40, marginTop: -40, zIndex: 1 }}
           pointerEvents="none"
         />

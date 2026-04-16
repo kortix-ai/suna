@@ -91,6 +91,10 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   const peekHeight = useSharedValue(0);
   const [isHolding, setIsHolding] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // Viewport width tracked in state so the content container can use
+  // `viewport/2` worth of horizontal padding — that's what lets every pill,
+  // including the first and last, scroll all the way to the center.
+  const [viewportWidth, setViewportWidth] = useState(0);
 
   // Layout refs — used for auto-scroll + pill-under-finger hit testing.
   const pillLayoutsRef = useRef<Record<string, { x: number; width: number }>>({});
@@ -125,15 +129,6 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     { icon: 'archive-outline' as const, label: 'Archive session', onPress: () => { closeSheet(); onArchiveSession?.(); } },
   ], [closeSheet, onDiagnostics, onViewChanges, onExportTranscript, onCompactSession, onArchiveSession]);
 
-  // Scroll the active pill into view whenever it changes.
-  useEffect(() => {
-    if (!activeTabId) return;
-    const layout = pillLayoutsRef.current[activeTabId];
-    const viewport = viewportWidthRef.current;
-    if (!layout || !viewport) return;
-    const target = Math.max(0, layout.x + layout.width / 2 - viewport / 2);
-    scrollRef.current?.scrollTo({ x: target, animated: true });
-  }, [activeTabId, tabs]);
 
   const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
   const EASE_IN_OUT = Easing.bezier(0.4, 0, 0.2, 1);
@@ -184,6 +179,15 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     scrollOffsetRef.current = target;
     scrollRef.current?.scrollTo({ x: target, animated: true });
   }, []);
+
+  // Center the active pill whenever it changes — covers taps, releases,
+  // and programmatic selection (e.g. opening a new tab from elsewhere).
+  // Short defer lets layout settle first so we read accurate widths.
+  useEffect(() => {
+    if (!activeTabId) return;
+    const t = setTimeout(() => { snapPillToCenter(activeTabId); }, 30);
+    return () => clearTimeout(t);
+  }, [activeTabId, snapPillToCenter]);
 
   // Scroll the strip by a delta, clamped to content bounds.
   const scrollBy = useCallback((delta: number) => {
@@ -411,14 +415,21 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
             showsHorizontalScrollIndicator={false}
             scrollEnabled={!isHolding}
             onLayout={(e: LayoutChangeEvent) => {
-              viewportWidthRef.current = e.nativeEvent.layout.width;
+              const w = e.nativeEvent.layout.width;
+              viewportWidthRef.current = w;
+              setViewportWidth(w);
             }}
             onContentSizeChange={(w) => { contentWidthRef.current = w; }}
             onScroll={(e) => {
               scrollOffsetRef.current = e.nativeEvent.contentOffset.x;
             }}
             scrollEventThrottle={16}
-            contentContainerStyle={{ paddingHorizontal: STRIP_PADDING, alignItems: 'center' }}
+            contentContainerStyle={{
+              // viewport/2 of padding on each side lets the first and last
+              // pills scroll all the way to the center of the strip.
+              paddingHorizontal: viewportWidth > 0 ? viewportWidth / 2 : STRIP_PADDING,
+              alignItems: 'center',
+            }}
           >
               {tabs.length === 0 ? (
                 <TouchableOpacity onPress={onOpenTabs} activeOpacity={0.7} className="px-3 py-2">
