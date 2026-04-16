@@ -184,7 +184,7 @@ export function AuthorSearchToolView({ toolCall, toolResult, isStreaming = false
                       e.stopPropagation();
                       handleOpenUrl(result.homepage!);
                     }}
-                    className="bg-primary/10 border border-primary/20 rounded-2xl p-3 flex-row items-center justify-center gap-2 active:opacity-70"
+                    className="bg-primary/10 border border-primary/20 rounded-full p-3 flex-row items-center justify-center gap-2 active:opacity-70"
                   >
                     <Icon as={ExternalLink} size={14} className="text-primary" />
                     <Text className="text-xs font-roobert-medium text-primary">

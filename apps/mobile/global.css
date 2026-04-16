@@ -40,33 +40,35 @@
   }
 
   /* Dark Mode - Kortix Brand
-   * Softened contrast (aligned with web 31bec7a):
-   * Lifted bg, trimmed fg, brighter borders, elevated chrome. */
+   * Aligned with web (apps/web globals.css .dark):
+   * Pure neutral grayscale, matching web's OKLCH(L 0 0).
+   * HSL lightness values are the sRGB equivalents of web's OKLCH L values
+   * (OKLCH is perceptual, so L=0.16 renders as ~5% sRGB lightness, not 16%). */
   .dark:root {
-    --background: 240 6% 10%;          /* ~oklch(0.16) - Lifted from 8% for softer contrast */
-    --foreground: 240 5% 92%;          /* ~oklch(0.92) - Trimmed from 97% to reduce harshness */
-    --card: 240 4% 12%;                /* ~oklch(0.195) - Deepened card, closer to bg for layering */
-    --card-foreground: 240 5% 92%;     /* Match trimmed foreground */
-    --popover: 240 4% 14%;             /* Slightly lifted popover */
-    --popover-foreground: 240 5% 92%;  /* Match trimmed foreground */
-    --primary: 240 5% 92%;             /* Match trimmed foreground */
-    --primary-foreground: 218 12% 7%;  /* #121215 - Text on primary */
-    --secondary: 220 4% 17%;           /* #2A2A2C - Secondary surfaces */
-    --secondary-foreground: 240 5% 92%;/* Match trimmed foreground */
-    --muted: 240 2% 15%;               /* Slightly brighter muted */
-    --muted-foreground: 0 0% 60%;      /* Muted text */
-    --accent: 220 4% 17%;              /* #2A2A2C - Accent */
-    --accent-foreground: 240 5% 92%;   /* Match trimmed foreground */
+    --background: 0 0% 5%;             /* oklch(0.16) ≈ #0D0D0D */
+    --foreground: 0 0% 89%;            /* oklch(0.92) ≈ #E3E3E3 */
+    --card: 0 0% 8%;                   /* oklch(0.195) ≈ #151515 */
+    --card-foreground: 0 0% 92%;       /* oklch(0.94) ≈ #EAEAEA */
+    --popover: 0 0% 12%;               /* oklch(0.24) ≈ #1F1F1F */
+    --popover-foreground: 0 0% 92%;    /* oklch(0.94) */
+    --primary: 0 0% 92%;               /* oklch(0.94) */
+    --primary-foreground: 0 0% 7%;     /* oklch(0.18) ≈ #121212 */
+    --secondary: 0 0% 9%;              /* Neutral dark surface */
+    --secondary-foreground: 0 0% 92%;  /* oklch(0.94) */
+    --muted: 0 0% 15%;                 /* oklch(0.27) ≈ #272727 */
+    --muted-foreground: 0 0% 50%;      /* oklch(0.60) ≈ #808080 */
+    --accent: 0 0% 13%;                /* oklch(0.25) ≈ #212121 */
+    --accent-foreground: 0 0% 92%;     /* oklch(0.94) */
     --destructive: 0 70.9% 59.4%;
-    --border: 240 2% 22%;              /* ~oklch(0.35) - Brighter borders for visibility */
-    --input: 220 6% 11%;               /* Slightly lifted inputs */
-    --ring: 240 5% 92%;                /* Match trimmed foreground */
-    /* Chrome colors — elevated above background (reversed old inverted hierarchy) */
-    --chrome-background: 240 7% 8%;    /* ~oklch(0.14) - Above bg, not below */
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --border: 0 0% 23%;                /* oklch(0.35) ≈ #3A3A3A */
+    --input: 0 0% 15%;                 /* oklch(0.27) */
+    --ring: 0 0% 39%;                  /* oklch(0.50) ≈ #636363 */
+    /* Chrome colors — sidebar-equivalent, darker than background */
+    --chrome-background: 0 0% 4%;      /* oklch(0.14) ≈ #0A0A0A - matches web --sidebar */
+    --chart-1: 0 0% 75%;
+    --chart-2: 0 0% 60%;
+    --chart-3: 0 0% 45%;
+    --chart-4: 0 0% 35%;
+    --chart-5: 0 0% 55%;
   }
 }

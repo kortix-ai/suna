@@ -44,11 +44,11 @@ const buttonVariants = cva(
         link: '',
       },
       size: {
-        default: 'h-12 rounded-2xl px-4', // Standard mobile button: 48px height, 16px radius
-        sm: 'h-9 rounded-2xl px-3 gap-1.5', // Small button: 36px height
-        lg: 'h-14 rounded-2xl px-6', // Large button: 56px height (for forms/emphasis)
-        icon: 'h-12 w-12 rounded-2xl', // Icon button: 48px square
-        figma: 'h-12 rounded-2xl px-4 gap-[6px]', // Alias for default (kept for compatibility)
+        default: 'h-12 rounded-full px-5', // Standard mobile button: 48px height, pill shape (matches web)
+        sm: 'h-9 rounded-full px-4 gap-1.5', // Small button: 36px height, pill shape
+        lg: 'h-14 rounded-full px-7', // Large button: 56px height, pill shape
+        icon: 'h-12 w-12 rounded-full', // Icon button: 48px square, pill shape
+        figma: 'h-12 rounded-full px-5 gap-[6px]', // Alias for default (kept for compatibility)
       },
     },
     defaultVariants: {

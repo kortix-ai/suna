@@ -226,7 +226,7 @@ export default function SettingUpScreen() {
 
                   <View
                     onTouchEnd={handleContinue}
-                    className="bg-foreground h-12 rounded-xl items-center justify-center active:opacity-80"
+                    className="bg-foreground h-12 rounded-full items-center justify-center active:opacity-80"
                   >
                     <Text className="text-[15px] font-roobert-medium text-background">
                       Continue to Onboarding

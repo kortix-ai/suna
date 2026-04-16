@@ -733,14 +733,14 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
           <View className="w-full flex-row gap-3">
             <Pressable
               onPress={handleOpenBrowseApps}
-              className="flex-1 rounded-xl bg-primary px-4 py-2 active:opacity-80">
+              className="flex-1 rounded-full bg-primary px-4 py-2 active:opacity-80">
               <Text className="text-center font-roobert-semibold text-sm text-primary-foreground">
                 Browse Apps
               </Text>
             </Pressable>
             <Pressable
               onPress={handleOpenCustomMcp}
-              className="flex-1 rounded-xl bg-primary px-4 py-2 active:opacity-80">
+              className="flex-1 rounded-full bg-primary px-4 py-2 active:opacity-80">
               <Text className="text-center font-roobert-semibold text-sm text-primary-foreground">
                 Custom MCP
               </Text>

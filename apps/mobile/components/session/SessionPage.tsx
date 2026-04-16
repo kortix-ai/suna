@@ -12,6 +12,7 @@ import {
   View,
   FlatList,
   ScrollView,
+  StyleSheet,
   TouchableOpacity,
   useWindowDimensions,
   Animated,
@@ -20,11 +21,14 @@ import {
   type NativeScrollEvent,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, interpolate } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
+import { Icon } from '@/components/ui/icon';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Text as RNText } from 'react-native';
 
@@ -61,18 +65,75 @@ import type { SandboxFile } from '@/api/types';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 
+/**
+ * Cross-fades + rotates between an arbitrary icon and the close icon based on `open`.
+ */
+function AnimatedToggleIcon({
+  open,
+  color,
+  icon,
+  size = 24,
+}: {
+  open: boolean;
+  color: string;
+  icon: keyof typeof Ionicons.glyphMap | 'menu-lucide';
+  size?: number;
+}) {
+  const progress = useSharedValue(open ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(open ? 1 : 0, { duration: 220 });
+  }, [open, progress]);
+
+  const baseStyle = useAnimatedStyle(() => ({
+    position: 'absolute',
+    opacity: interpolate(progress.value, [0, 1], [1, 0]),
+    transform: [{ rotate: `${interpolate(progress.value, [0, 1], [0, 90])}deg` }],
+  }));
+
+  const closeStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ rotate: `${interpolate(progress.value, [0, 1], [-90, 0])}deg` }],
+  }));
+
+  const renderBase = () => {
+    if (icon === 'menu-lucide') {
+      return <Icon as={MenuIcon} size={size} color={color} strokeWidth={2} />;
+    }
+    return <Ionicons name={icon} size={size} color={color} />;
+  };
+
+  const renderClose = () => {
+    if (icon === 'menu-lucide') {
+      return <Icon as={CloseIcon} size={size} color={color} strokeWidth={2} />;
+    }
+    return <Ionicons name="close" size={size} color={color} />;
+  };
+
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Reanimated.View style={baseStyle}>{renderBase()}</Reanimated.View>
+      <Reanimated.View style={closeStyle}>{renderClose()}</Reanimated.View>
+    </View>
+  );
+}
+
 interface SessionPageProps {
   sessionId: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  /** True when the left drawer is currently open — swaps the menu icon for an X */
+  isDrawerOpen?: boolean;
+  /** True when the right drawer is currently open — swaps the grid icon for an X */
+  isRightDrawerOpen?: boolean;
   /** Hides drawer buttons, model/variant selectors — used for onboarding */
   onboardingMode?: boolean;
   /** Skip callback shown in header during onboarding */
   onSkipOnboarding?: () => void;
 }
 
-export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -716,8 +777,8 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
     >
       {/* Header — matches dashboard layout exactly */}
       <View
-        style={{ paddingTop: insets.top }}
-        className="px-4 pb-3 bg-background"
+        style={{ paddingTop: insets.top, paddingBottom: 36 }}
+        className="px-4 bg-muted"
       >
         <View className="flex-row items-center">
           {!onboardingMode && (
@@ -726,12 +787,18 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
               className="mr-3 p-1"
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="menu" size={24} color={isDark ? '#F8F8F8' : '#121215'} />
+              <AnimatedToggleIcon open={!!isDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="menu-lucide" size={20} />
             </TouchableOpacity>
           )}
-          <View className="flex-1">
+          <View className="flex-1 flex-row items-center">
+            <Ionicons
+              name="chatbubble-outline"
+              size={16}
+              color={isDark ? '#999999' : '#6e6e6e'}
+              style={{ marginRight: 8 }}
+            />
             <Text
-              className="text-lg font-bold text-foreground"
+              className="flex-1 text-base font-medium text-muted-foreground"
               numberOfLines={1}
             >
               {title}
@@ -749,7 +816,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
               className="ml-3 p-1"
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="apps-outline" size={20} color={isDark ? '#F8F8F8' : '#121215'} />
+              <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="apps-outline" size={20} />
             </TouchableOpacity>
           )}
           {onboardingMode && onSkipOnboarding && (
@@ -767,7 +834,20 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       </View>
 
       {/* Messages + Fresh Session Hero */}
-      <View style={{ flex: 1 }}>
+      <View
+        style={{
+          flex: 1,
+          marginTop: -24,
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+          overflow: 'hidden',
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderLeftWidth: StyleSheet.hairlineWidth,
+          borderRightWidth: StyleSheet.hairlineWidth,
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+        }}
+        className="bg-background"
+      >
         <FlatList
           ref={flatListRef}
           data={turns}
@@ -856,8 +936,8 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       {/* Fade gradient above input — only when textarea is shown */}
       {!hasQuestion && (
         <LinearGradient
-          colors={isDark ? ['rgba(18,18,21,0)', 'rgba(18,18,21,1)'] : ['rgba(245,245,245,0)', 'rgba(245,245,245,1)']}
-          style={{ height: 40, marginTop: -40, zIndex: 1 }}
+          colors={isDark ? ['rgba(18,18,21,0)', 'rgba(18,18,21,1)'] : ['rgba(255,255,255,0)', 'rgba(255,255,255,1)']}
+          style={{ height: 24, marginTop: -24, zIndex: 1 }}
           pointerEvents="none"
         />
       )}

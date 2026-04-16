@@ -557,7 +557,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                     changePlanButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                   }}
                   style={changePlanButtonStyle}
-                  className="w-full h-12 bg-foreground rounded-2xl items-center justify-center flex-row gap-2"
+                  className="w-full h-12 bg-foreground rounded-full items-center justify-center flex-row gap-2"
                 >
                   <Text className="text-sm font-roobert-semibold text-background">
                     {t('billing.changePlan', 'Change Plan')}
@@ -586,7 +586,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                     creditsButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                   }}
                   style={creditsButtonStyle}
-                  className="w-full h-12 bg-primary rounded-2xl items-center justify-center flex-row gap-2"
+                  className="w-full h-12 bg-primary rounded-full items-center justify-center flex-row gap-2"
                 >
                   <Icon as={ShoppingCart} size={18} className="text-primary-foreground" strokeWidth={2} />
                   <Text className="text-sm font-roobert-semibold text-primary-foreground">

@@ -152,7 +152,7 @@ export function CodeBlockEditorModal({ visible, onClose, onInsert, initialData }
         <View className="px-4 pb-6 pt-4 border-t border-border bg-card">
           <Pressable
             onPress={handleInsert}
-            className="h-12 rounded-xl bg-primary items-center justify-center flex-row gap-2 active:opacity-90"
+            className="h-12 rounded-full bg-primary items-center justify-center flex-row gap-2 active:opacity-90"
           >
             <Icon as={Check} size={18} className="text-background" strokeWidth={2} />
             <Text className="text-base font-roobert-semibold text-background">

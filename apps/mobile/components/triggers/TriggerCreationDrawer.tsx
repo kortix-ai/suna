@@ -1340,7 +1340,7 @@ export function TriggerCreationDrawer({
                         </Text>
                         <Pressable
                           onPress={() => refetchTriggers()}
-                          className="rounded-xl bg-primary px-6 py-3 active:opacity-80">
+                          className="rounded-full bg-primary px-6 py-3 active:opacity-80">
                           <Text className="font-roobert-semibold text-sm text-primary-foreground">
                             {t('triggers.retry')}
                           </Text>

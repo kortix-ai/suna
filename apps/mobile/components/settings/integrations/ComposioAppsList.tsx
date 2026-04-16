@@ -168,7 +168,7 @@ export function ComposioAppsContent({
       <Text className="mb-4 font-roobert text-sm text-muted-foreground">
         {error?.message || 'An error occurred'}
       </Text>
-      <Pressable onPress={() => refetch()} className="rounded-xl bg-primary px-6 py-3">
+      <Pressable onPress={() => refetch()} className="rounded-full bg-primary px-6 py-3">
         <Text className="font-roobert-medium text-white">{t('integrations.retry')}</Text>
       </Pressable>
     </View>

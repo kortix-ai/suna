@@ -8,7 +8,7 @@
  * opening the overview), falling back to text previews or icons.
  */
 
-import React, { useCallback, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -17,6 +17,7 @@ import {
   Image,
   useWindowDimensions,
 } from 'react-native';
+import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, Easing } from 'react-native-reanimated';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -213,8 +214,21 @@ export function TabsOverview({
   const hasScrolled = useRef(false);
   const activeId = activePageId || activeSessionId;
 
+  // Entry animation — rises from the bottom to continue the peek's motion
+  // when it hands off from the BottomBar swipe-up gesture.
+  const entry = useSharedValue(screenHeight);
+  useEffect(() => {
+    entry.value = withTiming(0, {
+      duration: 320,
+      easing: Easing.bezier(0.22, 1, 0.36, 1),
+    });
+  }, [entry]);
+  const entryStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: entry.value }],
+  }));
+
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
+    <Reanimated.View style={[{ flex: 1, paddingTop: insets.top }, entryStyle]} className="bg-background">
       {/* Header */}
       <View className="items-center px-4 py-3">
         <Text className="text-sm font-semibold text-foreground">
@@ -488,6 +502,6 @@ export function TabsOverview({
           </TouchableOpacity>
         </BottomSheetView>
       </BottomSheetModal>
-    </View>
+    </Reanimated.View>
   );
 }

@@ -97,10 +97,17 @@ export function FileViewer({
 
   // Convert blob to data URL for binary files (images, PDFs, etc.)
   useEffect(() => {
+    let cancelled = false;
     if (imageBlob && file?.path) {
-      blobToDataURL(imageBlob, file.path).then(setBlobUrl);
+      blobToDataURL(imageBlob, file.path).then((url) => {
+        if (!cancelled) setBlobUrl(url);
+      });
+    } else {
+      setBlobUrl(undefined);
     }
-    return () => setBlobUrl(undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [imageBlob, file?.path]);
 
   const closeAnimatedStyle = useAnimatedStyle(() => ({

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import {
   getAllVersions,
@@ -264,16 +265,16 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: U
 
           {/* Update button — opens dialog */}
           {updateAvailable && latestVersion && (
-            <Pressable
+            <Button
               onPress={handleOpenDialog}
-              className="mt-4 flex-row items-center justify-center self-start rounded-xl px-5 py-2.5 active:opacity-90"
+              className="mt-4 self-start"
               style={{ backgroundColor: themeColors.primary }}
             >
               <Icon as={ArrowDownToLine} size={15} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
-              <Text className="ml-2 font-roobert-semibold text-sm" style={{ color: themeColors.primaryForeground }}>
+              <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
                 Update to {latestVersion.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
               </Text>
-            </Pressable>
+            </Button>
           )}
         </View>
 

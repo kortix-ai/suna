@@ -29,14 +29,11 @@ interface RightDrawerContentProps {
 
 const sections: MenuSection[] = [
   {
-    title: 'WORKSPACE',
+    title: 'QUICK ACTIONS',
     items: [
       { icon: 'folder-open-outline', label: 'Files', pageId: 'page:files' },
       { icon: 'terminal-outline', label: 'Terminal', pageId: 'page:terminal' },
-      { icon: 'folder-outline', label: 'Projects', pageId: 'page:projects' },
-      // Memory page temporarily hidden
       { icon: 'grid-outline', label: 'Workspace', pageId: 'page:workspace' },
-      { icon: 'sparkles-outline', label: 'Marketplace', pageId: 'page:marketplace' },
     ],
   },
   {
@@ -54,9 +51,9 @@ const sections: MenuSection[] = [
       { icon: 'calendar-outline', label: 'Triggers', pageId: 'page:triggers' },
       { icon: 'chatbox-outline', label: 'Channels', pageId: 'page:channels' },
       { icon: 'swap-horizontal-outline', label: 'Tunnel', pageId: 'page:tunnel' },
-      { icon: 'git-branch-outline', label: 'Integrations', pageId: 'page:integrations' },
+      { icon: 'git-branch-outline', label: 'Connectors', pageId: 'page:integrations' },
       { icon: 'pulse-outline', label: 'Service Manager', pageId: 'page:running-services' },
-      { icon: 'compass-outline', label: 'Browser', pageId: 'page:browser' },
+      { icon: 'compass-outline', label: 'Internal Browser', pageId: 'page:browser' },
       { icon: 'globe-outline', label: 'Agent Browser', pageId: 'page:agent-browser' },
     ],
   },
@@ -71,7 +68,7 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#888' : '#777';
   const sectionColor = isDark ? '#666' : '#999';
-  const bgColor = isDark ? '#121215' : '#FFFFFF';
+  const bgColor = isDark ? '#232324' : '#E8E8E8';
 
   const handleItemPress = (pageId: string) => {
     useTabStore.getState().navigateToPage(pageId);

@@ -227,7 +227,7 @@ function NewChatButton({ onPress }: NewChatButtonProps) {
       onPressOut={() => {
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
-      className="h-14 w-full flex-row items-center justify-center gap-2 rounded-2xl bg-primary">
+      className="h-14 w-full flex-row items-center justify-center gap-2 rounded-full bg-primary">
       <Icon as={Plus} size={20} strokeWidth={2} className="text-primary-foreground" />
       <Text className="font-roobert-medium text-primary-foreground">{t('menu.newChat')}</Text>
     </AnimatedPressable>

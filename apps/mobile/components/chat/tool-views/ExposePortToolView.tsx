@@ -118,7 +118,7 @@ export function ExposePortToolView({ toolCall, toolResult, assistantTimestamp, t
             <View className="flex-row gap-2">
               <Pressable
                 onPress={handleOpenUrl}
-                className="flex-1 flex-row items-center justify-center gap-2 py-2.5 rounded-xl bg-primary active:opacity-70"
+                className="flex-1 flex-row items-center justify-center gap-2 py-2.5 rounded-full bg-primary active:opacity-70"
               >
                 <Icon as={ExternalLink} size={15} className="text-primary-foreground" />
                 <Text className="text-sm font-roobert-medium text-primary-foreground">Open</Text>

@@ -385,7 +385,7 @@ export function ComposioToolsContent({
             <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
               {error.message}
             </Text>
-            <Pressable onPress={() => refetch()} className="mt-4 rounded-xl bg-primary px-4 py-2">
+            <Pressable onPress={() => refetch()} className="mt-4 rounded-full bg-primary px-4 py-2">
               <Text className="font-roobert-medium text-sm text-white">{t('composio.retry')}</Text>
             </Pressable>
           </View>
@@ -543,7 +543,7 @@ export function ComposioToolsContent({
             <Text className="mt-2 text-center font-roobert text-sm text-muted-foreground">
               {error.message}
             </Text>
-            <Pressable onPress={() => refetch()} className="mt-4 rounded-xl bg-primary px-4 py-2">
+            <Pressable onPress={() => refetch()} className="mt-4 rounded-full bg-primary px-4 py-2">
               <Text className="font-roobert-medium text-sm text-white">{t('composio.retry')}</Text>
             </Pressable>
           </View>

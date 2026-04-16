@@ -81,11 +81,11 @@ const PackageCard = memo(({
           </View>
           
           {isPurchasing ? (
-            <View className="h-10 w-20 items-center justify-center rounded-2xl bg-muted">
+            <View className="h-10 w-20 items-center justify-center rounded-full bg-muted">
               <ActivityIndicator />
             </View>
           ) : (
-            <View className="h-10 px-6 items-center justify-center rounded-2xl bg-primary">
+            <View className="h-10 px-6 items-center justify-center rounded-full bg-primary">
               <Text className="text-sm font-roobert-semibold text-primary-foreground">
                 Buy
               </Text>

@@ -946,7 +946,7 @@ export function FileViewerView({
                 <View className="flex-row gap-2 mb-3">
                   <Pressable
                     onPress={() => setRevertMode('single')}
-                    className={`flex-1 py-2 rounded-xl items-center active:opacity-70 ${revertMode === 'single' ? 'bg-primary' : 'bg-card border border-border'}`}
+                    className={`flex-1 py-2 rounded-full items-center active:opacity-70 ${revertMode === 'single' ? 'bg-primary' : 'bg-card border border-border'}`}
                   >
                     <Text className={`text-xs font-roobert-medium ${revertMode === 'single' ? 'text-background' : 'text-primary'}`}>
                       Just this file
@@ -954,7 +954,7 @@ export function FileViewerView({
                   </Pressable>
                   <Pressable
                     onPress={() => setRevertMode('commit')}
-                    className={`flex-1 py-2 rounded-xl items-center active:opacity-70 ${revertMode === 'commit' ? 'bg-primary' : 'bg-card border border-border'}`}
+                    className={`flex-1 py-2 rounded-full items-center active:opacity-70 ${revertMode === 'commit' ? 'bg-primary' : 'bg-card border border-border'}`}
                   >
                     <Text className={`text-xs font-roobert-medium ${revertMode === 'commit' ? 'text-background' : 'text-primary'}`}>
                       Entire snapshot
@@ -991,14 +991,14 @@ export function FileViewerView({
               <Pressable
                 onPress={() => setShowRevertModal(false)}
                 disabled={isReverting}
-                className="flex-1 py-3 rounded-xl items-center active:opacity-70 bg-card border border-border"
+                className="flex-1 py-3 rounded-full items-center active:opacity-70 bg-card border border-border"
               >
                 <Text className="text-sm font-roobert-medium text-primary">Cancel</Text>
               </Pressable>
               <Pressable
                 onPress={handleRevert}
                 disabled={isReverting}
-                className="flex-1 py-3 rounded-xl items-center active:opacity-70 bg-primary"
+                className="flex-1 py-3 rounded-full items-center active:opacity-70 bg-primary"
               >
                 {isReverting ? (
                   <View className="flex-row items-center gap-2">
