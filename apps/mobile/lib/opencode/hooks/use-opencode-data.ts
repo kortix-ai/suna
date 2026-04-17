@@ -265,7 +265,9 @@ export function useOpenCodeConfig(sandboxUrl: string | undefined) {
     queryKey: opencodeKeys.config(sandboxUrl || ''),
     queryFn: async () => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch<OpenCodeConfig>(sandboxUrl, '/config');
+      // Use /global/config so provider/config changes persist across
+      // sandbox dispose. Matches web aa7ed87.
+      return opencodeFetch<OpenCodeConfig>(sandboxUrl, '/global/config');
     },
     enabled: !!sandboxUrl,
     staleTime: 60 * 1000,
@@ -357,7 +359,9 @@ export function useUpdateOpenCodeConfig(sandboxUrl: string | undefined) {
   return useMutation({
     mutationFn: async (config: Partial<OpenCodeConfig>) => {
       if (!sandboxUrl) throw new Error('No sandbox URL');
-      return opencodeFetch<OpenCodeConfig>(sandboxUrl, '/config', {
+      // Write to /global/config so it survives sandbox dispose.
+      // Matches web aa7ed87.
+      return opencodeFetch<OpenCodeConfig>(sandboxUrl, '/global/config', {
         method: 'PATCH',
         body: JSON.stringify({ config }),
       });
