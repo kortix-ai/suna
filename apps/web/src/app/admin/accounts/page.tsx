@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Activity,
   ArrowDown,
   ArrowDownRight,
   ArrowUp,
@@ -16,7 +15,6 @@ import {
   Filter,
   History,
   Loader2,
-  LogIn,
   Mail,
   RefreshCw,
   Server,
@@ -69,7 +67,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import {
-  useAdminAccountActivity,
   useAdminAccountLedger,
   useAdminAccountSandboxes,
   useAdminAccountUsers,
@@ -82,7 +79,6 @@ import {
   type AdminAccountsFilters,
   type AdminAccountsSortBy,
   type AdminAccountsSortDir,
-  type AdminAuditEvent,
 } from '@/hooks/admin/use-admin-accounts';
 
 import {
@@ -998,7 +994,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
   const usersQuery = useAdminAccountUsers(account.accountId);
   const sandboxesQuery = useAdminAccountSandboxes(account.accountId);
   const ledgerQuery = useAdminAccountLedger(account.accountId, 100);
-  const activityQuery = useAdminAccountActivity(account.accountId, 30);
   const actions = billingActionsFor(account);
 
   return (
@@ -1073,10 +1068,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="activity" className="gap-1.5">
-              <Activity className="h-3.5 w-3.5" />
-              Activity
-            </TabsTrigger>
             <TabsTrigger value="ledger" className="gap-1.5">
               <History className="h-3.5 w-3.5" />
               Ledger
@@ -1095,9 +1086,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
           </TabsContent>
           <TabsContent value="instances" className="mt-4">
             <InstancesTab sandboxesQuery={sandboxesQuery} />
-          </TabsContent>
-          <TabsContent value="activity" className="mt-4">
-            <ActivityTab activityQuery={activityQuery} usersQuery={usersQuery} />
           </TabsContent>
           <TabsContent value="ledger" className="mt-4">
             <LedgerTab ledgerQuery={ledgerQuery} />
@@ -1409,155 +1397,6 @@ function InstancesTab({
       />
     </>
   );
-}
-
-function ActivityTab({
-  activityQuery,
-  usersQuery,
-}: {
-  activityQuery: ReturnType<typeof useAdminAccountActivity>;
-  usersQuery: ReturnType<typeof useAdminAccountUsers>;
-}) {
-  if (activityQuery.isLoading) {
-    return (
-      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading activity…
-      </div>
-    );
-  }
-
-  const events = activityQuery.data?.auditEvents ?? [];
-  const usage = activityQuery.data?.usage ?? [];
-  const users = usersQuery.data?.users ?? [];
-  const userById = new Map(users.map((u) => [u.user_id, u]));
-
-  if (events.length === 0 && usage.length === 0) {
-    return (
-      <div className="rounded-xl border border-border/60 bg-card">
-        <EmptyState
-          icon={IconInbox}
-          title="No recent activity"
-          description="Auth events and credit usage will appear here."
-          size="sm"
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {events.length > 0 && (
-        <div>
-          <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Auth events
-          </div>
-          <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60 max-h-[40vh] overflow-y-auto">
-            {events.map((event) => (
-              <AuditEventRow
-                key={event.id}
-                event={event}
-                user={event.actor_id ? userById.get(event.actor_id) : undefined}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {usage.length > 0 && (
-        <div>
-          <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Recent usage
-          </div>
-          <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60 max-h-[40vh] overflow-y-auto">
-            {usage.map((u) => (
-              <div key={u.id} className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="muted" size="sm" className="capitalize">
-                      {u.usageType?.replace(/_/g, ' ') || 'usage'}
-                    </Badge>
-                    {u.subscriptionTier && (
-                      <Badge variant="info" size="sm">
-                        {u.subscriptionTier}
-                      </Badge>
-                    )}
-                  </div>
-                  {u.description && (
-                    <div className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                      {u.description}
-                    </div>
-                  )}
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    {u.createdAt ? formatDateTime(u.createdAt) : '—'}
-                  </div>
-                </div>
-                <div className="text-right shrink-0 font-mono text-sm text-red-600 dark:text-red-400">
-                  -{money(u.amountDollars)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AuditEventRow({
-  event,
-  user,
-}: {
-  event: AdminAuditEvent;
-  user: AdminAccountUser | undefined;
-}) {
-  const action = event.action || 'event';
-  return (
-    <div className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm">
-      <div className="min-w-0 flex items-start gap-2">
-        <div
-          className={cn(
-            'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-            actionTone(action) === 'success'
-              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-              : actionTone(action) === 'danger'
-              ? 'bg-red-500/10 text-red-600 dark:text-red-400'
-              : 'bg-muted text-muted-foreground',
-          )}
-        >
-          <LogIn className="h-3 w-3" />
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium capitalize">{action.replace(/_/g, ' ')}</span>
-            {user?.email && (
-              <span className="text-xs text-muted-foreground truncate">{user.email}</span>
-            )}
-            {!user && event.actor_username && (
-              <span className="text-xs text-muted-foreground truncate">{event.actor_username}</span>
-            )}
-          </div>
-          <div className="mt-0.5 text-xs text-muted-foreground">
-            {formatDateTime(event.created_at)}
-            {event.ip_address && (
-              <>
-                <span className="mx-1.5 opacity-50">·</span>
-                <span className="font-mono">{event.ip_address}</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function actionTone(action: string): 'success' | 'danger' | 'default' {
-  const a = action.toLowerCase();
-  if (a.includes('login') || a.includes('signup') || a.includes('verify')) return 'success';
-  if (a.includes('logout') || a.includes('ban') || a.includes('delete') || a.includes('fail'))
-    return 'danger';
-  return 'default';
 }
 
 function formatRelative(value: string | null) {

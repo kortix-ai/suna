@@ -61,25 +61,6 @@ export interface AdminAccountSandbox {
   lastUsedAt: string | null;
 }
 
-export interface AdminAuditEvent {
-  id: string;
-  created_at: string;
-  ip_address: string | null;
-  action: string | null;
-  actor_id: string | null;
-  actor_username: string | null;
-  traits: Record<string, unknown> | null;
-}
-
-export interface AdminUsageEvent {
-  id: string;
-  amountDollars: string;
-  description: string | null;
-  usageType: string | null;
-  subscriptionTier: string | null;
-  createdAt: string | null;
-}
-
 export type AdminAccountsSortBy = 'balance' | 'members' | 'name' | 'created';
 export type AdminAccountsSortDir = 'asc' | 'desc';
 
@@ -226,21 +207,6 @@ export function useAdminAccountSandboxes(accountId: string | null) {
       const response = await backendApi.get<{ sandboxes: AdminAccountSandbox[] }>(
         `/admin/api/accounts/${accountId}/sandboxes`,
       );
-      if (response.error) throw new Error(response.error.message);
-      return response.data!;
-    },
-  });
-}
-
-export function useAdminAccountActivity(accountId: string | null, limit = 30) {
-  return useQuery<{ auditEvents: AdminAuditEvent[]; usage: AdminUsageEvent[] }>({
-    queryKey: ['admin', 'accounts', accountId, 'activity', limit],
-    enabled: !!accountId,
-    queryFn: async () => {
-      const response = await backendApi.get<{
-        auditEvents: AdminAuditEvent[];
-        usage: AdminUsageEvent[];
-      }>(`/admin/api/accounts/${accountId}/activity?limit=${limit}`);
       if (response.error) throw new Error(response.error.message);
       return response.data!;
     },
