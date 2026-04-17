@@ -11,7 +11,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import EventSource from 'react-native-sse';
 import { log } from '@/lib/logger';
 import { getAuthToken } from '@/api/config';
-import { useSyncStore, isOptimistic, clearDeltaActiveParts } from './sync-store';
+import {
+  useSyncStore,
+  isOptimistic,
+  clearDeltaActiveParts,
+  markBridgedParts,
+} from './sync-store';
 import { platformKeys } from '@/lib/platform/hooks';
 import { useCompactionStore } from '@/stores/compaction-store';
 import type { MessageWithParts, Part, SessionStatus } from './types';
@@ -33,6 +38,16 @@ interface SSEEvent {
  * Connect to the OpenCode SSE event stream.
  * Should be mounted ONCE at the app level, after sandbox is ready.
  */
+// Heartbeat — if no events arrive for this long, force a reconnect. Matches
+// the web consumer (apps/web/src/hooks/opencode/use-opencode-events.ts).
+// This is the primary stall-recovery mechanism; mobile has no other watchdog.
+const HEARTBEAT_TIMEOUT_MS = 15_000;
+
+// Gap (ms) after which a reconnect triggers a full message re-hydrate. Events
+// missed during SSE downtime (e.g. streaming assistant response) would never
+// arrive, leaving the UI stale until manual refresh. Matches web a6e2d03.
+const REHYDRATE_GAP_MS = 5_000;
+
 export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const queryClient = useQueryClient();
   const syncStore = useSyncStore;
@@ -40,7 +55,49 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const lastEventTime = useRef(Date.now());
+  const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const sandboxUrlRef = useRef<string | undefined>(sandboxUrl);
+  sandboxUrlRef.current = sandboxUrl;
+
+  // Re-fetch messages for every session currently in the store. Called after
+  // SSE reconnects that follow a significant gap — any streaming events that
+  // landed while the connection was down would otherwise be lost.
+  const rehydrateLoadedSessions = useCallback(async () => {
+    const url = sandboxUrlRef.current;
+    if (!url) return;
+    const sessionIds = Object.keys(useSyncStore.getState().messages);
+    if (sessionIds.length === 0) return;
+
+    log.log(`🔄 [SSE] Re-hydrating ${sessionIds.length} session(s) after gap`);
+
+    let token: string | null = null;
+    try {
+      token = await getAuthToken();
+    } catch {
+      return;
+    }
+
+    await Promise.allSettled(
+      sessionIds.map(async (sid) => {
+        try {
+          const res = await fetch(`${url}/session/${sid}/message`, {
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          });
+          if (!res.ok) return;
+          const messages: MessageWithParts[] = await res.json();
+          if (!mountedRef.current) return;
+          useSyncStore.getState().hydrate(sid, messages);
+        } catch {
+          // ignore per-session failures — individual sessions will recover
+          // on their own through later SSE events
+        }
+      }),
+    );
+  }, []);
 
   const handleEvent = useCallback((event: SSEEvent) => {
     const { type, properties: props } = event;
@@ -79,6 +136,10 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
                 ],
               },
             });
+            // Mark the bridge so the next real message.part.updated clears
+            // these carried-over parts instead of duplicating them.
+            // Mirrors web 77886a8.
+            if (fallbackParts.length > 0) markBridgedParts(info.id);
             break;
           }
         }
@@ -302,10 +363,18 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
     }
   }, [queryClient]);
 
+  const clearHeartbeat = useCallback(() => {
+    if (heartbeatTimerRef.current) {
+      clearTimeout(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    }
+  }, []);
+
   const connect = useCallback(async () => {
     if (!sandboxUrl || !mountedRef.current) return;
 
     // Clean up existing
+    clearHeartbeat();
     if (esRef.current) {
       esRef.current.close();
       esRef.current = null;
@@ -325,12 +394,41 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
 
       esRef.current = es;
 
+      // Reset the heartbeat timer on any server activity (event or keepalive).
+      // If nothing arrives for HEARTBEAT_TIMEOUT_MS we assume the stream is
+      // stalled (network blip, proxy idle edge case) and force a reconnect.
+      const resetHeartbeat = () => {
+        if (!mountedRef.current) return;
+        clearHeartbeat();
+        heartbeatTimerRef.current = setTimeout(() => {
+          if (!mountedRef.current) return;
+          log.warn('⚠️ [SSE] Heartbeat timeout, forcing reconnect');
+          es.close();
+          esRef.current = null;
+          scheduleReconnect();
+        }, HEARTBEAT_TIMEOUT_MS);
+      };
+
       es.addEventListener('open', () => {
         log.log('✅ [SSE] Connected');
+        // If this `open` followed a significant gap, any events emitted
+        // while we were disconnected were dropped. Re-hydrate loaded
+        // sessions so streaming responses appear without a manual refresh.
+        // Note: we intentionally check the gap BEFORE updating
+        // lastEventTime so the very first connection (gap measured from
+        // hook mount) doesn't force an unnecessary re-hydrate.
+        const gap = Date.now() - lastEventTime.current;
+        const isReconnect = reconnectAttempts.current > 0;
         reconnectAttempts.current = 0;
+        resetHeartbeat();
+        if (isReconnect && gap > REHYDRATE_GAP_MS) {
+          rehydrateLoadedSessions();
+        }
       });
 
       es.addEventListener('message', (evt: any) => {
+        // Any message (including empty keepalives) counts as server activity.
+        resetHeartbeat();
         if (!evt?.data) return;
         try {
           const raw = JSON.parse(evt.data);
@@ -350,6 +448,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       es.addEventListener('error', (evt: any) => {
         if (!mountedRef.current) return;
         log.warn('⚠️ [SSE] Connection error:', evt?.message || 'unknown');
+        clearHeartbeat();
         es.close();
         esRef.current = null;
         scheduleReconnect();
@@ -358,7 +457,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       log.error('❌ [SSE] Failed to connect:', error?.message || error);
       scheduleReconnect();
     }
-  }, [sandboxUrl, handleEvent]);
+  }, [sandboxUrl, handleEvent, clearHeartbeat, rehydrateLoadedSessions]);
 
   const scheduleReconnect = useCallback(() => {
     if (!mountedRef.current) return;
@@ -386,6 +485,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
         esRef.current = null;
       }
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
     };
   }, [sandboxUrl, connect]);
 
@@ -394,13 +494,17 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
       if (state === 'active' && sandboxUrl && mountedRef.current) {
         const gap = Date.now() - lastEventTime.current;
-        if (gap > 5000) {
+        if (gap > REHYDRATE_GAP_MS) {
           log.log('🔄 [SSE] App foregrounded, reconnecting');
+          // Re-hydrate before the reconnect — matches web a6e2d03. Events
+          // that landed while the app was backgrounded are already lost;
+          // this brings loaded sessions back to the current server state.
+          rehydrateLoadedSessions();
           reconnectAttempts.current = 0;
           connect();
         }
       }
     });
     return () => sub.remove();
-  }, [sandboxUrl, connect]);
+  }, [sandboxUrl, connect, rehydrateLoadedSessions]);
 }

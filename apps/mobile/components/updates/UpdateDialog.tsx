@@ -1,16 +1,22 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   Easing,
-  Modal,
   Pressable,
   ScrollView,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetView,
+} from '@gorhom/bottom-sheet';
+import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -26,6 +32,7 @@ import {
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Button } from '@/components/ui/button';
 import { useThemeColors } from '@/lib/theme-colors';
 import type { ChangelogChange, ChangelogEntry, UpdatePhase } from '@/lib/platform/client';
 import Svg, { Circle } from 'react-native-svg';
@@ -102,9 +109,46 @@ export function UpdateDialog({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const themeColors = useThemeColors();
   const [step, setStep] = useState<DialogStep>('confirm');
   const [expanded, setExpanded] = useState(false);
+
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const dismissingRef = useRef(false);
+
+  // Sync external `open` prop to imperative sheet API
+  useEffect(() => {
+    if (open) {
+      dismissingRef.current = false;
+      sheetRef.current?.present();
+    } else {
+      dismissingRef.current = true;
+      sheetRef.current?.dismiss();
+    }
+  }, [open]);
+
+  const handleSheetDismiss = useCallback(() => {
+    // Only invoke onClose when dismissal originated from user gesture
+    // (not when we programmatically dismissed because `open` flipped to false)
+    if (!dismissingRef.current) {
+      onClose();
+    }
+    dismissingRef.current = false;
+  }, [onClose]);
+
+  const renderBackdrop = useMemo(
+    () => (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.5}
+        pressBehavior={step === 'confirm' || step === 'done' || step === 'failed' ? 'close' : 'none'}
+      />
+    ),
+    [step],
+  );
 
   const isFailed = phase === 'failed';
   const isComplete = phase === 'complete';
@@ -156,38 +200,35 @@ export function UpdateDialog({
   const visibleChanges = expanded ? changes : changes.slice(0, 4);
   const hasMore = changes.length > 4 && !expanded;
 
-  const bgColor = isDark ? '#1A1A1F' : '#FFFFFF';
+  const bgColor = isDark ? '#0D0D0D' : '#FFFFFF';
   const borderColor = isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)';
   const mutedColor = isDark ? '#888' : '#777';
 
-  return (
-    <Modal
-      visible={open}
-      animationType="fade"
-      transparent
-      onRequestClose={() => {
-        if (step === 'confirm' || step === 'done' || step === 'failed') onClose();
-      }}
-      statusBarTranslucent
-    >
-      <View
-        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', paddingHorizontal: 24, paddingTop: insets.top, paddingBottom: insets.bottom }}
-      >
-        <Pressable
-          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          onPress={() => { if (step === 'confirm' || step === 'done' || step === 'failed') onClose(); }}
-        />
+  const isInteractiveStep = step === 'confirm' || step === 'done' || step === 'failed';
 
-        <View
-          style={{
-            backgroundColor: bgColor,
-            borderRadius: 20,
-            borderWidth: 1,
-            borderColor,
-            overflow: 'hidden',
-            maxHeight: '80%',
-          }}
-        >
+  return (
+    <BottomSheetModal
+      ref={sheetRef}
+      enableDynamicSizing
+      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
+      enablePanDownToClose={isInteractiveStep}
+      enableOverDrag={false}
+      onDismiss={handleSheetDismiss}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: bgColor,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+      }}
+      backdropComponent={renderBackdrop}
+    >
+      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
+        <View>
           {/* ── Confirm Step ── */}
           {step === 'confirm' && (
             <View>
@@ -258,26 +299,15 @@ export function UpdateDialog({
 
               {/* Buttons */}
               <View className="flex-row items-center justify-end" style={{ paddingHorizontal: 20, paddingVertical: 16, gap: 10 }}>
-                <Pressable
-                  onPress={onClose}
-                  className="rounded-xl px-4 py-2.5 active:opacity-70"
-                  style={{
-                    borderWidth: 1,
-                    borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.1)',
-                  }}
-                >
-                  <Text className="font-roobert-medium text-[13px] text-foreground">Cancel</Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleConfirm}
-                  className="flex-row items-center rounded-xl px-4 py-2.5 active:opacity-90"
-                  style={{ backgroundColor: themeColors.primary, gap: 6 }}
-                >
-                  <Icon as={ArrowDownToLine} size={14} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
-                  <Text className="font-roobert-semibold text-[13px]" style={{ color: themeColors.primaryForeground }}>
+                <Button variant="outline" onPress={onClose}>
+                  <Text className="font-roobert-medium text-foreground">Cancel</Text>
+                </Button>
+                <Button onPress={handleConfirm} style={{ backgroundColor: themeColors.primary }}>
+                  <Icon as={ArrowDownToLine} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+                  <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
                     Update now
                   </Text>
-                </Pressable>
+                </Button>
               </View>
             </View>
           )}
@@ -377,29 +407,21 @@ export function UpdateDialog({
 
               {/* Buttons */}
               <View className="flex-row items-center justify-end mt-4" style={{ gap: 10 }}>
-                <Pressable
-                  onPress={onClose}
-                  className="rounded-xl px-4 py-2.5 active:opacity-70"
-                  style={{ borderWidth: 1, borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.1)' }}
-                >
-                  <Text className="font-roobert-medium text-[13px] text-foreground">Close</Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleRetry}
-                  className="flex-row items-center rounded-xl px-4 py-2.5 active:opacity-90"
-                  style={{ backgroundColor: themeColors.primary, gap: 6 }}
-                >
-                  <Icon as={RotateCw} size={14} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
-                  <Text className="font-roobert-semibold text-[13px]" style={{ color: themeColors.primaryForeground }}>
+                <Button variant="outline" onPress={onClose}>
+                  <Text className="font-roobert-medium text-foreground">Close</Text>
+                </Button>
+                <Button onPress={handleRetry} style={{ backgroundColor: themeColors.primary }}>
+                  <Icon as={RotateCw} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+                  <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
                     Retry
                   </Text>
-                </Pressable>
+                </Button>
               </View>
             </View>
           )}
         </View>
-      </View>
-    </Modal>
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
 

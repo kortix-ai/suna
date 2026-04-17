@@ -185,10 +185,21 @@ export function useGlobalSandboxUpdate() {
 
   // Callback: re-fetch health to pick up the new version after update
   const handleVersionChanged = useCallback((newVersion: string) => {
-    setCurrentVersion(newVersion);
-    // Also trigger a re-fetch from health to get the authoritative version
+    // Only accept a concrete new version; ignore "unknown" or empty values
+    if (newVersion && newVersion !== 'unknown') {
+      setCurrentVersion(newVersion);
+    }
+    // Always re-fetch from health to get the authoritative version
     setFetchSeq((s) => s + 1);
   }, []);
 
-  return useSandboxUpdate(currentVersion, handleVersionChanged);
+  // Imperative refresh — callers can use this after update completion to force
+  // a fresh health-endpoint read (useful because the sandbox restarts during
+  // update and polling may land on a stale response).
+  const refreshCurrentVersion = useCallback(() => {
+    setFetchSeq((s) => s + 1);
+  }, []);
+
+  const update = useSandboxUpdate(currentVersion, handleVersionChanged);
+  return { ...update, refreshCurrentVersion };
 }

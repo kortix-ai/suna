@@ -398,15 +398,17 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
-      // 1. Fetch existing config
-      const configRes = await fetch(`${sandboxUrl}/config`, { headers });
+      // 1. Fetch existing config from the GLOBAL endpoint — the per-sandbox
+      // /config is scoped to the current directory/sandbox and gets wiped
+      // on dispose, so custom providers wouldn't survive. Matches web aa7ed87.
+      const configRes = await fetch(`${sandboxUrl}/global/config`, { headers });
       const existingConfig = configRes.ok ? await configRes.json() : {};
 
       // 2. Build merged config with new provider
       const configUpdate = buildCustomProviderConfigUpdate(existingConfig, form);
 
-      // 3. Write config
-      const updateRes = await fetch(`${sandboxUrl}/config`, {
+      // 3. Write config to /global/config so the provider persists.
+      const updateRes = await fetch(`${sandboxUrl}/global/config`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify(configUpdate),

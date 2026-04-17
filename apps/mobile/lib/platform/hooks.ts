@@ -291,6 +291,63 @@ export function useUnarchiveSession(sandboxUrl: string | undefined) {
   });
 }
 
+// ─── Session Rename Mutation ─────────────────────────────────────────────────
+
+/**
+ * Rename a session (update its title).
+ * PATCH {sandboxUrl}/session/{id} with { title: "..." }
+ *
+ * Optimistically updates the sessions list cache so the UI reflects the new
+ * title immediately; the server's SSE session.updated event will reconcile
+ * afterwards.
+ */
+export function useRenameSession(sandboxUrl: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: { sessionId: string; title: string }) => {
+      if (!sandboxUrl) throw new Error('No sandbox URL');
+      await opencodeFetch<void>(sandboxUrl, `/session/${params.sessionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: params.title }),
+      });
+    },
+    onMutate: async ({ sessionId, title }) => {
+      // Surgically patch the sessions list so the rename shows up instantly
+      // even if SSE is slow.
+      await queryClient.cancelQueries({ queryKey: platformKeys.sessions() });
+      const previous = queryClient.getQueryData<Session[]>(platformKeys.sessions());
+      queryClient.setQueryData<Session[]>(platformKeys.sessions(), (old) => {
+        if (!old) return old;
+        return old.map((s) => (s.id === sessionId ? { ...s, title } : s));
+      });
+      // Also patch the single-session cache used by useSession()
+      const singleKey = platformKeys.session(sessionId);
+      const previousSingle = queryClient.getQueryData<Session>(singleKey);
+      if (previousSingle) {
+        queryClient.setQueryData<Session>(singleKey, { ...previousSingle, title });
+      }
+      return { previous, previousSingle, sessionId };
+    },
+    onError: (_err, _vars, context) => {
+      // Roll back on failure
+      if (context?.previous) {
+        queryClient.setQueryData(platformKeys.sessions(), context.previous);
+      }
+      if (context?.previousSingle && context?.sessionId) {
+        queryClient.setQueryData(
+          platformKeys.session(context.sessionId),
+          context.previousSingle,
+        );
+      }
+    },
+    onSettled: (_data, _err, vars) => {
+      queryClient.invalidateQueries({ queryKey: platformKeys.sessions() });
+      queryClient.invalidateQueries({ queryKey: platformKeys.session(vars.sessionId) });
+    },
+  });
+}
+
 // ─── Session Prompt Mutation ─────────────────────────────────────────────────
 
 /**

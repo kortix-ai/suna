@@ -45,6 +45,12 @@ interface PlatformResponse<T> {
   created?: boolean;
 }
 
+interface LocalBridgeSandboxResponse {
+  success: boolean;
+  status?: string;
+  data?: SandboxInfo | null;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
@@ -136,18 +142,64 @@ export async function getActiveSandbox(): Promise<SandboxInfo | null> {
 
 /**
  * List all sandboxes for the user.
- * GET /platform/sandbox/list
+ *
+ * GET /platform/sandbox/list — cloud-tracked sandboxes from the DB.
+ * Additionally probes /platform/local-bridge/status so a live local Docker
+ * sandbox surfaces alongside cloud instances. The bridge call also ensures
+ * the backend creates/updates the local sandbox's DB row on self-hosted setups.
  */
-export async function listSandboxes(): Promise<SandboxInfo[]> {
-  const result = await platformFetch<SandboxInfo[]>('/platform/sandbox/list', {
-    method: 'GET',
-  });
+export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> {
+  try {
+    const qs = sandboxId ? `?sandbox_id=${encodeURIComponent(sandboxId)}` : '';
+    const result = await platformFetch<SandboxInfo[]>(`/platform/sandbox/list${qs}`, {
+      method: 'GET',
+    });
 
-  if (!result.success || !result.data) {
-    return [];
+    const rows = result.success && result.data ? result.data : [];
+    const discoveredLocal = await discoverLocalSandbox();
+    if (!discoveredLocal) return rows;
+    if (sandboxId && discoveredLocal.sandbox_id !== sandboxId) return rows;
+
+    const withoutDuplicate = rows.filter((s) => s.sandbox_id !== discoveredLocal.sandbox_id);
+    return [discoveredLocal, ...withoutDuplicate];
+  } catch {
+    const discoveredLocal = await discoverLocalSandbox().catch(() => null);
+    if (!discoveredLocal) return [];
+    if (sandboxId && discoveredLocal.sandbox_id !== sandboxId) return [];
+    return [discoveredLocal];
   }
+}
 
-  return result.data;
+/**
+ * Discover the local Docker sandbox (if any) by hitting the backend's
+ * local-bridge status endpoint. Returns null if no local sandbox is running
+ * or the endpoint is unreachable.
+ *
+ * GET /platform/local-bridge/status
+ */
+export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
+  try {
+    const token = await getAuthToken();
+    if (!token) return null;
+
+    const res = await fetch(`${API_URL}/platform/local-bridge/status`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(1500),
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) return null;
+
+    const body = (await res.json()) as LocalBridgeSandboxResponse;
+    if (!body.success || body.status !== 'ready' || !body.data?.sandbox_id) {
+      return null;
+    }
+    return body.data;
+  } catch {
+    return null;
+  }
 }
 
 /**

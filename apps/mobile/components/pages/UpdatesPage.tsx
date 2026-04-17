@@ -116,6 +116,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: U
     updateResult,
     updateError,
     resetStatus,
+    refreshCurrentVersion,
   } = useGlobalSandboxUpdate();
 
   const currentChannel = detectChannel(currentVersion);
@@ -184,7 +185,12 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: U
     // Refresh version data after dialog closes (covers both success and cancel)
     queryClient.invalidateQueries({ queryKey: ['sandbox', 'versions'] });
     queryClient.invalidateQueries({ queryKey: ['sandbox', 'latest-version'] });
-  }, [queryClient]);
+    // Force a fresh read of the running version from the sandbox health
+    // endpoint. The sandbox restarts during update and may take a moment to
+    // report the new version, so re-fetch immediately and again shortly after.
+    refreshCurrentVersion();
+    setTimeout(refreshCurrentVersion, 2000);
+  }, [queryClient, refreshCurrentVersion]);
 
   const handleDialogConfirm = useCallback(() => {
     update();

@@ -13,6 +13,7 @@ import {
   FlatList,
   ScrollView,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   useWindowDimensions,
   Animated,
@@ -36,7 +37,7 @@ import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSessionSync } from '@/lib/opencode/session-sync';
 import { groupMessagesIntoTurns } from '@/lib/opencode/turns';
 import type { Turn, QuestionRequest, ToolPart } from '@/lib/opencode/types';
-import { useSession, replyToQuestion, rejectQuestion, forkSession } from '@/lib/platform/hooks';
+import { useSession, replyToQuestion, rejectQuestion, forkSession, useRenameSession } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import type { QueuedMessage } from '@/stores/message-queue-store';
@@ -769,6 +770,45 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
 
   const title = session?.title || 'New Session';
 
+  // ── Inline title edit ──────────────────────────────────────────────────
+  // Tap the title → it becomes a TextInput in place. Commit on blur or Return;
+  // revert if the user clears the field. Disabled in onboarding mode.
+  const renameSession = useRenameSession(sandboxUrl);
+  const titleInputRef = useRef<TextInput>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(title);
+
+  const beginTitleEdit = useCallback(() => {
+    if (onboardingMode) return;
+    const current = session?.title || '';
+    setTitleDraft(current);
+    setIsEditingTitle(true);
+    // Focus on the next frame so the TextInput is mounted, then place the
+    // caret at the end of the text (native default would select the whole
+    // string when selectTextOnFocus is set).
+    requestAnimationFrame(() => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.setNativeProps({
+        selection: { start: current.length, end: current.length },
+      });
+    });
+  }, [onboardingMode, session?.title]);
+
+  const commitTitleEdit = useCallback(() => {
+    if (!isEditingTitle) return;
+    const trimmed = titleDraft.trim();
+    const previous = (session?.title || '').trim();
+    setIsEditingTitle(false);
+    // No change or empty → revert silently
+    if (!trimmed || trimmed === previous) return;
+    renameSession.mutate({ sessionId, title: trimmed });
+  }, [isEditingTitle, titleDraft, session?.title, renameSession, sessionId]);
+
+  const cancelTitleEdit = useCallback(() => {
+    setIsEditingTitle(false);
+    setTitleDraft(session?.title || '');
+  }, [session?.title]);
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -791,19 +831,44 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
             </TouchableOpacity>
           )}
           <View className="flex-1 flex-row items-center">
-            <Ionicons
-              name="chatbubble-outline"
-              size={16}
-              color={isDark ? '#999999' : '#6e6e6e'}
-              style={{ marginRight: 8 }}
-            />
-            <Text
-              className="flex-1 text-base font-medium text-muted-foreground"
-              numberOfLines={1}
-            >
-              {title}
-            </Text>
-            {isBusy && !onboardingMode && (
+            {isEditingTitle ? (
+              <TextInput
+                ref={titleInputRef}
+                value={titleDraft}
+                onChangeText={setTitleDraft}
+                onBlur={commitTitleEdit}
+                onSubmitEditing={commitTitleEdit}
+                returnKeyType="done"
+                blurOnSubmit
+                maxLength={200}
+                placeholder="Session title"
+                placeholderTextColor={isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)'}
+                style={{
+                  flex: 1,
+                  fontSize: 16,
+                  fontFamily: 'Roobert-Medium',
+                  color: isDark ? '#F8F8F8' : '#121215',
+                  padding: 0,
+                  margin: 0,
+                }}
+              />
+            ) : (
+              <TouchableOpacity
+                onPress={beginTitleEdit}
+                disabled={onboardingMode}
+                activeOpacity={onboardingMode ? 1 : 0.7}
+                className="flex-1"
+                hitSlop={{ top: 8, bottom: 8 }}
+              >
+                <Text
+                  className="text-base font-medium text-muted-foreground"
+                  numberOfLines={1}
+                >
+                  {title}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {isBusy && !onboardingMode && !isEditingTitle && (
               <View className="flex-row items-center mt-0.5">
                 <View className="h-1.5 w-1.5 rounded-full bg-muted-foreground mr-1" />
                 <Text className="text-xs text-muted-foreground">Working</Text>

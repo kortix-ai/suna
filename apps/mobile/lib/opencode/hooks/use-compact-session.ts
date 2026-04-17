@@ -29,7 +29,9 @@ interface CompactParams {
 async function resolveModel(sandboxUrl: string, sessionId: string): Promise<{ providerID: string; modelID: string }> {
   // 1. Try config default model
   try {
-    const config = await opencodeFetch<any>(sandboxUrl, '/config');
+    // Read /global/config so the model default survives sandbox dispose.
+    // Matches web aa7ed87.
+    const config = await opencodeFetch<any>(sandboxUrl, '/global/config');
     if (config?.model) {
       const parts = (config.model as string).split('/');
       if (parts.length >= 2) {
