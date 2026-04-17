@@ -3,7 +3,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
-import { useOpenCodeSessionStatusStore } from '@/stores/opencode-session-status-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import type {
   Session,
@@ -130,16 +129,43 @@ function unwrap<T>(result: { data?: T; error?: unknown; response?: Response }): 
 // Session Hooks
 // ============================================================================
 
+function getLSCache<T>(key: string): T | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return undefined;
+    return JSON.parse(raw) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function setLSCache(key: string, value: unknown): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage full or unavailable
+  }
+}
+
+const LS_SESSIONS = 'kortix_cache_sessions';
+const LS_AGENTS = 'kortix_cache_agents';
+const LS_COMMANDS = 'kortix_cache_commands';
+const LS_PROVIDERS = 'kortix_cache_providers';
+
 export function useOpenCodeSessions() {
   return useQuery<Session[]>({
     queryKey: opencodeKeys.sessions(),
     queryFn: async () => {
       const client = getClient();
-      // Server defaults to limit=100. Fetch all sessions.
       const result = await client.session.list({ limit: 10000 });
       const sessions = unwrap(result);
-      return sessions.sort((a: Session, b: Session) => b.time.updated - a.time.updated);
+      const sorted = sessions.sort((a: Session, b: Session) => b.time.updated - a.time.updated);
+      setLSCache(LS_SESSIONS, sorted);
+      return sorted;
     },
+    placeholderData: () => getLSCache<Session[]>(LS_SESSIONS),
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -149,6 +175,7 @@ export function useOpenCodeSessions() {
 }
 
 export function useOpenCodeSession(sessionId: string) {
+  const queryClient = useQueryClient();
   return useQuery<Session>({
     queryKey: opencodeKeys.session(sessionId),
     queryFn: async () => {
@@ -158,6 +185,10 @@ export function useOpenCodeSession(sessionId: string) {
     },
     enabled: !!sessionId,
     staleTime: Infinity,
+    placeholderData: () => {
+      const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
+      return sessions?.find((s) => s.id === sessionId);
+    },
   });
 }
 
@@ -299,6 +330,7 @@ export function useOpenCodeSessionTodo(sessionId: string) {
  * Without this, the Zustand selector returns a new array from .map() on every
  * call, breaking useSyncExternalStore's Object.is check → infinite re-render.
  */
+const MSG_HOOK_CACHE_MAX = 20;
 const msgHookCache = new Map<
   string,
   {
@@ -307,6 +339,18 @@ const msgHookCache = new Map<
     result: MessageWithParts[];
   }
 >();
+
+function touchMsgHookCache(sessionId: string) {
+  const entry = msgHookCache.get(sessionId);
+  if (entry) {
+    msgHookCache.delete(sessionId);
+    msgHookCache.set(sessionId, entry);
+  }
+  if (msgHookCache.size > MSG_HOOK_CACHE_MAX) {
+    const oldest = msgHookCache.keys().next().value;
+    if (oldest) msgHookCache.delete(oldest);
+  }
+}
 
 const EMPTY_MSGS: MessageWithParts[] = [];
 
@@ -339,6 +383,7 @@ function buildMsgsForHook(
     result.push({ info, parts: pa ?? [] });
   }
   msgHookCache.set(sessionId, { msgs, partRefs, result });
+  touchMsgHookCache(sessionId);
   return result;
 }
 
@@ -431,11 +476,9 @@ export function useSendOpenCodeMessage() {
 export function useAbortOpenCodeSession() {
   return useMutation({
     mutationFn: async (sessionId: string) => {
-      console.log(`[useAbortOpenCodeSession] Aborting session ${sessionId}`);
       const client = getClient();
       const result = await client.session.abort({ sessionID: sessionId });
       unwrap(result);
-      console.log(`[useAbortOpenCodeSession] Session ${sessionId} aborted successfully`);
       // After abort succeeds, the SSE stream should deliver session.idle event.
       // If the UI stays stuck, it means the SSE event wasn't received/processed.
       // The optimistic idle status we set in handleStop should handle this, but
@@ -445,24 +488,18 @@ export function useAbortOpenCodeSession() {
         const statusResult = await client.session.status();
         const statuses = statusResult.data as Record<string, any>;
         const serverStatus = statuses[sessionId];
-        console.log(`[useAbortOpenCodeSession] Post-abort server status for ${sessionId}:`, serverStatus);
         if (serverStatus && serverStatus.type !== 'idle') {
           // Server still thinks we're busy - update the store with server's view
           // This can happen if SSE events were missed
           useSyncStore.getState().setStatus(sessionId, serverStatus);
         }
-      } catch (e) {
-        console.log(`[useAbortOpenCodeSession] Could not fetch post-abort status:`, e);
+      } catch {
+        // Non-critical — SSE will eventually deliver the correct status
       }
     },
     retry: 2,
     retryDelay: 300,
-    onError: (err, sessionId) => {
-      console.error(`[useAbortOpenCodeSession] Abort failed for session ${sessionId} after retries:`, err);
-    },
-    onSuccess: (data, sessionId) => {
-      console.log(`[useAbortOpenCodeSession] Abort confirmed for session ${sessionId}`);
-    },
+    onError: () => {},
   });
 }
 
@@ -477,8 +514,11 @@ export function useOpenCodeAgents() {
       const client = getClient();
       const result = await client.app.agents();
       const data = unwrap(result);
-      return Array.isArray(data) ? data : Object.values(data);
+      const agents: Agent[] = Array.isArray(data) ? data : Object.values(data as Record<string, Agent>);
+      setLSCache(LS_AGENTS, agents);
+      return agents;
     },
+    placeholderData: () => getLSCache<Agent[]>(LS_AGENTS),
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
@@ -603,8 +643,11 @@ export function useOpenCodeCommands() {
     queryFn: async () => {
       const client = getClient();
       const result = await client.command.list();
-      return unwrap(result);
+      const commands = unwrap(result);
+      setLSCache(LS_COMMANDS, commands);
+      return commands;
     },
+    placeholderData: () => getLSCache<Command[]>(LS_COMMANDS),
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
@@ -834,8 +877,11 @@ export function useOpenCodeProviders() {
     queryFn: async () => {
       const client = getClient();
       const result = await client.provider.list();
-      return unwrap(result);
+      const providers = unwrap(result);
+      setLSCache(LS_PROVIDERS, providers);
+      return providers;
     },
+    placeholderData: () => getLSCache<ProviderListResponse>(LS_PROVIDERS),
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });

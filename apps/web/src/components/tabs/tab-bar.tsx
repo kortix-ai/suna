@@ -28,8 +28,8 @@ import {
 import { cn } from '@/lib/utils';
 import { useTabStore, isTabRecentlyClosed, type Tab, type TabType, DASHBOARD_TAB_ID } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { useOpenCodeSessionStatusStore } from '@/stores/opencode-session-status-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useOpenCodeSessions, opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
 import { useServerStore } from '@/stores/server-store';
 import { childMapByParent } from '@/ui';
@@ -600,7 +600,7 @@ export function TabBar() {
   const closeAllTabs = useTabStore((s) => s.closeAllTabs);
 
   // Status stores
-  const statuses = useOpenCodeSessionStatusStore((s) => s.statuses);
+  const statuses = useSyncStore((s) => s.sessionStatus);
   const permissions = useOpenCodePendingStore((s) => s.permissions);
   const questions = useOpenCodePendingStore((s) => s.questions);
 

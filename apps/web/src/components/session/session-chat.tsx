@@ -136,7 +136,6 @@ import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useOpenCodeSessionStatusStore } from '@/stores/opencode-session-status-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
@@ -4458,13 +4457,10 @@ export function SessionChat({
   // ---- Session status ----
   // Use sync store as primary (matches OpenCode), fall back to status store
   const syncStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const legacyStatus = useOpenCodeSessionStatusStore(
-    (s) => s.statuses[sessionId],
-  );
   const isOptimisticCompacting = useOpenCodeCompactionStore((s) =>
     Boolean(s.compactingBySession[sessionId]),
   );
-  const sessionStatus = syncStatus ?? legacyStatus;
+  const sessionStatus = syncStatus;
   const isServerBusy =
     sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
@@ -4808,7 +4804,7 @@ export function SessionChat({
         const timer = setTimeout(() => {
           // Re-check: if still idle after grace period, stop polling
           const currentStatus =
-            useOpenCodeSessionStatusStore.getState().statuses[sessionId];
+            useSyncStore.getState().sessionStatus[sessionId];
           if (currentStatus?.type === 'idle') {
             setPollingActive(false);
           }
@@ -5977,11 +5973,17 @@ export function SessionChat({
   // Instead, the loading/not-found states are rendered inline in the content
   // area while the header and input remain mounted.
 
-  const isDataLoading =
-    (sessionLoading || messagesLoading) && !optimisticPrompt;
-  const isNotFound = !session && !sessionLoading && !optimisticPrompt;
-
+  // Show loader ONLY when we have zero knowledge about this session.
+  // Once session metadata is available (from cache, placeholderData, or
+  // fetch), skip the loader and show the content area immediately — the
+  // welcome screen for empty sessions, cached messages for non-empty ones.
+  // This eliminates the loader for empty sessions entirely: instead of
+  // spinning while we wait to confirm "0 messages", we show the welcome
+  // screen right away.
   const hasMessages = messages && messages.length > 0;
+  const isDataLoading =
+    !session && sessionLoading && !hasMessages && !optimisticPrompt;
+  const isNotFound = !session && !sessionLoading && !optimisticPrompt;
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome =
     !prevHasChatContentRef.current && hasChatContent;

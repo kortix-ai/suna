@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, startTransition, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback, startTransition, useEffect, useRef, memo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { normalizeAppPathname, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname, buildInstancePath } from '@/lib/instance-routes';
 import {
@@ -55,7 +55,6 @@ import {
   useDeleteOpenCodeSession,
   useUpdateOpenCodeSession,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { useOpenCodeSessionStatusStore } from '@/stores/opencode-session-status-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useDebouncedBusySessions } from '@/hooks/use-debounced-busy-sessions';
 import { useSyncStore } from '@/stores/opencode-sync-store';
@@ -68,6 +67,7 @@ import { useTabStore, openTabAndNavigate } from '@/stores/tab-store';
 import { useServerStore } from '@/stores/server-store';
 import { childMapByParent, sortSessions, allDescendantIds } from '@/ui';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
+import { useBackgroundSessionPrefetch, prefetchSession } from '@/hooks/opencode/use-session-prefetch';
 import Link from 'next/link';
 
 // ============================================================================
@@ -89,9 +89,10 @@ interface SessionRowProps {
   onRename: (sessionId: string, currentTitle: string) => void;
   onArchive: (sessionId: string) => void;
   onCompact: (sessionId: string) => void;
+  onPrefetch?: (sessionId: string) => void;
 }
 
-function SessionRow({
+const SessionRow = memo(function SessionRow({
   session,
   isActive,
   isBusy,
@@ -105,6 +106,7 @@ function SessionRow({
   onRename,
   onArchive,
   onCompact,
+  onPrefetch,
 }: SessionRowProps) {
   const [isHovering, setIsHovering] = useState(false);
 
@@ -127,7 +129,10 @@ function SessionRow({
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
         )}
-        onMouseEnter={() => setIsHovering(true)}
+        onMouseEnter={() => {
+          setIsHovering(true);
+          onPrefetch?.(session.id);
+        }}
         onMouseLeave={() => setIsHovering(false)}
       >
         {/* Status dot — busy or pending */}
@@ -271,7 +276,7 @@ function SessionRow({
       </div>
     </Link>
   );
-}
+});
 
 // ============================================================================
 // Session Group — a parent session + its children (if any)
@@ -290,6 +295,7 @@ interface SessionGroupProps {
   onRename: (sessionId: string, currentTitle: string) => void;
   onArchive: (sessionId: string) => void;
   onCompact: (sessionId: string) => void;
+  onPrefetch?: (sessionId: string) => void;
 }
 
 function SessionGroup({
@@ -305,6 +311,7 @@ function SessionGroup({
   onRename,
   onArchive,
   onCompact,
+  onPrefetch,
 }: SessionGroupProps) {
   const childIds = childMap.get(session.id);
   const hasChildren = !!childIds && childIds.length > 0;
@@ -342,6 +349,7 @@ function SessionGroup({
           onRename={onRename}
           onArchive={onArchive}
           onCompact={onCompact}
+          onPrefetch={onPrefetch}
         />
       );
     }
@@ -359,6 +367,7 @@ function SessionGroup({
         onRename={onRename}
         onArchive={onArchive}
         onCompact={onCompact}
+        onPrefetch={onPrefetch}
       />
     );
   };
@@ -381,6 +390,7 @@ function SessionGroup({
         onRename={onRename}
         onArchive={onArchive}
         onCompact={onCompact}
+        onPrefetch={onPrefetch}
       />
 
       {/* Children — indented under parent with subtle left border */}
@@ -416,6 +426,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const [displayLimit, setDisplayLimit] = useState(SESSION_PAGE_SIZE);
 
   const { data: sessions, isLoading, error, refetch } = useOpenCodeSessions();
+  const { prefetchOnHover } = useBackgroundSessionPrefetch(sessions);
   const { mutate: deleteSession, isPending: isDeleting } = useDeleteOpenCodeSession();
   const { mutate: updateSession } = useUpdateOpenCodeSession();
 
@@ -455,13 +466,12 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const [renameSessionId, setRenameSessionId] = useState<string | null>(null);
   const [compactSessionId, setCompactSessionId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  const statuses = useOpenCodeSessionStatusStore((s) => s.statuses);
-  const syncStatuses = useSyncStore((s) => s.sessionStatus);
+  const statuses = useSyncStore((s) => s.sessionStatus);
   const permissions = useOpenCodePendingStore((s) => s.permissions);
   const questions = useOpenCodePendingStore((s) => s.questions);
 
   // Debounced busy state — prevents green dot from flickering during reasoning
-  const debouncedBusy = useDebouncedBusySessions(statuses);
+  const debouncedBusy = useDebouncedBusySessions();
 
   // Track which tree nodes are manually expanded/collapsed
   const [manualExpanded, setManualExpanded] = useState<Record<string, boolean>>({});
@@ -554,12 +564,10 @@ export function SessionList({ projectId }: SessionListProps = {}) {
         pendingCount === 0 &&
         (debouncedBusy[sessionId] ||
           statuses[sessionId]?.type === 'busy' ||
-          statuses[sessionId]?.type === 'retry' ||
-          syncStatuses[sessionId]?.type === 'busy' ||
-          syncStatuses[sessionId]?.type === 'retry');
+          statuses[sessionId]?.type === 'retry');
       return { isBusy: !!isBusy, pendingCount };
     },
-    [getPendingCount, debouncedBusy, statuses, syncStatuses],
+    [getPendingCount, debouncedBusy, statuses],
   );
 
   // Filter to root sessions only for the top-level list.
@@ -575,13 +583,13 @@ export function SessionList({ projectId }: SessionListProps = {}) {
       const bPending = getPendingCount(b.id);
       if (aPending > 0 && bPending === 0) return -1;
       if (bPending > 0 && aPending === 0) return 1;
-      const aIsBusy = aPending === 0 && (debouncedBusy[a.id] || statuses[a.id]?.type === 'busy' || syncStatuses[a.id]?.type === 'busy') ? 1 : 0;
-      const bIsBusy = bPending === 0 && (debouncedBusy[b.id] || statuses[b.id]?.type === 'busy' || syncStatuses[b.id]?.type === 'busy') ? 1 : 0;
+      const aIsBusy = aPending === 0 && (debouncedBusy[a.id] || statuses[a.id]?.type === 'busy') ? 1 : 0;
+      const bIsBusy = bPending === 0 && (debouncedBusy[b.id] || statuses[b.id]?.type === 'busy') ? 1 : 0;
       if (aIsBusy > bIsBusy) return -1;
       if (bIsBusy > aIsBusy) return 1;
       return 0;
     });
-  }, [sessions, projectId, debouncedBusy, statuses, syncStatuses, getPendingCount]);
+  }, [sessions, projectId, debouncedBusy, statuses, getPendingCount]);
 
   // Archived sessions
   const archivedSessions = useMemo(() => {
@@ -731,6 +739,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     onRename: handleRenameSession,
     onArchive: handleArchiveSession,
     onCompact: handleCompactSession,
+    onPrefetch: prefetchOnHover,
   };
 
   return (

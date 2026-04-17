@@ -24,11 +24,12 @@ import {
 import { useDiagnosticsStore, parseDiagnosticsFromToolOutput } from "@/stores/diagnostics-store";
 import { useOpenCodeCompactionStore } from "@/stores/opencode-compaction-store";
 import { useOpenCodePendingStore } from "@/stores/opencode-pending-store";
-import { useOpenCodeSessionStatusStore } from "@/stores/opencode-session-status-store";
 import { useSyncStore } from "@/stores/opencode-sync-store";
 import { useServerStore, getActiveOpenCodeUrl } from "@/stores/server-store";
 import { ptyKeys } from "./use-opencode-pty";
 import { opencodeKeys, type Session, type MessageWithParts } from "./use-opencode-sessions";
+import { saveSessionToIDB, deleteSessionFromIDB } from "@/lib/idb-sync-cache";
+import { resetPrefetchState } from "./use-session-prefetch";
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
@@ -40,8 +41,6 @@ import { opencodeKeys, type Session, type MessageWithParts } from "./use-opencod
  */
 export function useOpenCodeEventStream() {
 	const queryClient = useQueryClient();
-	const setStatus = useOpenCodeSessionStatusStore((s) => s.setStatus);
-	const clearStatuses = useOpenCodeSessionStatusStore((s) => s.setStatuses);
 	const addPermission = useOpenCodePendingStore((s) => s.addPermission);
 	const removePermission = useOpenCodePendingStore((s) => s.removePermission);
 	const addQuestion = useOpenCodePendingStore((s) => s.addQuestion);
@@ -155,7 +154,7 @@ export function useOpenCodeEventStream() {
 			type: "session.error",
 			properties: { sessionID, error },
 		} as any);
-		setStatus(sessionID, { type: "idle" } as any);
+		useSyncStore.getState().setStatus(sessionID, { type: "idle" } as any);
 		useSyncStore.getState().clearOptimisticMessages(sessionID);
 	});
 
@@ -166,12 +165,12 @@ export function useOpenCodeEventStream() {
 			type: "session.idle",
 			properties: { sessionID },
 		} as any);
-		setStatus(sessionID, { type: "idle" } as any);
+		useSyncStore.getState().setStatus(sessionID, { type: "idle" } as any);
 		useSyncStore.getState().clearOptimisticMessages(sessionID);
 	});
 
 	const reconcileMissingBusySessions = useRef((nextStatuses: Record<string, any>) => {
-		const previousStatuses = useOpenCodeSessionStatusStore.getState().statuses;
+		const previousStatuses = useSyncStore.getState().sessionStatus;
 		for (const [sessionID, status] of Object.entries(previousStatuses)) {
 			if (status?.type !== "idle" && !nextStatuses[sessionID]) {
 				markSessionIdleLocally.current(sessionID);
@@ -201,11 +200,11 @@ export function useOpenCodeEventStream() {
 		if (isFirstMount || isServerSwitch) {
 			resetClient();
 			clearConfigOverrides();
-			clearStatuses({});
 			clearPending();
 			useSyncStore.getState().reset();
 			useDiagnosticsStore.getState().clearAll();
 			queryClient.removeQueries({ queryKey: opcodeKeys.all });
+			resetPrefetchState();
 		} else if (didServerUrlChange) {
 			// URL changed on the same logical server (e.g. sandbox/proxy refresh).
 			// Recreate the SDK client so SSE reconnects to the new endpoint, but
@@ -286,8 +285,12 @@ export function useOpenCodeEventStream() {
 					client.session
 						.messages({ sessionID: sid })
 						.then((res) => {
-							if (res.data)
+							if (res.data) {
 								useSyncStore.getState().hydrate(sid, res.data as any);
+								const s = useSyncStore.getState();
+								const msgs = s.messages[sid] ?? [];
+								if (msgs.length > 0) saveSessionToIDB(sid, msgs, s.parts);
+							}
 						})
 						.catch(() => {});
 				}
@@ -635,11 +638,12 @@ export function useOpenCodeEventStream() {
 					queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
 						if (!old) return old;
 						const found = old.some((s) => s.id === info.id);
-						if (!found) return old; // Already gone — preserve reference
+						if (!found) return old;
 						return old.filter((s) => s.id !== info.id);
 					});
 					queryClient.removeQueries({ queryKey: opencodeKeys.session(info.id) });
 					queryClient.removeQueries({ queryKey: opencodeKeys.messages(info.id) });
+					deleteSessionFromIDB(info.id);
 				}
 				break;
 			}
@@ -648,14 +652,16 @@ export function useOpenCodeEventStream() {
 				const sessionID = (event.properties as any).sessionID;
 				if (sessionID) {
 					stopCompaction(sessionID);
-					// Full refetch after compaction since messages changed significantly.
-					// Rehydrate the sync store (the single source of truth for messages).
 					const client = getClient();
 					client.session
 						.messages({ sessionID })
 						.then((res) => {
-							if (res.data)
+							if (res.data) {
 								useSyncStore.getState().hydrate(sessionID, res.data as any);
+								const s = useSyncStore.getState();
+								const msgs = s.messages[sessionID] ?? [];
+								if (msgs.length > 0) saveSessionToIDB(sessionID, msgs, s.parts);
+							}
 						})
 						.catch(() => {});
 					// Refetch the individual session to clear time.compacting
@@ -689,8 +695,7 @@ export function useOpenCodeEventStream() {
 						// Detect busy/retry → idle transition BEFORE updating the store
 						// (coalescing can drop intermediate busy events, so we check here)
 						const prevStatus =
-							useOpenCodeSessionStatusStore.getState().statuses[sessionID];
-						setStatus(sessionID, status);
+							useSyncStore.getState().sessionStatus[sessionID];
 						if (
 							status.type === "idle" &&
 							prevStatus &&
@@ -706,10 +711,13 @@ export function useOpenCodeEventStream() {
 					const sessionID = (event.properties as any).sessionID;
 					if (sessionID) {
 						const prevStatus =
-							useOpenCodeSessionStatusStore.getState().statuses[sessionID];
-						setStatus(sessionID, { type: "idle" });
+							useSyncStore.getState().sessionStatus[sessionID];
 						if (prevStatus && prevStatus.type !== "idle") {
 							notifyTaskComplete(sessionID, getSessionTitle(sessionID));
+							// Persist final session state to IDB when streaming completes
+							const s = useSyncStore.getState();
+							const msgs = s.messages[sessionID] ?? [];
+							if (msgs.length > 0) saveSessionToIDB(sessionID, msgs, s.parts);
 						}
 					}
 					break;
@@ -718,7 +726,6 @@ export function useOpenCodeEventStream() {
 				// ---- Session errors ----
 			case "session.error": {
 				const props = event.properties as { sessionID?: string; error?: any };
-				console.log("[sse-handler] session.error event received", { sessionID: props.sessionID, error: props.error });
 				if (props.sessionID && props.error) {
 					stopCompaction(props.sessionID);
 					// Fire browser notification
@@ -779,6 +786,9 @@ export function useOpenCodeEventStream() {
 									if (!res.data) return;
 									useSyncStore.getState().hydrate(sid, res.data as any);
 									useSyncStore.getState().clearOptimisticMessages(sid);
+									const s = useSyncStore.getState();
+									const msgs = s.messages[sid] ?? [];
+									if (msgs.length > 0) saveSessionToIDB(sid, msgs, s.parts);
 								})
 								.catch(() => {});
 						} else {
@@ -872,7 +882,7 @@ export function useOpenCodeEventStream() {
 			// ---- Server disposed ----
 			case "server.instance.disposed": {
 				for (const [sessionID, status] of Object.entries(
-					useOpenCodeSessionStatusStore.getState().statuses,
+					useSyncStore.getState().sessionStatus,
 				)) {
 					if (status?.type !== "idle") {
 						markSessionAbortedLocally.current(
@@ -1008,8 +1018,6 @@ export function useOpenCodeEventStream() {
 		// stale SSE connections after sandbox/proxy URL changes.
 	}, [
 		queryClient,
-		setStatus,
-		clearStatuses,
 		addPermission,
 		removePermission,
 		addQuestion,

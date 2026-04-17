@@ -680,8 +680,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "message.updated": {
 				const info = (event.properties as { info: Message }).info;
 				if (!info?.sessionID) return;
-				if ((info as any).error) console.log("[sync-store] message.updated with error", { id: info.id, sessionID: info.sessionID, role: info.role, error: (info as any).error });
-				// When a real user message arrives from the server, swap out the
+					// When a real user message arrives from the server, swap out the
 				// optimistic message(s) in a SINGLE atomic set() call.
 				// This prevents the intermediate render where the user bubble
 				// vanishes (optimistic removed) before the real one appears.
@@ -897,8 +896,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const props = event.properties as { sessionID?: string; error?: unknown };
 			if (!props.sessionID || !props.error) return;
 			const sid = props.sessionID;
-			console.log("[sync-store] session.error received", { sid, error: props.error });
-
 			// Mark session idle — errors terminate the response.
 			store.setStatus(sid, { type: "idle" });
 			deltaActiveParts.clear();
@@ -910,8 +907,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// server which will bring in the authoritative data via hydrate().
 			set((s) => {
 				const msgs = s.messages[sid] ?? [];
-				console.log("[sync-store] session.error — current messages for session:", msgs.length, msgs.map(m => ({ id: m.id, role: m.role, error: (m as any).error })));
-
 				// Find last assistant message and patch .error onto it
 				for (let i = msgs.length - 1; i >= 0; i--) {
 					if (msgs[i].role === "assistant") {

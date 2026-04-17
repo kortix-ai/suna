@@ -15,6 +15,7 @@ import {
 	type MessageWithParts,
 	useSyncStore,
 } from "@/stores/opencode-sync-store";
+import { loadSessionFromIDB, saveSessionToIDB } from "@/lib/idb-sync-cache";
 
 const EMPTY_MESSAGES: MessageWithParts[] = [];
 const EMPTY_PERMS: PermissionRequest[] = [];
@@ -29,6 +30,7 @@ const IDLE_STATUS = { type: "idle" } as SessionStatus;
  * This is a module-level cache keyed by sessionId so multiple components
  * using the same sessionId share the cache (e.g. SessionLayout + SessionChat).
  */
+const MESSAGE_CACHE_MAX = 20;
 const messageCache = new Map<
 	string,
 	{
@@ -37,6 +39,18 @@ const messageCache = new Map<
 		result: MessageWithParts[];
 	}
 >();
+
+function touchMessageCache(sessionId: string) {
+	const entry = messageCache.get(sessionId);
+	if (entry) {
+		messageCache.delete(sessionId);
+		messageCache.set(sessionId, entry);
+	}
+	if (messageCache.size > MESSAGE_CACHE_MAX) {
+		const oldest = messageCache.keys().next().value;
+		if (oldest) messageCache.delete(oldest);
+	}
+}
 
 function buildMessages(
 	sessionId: string,
@@ -69,6 +83,7 @@ function buildMessages(
 		result.push({ info, parts: pa ?? [] });
 	}
 	messageCache.set(sessionId, { msgs, partRefs, result });
+	touchMessageCache(sessionId);
 	return result;
 }
 
@@ -101,6 +116,33 @@ export function useSessionSync(sessionId: string) {
 		// history. Always fetch and let hydrate() merge safely.
 
 		let cancelled = false;
+
+		// Phase 2: Hydrate from IndexedDB cache FIRST for instant display.
+		// Server fetch still runs in background to revalidate.
+		const hydrateFromCache = async () => {
+			const existing = useSyncStore.getState().messages[sessionId];
+			if (existing && existing.length > 0) return;
+			try {
+				const cached = await loadSessionFromIDB(sessionId);
+				if (cancelled) return;
+				if (cached && cached.messages.length > 0) {
+					const current = useSyncStore.getState().messages[sessionId];
+					if (!current || current.length === 0) {
+						useSyncStore.getState().hydrate(
+							sessionId,
+							cached.messages.map((info: any) => ({
+								info,
+								parts: cached.parts[info.id] ?? [],
+							})),
+						);
+					}
+				}
+			} catch {
+				// IDB unavailable — fall through to network fetch
+			}
+		};
+		hydrateFromCache();
+
 		const fetchWithRetry = async (attempt = 0) => {
 			try {
 				const res = await getClient().session.messages({
@@ -110,47 +152,43 @@ export function useSessionSync(sessionId: string) {
 				const data = (res.data ?? []) as any[];
 
 				if (data.length === 0) {
-					let sessionExists = true;
-					try {
-						const sessionRes = await getClient().session.get({ sessionID: sessionId });
-						sessionExists = Boolean(sessionRes?.data);
-					} catch {
-						sessionExists = false;
-					}
-
-					// Read fresh state AFTER the awaits — the pending-prompt
-					// effect may have set status to "busy" and added an
-					// optimistic message while the fetch was in flight.
-					// Using a stale pre-await snapshot would see "idle" and
-					// incorrectly call clearSession, wiping the optimistic
-					// message and reverting the UI to the welcome screen.
 					const freshState = useSyncStore.getState();
-					const currentStatus = freshState.sessionStatus[sessionId] ?? IDLE_STATUS;
-					if (!sessionExists || currentStatus.type === "idle") {
-						// Double-check: don't clear if there are already messages
-						// in the store (e.g. optimistic messages added by the
-						// pending-prompt effect while this fetch was in flight).
-						const existingMsgs = freshState.messages[sessionId];
-						if (existingMsgs && existingMsgs.length > 0) {
-							// Messages exist (likely optimistic) — skip clearing
-							return;
-						}
-						freshState.clearSession(sessionId);
+					const existingMsgs = freshState.messages[sessionId];
+					if (existingMsgs && existingMsgs.length > 0) {
 						return;
 					}
+					// Mark session as loaded (empty) immediately so
+					// isLoading becomes false — no extra round-trip.
+					// If the session is busy (agent running), SSE events
+					// will deliver messages as they arrive.
+					freshState.clearSession(sessionId);
+					return;
 				}
 
 				if (res.data) {
 					useSyncStore.getState().hydrate(sessionId, res.data as any);
+					// Persist to IDB for next cold load
+					const state = useSyncStore.getState();
+					const msgs = state.messages[sessionId] ?? [];
+					if (msgs.length > 0) {
+						saveSessionToIDB(sessionId, msgs, state.parts);
+					}
 				}
 			} catch {
 				if (cancelled) return;
 				if (attempt < 3) {
-					const delay = 500 * 2 ** attempt; // 500ms, 1s, 2s
+					const delay = 500 * 2 ** attempt;
 					setTimeout(() => fetchWithRetry(attempt + 1), delay);
 				} else {
-					// All retries exhausted — reset so a future mount can try again
+					// All retries exhausted — unblock the UI by marking
+					// the session as loaded (empty). Without this,
+					// isLoading stays true forever on cold boot when the
+					// sandbox isn't ready yet.
 					fetchedRef.current = null;
+					const state = useSyncStore.getState();
+					if (!(sessionId in state.messages)) {
+						state.clearSession(sessionId);
+					}
 				}
 			}
 		};

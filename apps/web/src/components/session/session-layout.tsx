@@ -17,7 +17,7 @@ import {
   useOpenCodeMessages,
   useOpenCodeSession,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { useOpenCodeSessionStatusStore } from '@/stores/opencode-session-status-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useTabStore } from '@/stores/tab-store';
 import {
   adaptMessagesToToolCalls,
@@ -43,8 +43,8 @@ export const SessionLayout = memo(function SessionLayout({
   const { data: messages } = useOpenCodeMessages(sessionId);
   const { data: session } = useOpenCodeSession(sessionId);
 
-  const sessionStatus = useOpenCodeSessionStatusStore(
-    (s) => s.statuses[sessionId],
+  const sessionStatus = useSyncStore(
+    (s) => s.sessionStatus[sessionId],
   );
   const isBusy = sessionStatus?.type === 'busy';
 
