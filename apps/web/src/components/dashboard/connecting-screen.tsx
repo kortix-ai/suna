@@ -215,13 +215,7 @@ export function ConnectingScreen({
     initialCheckDone &&
     status !== 'connected';
 
-  const shouldEscalateToOverlay =
-    isMidSessionDrop &&
-    status === 'unreachable' &&
-    !!disconnectedAt &&
-    Date.now() - disconnectedAt > 12_000;
-
-  if (isMidSessionDrop && !shouldEscalateToOverlay) {
+  if (isMidSessionDrop) {
     return (
       <>
         <ReconnectPill
@@ -232,7 +226,7 @@ export function ConnectingScreen({
         />
         <InstanceSettingsModal
           sandbox={healthModalQuery.data ?? null}
-          open={healthOpen && !!healthModalQuery.data}
+          open={healthOpen}
           onOpenChange={setHealthOpen}
           defaultTab="host"
         />
@@ -251,7 +245,7 @@ export function ConnectingScreen({
         />
         <InstanceSettingsModal
           sandbox={healthModalQuery.data ?? null}
-          open={healthOpen && !!healthModalQuery.data}
+          open={healthOpen}
           onOpenChange={setHealthOpen}
           defaultTab="host"
         />
@@ -259,7 +253,7 @@ export function ConnectingScreen({
     );
   }
 
-  if ((!forceConnecting && status === 'unreachable') || shouldEscalateToOverlay) {
+  if (!forceConnecting && status === 'unreachable') {
     return (
       <>
         <FullScreenShell>
@@ -270,7 +264,7 @@ export function ConnectingScreen({
             restarting={restarting}
             recoveryPhase={recoveryPhase}
             restartRequestedAt={restartRequestedAt}
-            degraded={healthy === false && status === 'connected'}
+            degraded={false}
             adminHealth={adminHealth}
             onHealth={resolvedSandboxId ? handleOpenHealth : undefined}
             onSwitch={handleSwitch}
@@ -279,7 +273,7 @@ export function ConnectingScreen({
         </FullScreenShell>
         <InstanceSettingsModal
           sandbox={healthModalQuery.data ?? null}
-          open={healthOpen && !!healthModalQuery.data}
+          open={healthOpen}
           onOpenChange={setHealthOpen}
           defaultTab="host"
         />
@@ -351,40 +345,9 @@ export interface ConnectingScreenProps {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function useConnectionToasts() {
-  const status = useSandboxConnectionStore((s) => s.status);
-  const wasConnected = useSandboxConnectionStore((s) => s.wasConnected);
-  const initialCheckDone = useSandboxConnectionStore(
-    (s) => s.initialCheckDone,
-  );
-
-  const prevStatusRef = useRef<SandboxConnectionStatus | null>(null);
-
-  useEffect(() => {
-    if (!initialCheckDone) return;
-
-    const prev = prevStatusRef.current;
-    prevStatusRef.current = status;
-
-    if (prev === null) return;
-
-    if (
-      prev === 'connected' &&
-      (status === 'unreachable' || status === 'connecting') &&
-      wasConnected
-    ) {
-      toast.error('Instance connection lost. Reconnecting…', {
-        duration: 4000,
-      });
-    }
-
-    if (
-      (prev === 'unreachable' || prev === 'connecting') &&
-      status === 'connected' &&
-      wasConnected
-    ) {
-      toast.success('Instance reconnected!', { duration: 3000 });
-    }
-  }, [status, wasConnected, initialCheckDone]);
+  // Mid-session connection state now stays in the background and is surfaced
+  // exclusively via the reconnect pill in the bottom-right corner. Avoid
+  // duplicate toast noise for transient drops and recoveries.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -22,15 +22,18 @@ import { useServerStore } from "@/stores/server-store";
 const FAIL_THRESHOLD_FIRST = 5;
 
 /**
- * For reconnection (was connected, then failed) — show the banner
- * after just 1 failure since the user already had a working connection.
+ * For reconnection (was connected, then failed) — require two consecutive
+ * failures before declaring the instance unreachable. The first miss drops
+ * into a lightweight reconnecting state so transient timeouts don't kick the
+ * user to an offline/error UI.
  */
-const FAIL_THRESHOLD_RECONNECT = 1;
+const FAIL_THRESHOLD_RECONNECT = 2;
 
 /** Interval between health checks (ms) */
 const POLL_CONNECTED = 30_000; // 30s when healthy
 const POLL_FAILING = 3_000; // 3s when any failure detected (fast retry)
 const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
+const RUNTIME_FAIL_THRESHOLD = 2;
 
 /** Timeout for each health check request */
 const CHECK_TIMEOUT = 5_000;
@@ -44,8 +47,8 @@ function isImmediateOfflineStatus(status: number): boolean {
  *
  * Key behaviour:
  *   - On first failure, immediately switches to fast polling (3s).
- *   - If the user was previously connected, marks unreachable after 1 failure
- *     so the reconnect banner appears within ~8s (one 30s poll + 5s timeout).
+ *   - If the user was previously connected, the first failure moves to
+ *     "connecting" and the second consecutive failure marks unreachable.
  *   - If it's the first connection, requires 3 failures (same as before).
  */
 export function useSandboxConnection() {
@@ -58,6 +61,7 @@ export function useSandboxConnection() {
 	const prevServerVersionRef = useRef(serverVersion);
 	const portsFetchedRef = useRef(false);
 	const versionFetchedRef = useRef(false);
+	const runtimeFailCountRef = useRef(0);
 
 	useEffect(() => {
 		const isFirstMount = isMountRef.current;
@@ -71,6 +75,7 @@ export function useSandboxConnection() {
 			resetForServerSwitch();
 			portsFetchedRef.current = false;
 			versionFetchedRef.current = false;
+			runtimeFailCountRef.current = 0;
 		}
 
 		let alive = true;
@@ -176,13 +181,18 @@ export function useSandboxConnection() {
 							signal: AbortSignal.timeout(3000),
 						}, { retryOnAuthError: false });
 						if (!coreRes.ok) {
-							setOpenCodeHealth(false);
 							const body = await coreRes.text().catch(() => "");
-							const coreError = new Error(
-								`Core runtime unhealthy: ${coreRes.status}${body ? ` ${body.slice(0, 120)}` : ""}`,
-							) as Error & { immediateOffline?: boolean };
-							coreError.immediateOffline = coreRes.status >= 500;
-							throw coreError;
+							runtimeFailCountRef.current += 1;
+							if (runtimeFailCountRef.current >= RUNTIME_FAIL_THRESHOLD) {
+								setOpenCodeHealth(false);
+							}
+							console.warn('[sandbox-connection] session/status failed after global health succeeded', {
+								status: coreRes.status,
+								body: body.slice(0, 120),
+								runtimeFailCount: runtimeFailCountRef.current,
+							});
+						} else {
+							runtimeFailCountRef.current = 0;
 						}
 
 						const hRes = await authenticatedFetch(`${url}/kortix/health`, {
@@ -214,6 +224,8 @@ export function useSandboxConnection() {
 
 					if (failCount >= threshold) {
 						setSandboxStatus("unreachable");
+					} else if (wasConnected) {
+						setSandboxStatus("connecting");
 					}
 				}
 			} finally {
