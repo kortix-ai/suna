@@ -31,12 +31,14 @@ import type { AuthVariables } from '../types';
 
 // ─── Provider Types (re-declared to avoid importing ../providers which chains to heavy deps) ─
 
-export type ProviderName = 'daytona' | 'local_docker';
+export type ProviderName = 'daytona' | 'local_docker' | 'justavps';
 
 export interface CreateSandboxOpts {
   accountId: string;
   userId: string;
   name: string;
+  serverType?: string;
+  location?: string;
   envVars?: Record<string, string>;
 }
 
@@ -153,6 +155,8 @@ export function createMockProvider(
     baseUrl:
       name === 'daytona'
         ? `https://kortix.cloud/mock-daytona-id/8000`
+        : name === 'justavps'
+          ? 'https://mock-justavps.kortix.cloud'
         : `http://localhost:${30000 + Math.floor(Math.random() * 1000)}`,
     metadata: {
       provisionedBy: 'test',

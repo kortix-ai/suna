@@ -101,6 +101,17 @@ function getProviderDisplayName(providerName: ProviderName): string {
   }
 }
 
+function stripProvisioningFailureMetadata(metadata: Record<string, unknown> | null | undefined) {
+  const source = metadata ?? {};
+  const {
+    provisioningError: _provisioningError,
+    lastProvisioningError: _lastProvisioningError,
+    errorMessage: _errorMessage,
+    ...rest
+  } = source;
+  return rest;
+}
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createCloudSandboxRouter(
@@ -767,7 +778,7 @@ export function createCloudSandboxRouter(
         resolveAccountId,
       });
 
-      if (!sandbox || !sandbox.externalId) {
+      if (!sandbox) {
         console.warn('[SANDBOX-CLOUD] restart target not found', {
           accountId: access.accountId,
           isAdmin: access.isAdmin,
@@ -777,6 +788,75 @@ export function createCloudSandboxRouter(
       }
 
       const provider = getProvider(sandbox.provider);
+
+      if (sandbox.provider === 'justavps' && !sandbox.externalId && sandbox.status === 'error') {
+        const existingMeta = (sandbox.metadata as Record<string, unknown> | null) ?? {};
+        const existingConfig = (sandbox.config as Record<string, unknown> | null) ?? {};
+        const cleanMeta = stripProvisioningFailureMetadata(existingMeta);
+
+        let serviceKey = typeof existingConfig.serviceKey === 'string' ? existingConfig.serviceKey : '';
+        if (!serviceKey) {
+          const sandboxKey = await createApiKey({
+            sandboxId: sandbox.sandboxId,
+            accountId: sandbox.accountId,
+            title: 'Sandbox Token (recovery)',
+            type: 'sandbox',
+          });
+          serviceKey = sandboxKey.secretKey;
+        }
+
+        const reprovisioned = await provider.create({
+          accountId: sandbox.accountId,
+          userId,
+          name: sandbox.name,
+          serverType: typeof existingMeta.serverType === 'string' ? existingMeta.serverType : undefined,
+          location: typeof existingMeta.location === 'string' ? existingMeta.location : undefined,
+          envVars: {
+            KORTIX_TOKEN: serviceKey,
+          },
+        });
+
+        await db
+          .update(sandboxes)
+          .set({
+            externalId: reprovisioned.externalId,
+            status: 'active',
+            baseUrl: reprovisioned.baseUrl,
+            metadata: { ...cleanMeta, ...reprovisioned.metadata },
+            config: { ...existingConfig, serviceKey },
+            updatedAt: new Date(),
+          })
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+
+        const [refreshed] = await db
+          .select()
+          .from(sandboxes)
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId))
+          .limit(1);
+
+        console.log(`[PLATFORM] Re-provisioned failed sandbox ${sandbox.sandboxId} via ${sandbox.provider}`);
+
+        return c.json({
+          success: true,
+          data: {
+            ...(refreshed ? serializeSandbox(refreshed) : {}),
+            recovery_state: 'reprovisioning',
+            action: 'retry_provision',
+          },
+        });
+      }
+
+      if (!sandbox.externalId) {
+        console.warn('[SANDBOX-CLOUD] restart target missing externalId', {
+          accountId: access.accountId,
+          isAdmin: access.isAdmin,
+          requestedSandboxId,
+          sandboxId: sandbox.sandboxId,
+          provider: sandbox.provider,
+          status: sandbox.status,
+        });
+        return c.json({ success: false, error: 'No sandbox to restart' }, 404);
+      }
 
       if (sandbox.provider === 'justavps') {
         const { JustAVPSProvider } = await import('../providers/justavps');

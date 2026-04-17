@@ -18,6 +18,7 @@ import {
   createTestApp,
   createMockProvider,
   cleanupTestData,
+  getTestDb,
   HAS_SAFE_TEST_DB,
   jsonPost,
   jsonGet,
@@ -26,6 +27,8 @@ import {
   OTHER_USER_ID,
   OTHER_USER_EMAIL,
 } from './helpers';
+import { sandboxes } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 
 const HAS_DB = HAS_SAFE_TEST_DB;
 
@@ -180,6 +183,75 @@ describe.skipIf(!HAS_DB)('Platform — Sandbox Lifecycle', () => {
 
       const body = await res.json();
       expect(body.success).toBe(true);
+    });
+
+    it('re-provisions failed JustAVPS sandboxes that never received an external id', async () => {
+      const justavpsProvider = createMockProvider('justavps', {
+        createResult: {
+          externalId: 'mock-justavps-recovered',
+          baseUrl: 'https://recovered.kortix.cloud',
+          metadata: {
+            justavpsSlug: 'recovered-sandbox',
+            provisioningStage: 'server_creating',
+            serverType: 'cpx32',
+            location: 'nbg1',
+          },
+        },
+      });
+      const justavpsApp = createTestApp({
+        provider: justavpsProvider,
+        defaultProvider: 'justavps',
+        availableProviders: ['justavps'],
+      });
+      const db = getTestDb();
+
+      const [failedSandbox] = await db.insert(sandboxes).values({
+        accountId: TEST_USER_ID,
+        name: 'failed-justavps-sandbox',
+        provider: 'justavps',
+        externalId: '',
+        status: 'error',
+        baseUrl: '',
+        config: { serviceKey: 'kortix_sb_retry_test' },
+        metadata: {
+          serverType: 'cpx32',
+          location: 'nbg1',
+          provisioningStage: 'error',
+          provisioningError: 'JustAVPS API POST /machines returned 500',
+          errorMessage: 'Provisioning failed',
+        },
+      }).returning();
+
+      const res = await jsonPost(justavpsApp, '/v1/platform/sandbox/restart', {
+        sandbox_id: failedSandbox.sandboxId,
+      });
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data.external_id).toBe('mock-justavps-recovered');
+      expect(body.data.recovery_state).toBe('reprovisioning');
+      expect(body.data.action).toBe('retry_provision');
+
+      expect(justavpsProvider.calls.create.length).toBe(1);
+      expect(justavpsProvider.calls.create[0]?.accountId).toBe(TEST_USER_ID);
+      expect(justavpsProvider.calls.create[0]?.envVars?.KORTIX_TOKEN).toBe('kortix_sb_retry_test');
+      expect(justavpsProvider.calls.create[0]?.serverType).toBe('cpx32');
+      expect(justavpsProvider.calls.create[0]?.location).toBe('nbg1');
+
+      const [updatedSandbox] = await db
+        .select()
+        .from(sandboxes)
+        .where(eq(sandboxes.sandboxId, failedSandbox.sandboxId))
+        .limit(1);
+
+      expect(updatedSandbox?.status).toBe('active');
+      expect(updatedSandbox?.externalId).toBe('mock-justavps-recovered');
+      expect((updatedSandbox?.metadata as Record<string, unknown>)?.provisioningError).toBeUndefined();
+      expect((updatedSandbox?.metadata as Record<string, unknown>)?.errorMessage).toBeUndefined();
+      expect((updatedSandbox?.metadata as Record<string, unknown>)?.provisioningStage).toBe('server_creating');
+
+      await db.delete(sandboxes).where(eq(sandboxes.sandboxId, failedSandbox.sandboxId));
     });
   });
 

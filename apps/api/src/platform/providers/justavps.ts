@@ -21,6 +21,9 @@ const PROVISION_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 3_000;
 const RECOVERY_ENDPOINT_RETRIES = 20;
 const RECOVERY_ENDPOINT_RETRY_MS = 5_000;
+const MACHINE_CREATE_RECOVERY_ATTEMPTS = 5;
+const MACHINE_CREATE_RECOVERY_DELAY_MS = 2_000;
+const MACHINE_CREATE_RECOVERY_GRACE_MS = 60_000;
 
 interface JustAVPSMachine {
   id: string;
@@ -350,6 +353,59 @@ export async function listServerTypes(
 
 let webhookRegistered = false;
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRecoverableMachineCreateError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /POST \/machines returned 5\d\d/.test(message)
+    || message.includes('timed out')
+    || message.includes('fetch failed')
+    || message.includes('network error');
+}
+
+async function findRecentlyCreatedMachineByName(
+  machineName: string,
+  requestedAtMs: number,
+): Promise<JustAVPSMachine | null> {
+  const list = await justavpsFetch<{ machines: JustAVPSMachine[] }>('/machines', { timeoutMs: 20_000 });
+  const notBefore = requestedAtMs - MACHINE_CREATE_RECOVERY_GRACE_MS;
+  const matches = (list.machines || [])
+    .filter((machine) => machine.name === machineName)
+    .filter((machine) => {
+      const createdAtMs = new Date(machine.created_at).getTime();
+      return Number.isFinite(createdAtMs) && createdAtMs >= notBefore;
+    })
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return matches[0] ?? null;
+}
+
+async function recoverMachineAfterCreateError(
+  machineName: string,
+  requestedAtMs: number,
+): Promise<JustAVPSMachine | null> {
+  for (let attempt = 0; attempt < MACHINE_CREATE_RECOVERY_ATTEMPTS; attempt++) {
+    try {
+      const recovered = await findRecentlyCreatedMachineByName(machineName, requestedAtMs);
+      if (recovered) {
+        console.warn(
+          `[JUSTAVPS] Recovered machine ${recovered.id} after create error for ${machineName}`,
+        );
+        return recovered;
+      }
+    } catch (error) {
+      console.warn(`[JUSTAVPS] Failed to inspect machine list while recovering ${machineName}:`, error);
+    }
+
+    if (attempt < MACHINE_CREATE_RECOVERY_ATTEMPTS - 1) {
+      await sleep(MACHINE_CREATE_RECOVERY_DELAY_MS);
+    }
+  }
+
+  return null;
+}
+
 async function ensureWebhookRegistered(): Promise<void> {
   if (webhookRegistered) return;
 
@@ -519,6 +575,7 @@ export class JustAVPSProvider implements SandboxProvider {
     const location = opts.location || config.JUSTAVPS_DEFAULT_LOCATION;
     const sandboxApiBase = resolveReachableKortixApiUrl().replace(/\/v1\/router\/?$/, '');
     const routerBase = `${sandboxApiBase}/v1/router`;
+    const machineName = `kortix-sandbox-${opts.accountId.slice(0, 8)}-${Date.now().toString(36)}`;
 
     const serviceKey = opts.envVars?.KORTIX_TOKEN || '';
     // Inject the API's own version into the sandbox container so the sandbox
@@ -549,7 +606,7 @@ export class JustAVPSProvider implements SandboxProvider {
       provider: 'cloud',
       server_type: serverType,
       region: location,
-      name: `kortix-sandbox-${opts.accountId.slice(0, 8)}-${Date.now().toString(36)}`,
+      name: machineName,
       env_vars: envVars,
       cloud_init_script: buildCustomerCloudInitScript(config.SANDBOX_IMAGE),
       enable_backups: true,
@@ -560,10 +617,25 @@ export class JustAVPSProvider implements SandboxProvider {
       body.image_id = imageId;
     }
 
-    const machine = await justavpsFetch<JustAVPSMachine>('/machines', {
-      method: 'POST',
-      body,
-    });
+    const requestedAtMs = Date.now();
+    let machine: JustAVPSMachine;
+    try {
+      machine = await justavpsFetch<JustAVPSMachine>('/machines', {
+        method: 'POST',
+        body,
+      });
+    } catch (error) {
+      if (!isRecoverableMachineCreateError(error)) {
+        throw error;
+      }
+
+      console.warn(`[JUSTAVPS] Machine create failed for ${machineName}, checking for orphaned success...`, error);
+      const recovered = await recoverMachineAfterCreateError(machineName, requestedAtMs);
+      if (!recovered) {
+        throw error;
+      }
+      machine = recovered;
+    }
 
     console.log(`[JUSTAVPS] Machine creation started: ${machine.id} (slug: ${machine.slug})`);
 
