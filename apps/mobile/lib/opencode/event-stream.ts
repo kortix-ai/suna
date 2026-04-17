@@ -38,6 +38,11 @@ interface SSEEvent {
 // This is the primary stall-recovery mechanism; mobile has no other watchdog.
 const HEARTBEAT_TIMEOUT_MS = 15_000;
 
+// Gap (ms) after which a reconnect triggers a full message re-hydrate. Events
+// missed during SSE downtime (e.g. streaming assistant response) would never
+// arrive, leaving the UI stale until manual refresh. Matches web a6e2d03.
+const REHYDRATE_GAP_MS = 5_000;
+
 export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const queryClient = useQueryClient();
   const syncStore = useSyncStore;
@@ -47,6 +52,47 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const lastEventTime = useRef(Date.now());
   const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const sandboxUrlRef = useRef<string | undefined>(sandboxUrl);
+  sandboxUrlRef.current = sandboxUrl;
+
+  // Re-fetch messages for every session currently in the store. Called after
+  // SSE reconnects that follow a significant gap — any streaming events that
+  // landed while the connection was down would otherwise be lost.
+  const rehydrateLoadedSessions = useCallback(async () => {
+    const url = sandboxUrlRef.current;
+    if (!url) return;
+    const sessionIds = Object.keys(useSyncStore.getState().messages);
+    if (sessionIds.length === 0) return;
+
+    log.log(`🔄 [SSE] Re-hydrating ${sessionIds.length} session(s) after gap`);
+
+    let token: string | null = null;
+    try {
+      token = await getAuthToken();
+    } catch {
+      return;
+    }
+
+    await Promise.allSettled(
+      sessionIds.map(async (sid) => {
+        try {
+          const res = await fetch(`${url}/session/${sid}/message`, {
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          });
+          if (!res.ok) return;
+          const messages: MessageWithParts[] = await res.json();
+          if (!mountedRef.current) return;
+          useSyncStore.getState().hydrate(sid, messages);
+        } catch {
+          // ignore per-session failures — individual sessions will recover
+          // on their own through later SSE events
+        }
+      }),
+    );
+  }, []);
 
   const handleEvent = useCallback((event: SSEEvent) => {
     const { type, properties: props } = event;
@@ -356,8 +402,19 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
 
       es.addEventListener('open', () => {
         log.log('✅ [SSE] Connected');
+        // If this `open` followed a significant gap, any events emitted
+        // while we were disconnected were dropped. Re-hydrate loaded
+        // sessions so streaming responses appear without a manual refresh.
+        // Note: we intentionally check the gap BEFORE updating
+        // lastEventTime so the very first connection (gap measured from
+        // hook mount) doesn't force an unnecessary re-hydrate.
+        const gap = Date.now() - lastEventTime.current;
+        const isReconnect = reconnectAttempts.current > 0;
         reconnectAttempts.current = 0;
         resetHeartbeat();
+        if (isReconnect && gap > REHYDRATE_GAP_MS) {
+          rehydrateLoadedSessions();
+        }
       });
 
       es.addEventListener('message', (evt: any) => {
@@ -391,7 +448,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       log.error('❌ [SSE] Failed to connect:', error?.message || error);
       scheduleReconnect();
     }
-  }, [sandboxUrl, handleEvent, clearHeartbeat]);
+  }, [sandboxUrl, handleEvent, clearHeartbeat, rehydrateLoadedSessions]);
 
   const scheduleReconnect = useCallback(() => {
     if (!mountedRef.current) return;
@@ -428,13 +485,17 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
       if (state === 'active' && sandboxUrl && mountedRef.current) {
         const gap = Date.now() - lastEventTime.current;
-        if (gap > 5000) {
+        if (gap > REHYDRATE_GAP_MS) {
           log.log('🔄 [SSE] App foregrounded, reconnecting');
+          // Re-hydrate before the reconnect — matches web a6e2d03. Events
+          // that landed while the app was backgrounded are already lost;
+          // this brings loaded sessions back to the current server state.
+          rehydrateLoadedSessions();
           reconnectAttempts.current = 0;
           connect();
         }
       }
     });
     return () => sub.remove();
-  }, [sandboxUrl, connect]);
+  }, [sandboxUrl, connect, rehydrateLoadedSessions]);
 }
