@@ -79,7 +79,11 @@ const envSchema = z.object({
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,  // NOTE: overridden by ENV_MODE=cloud below
   KORTIX_DEPLOYMENTS_ENABLED:       optBoolFalse,
 
-  // ── Search Providers (optional — features degrade gracefully) ────────────
+  // ── CRW (search, scrape, crawl, map — replaces Tavily, Serper, Firecrawl) ─
+  CRW_API_URL:                 optUrl('https://fastcrw.com/api'),
+  CRW_API_KEY:                 optStr,
+
+  // ── Legacy Search Providers (kept for backward compat, optional) ────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),
   TAVILY_API_KEY:              optStr,
   SERPER_API_URL:              optUrl('https://google.serper.dev'),
@@ -372,7 +376,11 @@ export const config = {
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,
 
-  // ─── Search Providers ──────────────────────────────────────────────────────
+  // ─── CRW (unified search, scrape, crawl) ───────────────────────────────────
+  CRW_API_URL: env.CRW_API_URL,
+  CRW_API_KEY: env.CRW_API_KEY,
+
+  // ─── Legacy Search Providers ──────────────────────────────────────────────
   TAVILY_API_URL: env.TAVILY_API_URL,
   TAVILY_API_KEY: env.TAVILY_API_KEY,
   SERPER_API_URL: env.SERPER_API_URL,
@@ -598,6 +606,11 @@ export const TOOL_PRICING: Record<string, ToolPricing> = {
     baseCost: 0.001,
     perResultCost: 0,
     markupMultiplier: 2.0,
+  },
+  proxy_crw: {
+    baseCost: 0.003,
+    perResultCost: 0,
+    markupMultiplier: 1.5,
   },
   proxy_tavily: {
     baseCost: 0.005,

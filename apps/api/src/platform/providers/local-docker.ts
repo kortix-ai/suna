@@ -584,6 +584,12 @@ export class LocalDockerProvider implements SandboxProvider {
       FIRECRAWL_API_URL: `${routerBase}/firecrawl`,
     };
 
+    // Only inject CRW proxy URL when the backend has a CRW key configured.
+    // Without this guard, sandbox tools would select CRW and get 503 "crw not configured".
+    if (config.CRW_API_KEY) {
+      desired.CRW_API_URL = `${routerBase}/crw`;
+    }
+
     // Read current state from the live master env (s6 env dir) — NOT from
     // Docker inspect which only has stale creation-time values.
     const authCandidates = getAuthCandidates(await this.getCanonicalServiceKey());
@@ -604,6 +610,13 @@ export class LocalDockerProvider implements SandboxProvider {
       if (val && currentEnv[key] !== val) {
         stale[key] = val;
       }
+    }
+
+    // Clean up stale CRW_API_URL from sandbox when CRW is no longer configured.
+    // Without this, disabling CRW leaves an orphan URL that makes sandbox tools
+    // select CRW and hit 503 "crw not configured".
+    if (!desired.CRW_API_URL && currentEnv.CRW_API_URL) {
+      stale.CRW_API_URL = '';  // empty value signals deletion to the env API
     }
 
     if (Object.keys(stale).length === 0) {
@@ -866,6 +879,7 @@ export class LocalDockerProvider implements SandboxProvider {
       'PROJECT_ID',
       'ENV_MODE',
       'CORS_ALLOWED_ORIGINS',
+      'CRW_API_URL',
       'TAVILY_API_URL',
       'REPLICATE_API_URL',
       'SERPER_API_URL',
@@ -915,6 +929,8 @@ export class LocalDockerProvider implements SandboxProvider {
       `REPLICATE_API_URL=${routerBase}/replicate`,
       `SERPER_API_URL=${routerBase}/serper`,
       `FIRECRAWL_API_URL=${routerBase}/firecrawl`,
+      // Only inject CRW proxy URL when the backend has a CRW key configured.
+      ...(config.CRW_API_KEY ? [`CRW_API_URL=${routerBase}/crw`] : []),
       ...(config.KORTIX_LOCAL_IMAGES ? ['KORTIX_LOCAL_SOURCE=1'] : []),
       `ENV_MODE=${config.KORTIX_BILLING_INTERNAL_ENABLED ? 'cloud' : 'local'}`,
       `CORS_ALLOWED_ORIGINS=${[config.FRONTEND_URL, config.KORTIX_URL].filter(Boolean).join(',')}`,
