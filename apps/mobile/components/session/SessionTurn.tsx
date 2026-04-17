@@ -45,6 +45,8 @@ import {
   Loader2,
   ExternalLink,
   FileText,
+  Folder,
+  FolderPlus,
   MonitorPlay,
   type LucideIcon,
 } from 'lucide-react-native';
@@ -295,6 +297,8 @@ const TOOL_ICON_MAP: Record<string, LucideIcon> = {
   list: List,
   scissors: Scissors,
   'message-circle': MessageCircle,
+  folder: Folder,
+  'folder-plus': FolderPlus,
   cpu: Cpu,
 };
 
@@ -2457,9 +2461,41 @@ function ToolCard({
 
   const hasExpandable = toolHasExpandableContent(tool);
 
+  // Project-tool navigation target — mirrors web ac10428. When a project_select
+  // or project_create tool call completes, tapping the row opens the project
+  // detail page. Extracts `proj-<id>` from output when present, else falls
+  // back to the input name.
+  const projectNavTarget = useMemo(() => {
+    const normalized = tool.tool.replace(/^oc-/, '').replace(/-/g, '_');
+    if (normalized !== 'project_select' && normalized !== 'project_create') return null;
+    if (tool.state.status !== 'completed') return null;
+
+    const output = ('output' in tool.state && typeof tool.state.output === 'string')
+      ? tool.state.output
+      : '';
+    const idMatch = output.match(/proj-[a-z0-9-]+/);
+    const projectId = idMatch ? idMatch[0] : (input.name as string) || (input.project as string) || '';
+    if (!projectId) return null;
+
+    const displayName =
+      (normalized === 'project_select' ? (input.project as string) : (input.name as string)) ||
+      projectId;
+    return { projectId, displayName };
+  }, [tool.tool, tool.state, input]);
+
   const chevronRotation = useSharedValue(0);
 
   const handlePress = useCallback(() => {
+    // Project tools: navigate to the project page instead of expanding.
+    if (projectNavTarget) {
+      useTabStore
+        .getState()
+        .setTabState(`page:project:${projectNavTarget.projectId}`, {
+          projectName: projectNavTarget.displayName,
+        });
+      useTabStore.getState().navigateToPage(`page:project:${projectNavTarget.projectId}`);
+      return;
+    }
     if (!hasExpandable && !isRunning) return;
     LayoutAnimation.configureNext({
       duration: 200,
@@ -2468,7 +2504,7 @@ function ToolCard({
       delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
     });
     setExpanded((prev) => !prev);
-  }, [hasExpandable, isRunning]);
+  }, [hasExpandable, isRunning, projectNavTarget]);
 
   useEffect(() => {
     chevronRotation.value = withTiming(expanded ? 1 : 0, { duration: 200 });
@@ -2491,7 +2527,7 @@ function ToolCard({
     >
       {/* Header row */}
       <TouchableOpacity
-        activeOpacity={hasExpandable ? 0.7 : 1}
+        activeOpacity={hasExpandable || projectNavTarget ? 0.7 : 1}
         onPress={handlePress}
         style={{
           flexDirection: 'row',
@@ -2561,6 +2597,8 @@ function ToolCard({
             <SpinningLoader size={14} color={muted(isDark)} />
           ) : isError ? (
             <CircleAlert size={14} color={isDark ? '#ef4444' : '#dc2626'} />
+          ) : projectNavTarget ? (
+            <ChevronRight size={14} color={isDark ? '#52525b' : '#a1a1aa'} />
           ) : hasExpandable ? (
             <ReAnimated.View style={chevronStyle}>
               <ChevronRight size={14} color={isDark ? '#52525b' : '#a1a1aa'} />

@@ -852,6 +852,36 @@ export function getToolInfo(tool: string, input: Record<string, any> = {}): Tool
     case 'oc-agent-task-get':
       return { icon: 'check-square', title: 'Task Details', subtitle: input.task_id };
 
+    // Project tools — ported from web ac10428. Clickable on mobile via ToolCard.
+    case 'project_list':
+    case 'project-list':
+    case 'oc-project_list':
+    case 'oc-project-list':
+      return { icon: 'folder', title: 'Projects' };
+    case 'project_get':
+    case 'project-get':
+    case 'oc-project_get':
+    case 'oc-project-get':
+    case 'project_update':
+    case 'project-update':
+    case 'oc-project_update':
+    case 'oc-project-update':
+    case 'project_delete':
+    case 'project-delete':
+    case 'oc-project_delete':
+    case 'oc-project-delete':
+      return { icon: 'folder', title: 'Project', subtitle: input.name || input.project };
+    case 'project_select':
+    case 'project-select':
+    case 'oc-project_select':
+    case 'oc-project-select':
+      return { icon: 'folder', title: 'Project Select', subtitle: input.project };
+    case 'project_create':
+    case 'project-create':
+    case 'oc-project_create':
+    case 'oc-project-create':
+      return { icon: 'folder-plus', title: 'Project Create', subtitle: input.name };
+
     default:
       return { icon: 'cpu', title: tool };
   }
