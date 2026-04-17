@@ -11,7 +11,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import EventSource from 'react-native-sse';
 import { log } from '@/lib/logger';
 import { getAuthToken } from '@/api/config';
-import { useSyncStore, isOptimistic, clearDeltaActiveParts } from './sync-store';
+import {
+  useSyncStore,
+  isOptimistic,
+  clearDeltaActiveParts,
+  markBridgedParts,
+} from './sync-store';
 import { platformKeys } from '@/lib/platform/hooks';
 import { useCompactionStore } from '@/stores/compaction-store';
 import type { MessageWithParts, Part, SessionStatus } from './types';
@@ -131,6 +136,10 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
                 ],
               },
             });
+            // Mark the bridge so the next real message.part.updated clears
+            // these carried-over parts instead of duplicating them.
+            // Mirrors web 77886a8.
+            if (fallbackParts.length > 0) markBridgedParts(info.id);
             break;
           }
         }

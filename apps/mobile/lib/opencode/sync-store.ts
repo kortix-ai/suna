@@ -89,6 +89,20 @@ export function clearDeltaActiveParts() {
   deltaActiveParts.clear();
 }
 
+// Track message IDs whose current parts are "bridged" — carried over from an
+// optimistic user message during the optimistic→real swap because the server
+// hadn't sent real parts yet. On the first real part update the bridge is
+// cleared so we don't double-render the user's text. Mirrors web 77886a8.
+const bridgedPartIds = new Set<string>();
+
+/** Mark a message as currently carrying bridged (optimistic) parts. The next
+ * real part update will clear these before inserting. Used by the SSE
+ * message.updated handler when it bridges an optimistic user message's
+ * parts onto the real user message ID. */
+export function markBridgedParts(messageId: string) {
+  bridgedPartIds.add(messageId);
+}
+
 // ---------------------------------------------------------------------------
 // Store implementation
 // ---------------------------------------------------------------------------
@@ -117,6 +131,17 @@ export const useSyncStore = create<SyncState>((set, get) => ({
         );
         if (!existingMsg) return incomingMsg;
 
+        // If this message is still carrying bridged optimistic parts and the
+        // server has now delivered real parts, replace outright (the bridge
+        // should never coexist with real parts). Mirrors web 77886a8.
+        if (
+          bridgedPartIds.has(incomingMsg.info.id) &&
+          incomingMsg.parts.length > 0
+        ) {
+          bridgedPartIds.delete(incomingMsg.info.id);
+          return incomingMsg;
+        }
+
         const reconciledParts = incomingMsg.parts.map((inPart) => {
           const exPart = existingMsg.parts.find((p) => p.id === inPart.id);
           if (!exPart) return inPart;
@@ -140,6 +165,34 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
         return { ...incomingMsg, parts: reconciledParts };
       });
+
+      // Bridge optimistic parts onto the real user message. When a fetch
+      // races ahead of parts persistence, the server returns the real user
+      // message with empty parts and `reconciled` above drops the optimistic
+      // entry entirely — leaving an empty user bubble. Carry the optimistic
+      // parts over under the real message ID so the text stays on screen
+      // until the server's part.updated arrives. Mirrors web 77886a8.
+      const realUserMsg = messages.find(
+        (m) => m.info.role === 'user' && !optimisticIds.has(m.info.id),
+      );
+      if (realUserMsg) {
+        const reconciledRealIdx = reconciled.findIndex(
+          (m) => m.info.id === realUserMsg.info.id,
+        );
+        if (reconciledRealIdx >= 0 && reconciled[reconciledRealIdx].parts.length === 0) {
+          const optimisticUserMsg = existing.find(
+            (m) => m.info.role === 'user' && optimisticIds.has(m.info.id),
+          );
+          const bridgeParts = optimisticUserMsg?.parts ?? [];
+          if (bridgeParts.length > 0) {
+            reconciled[reconciledRealIdx] = {
+              ...reconciled[reconciledRealIdx],
+              parts: bridgeParts,
+            };
+            bridgedPartIds.add(realUserMsg.info.id);
+          }
+        }
+      }
 
       return { messages: { ...state.messages, [sessionId]: reconciled } };
     }),
@@ -169,11 +222,18 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   upsertPart: (messageId, part) =>
     set((state) => {
       const newMessages = { ...state.messages };
+      // If this message had bridged (optimistic) parts carried over by
+      // hydrate, clear them now that a real part has arrived so we don't
+      // double-render. Mirrors web 77886a8.
+      const bridgeCleared = bridgedPartIds.has(messageId);
+      if (bridgeCleared) bridgedPartIds.delete(messageId);
       for (const sessionId of Object.keys(newMessages)) {
         const msgs = newMessages[sessionId];
         const msgIdx = msgs.findIndex((m) => m.info.id === messageId);
         if (msgIdx >= 0) {
-          const msg = msgs[msgIdx];
+          const msg = bridgeCleared
+            ? { ...msgs[msgIdx], parts: [] as Part[] }
+            : msgs[msgIdx];
           const partIdx = msg.parts.findIndex((p) => p.id === part.id);
           let updatedParts: Part[];
           if (partIdx >= 0) {
@@ -353,6 +413,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
   getStatus: (sessionId) => get().sessionStatus[sessionId],
 
-  reset: () =>
-    set({ messages: {}, sessionStatus: {}, permissions: {}, questions: {} }),
+  reset: () => {
+    bridgedPartIds.clear();
+    set({ messages: {}, sessionStatus: {}, permissions: {}, questions: {} });
+  },
 }));
