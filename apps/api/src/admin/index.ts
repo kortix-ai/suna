@@ -1061,7 +1061,8 @@ adminApp.get('/api/sandboxes/:id/health', async (c) => {
     const [row] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, sandboxId)).limit(1);
     if (!row) return c.json({ error: 'Sandbox not found' }, 404);
     if (row.provider !== 'justavps' || !row.externalId) {
-      return c.json({ error: `Health not supported for provider: ${row.provider}` }, 400);
+      const { createUnsupportedInstanceHealth } = await import('../platform/services/instance-health');
+      return c.json(createUnsupportedInstanceHealth(row.sandboxId, row.provider));
     }
 
     const { getProvider } = await import('../platform/providers');

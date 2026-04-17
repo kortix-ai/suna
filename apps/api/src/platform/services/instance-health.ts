@@ -49,6 +49,44 @@ export interface AdminInstanceHealth {
   };
 }
 
+export function createUnsupportedInstanceHealth(
+  sandboxId: string,
+  provider: string,
+): AdminInstanceHealth {
+  const summary = `Detailed health is not available for provider: ${provider}`;
+  return {
+    sandbox_id: sandboxId,
+    overall_status: 'unknown',
+    recommended_action: null,
+    layers: {
+      host: {
+        key: 'host',
+        label: 'Host',
+        status: 'unknown',
+        summary,
+        actions: [],
+        details: { provider, supported: false },
+      },
+      workload: {
+        key: 'workload',
+        label: 'Workload',
+        status: 'unknown',
+        summary,
+        actions: [],
+        details: { provider, supported: false },
+      },
+      runtime: {
+        key: 'runtime',
+        label: 'Runtime',
+        status: 'unknown',
+        summary,
+        actions: [],
+        details: { provider, supported: false },
+      },
+    },
+  };
+}
+
 interface JustAvpsMachineHealth {
   id: string;
   slug: string;
