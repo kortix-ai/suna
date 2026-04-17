@@ -418,8 +418,12 @@ export function buildCustomerCloudInitScript(dockerImage: string): string {
 }
 
 export function buildJustAVPSHostRecoveryCommand(): string {
+  // set -eu only — `pipefail` is bash-only, and on Debian/Ubuntu hosts
+  // /bin/sh is dash which rejects it with "Illegal option -o pipefail",
+  // killing the recovery script on line 1. The script has no real pipes,
+  // so pipefail serves no purpose here.
   return [
-    'set -euo pipefail',
+    'set -eu',
     'systemctl daemon-reload',
     `systemctl reset-failed docker.service ${JUSTAVPS_SERVICE_NAME} >/dev/null 2>&1 || true`,
     'systemctl start docker.service',
