@@ -103,7 +103,15 @@ async function verifyPublicKeyViaHostExec(
   containerName = 'justavps-workload',
 ): Promise<void> {
   const keyData = publicKey.split(' ')[1] || publicKey;
-  const verifyCmd = `docker exec ${containerName} sh -lc "test -f /config/.ssh/authorized_keys && grep -q '${keyData}' /config/.ssh/authorized_keys && test \"$(stat -c %a /config/.ssh/authorized_keys)\" = \"600\" && test \"$(stat -c %U /config/.ssh/authorized_keys)\" = \"abc\""`;
+  // Single-quote the sh -lc argument so $(stat ...) is evaluated by the
+  // container's shell, not the host. The previous \"...\" quoting broke
+  // the host's quoting state, causing the substitutions to run on the
+  // host (where /config/.ssh/authorized_keys does not exist) and leading
+  // to both "cannot statx" noise and `test: =: unexpected operator` when
+  // dash saw the resulting empty LHS. "x$VAR" = "xLIT" tolerates empty
+  // substitutions without the =-as-operator error.
+  // keyData is the ssh-ed25519 blob (base64 + '/+='), safe inside "...".
+  const verifyCmd = `docker exec ${containerName} sh -lc 'test -f /config/.ssh/authorized_keys && grep -qF "${keyData}" /config/.ssh/authorized_keys && [ "x$(stat -c %a /config/.ssh/authorized_keys 2>/dev/null)" = "x600" ] && [ "x$(stat -c %U /config/.ssh/authorized_keys 2>/dev/null)" = "xabc" ]'`;
   const result = await execOnHost(endpoint, verifyCmd, 30);
   if (!result.success) {
     throw new Error(`SSH key verification failed: ${result.stderr || result.stdout || 'authorized_keys missing or invalid'}`);
