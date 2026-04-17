@@ -784,12 +784,20 @@ export function FileOperationToolView({
         <View className="flex-row items-center justify-between w-full">
           <View className="flex-row items-center gap-2">
             {processedFilePath && (
-              <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
+              <Pressable
+                onPress={() => {
+                  if (isPresentationSlide) return;
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  openFileInComputer(processedFilePath);
+                }}
+                disabled={isPresentationSlide}
+                className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border active:opacity-70"
+              >
                 <Icon as={FileText} size={12} className="text-primary" />
                 <Text className="text-xs font-roobert-medium text-primary" numberOfLines={1}>
                   {fileName || 'File'}
                 </Text>
-              </View>
+              </Pressable>
             )}
             <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
               <Icon as={FileIcon} size={12} className="text-primary" />
