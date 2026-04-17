@@ -32,6 +32,7 @@ export function buildContainerConfig(opts: SetupOpts): ContainerConfig {
     name: opts.containerName || config.SANDBOX_CONTAINER_NAME,
     volumes,
     ports,
+    privileged: true,
     caps: ['SYS_ADMIN'],
     shmSize: '2g',
     envFile,

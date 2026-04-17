@@ -442,14 +442,14 @@ export function ConnectProviderContent({
       try {
         const normalizedForm = normalizeCustomProviderForm(customForm);
         const client = getClient();
-        const currentConfig = unwrapResult(await client.config.get());
+        const currentConfig = unwrapResult(await client.global.config.get());
         const configUpdate = buildCustomProviderConfigUpdate(
           currentConfig,
           normalizedForm,
         );
 
         unwrapResult(
-          await client.config.update({ config: configUpdate } as any),
+          await client.global.config.update({ config: configUpdate } as any),
         );
 
         if (normalizedForm.apiKey && !isEnvReference(normalizedForm.apiKey)) {

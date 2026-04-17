@@ -32,6 +32,7 @@ mock.module('../update/container-config', () => ({
     name: 'justavps-workload',
     volumes: [],
     ports: [],
+    privileged: true,
     caps: [],
     shmSize: '2g',
     envFile: '/etc/justavps/env',

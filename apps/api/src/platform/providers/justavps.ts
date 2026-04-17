@@ -448,7 +448,7 @@ export function buildJustAVPSHostRecoveryCommand(): string {
     'echo "health:"',
     'curl -sS -i http://localhost:8000/kortix/health 2>/dev/null || true',
     'exit 1',
-  ].join('; ');
+  ].join('\n');
 }
 
 export class JustAVPSProvider implements SandboxProvider {

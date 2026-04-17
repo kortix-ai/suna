@@ -83,7 +83,7 @@ done
 [ -s "${ENV_FILE}" ] || touch "${ENV_FILE}"
 docker rm -f ${CONTAINER} 2>/dev/null || true
 exec docker run --rm --name ${CONTAINER} --env-file "${ENV_FILE}" -e KORTIX_ENABLE_INNER_DOCKER=0 \\
-  --cap-add SYS_ADMIN --security-opt seccomp=unconfined --shm-size 2g \\
+  --privileged --cap-add SYS_ADMIN --security-opt seccomp=unconfined --shm-size 2g \\
   -v ${STARTUP_PATCH}:/ephemeral/startup.sh:ro -v ${VOLUME}:/workspace -v ${VOLUME}:/config ${PORT_ARGS} \\
   ${DOCKER_IMAGE}
 STARTEOF

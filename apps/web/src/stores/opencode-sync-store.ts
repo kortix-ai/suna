@@ -557,9 +557,32 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// Otherwise, incoming parts win (server is authoritative), but keep
 			// any extra parts from SSE that aren't in the fetch response.
 			const newParts = { ...s.parts };
-			// Clean up parts for superseded optimistic messages
+			// When superseding an optimistic user message, bridge its parts to
+			// the real user message ID if the server hasn't sent parts yet.
+			// Mirrors the message.updated SSE handler (see above) — without
+			// this, a fetch/hydrate that races ahead of parts persistence
+			// would drop the user's text and render an empty bubble.
+			const realUserMsg = incoming.find(
+				(m) => m.role === "user" && !optimisticIds.has(m.id),
+			);
+			const realUserEntry = realUserMsg
+				? msgs.find((m) => m.info.id === realUserMsg.id)
+				: undefined;
+			const serverHasRealUserParts =
+				(realUserEntry?.parts?.length ?? 0) > 0;
+			let bridge: Part[] | undefined;
 			for (const id of supersededOptimistic) {
+				if (!bridge && newParts[id]?.length) bridge = newParts[id];
 				delete newParts[id];
+			}
+			if (
+				bridge &&
+				realUserMsg &&
+				!serverHasRealUserParts &&
+				!newParts[realUserMsg.id]?.length
+			) {
+				newParts[realUserMsg.id] = bridge;
+				bridgedPartIds.add(realUserMsg.id);
 			}
 			for (const m of msgs) {
 				if (!m?.info?.id) continue;
