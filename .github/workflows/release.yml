@@ -100,9 +100,9 @@ jobs:
         run: |
           echo "### Deployed API v${{ env.VERSION }} → **prod**" >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Fast-forward production branch (Vercel) ────────────────────────────────
+  # ── Force-sync production branch to main (Vercel) ─────────────────────────
   update-production-branch:
-    name: Update production branch (Vercel)
+    name: Force-sync production branch (Vercel)
     needs: retag-images
     runs-on: ubuntu-latest
     steps:
@@ -114,14 +114,13 @@ jobs:
           # to the production branch (GITHUB_TOKEN cannot modify .github/workflows/*)
           token: ${{ secrets.GH_RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Fast-forward production branch
+      - name: Force-sync production branch to main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout production
-          git merge --ff-only origin/main
-          git push origin production
-          echo "### Production branch fast-forwarded → Vercel deploys kortix.com" >> "$GITHUB_STEP_SUMMARY"
+          git checkout --force -B production origin/main
+          git push --force-with-lease origin production
+          echo "### Production branch force-synced to origin/main → Vercel deploys kortix.com" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Create Git tag + GitHub Release ────────────────────────────────────────
   create-release:
