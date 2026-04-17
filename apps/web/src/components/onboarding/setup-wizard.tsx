@@ -13,6 +13,7 @@
  */
 
 import { useState, useMemo, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings2,
@@ -978,6 +979,7 @@ function GetStartedPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
 // ─── Main wizard ────────────────────────────────────────────────────────────
 
 export function SetupWizard({ onComplete }: { onComplete: () => void }) {
+  const router = useRouter();
   const showBilling = isBillingEnabled();
 
   const steps = useMemo<StepDef[]>(() => [
@@ -1031,6 +1033,18 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-background">
+      {/* Back to Instances — only on welcome step */}
+      {step === 0 && (
+        <Button
+          onClick={() => router.push('/instances')}
+          variant="muted"
+          size="xs"
+          className="absolute top-6 left-6 cursor-pointer"
+        >
+          <ArrowLeft className="h-3 w-3" /> Back to Instances
+        </Button>
+      )}
+
       {/* Header: Logo + stepper — hidden on welcome step */}
       {step > 0 && (
         <div className="absolute top-0 inset-x-0 flex flex-col items-center pt-8 gap-6">
