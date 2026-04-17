@@ -33,6 +33,11 @@ interface SSEEvent {
  * Connect to the OpenCode SSE event stream.
  * Should be mounted ONCE at the app level, after sandbox is ready.
  */
+// Heartbeat — if no events arrive for this long, force a reconnect. Matches
+// the web consumer (apps/web/src/hooks/opencode/use-opencode-events.ts).
+// This is the primary stall-recovery mechanism; mobile has no other watchdog.
+const HEARTBEAT_TIMEOUT_MS = 15_000;
+
 export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const queryClient = useQueryClient();
   const syncStore = useSyncStore;
@@ -40,6 +45,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const lastEventTime = useRef(Date.now());
+  const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
 
   const handleEvent = useCallback((event: SSEEvent) => {
@@ -302,10 +308,18 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
     }
   }, [queryClient]);
 
+  const clearHeartbeat = useCallback(() => {
+    if (heartbeatTimerRef.current) {
+      clearTimeout(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    }
+  }, []);
+
   const connect = useCallback(async () => {
     if (!sandboxUrl || !mountedRef.current) return;
 
     // Clean up existing
+    clearHeartbeat();
     if (esRef.current) {
       esRef.current.close();
       esRef.current = null;
@@ -325,12 +339,30 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
 
       esRef.current = es;
 
+      // Reset the heartbeat timer on any server activity (event or keepalive).
+      // If nothing arrives for HEARTBEAT_TIMEOUT_MS we assume the stream is
+      // stalled (network blip, proxy idle edge case) and force a reconnect.
+      const resetHeartbeat = () => {
+        if (!mountedRef.current) return;
+        clearHeartbeat();
+        heartbeatTimerRef.current = setTimeout(() => {
+          if (!mountedRef.current) return;
+          log.warn('⚠️ [SSE] Heartbeat timeout, forcing reconnect');
+          es.close();
+          esRef.current = null;
+          scheduleReconnect();
+        }, HEARTBEAT_TIMEOUT_MS);
+      };
+
       es.addEventListener('open', () => {
         log.log('✅ [SSE] Connected');
         reconnectAttempts.current = 0;
+        resetHeartbeat();
       });
 
       es.addEventListener('message', (evt: any) => {
+        // Any message (including empty keepalives) counts as server activity.
+        resetHeartbeat();
         if (!evt?.data) return;
         try {
           const raw = JSON.parse(evt.data);
@@ -350,6 +382,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       es.addEventListener('error', (evt: any) => {
         if (!mountedRef.current) return;
         log.warn('⚠️ [SSE] Connection error:', evt?.message || 'unknown');
+        clearHeartbeat();
         es.close();
         esRef.current = null;
         scheduleReconnect();
@@ -358,7 +391,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       log.error('❌ [SSE] Failed to connect:', error?.message || error);
       scheduleReconnect();
     }
-  }, [sandboxUrl, handleEvent]);
+  }, [sandboxUrl, handleEvent, clearHeartbeat]);
 
   const scheduleReconnect = useCallback(() => {
     if (!mountedRef.current) return;
@@ -386,6 +419,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
         esRef.current = null;
       }
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+      if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
     };
   }, [sandboxUrl, connect]);
 

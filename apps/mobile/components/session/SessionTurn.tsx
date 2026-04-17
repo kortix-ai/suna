@@ -3589,13 +3589,16 @@ function TurnActions({
         gap: 2,
       }}
     >
-      {/* Duration & cost */}
-      {duration != null && duration > 0 && (
-        <Text className={durationClassName}>
-          {formatDuration(duration)}
-          {costInfo ? ` · ${formatCost(costInfo.cost)} · ${formatTokens(costInfo.tokens.input + costInfo.tokens.output)}t` : ''}
-        </Text>
-      )}
+      {/* Duration & cost — formatDuration returns empty for sub-second, so join on bullet */}
+      {(() => {
+        const durationText = duration != null && duration > 0 ? formatDuration(duration) : '';
+        const costText = costInfo
+          ? `${formatCost(costInfo.cost)} · ${formatTokens(costInfo.tokens.input + costInfo.tokens.output)}t`
+          : '';
+        const combined = [durationText, costText].filter(Boolean).join(' · ');
+        if (!combined) return null;
+        return <Text className={durationClassName}>{combined}</Text>;
+      })()}
 
       {/* Copy */}
       <TouchableOpacity

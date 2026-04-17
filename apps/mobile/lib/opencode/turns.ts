@@ -545,6 +545,10 @@ export function getTurnStatus(
 // ============================================================================
 
 export function formatDuration(ms: number): string {
+  // Sub-second durations are noise — skip the badge entirely. Callers
+  // should conditionally render based on whether the returned string is
+  // non-empty, so nothing visible changes when a tool returns in 200ms.
+  if (!Number.isFinite(ms) || ms < 1000) return '';
   const seconds = Math.floor(ms / 1000);
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
