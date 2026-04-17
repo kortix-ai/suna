@@ -280,11 +280,17 @@ async function setupJustavpsSSH(externalId: string) {
 
   const provider = new JustAVPSProvider();
 
-  // The DB row can become "active" before the underlying JustAVPS machine has
-  // finished provisioning. Wait until the provider reports the VM itself is
-  // actually ready before attempting SSH setup.
-  await provider.ensureRunning(externalId);
-
+  // buildConnectionForJustavps below verifies machine.status === 'ready' and
+  // requires machine.ip — that is the only "is the VM up?" gate we need here.
+  //
+  // Historically this called provider.ensureRunning(externalId), which always
+  // forced a full host recovery (systemctl restart justavps-docker + wait
+  // loops, up to ~240s per attempt, 20 retries → ~1h worst-case). That
+  // restarted the sandbox container on every SSH click — hence the "machine
+  // turned off" reports when the restart stumbled. Key injection only needs
+  // a healthy container; if the container is down, injectPublicKeyViaHostExec
+  // -WithRetry will fail fast within its 120s window with a clear error, and
+  // the user can hit the explicit Restart action to trigger recovery.
   const connection = await buildConnectionForJustavps(externalId);
 
   // Generate a fresh keypair for this session
