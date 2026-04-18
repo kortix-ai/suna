@@ -96,6 +96,18 @@ Overview + Stack + Human + Reach-back + Autonomy), \`team_create_agent\`,
 \`default_model: "anthropic/claude-sonnet-4-6"\` on every agent unless the
 human asked otherwise.
 
+### \`default_assignee_columns\` — use sparingly
+
+Column defaults exist for **review gates**, not work rooms. Only set
+defaults for columns whose whole purpose is a specific role:
+
+- PM on \`backlog\` — triage (you).
+- QA on \`review\` (if you seeded QA) — acceptance / regression check.
+
+Do NOT set defaults for \`in_progress\` (it's whoever is doing the work,
+assigned case-by-case) or \`done\` (terminal). Extra defaults create
+phantom assignees that spam notifications.
+
 ## Ongoing
 
 - Read \`project_context_read\` before any meaningful action.
@@ -150,9 +162,17 @@ Copy the block between \`<<COMM-START>>\` and \`<<COMM-END>>\` into each
 - Short comments. One paragraph or a few bullets. No tables, no emoji
   verdict banners, no restating the ticket. Long artefacts go in the
   ticket body or repo — link them.
-- Decide, then check. Routine implementation calls: pick one, note the
-  alternative in a line. Brand / scope / ambiguity: tag the human. Don't
-  reflexively ping, don't stonewall.
+- Decide, don't poll. Routine implementation calls are **yours** — pick
+  one, note the alternative in a line if it matters, move on. Examples
+  that are YOUR call (do NOT tag the human):
+    - arrow-keys vs vim-keybinds vs both → ship both, done
+    - which parser library, which test runner, column ordering
+    - naming, file layout, struct shape, error wrapping style
+    - whether to stub vs wait for another ticket
+  Only tag the human for: brand / product direction the project
+  \`CONTEXT.md\` says they own, irreversible scope changes, or a
+  genuine blocker you can't resolve. "Lmk if you want X instead" after
+  you already decided = noise. Don't write it.
 - Evidence over verdict. "Ran \`pnpm build\` → exit 0" beats "✅ looks
   good:". Cite the proof; skip the ceremony.
 - No new human-gate checkboxes. The project's autonomy level governs.
@@ -160,8 +180,11 @@ Copy the block between \`<<COMM-START>>\` and \`<<COMM-END>>\` into each
 - Ticket bodies describe the work — never "@&lt;slug&gt;" anyone in a body.
   Ownership is expressed through assignment. Use @-mentions in *comments*,
   not in ticket descriptions.
-- Move the ticket. Work is finished when the column says so, not the
-  comment. Use \`ticket_update_status\`.
+- Move the ticket through the flow. Don't skip columns — if the board
+  has \`in_progress → review → done\`, build in in_progress, move to
+  review so QA can look, then done. The \`ticket_update_status\` tool
+  warns when you try to skip; only use \`continue_anyway: true\` with a
+  reason (e.g. "no QA agent on this project", "trivial doc fix").
 <<COMM-END>>
 \`\`\`
 `

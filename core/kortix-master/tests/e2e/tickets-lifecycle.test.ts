@@ -297,7 +297,7 @@ describe('ticket lifecycle', () => {
     expect(assignees.some((a) => a.assignee_id === qa.id)).toBe(true)
   })
 
-  test('promote-clears: when an agent moves a ticket they\'re assigned to, their assignment is removed', async () => {
+  test('mover stays assigned: moving a ticket you own does NOT auto-unassign you (no promote-clears)', async () => {
     const fx = await setupSeededProject()
     const pm = getAgentBySlug(fx.db, fx.project.id, DEFAULT_PM_SLUG)!
     const { ticket } = createTicket(fx.db, { project_id: fx.project.id, title: 'pm moves' })
@@ -307,7 +307,8 @@ describe('ticket lifecycle', () => {
       ticketId: ticket.id, toStatus: 'in_progress', actor_type: 'agent', actor_id: pm.id,
     })
     const after = getTicket(fx.db, ticket.id)!
-    expect(after.assignees.some((a) => a.assignee_id === pm.id)).toBe(false)
+    // PM still on the ticket — responsibility isn't silently handed off by a move.
+    expect(after.assignees.some((a) => a.assignee_id === pm.id)).toBe(true)
   })
 })
 

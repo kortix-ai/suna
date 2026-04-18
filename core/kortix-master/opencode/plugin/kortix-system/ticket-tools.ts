@@ -29,6 +29,7 @@ import {
   getTicket,
   insertAgent,
   listAgents,
+  listColumns,
   listTickets,
   listTicketEvents,
   removeAssignee,
@@ -295,22 +296,62 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     ticket_update_status: tool({
       description: [
         'Change a ticket\'s column. Status is a free string matching a project column key.',
-        'Flow guidance (not enforced): Backlog → In Progress → Review → Done. Move forward when your piece is done; move back if rework is needed.',
-        'If the destination column has a default assignee, they\'re auto-assigned and notified. If you are an agent currently assigned, moving the ticket clears your assignment (promote-clears).',
+        'Flow: move one column forward when your piece is done, or back if rework is needed.',
+        'Skipping columns (e.g. in_progress → done past review) is blocked by default —',
+        'the tool will return a warning naming the columns you\'d bypass. If the skip is',
+        'intentional (no QA on this project, trivial doc fix, etc.) re-call with',
+        'continue_anyway: true and a reason.',
+        'If the destination column has a default assignee (e.g. QA on review), they\'re',
+        'auto-assigned and notified. Your own assignment is NOT auto-cleared by a move —',
+        'unassign yourself explicitly if you\'re handing off.',
       ].join(' '),
       args: {
         id: tool.schema.string(),
         status: tool.schema.string().describe('Destination column key (e.g. "review")'),
+        continue_anyway: tool.schema.boolean().optional().describe('Set true to bypass the skip-column warning when intentionally jumping past intermediate columns.'),
+        reason: tool.schema.string().optional().describe('Short justification when continue_anyway is true (e.g. "no QA agent", "trivial typo fix"). Recorded in the comment trail.'),
       },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
         if (!pid) return 'Error: no project selected.'
         const actor = actorFromCtx(ctx)
+
+        // Skip-column guard — refuse to jump more than one column forward without
+        // continue_anyway. Backward moves are fine (rework).
+        const t = getTicket(db, args.id)
+        if (!t) return `Ticket not found: ${args.id}`
+        const cols = listColumns(db, pid)
+        const fromIdx = cols.findIndex((c) => c.key === t.status)
+        const toIdx = cols.findIndex((c) => c.key === args.status)
+        if (fromIdx === -1) {
+          // unknown source column — let the service surface the error below
+        } else if (toIdx === -1) {
+          return `Unknown status "${args.status}". Available: ${cols.map((c) => c.key).join(', ')}.`
+        } else if (toIdx > fromIdx + 1 && !args.continue_anyway) {
+          const skipped = cols.slice(fromIdx + 1, toIdx).map((c) => `"${c.key}"`).join(', ')
+          return [
+            `Skip-column warning: moving from "${t.status}" → "${args.status}" bypasses ${skipped}.`,
+            `The flow expects one column at a time (e.g. in_progress → review → done) so the owner of each column can do their pass.`,
+            `If this is intentional, re-call ticket_update_status with continue_anyway: true and a short reason.`,
+          ].join(' ')
+        }
+
         try {
           const r = updateTicketStatus(db, {
             ticketId: args.id, toStatus: args.status, actor_type: actor.type, actor_id: actor.id,
           })
           if (!r) return `Ticket not found: ${args.id}`
+          // Record the reason as a comment when the skip was overridden so the
+          // trail captures why a column was bypassed.
+          if (args.continue_anyway && toIdx > fromIdx + 1 && args.reason) {
+            const skipped = cols.slice(fromIdx + 1, toIdx).map((c) => c.key).join(', ')
+            addComment(db, {
+              ticketId: args.id,
+              body: `_Skipped ${skipped} intentionally: ${args.reason}_`,
+              actor_type: actor.type,
+              actor_id: actor.id,
+            })
+          }
           await pluginFireAgentTriggers(db, mgr, client, pid, args.id,
             r.triggered.map((t) => ({ ...t, reason: `Ticket moved to "${args.status}" — you are the default assignee for this column.` })),
             actor)

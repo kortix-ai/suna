@@ -831,7 +831,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     // ═══════════════════════════════════════════════════════════════
     table: ({ children }: { children?: React.ReactNode }) => (
       <div className="my-5 overflow-x-auto rounded-xl border border-border/60">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm !m-0">
           {children}
         </table>
       </div>

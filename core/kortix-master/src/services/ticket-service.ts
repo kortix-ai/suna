@@ -745,11 +745,16 @@ export interface UpdateStatusResult {
 }
 
 /**
- * Status change = the single automated rule.
+ * Status change rules:
  *
- * - If actor is agent and currently assigned → remove their assignment (promote clears).
- * - If destination column has a default assignee → add it (and trigger agent if applicable).
- * - Validates destination is a real column key.
+ * - Validates destination is a real column key for this project.
+ * - Emits a `status_changed` event into the activity log.
+ * - If destination column has a default assignee, we ADD it (no-op if already
+ *   assigned). Whoever was on the ticket BEFORE the move stays on — nobody
+ *   gets silently unassigned just because they moved the ticket forward.
+ *   Earlier behaviour auto-cleared the mover; that caused "engineer did the
+ *   work, then disappeared" once QA got added. Responsibility isn't passed
+ *   by moving; it's passed by explicit unassignment or reassignment.
  */
 export function updateTicketStatus(db: Database, input: {
   ticketId: string
@@ -775,16 +780,6 @@ export function updateTicketStatus(db: Database, input: {
     type: 'status_changed',
     payload: { from: fromStatus, to: input.toStatus },
   })
-
-  // Promote-clear behaviour: if the mover is an agent currently assigned, remove them.
-  if (input.actor_type === 'agent' && input.actor_id) {
-    removeAssignee(db, {
-      ticketId: input.ticketId,
-      assignee_type: 'agent',
-      assignee_id: input.actor_id,
-      actor_type: 'system',
-    })
-  }
 
   const triggered: UpdateStatusResult['triggered'] = []
   if (col.default_assignee_type && col.default_assignee_id) {
