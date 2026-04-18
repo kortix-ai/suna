@@ -32,6 +32,7 @@ import {
 import {
   ArrowLeft,
   FileText,
+  FileStack,
   Sparkles,
   Bug,
   Zap,
@@ -50,9 +51,15 @@ import {
 import { cn } from '@/lib/utils';
 import { UnifiedMarkdown } from '@/components/markdown';
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
   useCreateTicket,
   useAssignTicket,
   useTemplates,
+  useReplaceTemplates,
   useProjectAgents,
   useUserHandle,
   type TicketColumn,
@@ -83,6 +90,7 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
 
   const create = useCreateTicket();
   const assign = useAssignTicket();
+  const replaceTemplates = useReplaceTemplates();
 
   const [step, setStep] = useState<Step>('pick');
   const [template, setTemplate] = useState<TicketTemplate | null>(null);
@@ -140,7 +148,7 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
           // The repo's DialogContent hardcodes `sm:max-w-5xl`, so a plain
           // `max-w-md` gets overridden once the viewport hits `sm`.
           // The responsive variant below wins via Tailwind ordering.
-          step === 'pick' ? 'max-w-sm sm:max-w-sm' : 'max-w-lg sm:max-w-lg',
+          step === 'pick' ? 'max-w-sm sm:max-w-sm' : 'max-w-xl sm:max-w-xl',
         )}
         hideCloseButton
       >
@@ -173,6 +181,13 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
             onRemoveAssignee={(a) => setPending((p) => p.filter((x) => !(x.type === a.type && x.id === a.id)))}
             onSubmit={submit}
             submitting={create.isPending}
+            onSaveAsTemplate={(name) => new Promise<void>((resolve, reject) => {
+              replaceTemplates.mutate(
+                { projectId, templates: [...templates.map((t) => ({ name: t.name, body_md: t.body_md })), { name, body_md: body }] },
+                { onSuccess: () => resolve(), onError: (e) => reject(e) },
+              );
+            })}
+            savingTemplate={replaceTemplates.isPending}
           />
         )}
       </DialogContent>
@@ -279,6 +294,8 @@ function TicketForm({
   onRemoveAssignee,
   onSubmit,
   submitting,
+  onSaveAsTemplate,
+  savingTemplate,
 }: {
   template: TicketTemplate | null;
   title: string;
@@ -298,6 +315,8 @@ function TicketForm({
   onRemoveAssignee: (a: PendingAssignee) => void;
   onSubmit: () => void;
   submitting: boolean;
+  onSaveAsTemplate: (name: string) => Promise<void>;
+  savingTemplate: boolean;
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -434,22 +453,110 @@ function TicketForm({
       </div>
 
       {/* Footer */}
-      <div className="border-t border-border/40 px-5 py-2.5 flex items-center">
+      <div className="border-t border-border/40 px-5 py-2.5 flex items-center gap-2">
         <span className="text-[11px] text-muted-foreground/50">
           <kbd className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded border border-border/50 bg-muted/40 text-[10px] font-mono leading-none">⌘</kbd>
           <kbd className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 ml-0.5 rounded border border-border/50 bg-muted/40 text-[10px] font-mono leading-none">↵</kbd>
           <span className="ml-1.5">to create</span>
         </span>
-        <Button
-          size="sm"
-          className="ml-auto h-7 px-3 text-[12px]"
-          onClick={onSubmit}
-          disabled={!title.trim() || submitting}
-        >
-          {submitting ? 'Creating…' : 'Create ticket'}
-        </Button>
+        <div className="ml-auto flex items-center gap-1.5">
+          <SaveAsTemplateButton
+            disabled={!body.trim() || savingTemplate}
+            saving={savingTemplate}
+            onSave={onSaveAsTemplate}
+          />
+          <Button
+            size="sm"
+            className="h-7 px-3 text-[12px]"
+            onClick={onSubmit}
+            disabled={!title.trim() || submitting}
+          >
+            {submitting ? 'Creating…' : 'Create ticket'}
+          </Button>
+        </div>
       </div>
     </div>
+  );
+}
+
+// ─── Save-as-template popover ──────────────────────────────────────────────
+
+function SaveAsTemplateButton({ disabled, saving, onSave }: {
+  disabled: boolean; saving: boolean; onSave: (name: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setName('');
+      setError(null);
+      setTimeout(() => inputRef.current?.focus(), 40);
+    }
+  }, [open]);
+
+  const commit = async () => {
+    if (!name.trim()) { setError('Name required'); return; }
+    try {
+      await onSave(name.trim());
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed');
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            'h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground',
+            disabled && 'opacity-40 cursor-not-allowed',
+          )}
+          disabled={disabled}
+          title="Save current body as a template"
+          aria-label="Save as template"
+        >
+          <FileStack className="h-3.5 w-3.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={6} className="w-72 p-3 z-[10000]">
+        <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-2">
+          Save as template
+        </div>
+        <p className="text-[11.5px] text-muted-foreground/60 mb-2.5 leading-snug">
+          Reuse this ticket's body later as a fresh template in the picker.
+        </p>
+        <input
+          ref={inputRef}
+          value={name}
+          onChange={(e) => { setName(e.target.value); setError(null); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
+          }}
+          placeholder="Template name — e.g. Bug, Feature…"
+          className="h-7 w-full text-[12px] bg-transparent border border-border/50 rounded px-2 outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+        />
+        {error && <p className="text-[11px] text-destructive mt-1.5">{error}</p>}
+        <div className="flex items-center gap-2 mt-2.5">
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button
+            size="sm"
+            className="ml-auto h-6 px-2.5 text-[11px] gap-1"
+            onClick={commit}
+            disabled={!name.trim() || saving}
+          >
+            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+            Save template
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
