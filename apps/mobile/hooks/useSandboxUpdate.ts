@@ -175,7 +175,10 @@ export function useGlobalSandboxUpdate() {
         const res = await fetch(`${sandboxUrl}/kortix/health`, { headers });
         if (!res.ok) return;
         const data = await res.json();
-        if (!cancelled && data?.version) {
+        // Only accept a concrete version; ignore "unknown" or empty so
+        // consumers can cleanly fall back to a DB-cached value instead of
+        // rendering "vunknown".
+        if (!cancelled && data?.version && data.version !== 'unknown') {
           setCurrentVersion(data.version);
         }
       } catch {}
