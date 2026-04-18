@@ -626,7 +626,9 @@ function EventRow({ event, agentById, userHandle }: { event: any; agentById: Map
           <span className="font-mono text-[11.5px] text-foreground/80">@{actorHandle}</span>
           <span className="text-[10px] text-muted-foreground/40 tabular-nums ml-auto">{relativeTime(event.created_at)}</span>
         </div>
-        <div className="text-[13px] text-foreground/85 whitespace-pre-wrap leading-relaxed">{event.message}</div>
+        <article className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 text-[13px] leading-relaxed">
+          <UnifiedMarkdown content={event.message ?? ''} />
+        </article>
       </div>
     );
   }

@@ -358,7 +358,7 @@ function TicketForm({
 
       {/* Body — 2-column layout: seamless editor on the left, meta rail on the right */}
       <div className="grid grid-cols-[1fr_220px] min-h-[360px]">
-        <div className="px-6 pt-6 pb-5 border-r border-border/40">
+        <div className="px-6 pt-6 pb-5">
           <textarea
             ref={titleRef}
             value={title}
@@ -379,7 +379,7 @@ function TicketForm({
           />
         </div>
 
-        {/* Meta rail — same bg as the body so it reads as one surface. */}
+        {/* Meta rail — no divider, same bg as body. Reads as one surface. */}
         <aside className="px-4 pt-6 pb-5 space-y-5">
           <MetaBlock label="Assignees">
             <AssigneePicker
