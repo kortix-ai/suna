@@ -237,9 +237,10 @@ if command -v ocx >/dev/null 2>&1; then
        || { grep -qF '// Add MCP servers' "$OPENCODE_USER_CONFIG" 2>/dev/null \
             && ! grep -v '^[[:space:]]*//' "$OPENCODE_USER_CONFIG" | grep -q ',' 2>/dev/null; }; then
       echo "[startup] Repairing malformed opencode.jsonc template..."
-      su -s /bin/sh abc -c "python3 - <<'PY'
+      su -s /bin/sh abc -c 'python3 - "$1"' _ "$OPENCODE_USER_CONFIG" <<'PY' || echo "[startup] WARNING: opencode.jsonc repair failed (non-fatal)"
+import sys
 from pathlib import Path
-path = Path('$OPENCODE_USER_CONFIG')
+path = Path(sys.argv[1])
 text = path.read_text()
 
 text = text.replace('"\\$schema"', '"$schema"')
@@ -261,7 +262,7 @@ if '// Add MCP servers' in text:
     text = '\n'.join(repaired) + ('\n' if text.endswith('\n') else '')
 
 path.write_text(text)
-PY"
+PY
     fi
   fi
   # Always ensure registry aliases exist (idempotent)
