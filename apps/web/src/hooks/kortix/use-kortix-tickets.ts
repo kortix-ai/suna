@@ -39,6 +39,7 @@ export interface TicketColumn {
   default_assignee_type: AssigneeType | null;
   default_assignee_id: string | null;
   is_terminal: number;
+  icon: string | null;
 }
 
 export interface Ticket {
@@ -317,7 +318,7 @@ export function useReplaceColumns() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ projectId, columns }: { projectId: string; columns: Array<{ key: string; label: string; default_assignee_type?: AssigneeType | null; default_assignee_id?: string | null; is_terminal?: boolean }> }) =>
+    mutationFn: ({ projectId, columns }: { projectId: string; columns: Array<{ key: string; label: string; default_assignee_type?: AssigneeType | null; default_assignee_id?: string | null; is_terminal?: boolean; icon?: string | null }> }) =>
       kfetch<TicketColumn[]>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/columns`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

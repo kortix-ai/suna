@@ -20,8 +20,7 @@ import {
   SlidersHorizontal,
   FileStack,
   Check,
-  Circle,
-  CheckCircle2,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +30,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import {
   useColumns,
@@ -44,6 +50,7 @@ import {
   type ProjectField,
   type ProjectAgent,
 } from '@/hooks/kortix/use-kortix-tickets';
+import { COLUMN_ICONS, COLUMN_ICON_KEYS, defaultColumnIcon } from '@/components/kortix/ticket-board';
 
 type Panel = 'columns' | 'fields' | 'templates';
 
@@ -109,6 +116,7 @@ interface ColumnDraft {
   default_assignee_type: 'agent' | null;
   default_assignee_id: string | null;
   is_terminal: boolean;
+  icon: string | null;
 }
 
 function ColumnsEditor({ projectId }: { projectId: string }) {
@@ -123,7 +131,7 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
 
   const addColumn = () => setDrafts((ds) => [...ds, {
     key: `col_${Date.now().toString(36)}`, label: 'New column',
-    default_assignee_type: null, default_assignee_id: null, is_terminal: false,
+    default_assignee_type: null, default_assignee_id: null, is_terminal: false, icon: null,
   }]);
   const removeAt = (i: number) => setDrafts((ds) => ds.filter((_, idx) => idx !== i));
   const moveAt = (i: number, dir: -1 | 1) => setDrafts((ds) => {
@@ -140,7 +148,7 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
       <SectionHead
         icon={<ColumnsIcon className="h-3.5 w-3.5 text-muted-foreground/45" />}
         label="Columns"
-        description="Define the board's flow. Order matters — new tickets land in the first column. Mark the last one terminal so nothing auto-routes past it."
+        description="Define the board's flow. Order matters — new tickets land in the first column. Click a column's icon to change it."
         action={
           <Button
             variant="ghost" size="sm" className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
@@ -158,9 +166,10 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
         )}
         {drafts.map((d, i) => (
           <div key={i} className="flex items-center gap-2 px-3 py-2.5">
-            <div className="w-7 h-7 flex items-center justify-center shrink-0">
-              {d.is_terminal ? <CheckCircle2 className="h-4 w-4 text-emerald-500/60" /> : <Circle className="h-4 w-4 text-muted-foreground/40" />}
-            </div>
+            <ColumnIconPicker
+              iconKey={d.icon ?? defaultColumnIcon(d.key)}
+              onChange={(k) => patchAt(i, { icon: k })}
+            />
             <input
               value={d.label}
               onChange={(e) => patchAt(i, { label: e.target.value })}
@@ -185,14 +194,6 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
                 {agents.map((a) => <SelectItem key={a.id} value={a.id}>@{a.slug}</SelectItem>)}
               </SelectContent>
             </Select>
-            <label className="inline-flex items-center gap-1 text-[10.5px] text-muted-foreground/65 select-none cursor-pointer">
-              <input
-                type="checkbox" checked={d.is_terminal}
-                onChange={(e) => patchAt(i, { is_terminal: e.target.checked })}
-                className="accent-primary"
-              />
-              terminal
-            </label>
             <div className="flex items-center gap-0.5 ml-1">
               <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground" onClick={() => moveAt(i, -1)}><ArrowUp className="h-3 w-3" /></Button>
               <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground" onClick={() => moveAt(i, 1)}><ArrowDown className="h-3 w-3" /></Button>
@@ -214,6 +215,7 @@ function toColumnDraft(c: TicketColumn): ColumnDraft {
     default_assignee_type: c.default_assignee_type === 'agent' ? 'agent' : null,
     default_assignee_id: c.default_assignee_id,
     is_terminal: c.is_terminal === 1,
+    icon: c.icon ?? null,
   };
 }
 function toColumnDraftKey(d: ColumnDraft) { return { ...d }; }
@@ -223,7 +225,51 @@ function toColumnKey(c: TicketColumn) {
     default_assignee_type: c.default_assignee_type === 'agent' ? 'agent' : null,
     default_assignee_id: c.default_assignee_id,
     is_terminal: c.is_terminal === 1,
+    icon: c.icon ?? null,
   };
+}
+
+function ColumnIconPicker({ iconKey, onChange }: { iconKey: string; onChange: (k: string) => void }) {
+  const entry = COLUMN_ICONS[iconKey] ?? COLUMN_ICONS.backlog;
+  const Ic = entry.Icon;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 hover:bg-muted/40 transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          title="Change icon"
+          aria-label="Change column icon"
+        >
+          <Ic className={cn('h-4 w-4', entry.tint)} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[220px] z-[10000]">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Column icon</DropdownMenuLabel>
+        <div className="grid grid-cols-4 gap-1 p-1.5">
+          {COLUMN_ICON_KEYS.map((k) => {
+            const c = COLUMN_ICONS[k];
+            const I = c.Icon;
+            const active = k === iconKey;
+            return (
+              <DropdownMenuItem
+                key={k}
+                onClick={() => onChange(k)}
+                className={cn(
+                  'flex flex-col items-center justify-center gap-0.5 h-12 cursor-pointer p-1',
+                  active && 'bg-muted/40',
+                )}
+                title={c.label}
+              >
+                <I className={cn('h-3.5 w-3.5', c.tint)} />
+                <span className="text-[9.5px] text-muted-foreground/70 truncate max-w-full">{c.label}</span>
+              </DropdownMenuItem>
+            );
+          })}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

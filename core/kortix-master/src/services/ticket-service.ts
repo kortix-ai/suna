@@ -66,6 +66,7 @@ export interface ProjectColumnRow {
   default_assignee_type: AssigneeType | null
   default_assignee_id: string | null
   is_terminal: number
+  icon: string | null
 }
 
 export interface ProjectFieldRow {
@@ -180,6 +181,7 @@ export function ensureTicketTables(db: Database): void {
       default_assignee_type TEXT,
       default_assignee_id TEXT,
       is_terminal INTEGER NOT NULL DEFAULT 0,
+      icon TEXT,
       UNIQUE(project_id, key)
     );
     CREATE TABLE IF NOT EXISTS project_fields (
@@ -228,6 +230,7 @@ export function ensureTicketTables(db: Database): void {
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN default_model TEXT`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN color_hue INTEGER`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN icon TEXT`) } catch {}
+  try { db.exec(`ALTER TABLE project_columns ADD COLUMN icon TEXT`) } catch {}
 }
 
 // ── Columns ───────────────────────────────────────────────────────────────────
@@ -246,14 +249,15 @@ export interface ColumnInput {
   default_assignee_type?: AssigneeType | null
   default_assignee_id?: string | null
   is_terminal?: boolean
+  icon?: string | null
 }
 
 export function replaceColumns(db: Database, projectId: string, columns: ColumnInput[]): ProjectColumnRow[] {
   db.prepare('DELETE FROM project_columns WHERE project_id=$pid').run({ $pid: projectId })
   columns.forEach((c, i) => {
     db.prepare(`INSERT INTO project_columns
-      (id, project_id, key, label, order_index, default_assignee_type, default_assignee_id, is_terminal)
-      VALUES ($id, $pid, $k, $l, $o, $dat, $dai, $t)`).run({
+      (id, project_id, key, label, order_index, default_assignee_type, default_assignee_id, is_terminal, icon)
+      VALUES ($id, $pid, $k, $l, $o, $dat, $dai, $t, $icon)`).run({
       $id: genColumnId(),
       $pid: projectId,
       $k: c.key,
@@ -262,6 +266,7 @@ export function replaceColumns(db: Database, projectId: string, columns: ColumnI
       $dat: c.default_assignee_type ?? null,
       $dai: c.default_assignee_id ?? null,
       $t: c.is_terminal ? 1 : 0,
+      $icon: c.icon ?? null,
     })
   })
   return listColumns(db, projectId)
@@ -274,12 +279,15 @@ export function updateColumn(db: Database, projectId: string, key: string, patch
       label = COALESCE($label, label),
       default_assignee_type = $dat,
       default_assignee_id = $dai,
-      is_terminal = COALESCE($t, is_terminal)
+      is_terminal = COALESCE($t, is_terminal),
+      icon = CASE WHEN $iconSet=1 THEN $icon ELSE icon END
     WHERE project_id=$pid AND key=$k`).run({
     $label: patch.label ?? null,
     $dat: patch.default_assignee_type === undefined ? col.default_assignee_type : patch.default_assignee_type,
     $dai: patch.default_assignee_id === undefined ? col.default_assignee_id : patch.default_assignee_id,
     $t: patch.is_terminal === undefined ? null : (patch.is_terminal ? 1 : 0),
+    $iconSet: patch.icon === undefined ? 0 : 1,
+    $icon: patch.icon ?? null,
     $pid: projectId,
     $k: key,
   })
