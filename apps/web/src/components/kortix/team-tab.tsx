@@ -6,7 +6,7 @@
  * on bg-card with border-border/40, row dividers for list items).
  */
 
-import { useEffect, useRef, useState, useLayoutEffect } from 'react';
+import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import {
   Plus,
   UserCircle2,
@@ -59,6 +59,8 @@ import {
   type ExecutionMode,
   type ToolGroup,
 } from '@/hooks/kortix/use-kortix-tickets';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { flattenModels, type FlatModel } from '@/components/session/session-chat-input';
 
 const DEFAULT_PROMPT = `You are a team agent for this project.
 Describe your responsibilities, your flow, and what you own.
@@ -402,13 +404,15 @@ function AgentFormDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="p-0 overflow-hidden gap-0 border-border/60 bg-background max-w-xl sm:max-w-xl"
+        // Cap the dialog at 85vh and make the inner body scroll — otherwise
+        // a long system prompt pushes header + footer off-screen.
+        className="p-0 overflow-hidden gap-0 border-border/60 bg-background max-w-xl sm:max-w-xl max-h-[85vh] flex flex-col"
         hideCloseButton
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <DialogDescription className="sr-only">{title}</DialogDescription>
 
-        <div className="flex items-center px-5 h-11 border-b border-border/40 gap-2">
+        <div className="flex items-center px-5 h-11 shrink-0 border-b border-border/40 gap-2">
           <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{title}</span>
           <div className="ml-auto flex items-center gap-2">
             {headerAction}
@@ -418,9 +422,11 @@ function AgentFormDialog({
           </div>
         </div>
 
-        {children}
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {children}
+        </div>
 
-        <div className="border-t border-border/40 px-5 py-2.5 flex items-center">
+        <div className="shrink-0 border-t border-border/40 px-5 py-2.5 flex items-center">
           <span className="text-[11px] text-muted-foreground/40 font-mono truncate">{footerLeft}</span>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
@@ -497,12 +503,7 @@ function AgentFormBody({
           <ColumnPicker columns={columns} value={state.defaultCol} onChange={(v) => patch({ defaultCol: v })} />
         </MetaBlock>
         <MetaBlock label="Model">
-          <input
-            value={state.defaultModel}
-            onChange={(e) => patch({ defaultModel: e.target.value })}
-            placeholder="e.g. claude-sonnet-4-6"
-            className="h-7 w-full text-[11.5px] bg-transparent border border-border/40 rounded-lg px-2 outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 font-mono placeholder:text-muted-foreground/35"
-          />
+          <ModelPicker value={state.defaultModel} onChange={(v) => patch({ defaultModel: v })} />
           <p className="text-[10.5px] text-muted-foreground/40 mt-1 leading-snug">
             Overrides the session default when this agent runs.
           </p>
@@ -591,6 +592,73 @@ function RolePicker({ value, onChange }: { value: 'contributor' | 'orchestrator'
             </div>
           </div>
         </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ModelPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { data: providers } = useOpenCodeProviders();
+  const models = useMemo(() => flattenModels(providers), [providers]);
+  const byProvider = useMemo(() => {
+    const m = new Map<string, { providerName: string; models: FlatModel[] }>();
+    for (const mod of models) {
+      const g = m.get(mod.providerID);
+      if (g) g.models.push(mod);
+      else m.set(mod.providerID, { providerName: mod.providerName || mod.providerID, models: [mod] });
+    }
+    return Array.from(m.entries());
+  }, [models]);
+  const selected = models.find((m) => `${m.providerID}/${m.modelID}` === value) ?? null;
+  const label = selected ? selected.modelName : value ? value.split('/').slice(-1)[0] : 'Session default';
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+          <Cpu className={cn('h-3.5 w-3.5 shrink-0', value ? 'text-primary' : 'text-muted-foreground/55')} />
+          <span className={cn('flex-1 text-left truncate', value ? 'font-medium' : 'text-muted-foreground/60')}>{label}</span>
+          <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="w-[260px] max-h-[340px] overflow-y-auto z-[10000]"
+      >
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
+          Default model
+        </DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => onChange('')} className="gap-2 cursor-pointer">
+          <span className="flex-1 text-muted-foreground/80">Session default</span>
+          {!value && <Check className="h-3 w-3 text-primary" />}
+        </DropdownMenuItem>
+        {byProvider.length === 0 ? (
+          <div className="px-2 py-3 text-[11.5px] text-muted-foreground/55">
+            No providers connected.
+          </div>
+        ) : (
+          byProvider.map(([providerID, group]) => (
+            <div key={providerID}>
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.06em] text-muted-foreground/45 font-medium pt-2">
+                {group.providerName}
+              </DropdownMenuLabel>
+              {group.models.map((m) => {
+                const key = `${m.providerID}/${m.modelID}`;
+                const active = key === value;
+                return (
+                  <DropdownMenuItem
+                    key={key}
+                    onClick={() => onChange(key)}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <span className="flex-1 truncate text-[12px]">{m.modelName}</span>
+                    {active && <Check className="h-3 w-3 text-primary shrink-0" />}
+                  </DropdownMenuItem>
+                );
+              })}
+            </div>
+          ))
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

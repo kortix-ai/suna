@@ -40,6 +40,20 @@ export interface FireTriggerOptions {
   bindSessionToProject?: (sessionId: string, projectId: string) => void | Promise<void>
 }
 
+/**
+ * Parse a stored "providerID/modelID" string into the shape OpenCode's
+ * session.promptAsync expects. Returns null if the agent has no model set or
+ * the stored value isn't parseable.
+ */
+function parseModel(raw: string | null | undefined): { providerID: string; modelID: string } | null {
+  if (!raw) return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const slash = trimmed.indexOf('/')
+  if (slash <= 0 || slash === trimmed.length - 1) return null
+  return { providerID: trimmed.slice(0, slash), modelID: trimmed.slice(slash + 1) }
+}
+
 function ticketNotificationPrompt(params: {
   projectName: string
   agent: ProjectAgentRow
@@ -145,7 +159,7 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
       body: {
         agent: 'worker',
         parts: [{ type: 'text', text: prompt }],
-        ...(agent.default_model ? { model: agent.default_model } : {}),
+        ...(parseModel(agent.default_model) ? { model: parseModel(agent.default_model)! } : {}),
       },
     })
   } catch (err) {
