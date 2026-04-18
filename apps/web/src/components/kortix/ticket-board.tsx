@@ -22,13 +22,14 @@ import {
   X,
   Trash2,
   MoreHorizontal,
-  GripVertical,
   AlertCircle,
   Clock,
   Hourglass,
   Archive,
   PauseCircle,
   Zap,
+  ExternalLink,
+  Copy,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -54,6 +55,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import type {
@@ -339,9 +341,8 @@ function DraggableTicketCard({ ticket, columns, agentById, onSelect, onUpdateSta
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: ticket.id });
 
-  // The whole card is draggable — the 8px activation threshold on the sensor
-  // keeps click-to-open working for quick taps. The grip icon is purely a
-  // visual affordance so users know the card is movable.
+  // Whole card is draggable. The 8px activation distance on the sensor keeps
+  // click-to-open working for quick taps; longer motion engages DnD.
   return (
     <div
       ref={setNodeRef}
@@ -357,7 +358,6 @@ function DraggableTicketCard({ ticket, columns, agentById, onSelect, onUpdateSta
         onUpdateStatus={onUpdateStatus}
         onDelete={onDelete}
         columns={columns}
-        showGripAffordance
       />
     </div>
   );
@@ -371,7 +371,6 @@ function TicketCardInner({
   onDelete,
   columns,
   dragging,
-  showGripAffordance,
 }: {
   ticket: Ticket;
   agentById: Map<string, ProjectAgent>;
@@ -380,7 +379,6 @@ function TicketCardInner({
   onDelete?: () => void;
   columns?: TicketColumn[];
   dragging?: boolean;
-  showGripAffordance?: boolean;
 }) {
   const { handle: currentHandle, avatarUrl: currentAvatarUrl } = useCurrentUserAvatarProps();
 
@@ -394,18 +392,14 @@ function TicketCardInner({
       )}
     >
       <div className="flex items-start gap-2">
-        {showGripAffordance && (
-          <span
-            aria-hidden
-            className="mt-0.5 -ml-1 h-5 w-4 flex items-center justify-center text-muted-foreground/15 opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            <GripVertical className="h-3.5 w-3.5" />
-          </span>
-        )}
-
-        <p className="text-[13px] font-medium leading-snug line-clamp-3 tracking-tight flex-1 text-foreground/90">
-          {ticket.title}
-        </p>
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] font-mono tabular-nums text-muted-foreground/40 leading-none mb-1">
+            #{ticket.number}
+          </div>
+          <p className="text-[13.5px] font-medium leading-snug line-clamp-3 tracking-tight text-foreground/90">
+            {ticket.title}
+          </p>
+        </div>
 
         {columns && onUpdateStatus && onDelete && (
           <DropdownMenu>
@@ -413,30 +407,50 @@ function TicketCardInner({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                className="h-6 w-6 p-0 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted-foreground/50 hover:text-foreground"
                 onClick={(e) => e.stopPropagation()}
+                aria-label="Ticket actions"
               >
                 <MoreHorizontal className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onSelect?.(); }}>Open</DropdownMenuItem>
+            <DropdownMenuContent align="end" className="w-56 z-[10000]" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onSelect?.(); }} className="gap-2 cursor-pointer">
+                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/60" />
+                Open ticket
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(`#${ticket.number} ${ticket.title}`); }}
+                className="gap-2 cursor-pointer"
+              >
+                <Copy className="h-3.5 w-3.5 text-muted-foreground/60" />
+                Copy reference
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
-              {columns.filter((c) => c.key !== ticket.status).map((c) => (
-                <DropdownMenuItem
-                  key={c.key}
-                  onClick={(e) => { e.stopPropagation(); onUpdateStatus(ticket.id, c.key); }}
-                >
-                  Move → {c.label}
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
+                Move to
+              </DropdownMenuLabel>
+              {columns.filter((c) => c.key !== ticket.status).map((c) => {
+                const Ic = iconForColumn(c);
+                const tint = tintForColumn(c);
+                return (
+                  <DropdownMenuItem
+                    key={c.key}
+                    onClick={(e) => { e.stopPropagation(); onUpdateStatus(ticket.id, c.key); }}
+                    className="gap-2 cursor-pointer"
+                  >
+                    <Ic className={cn('h-3.5 w-3.5', tint)} />
+                    <span className="flex-1 truncate">{c.label}</span>
+                  </DropdownMenuItem>
+                );
+              })}
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                className="text-destructive focus:text-destructive"
+                className="gap-2 cursor-pointer text-destructive focus:text-destructive"
               >
-                <Trash2 className="mr-2 h-3.5 w-3.5" />
-                Delete
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete ticket
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -444,7 +458,6 @@ function TicketCardInner({
       </div>
 
       <div className="flex items-center gap-2 mt-2.5 text-[10px] text-muted-foreground/40">
-        <span className="font-mono tabular-nums">#{ticket.number}</span>
         <span className="tabular-nums">{new Date(ticket.updated_at).toLocaleDateString()}</span>
 
         {ticket.assignees.length > 0 && (
