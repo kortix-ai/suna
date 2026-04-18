@@ -52,6 +52,7 @@ import {
 import { cn } from '@/lib/utils';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
+import { MentionTextarea } from '@/components/kortix/mention-textarea';
 import {
   Popover,
   PopoverContent,
@@ -332,6 +333,7 @@ function TicketForm({
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [bodyMode, setBodyMode] = useState<'write' | 'preview'>('write');
+  const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
 
   // Auto-size title and body to fit content — the seamless feel requires that
   // neither field has a visible edge.
@@ -426,12 +428,15 @@ function TicketForm({
           />
 
           {bodyMode === 'write' ? (
-            <textarea
+            <MentionTextarea
               ref={bodyRef}
               value={body}
-              onChange={(e) => onBodyChange(e.target.value)}
+              onChange={onBodyChange}
               onKeyDown={onBodyKey}
-              placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Reference agents with @slug."}
+              agents={agents}
+              userHandle={userHandle}
+              userAvatarUrl={myAvatarUrl}
+              placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Type @ to tag a team member."}
               rows={8}
               className="w-full mt-3 text-[13px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
             />

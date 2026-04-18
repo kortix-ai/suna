@@ -56,6 +56,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
+import { MentionTextarea } from '@/components/kortix/mention-textarea';
 import {
   useTicket,
   useTicketEvents,
@@ -90,6 +91,7 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
   const assign = useAssignTicket();
   const unassign = useUnassignTicket();
   const userHandle = useUserHandle();
+  const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
 
   const [editingBody, setEditingBody] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -273,16 +275,19 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
 
                     {/* Comment composer */}
                     <div className="mt-3 rounded-xl border border-border/40 bg-card focus-within:border-border transition-colors">
-                      <textarea
+                      <MentionTextarea
                         value={comment}
-                        onChange={(e) => setComment(e.target.value)}
+                        onChange={setComment}
+                        agents={agents}
+                        userHandle={userHandle}
+                        userAvatarUrl={myAvatarUrl}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                             e.preventDefault();
                             postComment();
                           }
                         }}
-                        placeholder="Comment. Use @slug to ping a team agent."
+                        placeholder="Comment. Type @ to tag a team member."
                         rows={3}
                         className="w-full text-[13px] leading-relaxed bg-transparent border-0 outline-none focus:ring-0 resize-none px-4 pt-3 placeholder:text-muted-foreground/35"
                       />
