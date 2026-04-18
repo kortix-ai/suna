@@ -110,14 +110,40 @@ export function renderAgentFile(meta: AgentFileMeta, body: string): string {
  * agent file. Without this, opencode keeps serving the old agent set for that
  * project until the whole server is restarted. Scoped to just this directory
  * — other projects' sessions aren't touched.
+ *
+ * CRITICAL: dispose must NOT fire synchronously from inside a tool running in
+ * that same directory's session. Opencode reloads config on dispose, which
+ * can abort the very session invoking the tool (seen as "Tool execution
+ * aborted"). We debounce per-directory on a short timer so dispose fires
+ * *after* the current turn completes (the session goes idle between turns).
+ * Multiple back-to-back CRUDs in one turn (e.g. PM creating engineer + QA)
+ * coalesce into a single dispose call once the turn settles.
  */
-export async function disposeOpencodeDirectory(directory: string): Promise<void> {
-  const baseUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`
-  const url = `${baseUrl}/instance/dispose?directory=${encodeURIComponent(directory)}`
-  try {
-    await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5_000) })
-  } catch (err) {
-    console.warn('[project-v2-seed] dispose failed for', directory, err)
+const _disposeTimers = new Map<string, ReturnType<typeof setTimeout>>()
+// Longer debounce so the PM's text response after the tool call has time to
+// finish before we reload config (which aborts in-flight LLM turns).
+const DISPOSE_DEBOUNCE_MS = 20_000
+
+export function disposeOpencodeDirectory(directory: string): void {
+  const existing = _disposeTimers.get(directory)
+  if (existing) clearTimeout(existing)
+  _disposeTimers.set(directory, setTimeout(() => {
+    _disposeTimers.delete(directory)
+    const baseUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`
+    const url = `${baseUrl}/instance/dispose?directory=${encodeURIComponent(directory)}`
+    fetch(url, { method: 'POST', signal: AbortSignal.timeout(5_000) })
+      .catch((err) => console.warn('[project-v2-seed] dispose failed for', directory, err))
+  }, DISPOSE_DEBOUNCE_MS))
+}
+
+/** Force-flush any pending dispose immediately. Rarely needed; mostly for tests. */
+export async function flushPendingDisposes(): Promise<void> {
+  for (const [dir, timer] of _disposeTimers.entries()) {
+    clearTimeout(timer)
+    _disposeTimers.delete(dir)
+    const baseUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`
+    const url = `${baseUrl}/instance/dispose?directory=${encodeURIComponent(dir)}`
+    try { await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5_000) }) } catch {}
   }
 }
 
@@ -347,7 +373,7 @@ export async function seedV2Project(
     // Invalidate opencode's per-directory cache so the new agent is visible
     // on the next /agent?directory=<path> request and to sessions created
     // against this project.
-    await disposeOpencodeDirectory(project.path)
+    disposeOpencodeDirectory(project.path)
   }
 
   const existingColumns = listColumns(db, project.id)

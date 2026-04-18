@@ -578,7 +578,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         })
         await syncTeamSection(db, proj)
         // Invalidate opencode's per-directory cache so @${slug} is live now.
-        await disposeOpencodeDirectory(proj.path)
+        disposeOpencodeDirectory(proj.path)
         return `Created agent @${ag.slug} (${ag.id}).`
       },
     }),
@@ -646,7 +646,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           try { db.prepare('UPDATE project_agents SET default_model=$m WHERE id=$id').run({ $m: model, $id: ag.id }) } catch {}
         }
         await syncTeamSection(db, proj)
-        await disposeOpencodeDirectory(proj.path)
+        disposeOpencodeDirectory(proj.path)
         return `Updated agent @${args.slug}.`
       },
     }),
@@ -666,7 +666,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         try { await fs.unlink(agentFilePath(proj.path, ag.slug)) } catch {}
         db.prepare('DELETE FROM project_agents WHERE id=$id').run({ $id: ag.id })
         db.prepare('DELETE FROM ticket_agent_sessions WHERE agent_id=$id').run({ $id: ag.id })
-        await disposeOpencodeDirectory(proj.path)
+        disposeOpencodeDirectory(proj.path)
         await syncTeamSection(db, proj)
         return `Deleted agent @${args.slug}.`
       },
