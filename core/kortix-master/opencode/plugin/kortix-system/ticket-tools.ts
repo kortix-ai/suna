@@ -717,3 +717,32 @@ export function ticketToolGateHook(db: Database) {
     }
   }
 }
+
+/**
+ * experimental.chat.system.transform hook — if the session is bound to a
+ * project agent (via ticket_agent_sessions or project_agents.session_id),
+ * load that agent's persona markdown and push it onto the `system` array so
+ * the LLM sees the full role definition without the user ever seeing the
+ * markdown as a chat message.
+ *
+ * Replaces the old "prepend persona to prompt text" hack that polluted the
+ * chat UI with "# Project Manager — ..." as a user-message.
+ */
+export function ticketPersonaSystemHook(db: Database) {
+  return async (input: { sessionID?: string }, output: { system: string[] }) => {
+    if (!input.sessionID) return
+    try { ensureTicketTables(db) } catch {}
+    const agent = findAgentForSession(db, input.sessionID)
+    if (!agent?.file_path) return
+    let body = ''
+    try {
+      const fs = await import('node:fs/promises')
+      body = await fs.readFile(agent.file_path, 'utf8')
+    } catch { return }
+    if (!body) return
+    // Strip YAML frontmatter if present — it's metadata for our orchestrator,
+    // not instructions for the LLM.
+    const trimmed = body.replace(/^---[\s\S]*?---\s*/m, '').trim()
+    if (trimmed) output.system.push(trimmed)
+  }
+}

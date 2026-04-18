@@ -11,7 +11,6 @@
  */
 
 import { Database } from 'bun:sqlite'
-import * as fs from 'node:fs/promises'
 import {
   type ProjectAgentRow,
   getAgentById,
@@ -63,14 +62,12 @@ function ticketNotificationPrompt(params: {
   ticketBody: string
   ticketStatus: string
   reason: string
-  personaBody: string
   contextBody: string
 }): string {
-  const { agent, ticketId, ticketNumber, ticketTitle, ticketBody, ticketStatus, reason, personaBody, contextBody, projectName } = params
+  const { agent, ticketId, ticketNumber, ticketTitle, ticketBody, ticketStatus, reason, contextBody, projectName } = params
+  // Persona is applied as a SYSTEM prompt by the plugin's
+  // experimental.chat.system.transform hook — no need to prepend it here.
   return [
-    personaBody.trim(),
-    '',
-    '───────────────────────────────────────────────',
     `Project: ${projectName}`,
     `You are agent: ${agent.name} (@${agent.slug})`,
     '',
@@ -135,9 +132,6 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
     }
   }
 
-  let personaBody = ''
-  try { personaBody = await fs.readFile(agent.file_path, 'utf8') } catch {}
-  const personaStripped = personaBody.replace(/^---[\s\S]*?---\n?/, '')
   const contextBody = await tryReadContext(project.path)
 
   const prompt = ticketNotificationPrompt({
@@ -149,7 +143,6 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
     ticketBody: ticket.body_md,
     ticketStatus: ticket.status,
     reason,
-    personaBody: personaStripped,
     contextBody,
   })
 
@@ -212,22 +205,14 @@ export async function wakeAgentForProject(opts: {
     } catch {}
   }
 
-  // Inject the agent's own persona ahead of the task prompt. OpenCode applies
-  // the `worker` system prompt on top; prepending the persona nudges the model
-  // to adopt the PM/engineer/etc. role rather than the bare worker role.
-  let personaBody = ''
-  try { personaBody = await fs.readFile(agent.file_path, 'utf8') } catch {}
-  const personaStripped = personaBody.replace(/^---[\s\S]*?---\n?/, '').trim()
-  const fullPrompt = personaStripped
-    ? `${personaStripped}\n\n───────────────────────────────────────────────\n${prompt}`
-    : prompt
-
+  // Persona is applied as a SYSTEM prompt by the plugin's
+  // experimental.chat.system.transform hook — no need to prepend it here.
   try {
     await client.session.promptAsync({
       path: { id: sessionId },
       body: {
         agent: 'worker',
-        parts: [{ type: 'text', text: fullPrompt }],
+        parts: [{ type: 'text', text: prompt }],
         ...(parseModel(agent.default_model) ? { model: parseModel(agent.default_model)! } : {}),
       },
     })

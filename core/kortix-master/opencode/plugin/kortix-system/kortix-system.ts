@@ -17,7 +17,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 
 import { initProjectsDb, ProjectManager, projectTools, projectGateHook } from "./projects"
 import { agentTaskTools, handleAgentTaskSessionEvent } from "./agent-tasks"
-import { ticketTools, ticketToolGateHook } from "./ticket-tools"
+import { ticketTools, ticketToolGateHook, ticketPersonaSystemHook } from "./ticket-tools"
 import { ensureTasksTable, reconcileAllRunningTasks } from "../../../src/services/task-service"
 import { ensureTicketTables } from "../../../src/services/ticket-service"
 import { resolveKortixWorkspaceRoot, ensureKortixDir } from "./lib/paths"
@@ -173,6 +173,7 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	// ── Merge all tools ──
 	const projectGate = projectGateHook(mgr)
 	const ticketGate = ticketToolGateHook(db)
+	const ticketPersona = ticketPersonaSystemHook(db)
 	return {
 		tool: {
 			...projectTools(mgr, db),
@@ -194,11 +195,14 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 			await ticketGate(input, output)
 		},
 
-		// System prompt transform — forwards to auth (anthropic prefix)
+		// System prompt transform:
+		//   1. Auth prefix (e.g. Anthropic's leading <claude>…</claude> block)
+		//   2. Project-agent persona injection for sessions bound to a PM / engineer / QA / … agent
 		"experimental.chat.system.transform": async (input: any, output: { system: string[] }) => {
 			if (auth?.["experimental.chat.system.transform"]) {
 				await auth["experimental.chat.system.transform"](input, output)
 			}
+			await ticketPersona(input, output).catch((err) => console.warn("[kortix-system] persona system-transform failed:", err))
 		},
 
 		// BTW command

@@ -165,11 +165,11 @@ function getOpenCodeClient(): OpenCodeClientLike {
   return _ocClient as unknown as OpenCodeClientLike
 }
 
-// POST /:id/pm-session — create a fresh chat session with the project's PM.
-// Each click = new session. The session is bound to the project and to the
-// PM agent (via project_agents.session_id) so findAgentForSession resolves
-// the right persona + tool groups. A short kickoff prompt is fired so PM
-// greets the user in-persona; subsequent turns continue with full context.
+// POST /:id/pm-session — create a fresh chat session bound to the project's
+// PM. Each click = new session, no kickoff, no fake user-message. The user
+// types the first message themselves. The plugin's system-prompt transform
+// injects PM's persona as real system prompt so the LLM is PM without any
+// visible pollution in the chat.
 projectsRouter.post('/:id/pm-session', async (c) => {
   const db = getDb()
   const pid = decodeURIComponent(c.req.param('id'))
@@ -181,28 +181,23 @@ projectsRouter.post('/:id/pm-session', async (c) => {
   const pm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)
   if (!pm) return c.json({ error: 'Project Manager agent not found — run v2 seed first' }, 404)
 
-  // Clear PM's session pointer so wakeAgentForProject creates a fresh one.
-  // Latest "Ask PM" click becomes the canonical PM session; older sessions
-  // remain readable but are no longer bound (actions there attribute as user).
-  try { db.prepare('UPDATE project_agents SET session_id=NULL WHERE id=$id').run({ $id: pm.id }) } catch {}
-  const freshPm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)!
-
-  const userHandle = (project as any).user_handle || 'there'
-  const kickoff = [
-    `Human @${userHandle} just opened a direct chat with you from the project page.`,
-    'No task attached. Greet them briefly in your PM voice, then ask what they need.',
-    'One short paragraph. No bullet lists, no table. Stop after.',
-  ].join('\n')
   try {
-    const sessionId = await wakeAgentForProject({
-      db,
-      client: getOpenCodeClient(),
-      projectId: project.id,
-      agent: freshPm,
-      sessionTitle: `PM · ${project.name}`,
-      prompt: kickoff,
-    })
-    if (!sessionId) return c.json({ error: 'Failed to create PM session' }, 500)
+    const client = getOpenCodeClient()
+    const res = await client.session.create({
+      body: { title: `PM · ${project.name}` },
+    } as any)
+    const sessionId = (res as any)?.data?.id as string | undefined
+    if (!sessionId) return c.json({ error: 'Failed to create session' }, 500)
+    try {
+      db.prepare('INSERT OR REPLACE INTO session_projects (session_id, project_id, set_at) VALUES ($sid, $pid, $now)')
+        .run({ $sid: sessionId, $pid: project.id, $now: new Date().toISOString() })
+    } catch {}
+    // Bind this session ↔ PM so the plugin's findAgentForSession resolves PM
+    // for both the persona system-prompt hook and the tool-gating hook.
+    // Overwrites any prior PM session pointer — latest Ask-PM click wins.
+    try {
+      db.prepare('UPDATE project_agents SET session_id=$sid WHERE id=$id').run({ $sid: sessionId, $id: pm.id })
+    } catch {}
     return c.json({ session_id: sessionId })
   } catch (err) {
     return c.json({ error: String(err) }, 500)
