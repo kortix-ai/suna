@@ -878,14 +878,29 @@ export function updateTicketStatus(db: Database, input: {
 
   const triggered: UpdateStatusResult['triggered'] = []
   if (col.default_assignee_type && col.default_assignee_id) {
+    // Defensive slug→id resolution: a column stored "qa" as default_assignee_id
+    // because PM called project_columns_update before QA existed means
+    // subsequent updates can't find the agent. Fall back to slug lookup here.
+    let resolvedId = col.default_assignee_id
+    if (col.default_assignee_type === 'agent' && !resolvedId.startsWith('ag-')) {
+      const ag = getAgentBySlug(db, t.project_id, resolvedId)
+      if (ag) {
+        resolvedId = ag.id
+        // Heal the column row so future lookups are fast + self-consistent.
+        try {
+          db.prepare('UPDATE project_columns SET default_assignee_id=$id WHERE id=$cid')
+            .run({ $id: ag.id, $cid: col.id })
+        } catch {}
+      }
+    }
     const r = addAssignee(db, {
       ticketId: input.ticketId,
       assignee_type: col.default_assignee_type,
-      assignee_id: col.default_assignee_id,
+      assignee_id: resolvedId,
       actor_type: 'system',
     })
     if (r.added && col.default_assignee_type === 'agent') {
-      const ag = getAgentById(db, col.default_assignee_id)
+      const ag = getAgentById(db, resolvedId)
       if (ag) triggered.push({ agent_id: ag.id, agent_slug: ag.slug, reason: 'column_default' })
     }
   }
