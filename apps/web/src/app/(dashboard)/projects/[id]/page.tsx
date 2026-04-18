@@ -12,7 +12,8 @@
  */
 
 import { Fragment, use, useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { FolderGit2 } from 'lucide-react';
+import { FolderGit2, MessageSquareText, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -46,6 +47,7 @@ import {
   useDeleteTicket,
   useUserHandle,
   useProjectActivity,
+  useEnsurePmSession,
   computeUnread,
   readLastSeen,
   writeLastSeen,
@@ -139,6 +141,27 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   });
   const updateTicketStatus = useUpdateTicketStatus();
   const deleteTicket = useDeleteTicket();
+  const ensurePmSession = useEnsurePmSession();
+
+  const openPmChat = useCallback(() => {
+    if (!project?.id) return;
+    ensurePmSession.mutate(
+      { projectId: project.id },
+      {
+        onSuccess: (data) => {
+          openTabAndNavigate({
+            id: data.session_id,
+            title: `PM · ${project.name}`,
+            type: 'session',
+            href: `/sessions/${data.session_id}`,
+          });
+        },
+        onError: (err) => {
+          toast.error('Could not open PM chat', { description: err instanceof Error ? err.message : String(err) });
+        },
+      },
+    );
+  }, [project?.id, project?.name, ensurePmSession]);
 
   // Unread notifications for the current user. Recomputed on every activity
   // tick against the last-seen timestamp saved in localStorage. We don't
@@ -257,6 +280,22 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
         onNewTask={isV2 ? () => openNewTicket() : () => openNewTask()}
         newActionLabel={isV2 ? 'New ticket' : 'New task'}
         rightSlot={isV2 ? (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openPmChat}
+              disabled={ensurePmSession.isPending}
+              className="h-7 px-2.5 text-[12px] gap-1.5 border-border/40 hover:border-border/60 hover:bg-muted/30"
+              title="Open a chat with the Project Manager agent"
+            >
+              {ensurePmSession.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <MessageSquareText className="h-3.5 w-3.5" />
+              )}
+              <span className="hidden sm:inline">Ask PM</span>
+            </Button>
           <NotificationsBell
             projectId={project.id}
             userHandle={userHandle}
@@ -283,6 +322,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
               }
             }}
           />
+          </>
         ) : undefined}
       />
 

@@ -21,6 +21,8 @@ import {
   FileStack,
   Check,
   ChevronDown,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -116,6 +118,7 @@ interface ColumnDraft {
   default_assignee_type: 'agent' | null;
   default_assignee_id: string | null;
   is_terminal: boolean;
+  is_off_flow: boolean;
   icon: string | null;
 }
 
@@ -127,32 +130,70 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
   const [drafts, setDrafts] = useState<ColumnDraft[]>([]);
   useEffect(() => { if (columnsData) setDrafts(columnsData.map(toColumnDraft)); }, [columnsData]);
 
-  const dirty = useMemo(() => JSON.stringify(drafts.map(toColumnDraftKey)) !== JSON.stringify((columnsData ?? []).map(toColumnKey)), [drafts, columnsData]);
+  const dirty = useMemo(() => JSON.stringify(drafts.map(toColumnKeyShape)) !== JSON.stringify((columnsData ?? []).map(toColumnKey)), [drafts, columnsData]);
 
-  const addColumn = () => setDrafts((ds) => [...ds, {
+  // Derive flow vs off-flow from drafts. The draft array stays flat so index
+  // identities stay stable across renders — we filter for display.
+  const flowRows = useMemo(
+    () => drafts.map((d, idx) => ({ d, idx })).filter((r) => !r.d.is_off_flow),
+    [drafts],
+  );
+  const offFlowRows = useMemo(
+    () => drafts.map((d, idx) => ({ d, idx })).filter((r) => r.d.is_off_flow),
+    [drafts],
+  );
+
+  const addFlowColumn = () => setDrafts((ds) => [...ds, {
     key: `col_${Date.now().toString(36)}`, label: 'New column',
-    default_assignee_type: null, default_assignee_id: null, is_terminal: false, icon: null,
+    default_assignee_type: null, default_assignee_id: null, is_terminal: false, is_off_flow: false, icon: null,
+  }]);
+  const addOffFlowColumn = () => setDrafts((ds) => [...ds, {
+    key: `col_${Date.now().toString(36)}`, label: 'New side-channel',
+    default_assignee_type: null, default_assignee_id: null, is_terminal: false, is_off_flow: true, icon: 'pause',
   }]);
   const removeAt = (i: number) => setDrafts((ds) => ds.filter((_, idx) => idx !== i));
-  const moveAt = (i: number, dir: -1 | 1) => setDrafts((ds) => {
-    const j = i + dir;
-    if (j < 0 || j >= ds.length) return ds;
-    const next = [...ds]; [next[i], next[j]] = [next[j], next[i]]; return next;
-  });
   const patchAt = (i: number, patch: Partial<ColumnDraft>) => setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, ...patch } : d));
+  const toggleOffFlow = (i: number) => setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, is_off_flow: !d.is_off_flow } : d));
 
-  const save = () => replace.mutate({ projectId, columns: drafts });
+  // Reorder among flow columns only. Off-flow columns hold their draft slot.
+  const moveFlowUp = (draftIdx: number) => setDrafts((ds) => {
+    // Find the previous on-flow draft index.
+    let prev = -1;
+    for (let k = draftIdx - 1; k >= 0; k--) if (!ds[k].is_off_flow) { prev = k; break; }
+    if (prev === -1) return ds;
+    const next = [...ds];
+    [next[prev], next[draftIdx]] = [next[draftIdx], next[prev]];
+    return next;
+  });
+  const moveFlowDown = (draftIdx: number) => setDrafts((ds) => {
+    let nxt = -1;
+    for (let k = draftIdx + 1; k < ds.length; k++) if (!ds[k].is_off_flow) { nxt = k; break; }
+    if (nxt === -1) return ds;
+    const next = [...ds];
+    [next[draftIdx], next[nxt]] = [next[nxt], next[draftIdx]];
+    return next;
+  });
+
+  // Save order: flow columns first (preserving their relative order), then
+  // off-flow. Off-flow relative order doesn't matter, but we keep it stable.
+  const save = () => {
+    const ordered = [
+      ...drafts.filter((d) => !d.is_off_flow),
+      ...drafts.filter((d) => d.is_off_flow),
+    ];
+    replace.mutate({ projectId, columns: ordered });
+  };
 
   return (
     <section>
       <SectionHead
         icon={<ColumnsIcon className="h-3.5 w-3.5 text-muted-foreground/45" />}
-        label="Columns"
-        description="Define the board's flow. Order matters — new tickets land in the first column. Click a column's icon to change it."
+        label="Flow"
+        description="The linear sequence tickets move through. Order matters — new tickets land in the first column. Click a column's icon to change it."
         action={
           <Button
             variant="ghost" size="sm" className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
-            onClick={addColumn}
+            onClick={addFlowColumn}
           >
             <Plus className="h-3 w-3" />
             Add column
@@ -161,50 +202,143 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
       />
 
       <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
-        {drafts.length === 0 && (
-          <div className="py-8 text-center text-[12px] text-muted-foreground/50">No columns yet.</div>
+        {flowRows.length === 0 && (
+          <div className="py-8 text-center text-[12px] text-muted-foreground/50">No flow columns yet.</div>
         )}
-        {drafts.map((d, i) => (
-          <div key={i} className="flex items-center gap-2 px-3 py-2.5">
-            <ColumnIconPicker
-              iconKey={d.icon ?? defaultColumnIcon(d.key)}
-              onChange={(k) => patchAt(i, { icon: k })}
-            />
-            <input
-              value={d.label}
-              onChange={(e) => patchAt(i, { label: e.target.value })}
-              placeholder="Label"
-              className="h-7 flex-1 text-[12.5px] bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/30"
-            />
-            <input
-              value={d.key}
-              onChange={(e) => patchAt(i, { key: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
-              placeholder="key"
-              className="h-6 w-[110px] text-[10.5px] font-mono bg-muted/30 border border-border/30 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            <Select
-              value={d.default_assignee_id ?? '_none'}
-              onValueChange={(v) => patchAt(i, v === '_none'
-                ? { default_assignee_type: null, default_assignee_id: null }
-                : { default_assignee_type: 'agent', default_assignee_id: v })}
-            >
-              <SelectTrigger size="sm" className="h-6 text-[11px] w-[130px]"><SelectValue placeholder="Default…" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">No default</SelectItem>
-                {agents.map((a) => <SelectItem key={a.id} value={a.id}>@{a.slug}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <div className="flex items-center gap-0.5 ml-1">
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground" onClick={() => moveAt(i, -1)}><ArrowUp className="h-3 w-3" /></Button>
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground" onClick={() => moveAt(i, 1)}><ArrowDown className="h-3 w-3" /></Button>
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive" onClick={() => removeAt(i)}><Trash2 className="h-3 w-3" /></Button>
-            </div>
-          </div>
+        {flowRows.map(({ d, idx }, displayI) => (
+          <ColumnRow
+            key={idx}
+            draft={d}
+            agents={agents}
+            onPatch={(patch) => patchAt(idx, patch)}
+            onDelete={() => removeAt(idx)}
+            onToggleOffFlow={() => toggleOffFlow(idx)}
+            // Flow-only controls:
+            canMoveUp={displayI > 0}
+            canMoveDown={displayI < flowRows.length - 1}
+            onMoveUp={() => moveFlowUp(idx)}
+            onMoveDown={() => moveFlowDown(idx)}
+          />
         ))}
+      </div>
+
+      <div className="mt-8">
+        <SectionHead
+          icon={<Pause className="h-3.5 w-3.5 text-muted-foreground/45" />}
+          label="Off-flow"
+          description="Side-channel columns (e.g. blocked, on hold). Reachable from any flow column but don't participate in the linear sequence — skip-column and gate-column guards ignore them."
+          action={
+            <Button
+              variant="ghost" size="sm" className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
+              onClick={addOffFlowColumn}
+            >
+              <Plus className="h-3 w-3" />
+              Add side-channel
+            </Button>
+          }
+        />
+
+        <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+          {offFlowRows.length === 0 && (
+            <div className="py-6 text-center text-[11.5px] text-muted-foreground/45">
+              None. Tickets that stall waiting on external input can sit in a flow column, or you can add a side-channel like <code className="font-mono text-[10.5px] px-1 py-0.5 rounded bg-muted/30">blocked</code>.
+            </div>
+          )}
+          {offFlowRows.map(({ d, idx }) => (
+            <ColumnRow
+              key={idx}
+              draft={d}
+              agents={agents}
+              onPatch={(patch) => patchAt(idx, patch)}
+              onDelete={() => removeAt(idx)}
+              onToggleOffFlow={() => toggleOffFlow(idx)}
+              // Off-flow: no arrows, order doesn't matter.
+            />
+          ))}
+        </div>
       </div>
 
       <SaveRow disabled={!dirty} submitting={replace.isPending} onSave={save} />
     </section>
+  );
+}
+
+function ColumnRow({
+  draft: d, agents, onPatch, onDelete, onToggleOffFlow,
+  canMoveUp, canMoveDown, onMoveUp, onMoveDown,
+}: {
+  draft: ColumnDraft;
+  agents: ProjectAgent[];
+  onPatch: (patch: Partial<ColumnDraft>) => void;
+  onDelete: () => void;
+  onToggleOffFlow: () => void;
+  canMoveUp?: boolean; canMoveDown?: boolean;
+  onMoveUp?: () => void; onMoveDown?: () => void;
+}) {
+  const isOffFlow = d.is_off_flow;
+  return (
+    <div className="flex items-center gap-2 px-3 py-2.5">
+      <ColumnIconPicker
+        iconKey={d.icon ?? defaultColumnIcon(d.key)}
+        onChange={(k) => onPatch({ icon: k })}
+      />
+      <input
+        value={d.label}
+        onChange={(e) => onPatch({ label: e.target.value })}
+        placeholder="Label"
+        className="h-7 flex-1 text-[12.5px] bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/30"
+      />
+      <input
+        value={d.key}
+        onChange={(e) => onPatch({ key: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
+        placeholder="key"
+        className="h-6 w-[110px] text-[10.5px] font-mono bg-muted/30 border border-border/30 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
+      />
+      <Select
+        value={d.default_assignee_id ?? '_none'}
+        onValueChange={(v) => onPatch(v === '_none'
+          ? { default_assignee_type: null, default_assignee_id: null }
+          : { default_assignee_type: 'agent', default_assignee_id: v })}
+      >
+        <SelectTrigger size="sm" className="h-6 text-[11px] w-[130px]"><SelectValue placeholder="Default…" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="_none">No default</SelectItem>
+          {agents.map((a) => <SelectItem key={a.id} value={a.id}>@{a.slug}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <div className="flex items-center gap-0.5 ml-1">
+        {!isOffFlow && (
+          <>
+            <Button
+              variant="ghost" size="sm"
+              className={cn('h-6 w-6 p-0 hover:text-foreground', canMoveUp ? 'text-muted-foreground/40' : 'text-muted-foreground/15 pointer-events-none')}
+              onClick={onMoveUp}
+              title="Move up"
+            ><ArrowUp className="h-3 w-3" /></Button>
+            <Button
+              variant="ghost" size="sm"
+              className={cn('h-6 w-6 p-0 hover:text-foreground', canMoveDown ? 'text-muted-foreground/40' : 'text-muted-foreground/15 pointer-events-none')}
+              onClick={onMoveDown}
+              title="Move down"
+            ><ArrowDown className="h-3 w-3" /></Button>
+          </>
+        )}
+        <Button
+          variant="ghost" size="sm"
+          className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground"
+          onClick={onToggleOffFlow}
+          title={isOffFlow ? 'Move back to flow' : 'Move to off-flow (side-channel)'}
+        >
+          {isOffFlow ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+        </Button>
+        <Button
+          variant="ghost" size="sm"
+          className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive"
+          onClick={onDelete}
+          title="Delete column"
+        ><Trash2 className="h-3 w-3" /></Button>
+      </div>
+    </div>
   );
 }
 
@@ -215,16 +349,21 @@ function toColumnDraft(c: TicketColumn): ColumnDraft {
     default_assignee_type: c.default_assignee_type === 'agent' ? 'agent' : null,
     default_assignee_id: c.default_assignee_id,
     is_terminal: c.is_terminal === 1,
+    is_off_flow: c.is_off_flow === 1,
     icon: c.icon ?? null,
   };
 }
-function toColumnDraftKey(d: ColumnDraft) { return { ...d }; }
+function toColumnKeyShape(d: ColumnDraft) {
+  // For dirty comparison — include is_off_flow so toggling it flags dirty.
+  return { ...d };
+}
 function toColumnKey(c: TicketColumn) {
   return {
     key: c.key, label: c.label,
     default_assignee_type: c.default_assignee_type === 'agent' ? 'agent' : null,
     default_assignee_id: c.default_assignee_id,
     is_terminal: c.is_terminal === 1,
+    is_off_flow: c.is_off_flow === 1,
     icon: c.icon ?? null,
   };
 }

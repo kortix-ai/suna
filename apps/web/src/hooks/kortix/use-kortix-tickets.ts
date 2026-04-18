@@ -39,6 +39,7 @@ export interface TicketColumn {
   default_assignee_type: AssigneeType | null;
   default_assignee_id: string | null;
   is_terminal: number;
+  is_off_flow: number;
   icon: string | null;
 }
 
@@ -319,7 +320,7 @@ export function useReplaceColumns() {
   const qc = useQueryClient();
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ projectId, columns }: { projectId: string; columns: Array<{ key: string; label: string; default_assignee_type?: AssigneeType | null; default_assignee_id?: string | null; is_terminal?: boolean; icon?: string | null }> }) =>
+    mutationFn: ({ projectId, columns }: { projectId: string; columns: Array<{ key: string; label: string; default_assignee_type?: AssigneeType | null; default_assignee_id?: string | null; is_terminal?: boolean; is_off_flow?: boolean; icon?: string | null }> }) =>
       kfetch<TicketColumn[]>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/columns`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -381,6 +382,23 @@ export function useReplaceTemplates() {
         body: JSON.stringify({ templates }),
       }),
     onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.templates(vars.projectId) }); },
+  });
+}
+
+// ── PM chat session ──────────────────────────────────────────────────────────
+
+/**
+ * Ensure (create-if-missing) a project-level session bound to the Project
+ * Manager agent. Idempotent on the backend — first call creates + binds,
+ * subsequent calls return the existing session id so the thread continues.
+ */
+export function useEnsurePmSession() {
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  return useMutation({
+    mutationFn: ({ projectId }: { projectId: string }) =>
+      kfetch<{ session_id: string; reused: boolean }>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/pm-session`, {
+        method: 'POST',
+      }),
   });
 }
 
