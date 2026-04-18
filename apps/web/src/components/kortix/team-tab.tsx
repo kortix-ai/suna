@@ -6,7 +6,7 @@
  * on bg-card with border-border/40, row dividers for list items).
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import {
   Plus,
   UserCircle2,
@@ -19,6 +19,9 @@ import {
   Check,
   ShieldCheck,
   Users,
+  ChevronDown,
+  Zap,
+  Cpu,
 } from 'lucide-react';
 import {
   Dialog,
@@ -26,6 +29,14 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
@@ -201,6 +212,35 @@ function AgentRow({ agent, onClick }: { agent: ProjectAgent; onClick: () => void
   );
 }
 
+// ─── Shared agent form state ───────────────────────────────────────────────
+
+interface AgentFormState {
+  name: string;
+  body_md: string;
+  mode: ExecutionMode;
+  canManage: boolean;
+  defaultCol: string;
+  defaultModel: string;
+}
+
+type ExecutionChoice = 'per_ticket' | 'new_session';
+
+const EXECUTION_LABELS: Record<ExecutionChoice, string> = {
+  per_ticket: 'Per-ticket',
+  new_session: 'New session',
+};
+const EXECUTION_DESCRIPTIONS: Record<ExecutionChoice, string> = {
+  per_ticket: 'Reuse one session per ticket. Notifications queue into it.',
+  new_session: 'Spawn a fresh session on every assignment or mention.',
+};
+
+function modeToChoice(m: ExecutionMode): ExecutionChoice {
+  return m === 'per_assignment' ? 'new_session' : 'per_ticket';
+}
+function choiceToMode(c: ExecutionChoice): ExecutionMode {
+  return c === 'new_session' ? 'per_assignment' : 'per_ticket';
+}
+
 // ─── Create dialog ───────────────────────────────────────────────────────────
 
 function CreateAgentDialog({ open, onClose, projectId, columns }: {
@@ -208,105 +248,49 @@ function CreateAgentDialog({ open, onClose, projectId, columns }: {
 }) {
   const create = useCreateProjectAgent();
   const [slug, setSlug] = useState('');
-  const [name, setName] = useState('');
-  const [body_md, setBodyMd] = useState(DEFAULT_PROMPT);
-  const [mode, setMode] = useState<ExecutionMode>('per_ticket');
-  const [canManage, setCanManage] = useState(false);
-  const [defaultCol, setDefaultCol] = useState<string>('_none');
+  const [state, setState] = useState<AgentFormState>({
+    name: '', body_md: DEFAULT_PROMPT, mode: 'per_ticket',
+    canManage: false, defaultCol: '_none', defaultModel: '',
+  });
 
   useEffect(() => {
     if (open) {
       setSlug('');
-      setName('');
-      setBodyMd(DEFAULT_PROMPT);
-      setMode('per_ticket');
-      setCanManage(false);
-      setDefaultCol('_none');
+      setState({ name: '', body_md: DEFAULT_PROMPT, mode: 'per_ticket', canManage: false, defaultCol: '_none', defaultModel: '' });
     }
   }, [open]);
 
   const submit = () => {
-    if (!slug.trim() || !name.trim()) return;
-    const groups: ToolGroup[] = canManage ? ['project_manage', 'project_action'] : ['project_action'];
-    const defaults = defaultCol === '_none' ? [] : [defaultCol];
+    if (!slug.trim() || !state.name.trim()) return;
+    const groups: ToolGroup[] = state.canManage ? ['project_manage', 'project_action'] : ['project_action'];
+    const defaults = state.defaultCol === '_none' ? [] : [state.defaultCol];
     create.mutate({
-      projectId, slug: slug.trim(), name: name.trim(), body_md,
-      execution_mode: mode, tool_groups: groups, default_assignee_columns: defaults,
+      projectId, slug: slug.trim(), name: state.name.trim(), body_md: state.body_md,
+      execution_mode: state.mode, tool_groups: groups, default_assignee_columns: defaults,
+      default_model: state.defaultModel.trim() || null,
     }, { onSuccess: onClose });
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-xl p-0 overflow-hidden gap-0 border-border/60 bg-background" hideCloseButton>
-        <DialogTitle className="sr-only">New agent</DialogTitle>
-        <DialogDescription className="sr-only">Create a new team agent</DialogDescription>
-
-        <div className="flex items-center px-5 h-11 border-b border-border/40">
-          <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">New team agent</span>
-          <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/50" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <div className="px-5 py-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <LabeledInput label="Slug" value={slug} onChange={(v) => setSlug(v.toLowerCase().replace(/[^a-z0-9-_]/g, '-'))} placeholder="e.g. engineer" />
-            <LabeledInput label="Display name" value={name} onChange={setName} placeholder="e.g. Engineer" />
-          </div>
-
-          <LabeledBlock label="System prompt">
-            <textarea
-              value={body_md}
-              onChange={(e) => setBodyMd(e.target.value)}
-              rows={10}
-              className="w-full text-[12px] font-mono bg-card border border-border/40 rounded-xl px-3.5 py-3 outline-none focus:border-primary/30 focus:ring-1 focus:ring-primary/20 resize-none leading-[1.7]"
-            />
-          </LabeledBlock>
-
-          <div className="grid grid-cols-3 gap-3">
-            <LabeledBlock label="Execution">
-              <Select value={mode} onValueChange={(v) => setMode(v as ExecutionMode)}>
-                <SelectTrigger size="sm" className="h-7 text-[12px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="per_ticket">Per-ticket</SelectItem>
-                  <SelectItem value="per_assignment">Per-assignment</SelectItem>
-                  <SelectItem value="persistent" disabled>Persistent (soon)</SelectItem>
-                </SelectContent>
-              </Select>
-            </LabeledBlock>
-            <LabeledBlock label="Role">
-              <Select value={canManage ? 'manage' : 'action'} onValueChange={(v) => setCanManage(v === 'manage')}>
-                <SelectTrigger size="sm" className="h-7 text-[12px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="action">Contributor</SelectItem>
-                  <SelectItem value="manage">Orchestrator</SelectItem>
-                </SelectContent>
-              </Select>
-            </LabeledBlock>
-            <LabeledBlock label="Default for column">
-              <Select value={defaultCol} onValueChange={setDefaultCol}>
-                <SelectTrigger size="sm" className="h-7 text-[12px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">None</SelectItem>
-                  {columns.map((c) => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </LabeledBlock>
-          </div>
-        </div>
-
-        <div className="border-t border-border/40 px-5 py-2.5 flex items-center">
-          <span className="text-[11px] text-muted-foreground/40">Writes .kortix/agents/{slug || 'slug'}.md</span>
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" onClick={submit} disabled={!slug.trim() || !name.trim() || create.isPending} className="gap-1">
-              {create.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-              Create
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <AgentFormDialog
+      open={open}
+      onOpenChange={(o) => { if (!o) onClose(); }}
+      title="New team agent"
+      footerLeft={`Writes .kortix/agents/${slug || 'slug'}.md`}
+      submitLabel="Create"
+      submitIcon={create.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+      submitDisabled={!slug.trim() || !state.name.trim() || create.isPending}
+      onSubmit={submit}
+      onCancel={onClose}
+    >
+      <AgentFormBody
+        columns={columns}
+        state={state}
+        setState={setState}
+        slug={slug}
+        onSlugChange={(v) => setSlug(v.toLowerCase().replace(/[^a-z0-9-_]/g, '-'))}
+      />
+    </AgentFormDialog>
   );
 }
 
@@ -318,21 +302,21 @@ function EditAgentDialog({ slug, onClose, projectId, columns }: {
   const { data } = useAgentPersona(projectId, slug ?? undefined, { enabled: !!slug });
   const update = useUpdateProjectAgent();
   const del = useDeleteProjectAgent();
-  const [name, setName] = useState('');
-  const [body_md, setBodyMd] = useState('');
-  const [mode, setMode] = useState<ExecutionMode>('per_ticket');
-  const [canManage, setCanManage] = useState(false);
-  const [defaultCol, setDefaultCol] = useState<string>('_none');
+  const [state, setState] = useState<AgentFormState>({
+    name: '', body_md: '', mode: 'per_ticket', canManage: false, defaultCol: '_none', defaultModel: '',
+  });
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (data) {
-      setName(data.agent.name);
-      setBodyMd(data.body_md);
-      setMode(data.agent.execution_mode);
-      setCanManage(safeParseJsonArray(data.agent.tool_groups_json).includes('project_manage'));
-      const cols = safeParseJsonArray(data.agent.default_assignee_columns_json);
-      setDefaultCol(cols[0] ?? '_none');
+      setState({
+        name: data.agent.name,
+        body_md: data.body_md,
+        mode: data.agent.execution_mode,
+        canManage: safeParseJsonArray(data.agent.tool_groups_json).includes('project_manage'),
+        defaultCol: safeParseJsonArray(data.agent.default_assignee_columns_json)[0] ?? '_none',
+        defaultModel: data.agent.default_model ?? '',
+      });
     }
   }, [data?.agent?.id]);
 
@@ -340,101 +324,51 @@ function EditAgentDialog({ slug, onClose, projectId, columns }: {
   const isPM = slug === 'project-manager';
 
   const save = () => {
-    const groups: ToolGroup[] = canManage ? ['project_manage', 'project_action'] : ['project_action'];
-    const defaults = defaultCol === '_none' ? [] : [defaultCol];
+    const groups: ToolGroup[] = state.canManage ? ['project_manage', 'project_action'] : ['project_action'];
+    const defaults = state.defaultCol === '_none' ? [] : [state.defaultCol];
     update.mutate({
-      projectId, slug, name, body_md,
-      execution_mode: mode, tool_groups: groups, default_assignee_columns: defaults,
+      projectId, slug, name: state.name, body_md: state.body_md,
+      execution_mode: state.mode, tool_groups: groups, default_assignee_columns: defaults,
+      default_model: state.defaultModel.trim() || null,
     }, { onSuccess: onClose });
   };
 
   return (
-    <Dialog open={!!slug} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-xl p-0 overflow-hidden gap-0 border-border/60 bg-background" hideCloseButton>
-        <DialogTitle className="sr-only">Edit agent</DialogTitle>
-        <DialogDescription className="sr-only">Edit agent</DialogDescription>
-
-        <div className="flex items-center px-5 h-11 border-b border-border/40">
-          <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Edit @{slug}</span>
-          {!isPM && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-6 px-2 text-[11px] text-destructive hover:text-destructive gap-1"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="h-3 w-3" />
-              Delete
-            </Button>
-          )}
-          <Button variant="ghost" size="sm" className={isPM ? 'ml-auto h-7 w-7 p-0 text-muted-foreground/50' : 'h-7 w-7 p-0 text-muted-foreground/50 ml-1'} onClick={onClose}>
-            <X className="h-4 w-4" />
+    <>
+      <AgentFormDialog
+        open={!!slug}
+        onOpenChange={(o) => { if (!o) onClose(); }}
+        title={`Edit @${slug}`}
+        headerAction={!isPM ? (
+          <Button
+            variant="ghost" size="sm"
+            className="h-6 px-2 text-[11px] text-destructive hover:text-destructive gap-1"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 className="h-3 w-3" />
+            Delete
           </Button>
-        </div>
-
+        ) : undefined}
+        footerLeft={`.kortix/agents/${slug}.md`}
+        submitLabel="Save"
+        submitIcon={update.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+        submitDisabled={update.isPending}
+        onSubmit={save}
+        onCancel={onClose}
+      >
         {!data ? (
           <div className="p-10 text-center text-sm text-muted-foreground/60">
             <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
             Loading…
           </div>
         ) : (
-          <>
-            <div className="px-5 py-4 space-y-3">
-              <LabeledInput label="Display name" value={name} onChange={setName} />
-              <LabeledBlock label="System prompt">
-                <textarea
-                  value={body_md}
-                  onChange={(e) => setBodyMd(e.target.value)}
-                  rows={12}
-                  className="w-full text-[12px] font-mono bg-card border border-border/40 rounded-xl px-3.5 py-3 outline-none focus:border-primary/30 focus:ring-1 focus:ring-primary/20 resize-none leading-[1.7]"
-                />
-              </LabeledBlock>
-              <div className="grid grid-cols-3 gap-3">
-                <LabeledBlock label="Execution">
-                  <Select value={mode} onValueChange={(v) => setMode(v as ExecutionMode)}>
-                    <SelectTrigger size="sm" className="h-7 text-[12px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="per_ticket">Per-ticket</SelectItem>
-                      <SelectItem value="per_assignment">Per-assignment</SelectItem>
-                      <SelectItem value="persistent" disabled>Persistent (soon)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </LabeledBlock>
-                <LabeledBlock label="Role">
-                  <Select value={canManage ? 'manage' : 'action'} onValueChange={(v) => setCanManage(v === 'manage')}>
-                    <SelectTrigger size="sm" className="h-7 text-[12px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="action">Contributor</SelectItem>
-                      <SelectItem value="manage">Orchestrator</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </LabeledBlock>
-                <LabeledBlock label="Default column">
-                  <Select value={defaultCol} onValueChange={setDefaultCol}>
-                    <SelectTrigger size="sm" className="h-7 text-[12px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="_none">None</SelectItem>
-                      {columns.map((c) => <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </LabeledBlock>
-              </div>
-            </div>
-
-            <div className="border-t border-border/40 px-5 py-2.5 flex items-center">
-              <span className="text-[11px] text-muted-foreground/40 font-mono truncate">.kortix/agents/{slug}.md</span>
-              <div className="ml-auto flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-                <Button size="sm" onClick={save} disabled={update.isPending} className="gap-1">
-                  {update.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                  Save
-                </Button>
-              </div>
-            </div>
-          </>
+          <AgentFormBody
+            columns={columns}
+            state={state}
+            setState={setState}
+          />
         )}
-      </DialogContent>
-
+      </AgentFormDialog>
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
@@ -443,28 +377,249 @@ function EditAgentDialog({ slug, onClose, projectId, columns }: {
         confirmLabel="Delete"
         onConfirm={() => { del.mutate({ projectId, slug }, { onSuccess: onClose }); }}
       />
+    </>
+  );
+}
+
+// ─── Shared dialog chrome ───────────────────────────────────────────────────
+
+function AgentFormDialog({
+  open, onOpenChange, title, headerAction, footerLeft, submitLabel, submitIcon,
+  submitDisabled, onSubmit, onCancel, children,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  title: string;
+  headerAction?: React.ReactNode;
+  footerLeft: string;
+  submitLabel: string;
+  submitIcon: React.ReactNode;
+  submitDisabled: boolean;
+  onSubmit: () => void;
+  onCancel: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="p-0 overflow-hidden gap-0 border-border/60 bg-background max-w-xl sm:max-w-xl"
+        hideCloseButton
+      >
+        <DialogTitle className="sr-only">{title}</DialogTitle>
+        <DialogDescription className="sr-only">{title}</DialogDescription>
+
+        <div className="flex items-center px-5 h-11 border-b border-border/40 gap-2">
+          <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{title}</span>
+          <div className="ml-auto flex items-center gap-2">
+            {headerAction}
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onCancel}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {children}
+
+        <div className="border-t border-border/40 px-5 py-2.5 flex items-center">
+          <span className="text-[11px] text-muted-foreground/40 font-mono truncate">{footerLeft}</span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+            <Button size="sm" onClick={onSubmit} disabled={submitDisabled} className="gap-1">
+              {submitIcon}
+              {submitLabel}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
     </Dialog>
   );
 }
 
-function LabeledInput({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+// ─── Form body — mirrors the ticket composer's 2-column layout ─────────────
+
+function AgentFormBody({
+  columns, state, setState, slug, onSlugChange,
+}: {
+  columns: Array<{ key: string; label: string }>;
+  state: AgentFormState;
+  setState: React.Dispatch<React.SetStateAction<AgentFormState>>;
+  slug?: string;
+  onSlugChange?: (v: string) => void;
+}) {
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(200, el.scrollHeight)}px`;
+  }, [state.body_md]);
+
+  const patch = (p: Partial<AgentFormState>) => setState((s) => ({ ...s, ...p }));
+
   return (
-    <LabeledBlock label={label}>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-7 w-full text-[12px] bg-transparent border border-border/40 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
-      />
-    </LabeledBlock>
+    <div className="grid grid-cols-[1fr_180px] min-h-[320px]">
+      <div className="px-5 pt-5 pb-4 flex flex-col min-w-0">
+        <input
+          value={state.name}
+          onChange={(e) => patch({ name: e.target.value })}
+          placeholder="Agent name"
+          className="w-full text-[20px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 leading-tight"
+        />
+        {onSlugChange && (
+          <div className="mt-1 inline-flex items-center gap-1">
+            <span className="text-[11.5px] text-muted-foreground/45 font-mono">@</span>
+            <input
+              value={slug ?? ''}
+              onChange={(e) => onSlugChange(e.target.value)}
+              placeholder="slug"
+              className="text-[11.5px] bg-transparent font-mono text-muted-foreground/80 border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 w-full"
+            />
+          </div>
+        )}
+        <textarea
+          ref={bodyRef}
+          value={state.body_md}
+          onChange={(e) => patch({ body_md: e.target.value })}
+          placeholder="System prompt — describe responsibilities, flow, and what this agent owns."
+          rows={8}
+          className="w-full mt-3 text-[13px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
+        />
+      </div>
+
+      <aside className="px-4 pt-5 pb-4 space-y-5">
+        <MetaBlock label="Execution">
+          <ExecutionPicker value={modeToChoice(state.mode)} onChange={(c) => patch({ mode: choiceToMode(c) })} />
+        </MetaBlock>
+        <MetaBlock label="Role">
+          <RolePicker value={state.canManage ? 'orchestrator' : 'contributor'} onChange={(r) => patch({ canManage: r === 'orchestrator' })} />
+        </MetaBlock>
+        <MetaBlock label="Default for">
+          <ColumnPicker columns={columns} value={state.defaultCol} onChange={(v) => patch({ defaultCol: v })} />
+        </MetaBlock>
+        <MetaBlock label="Model">
+          <input
+            value={state.defaultModel}
+            onChange={(e) => patch({ defaultModel: e.target.value })}
+            placeholder="e.g. claude-sonnet-4-6"
+            className="h-7 w-full text-[11.5px] bg-transparent border border-border/40 rounded-lg px-2 outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 font-mono placeholder:text-muted-foreground/35"
+          />
+          <p className="text-[10.5px] text-muted-foreground/40 mt-1 leading-snug">
+            Overrides the session default when this agent runs.
+          </p>
+        </MetaBlock>
+      </aside>
+    </div>
   );
 }
 
-function LabeledBlock({ label, children }: { label: string; children: React.ReactNode }) {
+function MetaBlock({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-1.5">{label}</div>
+      <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-2">{label}</div>
       {children}
     </div>
+  );
+}
+
+// ─── Dropdown pickers (match the ticket composer's status picker) ──────────
+
+function ExecutionPicker({ value, onChange }: { value: ExecutionChoice; onChange: (v: ExecutionChoice) => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+          <Zap className="h-3.5 w-3.5 text-muted-foreground/55" />
+          <span className="flex-1 text-left truncate font-medium">{EXECUTION_LABELS[value]}</span>
+          <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[260px] z-[10000]">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Execution mode</DropdownMenuLabel>
+        {(['per_ticket', 'new_session'] as ExecutionChoice[]).map((choice) => (
+          <DropdownMenuItem
+            key={choice}
+            onClick={() => onChange(choice)}
+            className="items-start gap-2 cursor-pointer py-2"
+          >
+            <div className="mt-0.5 w-4 h-4 flex items-center justify-center">
+              {value === choice && <Check className="h-3 w-3 text-primary" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] font-medium">{EXECUTION_LABELS[choice]}</div>
+              <div className="text-[10.5px] text-muted-foreground/60 leading-snug whitespace-normal">
+                {EXECUTION_DESCRIPTIONS[choice]}
+              </div>
+            </div>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RolePicker({ value, onChange }: { value: 'contributor' | 'orchestrator'; onChange: (v: 'contributor' | 'orchestrator') => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+          <ShieldCheck className={cn('h-3.5 w-3.5', value === 'orchestrator' ? 'text-primary' : 'text-muted-foreground/55')} />
+          <span className="flex-1 text-left truncate font-medium capitalize">{value}</span>
+          <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[260px] z-[10000]">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Role</DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => onChange('contributor')} className="items-start gap-2 cursor-pointer py-2">
+          <div className="mt-0.5 w-4 h-4 flex items-center justify-center">
+            {value === 'contributor' && <Check className="h-3 w-3 text-primary" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-medium">Contributor</div>
+            <div className="text-[10.5px] text-muted-foreground/60 leading-snug whitespace-normal">
+              Can work tickets: comment, move status, assign, edit fields.
+            </div>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onChange('orchestrator')} className="items-start gap-2 cursor-pointer py-2">
+          <div className="mt-0.5 w-4 h-4 flex items-center justify-center">
+            {value === 'orchestrator' && <Check className="h-3 w-3 text-primary" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[12px] font-medium">Orchestrator</div>
+            <div className="text-[10.5px] text-muted-foreground/60 leading-snug whitespace-normal">
+              Plus: manage team, columns, custom fields, templates, context.
+            </div>
+          </div>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ColumnPicker({ columns, value, onChange }: { columns: Array<{ key: string; label: string }>; value: string; onChange: (v: string) => void }) {
+  const label = value === '_none' ? 'None' : (columns.find((c) => c.key === value)?.label ?? value);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
+          <Cpu className="h-3.5 w-3.5 text-muted-foreground/55" />
+          <span className="flex-1 text-left truncate font-medium">{label}</span>
+          <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[220px] z-[10000]">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Default for column</DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => onChange('_none')} className="gap-2 cursor-pointer">
+          <span className="flex-1">None</span>
+          {value === '_none' && <Check className="h-3 w-3 text-primary" />}
+        </DropdownMenuItem>
+        {columns.map((c) => (
+          <DropdownMenuItem key={c.key} onClick={() => onChange(c.key)} className="gap-2 cursor-pointer">
+            <span className="flex-1 truncate">{c.label}</span>
+            {value === c.key && <Check className="h-3 w-3 text-primary" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

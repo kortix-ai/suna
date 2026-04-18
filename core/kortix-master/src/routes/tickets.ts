@@ -394,6 +394,7 @@ ticketProjectsRouter.post('/:id/agents', async (c) => {
     execution_mode?: ExecutionMode
     tool_groups?: ToolGroup[]
     default_assignee_columns?: string[]
+    default_model?: string | null
   }>()
   if (!body.slug || !body.name || !body.body_md) {
     return c.json({ error: 'slug, name, body_md required' }, 400)
@@ -411,6 +412,7 @@ ticketProjectsRouter.post('/:id/agents', async (c) => {
     execution_mode: body.execution_mode,
     tool_groups: body.tool_groups,
     default_assignee_columns: body.default_assignee_columns,
+    default_model: body.default_model,
   })
   await syncTeamSection(db, project)
   return c.json(agent)
@@ -428,6 +430,7 @@ ticketProjectsRouter.patch('/:id/agents/:slug', async (c) => {
     execution_mode?: ExecutionMode
     tool_groups?: ToolGroup[]
     default_assignee_columns?: string[]
+    default_model?: string | null
   }>()
   if (body.body_md !== undefined) {
     try { await fs.writeFile(agent.file_path, body.body_md, 'utf8') } catch {}
@@ -437,6 +440,7 @@ ticketProjectsRouter.patch('/:id/agents/:slug', async (c) => {
     execution_mode: body.execution_mode,
     tool_groups: body.tool_groups,
     default_assignee_columns: body.default_assignee_columns,
+    default_model: body.default_model,
   })
   await syncTeamSection(db, project)
   return c.json(updated)

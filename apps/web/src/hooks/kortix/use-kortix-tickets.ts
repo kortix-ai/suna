@@ -98,6 +98,7 @@ export interface ProjectAgent {
   execution_mode: ExecutionMode;
   tool_groups_json: string;
   default_assignee_columns_json: string;
+  default_model: string | null;
   created_at: string;
 }
 
@@ -396,15 +397,16 @@ export function useCreateProjectAgent() {
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
     mutationFn: ({
-      projectId, slug, name, body_md, execution_mode, tool_groups, default_assignee_columns,
+      projectId, slug, name, body_md, execution_mode, tool_groups, default_assignee_columns, default_model,
     }: {
       projectId: string; slug: string; name: string; body_md: string;
       execution_mode?: ExecutionMode; tool_groups?: ToolGroup[]; default_assignee_columns?: string[];
+      default_model?: string | null;
     }) =>
       kfetch<ProjectAgent>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/agents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, name, body_md, execution_mode, tool_groups, default_assignee_columns }),
+        body: JSON.stringify({ slug, name, body_md, execution_mode, tool_groups, default_assignee_columns, default_model }),
       }),
     onSuccess: (_d, vars) => { qc.invalidateQueries({ queryKey: ticketKeys.agents(vars.projectId) }); },
   });
@@ -418,6 +420,7 @@ export function useUpdateProjectAgent() {
       projectId: string; slug: string;
       name?: string; body_md?: string;
       execution_mode?: ExecutionMode; tool_groups?: ToolGroup[]; default_assignee_columns?: string[];
+      default_model?: string | null;
     }) =>
       kfetch<ProjectAgent>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(slug)}`, {
         method: 'PATCH',

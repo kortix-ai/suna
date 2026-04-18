@@ -96,6 +96,7 @@ export interface ProjectAgentRow {
   execution_mode: ExecutionMode
   tool_groups_json: string
   default_assignee_columns_json: string
+  default_model: string | null
   created_at: string
 }
 
@@ -207,6 +208,7 @@ export function ensureTicketTables(db: Database): void {
       execution_mode TEXT NOT NULL DEFAULT 'per_ticket',
       tool_groups_json TEXT NOT NULL DEFAULT '["project_action"]',
       default_assignee_columns_json TEXT NOT NULL DEFAULT '[]',
+      default_model TEXT,
       created_at TEXT NOT NULL,
       UNIQUE(project_id, slug)
     );
@@ -219,6 +221,7 @@ export function ensureTicketTables(db: Database): void {
     );
   `)
   try { db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 1`) } catch {}
+  try { db.exec(`ALTER TABLE project_agents ADD COLUMN default_model TEXT`) } catch {}
 }
 
 // ── Columns ───────────────────────────────────────────────────────────────────
@@ -356,13 +359,14 @@ export interface AgentInput {
   execution_mode?: ExecutionMode
   tool_groups?: ToolGroup[]
   default_assignee_columns?: string[]
+  default_model?: string | null
 }
 
 export function insertAgent(db: Database, projectId: string, input: AgentInput): ProjectAgentRow {
   const id = genAgentId()
   db.prepare(`INSERT INTO project_agents
-      (id, project_id, slug, name, file_path, session_id, execution_mode, tool_groups_json, default_assignee_columns_json, created_at)
-    VALUES ($id, $pid, $s, $n, $f, NULL, $m, $tg, $dc, $now)`).run({
+      (id, project_id, slug, name, file_path, session_id, execution_mode, tool_groups_json, default_assignee_columns_json, default_model, created_at)
+    VALUES ($id, $pid, $s, $n, $f, NULL, $m, $tg, $dc, $dm, $now)`).run({
     $id: id,
     $pid: projectId,
     $s: input.slug,
@@ -371,6 +375,7 @@ export function insertAgent(db: Database, projectId: string, input: AgentInput):
     $m: input.execution_mode || 'per_ticket',
     $tg: JSON.stringify(input.tool_groups || ['project_action']),
     $dc: JSON.stringify(input.default_assignee_columns || []),
+    $dm: input.default_model ?? null,
     $now: nowIso(),
   })
   return getAgentById(db, id)!
@@ -385,7 +390,8 @@ export function updateAgent(db: Database, id: string, patch: Partial<AgentInput>
       file_path = COALESCE($file, file_path),
       execution_mode = COALESCE($mode, execution_mode),
       tool_groups_json = COALESCE($tg, tool_groups_json),
-      default_assignee_columns_json = COALESCE($dc, default_assignee_columns_json)
+      default_assignee_columns_json = COALESCE($dc, default_assignee_columns_json),
+      default_model = CASE WHEN $dmSet=1 THEN $dm ELSE default_model END
     WHERE id=$id`).run({
     $slug: patch.slug ?? null,
     $name: patch.name ?? null,
@@ -393,6 +399,8 @@ export function updateAgent(db: Database, id: string, patch: Partial<AgentInput>
     $mode: patch.execution_mode ?? null,
     $tg: patch.tool_groups ? JSON.stringify(patch.tool_groups) : null,
     $dc: patch.default_assignee_columns ? JSON.stringify(patch.default_assignee_columns) : null,
+    $dmSet: patch.default_model === undefined ? 0 : 1,
+    $dm: patch.default_model ?? null,
     $id: id,
   })
   return getAgentById(db, id)

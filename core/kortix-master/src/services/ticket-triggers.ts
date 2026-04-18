@@ -142,7 +142,11 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
   try {
     await client.session.promptAsync({
       path: { id: sessionId },
-      body: { agent: 'worker', parts: [{ type: 'text', text: prompt }] },
+      body: {
+        agent: 'worker',
+        parts: [{ type: 'text', text: prompt }],
+        ...(agent.default_model ? { model: agent.default_model } : {}),
+      },
     })
   } catch (err) {
     console.warn('[ticket-triggers] promptAsync failed:', err)
