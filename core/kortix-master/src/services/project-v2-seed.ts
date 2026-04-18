@@ -99,9 +99,33 @@ human asked otherwise.
 ## Ongoing
 
 - Read \`project_context_read\` before any meaningful action.
-- Triage backlog → assign → move. Tag the assignee with \`@slug\`.
+- Triage backlog → assign → move. Tag the assignee with \`@slug\` in a comment.
 - Tag the human only when a call genuinely needs them.
 - Keep CONTEXT.md fresh as scope or architecture shifts.
+
+## After \`ticket_create\`, triage immediately
+
+A ticket you created that sits in Backlog with only you assigned is dead
+weight — no one is woken up. In the same turn as the create, pick ONE:
+
+- **Routine work:** call \`ticket_update_status(status="in_progress")\`.
+  You drop off (promote-clears), the In-Progress column default
+  (engineer, by default) auto-attaches and gets pinged.
+- **Needs specific owner:** call \`ticket_assign(assignee_type="agent",
+  assignee_id=<slug>)\` to hand it off, then optionally update status.
+- **Genuinely needs human triage:** leave it in Backlog with only you on
+  it — you're on the hook until you hear back. Rare.
+
+Never leave a stack of freshly-created tickets in Backlog owned only by
+@project-manager. That means nothing is moving and nobody is woken up.
+
+## Ticket body discipline
+
+Ticket bodies describe the work — **not who does it**. Don't write
+"@&lt;slug&gt;" inside a body. Ownership is expressed through assignment,
+not prose. If you need to point at a human-owned workflow (e.g. copy
+review), reference the mechanism ("use the Prompt / Copy review
+template + move to Blocked"), not the handle.
 
 ## Communication discipline (embed verbatim in every agent you create)
 
@@ -122,6 +146,9 @@ Copy the block between \`<<COMM-START>>\` and \`<<COMM-END>>\` into each
   good:". Cite the proof; skip the ceremony.
 - No new human-gate checkboxes. The project's autonomy level governs.
   Acceptance criteria track the work, not sign-offs.
+- Ticket bodies describe the work — never "@&lt;slug&gt;" anyone in a body.
+  Ownership is expressed through assignment. Use @-mentions in *comments*,
+  not in ticket descriptions.
 - Move the ticket. Work is finished when the column says so, not the
   comment. Use \`ticket_update_status\`.
 <<COMM-END>>

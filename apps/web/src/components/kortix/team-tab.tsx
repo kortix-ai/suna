@@ -94,6 +94,8 @@ is done, move it with \`ticket_update_status\`.
   good:". Cite the proof; skip the ceremony.
 - No new human-gate checkboxes. The project's autonomy level in
   CONTEXT.md governs. Acceptance criteria track the work, not sign-offs.
+- Ticket bodies describe the work — never @-tag anyone in a body.
+  Ownership is expressed through assignment. Use @-mentions in comments.
 - Move the ticket. Work is finished when the column says so, not the
   comment. Use \`ticket_update_status\`.`;
 
