@@ -137,7 +137,7 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
       <DialogContent
         className={cn(
           'p-0 overflow-hidden gap-0 border-border/60 bg-background',
-          step === 'pick' ? 'max-w-md' : 'max-w-2xl',
+          step === 'pick' ? 'max-w-xs' : 'max-w-md',
         )}
         hideCloseButton
       >
@@ -380,8 +380,8 @@ function TicketForm({
       </div>
 
       {/* Body — 2-column layout: seamless editor on the left, meta rail on the right */}
-      <div className="grid grid-cols-[1fr_220px] min-h-[360px]">
-        <div className="px-6 pt-6 pb-5 flex flex-col min-w-0">
+      <div className="grid grid-cols-[1fr_180px] min-h-[300px]">
+        <div className="px-5 pt-5 pb-4 flex flex-col min-w-0">
           <textarea
             ref={titleRef}
             value={title}
@@ -389,7 +389,7 @@ function TicketForm({
             onKeyDown={onTitleKey}
             placeholder="Ticket title"
             rows={1}
-            className="w-full text-[22px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight"
+            className="w-full text-[20px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight"
           />
 
           {bodyMode === 'write' ? (
@@ -400,21 +400,21 @@ function TicketForm({
               onKeyDown={onBodyKey}
               placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Reference agents with @slug."}
               rows={8}
-              className="w-full mt-3 text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
+              className="w-full mt-3 text-[13px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
             />
           ) : body.trim() ? (
-            <article className="prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 text-[13.5px] leading-relaxed min-h-[200px] mt-3">
+            <article className="prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 text-[13px] leading-relaxed min-h-[180px] mt-3">
               <UnifiedMarkdown content={body} />
             </article>
           ) : (
-            <div className="text-[13px] text-muted-foreground/40 min-h-[200px] mt-3">
+            <div className="text-[13px] text-muted-foreground/40 min-h-[180px] mt-3">
               Nothing to preview yet.
             </div>
           )}
         </div>
 
-        {/* Meta rail — no divider, same bg as body. Reads as one surface. */}
-        <aside className="px-4 pt-6 pb-5 space-y-5">
+        {/* Meta rail — no divider, same bg as body. */}
+        <aside className="px-4 pt-5 pb-4 space-y-5">
           <MetaBlock label="Assignees">
             <AssigneePicker
               agents={agents}
