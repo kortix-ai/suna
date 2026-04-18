@@ -54,6 +54,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
+import { useServerStore } from '@/stores/server-store';
 
 type TabId = 'overview' | 'host' | 'updates' | 'backups';
 
@@ -429,6 +431,18 @@ export function InstanceSettingsModal({
   const isMobile = useIsMobile();
   const { data: adminRole } = useAdminRole();
   const isAdmin = !!adminRole?.isAdmin;
+  // Live version from /kortix/health for the currently-viewed instance.
+  // The DB's metadata.version is a cache written once at create time and only
+  // refreshed on successful updates — it can be null for older sandboxes and
+  // drifts after an update landed inside the image without a DB write. The
+  // running container is authoritative, so prefer it when this modal is open
+  // for the active instance and the connection store has a fresh value.
+  const activeServerInstanceId = useServerStore((s) =>
+    s.servers.find((srv) => srv.id === s.activeServerId)?.instanceId ?? null,
+  );
+  const liveSandboxVersion = useSandboxConnectionStore((s) => s.sandboxVersion);
+  const isActiveInstance = !!sandbox && activeServerInstanceId === sandbox.sandbox_id;
+  const effectiveVersion = (isActiveInstance ? liveSandboxVersion : null) || sandbox?.version || null;
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [backupDescription, setBackupDescription] = useState('');
@@ -751,7 +765,7 @@ export function InstanceSettingsModal({
   }
 
   const latestVersion = latestVersionQuery.data?.version ?? null;
-  const updateAvailable = sandbox?.version && latestVersion ? hasNewerVersion(sandbox.version, latestVersion) : false;
+  const updateAvailable = effectiveVersion && latestVersion ? hasNewerVersion(effectiveVersion, latestVersion) : false;
   const runtimeServices = Array.isArray(adminHealth?.layers.runtime.details.services)
     ? adminHealth.layers.runtime.details.services as Array<{ id: string; name: string; status: string; scope?: string; lastError?: string | null }>
     : [];
@@ -1034,7 +1048,7 @@ export function InstanceSettingsModal({
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Version</div>
-                <div className="font-medium font-mono">{sandbox.version || '—'}</div>
+                <div className="font-medium font-mono">{effectiveVersion || '—'}</div>
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Location</div>
@@ -1319,7 +1333,7 @@ export function InstanceSettingsModal({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
               <div className="text-xs text-muted-foreground">Current version</div>
-              <div className="font-medium font-mono">{sandbox.version || 'Unknown'}</div>
+              <div className="font-medium font-mono">{effectiveVersion || 'Unknown'}</div>
             </div>
             <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
               <div className="text-xs text-muted-foreground">Latest version</div>
@@ -1330,12 +1344,12 @@ export function InstanceSettingsModal({
           </div>
 
           <VersionHistoryPanel
-            currentVersion={sandbox.version || null}
+            currentVersion={effectiveVersion}
             latestVersion={latestVersion}
             updateAvailable={updateAvailable}
             isUpdating={false}
             onUpdateLatest={() => setUpdateDialogOpen(true)}
-            initialShowDev={(sandbox.version || '').startsWith('dev-')}
+            initialShowDev={(effectiveVersion || '').startsWith('dev-')}
             compact
             headerTitle="Versions"
             headerDescription="Same full changelog/version history content as the main changelog page."
