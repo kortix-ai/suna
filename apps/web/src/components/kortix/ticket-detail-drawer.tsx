@@ -247,9 +247,12 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                       />
                     ) : ticket.body_md ? (
                       <div className="rounded-xl border border-border/40 bg-card px-5 sm:px-6 py-5">
-                        <article className="prose prose-sm dark:prose-invert max-w-none">
-                          <UnifiedMarkdown content={ticket.body_md} />
-                        </article>
+                        <MentionMarkdown
+                          content={ticket.body_md}
+                          agents={agents}
+                          userHandle={userHandle}
+                          className="prose-base"
+                        />
                       </div>
                     ) : (
                       <button
@@ -481,7 +484,7 @@ function StatusPills({ columns, value, onChange }: { columns: TicketColumn[]; va
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[220px]">
+      <DropdownMenuContent align="start" className="w-[220px] z-[10000]">
         <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
           Move to
         </DropdownMenuLabel>
