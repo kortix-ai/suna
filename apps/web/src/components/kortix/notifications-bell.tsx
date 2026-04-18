@@ -98,7 +98,7 @@ export function NotificationsBell({
           <Bell className="h-4 w-4" />
           {unread.length > 0 && (
             <span
-              className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-[3px] inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[9px] font-semibold leading-none tabular-nums ring-2 ring-background"
+              className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] px-[3px] inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[9px] font-semibold leading-none tabular-nums ring-2 ring-background"
             >
               {unread.length > 99 ? '99+' : unread.length}
             </span>

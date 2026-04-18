@@ -107,7 +107,7 @@ export function ProjectHeader({
                   {t.label}
                   {badge > 0 && (
                     <span
-                      className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold leading-none tabular-nums"
+                      className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none tabular-nums"
                       aria-label={`${badge} unread`}
                     >
                       {badge > 99 ? '99+' : badge}

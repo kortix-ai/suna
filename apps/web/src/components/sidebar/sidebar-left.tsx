@@ -75,6 +75,12 @@ import { isBillingEnabled } from '@/lib/config';
 
 import { useCreateOpenCodeSession, useOpenCodeSessions } from '@/hooks/opencode/use-opencode-sessions';
 import { useKortixProjects, type KortixProject } from '@/hooks/kortix/use-kortix-projects';
+import {
+  useProjectActivity,
+  useUserHandle,
+  computeUnread,
+  readLastSeen,
+} from '@/hooks/kortix/use-kortix-tickets';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useServerStore } from '@/stores/server-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
@@ -703,22 +709,11 @@ function SidebarSections() {
               <div className="px-2 pb-2">
                 <div className="space-y-0.5">
                   {sortedProjects.map((project) => (
-                    <div
+                    <SidebarProjectRow
                       key={project.id}
+                      project={project}
                       onClick={() => handleProjectClick(project)}
-                      className={cn(
-                        'flex items-center gap-2 py-1.5 pl-3.5 pr-2.5 rounded-lg text-[13px] cursor-pointer',
-                        'transition-colors duration-150',
-                        'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                      )}
-                    >
-                      <span className="flex-1 truncate">{project.name}</span>
-                      {(project.sessionCount ?? 0) > 0 && (
-                        <span className="text-[10px] text-muted-foreground/40 tabular-nums">
-                          {project.sessionCount}
-                        </span>
-                      )}
-                    </div>
+                    />
                   ))}
                 </div>
               </div>
@@ -867,6 +862,71 @@ function SidebarSections() {
 // ============================================================================
 // Main Sidebar
 // ============================================================================
+
+/**
+ * One sidebar row for a project with a red unread-count badge.
+ *
+ * Per-project activity is queried here so the row re-renders independently
+ * when new events land. Unread = events past the localStorage last-seen
+ * timestamp that are assignments to the user or @-mentions in comments.
+ * Read computeUnread for the exact rule set. v1 projects have no
+ * ticket_events so the badge naturally stays hidden.
+ */
+function SidebarProjectRow({
+  project,
+  onClick,
+}: {
+  project: KortixProject & { sessionCount?: number };
+  onClick: () => void;
+}) {
+  const userHandle = useUserHandle();
+  const isV2 = project.structure_version === 2;
+  const { data: events } = useProjectActivity(isV2 ? project.id : undefined, {
+    enabled: isV2,
+    pollingEnabled: isV2,
+  });
+  const [lastSeen, setLastSeen] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!isV2 || !userHandle) return;
+    setLastSeen(readLastSeen(project.id, userHandle));
+    // Re-read every 20s so visits from the project page propagate here.
+    const t = setInterval(() => setLastSeen(readLastSeen(project.id, userHandle)), 20_000);
+    return () => clearInterval(t);
+  }, [isV2, project.id, userHandle]);
+  const unread = React.useMemo(
+    () => (isV2 ? computeUnread(events, userHandle, lastSeen).total : 0),
+    [isV2, events, userHandle, lastSeen],
+  );
+
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-2 py-1.5 pl-3.5 pr-2.5 rounded-lg text-[13px] cursor-pointer',
+        'transition-colors duration-150',
+        'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+      )}
+    >
+      <span className={cn('flex-1 truncate', unread > 0 && 'text-foreground font-medium')}>
+        {project.name}
+      </span>
+      {unread > 0 && (
+        <span
+          className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none tabular-nums"
+          aria-label={`${unread} unread`}
+          title={`${unread} unread`}
+        >
+          {unread > 99 ? '99+' : unread}
+        </span>
+      )}
+      {unread === 0 && (project.sessionCount ?? 0) > 0 && (
+        <span className="text-[10px] text-muted-foreground/40 tabular-nums">
+          {project.sessionCount}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function ScheduledDeletionCard() {
   const { sandbox, refetch } = useSandbox();
