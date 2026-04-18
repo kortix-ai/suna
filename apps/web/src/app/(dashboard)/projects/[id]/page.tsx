@@ -45,6 +45,10 @@ import {
   useUpdateTicketStatus,
   useDeleteTicket,
   useUserHandle,
+  useProjectActivity,
+  computeUnread,
+  readLastSeen,
+  writeLastSeen,
   type Ticket,
 } from '@/hooks/kortix/use-kortix-tickets';
 import { openTabAndNavigate } from '@/stores/tab-store';
@@ -127,8 +131,39 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   const { data: columns = [] } = useColumns(loadV2 ? project?.id : undefined);
   const { data: agents = [] } = useProjectAgents(loadV2 ? project?.id : undefined);
   const { data: fields = [] } = useFields(loadV2 ? project?.id : undefined);
+  const { data: activity } = useProjectActivity(loadV2 ? project?.id : undefined, {
+    enabled: loadV2,
+    pollingEnabled: loadV2 && isProjectRouteActive,
+  });
   const updateTicketStatus = useUpdateTicketStatus();
   const deleteTicket = useDeleteTicket();
+
+  // Unread notifications for the current user. Recomputed on every activity
+  // tick against the last-seen timestamp saved in localStorage.
+  const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);
+  useEffect(() => {
+    if (!loadV2 || !project?.id || !userHandle) return;
+    setLastSeenAt(readLastSeen(project.id, userHandle));
+  }, [loadV2, project?.id, userHandle]);
+  const unread = useMemo(
+    () => computeUnread(activity, userHandle, lastSeenAt),
+    [activity, userHandle, lastSeenAt],
+  );
+
+  // Clear notifications once the user has the board visible — a short delay
+  // so they actually see the badge before it zeroes out, and only if the
+  // route is currently active (not when the project page is a hidden tab).
+  useEffect(() => {
+    if (!loadV2 || !project?.id || !userHandle) return;
+    if (tab !== 'board' || !isProjectRouteActive) return;
+    if (!unread.latestAt) return;
+    const t = setTimeout(() => {
+      const iso = unread.latestAt!;
+      writeLastSeen(project.id, userHandle, iso);
+      setLastSeenAt(iso);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [tab, isProjectRouteActive, loadV2, project?.id, userHandle, unread.latestAt]);
 
   // ─── File explorer scoping ─────────────────────────────────────────────
   useEffect(() => {
@@ -232,6 +267,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
         structureVersion={project.structure_version}
         onNewTask={isV2 ? () => openNewTicket() : () => openNewTask()}
         newActionLabel={isV2 ? 'New ticket' : 'New task'}
+        tabBadges={isV2 ? { board: unread.total } : undefined}
       />
 
       <div className="flex-1 min-h-0 relative">

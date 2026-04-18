@@ -30,6 +30,8 @@ export interface ProjectHeaderProps {
   structureVersion?: number;
   newActionLabel?: string;
   newActionHotkey?: string;
+  /** Per-tab unread badge counts (currently only used for 'board'). */
+  tabBadges?: Partial<Record<ProjectTab, number>>;
 }
 
 const V1_TABS: Array<{ id: ProjectTab; label: string }> = [
@@ -56,6 +58,7 @@ export function ProjectHeader({
   structureVersion,
   newActionLabel,
   newActionHotkey,
+  tabBadges,
 }: ProjectHeaderProps) {
   const isV2 = structureVersion === 2;
   const tabs = isV2 ? V2_TABS : V1_TABS;
@@ -84,21 +87,32 @@ export function ProjectHeader({
           </div>
 
           <TabsPrimitive.List className="flex items-center h-full gap-5 shrink-0">
-            {tabs.map((t) => (
-              <TabsPrimitive.Trigger
-                key={t.id}
-                value={t.id}
-                className={cn(
-                  'relative h-full inline-flex items-center text-[13px] font-medium tracking-tight cursor-pointer transition-colors outline-none',
-                  'text-muted-foreground/60 hover:text-foreground',
-                  'data-[state=active]:text-foreground',
-                  'after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-foreground after:rounded-full',
-                  'after:opacity-0 data-[state=active]:after:opacity-100 after:transition-opacity',
-                )}
-              >
-                {t.label}
-              </TabsPrimitive.Trigger>
-            ))}
+            {tabs.map((t) => {
+              const badge = tabBadges?.[t.id] ?? 0;
+              return (
+                <TabsPrimitive.Trigger
+                  key={t.id}
+                  value={t.id}
+                  className={cn(
+                    'relative h-full inline-flex items-center gap-1.5 text-[13px] font-medium tracking-tight cursor-pointer transition-colors outline-none',
+                    'text-muted-foreground/60 hover:text-foreground',
+                    'data-[state=active]:text-foreground',
+                    'after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-foreground after:rounded-full',
+                    'after:opacity-0 data-[state=active]:after:opacity-100 after:transition-opacity',
+                  )}
+                >
+                  {t.label}
+                  {badge > 0 && (
+                    <span
+                      className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-semibold leading-none tabular-nums"
+                      aria-label={`${badge} unread`}
+                    >
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
+                </TabsPrimitive.Trigger>
+              );
+            })}
           </TabsPrimitive.List>
 
           <div className="flex-1 flex items-center justify-end">
