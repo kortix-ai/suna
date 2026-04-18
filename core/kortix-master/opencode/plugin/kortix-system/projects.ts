@@ -12,6 +12,9 @@ import * as path from "node:path"
 import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { ensureGlobalMemoryFiles } from "./lib/paths"
 import { ensureSchema } from "./lib/schema"
+import { seedV2Project, DEFAULT_PM_SLUG } from "../../../src/services/project-v2-seed"
+import { wakeAgentForProject, type OpenCodeClientLike } from "../../../src/services/ticket-triggers"
+import { getAgentBySlug } from "../../../src/services/ticket-service"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -181,7 +184,8 @@ function projectId(name: string): string {
 export class ProjectManager {
 	private sessionProjectCache = new Map<string, ProjectRow>()
 
-	constructor(private client: any, private workspaceRoot: string, public db: Database) {}
+	// client is publicly accessible so tools can invoke session.* directly.
+	constructor(public client: any, private workspaceRoot: string, public db: Database) {}
 
 	getSessionProject(sessionId: string): ProjectRow | null {
 		const cached = this.sessionProjectCache.get(sessionId)
@@ -272,16 +276,68 @@ export class ProjectManager {
 export function projectTools(mgr: ProjectManager, db: Database) {
 	return {
 		project_create: tool({
-			description: "Register a directory as a project (new or existing). Never overwrites existing files.",
+			description: [
+				"Create a v2 project (folder + Project Manager agent + default columns + PM onboarding session).",
+				"Always seeds a real `.opencode/agent/project-manager.md` so PM is a first-class opencode agent in that project.",
+				"If user_handle is provided, a PM onboarding chat is kicked off in a fresh session and that session id is returned — direct the human there to continue setup.",
+			].join(" "),
 			args: {
 				name: tool.schema.string().describe("Project name"),
 				description: tool.schema.string().describe('Description. "" if none.'),
 				path: tool.schema.string().describe('Absolute path. "" for default.'),
+				user_handle: tool.schema.string().optional().describe('Human\'s handle for @-mentions (e.g. "vukasinkubet"). If omitted, PM onboarding is NOT auto-fired and the project just gets seeded silently.'),
 			},
-			async execute(args: { name: string; description: string; path: string }): Promise<string> {
+			async execute(args: { name: string; description: string; path: string; user_handle?: string }): Promise<string> {
 				try {
 					const p = await mgr.createProject(args.name, args.description, args.path)
-					return `Project **${p.name}** at \`${p.path}\` (${p.id})`
+					// Force v2 + record user handle if given. createProject inserts
+					// with default structure_version=1, so flip it here.
+					db.prepare(
+						"UPDATE projects SET structure_version=2, user_handle=COALESCE($h, user_handle) WHERE id=$id"
+					).run({ $h: args.user_handle?.trim() || null, $id: p.id })
+					// Seed PM agent, default columns, CONTEXT.md team section.
+					await seedV2Project(db, {
+						id: p.id,
+						name: p.name,
+						path: p.path,
+						description: p.description,
+						user_handle: args.user_handle || null,
+					})
+					// Fire PM onboarding if we have a handle to address the human.
+					let sessionLine = ""
+					if (args.user_handle) {
+						const pm = getAgentBySlug(db, p.id, DEFAULT_PM_SLUG)
+						if (pm) {
+							const prompt = [
+								`Fresh project "${p.name}". Human: @${args.user_handle}.`,
+								p.description ? `User's description: ${p.description}` : null,
+								"",
+								"Run the onboarding interview from your persona. ONE short question at a time — no batching, no answering for the user. STOP after each turn and wait for their reply.",
+								"",
+								"Cover (in order): project · stack · role + reach-back · autonomy · starting team · columns/templates. Apply each piece only after approval, using your `project_manage` tools. Keep CONTEXT.md tight.",
+								"",
+								'Pass `default_model: "anthropic/claude-sonnet-4-6"` on every agent. Copy the Communication discipline block from your persona into each agent body_md verbatim.',
+								"",
+								"Your messages follow the same rules as the team: short, decisive, no tables, no verdict banners.",
+								"",
+								`First message: brief intro + question #1, addressed to @${args.user_handle}. Then STOP.`,
+							].filter(Boolean).join("\n")
+							const sid = await wakeAgentForProject({
+								db,
+								client: mgr.client as unknown as OpenCodeClientLike,
+								projectId: p.id,
+								agent: pm,
+								sessionTitle: `Onboarding · ${p.name}`,
+								prompt,
+								bindSessionToProject: (sessionId, pid) => mgr.setSessionProject(sessionId, pid),
+							}).catch((err) => {
+								console.warn("[project_create] PM onboarding wake failed:", err)
+								return null
+							})
+							if (sid) sessionLine = `\n\nPM onboarding started → session \`${sid}\`. Direct @${args.user_handle} there to continue setup.`
+						}
+					}
+					return `Project **${p.name}** at \`${p.path}\` (${p.id}) — v2 seeded (PM + default columns).${sessionLine}`
 				} catch (e) { return `Failed: ${e instanceof Error ? e.message : "unknown"}` }
 			},
 		}),
