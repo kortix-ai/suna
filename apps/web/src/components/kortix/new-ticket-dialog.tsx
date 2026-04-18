@@ -137,7 +137,10 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
       <DialogContent
         className={cn(
           'p-0 overflow-hidden gap-0 border-border/60 bg-background',
-          step === 'pick' ? 'max-w-xs' : 'max-w-md',
+          // The repo's DialogContent hardcodes `sm:max-w-5xl`, so a plain
+          // `max-w-md` gets overridden once the viewport hits `sm`.
+          // The responsive variant below wins via Tailwind ordering.
+          step === 'pick' ? 'max-w-sm sm:max-w-sm' : 'max-w-lg sm:max-w-lg',
         )}
         hideCloseButton
       >
