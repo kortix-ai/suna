@@ -66,10 +66,9 @@ import * as path from 'node:path'
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const TOOL_GROUPS: Record<string, ToolGroup> = {
-  // project_action
+  // project_action — contributors (engineer, qa, designer, writer) + PM
   ticket_list: 'project_action',
   ticket_get: 'project_action',
-  ticket_create: 'project_action',
   ticket_update: 'project_action',
   ticket_update_status: 'project_action',
   ticket_assign: 'project_action',
@@ -78,7 +77,11 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
   ticket_events: 'project_action',
   team_list: 'project_action',
   project_context_read: 'project_action',
-  // project_manage
+  // project_manage — PM only (and anyone PM explicitly gives this group to)
+  // ticket_create is project_manage: contributors don't spawn tickets. If they
+  // see scope that needs splitting or new work, they comment + tag @pm and PM
+  // decides whether to decompose (via tech-lead) or create directly.
+  ticket_create: 'project_manage',
   team_create_agent: 'project_manage',
   team_update_agent: 'project_manage',
   team_delete_agent: 'project_manage',
@@ -341,6 +344,20 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         const srcFlowIdx = srcCol && !srcCol.is_off_flow ? flowCols.findIndex((c) => c.key === srcCol.key) : -1
         const dstFlowIdx = !dstCol.is_off_flow ? flowCols.findIndex((c) => c.key === dstCol.key) : -1
 
+        // Terminal-column guard — tickets in done (or any terminal column) are
+        // closed. Refuse to move them OUT unless the caller explicitly passes
+        // continue_anyway: true with a reason that signals intentional
+        // reopening. This catches agents that try to "resurrect" closed or
+        // cancelled tickets (observed: engineer sessions moving PM-cancelled
+        // duplicates from done → review, confusing the board).
+        if (srcCol?.is_terminal && !args.continue_anyway) {
+          return [
+            `Terminal-column guard: "${t.status}" is a terminal column — this ticket is closed.`,
+            `Moving it out resurrects it. If the ticket genuinely needs reopening, that's PM's call — comment and tag @pm with what needs changing.`,
+            `If you ARE PM and are intentionally reopening, re-call ticket_update_status with continue_anyway: true and a reason starting with "Reopening:".`,
+          ].join(' ')
+        }
+
         // Skip-column guard — only meaningful when both source and destination
         // are on-flow. Moving INTO or OUT OF an off-flow column never trips it.
         if (srcFlowIdx !== -1 && dstFlowIdx !== -1 && dstFlowIdx > srcFlowIdx + 1 && !args.continue_anyway) {
@@ -554,8 +571,8 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: pid }) as { id: string; name: string; path: string; description: string } | null
         if (!proj) return 'Error: project not found.'
         if (getAgentBySlug(db, pid, args.slug)) return `Agent with slug "${args.slug}" already exists.`
-        const toolGroups = (args.tool_groups || 'project_action').split(',').map((s) => s.trim()).filter(Boolean) as ToolGroup[]
-        const cols = (args.default_assignee_columns || '').split(',').map((s) => s.trim()).filter(Boolean)
+        const toolGroups = (parseSlugList(args.tool_groups).length ? parseSlugList(args.tool_groups) : ['project_action']) as ToolGroup[]
+        const cols = parseSlugList(args.default_assignee_columns)
         const mode = (args.execution_mode as ExecutionMode) || 'per_ticket'
         const filePath = agentFilePath(proj.path, args.slug)
         const meta: AgentFileMeta = {
@@ -614,10 +631,10 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         if (!ag) return `Agent not found: ${args.slug}`
         // Parse new values, falling back to existing DB state when omitted.
         const toolGroups = args.tool_groups
-          ? args.tool_groups.split(',').map((s) => s.trim()).filter(Boolean) as ToolGroup[]
+          ? parseSlugList(args.tool_groups) as ToolGroup[]
           : (JSON.parse(ag.tool_groups_json || '[]') as ToolGroup[])
         const cols = args.default_assignee_columns !== undefined
-          ? args.default_assignee_columns.split(',').map((s) => s.trim()).filter(Boolean)
+          ? parseSlugList(args.default_assignee_columns)
           : (JSON.parse(ag.default_assignee_columns_json || '[]') as string[])
         const mode = (args.execution_mode as ExecutionMode | undefined) ?? ag.execution_mode
         const name = args.name ?? ag.name
@@ -778,6 +795,27 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
 
 function safeParseArray(s: string): string[] {
   try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v.map(String) : [] } catch { return [] }
+}
+
+/**
+ * Parse a slug list in either form:
+ *   "engineer,qa"               ← comma-separated (documented form)
+ *   "[\"engineer\", \"qa\"]"    ← JSON array (PM occasionally emits this)
+ *   "[]"                        ← empty JSON array (PM occasionally emits for empty)
+ *   ""                          ← empty
+ * Always returns a clean string[] with trimmed items and no empties.
+ */
+function parseSlugList(raw?: string | null): string[] {
+  if (!raw) return []
+  const trimmed = raw.trim()
+  if (!trimmed) return []
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      const v = JSON.parse(trimmed)
+      if (Array.isArray(v)) return v.map(String).map((s) => s.trim()).filter(Boolean)
+    } catch { /* fall through to comma split */ }
+  }
+  return trimmed.split(',').map((s) => s.trim()).filter(Boolean)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

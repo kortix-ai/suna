@@ -286,6 +286,19 @@ restate, don't trim, don't edit. Just paste.
 - Write acceptance criteria as \`- [ ]\` markdown checkboxes — one per
   criterion, concrete enough that a single test or command can verify
   it.
+- You don't create tickets. Only PM owns \`ticket_create\`. Tech Lead
+  decomposes by drafting tickets in a comment and tagging \`@pm\` —
+  PM then calls \`ticket_create\`. Everyone else: if you spot scope
+  that needs splitting or a new ticket, comment + \`@pm\` and move on.
+  \`ticket_create\` is blocked for contributors at the tool layer.
+- Before starting work, read the ticket body. If it contains
+  "blocked by #N" or "after #N", call \`ticket_get\` on those
+  tickets. If any blocker isn't in \`done\`, move THIS ticket to
+  \`blocked\` with a comment \`"@pm waiting on #N"\` and stop.
+- Terminal columns are closed. Never move a ticket OUT of \`done\`
+  (or any column with \`is_terminal=true\`). If you think a closed
+  ticket needs rework, comment + \`@pm\` — reopening is PM's call.
+  The tool refuses the move; don't try to \`continue_anyway\` around it.
 - Don't skip columns; don't move tickets out of someone else's gate
   column. Tools enforce both; \`continue_anyway: true\` only with a real
   reason.
@@ -314,8 +327,14 @@ When @-mentioned or assigned a requirement:
 3. Note deps inline ("after #N") when one ticket blocks another.
 4. Comment back with \`@pm\` summarizing the plan. PM routes each
    ticket to the right contributor.
-Never call \`ticket_create\` with \`assign_to="engineer"\` directly —
-your output is the ticket DRAFT in comments; PM owns the routing.
+Never call \`ticket_create\` — it's blocked for you at the tool layer
+anyway. Your output is the ticket DRAFT in a single comment on the
+requirement ticket: a numbered list, each item being a proposed
+ticket title + one-sentence goal + concrete \`- [ ]\` AC checkboxes.
+End with \`@pm please route these\`. PM calls \`ticket_create\` for
+each item and routes assignees. If you were to somehow bypass this
+(you can't) you'd duplicate whatever PM creates from your comment —
+it always ends in PM cancelling orphans, so skip the shortcut.
 <<DECOMPOSITION>>
 \`\`\`
 `

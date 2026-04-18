@@ -470,6 +470,28 @@ describe('tool_group enforcement', () => {
     const gate = ticketToolGateHook(fx.db)
     await expect(gate({ tool: 'ticket_comment', sessionID: 'ses-worker-1', callID: 'c1' }, { args: {} })).resolves.toBeUndefined()
     await expect(gate({ tool: 'team_create_agent', sessionID: 'ses-worker-1', callID: 'c2' }, { args: {} })).rejects.toThrow(/project_manage/)
+    // ticket_create is project_manage: contributors (project_action only) can't call it.
+    await expect(gate({ tool: 'ticket_create', sessionID: 'ses-worker-1', callID: 'c3' }, { args: {} })).rejects.toThrow(/project_manage/)
+  })
+
+  test('PM (project_manage + project_action) can call ticket_create; engineer cannot', async () => {
+    const fx = await setupSeededProject()
+    // PM is the seeded orchestrator — gets both groups.
+    const pm = getAgentBySlug(fx.db, fx.project.id, DEFAULT_PM_SLUG)!
+    fx.db.prepare('INSERT INTO ticket_agent_sessions (ticket_id, agent_id, session_id, created_at) VALUES (\'t0\',$a,\'ses-pm\',$c)').run({ $a: pm.id, $c: new Date().toISOString() })
+
+    const engPath = path.join(fx.project.path, '.kortix', 'agents', 'engineer.md')
+    await fs.mkdir(path.dirname(engPath), { recursive: true })
+    await fs.writeFile(engPath, '# Engineer', 'utf8')
+    const eng = insertAgent(fx.db, fx.project.id, {
+      slug: 'engineer', name: 'Engineer', file_path: engPath,
+      tool_groups: ['project_action'],
+    })
+    fx.db.prepare('INSERT INTO ticket_agent_sessions (ticket_id, agent_id, session_id, created_at) VALUES (\'t1\',$a,\'ses-eng\',$c)').run({ $a: eng.id, $c: new Date().toISOString() })
+
+    const gate = ticketToolGateHook(fx.db)
+    await expect(gate({ tool: 'ticket_create', sessionID: 'ses-pm', callID: 'p1' }, { args: {} })).resolves.toBeUndefined()
+    await expect(gate({ tool: 'ticket_create', sessionID: 'ses-eng', callID: 'e1' }, { args: {} })).rejects.toThrow(/project_manage/)
   })
 
   test('user/interactive session (no bound agent) bypasses gating', async () => {
