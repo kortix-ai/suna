@@ -44,17 +44,24 @@ export function AutoTopupCard({
   const [dirty, setDirty] = useState(false);
   const [saveResult, setSaveResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const { data: fetchedConfig, isLoading } = useQuery({
+  // Fail fast: these endpoints can stall on Stripe round-trips; we'd rather
+  // render with defaults than spin forever.
+  const {
+    data: fetchedConfig,
+    isLoading,
+    isError: settingsError,
+    refetch: refetchSettings,
+  } = useQuery({
     queryKey: ['auto-topup-settings'],
     queryFn: getAutoTopupSettings,
-    retry: 1,
+    retry: 0,
     enabled: fetchSettings,
   });
 
   const { data: setupStatus } = useQuery({
     queryKey: ['auto-topup-setup-status'],
     queryFn: getAutoTopupSetupStatus,
-    retry: 1,
+    retry: 0,
     enabled: fetchSettings,
   });
 
@@ -133,6 +140,24 @@ export function AutoTopupCard({
 
   return (
     <div className="space-y-4">
+      {/* Settings fetch failed → render with defaults but surface a retry */}
+      {settingsError && (
+        <Alert variant="warning">
+          <AlertCircle className="size-4" />
+          <AlertDescription className="flex items-center justify-between gap-2">
+            <span>Couldn't load your current settings. Showing defaults.</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-[11px] px-2 shrink-0"
+              onClick={() => refetchSettings()}
+            >
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Toggle row */}
       <div className="flex items-center justify-between">
         <div className="text-left">

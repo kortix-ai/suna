@@ -9,6 +9,8 @@ import { SubscriptionStoreSync } from '@/stores/subscription-store';
 import { useModelHydration } from '@/hooks/opencode/use-model-hydration';
 import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
+import { UserSettingsModal } from '@/components/settings/user-settings-modal';
+import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
 
@@ -80,6 +82,19 @@ function GlobalNewInstanceModal() {
   return <NewInstanceModal open={isOpen} onOpenChange={(o) => !o && closeNewInstanceModal()} title={title} />;
 }
 
+/** Store-driven UserSettingsModal — mounted once globally so the error handler
+ *  can route billing errors to the Billing tab with a highlight. */
+function GlobalUserSettingsModal() {
+  const { isOpen, defaultTab, closeUserSettings } = useUserSettingsModalStore();
+  return (
+    <UserSettingsModal
+      open={isOpen}
+      onOpenChange={(o) => !o && closeUserSettings()}
+      defaultTab={defaultTab}
+    />
+  );
+}
+
 interface AppProvidersProps {
   children: React.ReactNode;
   showSidebar?: boolean;
@@ -103,6 +118,7 @@ export function AppProviders({
       <SubscriptionStoreSync>
         {children}
         <GlobalNewInstanceModal />
+        <GlobalUserSettingsModal />
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>
   );

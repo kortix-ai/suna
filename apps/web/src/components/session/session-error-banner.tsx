@@ -1,7 +1,9 @@
 'use client';
 
-import { AlertCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, CreditCard, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 
 // ============================================================================
 // Abort detection — user-initiated stops get a lowkey treatment
@@ -18,6 +20,77 @@ const ABORT_PATTERNS = [
 function isAbortError(text: string): boolean {
   const lower = text.toLowerCase();
   return ABORT_PATTERNS.some((p) => lower.includes(p));
+}
+
+// ============================================================================
+// Insufficient-credits detection — upstream 402 from /v1/router/chat/completions
+// surfaces as "Payment Required: Insufficient credits. Balance: $-0.06". Render
+// a specialized card with one-click actions instead of raw text.
+// ============================================================================
+
+function isInsufficientCreditsError(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes('insufficient credits') ||
+    (lower.includes('payment required') && lower.includes('credit')) ||
+    (lower.includes('402') && lower.includes('credit'))
+  );
+}
+
+function parseBalance(text: string): string | null {
+  const match = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
+  if (!match) return null;
+  const value = parseFloat(match[1]);
+  if (Number.isNaN(value)) return null;
+  return `$${value.toFixed(2)}`;
+}
+
+function InsufficientCreditsCard({ errorText, className }: { errorText: string; className?: string }) {
+  const openUserSettings = useUserSettingsModalStore((s) => s.openUserSettings);
+  const balance = parseBalance(errorText);
+  const openBilling = () => openUserSettings({ tab: 'billing', highlight: 'credits' });
+
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-2.5 px-3 py-2.5 rounded-md border',
+        'bg-amber-500/[0.04] dark:bg-amber-500/[0.06]',
+        'border-amber-500/30',
+        className,
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <CreditCard className="size-3.5 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-500" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-foreground">You ran out of credits</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {balance
+              ? `Your balance is ${balance}. Top up or enable auto top-up to continue.`
+              : 'Top up or enable auto top-up to continue.'}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 pl-5">
+        <Button
+          size="sm"
+          variant="default"
+          className="h-7 text-[11px] px-2.5"
+          onClick={openBilling}
+        >
+          <Zap className="size-3 mr-1" />
+          Enable auto top-up
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px] px-2.5"
+          onClick={openBilling}
+        >
+          Buy credits
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -47,6 +120,11 @@ export function TurnErrorDisplay({ errorText, className }: TurnErrorDisplayProps
         Interrupted
       </p>
     );
+  }
+
+  // Insufficient credits → actionable card with buy/auto-topup buttons
+  if (isInsufficientCreditsError(errorText)) {
+    return <InsufficientCreditsCard errorText={errorText} className={className} />;
   }
 
   // Real errors → full card

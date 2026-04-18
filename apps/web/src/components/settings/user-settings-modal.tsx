@@ -55,7 +55,8 @@ import {
 import { AccountState } from '@/lib/api/billing';
 import { useAuth } from '@/components/AuthProvider';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
-import { CreditBalanceDisplay, CreditPurchaseModal, AutoTopupModal } from '@/components/billing/credit-purchase';
+import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
+import { AutoTopupCard } from '@/components/billing/auto-topup-card';
 import { 
     useAccountState,
     accountStateKeys,
@@ -1267,10 +1268,21 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
 
 // ─── Billing Tab ─────────────────────────────────────────────────────────────
 
+const CREDIT_PACKAGES: { credits: number; price: number }[] = [
+    { credits: 1000, price: 10 },
+    { credits: 2500, price: 25 },
+    { credits: 5000, price: 50 },
+    { credits: 10000, price: 100 },
+    { credits: 25000, price: 250 },
+    { credits: 50000, price: 500 },
+];
+
 function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: boolean }) {
     const { session, isLoading: authLoading } = useAuth();
-    const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
-    const [showAutoTopupModal, setShowAutoTopupModal] = useState(false);
+    const highlight = useUserSettingsModalStore((s) => s.highlight);
+    const [selectedPackage, setSelectedPackage] = useState<(typeof CREDIT_PACKAGES)[number] | null>(null);
+    const [isPurchasing, setIsPurchasing] = useState(false);
+    const [purchaseError, setPurchaseError] = useState<string | null>(null);
     const queryClient = useQueryClient();
 
     const billingActive = isBillingEnabled();
@@ -1424,6 +1436,30 @@ function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: bool
         createPortalSessionMutation.mutate({ return_url: returnUrl });
     };
 
+    const handlePurchaseCredits = async () => {
+        if (!selectedPackage) return;
+        setIsPurchasing(true);
+        setPurchaseError(null);
+        try {
+            const response = await billingApi.purchaseCredits({
+                amount: selectedPackage.price,
+                success_url: `${window.location.origin}/instances?credit_purchase=success`,
+                cancel_url: window.location.href,
+            });
+            if (response.checkout_url) {
+                window.location.href = response.checkout_url;
+            } else {
+                throw new Error('No checkout URL received');
+            }
+        } catch (err: any) {
+            const msg = err?.details?.detail || err?.message || 'Failed to create checkout session';
+            setPurchaseError(msg);
+            toast.error(msg);
+        } finally {
+            setIsPurchasing(false);
+        }
+    };
+
 
 
     const isLoading = isLoadingSubscription || authLoading;
@@ -1486,50 +1522,134 @@ function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: bool
                 <p className="text-sm text-muted-foreground mt-0.5">Credits, instances, and subscription.</p>
             </div>
 
+            {/* ── Insufficient credits alert (routed here from 402 errors) ── */}
+            {highlight === 'credits' && totalCredits <= 0 && (
+                <Alert className="border-amber-500/40 bg-amber-500/5">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <AlertDescription>
+                        <div className="text-sm font-medium text-foreground">You ran out of credits.</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                            {canPurchaseCredits
+                                ? 'Buy credits below or enable auto top-up so it never happens again.'
+                                : 'Subscribe to continue using the assistant.'}
+                        </div>
+                    </AlertDescription>
+                </Alert>
+            )}
+
             {/* ── Credit Balance ── */}
             <div>
                 <p className="text-xs uppercase tracking-widest text-muted-foreground mb-3">Credits</p>
                 <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-medium tabular-nums tracking-tight">${(totalCredits / 100).toFixed(2)}</span>
-                </div>
-                <div className="flex items-center gap-3 mt-3">
-                    {canPurchaseCredits && (
-                        <>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 text-xs"
-                                onClick={() => setShowCreditPurchaseModal(true)}
-                            >
-                                Buy Credits
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 text-xs"
-                                onClick={() => setShowAutoTopupModal(true)}
-                            >
-                                <Zap className="size-3 mr-1.5" />
-                                Auto Top-up
-                            </Button>
-                        </>
-                    )}
+                    <span className={cn(
+                        "text-3xl font-medium tabular-nums tracking-tight",
+                        totalCredits <= 0 && "text-amber-600 dark:text-amber-500"
+                    )}>
+                        ${(totalCredits / 100).toFixed(2)}
+                    </span>
                 </div>
             </div>
 
-            {/* ── Yolo Usage ── */}
+            {/* ── Kortix YOLO (shown between Credits and Top-up actions) ── */}
             {yoloUsage && (
-                <div className="border-t border-border pt-4 space-y-1.5">
-                    <p className="text-xs uppercase tracking-widest text-muted-foreground">Yolo usage</p>
+                <div className="border-t border-border pt-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground">Kortix YOLO</p>
+                        <a
+                            href="https://yolo.kortix.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                        >
+                            Learn more <ExternalLink className="size-3" />
+                        </a>
+                    </div>
                     <div className="text-2xl font-medium tabular-nums tracking-tight">{yoloUsage.used_percent}%</div>
                     <p className="text-sm text-muted-foreground">
                         {yoloUsage.window_started && yoloResetAt
                             ? `Resets ${yoloResetAt}`
                             : '5h window starts on first request'}
                     </p>
+                    <p className="text-xs text-muted-foreground/70 leading-relaxed pt-1">
+                        Every Kortix subscription includes{' '}
+                        <a
+                            href="https://yolo.kortix.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium text-foreground/80 underline underline-offset-2 decoration-foreground/30 hover:decoration-foreground/60"
+                        >
+                            Kortix YOLO
+                        </a>{' '}—
+                        an all-you-can-use AI model subscription powered by our in-house model router.
+                        Choose between <span className="font-medium text-foreground/80">Fast</span> and{' '}
+                        <span className="font-medium text-foreground/80">Think</span> in the model selector
+                        by default. Zero credit cost; the rolling 5&nbsp;hour window resets automatically
+                        so you can keep building without thinking about usage.
+                    </p>
                 </div>
             )}
 
+            {/* ── Auto top-up (primary — recommended first so users avoid this altogether) ── */}
+            {canPurchaseCredits && (
+                <div className="border-t border-border pt-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                            <Zap className="size-3" />
+                            Auto top-up
+                        </p>
+                        <p className="text-[11px] text-muted-foreground/60">Never run out again</p>
+                    </div>
+                    <AutoTopupCard fetchSettings showSaveButton />
+                </div>
+            )}
+
+            {/* ── Buy credits (secondary — one-time) ── */}
+            {canPurchaseCredits && (
+                <div className="border-t border-border pt-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <p className="text-xs uppercase tracking-widest text-muted-foreground">Buy credits</p>
+                        <p className="text-[11px] text-muted-foreground/60">One-time top-up</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                        {CREDIT_PACKAGES.map((pkg) => {
+                            const isSelected = selectedPackage?.price === pkg.price;
+                            return (
+                                <Button
+                                    key={pkg.price}
+                                    type="button"
+                                    onClick={() => setSelectedPackage(pkg)}
+                                    disabled={isPurchasing}
+                                    variant="outline"
+                                    className={cn(
+                                        'h-auto p-3 flex-col rounded-xl text-center',
+                                        isSelected && 'border-foreground bg-foreground/5',
+                                    )}
+                                >
+                                    <span className="text-lg font-semibold tabular-nums">${pkg.price}</span>
+                                    <span className="text-xs text-muted-foreground">{formatCredits(pkg.credits)} credits</span>
+                                </Button>
+                            );
+                        })}
+                    </div>
+                    {purchaseError && (
+                        <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertDescription>{purchaseError}</AlertDescription>
+                        </Alert>
+                    )}
+                    <Button
+                        onClick={handlePurchaseCredits}
+                        disabled={isPurchasing || !selectedPackage}
+                        className="w-full"
+                    >
+                        {isPurchasing
+                            ? 'Processing...'
+                            : selectedPackage
+                                ? `Buy $${selectedPackage.price} in credits`
+                                : 'Select a package'}
+                    </Button>
+                </div>
+            )}
 
             {/* ── Instances ── */}
             {!isFreeTier && (
@@ -1549,19 +1669,6 @@ function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: bool
                 </Button>
             </div>
 
-            <CreditPurchaseModal
-                open={showCreditPurchaseModal}
-                onOpenChange={setShowCreditPurchaseModal}
-                currentBalance={totalCredits}
-                canPurchase={canPurchaseCredits}
-                onPurchaseComplete={() => {
-                    refetchSubscription();
-                }}
-            />
-            <AutoTopupModal
-                open={showAutoTopupModal}
-                onOpenChange={setShowAutoTopupModal}
-            />
         </div>
     );
 }

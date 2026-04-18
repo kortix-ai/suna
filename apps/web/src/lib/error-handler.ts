@@ -1,6 +1,7 @@
 import { toast } from '@/lib/toast';
 import { BillingError, isBillingError, formatBillingErrorForUI } from './api/errors';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import * as Sentry from '@sentry/nextjs';
 
 export interface ApiError extends Error {
@@ -148,13 +149,32 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   const rawMessage = extractErrorMessage(error);
   const formattedMessage = formatErrorMessage(rawMessage, context);
 
-  // Handle billing errors by opening pricing modal
+  // Handle billing errors.
+  // Insufficient-credits 402s route to the Billing tab (inline auto top-up + buy credits);
+  // other 402s (e.g. no subscription) still open the new-instance flow.
   const errorUI = formatBillingErrorForUI(error);
   if (errorUI) {
-    usePricingModalStore.getState().openPricingModal({ 
-      isAlert: true, 
-      alertTitle: errorUI.alertTitle,
-    });
+    const message = (error as BillingError)?.detail?.message?.toLowerCase() || '';
+    const isCreditsExhausted =
+      message.includes('credit') ||
+      message.includes('balance') ||
+      message.includes('insufficient');
+
+    if (isCreditsExhausted) {
+      useUserSettingsModalStore.getState().openUserSettings({
+        tab: 'billing',
+        highlight: 'credits',
+      });
+      toast.error(errorUI.alertTitle, {
+        description: errorUI.alertSubtitle,
+        duration: 6000,
+      });
+    } else {
+      usePricingModalStore.getState().openPricingModal({
+        isAlert: true,
+        alertTitle: errorUI.alertTitle,
+      });
+    }
     return;
   }
 

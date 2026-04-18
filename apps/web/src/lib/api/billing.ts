@@ -694,8 +694,17 @@ export interface AutoTopupSetupStatus {
   has_default_payment_method: boolean;
 }
 
+// Short per-call timeout + silent errors: these endpoints gate the billing
+// UI, and `setup-status` makes round-trips to Stripe (customers.retrieve +
+// paymentMethods.list) that can stall. We'd rather fail fast and render
+// with defaults than hang the Auto Top-up panel.
+const AUTO_TOPUP_TIMEOUT_MS = 8000;
+
 export async function getAutoTopupSettings(): Promise<AutoTopupConfig> {
-  const response = await backendApi.get<AutoTopupConfig>('/billing/auto-topup/settings');
+  const response = await backendApi.get<AutoTopupConfig>('/billing/auto-topup/settings', {
+    timeout: AUTO_TOPUP_TIMEOUT_MS,
+    showErrors: false,
+  });
   if (response.error) throw response.error;
   return response.data!;
 }
@@ -707,7 +716,10 @@ export async function configureAutoTopup(config: AutoTopupConfig): Promise<{ suc
 }
 
 export async function getAutoTopupSetupStatus(): Promise<AutoTopupSetupStatus> {
-  const response = await backendApi.get<AutoTopupSetupStatus>('/billing/auto-topup/setup-status');
+  const response = await backendApi.get<AutoTopupSetupStatus>('/billing/auto-topup/setup-status', {
+    timeout: AUTO_TOPUP_TIMEOUT_MS,
+    showErrors: false,
+  });
   if (response.error) throw response.error;
   return response.data!;
 }
