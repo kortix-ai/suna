@@ -137,7 +137,7 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
       <DialogContent
         className={cn(
           'p-0 overflow-hidden gap-0 border-border/60 bg-background',
-          step === 'pick' ? 'max-w-xl' : 'max-w-3xl',
+          step === 'pick' ? 'max-w-md' : 'max-w-2xl',
         )}
         hideCloseButton
       >
@@ -342,7 +342,7 @@ function TicketForm({
   return (
     <div className="flex flex-col">
       {/* Header */}
-      <div className="flex items-center px-5 pt-4 pb-3">
+      <div className="flex items-center px-5 pt-4 pb-3 gap-3">
         {showBack ? (
           <Button variant="ghost" size="sm" className="h-6 px-1.5 -ml-1.5 text-muted-foreground/60 hover:text-foreground text-[11px]" onClick={onBack}>
             <ArrowLeft className="h-3.5 w-3.5 mr-1" />
@@ -353,9 +353,30 @@ function TicketForm({
             New ticket{template ? ` · ${template.name}` : ''}
           </div>
         )}
-        <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="ml-auto inline-flex items-center gap-3 text-[11px]">
+          <button
+            onClick={() => setBodyMode('write')}
+            className={cn(
+              'transition-colors cursor-pointer',
+              bodyMode === 'write' ? 'text-foreground' : 'text-muted-foreground/40 hover:text-foreground/80',
+            )}
+          >
+            Write
+          </button>
+          <button
+            onClick={() => setBodyMode('preview')}
+            className={cn(
+              'transition-colors cursor-pointer',
+              bodyMode === 'preview' ? 'text-foreground' : 'text-muted-foreground/40 hover:text-foreground/80',
+            )}
+          >
+            Preview
+          </button>
+          <span className="h-4 w-px bg-border/50" aria-hidden />
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Body — 2-column layout: seamless editor on the left, meta rail on the right */}
@@ -371,12 +392,6 @@ function TicketForm({
             className="w-full text-[22px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight"
           />
 
-          {/* Write/Preview switcher — mirrors GitHub issue composer. */}
-          <div className="mt-3 mb-2 inline-flex items-center gap-0.5 p-0.5 rounded-full border border-border/40 bg-muted/20 w-fit">
-            <ToggleTab active={bodyMode === 'write'} onClick={() => setBodyMode('write')}>Write</ToggleTab>
-            <ToggleTab active={bodyMode === 'preview'} onClick={() => setBodyMode('preview')}>Preview</ToggleTab>
-          </div>
-
           {bodyMode === 'write' ? (
             <textarea
               ref={bodyRef}
@@ -385,14 +400,14 @@ function TicketForm({
               onKeyDown={onBodyKey}
               placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Reference agents with @slug."}
               rows={8}
-              className="w-full text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
+              className="w-full mt-3 text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
             />
           ) : body.trim() ? (
-            <article className="prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 text-[13.5px] leading-relaxed min-h-[200px]">
+            <article className="prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 text-[13.5px] leading-relaxed min-h-[200px] mt-3">
               <UnifiedMarkdown content={body} />
             </article>
           ) : (
-            <div className="text-[13px] text-muted-foreground/40 min-h-[200px]">
+            <div className="text-[13px] text-muted-foreground/40 min-h-[200px] mt-3">
               Nothing to preview yet.
             </div>
           )}
@@ -432,23 +447,6 @@ function TicketForm({
         </Button>
       </div>
     </div>
-  );
-}
-
-// ─── Write/Preview pill tab ────────────────────────────────────────────────
-
-function ToggleTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'h-6 px-3 rounded-full text-[11px] font-medium transition-colors cursor-pointer',
-        active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground',
-      )}
-      aria-pressed={active}
-    >
-      {children}
-    </button>
   );
 }
 
