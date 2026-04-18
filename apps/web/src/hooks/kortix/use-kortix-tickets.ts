@@ -181,6 +181,7 @@ export function useCreateTicket() {
       status?: string;
       template_id?: string | null;
       custom_fields?: Record<string, unknown>;
+      assign_to?: Array<{ type: AssigneeType; id: string }>;
     }) =>
       kfetch<{ ticket: Ticket; triggered: Array<{ agent_id: string; agent_slug: string; reason: string }> }>(serverUrl, '/kortix/tickets', {
         method: 'POST',

@@ -214,6 +214,46 @@ describe('ticket lifecycle', () => {
     expect(triggered[0]).toMatchObject({ agent_slug: DEFAULT_PM_SLUG })
   })
 
+  test('assign_to on create routes to listed owner, skips column default, and is self-stripped for the creator', async () => {
+    const fx = await setupSeededProject()
+    const pm = getAgentBySlug(fx.db, fx.project.id, DEFAULT_PM_SLUG)!
+    const engPersona = path.join(fx.project.path, '.kortix', 'agents', 'engineer.md')
+    await fs.mkdir(path.dirname(engPersona), { recursive: true })
+    await fs.writeFile(engPersona, '# Engineer', 'utf8')
+    const eng = insertAgent(fx.db, fx.project.id, {
+      slug: 'engineer', name: 'Engineer', file_path: engPersona,
+      tool_groups: ['project_action'],
+    })
+
+    // PM creates a ticket and routes to engineer in the same call.
+    const { ticket, triggered } = createTicket(fx.db, {
+      project_id: fx.project.id,
+      title: 'Routed ticket',
+      created_by_type: 'agent',
+      created_by_id: pm.id,
+      assign_to: [{ type: 'agent', id: eng.id }],
+    })
+
+    // Only engineer is on it — column default (PM) is skipped because
+    // assign_to was provided.
+    expect(ticket.assignees).toHaveLength(1)
+    expect(ticket.assignees[0]).toMatchObject({ assignee_type: 'agent', assignee_id: eng.id })
+    expect(triggered).toHaveLength(1)
+    expect(triggered[0]).toMatchObject({ agent_slug: 'engineer' })
+
+    // Self-routing is a no-op: PM trying to assign itself creates an
+    // unassigned ticket, not a ticket with PM redundantly on it.
+    const r2 = createTicket(fx.db, {
+      project_id: fx.project.id,
+      title: 'Self-route',
+      created_by_type: 'agent',
+      created_by_id: pm.id,
+      assign_to: [{ type: 'agent', id: pm.id }],
+    })
+    expect(r2.ticket.assignees).toHaveLength(0)
+    expect(r2.triggered).toHaveLength(0)
+  })
+
   test('ticket numbers increment per project', async () => {
     const fx = await setupSeededProject()
     const a = createTicket(fx.db, { project_id: fx.project.id, title: 'a' }).ticket

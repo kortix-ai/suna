@@ -218,17 +218,37 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     }),
 
     ticket_create: tool({
-      description: 'Create a new ticket in the current project. Lands in the first column by default.',
+      description: [
+        'Create a new ticket in the current project. Lands in the first column by default.',
+        'Pass `assign_to` (comma-separated agent slugs, or "user" for the human)',
+        'to route the ticket to its owner in the same call — wakes them up and',
+        'skips the column\'s default-assignee rule. If omitted, the first column\'s',
+        'default assignee is attached instead (you, probably).',
+      ].join(' '),
       args: {
         title: tool.schema.string().describe('Short ticket title'),
-        body_md: tool.schema.string().optional().describe('Markdown body (description, acceptance criteria, …)'),
+        body_md: tool.schema.string().optional().describe('Markdown body (description, acceptance criteria, …). Describe the work — do NOT @-tag agents or the human inside the body.'),
         status: tool.schema.string().optional().describe('Column key — defaults to first column (e.g. "backlog")'),
         template_id: tool.schema.string().optional(),
+        assign_to: tool.schema.string().optional().describe('Comma-separated assignees to route the ticket to, in "slug" form (e.g. "engineer" or "engineer,qa"). Use "user" for the human. The column\'s default-assignee rule is skipped when this is set.'),
       },
-      async execute(args: { title: string; body_md?: string; status?: string; template_id?: string }, ctx: ToolContext): Promise<string> {
+      async execute(args: { title: string; body_md?: string; status?: string; template_id?: string; assign_to?: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
         if (!pid) return 'Error: no project selected.'
         const actor = actorFromCtx(ctx)
+        // Resolve assign_to slugs to typed assignees.
+        const parsed: Array<{ type: AssigneeType; id: string }> = []
+        if (args.assign_to) {
+          const proj = db.prepare('SELECT user_handle FROM projects WHERE id=$id').get({ $id: pid }) as { user_handle?: string | null } | null
+          for (const raw of args.assign_to.split(',').map((s) => s.trim()).filter(Boolean)) {
+            if (raw === 'user' || (proj?.user_handle && raw === proj.user_handle)) {
+              parsed.push({ type: 'user', id: proj?.user_handle || 'user' })
+              continue
+            }
+            const ag = getAgentBySlug(db, pid, raw) || getAgentById(db, raw)
+            if (ag) parsed.push({ type: 'agent', id: ag.id })
+          }
+        }
         const result = createTicket(db, {
           project_id: pid,
           title: args.title,
@@ -237,11 +257,15 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           template_id: args.template_id ?? null,
           created_by_type: actor.type,
           created_by_id: actor.id,
+          assign_to: parsed.length ? parsed : undefined,
         })
         await pluginFireAgentTriggers(db, mgr, client, pid, result.ticket.id,
-          result.triggered.map((t) => ({ ...t, reason: 'You are the default assignee for this column.' })),
+          result.triggered.map((t) => ({ ...t, reason: `You were assigned to ticket #${result.ticket.number} on creation.` })),
           actor)
-        return `Created ticket **#${result.ticket.number}** (${result.ticket.id}) in ${result.ticket.status}.`
+        const routed = parsed.length
+          ? ` routed to ${parsed.map((p) => p.type === 'agent' ? '@' + (getAgentById(db, p.id)?.slug ?? p.id) : '@' + p.id).join(', ')}`
+          : ''
+        return `Created ticket **#${result.ticket.number}** (${result.ticket.id}) in ${result.ticket.status}${routed}.`
       },
     }),
 

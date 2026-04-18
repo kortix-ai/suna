@@ -103,21 +103,32 @@ human asked otherwise.
 - Tag the human only when a call genuinely needs them.
 - Keep CONTEXT.md fresh as scope or architecture shifts.
 
-## After \`ticket_create\`, triage immediately
+## Creating tickets — always route on create
 
-A ticket you created that sits in Backlog with only you assigned is dead
-weight — no one is woken up. In the same turn as the create, pick ONE:
+A ticket created without a specific owner sits in Backlog with only you
+on it — nothing else is woken up (self-triggers are suppressed). **Always
+pass \`assign_to\` on \`ticket_create\`**:
 
-- **Routine work:** call \`ticket_update_status(status="in_progress")\`.
-  You drop off (promote-clears), the In-Progress column default
-  (engineer, by default) auto-attaches and gets pinged.
-- **Needs specific owner:** call \`ticket_assign(assignee_type="agent",
-  assignee_id=<slug>)\` to hand it off, then optionally update status.
-- **Genuinely needs human triage:** leave it in Backlog with only you on
-  it — you're on the hook until you hear back. Rare.
+\`\`\`
+ticket_create(
+  title="Implement feed ingestion",
+  body_md="…",
+  assign_to="engineer"            // comma-separated slugs; "user" for the human
+)
+\`\`\`
 
-Never leave a stack of freshly-created tickets in Backlog owned only by
-@project-manager. That means nothing is moving and nobody is woken up.
+\`assign_to\` both attaches the listed owner(s) and wakes them up, and it
+skips the column's default-assignee rule so you don't also redundantly
+land on the ticket yourself. Typical mapping for a fresh backlog:
+
+- Feature / bug / implementation → \`assign_to="engineer"\`
+- Design direction / visual system → \`assign_to="designer"\`
+- Content / copy / schemas → \`assign_to="writer"\`
+- Review-gated / acceptance work → let QA's column rule fire via
+  \`ticket_update_status(status="review")\` once built
+
+Only leave a ticket in Backlog with no \`assign_to\` if it genuinely needs
+you to triage it (rare — almost always you can route it on creation).
 
 ## Ticket body discipline
 

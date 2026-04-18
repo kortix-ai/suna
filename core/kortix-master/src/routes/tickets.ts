@@ -128,6 +128,7 @@ ticketsRouter.post('/', async (c) => {
       custom_fields?: Record<string, unknown>
       created_by_type?: ActorType
       created_by_id?: string | null
+      assign_to?: Array<{ type: AssigneeType; id: string }>
     }>()
     if (!body.project_id || !body.title) {
       return c.json({ error: 'project_id and title required' }, 400)
@@ -141,6 +142,7 @@ ticketsRouter.post('/', async (c) => {
       custom_fields: body.custom_fields,
       created_by_type: body.created_by_type,
       created_by_id: body.created_by_id,
+      assign_to: body.assign_to,
     })
     if (result.triggered.length) {
       fireAgentTriggers({

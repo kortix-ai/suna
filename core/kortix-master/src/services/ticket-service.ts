@@ -467,7 +467,16 @@ export interface CreateTicketInput {
   custom_fields?: Record<string, unknown>
   created_by_type?: ActorType
   created_by_id?: string | null
+  /** Skip the column's default-assignee rule (keep true by default). */
   auto_assign?: boolean
+  /**
+   * Explicit assignees to attach on create. When non-empty the column's
+   * default-assignee rule is SKIPPED — the creator has made the call, so
+   * we don't also tag the default (typically the creator themselves).
+   * Creator agent is never added to its own assign_to list (self-assign
+   * is pointless).
+   */
+  assign_to?: Array<{ type: AssigneeType; id: string }>
 }
 
 export function listTickets(db: Database, filters: { projectId?: string; status?: string } = {}): TicketWithRelations[] {
@@ -646,7 +655,28 @@ export function createTicket(db: Database, input: CreateTicketInput): CreateTick
   })
 
   const triggered: CreateTicketResult['triggered'] = []
-  if (input.auto_assign !== false) {
+  const creatorAgentId = input.created_by_type === 'agent' ? input.created_by_id : null
+
+  if (input.assign_to && input.assign_to.length > 0) {
+    // Explicit routing — the creator made the call. Skip the column default.
+    for (const a of input.assign_to) {
+      // Never self-attach: if the creator is an agent asking to assign
+      // themselves, just ignore — creating a ticket for yourself to do is
+      // the same as creating it and starting work.
+      if (creatorAgentId && a.type === 'agent' && a.id === creatorAgentId) continue
+      const r = addAssignee(db, {
+        ticketId: id,
+        assignee_type: a.type,
+        assignee_id: a.id,
+        actor_type: input.created_by_type ?? 'system',
+        actor_id: input.created_by_id ?? null,
+      })
+      if (r.added && a.type === 'agent') {
+        const ag = getAgentById(db, a.id)
+        if (ag) triggered.push({ agent_id: ag.id, agent_slug: ag.slug, reason: 'column_default' })
+      }
+    }
+  } else if (input.auto_assign !== false) {
     const col = getColumnByKey(db, input.project_id, status)
     if (col?.default_assignee_type && col.default_assignee_id) {
       const r = addAssignee(db, {

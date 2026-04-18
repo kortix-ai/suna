@@ -59,7 +59,6 @@ import {
 } from '@/components/ui/popover';
 import {
   useCreateTicket,
-  useAssignTicket,
   useTemplates,
   useReplaceTemplates,
   useProjectAgents,
@@ -91,7 +90,6 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
   const userHandle = useUserHandle();
 
   const create = useCreateTicket();
-  const assign = useAssignTicket();
   const replaceTemplates = useReplaceTemplates();
 
   const [step, setStep] = useState<Step>('pick');
@@ -127,18 +125,14 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
         body_md: body,
         status: status || undefined,
         template_id: template?.id ?? null,
+        // Passing `assign_to` at create time makes the server skip the
+        // column's default-assignee rule. User-picked assignees win, backlog
+        // default (PM) doesn't redundantly attach.
+        assign_to: pending.length
+          ? pending.map((p) => ({ type: p.type, id: p.id }))
+          : undefined,
       },
-      {
-        onSuccess: (r) => {
-          // Apply any manually-picked assignees after create — the column rule
-          // may have auto-assigned someone (e.g. PM for backlog), so this adds
-          // on top. Duplicate-safe on the server.
-          for (const p of pending) {
-            assign.mutate({ id: r.ticket.id, assignee_type: p.type, assignee_id: p.id });
-          }
-          onOpenChange(false);
-        },
-      },
+      { onSuccess: () => onOpenChange(false) },
     );
   };
 
