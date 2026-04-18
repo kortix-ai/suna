@@ -55,6 +55,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { UnifiedMarkdown } from '@/components/markdown';
+import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
 import {
   useTicket,
   useTicketEvents,
@@ -493,25 +494,25 @@ function AssigneeList({
   onUnassign: (type: 'user' | 'agent', id: string) => void;
 }) {
   const has = (type: 'user' | 'agent', id: string) => ticket.assignees.some((a: any) => a.assignee_type === type && a.assignee_id === id);
+  const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
   return (
     <div className="space-y-1.5">
       {ticket.assignees.length === 0 && (
         <div className="text-[11.5px] text-muted-foreground/40">Unassigned.</div>
       )}
       {ticket.assignees.map((a: any) => {
-        const label = a.assignee_type === 'agent'
-          ? `@${agentById.get(a.assignee_id)?.slug ?? 'agent'}`
-          : `@${a.assignee_id}`;
+        const isMe = a.assignee_type === 'user' && a.assignee_id === userHandle;
+        const ag = a.assignee_type === 'agent' ? agentById.get(a.assignee_id) : null;
+        const label = ag ? `@${ag.slug}` : `@${a.assignee_id}`;
         return (
           <div key={`${a.assignee_type}:${a.assignee_id}`} className="flex items-center gap-2">
-            <span className={cn(
-              'inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[11.5px] font-mono',
-              a.assignee_type === 'user' ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-foreground/80',
-            )}>
-              {a.assignee_type === 'user'
-                ? <UserCircle2 className="h-3 w-3" />
-                : <Bot className="h-3 w-3 opacity-60" />}
-              {label}
+            <span className="inline-flex items-center gap-1.5 h-6 pl-0.5 pr-2 rounded-full text-[11.5px] bg-muted/40">
+              {ag ? (
+                <AgentAvatar hue={ag.color_hue} icon={ag.icon} slug={ag.slug} name={ag.name} size="sm" />
+              ) : (
+                <UserAvatar handle={a.assignee_id} avatarUrl={isMe ? myAvatarUrl : null} size="sm" />
+              )}
+              <span className="font-mono text-foreground/85">{label}</span>
             </span>
             <button
               onClick={() => onUnassign(a.assignee_type, a.assignee_id)}
@@ -533,14 +534,16 @@ function AssigneeList({
             Add
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuLabel>Assign to</DropdownMenuLabel>
+        <DropdownMenuContent align="start" className="w-60 z-[10000]">
+          <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Assign to</DropdownMenuLabel>
           <DropdownMenuItem
             disabled={has('user', userHandle)}
             onClick={() => onAssign('user', userHandle)}
+            className="gap-2 cursor-pointer"
           >
-            <UserCircle2 className="mr-2 h-3.5 w-3.5 text-primary" />
-            @{userHandle} <span className="ml-auto text-[10px] text-muted-foreground/40">you</span>
+            <UserAvatar handle={userHandle} avatarUrl={myAvatarUrl} size="sm" />
+            <span className="flex-1 truncate">@{userHandle}</span>
+            <span className="text-[10px] text-muted-foreground/40">you</span>
           </DropdownMenuItem>
           {agents.length > 0 && <DropdownMenuSeparator />}
           {agents.map((a) => (
@@ -548,9 +551,10 @@ function AssigneeList({
               key={a.id}
               disabled={has('agent', a.id)}
               onClick={() => onAssign('agent', a.id)}
+              className="gap-2 cursor-pointer"
             >
-              <Bot className="mr-2 h-3.5 w-3.5 text-muted-foreground/60" />
-              @{a.slug}
+              <AgentAvatar hue={a.color_hue} icon={a.icon} slug={a.slug} name={a.name} size="sm" />
+              <span className="flex-1 truncate">@{a.slug}</span>
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -612,9 +616,21 @@ function FieldInput({ field, value, onChange }: { field: ProjectField; value: un
 // ─── Event row ──────────────────────────────────────────────────────────────
 
 function EventRow({ event, agentById, userHandle }: { event: any; agentById: Map<string, ProjectAgent>; userHandle: string }) {
+  const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
+  const actorAgent = event.actor_type === 'agent' ? agentById.get(event.actor_id ?? '') : null;
   const actorHandle = event.actor_type === 'agent'
-    ? agentById.get(event.actor_id ?? '')?.slug ?? 'agent'
+    ? (actorAgent?.slug ?? 'agent')
     : event.actor_type === 'system' ? 'system' : (event.actor_id || userHandle);
+  const isMeUser = event.actor_type === 'user' && actorHandle === userHandle;
+  const Avatar = () => {
+    if (event.actor_type === 'agent' && actorAgent) {
+      return <AgentAvatar hue={actorAgent.color_hue} icon={actorAgent.icon} slug={actorAgent.slug} name={actorAgent.name} size="sm" />;
+    }
+    if (event.actor_type === 'system') {
+      return <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted/50 text-muted-foreground/60"><Activity className="h-3 w-3" /></span>;
+    }
+    return <UserAvatar handle={actorHandle} avatarUrl={isMeUser ? myAvatarUrl : null} size="sm" />;
+  };
 
   const p = safeJson(event.payload_json);
   let summary: React.ReactNode;
@@ -622,7 +638,7 @@ function EventRow({ event, agentById, userHandle }: { event: any; agentById: Map
     return (
       <div className="px-4 py-3">
         <div className="flex items-center gap-2 mb-1.5">
-          <ActorIcon type={event.actor_type} />
+          <Avatar />
           <span className="font-mono text-[11.5px] text-foreground/80">@{actorHandle}</span>
           <span className="text-[10px] text-muted-foreground/40 tabular-nums ml-auto">{relativeTime(event.created_at)}</span>
         </div>
@@ -646,18 +662,12 @@ function EventRow({ event, agentById, userHandle }: { event: any; agentById: Map
 
   return (
     <div className="flex items-center gap-2 px-4 py-2 text-[12px]">
-      <ActorIcon type={event.actor_type} />
+      <Avatar />
       <span className="font-mono text-[11px] text-muted-foreground/65">@{actorHandle}</span>
       <span className="text-muted-foreground/70">{summary}</span>
       <span className="ml-auto text-[10px] text-muted-foreground/35 tabular-nums">{relativeTime(event.created_at)}</span>
     </div>
   );
-}
-
-function ActorIcon({ type }: { type: string }) {
-  if (type === 'agent') return <Bot className="h-3 w-3 text-muted-foreground/50" />;
-  if (type === 'system') return <Activity className="h-3 w-3 text-muted-foreground/40" />;
-  return <UserCircle2 className="h-3 w-3 text-primary/70" />;
 }
 
 function safeJson(s: string | null): any { try { return s ? JSON.parse(s) : null; } catch { return null; } }

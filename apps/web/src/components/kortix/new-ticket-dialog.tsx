@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UnifiedMarkdown } from '@/components/markdown';
+import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
 import {
   Popover,
   PopoverContent,
@@ -653,6 +654,9 @@ function AssigneePicker({
   onRemove: (a: PendingAssignee) => void;
 }) {
   const alreadyAdded = (t: AssigneeType, id: string) => pending.some((x) => x.type === t && x.id === id);
+  const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
+  const agentBySlug = new Map(agents.map((a) => [a.slug, a] as const));
+
   return (
     <div className="flex flex-col gap-1.5">
       {pending.length === 0 && (
@@ -660,30 +664,29 @@ function AssigneePicker({
           Unassigned — column defaults still fire.
         </p>
       )}
-      {pending.map((a) => (
-        <div
-          key={`${a.type}:${a.id}`}
-          className={cn(
-            'inline-flex items-center gap-1.5 h-7 pl-2 pr-1 rounded-full text-[11.5px] font-mono w-fit',
-            a.type === 'user' ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-foreground/80',
-          )}
-        >
-          {a.type === 'user'
-            ? <UserCircle2 className="h-3 w-3" />
-            : <Bot className="h-3 w-3 opacity-60" />}
-          <span className="truncate max-w-[140px]">@{a.label}</span>
-          <button
-            onClick={() => onRemove(a)}
-            className={cn(
-              'h-4 w-4 inline-flex items-center justify-center rounded-full transition-colors',
-              a.type === 'user' ? 'text-primary/60 hover:text-primary hover:bg-primary/15' : 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/70',
-            )}
-            aria-label="Remove"
+      {pending.map((a) => {
+        const ag = a.type === 'agent' ? agents.find((x) => x.id === a.id) : null;
+        return (
+          <div
+            key={`${a.type}:${a.id}`}
+            className="inline-flex items-center gap-1.5 h-7 pl-0.5 pr-1 rounded-full bg-muted/40 w-fit"
           >
-            <X className="h-2.5 w-2.5" />
-          </button>
-        </div>
-      ))}
+            {ag ? (
+              <AgentAvatar hue={ag.color_hue} icon={ag.icon} slug={ag.slug} name={ag.name} size="sm" />
+            ) : (
+              <UserAvatar handle={a.label} avatarUrl={a.type === 'user' && a.label === userHandle ? myAvatarUrl : null} size="sm" />
+            )}
+            <span className="text-[11.5px] font-mono text-foreground/85 truncate max-w-[120px]">@{a.label}</span>
+            <button
+              onClick={() => onRemove(a)}
+              className="h-4 w-4 inline-flex items-center justify-center rounded-full text-muted-foreground/50 hover:text-foreground hover:bg-muted/60 transition-colors"
+              aria-label="Remove"
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </div>
+        );
+      })}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -695,7 +698,7 @@ function AssigneePicker({
             Add
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56 z-[10000]">
+        <DropdownMenuContent align="start" className="w-60 z-[10000]">
           <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
             Assign to
           </DropdownMenuLabel>
@@ -704,7 +707,7 @@ function AssigneePicker({
             onClick={() => onAdd({ type: 'user', id: userHandle, label: userHandle })}
             className="gap-2 cursor-pointer"
           >
-            <UserCircle2 className="h-3.5 w-3.5 text-primary" />
+            <UserAvatar handle={userHandle} avatarUrl={myAvatarUrl} size="sm" />
             <span className="flex-1 truncate">@{userHandle}</span>
             <span className="text-[10px] text-muted-foreground/40">you</span>
           </DropdownMenuItem>
@@ -716,12 +719,14 @@ function AssigneePicker({
               onClick={() => onAdd({ type: 'agent', id: a.id, label: a.slug })}
               className="gap-2 cursor-pointer"
             >
-              <Bot className="h-3.5 w-3.5 text-muted-foreground/60" />
+              <AgentAvatar hue={a.color_hue} icon={a.icon} slug={a.slug} name={a.name} size="sm" />
               <span className="flex-1 truncate">@{a.slug}</span>
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+      {/* Silence unused-variable linting for the reference map (kept for future @-mention UX). */}
+      {agentBySlug.size === -1 && null}
     </div>
   );
 }
