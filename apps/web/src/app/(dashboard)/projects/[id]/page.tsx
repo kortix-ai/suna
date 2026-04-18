@@ -3,8 +3,12 @@
 /**
  * Project page.
  *
- * Tabs: Overview, Tasks, Files, Sessions — pre-mounted, CSS-hidden when inactive.
- * All real UI lives in extracted components.
+ * v1 projects: legacy tabs — About · Tasks · Files · Sessions.
+ * v2 projects: new tabs — About · Board · Team · Settings · Files · Sessions.
+ *
+ * Branching is purely frontend-driven by `project.structure_version`. New
+ * projects default to v2 server-side; v1 projects continue using the original
+ * task system untouched.
  */
 
 import { Fragment, use, useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -23,6 +27,7 @@ import {
 import {
   useKortixProject,
   useKortixProjectSessions,
+  usePatchProject,
 } from '@/hooks/kortix/use-kortix-projects';
 import {
   useKortixTasks,
@@ -32,6 +37,16 @@ import {
   type KortixTask,
   type KortixTaskStatus,
 } from '@/hooks/kortix/use-kortix-tasks';
+import {
+  useTickets,
+  useColumns,
+  useProjectAgents,
+  useFields,
+  useUpdateTicketStatus,
+  useDeleteTicket,
+  useUserHandle,
+  type Ticket,
+} from '@/hooks/kortix/use-kortix-tickets';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import {
   createFilesStore,
@@ -47,6 +62,11 @@ import { ProjectAbout } from '@/components/kortix/project-about';
 import { TasksTab } from '@/components/kortix/tasks-tab';
 import { TaskDetailView } from '@/components/kortix/task-detail-view';
 import { NewTaskDialog } from '@/components/kortix/new-task-dialog';
+import { TicketBoard } from '@/components/kortix/ticket-board';
+import { TicketDetailDrawer } from '@/components/kortix/ticket-detail-drawer';
+import { NewTicketDialog } from '@/components/kortix/new-ticket-dialog';
+import { TeamTab } from '@/components/kortix/team-tab';
+import { TicketSettingsTab } from '@/components/kortix/ticket-settings-tab';
 import { useIsRouteActive } from '@/hooks/utils/use-is-route-active';
 
 export default function ProjectPage({ params }: { params?: Promise<{ id: string }> }) {
@@ -55,18 +75,34 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   const projectFilesStoreRef = useRef(createFilesStore());
   const projectFilesStore = projectFilesStoreRef.current;
 
-  // ── Tabs ────────────────────────────────────────────────────
-  const [tab, setTabState] = useState<ProjectTab>('about');
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  const isProjectRouteActive = useIsRouteActive(`/projects/${encodeURIComponent(pid)}`);
-  const shouldLoadProjectSessions = isProjectRouteActive && tab === 'sessions';
-  const shouldLoadProjectTasks = isProjectRouteActive && tab === 'tasks';
-
-  // ── Data ────────────────────────────────────────────────────
   const { data: project, isLoading } = useKortixProject(pid);
-  const { data: sessions } = useKortixProjectSessions(pid, {
-    enabled: shouldLoadProjectSessions,
-  });
+  const isV2 = project?.structure_version === 2;
+  const userHandle = useUserHandle();
+  const patchProject = usePatchProject();
+
+  // Auto-sync user_handle once per project: projects are created by the
+  // project_create agent tool which doesn't know the logged-in human's handle,
+  // so the frontend backfills it on first load of a v2 project.
+  const syncedHandleRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!project || !isV2) return;
+    if ((project as any).user_handle === userHandle) return;
+    if (syncedHandleRef.current.has(project.id)) return;
+    syncedHandleRef.current.add(project.id);
+    patchProject.mutate({ id: project.id, user_handle: userHandle });
+    // patchProject is a stable mutation object; excluding from deps avoids a re-sync loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id, isV2, userHandle, (project as any)?.user_handle]);
+
+  const [tab, setTabState] = useState<ProjectTab>('about');
+  const isProjectRouteActive = useIsRouteActive(`/projects/${encodeURIComponent(pid)}`);
+
+  // ─── v1 state ──────────────────────────────────────────────────────────
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const shouldLoadProjectSessions = isProjectRouteActive && tab === 'sessions';
+  const shouldLoadProjectTasks = !isV2 && isProjectRouteActive && tab === 'tasks';
+
+  const { data: sessions } = useKortixProjectSessions(pid, { enabled: shouldLoadProjectSessions });
   const { data: tasks } = useKortixTasks(project?.id, undefined, {
     enabled: shouldLoadProjectTasks,
     pollingEnabled: shouldLoadProjectTasks,
@@ -78,7 +114,23 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   const sessionList = useMemo(() => sessions ?? [], [sessions]);
   const taskList = useMemo<KortixTask[]>(() => tasks ?? [], [tasks]);
 
-  // ── File explorer scoping ───────────────────────────────────
+  // ─── v2 state ──────────────────────────────────────────────────────────
+  const [openTicketId, setOpenTicketId] = useState<string | null>(null);
+  const [newTicketDefaultStatus, setNewTicketDefaultStatus] = useState<string | undefined>();
+  const [newTicketOpen, setNewTicketOpen] = useState(false);
+
+  const loadV2 = !!isV2 && isProjectRouteActive;
+  const { data: tickets = [] } = useTickets(project?.id, {
+    enabled: loadV2 && tab === 'board',
+    pollingEnabled: loadV2 && tab === 'board',
+  });
+  const { data: columns = [] } = useColumns(loadV2 ? project?.id : undefined);
+  const { data: agents = [] } = useProjectAgents(loadV2 ? project?.id : undefined);
+  const { data: fields = [] } = useFields(loadV2 ? project?.id : undefined);
+  const updateTicketStatus = useUpdateTicketStatus();
+  const deleteTicket = useDeleteTicket();
+
+  // ─── File explorer scoping ─────────────────────────────────────────────
   useEffect(() => {
     const { setRootPath, navigateToPath } = projectFilesStore.getState();
     if (project?.path && project.path !== '/') {
@@ -91,26 +143,23 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
     };
   }, [project?.path, projectFilesStore]);
 
-  const setTab = useCallback((next: ProjectTab) => {
-    setTabState(next);
-  }, []);
-  const openTask = useCallback((task: KortixTask) => {
-    setOpenTaskId(task.id);
-  }, []);
-  const closeTask = useCallback(() => setOpenTaskId(null), []);
-
-  // Re-navigate file explorer when files tab activated
   useEffect(() => {
     if (tab === 'files' && project?.path && project.path !== '/') {
       projectFilesStore.getState().navigateToPath(project.path);
     }
   }, [tab, project?.path, projectFilesStore]);
 
-  // ── Tasks view state ────────────────────────────────────────
+  const setTab = useCallback((next: ProjectTab) => setTabState(next), []);
+  const openTask = useCallback((task: KortixTask) => setOpenTaskId(task.id), []);
+  const closeTask = useCallback(() => setOpenTaskId(null), []);
+  const openTicket = useCallback((t: Ticket) => setOpenTicketId(t.id), []);
+  const closeTicket = useCallback(() => setOpenTicketId(null), []);
+
+  // ─── v1 tasks search ───────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // ── New task dialog ─────────────────────────────────────────
+  // ─── v1 new-task dialog ────────────────────────────────────────────────
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskDefault, setNewTaskDefault] = useState<KortixTaskStatus | undefined>();
   const openNewTask = useCallback((status?: KortixTaskStatus) => {
@@ -118,46 +167,37 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
     setNewTaskOpen(true);
   }, []);
 
-  // ── Filtered tasks ──────────────────────────────────────────
+  const openNewTicket = useCallback((status?: string) => {
+    setNewTicketDefaultStatus(status);
+    setNewTicketOpen(true);
+  }, []);
+
   const filteredTasks = useMemo(() => {
     if (!search.trim()) return taskList;
     const q = search.toLowerCase();
-    return taskList.filter(
-      (t) =>
-        t.title.toLowerCase().includes(q) ||
-        (t.description || '').toLowerCase().includes(q),
-    );
+    return taskList.filter((t) => t.title.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q));
   }, [taskList, search]);
 
-  // ── Keyboard shortcuts (tasks tab only) ─────────────────────
+  // ─── Keyboard shortcuts ────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!isProjectRouteActive || newTaskOpen || e.repeat) return;
-
+      if (!isProjectRouteActive || newTaskOpen || newTicketOpen || e.repeat) return;
       const inField =
         document.activeElement?.tagName === 'INPUT' ||
         document.activeElement?.tagName === 'TEXTAREA' ||
         (document.activeElement as HTMLElement | null)?.isContentEditable;
 
-      if (e.key === '/' && tab === 'tasks' && !inField) {
+      if (e.key === '/' && tab === 'tasks' && !inField) { e.preventDefault(); searchRef.current?.focus(); }
+      if ((e.key === 'c' || e.key === 'C') && !inField && !e.metaKey && !e.ctrlKey) {
         e.preventDefault();
-        searchRef.current?.focus();
-      }
-      if (
-        (e.key === 'c' || e.key === 'C') &&
-        !inField &&
-        !e.metaKey &&
-        !e.ctrlKey
-      ) {
-        e.preventDefault();
-        setNewTaskOpen(true);
+        if (isV2) setNewTicketOpen(true);
+        else setNewTaskOpen(true);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tab, isProjectRouteActive, newTaskOpen]);
+  }, [tab, isProjectRouteActive, newTaskOpen, newTicketOpen, isV2]);
 
-  // ── Loading / 404 ───────────────────────────────────────────
   if (isLoading && !project) return <ProjectSkeleton />;
   if (!project)
     return (
@@ -189,29 +229,54 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
         project={project}
         tab={tab}
         onTabChange={setTab}
-        onNewTask={() => openNewTask()}
+        structureVersion={project.structure_version}
+        onNewTask={isV2 ? () => openNewTicket() : () => openNewTask()}
+        newActionLabel={isV2 ? 'New ticket' : 'New task'}
       />
 
-      {/* ── Pre-mounted tab bodies ─────────────────────────── */}
       <div className="flex-1 min-h-0 relative">
         <TabPanel active={tab === 'about'}>
           <ProjectAbout project={project} />
         </TabPanel>
 
-        <TabPanel active={tab === 'tasks'}>
-          <TasksTab
-            tasks={taskList}
-            filteredTasks={filteredTasks}
-            search={search}
-            setSearch={setSearch}
-            searchRef={searchRef}
-            onStartTask={(id) => startTask.mutate({ id })}
-            onApproveTask={(id) => approveTask.mutate(id)}
-            onOpenTask={openTask}
-            onNewTask={openNewTask}
-            onDeleteTask={(id) => deleteTask.mutate(id)}
-          />
-        </TabPanel>
+        {!isV2 && (
+          <TabPanel active={tab === 'tasks'}>
+            <TasksTab
+              tasks={taskList}
+              filteredTasks={filteredTasks}
+              search={search}
+              setSearch={setSearch}
+              searchRef={searchRef}
+              onStartTask={(id) => startTask.mutate({ id })}
+              onApproveTask={(id) => approveTask.mutate(id)}
+              onOpenTask={openTask}
+              onNewTask={openNewTask}
+              onDeleteTask={(id) => deleteTask.mutate(id)}
+            />
+          </TabPanel>
+        )}
+
+        {isV2 && (
+          <>
+            <TabPanel active={tab === 'board'}>
+              <TicketBoard
+                tickets={tickets}
+                columns={columns}
+                agents={agents}
+                onOpenTicket={openTicket}
+                onNewTicket={openNewTicket}
+                onUpdateStatus={(id, status) => updateTicketStatus.mutate({ id, status })}
+                onDeleteTicket={(id) => deleteTicket.mutate(id)}
+              />
+            </TabPanel>
+            <TabPanel active={tab === 'team'}>
+              <TeamTab projectId={project.id} />
+            </TabPanel>
+            <TabPanel active={tab === 'settings'}>
+              <TicketSettingsTab projectId={project.id} />
+            </TabPanel>
+          </>
+        )}
 
         <TabPanel active={tab === 'files'}>
           {hasFiles ? (
@@ -230,38 +295,51 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
         </TabPanel>
       </div>
 
-      {/* New task dialog — always mounted */}
-      <NewTaskDialog
-        open={newTaskOpen}
-        onOpenChange={setNewTaskOpen}
-        projectId={project.id}
-        projectName={project.name}
-        projectPath={project.path}
-        defaultStatus={newTaskDefault}
-      />
+      {/* v1 dialogs */}
+      {!isV2 && (
+        <NewTaskDialog
+          open={newTaskOpen}
+          onOpenChange={setNewTaskOpen}
+          projectId={project.id}
+          projectName={project.name}
+          projectPath={project.path}
+          defaultStatus={newTaskDefault}
+        />
+      )}
+      {!isV2 && (
+        <TaskDetailView
+          taskId={openTaskId}
+          onClose={closeTask}
+          projectName={project.name}
+          pollingEnabled={isProjectRouteActive && !!openTaskId}
+        />
+      )}
 
-      {/* Task detail modal */}
-      <TaskDetailView
-        taskId={openTaskId}
-        onClose={closeTask}
-        projectName={project.name}
-        pollingEnabled={isProjectRouteActive && !!openTaskId}
-      />
+      {/* v2 dialogs */}
+      {isV2 && (
+        <NewTicketDialog
+          open={newTicketOpen}
+          onOpenChange={setNewTicketOpen}
+          projectId={project.id}
+          columns={columns}
+          defaultStatus={newTicketDefaultStatus}
+        />
+      )}
+      {isV2 && (
+        <TicketDetailDrawer
+          ticketId={openTicketId}
+          onClose={closeTicket}
+          columns={columns}
+          fields={fields}
+          agents={agents}
+          pollingEnabled={isProjectRouteActive && !!openTicketId}
+        />
+      )}
     </div>
   );
 }
 
-// ───────────────────────────────────────────────────────────────
-// Tiny helpers
-// ───────────────────────────────────────────────────────────────
-
-function TabPanel({
-  active,
-  children,
-}: {
-  active: boolean;
-  children: React.ReactNode;
-}) {
+function TabPanel({ active, children }: { active: boolean; children: React.ReactNode }) {
   return (
     <div className={cn('absolute inset-0 flex flex-col overflow-hidden', !active && 'hidden')}>
       {children}
@@ -272,8 +350,6 @@ function TabPanel({
 function SessionsList({ sessions }: { sessions: any[] }) {
   if (sessions.length === 0)
     return <EmptyState text="No sessions linked" sub="Sessions appear here when you select this project" />;
-
-  // Separate parent and child sessions
   const parents = sessions
     .filter((s) => !s.parentID)
     .sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0));
@@ -284,17 +360,10 @@ function SessionsList({ sessions }: { sessions: any[] }) {
     list.push(c);
     childrenByParent.set(c.parentID, list);
   }
-  // Orphaned children (parent not in our list)
   const parentIds = new Set(parents.map((p) => p.id));
   const orphans = children.filter((c) => !parentIds.has(c.parentID));
-
   const openSession = (s: any) =>
-    openTabAndNavigate({
-      id: s.id,
-      title: s.title || 'Session',
-      type: 'session',
-      href: `/sessions/${s.id}`,
-    });
+    openTabAndNavigate({ id: s.id, title: s.title || 'Session', type: 'session', href: `/sessions/${s.id}` });
 
   return (
     <div className="flex-1 overflow-y-auto bg-background">
@@ -311,10 +380,7 @@ function SessionsList({ sessions }: { sessions: any[] }) {
               const kids = childrenByParent.get(s.id) || [];
               return (
                 <Fragment key={s.id}>
-                  <TableRow
-                    onClick={() => openSession(s)}
-                    className="cursor-pointer group"
-                  >
+                  <TableRow onClick={() => openSession(s)} className="cursor-pointer group">
                     <TableCell className="text-[13px] text-foreground/85 truncate max-w-0 group-hover:text-foreground">
                       {s.title || 'Untitled session'}
                     </TableCell>
@@ -323,11 +389,7 @@ function SessionsList({ sessions }: { sessions: any[] }) {
                     </TableCell>
                   </TableRow>
                   {kids.map((child: any) => (
-                    <TableRow
-                      key={child.id}
-                      onClick={() => openSession(child)}
-                      className="cursor-pointer group"
-                    >
+                    <TableRow key={child.id} onClick={() => openSession(child)} className="cursor-pointer group">
                       <TableCell className="text-[13px] truncate max-w-0 pl-8">
                         <span className="text-muted-foreground/30 mr-2">└</span>
                         <span className="text-foreground/70 group-hover:text-foreground">
@@ -348,21 +410,12 @@ function SessionsList({ sessions }: { sessions: any[] }) {
               );
             })}
             {orphans.map((s: any) => (
-              <TableRow
-                key={s.id}
-                onClick={() => openSession(s)}
-                className="cursor-pointer group"
-              >
+              <TableRow key={s.id} onClick={() => openSession(s)} className="cursor-pointer group">
                 <TableCell className="text-[13px] truncate max-w-0 pl-8">
                   <span className="text-muted-foreground/30 mr-2">└</span>
                   <span className="text-foreground/70 group-hover:text-foreground">
                     {s.task ? s.task.title : (s.title || 'Worker session')}
                   </span>
-                  {s.task && (
-                    <span className="ml-2 text-[10px] text-muted-foreground/40 font-mono">
-                      {s.task.status}
-                    </span>
-                  )}
                 </TableCell>
                 <TableCell className="text-[11px] text-muted-foreground/35 tabular-nums text-right">
                   {relativeTime(s.time?.updated)}
@@ -396,9 +449,7 @@ function ProjectSkeleton() {
         <Skeleton className="h-4 w-3/4 rounded mb-2" />
         <Skeleton className="h-4 w-1/2 rounded mb-8" />
         <div className="flex gap-4 mb-6">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-6 w-16 rounded" />
-          ))}
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-6 w-16 rounded" />)}
         </div>
         <Skeleton className="h-[400px] rounded-lg" />
       </div>
