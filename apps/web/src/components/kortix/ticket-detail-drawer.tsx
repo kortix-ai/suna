@@ -58,6 +58,7 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
 import { MentionTextarea } from '@/components/kortix/mention-textarea';
 import { MentionMarkdown } from '@/components/kortix/mention-markdown';
+import { MarkdownField } from '@/components/kortix/markdown-field';
 import {
   useTicket,
   useTicketEvents,
@@ -97,9 +98,7 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
   const userHandle = useUserHandle();
   const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
 
-  const [editingBody, setEditingBody] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
-  const [bodyDraft, setBodyDraft] = useState('');
   const [titleDraft, setTitleDraft] = useState('');
   const [comment, setComment] = useState('');
 
@@ -107,20 +106,6 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
   const agentById = useMemo(() => { const m = new Map<string, ProjectAgent>(); for (const a of agents) m.set(a.id, a); return m; }, [agents]);
 
   if (!ticketId) return null;
-
-  const startBodyEdit = () => {
-    if (!ticket) return;
-    setBodyDraft(ticket.body_md);
-    setEditingBody(true);
-  };
-  const saveBody = () => {
-    if (!ticket) return;
-    if (bodyDraft !== ticket.body_md) {
-      updateTicket.mutate({ id: ticket.id, body_md: bodyDraft });
-    }
-    setEditingBody(false);
-  };
-  const cancelBody = () => { setEditingBody(false); setBodyDraft(''); };
 
   const startTitleEdit = () => {
     if (!ticket) return;
@@ -198,72 +183,20 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                     </button>
                   )}
 
-                  {/* Body — UnifiedMarkdown render / textarea edit */}
+                  {/* Body — single shared MarkdownField handles view + edit */}
                   <section>
                     <div className="flex items-center gap-2 mb-3">
                       <FileText className="h-3.5 w-3.5 text-muted-foreground/45" />
                       <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Description</span>
-                      <div className="ml-auto flex items-center gap-1">
-                        {editingBody ? (
-                          <>
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-6 px-2 text-[11px] text-muted-foreground hover:text-foreground"
-                              onClick={cancelBody}
-                              disabled={updateTicket.isPending}
-                            >Cancel</Button>
-                            <Button
-                              variant="ghost" size="sm"
-                              className="h-6 px-2 text-[11px] text-emerald-500 hover:text-emerald-400 gap-1"
-                              onClick={saveBody}
-                              disabled={updateTicket.isPending}
-                            >
-                              {updateTicket.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                              Save
-                            </Button>
-                          </>
-                        ) : ticket.body_md ? (
-                          <Button
-                            variant="ghost" size="sm"
-                            className="h-6 px-2 text-[11px] text-muted-foreground/50 hover:text-foreground gap-1"
-                            onClick={startBodyEdit}
-                          >
-                            <Pencil className="h-3 w-3" />
-                            Edit
-                          </Button>
-                        ) : null}
-                      </div>
                     </div>
-
-                    {editingBody ? (
-                      <BodyEditor
-                        value={bodyDraft}
-                        onChange={setBodyDraft}
-                        onSave={saveBody}
-                        onCancel={cancelBody}
-                        agents={agents}
-                        userHandle={userHandle}
-                        userAvatarUrl={myAvatarUrl}
-                      />
-                    ) : ticket.body_md ? (
-                      <div className="rounded-xl border border-border/40 bg-card px-5 sm:px-6 py-5">
-                        <MentionMarkdown
-                          content={ticket.body_md}
-                          agents={agents}
-                          userHandle={userHandle}
-                          className="prose-base"
-                        />
-                      </div>
-                    ) : (
-                      <button
-                        onClick={startBodyEdit}
-                        className="w-full rounded-xl border border-dashed border-border/50 p-8 text-center hover:border-border hover:bg-muted/20 transition-colors cursor-pointer"
-                      >
-                        <p className="text-[12.5px] text-muted-foreground/55">
-                          Add a description — acceptance criteria, notes, anything durable.
-                        </p>
-                      </button>
-                    )}
+                    <MarkdownField
+                      value={ticket.body_md}
+                      onSave={(next) => updateTicket.mutate({ id: ticket.id, body_md: next })}
+                      agents={agents}
+                      userHandle={userHandle}
+                      userAvatarUrl={myAvatarUrl}
+                      placeholder="Add a description — acceptance criteria, notes, anything durable."
+                    />
                   </section>
 
                   {/* Activity */}
@@ -407,46 +340,6 @@ function TitleEditor({ value, onChange, onSave, onCancel }: {
       rows={1}
       className="w-full text-[28px] font-semibold tracking-tight leading-tight bg-transparent border-0 outline-none focus:ring-0 resize-none overflow-hidden"
     />
-  );
-}
-
-// ─── Body editor — MentionTextarea with live md + @-mention highlighting ────
-
-function BodyEditor({
-  value, onChange, onSave, onCancel, agents, userHandle, userAvatarUrl,
-}: {
-  value: string; onChange: (v: string) => void; onSave: () => void; onCancel: () => void;
-  agents: ProjectAgent[]; userHandle: string; userAvatarUrl: string | null;
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.max(240, el.scrollHeight)}px`;
-  }, [value]);
-  useEffect(() => { setTimeout(() => ref.current?.focus(), 0); }, []);
-  return (
-    <div className="rounded-xl border border-border/40 bg-card focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/20 transition-colors p-5">
-      <MentionTextarea
-        ref={ref}
-        value={value}
-        onChange={onChange}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-          if (e.key === 's' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(); }
-        }}
-        agents={agents}
-        userHandle={userHandle}
-        userAvatarUrl={userAvatarUrl}
-        placeholder="Description, acceptance criteria, notes…"
-        className={cn(
-          'w-full resize-none overflow-hidden border-0 outline-none',
-          'text-[13px] leading-[1.7] font-mono',
-          'placeholder:text-muted-foreground/30',
-        )}
-      />
-    </div>
   );
 }
 
