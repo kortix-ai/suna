@@ -4390,6 +4390,7 @@ export function SessionChat({
           client.session.promptAsync({
             sessionID: sessionId,
             parts,
+            ...(session?.directory ? { directory: session.directory } : {}),
             ...(sendOpts?.agent && { agent: sendOpts.agent }),
             ...(sendOpts?.model && { model: sendOpts.model }),
             ...(sendOpts?.variant && { variant: sendOpts.variant }),
@@ -5700,6 +5701,10 @@ export function SessionChat({
         res = await client.session.promptAsync({
           sessionID: sessionId,
           parts: mappedParts,
+          // Pass the session's directory so opencode resolves project-scoped
+          // agents (.opencode/agent/*.md under the project) and applies them
+          // when the user picked a project agent from the picker.
+          ...(session?.directory ? { directory: session.directory } : {}),
           ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
           ...(sendOpts?.model ? { model: sendOpts.model } : {}),
           ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
