@@ -358,7 +358,7 @@ function TicketForm({
 
       {/* Body — 2-column layout: seamless editor on the left, meta rail on the right */}
       <div className="grid grid-cols-[1fr_220px] min-h-[360px]">
-        <div className="px-6 pt-4 pb-4 border-r border-border/40">
+        <div className="px-6 pt-6 pb-5 border-r border-border/40">
           <textarea
             ref={titleRef}
             value={title}
@@ -366,7 +366,7 @@ function TicketForm({
             onKeyDown={onTitleKey}
             placeholder="Ticket title"
             rows={1}
-            className="w-full text-[22px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight py-1"
+            className="w-full text-[22px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight"
           />
           <textarea
             ref={bodyRef}
@@ -375,14 +375,12 @@ function TicketForm({
             onKeyDown={onBodyKey}
             placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Reference agents with @slug."}
             rows={8}
-            className="w-full mt-2 text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
+            className="w-full mt-3 text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
           />
         </div>
 
-        <aside className="px-4 pt-4 pb-4 bg-muted/[0.04] space-y-4">
-          <MetaBlock label="Status">
-            <StatusPicker columns={columns} value={status} onChange={onStatusChange} />
-          </MetaBlock>
+        {/* Meta rail — same bg as the body so it reads as one surface. */}
+        <aside className="px-4 pt-6 pb-5 space-y-5">
           <MetaBlock label="Assignees">
             <AssigneePicker
               agents={agents}
@@ -391,6 +389,9 @@ function TicketForm({
               onAdd={onAddAssignee}
               onRemove={onRemoveAssignee}
             />
+          </MetaBlock>
+          <MetaBlock label="Status">
+            <StatusPicker columns={columns} value={status} onChange={onStatusChange} />
           </MetaBlock>
         </aside>
       </div>
