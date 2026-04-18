@@ -48,6 +48,7 @@ import {
   Bot,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { UnifiedMarkdown } from '@/components/markdown';
 import {
   useCreateTicket,
   useAssignTicket,
@@ -297,6 +298,7 @@ function TicketForm({
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const [bodyMode, setBodyMode] = useState<'write' | 'preview'>('write');
 
   // Auto-size title and body to fit content — the seamless feel requires that
   // neither field has a visible edge.
@@ -358,7 +360,7 @@ function TicketForm({
 
       {/* Body — 2-column layout: seamless editor on the left, meta rail on the right */}
       <div className="grid grid-cols-[1fr_220px] min-h-[360px]">
-        <div className="px-6 pt-6 pb-5">
+        <div className="px-6 pt-6 pb-5 flex flex-col min-w-0">
           <textarea
             ref={titleRef}
             value={title}
@@ -368,15 +370,32 @@ function TicketForm({
             rows={1}
             className="w-full text-[22px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight"
           />
-          <textarea
-            ref={bodyRef}
-            value={body}
-            onChange={(e) => onBodyChange(e.target.value)}
-            onKeyDown={onBodyKey}
-            placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Reference agents with @slug."}
-            rows={8}
-            className="w-full mt-3 text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
-          />
+
+          {/* Write/Preview switcher — mirrors GitHub issue composer. */}
+          <div className="mt-3 mb-2 inline-flex items-center gap-0.5 p-0.5 rounded-full border border-border/40 bg-muted/20 w-fit">
+            <ToggleTab active={bodyMode === 'write'} onClick={() => setBodyMode('write')}>Write</ToggleTab>
+            <ToggleTab active={bodyMode === 'preview'} onClick={() => setBodyMode('preview')}>Preview</ToggleTab>
+          </div>
+
+          {bodyMode === 'write' ? (
+            <textarea
+              ref={bodyRef}
+              value={body}
+              onChange={(e) => onBodyChange(e.target.value)}
+              onKeyDown={onBodyKey}
+              placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Reference agents with @slug."}
+              rows={8}
+              className="w-full text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
+            />
+          ) : body.trim() ? (
+            <article className="prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 text-[13.5px] leading-relaxed min-h-[200px]">
+              <UnifiedMarkdown content={body} />
+            </article>
+          ) : (
+            <div className="text-[13px] text-muted-foreground/40 min-h-[200px]">
+              Nothing to preview yet.
+            </div>
+          )}
         </div>
 
         {/* Meta rail — no divider, same bg as body. Reads as one surface. */}
@@ -413,6 +432,23 @@ function TicketForm({
         </Button>
       </div>
     </div>
+  );
+}
+
+// ─── Write/Preview pill tab ────────────────────────────────────────────────
+
+function ToggleTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'h-6 px-3 rounded-full text-[11px] font-medium transition-colors cursor-pointer',
+        active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground/60 hover:text-foreground',
+      )}
+      aria-pressed={active}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -460,7 +496,7 @@ function StatusPicker({ columns, value, onChange }: { columns: TicketColumn[]; v
           <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[200px]">
+      <DropdownMenuContent align="start" className="w-[200px] z-[10000]">
         <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
           Move to
         </DropdownMenuLabel>
@@ -535,13 +571,13 @@ function AssigneePicker({
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-[11.5px] gap-1 text-muted-foreground/60 hover:text-foreground border border-dashed border-border/40 hover:border-border rounded-full w-fit"
+            className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground border border-dashed border-border/40 hover:border-border rounded-full w-fit"
           >
-            <UserPlus className="h-3 w-3" />
-            Add assignee
+            <UserPlus className="h-2.5 w-2.5" />
+            Add
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent align="start" className="w-56 z-[10000]">
           <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
             Assign to
           </DropdownMenuLabel>
