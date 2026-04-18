@@ -3,17 +3,28 @@
  * "## Team" section of CONTEXT.md on any agent CRUD.
  *
  * Filesystem layout per project:
- *   <project.path>/.kortix/
- *     ├── CONTEXT.md              (existing; we own a "## Team" region inside)
- *     └── agents/
- *         ├── project-manager.md  (seeded on v2 create)
- *         └── <other-agents>.md
+ *   <project.path>/
+ *     ├── .kortix/
+ *     │   └── CONTEXT.md                  (we own a "## Team" region inside)
+ *     └── .opencode/
+ *         └── agent/
+ *             ├── project-manager.md      (real OpenCode agent — seeded on v2 create)
+ *             └── <other-agents>.md       (real OpenCode agents — created by team_create_agent)
+ *
+ * Agent files live under `.opencode/agent/` so OpenCode discovers them as
+ * real first-class agents when a session is created with
+ * `?directory=<project.path>`. The YAML frontmatter carries BOTH opencode-
+ * native keys (name, description, mode, model) AND kortix metadata
+ * (slug, tool_groups, execution_mode, default_assignee_columns). OpenCode
+ * ignores unknown keys; the kortix plugin reads the kortix ones from our DB
+ * mirror, not the file.
  */
 
 import { Database } from 'bun:sqlite'
 import * as fs from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import * as path from 'node:path'
+import { config } from '../config'
 import {
   ensureTicketTables,
   listAgents,
@@ -31,6 +42,84 @@ export const TEAM_SECTION_END = '<!-- KORTIX:TEAM:END -->'
 
 export const DEFAULT_PM_SLUG = 'project-manager'
 export const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-6'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent file layout + rendering
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function agentFilePath(projectPath: string, slug: string): string {
+  return path.join(projectPath, '.opencode', 'agent', `${slug}.md`)
+}
+
+export interface AgentFileMeta {
+  slug: string
+  name: string
+  description?: string | null
+  /** OpenCode-native agent mode — `primary` makes it selectable from the picker. */
+  mode?: 'primary' | 'subagent' | 'all'
+  /** `providerID/modelID` form, e.g. `anthropic/claude-sonnet-4-6`. */
+  model?: string | null
+  // Kortix metadata — unknown to opencode, read by our plugin hooks from DB.
+  tool_groups?: string[]
+  execution_mode?: 'per_ticket' | 'per_assignment' | 'persistent'
+  default_assignee_columns?: string[]
+}
+
+/**
+ * Render a full agent file = YAML frontmatter + markdown body.
+ *
+ * The frontmatter mixes opencode-native keys (top half) with kortix metadata
+ * (bottom half). OpenCode reads what it knows, ignores the rest. Our plugin
+ * reads the kortix keys from the DB mirror — the file is opencode's source
+ * of truth for persona + opencode config; the DB is our source of truth for
+ * kortix tool gating.
+ */
+export function renderAgentFile(meta: AgentFileMeta, body: string): string {
+  const mode = meta.mode ?? 'primary'
+  const cleanBody = (body || '').replace(/^---[\s\S]*?---\s*/m, '').trim()
+  const lines: string[] = ['---']
+  // OpenCode-native fields
+  lines.push(`name: ${meta.slug}`)
+  if (meta.description && meta.description.trim()) {
+    lines.push(`description: ${JSON.stringify(meta.description.trim())}`)
+  }
+  lines.push(`mode: ${mode}`)
+  if (meta.model && meta.model.trim()) {
+    lines.push(`model: ${meta.model.trim()}`)
+  }
+  // Kortix bookkeeping — opencode ignores, plugin reads via DB
+  lines.push(`display_name: ${JSON.stringify(meta.name)}`)
+  lines.push(`slug: ${meta.slug}`)
+  if (meta.tool_groups?.length) {
+    lines.push('tool_groups:')
+    for (const g of meta.tool_groups) lines.push(`  - ${g}`)
+  }
+  if (meta.execution_mode) {
+    lines.push(`execution_mode: ${meta.execution_mode}`)
+  }
+  if (meta.default_assignee_columns?.length) {
+    lines.push('default_assignee_columns:')
+    for (const c of meta.default_assignee_columns) lines.push(`  - ${c}`)
+  }
+  lines.push('---', '', cleanBody, '')
+  return lines.join('\n')
+}
+
+/**
+ * Invalidate OpenCode's per-directory config cache after writing/deleting an
+ * agent file. Without this, opencode keeps serving the old agent set for that
+ * project until the whole server is restarted. Scoped to just this directory
+ * — other projects' sessions aren't touched.
+ */
+export async function disposeOpencodeDirectory(directory: string): Promise<void> {
+  const baseUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`
+  const url = `${baseUrl}/instance/dispose?directory=${encodeURIComponent(directory)}`
+  try {
+    await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5_000) })
+  } catch (err) {
+    console.warn('[project-v2-seed] dispose failed for', directory, err)
+  }
+}
 
 export interface ProjectRowLite {
   id: string
@@ -59,19 +148,8 @@ export function buildDefaultColumns(pmAgentId: string) {
 // PM persona — tight, minimal, opinionated
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function pmPersonaMarkdown(projectName: string): string {
-  return `---
-name: Project Manager
-slug: project-manager
-tool_groups:
-  - project_manage
-  - project_action
-execution_mode: per_ticket
-default_assignee_columns:
-  - backlog
----
-
-# Project Manager — ${projectName}
+export function pmPersonaBody(projectName: string): string {
+  return `# Project Manager — ${projectName}
 
 You triage the backlog, shape the team, and keep the board moving.
 
@@ -238,13 +316,23 @@ export async function seedV2Project(
   let pm = existingAgents.find((a) => a.slug === DEFAULT_PM_SLUG) || null
 
   if (!pm) {
-    const agentsDir = path.join(project.path, '.kortix', 'agents')
-    const pmPath = path.join(agentsDir, `${DEFAULT_PM_SLUG}.md`)
+    const pmPath = agentFilePath(project.path, DEFAULT_PM_SLUG)
+    const meta: AgentFileMeta = {
+      slug: DEFAULT_PM_SLUG,
+      name: 'Project Manager',
+      description: 'Project Manager — triages backlog, shapes team, keeps the board moving.',
+      mode: 'primary',
+      model: DEFAULT_MODEL,
+      tool_groups: ['project_manage', 'project_action'],
+      execution_mode: 'per_ticket',
+      default_assignee_columns: ['backlog'],
+    }
+    const contents = renderAgentFile(meta, pmPersonaBody(project.name))
     const writer = opts.writeFile ?? (async (fp: string, body: string) => {
       await fs.mkdir(path.dirname(fp), { recursive: true })
       await fs.writeFile(fp, body, 'utf8')
     })
-    await writer(pmPath, pmPersonaMarkdown(project.name))
+    await writer(pmPath, contents)
 
     const input: AgentInput = {
       slug: DEFAULT_PM_SLUG,
@@ -256,6 +344,10 @@ export async function seedV2Project(
       default_model: DEFAULT_MODEL,
     }
     pm = insertAgent(db, project.id, input)
+    // Invalidate opencode's per-directory cache so the new agent is visible
+    // on the next /agent?directory=<path> request and to sessions created
+    // against this project.
+    await disposeOpencodeDirectory(project.path)
   }
 
   const existingColumns = listColumns(db, project.id)

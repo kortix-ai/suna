@@ -142,7 +142,8 @@ projectsRouter.post('/', async (c) => {
               agent: pm,
               sessionTitle: `Onboarding · ${created.name}`,
               prompt: buildOnboardingPrompt(created.name, userHandle, created.description),
-            }).catch((err) => console.warn('[projects] PM onboarding failed:', err))
+            }).then((sid) => console.log('[projects] PM onboarding session:', sid))
+              .catch((err) => console.warn('[projects] PM onboarding failed:', err))
           }
         }
       } catch (err) {
@@ -185,6 +186,9 @@ projectsRouter.post('/:id/pm-session', async (c) => {
     const client = getOpenCodeClient()
     const res = await client.session.create({
       body: { title: `PM · ${project.name}` },
+      // Scope to the project directory. OpenCode will then discover the
+      // project's real agents from `<project.path>/.opencode/agent/*.md`.
+      query: { directory: project.path },
     } as any)
     const sessionId = (res as any)?.data?.id as string | undefined
     if (!sessionId) return c.json({ error: 'Failed to create session' }, 500)
@@ -192,9 +196,8 @@ projectsRouter.post('/:id/pm-session', async (c) => {
       db.prepare('INSERT OR REPLACE INTO session_projects (session_id, project_id, set_at) VALUES ($sid, $pid, $now)')
         .run({ $sid: sessionId, $pid: project.id, $now: new Date().toISOString() })
     } catch {}
-    // Bind this session ↔ PM so the plugin's findAgentForSession resolves PM
-    // for both the persona system-prompt hook and the tool-gating hook.
-    // Overwrites any prior PM session pointer — latest Ask-PM click wins.
+    // Bind session ↔ PM in the kortix DB so ticketToolGateHook resolves
+    // which tool_group applies when this session runs PM-dispatched tools.
     try {
       db.prepare('UPDATE project_agents SET session_id=$sid WHERE id=$id').run({ $sid: sessionId, $id: pm.id })
     } catch {}

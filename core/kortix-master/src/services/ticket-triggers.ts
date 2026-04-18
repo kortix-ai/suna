@@ -110,6 +110,9 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
     try {
       const res = await client.session.create({
         body: { title: `${agent.name} · #${ticket.number} ${ticket.title}` },
+        // Scope the session to the project's directory so opencode discovers
+        // `.opencode/agent/<slug>.md` files under it.
+        query: { directory: project.path },
       })
       sessionId = res?.data?.id as string | undefined ?? null
     } catch (err) {
@@ -149,8 +152,13 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
   try {
     await client.session.promptAsync({
       path: { id: sessionId },
+      // Dispatch under the agent's real opencode name — opencode loads the
+      // persona + config from `<project>/.opencode/agent/<slug>.md`. The
+      // `directory` query param is required every call so opencode resolves
+      // agents against this project's `.opencode/agent/` tree.
+      query: { directory: project.path },
       body: {
-        agent: 'worker',
+        agent: agent.slug,
         parts: [{ type: 'text', text: prompt }],
         ...(parseModel(agent.default_model) ? { model: parseModel(agent.default_model)! } : {}),
       },
@@ -185,6 +193,8 @@ export async function wakeAgentForProject(opts: {
     try {
       const res = await client.session.create({
         body: { title: sessionTitle || `${agent.name} · ${project.name}` },
+        // Scope to project directory so opencode discovers the agent file.
+        query: { directory: project.path },
       })
       sessionId = (res?.data?.id as string | undefined) ?? null
     } catch (err) {
@@ -205,13 +215,15 @@ export async function wakeAgentForProject(opts: {
     } catch {}
   }
 
-  // Persona is applied as a SYSTEM prompt by the plugin's
-  // experimental.chat.system.transform hook — no need to prepend it here.
+  // Dispatch to the real opencode agent — persona + config live in the file
+  // under `<project>/.opencode/agent/<slug>.md`. Pass `directory` so opencode
+  // resolves the agent from the project's `.opencode/agent/` tree.
   try {
     await client.session.promptAsync({
       path: { id: sessionId },
+      query: { directory: project.path },
       body: {
-        agent: 'worker',
+        agent: agent.slug,
         parts: [{ type: 'text', text: prompt }],
         ...(parseModel(agent.default_model) ? { model: parseModel(agent.default_model)! } : {}),
       },

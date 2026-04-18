@@ -141,7 +141,6 @@ import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { useSelectedProjectStore } from '@/stores/selected-project-store';
 import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
-import { useProjectAgents } from '@/hooks/kortix/use-kortix-tickets';
 import {
   appendProjectRefs,
   buildProjectRefsBlock,
@@ -4056,7 +4055,10 @@ export function SessionChat({
     useSessionSync(sessionId);
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
-  const { data: agents } = useOpenCodeAgents();
+  // Scope agents to the session's directory so project-local agents
+  // (.opencode/agent/*.md under the project folder) are returned alongside
+  // the globals. First render has no session yet — fall back to globals.
+  const { data: agents } = useOpenCodeAgents({ directory: session?.directory });
   const { data: commands } = useOpenCodeCommands();
   const { data: providers } = useOpenCodeProviders();
   const { data: allSessions } = useOpenCodeSessions();
@@ -4083,57 +4085,22 @@ export function SessionChat({
     }
   }, [selectedProjectId, kortixProjects, selectedProject, setSelectedProjectId]);
 
-  // ---- Project-agent overlay ----
-  // In a v2-project session, the agent picker shows the project's roster
-  // (PM / engineer / QA / …) instead of OpenCode's global agent list.
-  // Selection is pure UI — internally the session still uses whatever
-  // OpenCode agent is default (worker). The plugin layer resolves persona +
-  // tool-group from `project_agents.session_id` binding, so gating + actor
-  // attribution are correct without needing to forward the picker value.
-  const isV2ProjectSession = selectedProject?.structure_version === 2;
-  const { data: projectAgentRoster = [] } = useProjectAgents(
-    isV2ProjectSession ? selectedProject?.id : undefined,
-  );
-  const projectAgentOverlay = useMemo(() => {
-    if (!projectAgentRoster.length) return [] as typeof local.agent.list;
-    return projectAgentRoster.map((p) => ({
-      name: p.slug,
-      description: p.name,
-      hidden: false,
-      mode: 'primary',
-    })) as unknown as typeof local.agent.list;
-  }, [projectAgentRoster]);
-
-  const effectiveAgents = projectAgentOverlay.length
-    ? projectAgentOverlay
-    : local.agent.list;
-
-  // PM chat sessions ship with title "PM · <project>" — default the picker to
-  // project-manager on first render. Otherwise leave whatever the picker last
-  // chose (persisted across renders in `pickedProjectAgent`).
-  const [pickedProjectAgent, setPickedProjectAgent] = useState<string | null>(null);
+  // Sessions titled "PM · <project>" default the agent picker to the
+  // project's PM on first render. OpenCode now returns project-scoped
+  // agents via useOpenCodeAgents({ directory }), so `project-manager` is
+  // a real entry in `local.agent.list` — nothing else to wire.
+  const defaultedPmRef = useRef(false);
   useEffect(() => {
-    if (!projectAgentOverlay.length || pickedProjectAgent !== null) return;
+    if (defaultedPmRef.current) return;
     const title = session?.title || '';
-    if (/^PM\s·/i.test(title)) setPickedProjectAgent('project-manager');
-  }, [projectAgentOverlay.length, pickedProjectAgent, session?.title]);
-
-  const effectiveSelectedAgent = projectAgentOverlay.length
-    ? (pickedProjectAgent ?? 'project-manager')
-    : (local.agent.current?.name ?? null);
-
-  const handleAgentChange = useCallback((name: string | null | undefined) => {
-    // If the picked name is a project agent slug, keep it as the UI selection
-    // only — don't push it into OpenCode's local agent state (unknown to it).
-    if (projectAgentOverlay.some((p: any) => p.name === name)) {
-      setPickedProjectAgent(name ?? null);
-      return;
+    if (!/^PM\s·/i.test(title)) return;
+    const pm = local.agent.list.find((a: any) => a?.name === 'project-manager');
+    if (!pm) return;
+    if (local.agent.current?.name !== 'project-manager') {
+      local.agent.set('project-manager');
     }
-    // Otherwise it's an OpenCode agent — fall back to the normal path, and
-    // clear the project-agent overlay selection so it doesn't shadow.
-    setPickedProjectAgent(null);
-    local.agent.set(name ?? undefined);
-  }, [projectAgentOverlay, local.agent]);
+    defaultedPmRef.current = true;
+  }, [session?.title, local.agent]);
 
   const pendingPromptHandled = useRef(false);
 
@@ -6407,9 +6374,9 @@ export function SessionChat({
           isBusy={isBusy}
           onStop={handleStop}
           escCount={escCount}
-          agents={effectiveAgents}
-          selectedAgent={effectiveSelectedAgent}
-          onAgentChange={handleAgentChange}
+          agents={local.agent.list}
+          selectedAgent={local.agent.current?.name ?? null}
+          onAgentChange={(name) => local.agent.set(name ?? undefined)}
           commands={commands || []}
           onCommand={handleCommand}
           models={local.model.list}
