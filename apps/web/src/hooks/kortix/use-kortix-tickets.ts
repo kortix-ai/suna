@@ -484,6 +484,16 @@ export interface UnreadComputation {
   latestAt: string | null;
 }
 
+export type NotificationKind = 'mention' | 'assigned' | 'comment-on-mine';
+
+export interface ProjectNotification {
+  event: TicketEvent;
+  ticket_id: string;
+  kind: NotificationKind;
+  /** Event that triggered the notification — used to show the comment body when kind='mention'. */
+  relatedComment?: TicketEvent | null;
+}
+
 /**
  * Count events that are meaningful for the current human:
  *   - they were assigned to this user (user.assignee_id === handle)
@@ -527,6 +537,39 @@ export function computeUnread(
     byTicket.set(ev.ticket_id, (byTicket.get(ev.ticket_id) ?? 0) + 1);
   }
   return { total, byTicket, latestAt: latest };
+}
+
+/**
+ * Turn the raw activity stream into a list of user-facing notifications.
+ * Scoped to assignments + @mentions, same rule set as computeUnread — we
+ * just keep the event itself so the UI can render actor avatars, ticket
+ * titles, relative times, and the comment body that caused a mention.
+ */
+export function computeNotifications(
+  events: TicketEvent[] | undefined,
+  handle: string,
+  sinceIso: string | null,
+): ProjectNotification[] {
+  if (!events) return [];
+  const h = handle.toLowerCase();
+  const mentionRe = new RegExp(`(^|\\s)@${h.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+  const out: ProjectNotification[] = [];
+  for (const ev of events) {
+    if (sinceIso && ev.created_at <= sinceIso) continue;
+    if (ev.actor_type === 'user' && (ev.actor_id ?? '').toLowerCase() === h) continue;
+
+    if (ev.type === 'assigned') {
+      try {
+        const p = ev.payload_json ? JSON.parse(ev.payload_json) : null;
+        if (p?.assignee_type === 'user' && (p.assignee_id ?? '').toLowerCase() === h) {
+          out.push({ event: ev, ticket_id: ev.ticket_id, kind: 'assigned' });
+        }
+      } catch {}
+    } else if (ev.type === 'comment' && ev.message && mentionRe.test(ev.message)) {
+      out.push({ event: ev, ticket_id: ev.ticket_id, kind: 'mention', relatedComment: ev });
+    }
+  }
+  return out;
 }
 
 const LAST_SEEN_KEY = (projectId: string, handle: string) => `kortix:activity-last-seen:${projectId}:${handle}`;

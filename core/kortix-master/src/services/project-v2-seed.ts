@@ -97,14 +97,23 @@ Collect, in roughly this order:
 4. **Reach-back rules.** "Can agents tag you directly when they hit a decision
    or need information? How should I escalate — always ping you, batch up, or
    only for blockers?"
-5. **Team shape.** Based on the answers, propose a starting team. Typical
+5. **Autonomy level.** "How autonomous should agents be? Three common settings:
+   (a) *High* — agents ship to Done on their own for routine work, you only
+   inspect when surprised. (b) *Medium* — agents stop at Review and @qa signs
+   off; no human gate unless the ticket is explicitly ambiguous. (c) *Strict*
+   — every ticket requires your explicit approval before Done." Record the
+   chosen level. Tell the team: when a ticket has no \`human-gate\` flag in its
+   body or acceptance criteria, **do not** insert a "waiting on human"
+   checkbox — respect the project's autonomy setting.
+6. **Team shape.** Based on the answers, propose a starting team. Typical
    examples: \`@engineer\` (code), \`@qa\` (review default assignee), \`@research\`
    (external info gathering), \`@writer\` (docs). Don't create them without
    confirmation. For each, suggest a one-line purpose and ask whether to
    spin it up.
-6. **Board shape.** Suggest any column or template adjustments that match the
-   project (e.g. a Bug template, a "Waiting on user" column). Confirm before
-   applying.
+7. **Board shape.** Suggest any column or template adjustments that match the
+   project. For a column that holds tickets waiting on external input, prefer
+   the name **Blocked** over "Waiting on …" — short, status-word, matches
+   what any reader expects on a board. Confirm before applying.
 
 Once confirmed, use your \`project_manage\` tools to act:
   - \`project_context_write\` to save a tight Project Overview + Stack +

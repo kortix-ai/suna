@@ -71,6 +71,7 @@ import { TicketDetailDrawer } from '@/components/kortix/ticket-detail-drawer';
 import { NewTicketDialog } from '@/components/kortix/new-ticket-dialog';
 import { TeamTab } from '@/components/kortix/team-tab';
 import { TicketSettingsTab } from '@/components/kortix/ticket-settings-tab';
+import { NotificationsBell } from '@/components/kortix/notifications-bell';
 import { useIsRouteActive } from '@/hooks/utils/use-is-route-active';
 
 export default function ProjectPage({ params }: { params?: Promise<{ id: string }> }) {
@@ -268,6 +269,21 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
         onNewTask={isV2 ? () => openNewTicket() : () => openNewTask()}
         newActionLabel={isV2 ? 'New ticket' : 'New task'}
         tabBadges={isV2 ? { board: unread.total } : undefined}
+        rightSlot={isV2 ? (
+          <NotificationsBell
+            projectId={project.id}
+            userHandle={userHandle}
+            events={activity}
+            tickets={tickets}
+            agents={agents}
+            lastSeenAt={lastSeenAt}
+            onMarkAllRead={(iso) => {
+              writeLastSeen(project.id, userHandle, iso);
+              setLastSeenAt(iso);
+            }}
+            onOpenTicket={(id) => setOpenTicketId(id)}
+          />
+        ) : undefined}
       />
 
       <div className="flex-1 min-h-0 relative">

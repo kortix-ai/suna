@@ -32,6 +32,8 @@ export interface ProjectHeaderProps {
   newActionHotkey?: string;
   /** Per-tab unread badge counts (currently only used for 'board'). */
   tabBadges?: Partial<Record<ProjectTab, number>>;
+  /** Right-side slot — rendered between tabs and the New-task button. */
+  rightSlot?: React.ReactNode;
 }
 
 const V1_TABS: Array<{ id: ProjectTab; label: string }> = [
@@ -59,6 +61,7 @@ export function ProjectHeader({
   newActionLabel,
   newActionHotkey,
   tabBadges,
+  rightSlot,
 }: ProjectHeaderProps) {
   const isV2 = structureVersion === 2;
   const tabs = isV2 ? V2_TABS : V1_TABS;
@@ -115,7 +118,8 @@ export function ProjectHeader({
             })}
           </TabsPrimitive.List>
 
-          <div className="flex-1 flex items-center justify-end">
+          <div className="flex-1 flex items-center justify-end gap-1.5">
+            {rightSlot}
             {onNewTask && (
               <Button
                 size="sm"
