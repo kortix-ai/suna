@@ -166,41 +166,28 @@ function getOpenCodeClient(): OpenCodeClientLike {
 }
 
 function buildOnboardingPrompt(name: string, handle: string, description: string): string {
-  // Deliberately NO /autowork wrapper — onboarding is a real conversation with
-  // the human. Autowork would force the agent to simulate both sides and loop.
-  // Fire exactly one turn, then wait for the user's next message.
+  // No `/autowork` wrapper — onboarding is a real back-and-forth, not a task
+  // loop. One turn, then wait for the human's reply.
   return [
-    `You have just been activated on a fresh project "${name}".`,
-    description ? `Description from the user: ${description}` : null,
-    `The human on this project is @${handle}.`,
+    `Fresh project "${name}". Human: @${handle}.`,
+    description ? `User's description: ${description}` : null,
     '',
-    'Run the onboarding interview from your persona. Ask ONE short, conversational',
-    'question at a time — do not batch them, do not answer on behalf of the user.',
-    'After this turn, STOP and wait for the human to reply. The human will respond',
-    'in the same session; subsequent turns paraphrase their answer and ask the',
-    'next question.',
+    'Run the onboarding interview from your persona. ONE short question at a',
+    'time — no batching, no answering for the user. STOP after each turn and',
+    'wait for their reply.',
     '',
-    'Across the full interview, collect (in order):',
-    '  1. What the project is about (one sentence).',
-    '  2. Stack / surface area (tools, repos, services).',
-    `  3. @${handle}'s role + reach-back preferences.`,
-    '  4. **Autonomy level** — High / Medium / Strict. Record what they choose.',
-    '     Do not inject human-gate checkboxes into every ticket; respect this setting.',
-    '  5. A proposed starting team (agents) — wait for explicit confirmation before',
-    '     calling `team_create_agent`.',
-    '  6. Column / template adjustments if they fit the project. Prefer the name',
-    '     "Blocked" for any column that holds tickets waiting on external input.',
+    'Cover (in order): project · stack · role + reach-back · autonomy ·',
+    'starting team · columns/templates. Apply each piece only after approval,',
+    'using your `project_manage` tools. Keep CONTEXT.md tight.',
     '',
-    'Only after the human approves each piece, use your `project_manage` tools:',
-    '`project_context_write`, `team_create_agent`, `project_columns_update`,',
-    '`project_templates_update`, `project_fields_update`. Keep CONTEXT.md tight.',
+    'Pass `default_model: "anthropic/claude-sonnet-4-6"` on every agent. Copy',
+    'the Communication discipline block from your persona into each agent',
+    'body_md verbatim — non-negotiable.',
     '',
-    'When you call `team_create_agent`, always pass `default_model: "anthropic/claude-sonnet-4-6"` unless the human asks for a different model.',
+    'Your messages follow the same rules as the team: short, decisive, no',
+    'tables, no verdict banners.',
     '',
-    'End with a short recap of what got set up and say you are ready for the first ticket.',
-    '',
-    `Your first message: briefly introduce yourself and ask question #1. Address the user as @${handle}.`,
-    'STOP after that first question.',
+    `First message: brief intro + question #1, addressed to @${handle}. Then STOP.`,
   ].filter(Boolean).join('\n')
 }
 

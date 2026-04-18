@@ -417,7 +417,17 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     // ── project_manage: team CRUD + project config ────────────────────────
 
     team_create_agent: tool({
-      description: 'Create a new team agent. Writes .kortix/agents/<slug>.md and registers it. Tool_groups are "project_action" alone (contributor) or both "project_action" and "project_manage" (orchestrator). Pass default_model to pin the LLM for this agent (e.g. "anthropic/claude-sonnet-4-6") — match your own model unless the user asked otherwise.',
+      description: [
+        'Create a new team agent. Writes .kortix/agents/<slug>.md and registers it.',
+        'Tool_groups are "project_action" alone (contributor) or both "project_action"',
+        'and "project_manage" (orchestrator).',
+        'Pass default_model to pin the LLM (match your own model unless asked otherwise).',
+        '',
+        'IMPORTANT: the body_md you write MUST embed the Communication discipline',
+        'block from your own persona verbatim — short comments, decide-don\'t-poll,',
+        'evidence-over-verdict, no new human-gate acceptance items. Agents created',
+        'without this block ship verdict-theatre comments and over-gate tickets.',
+      ].join(' '),
       args: {
         slug: tool.schema.string().describe('URL-safe short id, e.g. "engineer"'),
         name: tool.schema.string().describe('Display name, e.g. "Engineer"'),
