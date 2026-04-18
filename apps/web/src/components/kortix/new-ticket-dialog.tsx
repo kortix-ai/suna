@@ -39,7 +39,11 @@ import {
   X,
   UserPlus,
   Check,
-  LayoutGrid,
+  ChevronDown,
+  Circle,
+  CircleDot,
+  Loader2,
+  CheckCircle2,
   UserCircle2,
   Bot,
 } from 'lucide-react';
@@ -132,7 +136,7 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
       <DialogContent
         className={cn(
           'p-0 overflow-hidden gap-0 border-border/60 bg-background',
-          step === 'pick' ? 'max-w-xl' : 'max-w-2xl',
+          step === 'pick' ? 'max-w-xl' : 'max-w-3xl',
         )}
         hideCloseButton
       >
@@ -352,39 +356,34 @@ function TicketForm({
         </Button>
       </div>
 
-      {/* Title + body — seamless editor */}
-      <div className="px-6 pb-4">
-        <textarea
-          ref={titleRef}
-          value={title}
-          onChange={(e) => onTitleChange(e.target.value)}
-          onKeyDown={onTitleKey}
-          placeholder="Ticket title"
-          rows={1}
-          className="w-full text-[22px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight py-1"
-        />
-        <textarea
-          ref={bodyRef}
-          value={body}
-          onChange={(e) => onBodyChange(e.target.value)}
-          onKeyDown={onBodyKey}
-          placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Reference agents with @slug."}
-          rows={8}
-          className="w-full mt-2 text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
-        />
-      </div>
+      {/* Body — 2-column layout: seamless editor on the left, meta rail on the right */}
+      <div className="grid grid-cols-[1fr_220px] min-h-[360px]">
+        <div className="px-6 pt-4 pb-4 border-r border-border/40">
+          <textarea
+            ref={titleRef}
+            value={title}
+            onChange={(e) => onTitleChange(e.target.value)}
+            onKeyDown={onTitleKey}
+            placeholder="Ticket title"
+            rows={1}
+            className="w-full text-[22px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight py-1"
+          />
+          <textarea
+            ref={bodyRef}
+            value={body}
+            onChange={(e) => onBodyChange(e.target.value)}
+            onKeyDown={onBodyKey}
+            placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Reference agents with @slug."}
+            rows={8}
+            className="w-full mt-2 text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
+          />
+        </div>
 
-      {/* Metadata block */}
-      <div className="border-t border-border/40 px-5 py-3 space-y-2 bg-muted/[0.04]">
-        <MetaRow
-          label="Status"
-          value={
+        <aside className="px-4 pt-4 pb-4 bg-muted/[0.04] space-y-4">
+          <MetaBlock label="Status">
             <StatusPicker columns={columns} value={status} onChange={onStatusChange} />
-          }
-        />
-        <MetaRow
-          label="Assignees"
-          value={
+          </MetaBlock>
+          <MetaBlock label="Assignees">
             <AssigneePicker
               agents={agents}
               userHandle={userHandle}
@@ -392,8 +391,8 @@ function TicketForm({
               onAdd={onAddAssignee}
               onRemove={onRemoveAssignee}
             />
-          }
-        />
+          </MetaBlock>
+        </aside>
       </div>
 
       {/* Footer */}
@@ -416,45 +415,70 @@ function TicketForm({
   );
 }
 
-// ─── Meta row ───────────────────────────────────────────────────────────────
+// ─── Meta block (right-rail section) ────────────────────────────────────────
 
-function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
+function MetaBlock({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-3 min-h-[28px]">
-      <span className="shrink-0 w-[78px] text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold pt-1.5">
-        {label}
-      </span>
-      <div className="flex-1 min-w-0">{value}</div>
+    <div>
+      <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-2">{label}</div>
+      {children}
     </div>
   );
 }
 
-// ─── Status picker: chips for every column ──────────────────────────────────
+// ─── Status picker: single chip → dropdown with every column ────────────────
+
+function columnIcon(c: TicketColumn, active: boolean) {
+  const className = active
+    ? 'h-3.5 w-3.5'
+    : c.is_terminal
+      ? 'h-3.5 w-3.5 text-emerald-500/70'
+      : c.key === 'in_progress'
+        ? 'h-3.5 w-3.5 text-blue-500/80'
+        : c.key === 'review'
+          ? 'h-3.5 w-3.5 text-amber-500/70'
+          : 'h-3.5 w-3.5 text-muted-foreground/55';
+  if (c.is_terminal) return <CheckCircle2 className={className} />;
+  if (c.key === 'in_progress') return <Loader2 className={className} />;
+  if (c.key === 'review') return <CircleDot className={className} />;
+  return <Circle className={className} />;
+}
 
 function StatusPicker({ columns, value, onChange }: { columns: TicketColumn[]; value: string; onChange: (k: string) => void }) {
+  const selected = columns.find((c) => c.key === value) ?? columns[0];
+  if (!selected) return null;
   return (
-    <div className="flex items-center gap-1 flex-wrap">
-      {columns.map((c) => {
-        const active = c.key === value;
-        return (
-          <button
-            key={c.key}
-            onClick={() => onChange(c.key)}
-            className={cn(
-              'inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11.5px] transition-colors cursor-pointer border',
-              active
-                ? 'bg-foreground text-background border-foreground'
-                : 'bg-transparent text-muted-foreground/70 hover:text-foreground border-border/50 hover:border-border',
-            )}
-            aria-pressed={active}
-          >
-            {active && <Check className="h-3 w-3" />}
-            {!active && <LayoutGrid className="h-3 w-3 opacity-40" />}
-            {c.label}
-          </button>
-        );
-      })}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          aria-label={`Status: ${selected.label}`}
+        >
+          {columnIcon(selected, false)}
+          <span className="truncate flex-1 text-left font-medium">{selected.label}</span>
+          <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[200px]">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
+          Move to
+        </DropdownMenuLabel>
+        {columns.map((c) => {
+          const active = c.key === value;
+          return (
+            <DropdownMenuItem
+              key={c.key}
+              onClick={() => onChange(c.key)}
+              className="gap-2 cursor-pointer"
+            >
+              {columnIcon(c, false)}
+              <span className="flex-1 truncate">{c.label}</span>
+              {active && <Check className="h-3 w-3 text-primary" />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -475,46 +499,59 @@ function AssigneePicker({
 }) {
   const alreadyAdded = (t: AssigneeType, id: string) => pending.some((x) => x.type === t && x.id === id);
   return (
-    <div className="flex items-center gap-1.5 flex-wrap pt-1">
+    <div className="flex flex-col gap-1.5">
       {pending.length === 0 && (
-        <span className="text-[11.5px] text-muted-foreground/40 h-6 inline-flex items-center">
-          Unassigned — column defaults still apply.
-        </span>
+        <p className="text-[11.5px] text-muted-foreground/40 leading-snug">
+          Unassigned — column defaults still fire.
+        </p>
       )}
       {pending.map((a) => (
-        <span
+        <div
           key={`${a.type}:${a.id}`}
-          className="inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-full text-[11.5px] font-mono bg-primary/10 text-primary"
+          className={cn(
+            'inline-flex items-center gap-1.5 h-7 pl-2 pr-1 rounded-full text-[11.5px] font-mono w-fit',
+            a.type === 'user' ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-foreground/80',
+          )}
         >
-          @{a.label}
+          {a.type === 'user'
+            ? <UserCircle2 className="h-3 w-3" />
+            : <Bot className="h-3 w-3 opacity-60" />}
+          <span className="truncate max-w-[140px]">@{a.label}</span>
           <button
             onClick={() => onRemove(a)}
-            className="h-4 w-4 inline-flex items-center justify-center rounded-full text-primary/60 hover:text-primary hover:bg-primary/10"
+            className={cn(
+              'h-4 w-4 inline-flex items-center justify-center rounded-full transition-colors',
+              a.type === 'user' ? 'text-primary/60 hover:text-primary hover:bg-primary/15' : 'text-muted-foreground/50 hover:text-foreground hover:bg-muted/70',
+            )}
             aria-label="Remove"
           >
             <X className="h-2.5 w-2.5" />
           </button>
-        </span>
+        </div>
       ))}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-[11.5px] gap-1 text-muted-foreground/70 hover:text-foreground border border-dashed border-border/50 rounded-full"
+            className="h-7 px-2 text-[11.5px] gap-1 text-muted-foreground/60 hover:text-foreground border border-dashed border-border/40 hover:border-border rounded-full w-fit"
           >
             <UserPlus className="h-3 w-3" />
-            Add
+            Add assignee
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuLabel>Assign to</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
+            Assign to
+          </DropdownMenuLabel>
           <DropdownMenuItem
             disabled={alreadyAdded('user', userHandle)}
             onClick={() => onAdd({ type: 'user', id: userHandle, label: userHandle })}
+            className="gap-2 cursor-pointer"
           >
-            <UserCircle2 className="mr-2 h-3.5 w-3.5 text-primary" />
-            @{userHandle} <span className="ml-auto text-[10px] text-muted-foreground/40">you</span>
+            <UserCircle2 className="h-3.5 w-3.5 text-primary" />
+            <span className="flex-1 truncate">@{userHandle}</span>
+            <span className="text-[10px] text-muted-foreground/40">you</span>
           </DropdownMenuItem>
           {agents.length > 0 && <DropdownMenuSeparator />}
           {agents.map((a) => (
@@ -522,9 +559,10 @@ function AssigneePicker({
               key={a.id}
               disabled={alreadyAdded('agent', a.id)}
               onClick={() => onAdd({ type: 'agent', id: a.id, label: a.slug })}
+              className="gap-2 cursor-pointer"
             >
-              <Bot className="mr-2 h-3.5 w-3.5 text-muted-foreground/60" />
-              @{a.slug}
+              <Bot className="h-3.5 w-3.5 text-muted-foreground/60" />
+              <span className="flex-1 truncate">@{a.slug}</span>
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>

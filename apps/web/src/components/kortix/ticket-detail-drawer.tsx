@@ -24,9 +24,12 @@ import {
   UserCircle2,
   Bot,
   CircleDot,
+  Circle,
+  CheckCircle2,
   Activity,
   History,
   FileText,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -431,30 +434,49 @@ function PanelSection({ label, children }: { label: string; children: React.Reac
   );
 }
 
-// ─── Status pills in the side panel ─────────────────────────────────────────
+// ─── Status picker (dropdown) ───────────────────────────────────────────────
+
+function columnIcon(c: TicketColumn) {
+  if (c.is_terminal) return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500/70" />;
+  if (c.key === 'in_progress') return <Loader2 className="h-3.5 w-3.5 text-blue-500/80" />;
+  if (c.key === 'review') return <CircleDot className="h-3.5 w-3.5 text-amber-500/70" />;
+  return <Circle className="h-3.5 w-3.5 text-muted-foreground/55" />;
+}
 
 function StatusPills({ columns, value, onChange }: { columns: TicketColumn[]; value: string; onChange: (k: string) => void }) {
+  const selected = columns.find((c) => c.key === value) ?? columns[0];
+  if (!selected) return null;
   return (
-    <div className="flex flex-wrap gap-1">
-      {columns.map((c) => {
-        const active = c.key === value;
-        return (
-          <button
-            key={c.key}
-            onClick={() => onChange(c.key)}
-            className={cn(
-              'inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11.5px] border transition-colors cursor-pointer',
-              active
-                ? 'bg-foreground text-background border-foreground'
-                : 'text-muted-foreground/70 hover:text-foreground border-border/50 hover:border-border bg-transparent',
-            )}
-          >
-            {active ? <Check className="h-3 w-3" /> : <CircleDot className="h-3 w-3 opacity-30" />}
-            {c.label}
-          </button>
-        );
-      })}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        >
+          {columnIcon(selected)}
+          <span className="flex-1 text-left truncate font-medium">{selected.label}</span>
+          <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-[220px]">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
+          Move to
+        </DropdownMenuLabel>
+        {columns.map((c) => {
+          const active = c.key === value;
+          return (
+            <DropdownMenuItem
+              key={c.key}
+              onClick={() => onChange(c.key)}
+              className="gap-2 cursor-pointer"
+            >
+              {columnIcon(c)}
+              <span className="flex-1 truncate">{c.label}</span>
+              {active && <Check className="h-3 w-3 text-primary" />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
