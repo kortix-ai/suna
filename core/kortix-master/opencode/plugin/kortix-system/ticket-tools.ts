@@ -51,10 +51,13 @@ import {
   writeContextPreservingTeam,
   renderAgentFile,
   agentFilePath,
-  disposeOpencodeDirectory,
   type AgentFileMeta,
 } from '../../../src/services/project-v2-seed'
-import { fireAgentTrigger as svcFireAgentTrigger, fireAgentTriggers as svcFireAgentTriggers } from '../../../src/services/ticket-triggers'
+import {
+  fireAgentTrigger as svcFireAgentTrigger,
+  fireAgentTriggers as svcFireAgentTriggers,
+  scheduleAgentRefresh,
+} from '../../../src/services/ticket-triggers'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 
@@ -577,9 +580,16 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           default_model: args.default_model || null,
         })
         await syncTeamSection(db, proj)
-        // Invalidate opencode's per-directory cache so @${slug} is live now.
-        disposeOpencodeDirectory(proj.path)
-        return `Created agent @${ag.slug} (${ag.id}).`
+        // Schedule a debounced opencode refresh so the new agent becomes
+        // routable without aborting the turn we're running in right now.
+        // Any assign_to or column-default trigger for this agent issued
+        // before the refresh lands is queued in pending_agent_triggers
+        // and drained automatically when ready_at flips.
+        scheduleAgentRefresh({
+          db, client, directory: proj.path, projectId: pid,
+          bindSessionToProject: (sid, pid) => mgr.setSessionProject(sid, pid),
+        })
+        return `Created agent @${ag.slug} (${ag.id}). Will be routable in ~20s (opencode cache refresh). Triggers issued before then will be queued and fire automatically.`
       },
     }),
 
@@ -645,9 +655,15 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         if (args.default_model !== undefined) {
           try { db.prepare('UPDATE project_agents SET default_model=$m WHERE id=$id').run({ $m: model, $id: ag.id }) } catch {}
         }
+        // The persona body or model changed — mark not-ready so the next
+        // dispatch waits for the refresh cycle to pick up the new file.
+        try { db.prepare('UPDATE project_agents SET ready_at=NULL WHERE id=$id').run({ $id: ag.id }) } catch {}
         await syncTeamSection(db, proj)
-        disposeOpencodeDirectory(proj.path)
-        return `Updated agent @${args.slug}.`
+        scheduleAgentRefresh({
+          db, client, directory: proj.path, projectId: pid,
+          bindSessionToProject: (sid, pid) => mgr.setSessionProject(sid, pid),
+        })
+        return `Updated agent @${args.slug}. Refresh scheduled (~20s).`
       },
     }),
 
@@ -666,7 +682,11 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         try { await fs.unlink(agentFilePath(proj.path, ag.slug)) } catch {}
         db.prepare('DELETE FROM project_agents WHERE id=$id').run({ $id: ag.id })
         db.prepare('DELETE FROM ticket_agent_sessions WHERE agent_id=$id').run({ $id: ag.id })
-        disposeOpencodeDirectory(proj.path)
+        db.prepare('DELETE FROM pending_agent_triggers WHERE agent_id=$id').run({ $id: ag.id })
+        scheduleAgentRefresh({
+          db, client, directory: proj.path, projectId: pid,
+          bindSessionToProject: (sid, pid) => mgr.setSessionProject(sid, pid),
+        })
         await syncTeamSection(db, proj)
         return `Deleted agent @${args.slug}.`
       },

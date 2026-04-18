@@ -30,6 +30,7 @@ import {
   listAgents,
   listColumns,
   insertAgent,
+  markAgentReady,
   replaceColumns,
   setProjectStructureVersion,
   type AgentInput,
@@ -106,44 +107,26 @@ export function renderAgentFile(meta: AgentFileMeta, body: string): string {
 }
 
 /**
- * Invalidate OpenCode's per-directory config cache after writing/deleting an
- * agent file. Without this, opencode keeps serving the old agent set for that
- * project until the whole server is restarted. Scoped to just this directory
- * — other projects' sessions aren't touched.
+ * Invalidate OpenCode's per-directory agent/config cache so freshly-written
+ * `.opencode/agent/*.md` files become discoverable. Scoped to one directory
+ * — other projects' sessions are unaffected.
  *
- * CRITICAL: dispose must NOT fire synchronously from inside a tool running in
- * that same directory's session. Opencode reloads config on dispose, which
- * can abort the very session invoking the tool (seen as "Tool execution
- * aborted"). We debounce per-directory on a short timer so dispose fires
- * *after* the current turn completes (the session goes idle between turns).
- * Multiple back-to-back CRUDs in one turn (e.g. PM creating engineer + QA)
- * coalesce into a single dispose call once the turn settles.
+ * WARNING: if any session is *actively generating a turn* in this same
+ * directory when dispose fires, that turn dies with MessageAbortedError
+ * (verified empirically against opencode 1.2.25). Idle sessions survive.
+ * Only call this when you're certain the directory is idle — e.g. during
+ * project seeding (before any session exists) or via `scheduleAgentRefresh`
+ * in ticket-triggers.ts, which debounces + drains pending triggers.
  */
-const _disposeTimers = new Map<string, ReturnType<typeof setTimeout>>()
-// Longer debounce so the PM's text response after the tool call has time to
-// finish before we reload config (which aborts in-flight LLM turns).
-const DISPOSE_DEBOUNCE_MS = 20_000
-
-export function disposeOpencodeDirectory(directory: string): void {
-  const existing = _disposeTimers.get(directory)
-  if (existing) clearTimeout(existing)
-  _disposeTimers.set(directory, setTimeout(() => {
-    _disposeTimers.delete(directory)
-    const baseUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`
-    const url = `${baseUrl}/instance/dispose?directory=${encodeURIComponent(directory)}`
-    fetch(url, { method: 'POST', signal: AbortSignal.timeout(5_000) })
-      .catch((err) => console.warn('[project-v2-seed] dispose failed for', directory, err))
-  }, DISPOSE_DEBOUNCE_MS))
-}
-
-/** Force-flush any pending dispose immediately. Rarely needed; mostly for tests. */
-export async function flushPendingDisposes(): Promise<void> {
-  for (const [dir, timer] of _disposeTimers.entries()) {
-    clearTimeout(timer)
-    _disposeTimers.delete(dir)
-    const baseUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`
-    const url = `${baseUrl}/instance/dispose?directory=${encodeURIComponent(dir)}`
-    try { await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5_000) }) } catch {}
+export async function fireOpencodeDispose(directory: string): Promise<boolean> {
+  const baseUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`
+  const url = `${baseUrl}/instance/dispose?directory=${encodeURIComponent(directory)}`
+  try {
+    const res = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(5_000) })
+    return res.ok
+  } catch (err) {
+    console.warn('[project-v2-seed] fireOpencodeDispose failed for', directory, err)
+    return false
   }
 }
 
@@ -370,10 +353,11 @@ export async function seedV2Project(
       default_model: DEFAULT_MODEL,
     }
     pm = insertAgent(db, project.id, input)
-    // Invalidate opencode's per-directory cache so the new agent is visible
-    // on the next /agent?directory=<path> request and to sessions created
-    // against this project.
-    disposeOpencodeDirectory(project.path)
+    // Seeding runs before any session exists in this directory, so calling
+    // dispose synchronously is safe — no active turns to abort. After the
+    // dispose resolves we mark PM ready so wakeAgentForProject can dispatch.
+    await fireOpencodeDispose(project.path)
+    markAgentReady(db, pm.id)
   }
 
   const existingColumns = listColumns(db, project.id)

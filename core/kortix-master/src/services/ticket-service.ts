@@ -107,6 +107,22 @@ export interface ProjectAgentRow {
   color_hue: number | null
   icon: string | null
   created_at: string
+  /**
+   * Set once opencode's per-directory config cache has been refreshed since
+   * this agent's file was written, so dispatches by slug are guaranteed to
+   * resolve. Null while the register/dispose cycle is still in flight.
+   * Triggers fired for a not-ready agent are queued in pending_agent_triggers
+   * and drained when this flips.
+   */
+  ready_at: string | null
+}
+
+export interface PendingAgentTriggerRow {
+  id: string
+  agent_id: string
+  ticket_id: string
+  reason: string
+  created_at: string
 }
 
 export interface TicketAgentSessionRow {
@@ -222,6 +238,7 @@ export function ensureTicketTables(db: Database): void {
       default_model TEXT,
       color_hue INTEGER,
       icon TEXT,
+      ready_at TEXT,
       created_at TEXT NOT NULL,
       UNIQUE(project_id, slug)
     );
@@ -232,6 +249,17 @@ export function ensureTicketTables(db: Database): void {
       created_at TEXT NOT NULL,
       PRIMARY KEY (ticket_id, agent_id)
     );
+    -- Triggers that wanted to fire but the target agent wasn't yet "ready"
+    -- (opencode's per-directory config cache hadn't refreshed since the
+    -- agent file was written). Drained when the dispose cycle completes
+    -- and agents flip to ready.
+    CREATE TABLE IF NOT EXISTS pending_agent_triggers (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      ticket_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `)
   try { db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 1`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN default_model TEXT`) } catch {}
@@ -239,6 +267,7 @@ export function ensureTicketTables(db: Database): void {
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN icon TEXT`) } catch {}
   try { db.exec(`ALTER TABLE project_columns ADD COLUMN icon TEXT`) } catch {}
   try { db.exec(`ALTER TABLE project_columns ADD COLUMN is_off_flow INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { db.exec(`ALTER TABLE project_agents ADD COLUMN ready_at TEXT`) } catch {}
 }
 
 // ── Columns ───────────────────────────────────────────────────────────────────
@@ -458,6 +487,60 @@ export function deleteAgent(db: Database, id: string): void {
 
 export function setAgentSession(db: Database, agentId: string, sessionId: string | null): void {
   db.prepare('UPDATE project_agents SET session_id=$sid WHERE id=$id').run({ $sid: sessionId, $id: agentId })
+}
+
+// ── Agent readiness (directory-cache sync) ───────────────────────────────────
+
+/**
+ * Mark every not-ready agent in a project as ready and return the rows that
+ * just flipped. Callers typically run this right after opencode's
+ * /instance/dispose call resolves: at that point opencode has refreshed its
+ * per-directory agent cache and any pending agent-file writes are live.
+ */
+export function markAgentsReadyForProject(db: Database, projectId: string): ProjectAgentRow[] {
+  const flipped = db.prepare(
+    'SELECT * FROM project_agents WHERE project_id=$pid AND ready_at IS NULL'
+  ).all({ $pid: projectId }) as ProjectAgentRow[]
+  if (!flipped.length) return []
+  db.prepare('UPDATE project_agents SET ready_at=$now WHERE project_id=$pid AND ready_at IS NULL')
+    .run({ $now: nowIso(), $pid: projectId })
+  return flipped.map((a) => ({ ...a, ready_at: nowIso() }))
+}
+
+/** Force a specific agent's ready_at. Used by seedV2Project for the PM
+ * on the first project-create path, when no sessions exist in the dir yet. */
+export function markAgentReady(db: Database, agentId: string): void {
+  db.prepare('UPDATE project_agents SET ready_at=$now WHERE id=$id').run({ $now: nowIso(), $id: agentId })
+}
+
+// ── Pending agent triggers ───────────────────────────────────────────────────
+
+export function enqueuePendingTrigger(db: Database, input: {
+  agent_id: string; ticket_id: string; reason: string
+}): PendingAgentTriggerRow {
+  const id = 'pt-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+  const now = nowIso()
+  db.prepare(
+    `INSERT INTO pending_agent_triggers (id, agent_id, ticket_id, reason, created_at)
+     VALUES ($id, $aid, $tid, $r, $now)`
+  ).run({ $id: id, $aid: input.agent_id, $tid: input.ticket_id, $r: input.reason, $now: now })
+  return { id, agent_id: input.agent_id, ticket_id: input.ticket_id, reason: input.reason, created_at: now }
+}
+
+/** Drain (read + delete) pending triggers for the given agent ids. */
+export function drainPendingTriggersForAgents(
+  db: Database, agentIds: string[],
+): PendingAgentTriggerRow[] {
+  if (!agentIds.length) return []
+  const placeholders = agentIds.map((_, i) => `$a${i}`).join(',')
+  const params: Record<string, string> = {}
+  agentIds.forEach((id, i) => { params[`$a${i}`] = id })
+  const rows = db.prepare(
+    `SELECT * FROM pending_agent_triggers WHERE agent_id IN (${placeholders}) ORDER BY created_at ASC`
+  ).all(params) as PendingAgentTriggerRow[]
+  if (!rows.length) return []
+  db.prepare(`DELETE FROM pending_agent_triggers WHERE agent_id IN (${placeholders})`).run(params)
+  return rows
 }
 
 // ── Tickets ───────────────────────────────────────────────────────────────────

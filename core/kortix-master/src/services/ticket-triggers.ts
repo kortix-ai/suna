@@ -13,13 +13,17 @@
 import { Database } from 'bun:sqlite'
 import {
   type ProjectAgentRow,
+  drainPendingTriggersForAgents,
+  enqueuePendingTrigger,
   getAgentById,
   getTicket,
   getTicketAgentSession,
+  listAgents,
+  markAgentsReadyForProject,
   setAgentSession,
   setTicketAgentSession,
 } from './ticket-service'
-import { tryReadContext } from './project-v2-seed'
+import { fireOpencodeDispose, tryReadContext } from './project-v2-seed'
 
 export interface OpenCodeClientLike {
   session: {
@@ -97,6 +101,16 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
   if (!ticket) return null
   const project = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: projectId }) as { id: string; name: string; path: string; description: string } | null
   if (!project) return null
+
+  // Readiness gate: opencode's per-directory agent cache may not yet have
+  // this agent (file was written this turn, dispose hasn't completed). If
+  // we dispatch now, session.promptAsync({ agent: slug }) resolves to
+  // nothing and the spawn is silent-broken. Queue the trigger instead —
+  // it will be drained after the debounced dispose fires.
+  if (!agent.ready_at) {
+    enqueuePendingTrigger(db, { agent_id: agent.id, ticket_id: ticketId, reason })
+    return null
+  }
 
   let sessionId: string | null = null
   if (agent.execution_mode === 'per_ticket') {
@@ -257,5 +271,75 @@ export async function fireAgentTriggers(opts: {
       reason: t.reason,
       bindSessionToProject: opts.bindSessionToProject,
     })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Directory-refresh scheduler — debounced dispose + pending-trigger drain
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Coalesced per-directory dispose with a grace window so the active turn that
+ * just wrote an agent file has time to finish before opencode's config reload
+ * kicks in (reload aborts turns in the same directory).
+ *
+ * When the timer fires:
+ *   1. POST /instance/dispose?directory=<path>  (opencode rescans agent dir)
+ *   2. markAgentsReadyForProject — flips ready_at for every new agent
+ *   3. drainPendingTriggers — replays any triggers that were queued because
+ *      their target agent wasn't ready at the time.
+ *
+ * Multiple back-to-back agent CRUDs in one turn collapse into a single
+ * refresh pass — the timer resets on each call.
+ */
+const _refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
+// Tuned long enough that PM's post-tool text response typically finishes
+// before we reload config. Not bulletproof against a user mid-typing a
+// follow-up — that's accepted churn for now.
+const REFRESH_DEBOUNCE_MS = 20_000
+
+export interface ScheduleRefreshOpts {
+  db: Database
+  client: OpenCodeClientLike
+  directory: string
+  projectId: string
+  bindSessionToProject?: (sessionId: string, projectId: string) => void | Promise<void>
+}
+
+export function scheduleAgentRefresh(opts: ScheduleRefreshOpts): void {
+  const { db, client, directory, projectId, bindSessionToProject } = opts
+  const existing = _refreshTimers.get(directory)
+  if (existing) clearTimeout(existing)
+  _refreshTimers.set(directory, setTimeout(async () => {
+    _refreshTimers.delete(directory)
+    const ok = await fireOpencodeDispose(directory)
+    if (!ok) {
+      console.warn('[ticket-triggers] dispose failed, skipping readiness flip for', directory)
+      return
+    }
+    const flipped = markAgentsReadyForProject(db, projectId)
+    if (!flipped.length) return
+    const drained = drainPendingTriggersForAgents(db, flipped.map((a) => a.id))
+    for (const row of drained) {
+      const agent = getAgentById(db, row.agent_id)
+      if (!agent) continue
+      try {
+        await fireAgentTrigger({
+          db, client, projectId, ticketId: row.ticket_id, agent, reason: row.reason,
+          bindSessionToProject,
+        })
+      } catch (err) {
+        console.warn('[ticket-triggers] drain replay failed for agent', agent.slug, err)
+      }
+    }
+  }, REFRESH_DEBOUNCE_MS))
+}
+
+/** Flush any pending refresh immediately. Mostly for tests / shutdown. */
+export async function flushPendingRefreshes(): Promise<void> {
+  for (const [dir, timer] of Array.from(_refreshTimers.entries())) {
+    clearTimeout(timer)
+    _refreshTimers.delete(dir)
+    await fireOpencodeDispose(dir).catch(() => {})
   }
 }
