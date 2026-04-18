@@ -23,6 +23,10 @@ interface HttpProbeResult<T = any> {
   error?: string;
 }
 
+function unavailableProbe<T = any>(error: string): HttpProbeResult<T> {
+  return { ok: false, status: 0, error };
+}
+
 export interface InstanceLayerActionDescriptor {
   action: InstanceRepairAction;
   label: string;
@@ -189,11 +193,29 @@ function summarizeRuntime(
   status: InstanceLayerStatus,
 ): string {
   if (status === 'healthy') return 'Core runtime healthy';
-  if (!kortix.ok) return 'Kortix core unavailable';
-  if (!globalHealth.ok) return 'OpenCode not ready';
-  if (!sessionStatus.ok) return 'Session API failing';
+  if (!kortix.ok) {
+    return kortix.status === 0 && kortix.error
+      ? `Kortix core unavailable · ${kortix.error}`
+      : 'Kortix core unavailable';
+  }
+  if (!globalHealth.ok) {
+    return globalHealth.status === 0 && globalHealth.error
+      ? `OpenCode not ready · ${globalHealth.error}`
+      : 'OpenCode not ready';
+  }
+  if (!sessionStatus.ok) {
+    return sessionStatus.status === 0 && sessionStatus.error
+      ? `Session API failing · ${sessionStatus.error}`
+      : 'Session API failing';
+  }
   if (!coreStatus.ok) return 'Service manager unavailable';
   return 'Core runtime degraded';
+}
+
+function describeProbeFailure(result: HttpProbeResult<any>, label: string): string | null {
+  if (result.ok) return null;
+  if (result.status === 0) return `${label} timed out`;
+  return `${label} returned ${result.status}`;
 }
 
 function deriveOverallStatus(
@@ -344,23 +366,42 @@ export async function getJustAvpsInstanceHealth(
           }
         : null;
       const [kortixHealth, globalHealth, sessionStatus, coreStatus] = await Promise.all([
-        runtimeEndpoint ? fetchEndpointJson(runtimeEndpoint, '/kortix/health') : Promise.resolve({ ok: false, status: 0, error: 'runtime endpoint unavailable' }),
-        runtimeEndpoint ? fetchEndpointJson(runtimeEndpoint, '/global/health') : Promise.resolve({ ok: false, status: 0, error: 'runtime endpoint unavailable' }),
-        runtimeEndpoint ? fetchEndpointJson(runtimeEndpoint, '/session/status') : Promise.resolve({ ok: false, status: 0, error: 'runtime endpoint unavailable' }),
-        runtimeEndpoint ? fetchEndpointJson(runtimeEndpoint, '/kortix/core/status') : Promise.resolve({ ok: false, status: 0, error: 'runtime endpoint unavailable' }),
+        runtimeEndpoint ? fetchEndpointJson(runtimeEndpoint, '/kortix/health') : Promise.resolve(unavailableProbe('runtime endpoint unavailable')),
+        runtimeEndpoint ? fetchEndpointJson(runtimeEndpoint, '/global/health') : Promise.resolve(unavailableProbe('runtime endpoint unavailable')),
+        runtimeEndpoint ? fetchEndpointJson(runtimeEndpoint, '/session/status') : Promise.resolve(unavailableProbe('runtime endpoint unavailable')),
+        runtimeEndpoint ? fetchEndpointJson(runtimeEndpoint, '/kortix/core/status') : Promise.resolve(unavailableProbe('runtime endpoint unavailable')),
       ]);
 
+      const runtimeProbeIssues = [
+        describeProbeFailure(kortixHealth, 'kortix health'),
+        describeProbeFailure(globalHealth, 'global health'),
+        describeProbeFailure(sessionStatus, 'session status'),
+      ].filter((issue): issue is string => Boolean(issue));
+
       const services = Array.isArray(coreStatus.data?.services)
-        ? coreStatus.data.services.map((service: any) => ({
-            id: service.id,
-            name: service.name,
-            scope: service.scope,
-            status: service.status,
-            lastError: service.lastError ?? null,
-          }))
+        ? coreStatus.data.services.map((service: any) => {
+            let derivedStatus = service.status;
+            let derivedLastError = service.lastError ?? null;
+
+            if (service.id === 'opencode-serve' && runtimeProbeIssues.length > 0) {
+              derivedStatus = 'unresponsive';
+              derivedLastError = runtimeProbeIssues.join(' · ');
+            } else if (service.id === 'svc-kortix-master' && !kortixHealth.ok) {
+              derivedStatus = 'unresponsive';
+              derivedLastError = describeProbeFailure(kortixHealth, 'kortix health');
+            }
+
+            return {
+              id: service.id,
+              name: service.name,
+              scope: service.scope,
+              status: derivedStatus,
+              lastError: derivedLastError,
+            };
+          })
         : [];
 
-      const degradedServices = services.filter((service: any) => service.status === 'failed' || service.status === 'backoff');
+      const degradedServices = services.filter((service: any) => service.status === 'failed' || service.status === 'backoff' || service.status === 'unresponsive');
 
       let runtimeStatus: InstanceLayerStatus = 'unknown';
       if (kortixHealth.ok && globalHealth.ok && sessionStatus.ok && degradedServices.length === 0) {
@@ -388,6 +429,7 @@ export async function getJustAvpsInstanceHealth(
           kortix_health: { status: kortixHealth.status, data: kortixHealth.data ?? null, error: kortixHealth.error ?? null },
           global_health: { status: globalHealth.status, data: globalHealth.data ?? null, error: globalHealth.error ?? null },
           session_status: { status: sessionStatus.status, data: sessionStatus.data ?? null, error: sessionStatus.error ?? null },
+          runtime_probe_issues: runtimeProbeIssues,
           services,
         },
       };

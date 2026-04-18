@@ -980,7 +980,8 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
       return data;
     },
     staleTime: 5_000,
-    refetchInterval: 10_000,
+    retry: false,
+    refetchInterval: false,
     refetchOnWindowFocus: true,
   });
 
@@ -1064,6 +1065,9 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
 
   if (!hasProblem) return null;
 
+  const primaryProblem = configStatus.problems[0];
+  const taskTargetLabel = configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null;
+
   if (collapsed) {
     return (
       <div className="w-full px-2">
@@ -1089,9 +1093,6 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
       </div>
     );
   }
-
-  const primaryProblem = configStatus.problems[0];
-  const taskTargetLabel = configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null;
 
   return (
     <div className="rounded-xl border border-amber-500/18 bg-sidebar-accent/45 px-3 py-2.5 shadow-[0_1px_0_rgba(255,255,255,0.02)]">

@@ -39,6 +39,7 @@ const messageCache = new Map<
 		result: MessageWithParts[];
 	}
 >();
+const inFlightInitialLoads = new Map<string, Promise<void>>();
 
 function touchMessageCache(sessionId: string) {
 	const entry = messageCache.get(sessionId);
@@ -192,14 +193,22 @@ export function useSessionSync(sessionId: string) {
 				}
 			}
 		};
-		fetchWithRetry();
+		const existingLoad = inFlightInitialLoads.get(sessionId);
+		if (existingLoad) {
+			existingLoad.catch(() => {
+				// Error handling is already performed by the owner.
+			});
+		} else {
+			const loadPromise = fetchWithRetry().finally(() => {
+				inFlightInitialLoads.delete(sessionId);
+			});
+			inFlightInitialLoads.set(sessionId, loadPromise);
+		}
 
 		return () => {
 			cancelled = true;
-			// Reset so React 18 Strict Mode double-mount can re-fetch.
-			// Without this, the second mount sees fetchedRef === sessionId
-			// and skips the fetch, while the first mount's result is discarded
-			// because cancelled was set to true by this cleanup.
+			// Allow a future real remount/navigation to fetch again while still
+			// relying on the module-level in-flight map to dedupe Strict Mode.
 			fetchedRef.current = null;
 			// Evict stale cache entry to prevent unbounded memory growth
 			messageCache.delete(sessionId);

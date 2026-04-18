@@ -22,7 +22,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { restartSandbox } from '@/lib/platform-client';
+import { restartSandbox, type SandboxInfo } from '@/lib/platform-client';
 import { getActiveInstanceIdFromCookie, getCurrentInstanceIdFromWindow } from '@/lib/instance-routes';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxHealth, useAdminSandboxRepair, type AdminInstanceLayerAction } from '@/hooks/admin/use-admin-sandboxes';
@@ -110,6 +110,21 @@ export function ConnectingScreen({
     enabled: healthOpen && !!resolvedSandboxId,
     staleTime: 30_000,
   });
+  const healthModalSandbox = useMemo<SandboxInfo | null>(() => {
+    if (healthModalQuery.data) return healthModalQuery.data;
+    if (!resolvedSandboxId || !healthOpen) return null;
+    return {
+      sandbox_id: resolvedSandboxId,
+      external_id: activeServer?.sandboxId || activeServer?.instanceId || resolvedSandboxId,
+      name: activeServer?.label?.trim() || labelOverride?.trim() || 'workspace',
+      provider: (effectiveProvider || 'justavps') as SandboxInfo['provider'],
+      base_url: '',
+      status: 'unknown',
+      metadata: undefined,
+      created_at: new Date(0).toISOString(),
+      updated_at: new Date(0).toISOString(),
+    };
+  }, [activeServer?.instanceId, activeServer?.label, activeServer?.sandboxId, effectiveProvider, healthModalQuery.data, healthOpen, labelOverride, resolvedSandboxId]);
 
   const runtimeOnlyDegraded = !forceConnecting && healthy === false && status === 'connected';
   const runtimeSummary = adminHealth?.layers.runtime.summary || 'Runtime services degraded';
@@ -225,7 +240,7 @@ export function ConnectingScreen({
           onHealth={resolvedSandboxId ? handleOpenHealth : undefined}
         />
         <InstanceSettingsModal
-          sandbox={healthModalQuery.data ?? null}
+          sandbox={healthModalSandbox}
           open={healthOpen}
           onOpenChange={setHealthOpen}
           defaultTab="host"
@@ -244,7 +259,7 @@ export function ConnectingScreen({
           onSwitch={handleSwitch}
         />
         <InstanceSettingsModal
-          sandbox={healthModalQuery.data ?? null}
+          sandbox={healthModalSandbox}
           open={healthOpen}
           onOpenChange={setHealthOpen}
           defaultTab="host"
@@ -272,7 +287,7 @@ export function ConnectingScreen({
           />
         </FullScreenShell>
         <InstanceSettingsModal
-          sandbox={healthModalQuery.data ?? null}
+          sandbox={healthModalSandbox}
           open={healthOpen}
           onOpenChange={setHealthOpen}
           defaultTab="host"

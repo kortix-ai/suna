@@ -95,10 +95,18 @@ function isSandboxConfigStatus(value: unknown): value is SandboxConfigStatus {
 }
 
 async function requestSandboxJson<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
-  const response = await authenticatedFetch(`${sandboxUrl.replace(/\/+$/, '')}${path}`, {
-    signal: AbortSignal.timeout(10_000),
-    ...init,
-  }, { retryOnAuthError: false });
+  let response: Response;
+  try {
+    response = await authenticatedFetch(`${sandboxUrl.replace(/\/+$/, '')}${path}`, {
+      signal: AbortSignal.timeout(10_000),
+      ...init,
+    }, { retryOnAuthError: false });
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(error.message || 'Request timed out');
+    }
+    throw new Error('Request timed out');
+  }
 
   const text = await response.text();
   let data: unknown = null;
@@ -485,7 +493,7 @@ export function InstanceSettingsModal({
 
   const configStatusQuery = useQuery<SandboxConfigStatus>({
     queryKey: ['sandbox', 'config-status', sandbox?.sandbox_id, sandboxUrl],
-    enabled: open && !!sandboxUrl,
+    enabled: open && !!sandboxUrl && adminHealth?.layers.runtime.status !== 'offline',
     queryFn: async () => {
       const data = await requestSandboxJson<unknown>(sandboxUrl!, '/config/status');
       if (!isSandboxConfigStatus(data)) {
@@ -494,7 +502,8 @@ export function InstanceSettingsModal({
       return data;
     },
     staleTime: 5_000,
-    refetchInterval: 10_000,
+    retry: false,
+    refetchInterval: adminHealth?.layers.runtime.status === 'healthy' ? 10_000 : false,
     refetchOnWindowFocus: true,
   });
 
@@ -746,6 +755,17 @@ export function InstanceSettingsModal({
   const runtimeServices = Array.isArray(adminHealth?.layers.runtime.details.services)
     ? adminHealth.layers.runtime.details.services as Array<{ id: string; name: string; status: string; scope?: string; lastError?: string | null }>
     : [];
+  const runtimeProbeIssues = Array.isArray(adminHealth?.layers.runtime.details.runtime_probe_issues)
+    ? adminHealth.layers.runtime.details.runtime_probe_issues as string[]
+    : [];
+  const configDiagnosticsError = adminHealth?.layers.runtime.status === 'offline'
+    ? 'Config diagnostics unavailable while the runtime is offline.'
+    : adminHealth?.layers.runtime.status === 'degraded' && runtimeProbeIssues.length > 0
+      ? `Config diagnostics unavailable while the runtime is degraded: ${runtimeProbeIssues.join(' · ')}`
+      : configStatusQuery.error instanceof Error
+        ? configStatusQuery.error.message
+        : null;
+  const configDiagnosticsLoading = !configDiagnosticsError && configStatusQuery.isPending;
 
   function layerTone(status: AdminInstanceLayerHealth['status']) {
     switch (status) {
@@ -753,6 +773,21 @@ export function InstanceSettingsModal({
       case 'degraded': return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
       case 'offline': return 'border-red-500/30 bg-red-500/10 text-red-200';
       default: return 'border-border/60 bg-muted/10 text-muted-foreground';
+    }
+  }
+
+  function serviceTone(status: string) {
+    switch (status) {
+      case 'running':
+        return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200';
+      case 'unresponsive':
+      case 'backoff':
+        return 'border-amber-500/30 bg-amber-500/10 text-amber-200';
+      case 'failed':
+      case 'stopped':
+        return 'border-red-500/30 bg-red-500/10 text-red-200';
+      default:
+        return 'border-border/60 bg-muted/10 text-muted-foreground';
     }
   }
 
@@ -933,13 +968,13 @@ export function InstanceSettingsModal({
               <h2 className="text-lg font-semibold">General</h2>
               <p className="text-sm text-muted-foreground">Core details and entry points for this instance.</p>
             </div>
-            <ConfigDegradationPanel
-              status={configStatusQuery.data}
-              loading={configStatusQuery.isLoading}
-              error={configStatusQuery.error instanceof Error ? configStatusQuery.error.message : null}
-              onCopyPrompt={handleCopyConfigFixPrompt}
-              onStartTask={handleStartConfigFixTask}
-              taskPending={configFixTaskMutation.isPending}
+              <ConfigDegradationPanel
+                status={configStatusQuery.data}
+                loading={configDiagnosticsLoading}
+                error={configDiagnosticsError}
+                onCopyPrompt={handleCopyConfigFixPrompt}
+                onStartTask={handleStartConfigFixTask}
+                taskPending={configFixTaskMutation.isPending}
               taskTargetLabel={configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null}
             />
             {showRecoveryCallout && (
@@ -1050,8 +1085,8 @@ export function InstanceSettingsModal({
 
           <ConfigDegradationPanel
             status={configStatusQuery.data}
-            loading={configStatusQuery.isLoading}
-            error={configStatusQuery.error instanceof Error ? configStatusQuery.error.message : null}
+            loading={configDiagnosticsLoading}
+            error={configDiagnosticsError}
             onCopyPrompt={handleCopyConfigFixPrompt}
             onStartTask={handleStartConfigFixTask}
             taskPending={configFixTaskMutation.isPending}
@@ -1128,8 +1163,13 @@ export function InstanceSettingsModal({
                             {layerServices.map((service) => (
                               <div key={service.id} className="rounded-lg border border-border/60 bg-background/60 px-3 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="min-w-0">
-                                  <div className="text-sm font-medium">{service.name}</div>
-                                  <div className="mt-1 text-xs text-muted-foreground font-mono">{service.id} · {service.status}</div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <div className="text-sm font-medium">{service.name}</div>
+                                    <div className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide', serviceTone(service.status))}>
+                                      {service.status}
+                                    </div>
+                                  </div>
+                                  <div className="mt-1 text-xs text-muted-foreground font-mono">{service.id}</div>
                                   {service.lastError ? <div className="mt-1 text-[11px] text-muted-foreground break-words">{service.lastError}</div> : null}
                                 </div>
                                 <Button size="sm" variant="outline" onClick={() => triggerRepairAction('restart_service', service.id)} disabled={adminRepairMutation.isPending}>
