@@ -22,6 +22,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
   type TextareaHTMLAttributes,
+  type UIEvent,
 } from 'react';
 import { cn } from '@/lib/utils';
 import {
@@ -29,6 +30,30 @@ import {
   UserAvatar,
 } from '@/components/kortix/agent-avatar';
 import type { ProjectAgent } from '@/hooks/kortix/use-kortix-tickets';
+
+// ─── Inline tokenizer: valid @mention only if the slug matches a team member.
+// Everything else stays plain so "email@host" doesn't light up.
+
+interface Token { type: 'text' | 'mention'; text: string }
+
+function tokenize(text: string, knownSlugs: Set<string>): Token[] {
+  const out: Token[] = [];
+  if (!text) return out;
+  const re = /(^|\s)@([a-z0-9_.-]+)/gi;
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const atIdx = m.index + m[1].length;
+    const slug = m[2].toLowerCase();
+    const end = atIdx + 1 + m[2].length;
+    if (atIdx > cursor) out.push({ type: 'text', text: text.slice(cursor, atIdx) });
+    if (knownSlugs.has(slug)) out.push({ type: 'mention', text: text.slice(atIdx, end) });
+    else out.push({ type: 'text', text: text.slice(atIdx, end) });
+    cursor = end;
+  }
+  if (cursor < text.length) out.push({ type: 'text', text: text.slice(cursor) });
+  return out;
+}
 
 type Candidate =
   | { type: 'user'; handle: string; avatarUrl: string | null }
@@ -59,6 +84,18 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
     const [query, setQuery] = useState<string | null>(null);
     const [anchor, setAnchor] = useState<{ start: number; end: number } | null>(null);
     const [selectedIdx, setSelectedIdx] = useState(0);
+    // Overlay scroll is kept in sync with the textarea so highlighted tokens
+    // track the visible viewport when the content overflows.
+    const [scrollTop, setScrollTop] = useState(0);
+
+    // Tokenize once per change to highlight recognised @mentions inline.
+    const knownSlugs = useMemo(() => {
+      const s = new Set<string>();
+      s.add(userHandle.toLowerCase());
+      for (const a of agents) s.add(a.slug.toLowerCase());
+      return s;
+    }, [agents, userHandle]);
+    const tokens = useMemo(() => tokenize(value, knownSlugs), [value, knownSlugs]);
 
     const candidates = useMemo<Candidate[]>(() => {
       if (query === null) return [];
@@ -154,14 +191,57 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
 
     const open = query !== null && candidates.length > 0;
 
+    const handleScroll = (e: UIEvent<HTMLTextAreaElement>) => setScrollTop(e.currentTarget.scrollTop);
+
+    // Shared style surface so the overlay's wrapping EXACTLY matches the
+    // textarea's, down to padding + font metrics. The textarea carries the
+    // caller's `className`; the overlay inherits it and overrides colors so
+    // it's the visible layer. The textarea itself renders transparent text
+    // (the caret stays via `caret-foreground`).
+    const overlayCls = cn(
+      className,
+      'absolute inset-0 pointer-events-none overflow-hidden whitespace-pre-wrap break-words text-foreground/90',
+      'select-none',
+    );
+    const textareaCls = cn(
+      className,
+      'relative bg-transparent text-transparent caret-foreground',
+      'selection:bg-primary/30 selection:text-transparent',
+    );
+
     return (
       <div className="relative">
+        {/* Syntax overlay — renders under the textarea, shows highlighted
+            @mentions and bold markdown markers in color. Transforms with the
+            textarea's scrollTop so long content stays in sync. */}
+        <div className={overlayCls} aria-hidden>
+          <div style={{ transform: `translateY(${-scrollTop}px)` }}>
+            {tokens.length === 0 ? (
+              // Reserve an empty line so the overlay doesn't collapse on empty
+              <span>{'\u200B'}</span>
+            ) : tokens.map((t, i) => (
+              t.type === 'mention' ? (
+                <span
+                  key={i}
+                  className="font-semibold text-primary rounded-sm px-0.5 bg-primary/10"
+                >
+                  {t.text}
+                </span>
+              ) : (
+                <span key={i}>{t.text}</span>
+              )
+            ))}
+            {/* Keep trailing newline visible in wrap calc */}
+            {value.endsWith('\n') && <span>{'\u200B'}</span>}
+          </div>
+        </div>
         <textarea
           {...textareaProps}
           ref={innerRef}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onScroll={handleScroll}
           onSelect={handleSelect}
           onBlur={(e) => {
             // Let clicks inside the dropdown (mousedown prevents blur) still
@@ -169,7 +249,8 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
             textareaProps.onBlur?.(e);
             setTimeout(close, 80);
           }}
-          className={className}
+          className={textareaCls}
+          spellCheck={textareaProps.spellCheck ?? false}
         />
         {open && (
           <div

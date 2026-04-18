@@ -50,7 +50,6 @@ import {
   Bot,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { UnifiedMarkdown } from '@/components/markdown';
 import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
 import { MentionTextarea } from '@/components/kortix/mention-textarea';
 import {
@@ -332,7 +331,6 @@ function TicketForm({
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
-  const [bodyMode, setBodyMode] = useState<'write' | 'preview'>('write');
   const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
 
   // Auto-size title and body to fit content — the seamless feel requires that
@@ -388,30 +386,9 @@ function TicketForm({
             New ticket{template ? ` · ${template.name}` : ''}
           </div>
         )}
-        <div className="ml-auto inline-flex items-center gap-3 text-[11px]">
-          <button
-            onClick={() => setBodyMode('write')}
-            className={cn(
-              'transition-colors cursor-pointer',
-              bodyMode === 'write' ? 'text-foreground' : 'text-muted-foreground/40 hover:text-foreground/80',
-            )}
-          >
-            Write
-          </button>
-          <button
-            onClick={() => setBodyMode('preview')}
-            className={cn(
-              'transition-colors cursor-pointer',
-              bodyMode === 'preview' ? 'text-foreground' : 'text-muted-foreground/40 hover:text-foreground/80',
-            )}
-          >
-            Preview
-          </button>
-          <span className="h-4 w-px bg-border/50" aria-hidden />
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
       </div>
 
       {/* Body — 2-column layout: seamless editor on the left, meta rail on the right */}
@@ -427,28 +404,18 @@ function TicketForm({
             className="w-full text-[20px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight"
           />
 
-          {bodyMode === 'write' ? (
-            <MentionTextarea
-              ref={bodyRef}
-              value={body}
-              onChange={onBodyChange}
-              onKeyDown={onBodyKey}
-              agents={agents}
-              userHandle={userHandle}
-              userAvatarUrl={myAvatarUrl}
-              placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Type @ to tag a team member."}
-              rows={8}
-              className="w-full mt-3 text-[13px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
-            />
-          ) : body.trim() ? (
-            <article className="prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 text-[13px] leading-relaxed min-h-[180px] mt-3">
-              <UnifiedMarkdown content={body} />
-            </article>
-          ) : (
-            <div className="text-[13px] text-muted-foreground/40 min-h-[180px] mt-3">
-              Nothing to preview yet.
-            </div>
-          )}
+          <MentionTextarea
+            ref={bodyRef}
+            value={body}
+            onChange={onBodyChange}
+            onKeyDown={onBodyKey}
+            agents={agents}
+            userHandle={userHandle}
+            userAvatarUrl={myAvatarUrl}
+            placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Type @ to tag a team member."}
+            rows={8}
+            className="w-full mt-3 text-[13px] leading-[1.7] border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono"
+          />
         </div>
 
         {/* Meta rail — no divider, same bg as body. */}
