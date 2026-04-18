@@ -17,7 +17,9 @@ import type { Plugin } from "@opencode-ai/plugin"
 
 import { initProjectsDb, ProjectManager, projectTools, projectGateHook } from "./projects"
 import { agentTaskTools, handleAgentTaskSessionEvent } from "./agent-tasks"
+import { ticketTools, ticketToolGateHook } from "./ticket-tools"
 import { ensureTasksTable, reconcileAllRunningTasks } from "../../../src/services/task-service"
+import { ensureTicketTables } from "../../../src/services/ticket-service"
 import { resolveKortixWorkspaceRoot, ensureKortixDir } from "./lib/paths"
 import { markStartupAbortedSession } from "./lib/startup-aborted-sessions"
 import { getBusySessionIds } from "../../../src/services/runtime-reload"
@@ -139,6 +141,7 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	const kortixDir = ensureKortixDir(import.meta.dir)
 	const db = initProjectsDb(path.join(kortixDir, "kortix.db"))
 	ensureTasksTable(db)
+	ensureTicketTables(db)
 	const mgr = new ProjectManager(client, workspaceRoot, db)
 	let currentSessionId: string | null = null
 
@@ -168,10 +171,13 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	}, 5000)
  
 	// ── Merge all tools ──
+	const projectGate = projectGateHook(mgr)
+	const ticketGate = ticketToolGateHook(db)
 	return {
 		tool: {
 			...projectTools(mgr, db),
 			...agentTaskTools(db, mgr, client),
+			...ticketTools(db, mgr, client),
 			...(sessions?.tool || {}),
 			...(connectors?.tool || {}),
 			...(triggers?.tool || {}),
@@ -182,8 +188,11 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 		// Auth
 		...(auth?.auth ? { auth: auth.auth } : {}),
 
-		// Project gate (file writes require project)
-		"tool.execute.before": projectGateHook(mgr),
+		// Gates: project selection + ticket tool_group enforcement
+		"tool.execute.before": async (input: any, output: any) => {
+			await projectGate(input, output)
+			await ticketGate(input, output)
+		},
 
 		// System prompt transform — forwards to auth (anthropic prefix)
 		"experimental.chat.system.transform": async (input: any, output: { system: string[] }) => {

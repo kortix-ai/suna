@@ -1,0 +1,582 @@
+/**
+ * Ticket tool bundles for OpenCode agents.
+ *
+ * Two groups, chosen per-agent via project_agents.tool_groups_json:
+ *   - project_action   — ticket work (read/create/update/status/assign/comment),
+ *                        plus team_list and project_context_read.
+ *   - project_manage   — everything above, plus: team CRUD, columns/fields/
+ *                        templates editing, project_context_write.
+ *
+ * Enforcement runs in a tool.execute.before hook that looks up the session's
+ * bound agent (via ticket_agent_sessions or project_agents.session_id) and
+ * rejects calls to tools outside the agent's tool_groups.
+ *
+ * When a column rule fires an auto-assignment or a comment @-mentions an
+ * agent, fireAgentTrigger spawns or reuses a session per the agent's
+ * execution_mode.
+ */
+
+import { Database } from 'bun:sqlite'
+import { tool, type ToolContext } from '@opencode-ai/plugin'
+import type { ProjectManager } from './projects'
+import {
+  addAssignee,
+  addComment,
+  createTicket,
+  ensureTicketTables,
+  getAgentById,
+  getAgentBySlug,
+  getTicket,
+  insertAgent,
+  listAgents,
+  listTickets,
+  listTicketEvents,
+  removeAssignee,
+  replaceColumns,
+  replaceFields,
+  replaceTemplates,
+  updateAgent as svcUpdateAgent,
+  updateTicket,
+  updateTicketStatus,
+  type ActorType,
+  type AssigneeType,
+  type ExecutionMode,
+  type ProjectAgentRow,
+  type ToolGroup,
+} from '../../../src/services/ticket-service'
+import {
+  syncTeamSection,
+  tryReadContext,
+  writeContextPreservingTeam,
+} from '../../../src/services/project-v2-seed'
+import { fireAgentTrigger as svcFireAgentTrigger, fireAgentTriggers as svcFireAgentTriggers } from '../../../src/services/ticket-triggers'
+import * as fs from 'node:fs/promises'
+import * as path from 'node:path'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool → required group mapping
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const TOOL_GROUPS: Record<string, ToolGroup> = {
+  // project_action
+  ticket_list: 'project_action',
+  ticket_get: 'project_action',
+  ticket_create: 'project_action',
+  ticket_update: 'project_action',
+  ticket_update_status: 'project_action',
+  ticket_assign: 'project_action',
+  ticket_unassign: 'project_action',
+  ticket_comment: 'project_action',
+  ticket_events: 'project_action',
+  team_list: 'project_action',
+  project_context_read: 'project_action',
+  // project_manage
+  team_create_agent: 'project_manage',
+  team_update_agent: 'project_manage',
+  team_delete_agent: 'project_manage',
+  project_columns_update: 'project_manage',
+  project_fields_update: 'project_manage',
+  project_templates_update: 'project_manage',
+  project_context_write: 'project_manage',
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session → Agent resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function findAgentForSession(db: Database, sessionId: string): ProjectAgentRow | null {
+  const bound = db.prepare('SELECT agent_id FROM ticket_agent_sessions WHERE session_id=$sid').get({ $sid: sessionId }) as { agent_id: string } | null
+  if (bound) return getAgentById(db, bound.agent_id)
+  const persistent = db.prepare('SELECT id FROM project_agents WHERE session_id=$sid').get({ $sid: sessionId }) as { id: string } | null
+  if (persistent) return getAgentById(db, persistent.id)
+  return null
+}
+
+export function agentHasGroup(agent: ProjectAgentRow | null, group: ToolGroup): boolean {
+  if (!agent) return true // non-agent sessions (user/interactive) can use everything
+  try {
+    const groups = JSON.parse(agent.tool_groups_json || '[]') as string[]
+    return groups.includes(group)
+  } catch {
+    return false
+  }
+}
+
+function getProjectIdForCtx(mgr: ProjectManager, ctx: ToolContext): string | null {
+  if (!ctx?.sessionID) return null
+  return mgr.getSessionProject(ctx.sessionID)?.id || null
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Execution / triggers — delegate to ticket-triggers service for shared logic
+// ─────────────────────────────────────────────────────────────────────────────
+
+function pluginFireAgentTriggers(
+  db: Database,
+  mgr: ProjectManager,
+  client: any,
+  projectId: string,
+  ticketId: string,
+  triggered: Array<{ agent_id: string; agent_slug: string; reason: string }>,
+  actor?: { type: ActorType; id?: string | null },
+): Promise<void> {
+  return svcFireAgentTriggers({
+    db,
+    client,
+    projectId,
+    ticketId,
+    triggered,
+    actor,
+    bindSessionToProject: (sessionId, pid) => mgr.setSessionProject(sessionId, pid),
+  })
+}
+
+async function pluginFireAgentTrigger(
+  db: Database,
+  mgr: ProjectManager,
+  client: any,
+  projectId: string,
+  ticketId: string,
+  agent: ProjectAgentRow,
+  reason: string,
+): Promise<string | null> {
+  return svcFireAgentTrigger({
+    db, client, projectId, ticketId, agent, reason,
+    bindSessionToProject: (sessionId, pid) => mgr.setSessionProject(sessionId, pid),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tools
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
+  const actorFromCtx = (ctx: ToolContext): { type: ActorType; id: string | null } => {
+    const agent = findAgentForSession(db, ctx.sessionID)
+    if (agent) return { type: 'agent', id: agent.id }
+    return { type: 'user', id: null }
+  }
+
+  return {
+    // ── project_action: read/write tickets ─────────────────────────────────
+
+    ticket_list: tool({
+      description: 'List tickets in the current project, optionally filtered by status (column key).',
+      args: {
+        status: tool.schema.string().optional().describe('Column key filter — e.g. "backlog", "in_progress", "review", "done".'),
+      },
+      async execute(args: { status?: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const rows = listTickets(db, { projectId: pid, status: args.status })
+        if (!rows.length) return args.status ? `No tickets in column "${args.status}".` : 'No tickets in this project.'
+        return rows.map((t) => {
+          const assignees = t.assignees.length
+            ? ` — assignees: ${t.assignees.map((a) => `${a.assignee_type}:${a.assignee_id}`).join(', ')}`
+            : ''
+          return `#${t.number} [${t.status}] ${t.title} (${t.id})${assignees}`
+        }).join('\n')
+      },
+    }),
+
+    ticket_get: tool({
+      description: 'Get full ticket detail including body, status, custom fields, and assignees.',
+      args: { id: tool.schema.string().describe('Ticket id (tk-…) or #number') },
+      async execute(args: { id: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        let t = getTicket(db, args.id)
+        if (!t && /^#?\d+$/.test(args.id)) {
+          const n = Number(args.id.replace('#', ''))
+          const row = db.prepare('SELECT id FROM tickets WHERE project_id=$pid AND number=$n').get({ $pid: pid, $n: n }) as { id: string } | null
+          if (row) t = getTicket(db, row.id)
+        }
+        if (!t) return `Ticket not found: ${args.id}`
+        const fields = JSON.parse(t.custom_fields_json || '{}')
+        return [
+          `## #${t.number} — ${t.title}`,
+          '',
+          `**ID:** ${t.id}`,
+          `**Status:** ${t.status}`,
+          `**Assignees:** ${t.assignees.length ? t.assignees.map((a) => `${a.assignee_type}:${a.assignee_id}`).join(', ') : '—'}`,
+          Object.keys(fields).length ? `**Fields:** ${JSON.stringify(fields)}` : null,
+          '',
+          t.body_md || '(no body)',
+        ].filter(Boolean).join('\n')
+      },
+    }),
+
+    ticket_events: tool({
+      description: 'List the activity log (comments, status changes, assignments, etc.) for a ticket.',
+      args: { id: tool.schema.string().describe('Ticket id') },
+      async execute(args: { id: string }, ctx: ToolContext): Promise<string> {
+        if (!getProjectIdForCtx(mgr, ctx)) return 'Error: no project selected.'
+        const events = listTicketEvents(db, args.id)
+        if (!events.length) return 'No events.'
+        return events.map((e) => `[${e.created_at}] ${e.actor_type}${e.actor_id ? `:${e.actor_id}` : ''} · ${e.type}${e.message ? ` — ${e.message}` : ''}`).join('\n')
+      },
+    }),
+
+    ticket_create: tool({
+      description: 'Create a new ticket in the current project. Lands in the first column by default.',
+      args: {
+        title: tool.schema.string().describe('Short ticket title'),
+        body_md: tool.schema.string().optional().describe('Markdown body (description, acceptance criteria, …)'),
+        status: tool.schema.string().optional().describe('Column key — defaults to first column (e.g. "backlog")'),
+        template_id: tool.schema.string().optional(),
+      },
+      async execute(args: { title: string; body_md?: string; status?: string; template_id?: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        const result = createTicket(db, {
+          project_id: pid,
+          title: args.title,
+          body_md: args.body_md,
+          status: args.status,
+          template_id: args.template_id ?? null,
+          created_by_type: actor.type,
+          created_by_id: actor.id,
+        })
+        await pluginFireAgentTriggers(db, mgr, client, pid, result.ticket.id,
+          result.triggered.map((t) => ({ ...t, reason: 'You are the default assignee for this column.' })),
+          actor)
+        return `Created ticket **#${result.ticket.number}** (${result.ticket.id}) in ${result.ticket.status}.`
+      },
+    }),
+
+    ticket_update: tool({
+      description: 'Update a ticket\'s title, body, template, or custom fields. Use ticket_update_status to change column.',
+      args: {
+        id: tool.schema.string(),
+        title: tool.schema.string().optional(),
+        body_md: tool.schema.string().optional(),
+        template_id: tool.schema.string().optional(),
+        custom_fields_json: tool.schema.string().optional().describe('JSON object of custom field values to merge in.'),
+      },
+      async execute(args, ctx): Promise<string> {
+        if (!getProjectIdForCtx(mgr, ctx)) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        let custom_fields: Record<string, unknown> | undefined
+        if (args.custom_fields_json) {
+          try { custom_fields = JSON.parse(args.custom_fields_json) } catch { return 'Error: custom_fields_json is not valid JSON.' }
+        }
+        const r = updateTicket(db, args.id, {
+          title: args.title, body_md: args.body_md, template_id: args.template_id ?? undefined, custom_fields,
+        }, actor)
+        return r ? `Updated ticket ${r.id}.` : `Ticket not found: ${args.id}`
+      },
+    }),
+
+    ticket_update_status: tool({
+      description: [
+        'Change a ticket\'s column. Status is a free string matching a project column key.',
+        'Flow guidance (not enforced): Backlog → In Progress → Review → Done. Move forward when your piece is done; move back if rework is needed.',
+        'If the destination column has a default assignee, they\'re auto-assigned and notified. If you are an agent currently assigned, moving the ticket clears your assignment (promote-clears).',
+      ].join(' '),
+      args: {
+        id: tool.schema.string(),
+        status: tool.schema.string().describe('Destination column key (e.g. "review")'),
+      },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        try {
+          const r = updateTicketStatus(db, {
+            ticketId: args.id, toStatus: args.status, actor_type: actor.type, actor_id: actor.id,
+          })
+          if (!r) return `Ticket not found: ${args.id}`
+          await pluginFireAgentTriggers(db, mgr, client, pid, args.id,
+            r.triggered.map((t) => ({ ...t, reason: `Ticket moved to "${args.status}" — you are the default assignee for this column.` })),
+            actor)
+          return `Ticket moved to "${args.status}".`
+        } catch (err) {
+          return `Failed: ${err instanceof Error ? err.message : String(err)}`
+        }
+      },
+    }),
+
+    ticket_assign: tool({
+      description: 'Assign a ticket to an agent (by slug) or the user.',
+      args: {
+        id: tool.schema.string(),
+        assignee_type: tool.schema.string().describe('"agent" or "user"'),
+        assignee_id: tool.schema.string().describe('Agent slug, user id, or "user" for the real human.'),
+      },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        let resolvedId = args.assignee_id
+        if (args.assignee_type === 'agent') {
+          const ag = getAgentBySlug(db, pid, args.assignee_id) || getAgentById(db, args.assignee_id)
+          if (!ag) return `Agent not found: ${args.assignee_id}`
+          resolvedId = ag.id
+        }
+        const r = addAssignee(db, {
+          ticketId: args.id,
+          assignee_type: args.assignee_type as AssigneeType,
+          assignee_id: resolvedId,
+          actor_type: actor.type,
+          actor_id: actor.id,
+        })
+        if (!r.added) return 'Already assigned.'
+        if (args.assignee_type === 'agent') {
+          const ag = getAgentById(db, resolvedId)
+          if (ag && (actor.type !== 'agent' || actor.id !== ag.id)) {
+            await pluginFireAgentTrigger(db, mgr, client, pid, args.id, ag,
+              'You were assigned to this ticket.')
+          }
+        }
+        return `Assigned ${args.assignee_type}:${resolvedId} to ticket ${args.id}.`
+      },
+    }),
+
+    ticket_unassign: tool({
+      description: 'Remove an assignee from a ticket.',
+      args: {
+        id: tool.schema.string(),
+        assignee_type: tool.schema.string().describe('"agent" or "user"'),
+        assignee_id: tool.schema.string().describe('Agent slug or user id'),
+      },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        let resolvedId = args.assignee_id
+        if (args.assignee_type === 'agent') {
+          const ag = getAgentBySlug(db, pid, args.assignee_id) || getAgentById(db, args.assignee_id)
+          if (ag) resolvedId = ag.id
+        }
+        const r = removeAssignee(db, {
+          ticketId: args.id,
+          assignee_type: args.assignee_type as AssigneeType,
+          assignee_id: resolvedId,
+          actor_type: actor.type,
+          actor_id: actor.id,
+        })
+        return r.removed ? 'Unassigned.' : 'Was not assigned.'
+      },
+    }),
+
+    ticket_comment: tool({
+      description: 'Post a comment on a ticket. Use @slug to mention a team agent — they\'ll be auto-notified.',
+      args: {
+        id: tool.schema.string(),
+        body: tool.schema.string().describe('Markdown body. Reference agents as @slug.'),
+      },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        const r = addComment(db, {
+          ticketId: args.id, body: args.body, actor_type: actor.type, actor_id: actor.id,
+        })
+        await pluginFireAgentTriggers(db, mgr, client, pid, args.id,
+          r.triggered.map((t) => ({ ...t, reason: 'You were @-mentioned in a comment.' })),
+          actor)
+        return r.mentions.length
+          ? `Comment posted. Notified: ${r.mentions.map((m) => `@${m}`).join(', ')}.`
+          : 'Comment posted.'
+      },
+    }),
+
+    // ── project_action: team + context reads ──────────────────────────────
+
+    team_list: tool({
+      description: 'List all team agents in the current project (plus the user role).',
+      args: {},
+      async execute(_args: unknown, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const agents = listAgents(db, pid)
+        const lines = ['- @user — real human. Tag when you need a decision an agent can\'t make.']
+        for (const a of agents) {
+          const groups = safeParseArray(a.tool_groups_json).join(', ')
+          const cols = safeParseArray(a.default_assignee_columns_json)
+          lines.push(`- @${a.slug} (${a.name}) — ${groups}${cols.length ? ` · default-assignee: ${cols.join(', ')}` : ''} · ${a.execution_mode}`)
+        }
+        return lines.join('\n')
+      },
+    }),
+
+    project_context_read: tool({
+      description: 'Read the project CONTEXT.md file.',
+      args: {},
+      async execute(_args: unknown, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const proj = db.prepare('SELECT path FROM projects WHERE id=$id').get({ $id: pid }) as { path: string } | null
+        if (!proj) return 'Error: project not found.'
+        const body = await tryReadContext(proj.path)
+        return body || '(CONTEXT.md is empty)'
+      },
+    }),
+
+    // ── project_manage: team CRUD + project config ────────────────────────
+
+    team_create_agent: tool({
+      description: 'Create a new team agent. Writes .kortix/agents/<slug>.md and registers it. Tool_groups are "project_action" alone (contributor) or both "project_action" and "project_manage" (orchestrator).',
+      args: {
+        slug: tool.schema.string().describe('URL-safe short id, e.g. "engineer"'),
+        name: tool.schema.string().describe('Display name, e.g. "Engineer"'),
+        body_md: tool.schema.string().describe('System prompt markdown (with or without frontmatter)'),
+        tool_groups: tool.schema.string().optional().describe('Comma-separated: "project_action" and/or "project_manage". Defaults to project_action.'),
+        default_assignee_columns: tool.schema.string().optional().describe('Comma-separated column keys this agent auto-assigns for, e.g. "review".'),
+        execution_mode: tool.schema.string().optional().describe('"per_ticket" (default), "per_assignment", or "persistent".'),
+      },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: pid }) as { id: string; name: string; path: string; description: string } | null
+        if (!proj) return 'Error: project not found.'
+        if (getAgentBySlug(db, pid, args.slug)) return `Agent with slug "${args.slug}" already exists.`
+        const toolGroups = (args.tool_groups || 'project_action').split(',').map((s) => s.trim()).filter(Boolean) as ToolGroup[]
+        const cols = (args.default_assignee_columns || '').split(',').map((s) => s.trim()).filter(Boolean)
+        const mode = (args.execution_mode as ExecutionMode) || 'per_ticket'
+        const filePath = path.join(proj.path, '.kortix', 'agents', `${args.slug}.md`)
+        await fs.mkdir(path.dirname(filePath), { recursive: true })
+        await fs.writeFile(filePath, args.body_md, 'utf8')
+        const ag = insertAgent(db, pid, {
+          slug: args.slug,
+          name: args.name,
+          file_path: filePath,
+          execution_mode: mode,
+          tool_groups: toolGroups,
+          default_assignee_columns: cols,
+        })
+        await syncTeamSection(db, proj)
+        return `Created agent @${ag.slug} (${ag.id}).`
+      },
+    }),
+
+    team_update_agent: tool({
+      description: 'Update an existing team agent\'s name, prompt, tool_groups, default columns, or execution mode.',
+      args: {
+        slug: tool.schema.string(),
+        name: tool.schema.string().optional(),
+        body_md: tool.schema.string().optional(),
+        tool_groups: tool.schema.string().optional(),
+        default_assignee_columns: tool.schema.string().optional(),
+        execution_mode: tool.schema.string().optional(),
+      },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: pid }) as { id: string; name: string; path: string; description: string } | null
+        if (!proj) return 'Error: project not found.'
+        const ag = getAgentBySlug(db, pid, args.slug)
+        if (!ag) return `Agent not found: ${args.slug}`
+        if (args.body_md !== undefined) {
+          try { await fs.writeFile(ag.file_path, args.body_md, 'utf8') } catch {}
+        }
+        svcUpdateAgent(db, ag.id, {
+          name: args.name,
+          execution_mode: args.execution_mode as ExecutionMode | undefined,
+          tool_groups: args.tool_groups ? args.tool_groups.split(',').map((s) => s.trim()).filter(Boolean) as ToolGroup[] : undefined,
+          default_assignee_columns: args.default_assignee_columns ? args.default_assignee_columns.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+        })
+        await syncTeamSection(db, proj)
+        return `Updated agent @${args.slug}.`
+      },
+    }),
+
+    team_delete_agent: tool({
+      description: 'Delete a team agent. Removes the markdown file and the registration row. Does not touch existing tickets they were assigned to.',
+      args: { slug: tool.schema.string() },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: pid }) as { id: string; name: string; path: string; description: string } | null
+        if (!proj) return 'Error: project not found.'
+        const ag = getAgentBySlug(db, pid, args.slug)
+        if (!ag) return `Agent not found: ${args.slug}`
+        try { await fs.unlink(ag.file_path) } catch {}
+        db.prepare('DELETE FROM project_agents WHERE id=$id').run({ $id: ag.id })
+        db.prepare('DELETE FROM ticket_agent_sessions WHERE agent_id=$id').run({ $id: ag.id })
+        await syncTeamSection(db, proj)
+        return `Deleted agent @${args.slug}.`
+      },
+    }),
+
+    project_columns_update: tool({
+      description: 'Replace the project\'s column set. Pass JSON array of {key,label,default_assignee_type?,default_assignee_id?,is_terminal?}.',
+      args: { columns_json: tool.schema.string().describe('JSON array of column definitions in display order.') },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        let cols: any[]
+        try { cols = JSON.parse(args.columns_json) } catch { return 'columns_json is not valid JSON.' }
+        if (!Array.isArray(cols)) return 'columns_json must be an array.'
+        replaceColumns(db, pid, cols)
+        return `Replaced columns (${cols.length}).`
+      },
+    }),
+
+    project_fields_update: tool({
+      description: 'Replace the project\'s custom-field definitions. Pass JSON array of {key,label,type,options?}.',
+      args: { fields_json: tool.schema.string() },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        let fields: any[]
+        try { fields = JSON.parse(args.fields_json) } catch { return 'fields_json is not valid JSON.' }
+        if (!Array.isArray(fields)) return 'fields_json must be an array.'
+        replaceFields(db, pid, fields)
+        return `Replaced fields (${fields.length}).`
+      },
+    }),
+
+    project_templates_update: tool({
+      description: 'Replace the project\'s ticket templates. Pass JSON array of {name,body_md}.',
+      args: { templates_json: tool.schema.string() },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        let tpls: any[]
+        try { tpls = JSON.parse(args.templates_json) } catch { return 'templates_json is not valid JSON.' }
+        if (!Array.isArray(tpls)) return 'templates_json must be an array.'
+        replaceTemplates(db, pid, tpls)
+        return `Replaced templates (${tpls.length}).`
+      },
+    }),
+
+    project_context_write: tool({
+      description: 'Overwrite the project\'s CONTEXT.md with new content. The auto-maintained "## Team" section is preserved.',
+      args: { body: tool.schema.string() },
+      async execute(args, ctx): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: pid }) as { id: string; name: string; path: string; description: string } | null
+        if (!proj) return 'Error: project not found.'
+        await writeContextPreservingTeam(proj.path, args.body)
+        await syncTeamSection(db, proj)
+        return 'CONTEXT.md updated.'
+      },
+    }),
+  }
+}
+
+function safeParseArray(s: string): string[] {
+  try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v.map(String) : [] } catch { return [] }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gating hook — tool.execute.before
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function ticketToolGateHook(db: Database) {
+  return async (input: { tool: string; sessionID: string; callID: string }, _output: { args: any }) => {
+    ensureTicketTables(db)
+    const toolName = input.tool
+    const required = TOOL_GROUPS[toolName]
+    if (!required) return // not one of ours
+    if (!input.sessionID) return
+    const agent = findAgentForSession(db, input.sessionID)
+    if (!agent) return // interactive/user sessions bypass
+    if (!agentHasGroup(agent, required)) {
+      throw new Error(`Tool "${toolName}" requires tool_group "${required}". Agent @${agent.slug} has: ${agent.tool_groups_json}.`)
+    }
+  }
+}

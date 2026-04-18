@@ -139,13 +139,15 @@ export function initProjectsDb(dbPath: string): Database {
 	db.exec("PRAGMA journal_mode=DELETE; PRAGMA busy_timeout=5000")
 
 	ensureSchema(db, "projects", [
-		{ name: "id",          type: "TEXT", notNull: true,  defaultValue: null,   primaryKey: true },
-		{ name: "name",        type: "TEXT", notNull: true,  defaultValue: null,   primaryKey: false },
-		{ name: "path",        type: "TEXT", notNull: true,  defaultValue: null,   primaryKey: false, unique: true },
-		{ name: "description", type: "TEXT", notNull: true,  defaultValue: "''",   primaryKey: false },
-		{ name: "created_at",  type: "TEXT", notNull: true,  defaultValue: null,   primaryKey: false },
-		{ name: "opencode_id", type: "TEXT", notNull: false, defaultValue: null,   primaryKey: false },
-		{ name: "maintainer_session_id", type: "TEXT", notNull: false, defaultValue: null,   primaryKey: false },
+		{ name: "id",          type: "TEXT",    notNull: true,  defaultValue: null, primaryKey: true },
+		{ name: "name",        type: "TEXT",    notNull: true,  defaultValue: null, primaryKey: false },
+		{ name: "path",        type: "TEXT",    notNull: true,  defaultValue: null, primaryKey: false, unique: true },
+		{ name: "description", type: "TEXT",    notNull: true,  defaultValue: "''", primaryKey: false },
+		{ name: "created_at",  type: "TEXT",    notNull: true,  defaultValue: null, primaryKey: false },
+		{ name: "opencode_id", type: "TEXT",    notNull: false, defaultValue: null, primaryKey: false },
+		{ name: "maintainer_session_id", type: "TEXT", notNull: false, defaultValue: null, primaryKey: false },
+		{ name: "structure_version", type: "INTEGER", notNull: true, defaultValue: "1", primaryKey: false },
+		{ name: "user_handle", type: "TEXT", notNull: false, defaultValue: null, primaryKey: false },
 	])
 
 	ensureSchema(db, "session_projects", [
