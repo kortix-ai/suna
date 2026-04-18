@@ -11,12 +11,15 @@ import { Hono } from 'hono'
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
 import { basename, dirname, join } from 'path'
+import { ensureTicketTables } from '../services/ticket-service'
+import { seedV2Project, syncTeamSection } from '../services/project-v2-seed'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface ProjectRow {
   id: string; name: string; path: string; description: string
   created_at: string; opencode_id: string | null
+  structure_version?: number
 }
 
 // ── DB singleton ─────────────────────────────────────────────────────────────
@@ -60,9 +63,14 @@ function getDb(): Database {
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
       description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
-      opencode_id TEXT, maintainer_session_id TEXT
+      opencode_id TEXT, maintainer_session_id TEXT,
+      structure_version INTEGER NOT NULL DEFAULT 1,
+      user_handle TEXT
     );
   `)
+  try { _db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 1`) } catch {}
+  try { _db.exec(`ALTER TABLE projects ADD COLUMN user_handle TEXT`) } catch {}
+  ensureTicketTables(_db)
 
   return _db
 }
@@ -75,27 +83,53 @@ const projectsRouter = new Hono()
 projectsRouter.post('/', async (c) => {
   try {
     const db = getDb()
-    const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string }>().catch(() => ({}))
+    const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string; structure_version?: number; user_handle?: string }>().catch(() => ({} as { id?: string; name?: string; path?: string; description?: string; structure_version?: number; user_handle?: string }))
     const projectPath = body.path?.trim() || '/workspace'
     const existing = db.prepare('SELECT * FROM projects WHERE path=$path').get({ $path: projectPath }) as ProjectRow | null
-    if (existing) return c.json(existing)
+    if (existing) {
+      if (body.user_handle && body.user_handle.trim() && !(existing as any).user_handle) {
+        db.prepare('UPDATE projects SET user_handle=$h WHERE id=$id').run({ $h: body.user_handle.trim(), $id: existing.id })
+        return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: existing.id }))
+      }
+      return c.json(existing)
+    }
 
     const fallbackName = projectPath === '/workspace' ? 'Workspace' : basename(projectPath) || 'Project'
     const name = body.name?.trim() || fallbackName
     const id = body.id?.trim() || `project_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
     const description = body.description ?? ''
+    const userHandle = body.user_handle?.trim() || null
     const createdAt = new Date().toISOString()
+    // New projects default to v2. Pass structure_version=1 explicitly to opt
+    // into the legacy tasks-only layout.
+    const structureVersion = body.structure_version === 1 ? 1 : 2
 
-    db.prepare(`INSERT INTO projects (id, name, path, description, created_at, opencode_id, maintainer_session_id)
-      VALUES ($id, $name, $path, $description, $createdAt, NULL, NULL)`)
+    db.prepare(`INSERT INTO projects (id, name, path, description, created_at, opencode_id, maintainer_session_id, structure_version, user_handle)
+      VALUES ($id, $name, $path, $description, $createdAt, NULL, NULL, $sv, $uh)`)
       .run({
         $id: id,
         $name: name,
         $path: projectPath,
         $description: description,
         $createdAt: createdAt,
+        $sv: structureVersion,
+        $uh: userHandle,
       })
 
+    const created = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow
+    if (structureVersion === 2) {
+      try {
+        await seedV2Project(db, {
+          id: created.id,
+          name: created.name,
+          path: created.path,
+          description: created.description,
+          user_handle: userHandle,
+        })
+      } catch (err) {
+        console.warn('[projects] v2 seed failed:', err)
+      }
+    }
     return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }))
   } catch (e) {
     return c.json({ error: String(e) }, 400)
@@ -234,7 +268,7 @@ projectsRouter.delete('/:id', async (c) => {
 projectsRouter.patch('/:id', async (c) => {
   const db = getDb()
   const id = decodeURIComponent(c.req.param('id'))
-  const body = await c.req.json<{ name?: string; description?: string }>()
+  const body = await c.req.json<{ name?: string; description?: string; user_handle?: string | null }>()
   const p = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
 
@@ -243,6 +277,24 @@ projectsRouter.patch('/:id', async (c) => {
   }
   if (body.description !== undefined) {
     db.prepare('UPDATE projects SET description=$d WHERE id=$id').run({ $d: body.description, $id: id })
+  }
+  if (body.user_handle !== undefined) {
+    const handle = (typeof body.user_handle === 'string' && body.user_handle.trim()) || null
+    db.prepare('UPDATE projects SET user_handle=$h WHERE id=$id').run({ $h: handle, $id: id })
+    const refreshed = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow
+    if ((refreshed as any).structure_version === 2) {
+      try {
+        await syncTeamSection(db, {
+          id: refreshed.id,
+          name: refreshed.name,
+          path: refreshed.path,
+          description: refreshed.description,
+          user_handle: handle,
+        })
+      } catch (err) {
+        console.warn('[projects] team-section sync failed:', err)
+      }
+    }
   }
   return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }))
 })
