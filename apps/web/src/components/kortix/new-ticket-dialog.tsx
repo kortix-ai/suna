@@ -41,6 +41,7 @@ import {
   UserPlus,
   Check,
   ChevronDown,
+  ChevronRight,
   Circle,
   CircleDot,
   Loader2,
@@ -208,32 +209,34 @@ function TemplatePicker({
 }) {
   return (
     <div className="flex flex-col">
-      <div className="flex items-center px-5 pt-5 pb-3">
+      <div className="flex items-start px-5 pt-5 pb-4">
         <div>
           <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">New ticket</div>
           <h2 className="text-[15px] font-semibold tracking-tight mt-1">Start from a template</h2>
         </div>
-        <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/60" onClick={onCancel}>
+        <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/60 hover:text-foreground" onClick={onCancel}>
           <X className="h-4 w-4" />
         </Button>
       </div>
 
-      <div className="px-5 pb-5 grid grid-cols-2 gap-2">
-        <TemplateCard
-          title="Blank"
-          hint="Empty ticket."
-          icon={<FileText className="h-4 w-4 text-muted-foreground/60" />}
-          onClick={() => onPick(null)}
-        />
-        {templates.map((t) => (
-          <TemplateCard
-            key={t.id}
-            title={t.name}
-            hint={summarise(t.body_md)}
-            icon={iconForName(t.name)}
-            onClick={() => onPick(t)}
+      <div className="px-5 pb-4">
+        <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+          <TemplateRow
+            title="Blank"
+            hint="Start from an empty ticket."
+            icon={<FileText className="h-3.5 w-3.5 text-muted-foreground/55" />}
+            onClick={() => onPick(null)}
           />
-        ))}
+          {templates.map((t) => (
+            <TemplateRow
+              key={t.id}
+              title={t.name}
+              hint={summarise(t.body_md)}
+              icon={iconForName(t.name)}
+              onClick={() => onPick(t)}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="px-5 pb-4 text-[11px] text-muted-foreground/40">
@@ -243,17 +246,24 @@ function TemplatePicker({
   );
 }
 
-function TemplateCard({ title, hint, icon, onClick }: { title: string; hint: string; icon: React.ReactNode; onClick: () => void }) {
+function TemplateRow({ title, hint, icon, onClick }: { title: string; hint: string; icon: React.ReactNode; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className="group text-left rounded-xl border border-border/40 bg-card/70 hover:bg-muted/30 hover:border-border p-3.5 transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      className="group w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/20 transition-colors cursor-pointer outline-none focus-visible:bg-muted/25"
     >
-      <div className="flex items-center gap-2 mb-1.5">
+      <span className="shrink-0 w-6 h-6 rounded-full bg-muted/40 flex items-center justify-center">
         {icon}
-        <span className="text-[13px] font-semibold tracking-tight">{title}</span>
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-[12.5px] font-semibold tracking-tight text-foreground leading-tight">
+          {title}
+        </div>
+        <p className="text-[11.5px] text-muted-foreground/60 line-clamp-1 leading-snug mt-0.5">
+          {hint}
+        </p>
       </div>
-      <p className="text-[11.5px] text-muted-foreground/65 line-clamp-2 leading-relaxed">{hint}</p>
+      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/25 group-hover:text-foreground transition-colors" />
     </button>
   );
 }
