@@ -463,6 +463,83 @@ export function useUserHandle(): string {
   return getUserHandle(user);
 }
 
+// ── Project activity / notifications ─────────────────────────────────────────
+
+export function useProjectActivity(projectId?: string, opts?: { enabled?: boolean; pollingEnabled?: boolean }) {
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  return useQuery<TicketEvent[]>({
+    queryKey: ['kortix', 'project-activity', projectId ?? ''],
+    queryFn: () =>
+      kfetch<TicketEvent[]>(serverUrl, `/kortix/projects/${encodeURIComponent(projectId!)}/activity?limit=200`),
+    enabled: !!projectId && (opts?.enabled ?? true),
+    refetchInterval: opts?.pollingEnabled === false ? false : 10_000,
+    refetchIntervalInBackground: false,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export interface UnreadComputation {
+  total: number;
+  byTicket: Map<string, number>;
+  latestAt: string | null;
+}
+
+/**
+ * Count events that are meaningful for the current human:
+ *   - they were assigned to this user (user.assignee_id === handle)
+ *   - they were @-mentioned in a comment body (message contains `@handle`)
+ *   - a teammate commented on a ticket the user is tracking (not implemented;
+ *     for v1 the assignment/@-mention covers the critical surface).
+ *
+ * Filters out events the user themselves produced. Uses the client-side
+ * `sinceIso` (usually localStorage last-seen for the project) as the cutoff.
+ */
+export function computeUnread(
+  events: TicketEvent[] | undefined,
+  handle: string,
+  sinceIso: string | null,
+): UnreadComputation {
+  const byTicket = new Map<string, number>();
+  let latest: string | null = null;
+  let total = 0;
+  if (!events) return { total, byTicket, latestAt: null };
+  const h = handle.toLowerCase();
+  const mentionRe = new RegExp(`(^|\\s)@${h.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+
+  for (const ev of events) {
+    if (sinceIso && ev.created_at <= sinceIso) continue;
+    if (!latest || ev.created_at > latest) latest = ev.created_at;
+    // Skip events the user themselves initiated (actor_type=user,actor_id=handle).
+    if (ev.actor_type === 'user' && (ev.actor_id ?? '').toLowerCase() === h) continue;
+
+    let hit = false;
+    if (ev.type === 'assigned') {
+      try {
+        const p = ev.payload_json ? JSON.parse(ev.payload_json) : null;
+        if (p?.assignee_type === 'user' && (p.assignee_id ?? '').toLowerCase() === h) hit = true;
+      } catch {}
+    } else if (ev.type === 'comment' && ev.message && mentionRe.test(ev.message)) {
+      hit = true;
+    }
+    if (!hit) continue;
+
+    total++;
+    byTicket.set(ev.ticket_id, (byTicket.get(ev.ticket_id) ?? 0) + 1);
+  }
+  return { total, byTicket, latestAt: latest };
+}
+
+const LAST_SEEN_KEY = (projectId: string, handle: string) => `kortix:activity-last-seen:${projectId}:${handle}`;
+
+export function readLastSeen(projectId: string, handle: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try { return window.localStorage.getItem(LAST_SEEN_KEY(projectId, handle)); } catch { return null; }
+}
+export function writeLastSeen(projectId: string, handle: string, iso: string): void {
+  if (typeof window === 'undefined') return;
+  try { window.localStorage.setItem(LAST_SEEN_KEY(projectId, handle), iso); } catch {}
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 export function safeParseJsonArray(s: string | null | undefined): string[] {

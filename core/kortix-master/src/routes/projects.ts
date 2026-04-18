@@ -11,8 +11,11 @@ import { Hono } from 'hono'
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
 import { basename, dirname, join } from 'path'
-import { ensureTicketTables } from '../services/ticket-service'
-import { seedV2Project, syncTeamSection } from '../services/project-v2-seed'
+import { ensureTicketTables, getAgentBySlug } from '../services/ticket-service'
+import { seedV2Project, syncTeamSection, DEFAULT_PM_SLUG } from '../services/project-v2-seed'
+import { wakeAgentForProject, type OpenCodeClientLike } from '../services/ticket-triggers'
+import { createOpencodeClient } from '@opencode-ai/sdk/client'
+import { config } from '../config'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -126,6 +129,22 @@ projectsRouter.post('/', async (c) => {
           description: created.description,
           user_handle: userHandle,
         })
+        // Kick off PM onboarding in a project-level session so the human can
+        // chat with the PM right away from the Sessions tab. Fire-and-forget
+        // — the create HTTP response should not wait on LLM turns.
+        if (userHandle) {
+          const pm = getAgentBySlug(db, created.id, DEFAULT_PM_SLUG)
+          if (pm) {
+            wakeAgentForProject({
+              db,
+              client: getOpenCodeClient(),
+              projectId: created.id,
+              agent: pm,
+              sessionTitle: `Onboarding · ${created.name}`,
+              prompt: buildOnboardingPrompt(created.name, userHandle, created.description),
+            }).catch((err) => console.warn('[projects] PM onboarding failed:', err))
+          }
+        }
       } catch (err) {
         console.warn('[projects] v2 seed failed:', err)
       }
@@ -135,6 +154,46 @@ projectsRouter.post('/', async (c) => {
     return c.json({ error: String(e) }, 400)
   }
 })
+
+let _ocClient: ReturnType<typeof createOpencodeClient> | null = null
+function getOpenCodeClient(): OpenCodeClientLike {
+  if (!_ocClient) {
+    _ocClient = createOpencodeClient({
+      baseUrl: `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`,
+    })
+  }
+  return _ocClient as unknown as OpenCodeClientLike
+}
+
+function buildOnboardingPrompt(name: string, handle: string, description: string): string {
+  return [
+    `/autowork --max-iterations 40`,
+    '',
+    `You have just been activated on a fresh project "${name}".`,
+    description ? `Description from the user: ${description}` : null,
+    `The human on this project is @${handle}.`,
+    '',
+    'Before touching any tools, start the onboarding interview described in',
+    'your persona. Ask one short, conversational question at a time — do not',
+    'batch them. Paraphrase answers back to confirm understanding.',
+    '',
+    'The goals, in order:',
+    '  1. Learn what the project is about (one sentence).',
+    '  2. Learn the stack / surface area (tools, repos, services).',
+    `  3. Learn @${handle}'s role + reach-back preferences.`,
+    '  4. Propose a starting team (agents) and wait for confirmation.',
+    '  5. Propose column / template adjustments if they fit.',
+    '',
+    'Only after the human approves each piece, use `project_context_write`,',
+    '`team_create_agent`, `project_columns_update`, `project_templates_update`,',
+    '`project_fields_update` to apply. Keep CONTEXT.md tight and high-signal.',
+    '',
+    'End with a short recap of what got set up and say you are ready for the',
+    'first ticket.',
+    '',
+    `Your first message to the user should briefly introduce yourself and ask question #1. Address the user as @${handle}.`,
+  ].filter(Boolean).join('\n')
+}
 
 // GET / — list all projects with stats
 projectsRouter.get('/', async (c) => {

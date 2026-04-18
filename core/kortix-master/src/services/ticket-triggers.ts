@@ -169,6 +169,65 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
   return sessionId
 }
 
+/**
+ * Wake an agent without a ticket — used for project-level onboarding.
+ * Creates a dedicated session (stored on project_agents.session_id) so the
+ * user can follow the conversation from the project's Sessions tab.
+ */
+export async function wakeAgentForProject(opts: {
+  db: Database
+  client: OpenCodeClientLike
+  projectId: string
+  agent: ProjectAgentRow
+  prompt: string
+  sessionTitle?: string
+  bindSessionToProject?: (sessionId: string, projectId: string) => void | Promise<void>
+}): Promise<string | null> {
+  const { db, client, projectId, agent, prompt, sessionTitle, bindSessionToProject } = opts
+  const project = db.prepare('SELECT id,name,path FROM projects WHERE id=$id').get({ $id: projectId }) as { id: string; name: string; path: string } | null
+  if (!project) return null
+
+  let sessionId = agent.session_id
+  if (!sessionId) {
+    try {
+      const res = await client.session.create({
+        body: { title: sessionTitle || `${agent.name} · ${project.name}` },
+      })
+      sessionId = (res?.data?.id as string | undefined) ?? null
+    } catch (err) {
+      console.warn('[ticket-triggers] project-level session.create failed:', err)
+      return null
+    }
+    if (!sessionId) return null
+    if (bindSessionToProject) {
+      try { await bindSessionToProject(sessionId, projectId) } catch {}
+    } else {
+      try {
+        db.prepare('INSERT OR REPLACE INTO session_projects (session_id, project_id, set_at) VALUES ($sid, $pid, $now)')
+          .run({ $sid: sessionId, $pid: projectId, $now: new Date().toISOString() })
+      } catch {}
+    }
+    try {
+      db.prepare('UPDATE project_agents SET session_id=$sid WHERE id=$id').run({ $sid: sessionId, $id: agent.id })
+    } catch {}
+  }
+
+  try {
+    await client.session.promptAsync({
+      path: { id: sessionId },
+      body: {
+        agent: 'worker',
+        parts: [{ type: 'text', text: prompt }],
+        ...(parseModel(agent.default_model) ? { model: parseModel(agent.default_model)! } : {}),
+      },
+    })
+  } catch (err) {
+    console.warn('[ticket-triggers] onboarding promptAsync failed:', err)
+  }
+
+  return sessionId
+}
+
 export async function fireAgentTriggers(opts: {
   db: Database
   client: OpenCodeClientLike

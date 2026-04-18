@@ -498,6 +498,34 @@ ticketProjectsRouter.put('/:id/context', async (c) => {
   return c.json({ ok: true })
 })
 
+// ── Activity / notifications ────────────────────────────────────────────────
+
+/**
+ * GET /kortix/projects/:id/activity?since=<iso>&limit=<n>
+ *
+ * Returns ticket_events across every ticket in the project, newest first.
+ * Client computes "what's unread for me" by filtering on actor_id / payload.
+ * Keeps the endpoint dumb so the notification logic lives in one place
+ * (useProjectActivity) instead of split across SQL + types.
+ */
+ticketProjectsRouter.get('/:id/activity', (c) => {
+  const db = getDb()
+  const project = resolveProject(db, decodeURIComponent(c.req.param('id')))
+  if (!project) return c.json({ error: 'Project not found' }, 404)
+  const since = c.req.query('since') || null
+  const limit = Math.min(Number(c.req.query('limit') || 200), 500)
+
+  const params: Record<string, string | number> = { $pid: project.id, $limit: limit }
+  let q = 'SELECT * FROM ticket_events WHERE project_id=$pid'
+  if (since) {
+    q += ' AND created_at > $since'
+    params.$since = since
+  }
+  q += ' ORDER BY created_at DESC LIMIT $limit'
+  const rows = db.prepare(q).all(params)
+  return c.json(rows)
+})
+
 // ── Seed (upgrade existing project → v2) ────────────────────────────────────
 
 ticketProjectsRouter.post('/:id/seed-v2', async (c) => {
