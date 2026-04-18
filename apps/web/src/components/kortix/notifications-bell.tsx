@@ -41,7 +41,7 @@ export interface NotificationsBellProps {
   agents: ProjectAgent[];
   lastSeenAt: string | null;
   onMarkAllRead: (iso: string) => void;
-  onOpenTicket: (ticketId: string) => void;
+  onOpenTicket: (ticketId: string, focusEventId?: string) => void;
 }
 
 export function NotificationsBell({
@@ -82,7 +82,7 @@ export function NotificationsBell({
   };
 
   const pick = (n: ProjectNotification) => {
-    onOpenTicket(n.ticket_id);
+    onOpenTicket(n.ticket_id, n.event.id);
     setOpen(false);
   };
 

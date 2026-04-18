@@ -121,6 +121,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
 
   // ─── v2 state ──────────────────────────────────────────────────────────
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
+  const [focusEventId, setFocusEventId] = useState<string | null>(null);
   const [newTicketDefaultStatus, setNewTicketDefaultStatus] = useState<string | undefined>();
   const [newTicketOpen, setNewTicketOpen] = useState(false);
 
@@ -189,7 +190,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   const openTask = useCallback((task: KortixTask) => setOpenTaskId(task.id), []);
   const closeTask = useCallback(() => setOpenTaskId(null), []);
   const openTicket = useCallback((t: Ticket) => setOpenTicketId(t.id), []);
-  const closeTicket = useCallback(() => setOpenTicketId(null), []);
+  const closeTicket = useCallback(() => { setOpenTicketId(null); setFocusEventId(null); }, []);
 
   // ─── v1 tasks search ───────────────────────────────────────────────────
   const [search, setSearch] = useState('');
@@ -281,7 +282,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
               writeLastSeen(project.id, userHandle, iso);
               setLastSeenAt(iso);
             }}
-            onOpenTicket={(id) => setOpenTicketId(id)}
+            onOpenTicket={(id, focusId) => { setOpenTicketId(id); setFocusEventId(focusId ?? null); }}
           />
         ) : undefined}
       />
@@ -385,6 +386,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
           fields={fields}
           agents={agents}
           pollingEnabled={isProjectRouteActive && !!openTicketId}
+          focusEventId={focusEventId}
         />
       )}
     </div>

@@ -57,6 +57,7 @@ import {
 import { UnifiedMarkdown } from '@/components/markdown';
 import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
 import { MentionTextarea } from '@/components/kortix/mention-textarea';
+import { MentionMarkdown } from '@/components/kortix/mention-markdown';
 import {
   useTicket,
   useTicketEvents,
@@ -80,9 +81,12 @@ interface Props {
   fields: ProjectField[];
   agents: ProjectAgent[];
   pollingEnabled?: boolean;
+  /** Optional event id to scroll to + briefly highlight — used when opened
+   *  from the notifications bell so the user lands on the right comment. */
+  focusEventId?: string | null;
 }
 
-export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents, pollingEnabled }: Props) {
+export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents, pollingEnabled, focusEventId }: Props) {
   const { data: ticket } = useTicket(ticketId ?? undefined, { pollingEnabled });
   const { data: events } = useTicketEvents(ticketId ?? undefined, { pollingEnabled });
   const updateTicket = useUpdateTicket();
@@ -173,7 +177,7 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
             <div className="flex-1 min-h-0 grid grid-cols-[1fr_300px] overflow-hidden">
               {/* Main column */}
               <div className="overflow-y-auto border-r border-border/40">
-                <div className="max-w-2xl mx-auto px-6 sm:px-10 py-8 space-y-8">
+                <div className="max-w-2xl mx-auto px-4 sm:px-3 py-8 space-y-8">
 
                   {/* Title */}
                   {editingTitle ? (
@@ -271,7 +275,14 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                         <div className="text-[12px] text-muted-foreground/40 py-5 text-center">No activity yet.</div>
                       ) : (
                         (events ?? []).map((ev) => (
-                          <EventRow key={ev.id} event={ev} agentById={agentById} userHandle={userHandle} />
+                          <EventRow
+                            key={ev.id}
+                            event={ev}
+                            agentById={agentById}
+                            userHandle={userHandle}
+                            agents={agents}
+                            focused={focusEventId === ev.id}
+                          />
                         ))
                       )}
                     </div>
@@ -591,7 +602,7 @@ function FieldRow({ field, value, onChange }: { field: ProjectField; value: unkn
 function FieldInput({ field, value, onChange }: { field: ProjectField; value: unknown; onChange: (v: unknown) => void }) {
   if (field.type === 'select') {
     let options: string[] = [];
-    try { options = field.options_json ? JSON.parse(field.options_json) : []; } catch {}
+    try { options = field.options_json ? JSON.parse(field.options_json) : []; } catch { }
     const current = (value as string) ?? '';
     return (
       <Select value={current} onValueChange={(v) => onChange(v || null)}>
@@ -627,8 +638,20 @@ function FieldInput({ field, value, onChange }: { field: ProjectField; value: un
 
 // ─── Event row ──────────────────────────────────────────────────────────────
 
-function EventRow({ event, agentById, userHandle }: { event: any; agentById: Map<string, ProjectAgent>; userHandle: string }) {
+function EventRow({ event, agentById, userHandle, agents, focused }: { event: any; agentById: Map<string, ProjectAgent>; userHandle: string; agents: ProjectAgent[]; focused?: boolean }) {
   const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
+  const ref = useRef<HTMLDivElement>(null);
+
+  // When opened from a notification, scroll to this event and briefly ring
+  // it so the user can see what the notification was pointing at.
+  useEffect(() => {
+    if (!focused) return;
+    const t = setTimeout(() => {
+      ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    return () => clearTimeout(t);
+  }, [focused]);
+
   const actorAgent = event.actor_type === 'agent' ? agentById.get(event.actor_id ?? '') : null;
   const actorHandle = event.actor_type === 'agent'
     ? (actorAgent?.slug ?? 'agent')
@@ -644,19 +667,24 @@ function EventRow({ event, agentById, userHandle }: { event: any; agentById: Map
     return <UserAvatar handle={actorHandle} avatarUrl={isMeUser ? myAvatarUrl : null} size="sm" />;
   };
 
+  const focusRing = focused ? 'ring-2 ring-primary/40 ring-offset-0 bg-primary/[0.04]' : '';
+
   const p = safeJson(event.payload_json);
   let summary: React.ReactNode;
   if (event.type === 'comment') {
     return (
-      <div className="px-4 py-3">
+      <div ref={ref} className={cn('px-4 py-3 transition-colors rounded-lg', focusRing)} data-event-id={event.id}>
         <div className="flex items-center gap-2 mb-1.5">
           <Avatar />
           <span className="font-mono text-[11.5px] text-foreground/80">@{actorHandle}</span>
           <span className="text-[10px] text-muted-foreground/40 tabular-nums ml-auto">{relativeTime(event.created_at)}</span>
         </div>
-        <article className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 text-[13px] leading-relaxed">
-          <UnifiedMarkdown content={event.message ?? ''} />
-        </article>
+        <MentionMarkdown
+          content={event.message ?? ''}
+          agents={agents}
+          userHandle={userHandle}
+          className="text-[13px] leading-relaxed"
+        />
       </div>
     );
   }
@@ -673,7 +701,7 @@ function EventRow({ event, agentById, userHandle }: { event: any; agentById: Map
   else summary = <>{event.type}{event.message ? ` — ${event.message}` : ''}</>;
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 text-[12px]">
+    <div ref={ref} className={cn('flex items-center gap-2 px-4 py-2 text-[12px] rounded-lg transition-colors', focusRing)} data-event-id={event.id}>
       <Avatar />
       <span className="font-mono text-[11px] text-muted-foreground/65">@{actorHandle}</span>
       <span className="text-muted-foreground/70">{summary}</span>

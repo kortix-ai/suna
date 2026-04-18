@@ -55,15 +55,16 @@ import type { ProjectAgent } from '@/hooks/kortix/use-kortix-tickets';
 interface Run { text: string; className?: string }
 
 const CLS = {
-  mention:    'font-semibold text-primary rounded-sm px-0.5 bg-primary/10',
-  bold:       'font-semibold',
-  italic:     'italic',
-  code:       'bg-muted/50 rounded-sm px-0.5 font-mono text-foreground',
-  strike:     'line-through decoration-foreground/60',
-  link:       'text-primary underline underline-offset-2 decoration-primary/40',
-  dim:        'text-muted-foreground/40',
-  heading:    'text-primary/70 font-bold',
-  bullet:     'text-primary/70 font-semibold',
+  mention:     'font-semibold text-primary rounded-sm px-0.5 bg-primary/10',
+  mentionSelf: 'font-bold text-amber-400 rounded-sm px-0.5 bg-amber-500/15',
+  bold:        'font-semibold',
+  italic:      'italic',
+  code:        'bg-muted/50 rounded-sm px-0.5 font-mono text-foreground',
+  strike:      'line-through decoration-foreground/60',
+  link:        'text-primary underline underline-offset-2 decoration-primary/40',
+  dim:         'text-muted-foreground/40',
+  heading:     'text-primary/70 font-bold',
+  bullet:      'text-primary/70 font-semibold',
 } as const;
 
 function combine(a?: string, b?: string): string | undefined {
@@ -72,7 +73,11 @@ function combine(a?: string, b?: string): string | undefined {
   return `${a} ${b}`;
 }
 
-function tokenize(text: string, knownSlugs: Set<string>): Run[] {
+export function tokenizeMarkdown(text: string, knownSlugs: Set<string>, selfHandle?: string): Run[] {
+  return tokenize(text, knownSlugs, selfHandle);
+}
+
+function tokenize(text: string, knownSlugs: Set<string>, selfHandle?: string): Run[] {
   const runs: Run[] = [];
   const push = (seg: string, className?: string) => {
     if (!seg) return;
@@ -193,7 +198,8 @@ function tokenize(text: string, knownSlugs: Set<string>): Run[] {
       if (m) {
         const slug = m[0].slice(1).toLowerCase();
         if (knownSlugs.has(slug)) {
-          push(m[0], CLS.mention);
+          const cls = selfHandle && slug === selfHandle.toLowerCase() ? CLS.mentionSelf : CLS.mention;
+          push(m[0], cls);
           i += m[0].length;
           continue;
         }
@@ -248,7 +254,7 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
       for (const a of agents) s.add(a.slug.toLowerCase());
       return s;
     }, [agents, userHandle]);
-    const tokens = useMemo(() => tokenize(value, knownSlugs), [value, knownSlugs]);
+    const tokens = useMemo(() => tokenize(value, knownSlugs, userHandle), [value, knownSlugs, userHandle]);
 
     const candidates = useMemo<Candidate[]>(() => {
       if (query === null) return [];
