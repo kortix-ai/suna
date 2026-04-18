@@ -97,6 +97,8 @@ export interface ProjectAgentRow {
   tool_groups_json: string
   default_assignee_columns_json: string
   default_model: string | null
+  color_hue: number | null
+  icon: string | null
   created_at: string
 }
 
@@ -209,6 +211,8 @@ export function ensureTicketTables(db: Database): void {
       tool_groups_json TEXT NOT NULL DEFAULT '["project_action"]',
       default_assignee_columns_json TEXT NOT NULL DEFAULT '[]',
       default_model TEXT,
+      color_hue INTEGER,
+      icon TEXT,
       created_at TEXT NOT NULL,
       UNIQUE(project_id, slug)
     );
@@ -222,6 +226,8 @@ export function ensureTicketTables(db: Database): void {
   `)
   try { db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 1`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN default_model TEXT`) } catch {}
+  try { db.exec(`ALTER TABLE project_agents ADD COLUMN color_hue INTEGER`) } catch {}
+  try { db.exec(`ALTER TABLE project_agents ADD COLUMN icon TEXT`) } catch {}
 }
 
 // ── Columns ───────────────────────────────────────────────────────────────────
@@ -360,13 +366,24 @@ export interface AgentInput {
   tool_groups?: ToolGroup[]
   default_assignee_columns?: string[]
   default_model?: string | null
+  color_hue?: number | null
+  icon?: string | null
+}
+
+/** Derive a deterministic hue from a slug so PM/engineer/etc. stay consistent
+ *  even if nobody picked a color at creation time. */
+function hashHue(slug: string): number {
+  let h = 0
+  for (let i = 0; i < slug.length; i++) h = (h * 31 + slug.charCodeAt(i)) | 0
+  return Math.abs(h) % 360
 }
 
 export function insertAgent(db: Database, projectId: string, input: AgentInput): ProjectAgentRow {
   const id = genAgentId()
+  const hue = input.color_hue ?? hashHue(input.slug)
   db.prepare(`INSERT INTO project_agents
-      (id, project_id, slug, name, file_path, session_id, execution_mode, tool_groups_json, default_assignee_columns_json, default_model, created_at)
-    VALUES ($id, $pid, $s, $n, $f, NULL, $m, $tg, $dc, $dm, $now)`).run({
+      (id, project_id, slug, name, file_path, session_id, execution_mode, tool_groups_json, default_assignee_columns_json, default_model, color_hue, icon, created_at)
+    VALUES ($id, $pid, $s, $n, $f, NULL, $m, $tg, $dc, $dm, $hue, $icon, $now)`).run({
     $id: id,
     $pid: projectId,
     $s: input.slug,
@@ -376,6 +393,8 @@ export function insertAgent(db: Database, projectId: string, input: AgentInput):
     $tg: JSON.stringify(input.tool_groups || ['project_action']),
     $dc: JSON.stringify(input.default_assignee_columns || []),
     $dm: input.default_model ?? null,
+    $hue: hue,
+    $icon: input.icon ?? null,
     $now: nowIso(),
   })
   return getAgentById(db, id)!
@@ -391,7 +410,9 @@ export function updateAgent(db: Database, id: string, patch: Partial<AgentInput>
       execution_mode = COALESCE($mode, execution_mode),
       tool_groups_json = COALESCE($tg, tool_groups_json),
       default_assignee_columns_json = COALESCE($dc, default_assignee_columns_json),
-      default_model = CASE WHEN $dmSet=1 THEN $dm ELSE default_model END
+      default_model = CASE WHEN $dmSet=1 THEN $dm ELSE default_model END,
+      color_hue = CASE WHEN $hueSet=1 THEN $hue ELSE color_hue END,
+      icon = CASE WHEN $iconSet=1 THEN $icon ELSE icon END
     WHERE id=$id`).run({
     $slug: patch.slug ?? null,
     $name: patch.name ?? null,
@@ -401,6 +422,10 @@ export function updateAgent(db: Database, id: string, patch: Partial<AgentInput>
     $dc: patch.default_assignee_columns ? JSON.stringify(patch.default_assignee_columns) : null,
     $dmSet: patch.default_model === undefined ? 0 : 1,
     $dm: patch.default_model ?? null,
+    $hueSet: patch.color_hue === undefined ? 0 : 1,
+    $hue: patch.color_hue ?? null,
+    $iconSet: patch.icon === undefined ? 0 : 1,
+    $icon: patch.icon ?? null,
     $id: id,
   })
   return getAgentById(db, id)

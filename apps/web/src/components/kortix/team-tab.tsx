@@ -61,6 +61,20 @@ import {
 } from '@/hooks/kortix/use-kortix-tickets';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { flattenModels, type FlatModel } from '@/components/session/session-chat-input';
+import {
+  AgentAvatar,
+  UserAvatar,
+  AGENT_ICONS,
+  AGENT_ICON_KEYS,
+  agentColors,
+  guessAgentIcon,
+  useCurrentUserAvatarProps,
+} from '@/components/kortix/agent-avatar';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 const DEFAULT_PROMPT = `You are a team agent for this project.
 Describe your responsibilities, your flow, and what you own.
@@ -159,11 +173,10 @@ function SectionLabel({ label, icon }: { label: string; icon?: React.ReactNode }
 // ─── Rows ───────────────────────────────────────────────────────────────────
 
 function UserRow({ handle }: { handle: string }) {
+  const { avatarUrl } = useCurrentUserAvatarProps();
   return (
     <div className="flex items-center gap-3 px-4 py-3">
-      <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-        <UserCircle2 className="h-3.5 w-3.5 text-primary" />
-      </div>
+      <UserAvatar handle={handle} avatarUrl={avatarUrl} size="md" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[13px] font-semibold truncate">@{handle}</span>
@@ -187,9 +200,7 @@ function AgentRow({ agent, onClick }: { agent: ProjectAgent; onClick: () => void
       onClick={onClick}
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer text-left group"
     >
-      <div className="w-7 h-7 rounded-full bg-muted/50 flex items-center justify-center shrink-0">
-        <Bot className="h-3.5 w-3.5 text-muted-foreground/65" />
-      </div>
+      <AgentAvatar hue={agent.color_hue} icon={agent.icon} slug={agent.slug} name={agent.name} size="md" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-[13px] font-semibold truncate">@{agent.slug}</span>
@@ -200,7 +211,7 @@ function AgentRow({ agent, onClick }: { agent: ProjectAgent; onClick: () => void
             {isOrchestrator ? 'orchestrator' : 'contributor'}
           </span>
           <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-mono bg-muted/40 text-muted-foreground/70">
-            {agent.execution_mode}
+            {agent.execution_mode === 'per_assignment' ? 'new session' : 'per-ticket'}
           </span>
           {cols.map((c) => (
             <span key={c} className="inline-flex items-center h-4 px-1.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400/80">
@@ -223,6 +234,8 @@ interface AgentFormState {
   canManage: boolean;
   defaultCol: string;
   defaultModel: string;
+  colorHue: number | null;
+  icon: string | null;
 }
 
 type ExecutionChoice = 'per_ticket' | 'new_session';
@@ -253,12 +266,16 @@ function CreateAgentDialog({ open, onClose, projectId, columns }: {
   const [state, setState] = useState<AgentFormState>({
     name: '', body_md: DEFAULT_PROMPT, mode: 'per_ticket',
     canManage: false, defaultCol: '_none', defaultModel: '',
+    colorHue: null, icon: null,
   });
 
   useEffect(() => {
     if (open) {
       setSlug('');
-      setState({ name: '', body_md: DEFAULT_PROMPT, mode: 'per_ticket', canManage: false, defaultCol: '_none', defaultModel: '' });
+      setState({
+        name: '', body_md: DEFAULT_PROMPT, mode: 'per_ticket', canManage: false,
+        defaultCol: '_none', defaultModel: '', colorHue: null, icon: null,
+      });
     }
   }, [open]);
 
@@ -270,6 +287,8 @@ function CreateAgentDialog({ open, onClose, projectId, columns }: {
       projectId, slug: slug.trim(), name: state.name.trim(), body_md: state.body_md,
       execution_mode: state.mode, tool_groups: groups, default_assignee_columns: defaults,
       default_model: state.defaultModel.trim() || null,
+      color_hue: state.colorHue,
+      icon: state.icon,
     }, { onSuccess: onClose });
   };
 
@@ -306,6 +325,7 @@ function EditAgentDialog({ slug, onClose, projectId, columns }: {
   const del = useDeleteProjectAgent();
   const [state, setState] = useState<AgentFormState>({
     name: '', body_md: '', mode: 'per_ticket', canManage: false, defaultCol: '_none', defaultModel: '',
+    colorHue: null, icon: null,
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -318,6 +338,8 @@ function EditAgentDialog({ slug, onClose, projectId, columns }: {
         canManage: safeParseJsonArray(data.agent.tool_groups_json).includes('project_manage'),
         defaultCol: safeParseJsonArray(data.agent.default_assignee_columns_json)[0] ?? '_none',
         defaultModel: data.agent.default_model ?? '',
+        colorHue: data.agent.color_hue ?? null,
+        icon: data.agent.icon ?? null,
       });
     }
   }, [data?.agent?.id]);
@@ -332,6 +354,8 @@ function EditAgentDialog({ slug, onClose, projectId, columns }: {
       projectId, slug, name: state.name, body_md: state.body_md,
       execution_mode: state.mode, tool_groups: groups, default_assignee_columns: defaults,
       default_model: state.defaultModel.trim() || null,
+      color_hue: state.colorHue,
+      icon: state.icon,
     }, { onSuccess: onClose });
   };
 
@@ -368,6 +392,7 @@ function EditAgentDialog({ slug, onClose, projectId, columns }: {
             columns={columns}
             state={state}
             setState={setState}
+            slug={slug}
           />
         )}
       </AgentFormDialog>
@@ -465,23 +490,38 @@ function AgentFormBody({
   return (
     <div className="grid grid-cols-[1fr_180px] min-h-[320px]">
       <div className="px-5 pt-5 pb-4 flex flex-col min-w-0">
-        <input
-          value={state.name}
-          onChange={(e) => patch({ name: e.target.value })}
-          placeholder="Agent name"
-          className="w-full text-[20px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 leading-tight"
-        />
-        {onSlugChange && (
-          <div className="mt-1 inline-flex items-center gap-1">
-            <span className="text-[11.5px] text-muted-foreground/45 font-mono">@</span>
+        <div className="flex items-start gap-3">
+          <AgentAvatarPicker
+            slug={slug ?? ''}
+            name={state.name || slug || 'agent'}
+            hue={state.colorHue}
+            icon={state.icon}
+            onHueChange={(h) => patch({ colorHue: h })}
+            onIconChange={(i) => patch({ icon: i })}
+          />
+          <div className="flex-1 min-w-0">
             <input
-              value={slug ?? ''}
-              onChange={(e) => onSlugChange(e.target.value)}
-              placeholder="slug"
-              className="text-[11.5px] bg-transparent font-mono text-muted-foreground/80 border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 w-full"
+              value={state.name}
+              onChange={(e) => patch({ name: e.target.value })}
+              placeholder="Agent name"
+              className="w-full text-[20px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 leading-tight"
             />
+            {onSlugChange && (
+              <div className="inline-flex items-center gap-1">
+                <span className="text-[11.5px] text-muted-foreground/45 font-mono">@</span>
+                <input
+                  value={slug ?? ''}
+                  onChange={(e) => onSlugChange(e.target.value)}
+                  placeholder="slug"
+                  className="text-[11.5px] bg-transparent font-mono text-muted-foreground/80 border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 w-full"
+                />
+              </div>
+            )}
+            {!onSlugChange && slug && (
+              <div className="text-[11.5px] text-muted-foreground/50 font-mono mt-0.5">@{slug}</div>
+            )}
           </div>
-        )}
+        </div>
         <textarea
           ref={bodyRef}
           value={state.body_md}
@@ -510,6 +550,100 @@ function AgentFormBody({
         </MetaBlock>
       </aside>
     </div>
+  );
+}
+
+// ─── Avatar picker — click the avatar to change color + icon ───────────────
+
+const PRESET_HUES = [
+  0, 20, 40, 60, 100, 140, 170, 200, 230, 260, 290, 320,
+];
+
+function AgentAvatarPicker({
+  slug, name, hue, icon, onHueChange, onIconChange,
+}: {
+  slug: string;
+  name: string;
+  hue: number | null;
+  icon: string | null;
+  onHueChange: (h: number | null) => void;
+  onIconChange: (i: string | null) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Customise agent look"
+          className="group relative shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        >
+          <AgentAvatar hue={hue} icon={icon} slug={slug || 'agent'} name={name} size="lg" />
+          <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-background border border-border/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <Pencil className="h-2 w-2 text-muted-foreground/60" />
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={8} className="w-[280px] p-3 z-[10000]">
+        <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-2">Color</div>
+        <div className="grid grid-cols-6 gap-1.5 mb-3">
+          {PRESET_HUES.map((h) => {
+            const c = agentColors(h);
+            const active = hue !== null && Math.abs(hue - h) < 5;
+            return (
+              <button
+                key={h}
+                type="button"
+                aria-label={`Hue ${h}`}
+                onClick={() => onHueChange(h)}
+                className={cn(
+                  'h-7 w-7 rounded-full flex items-center justify-center transition-transform cursor-pointer',
+                  active ? 'scale-110' : 'hover:scale-105',
+                )}
+                style={{ backgroundColor: c.bg, boxShadow: `inset 0 0 0 ${active ? 2 : 1}px ${active ? c.fg : c.ring}` }}
+              >
+                {active && <Check className="h-3 w-3" style={{ color: c.fg }} />}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-2">Icon</div>
+        <div className="grid grid-cols-8 gap-1">
+          {AGENT_ICON_KEYS.map((key) => {
+            const Ic = AGENT_ICONS[key];
+            const current = icon ?? guessAgentIcon(slug, name);
+            const active = current === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-label={key}
+                onClick={() => onIconChange(key)}
+                className={cn(
+                  'h-7 w-7 rounded-md flex items-center justify-center transition-colors cursor-pointer',
+                  active ? 'bg-foreground text-background' : 'text-muted-foreground/70 hover:bg-muted/40 hover:text-foreground',
+                )}
+                title={key}
+              >
+                <Ic className="h-3.5 w-3.5" />
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center mt-3 pt-3 border-t border-border/40">
+          <span className="text-[10.5px] text-muted-foreground/50">Random color + icon inferred from name if unset.</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto h-6 px-2 text-[11px] text-muted-foreground/60 hover:text-foreground"
+            onClick={() => { onHueChange(null); onIconChange(null); }}
+          >
+            Reset
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
