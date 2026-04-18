@@ -212,12 +212,22 @@ export async function wakeAgentForProject(opts: {
     } catch {}
   }
 
+  // Inject the agent's own persona ahead of the task prompt. OpenCode applies
+  // the `worker` system prompt on top; prepending the persona nudges the model
+  // to adopt the PM/engineer/etc. role rather than the bare worker role.
+  let personaBody = ''
+  try { personaBody = await fs.readFile(agent.file_path, 'utf8') } catch {}
+  const personaStripped = personaBody.replace(/^---[\s\S]*?---\n?/, '').trim()
+  const fullPrompt = personaStripped
+    ? `${personaStripped}\n\n───────────────────────────────────────────────\n${prompt}`
+    : prompt
+
   try {
     await client.session.promptAsync({
       path: { id: sessionId },
       body: {
         agent: 'worker',
-        parts: [{ type: 'text', text: prompt }],
+        parts: [{ type: 'text', text: fullPrompt }],
         ...(parseModel(agent.default_model) ? { model: parseModel(agent.default_model)! } : {}),
       },
     })

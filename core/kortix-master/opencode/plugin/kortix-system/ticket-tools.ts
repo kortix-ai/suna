@@ -417,7 +417,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     // ── project_manage: team CRUD + project config ────────────────────────
 
     team_create_agent: tool({
-      description: 'Create a new team agent. Writes .kortix/agents/<slug>.md and registers it. Tool_groups are "project_action" alone (contributor) or both "project_action" and "project_manage" (orchestrator).',
+      description: 'Create a new team agent. Writes .kortix/agents/<slug>.md and registers it. Tool_groups are "project_action" alone (contributor) or both "project_action" and "project_manage" (orchestrator). Pass default_model to pin the LLM for this agent (e.g. "anthropic/claude-sonnet-4-6") — match your own model unless the user asked otherwise.',
       args: {
         slug: tool.schema.string().describe('URL-safe short id, e.g. "engineer"'),
         name: tool.schema.string().describe('Display name, e.g. "Engineer"'),
@@ -425,6 +425,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         tool_groups: tool.schema.string().optional().describe('Comma-separated: "project_action" and/or "project_manage". Defaults to project_action.'),
         default_assignee_columns: tool.schema.string().optional().describe('Comma-separated column keys this agent auto-assigns for, e.g. "review".'),
         execution_mode: tool.schema.string().optional().describe('"per_ticket" (default), "per_assignment", or "persistent".'),
+        default_model: tool.schema.string().optional().describe('Model id in "providerID/modelID" form, e.g. "anthropic/claude-sonnet-4-6". Defaults to the session default.'),
       },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
@@ -445,6 +446,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           execution_mode: mode,
           tool_groups: toolGroups,
           default_assignee_columns: cols,
+          default_model: args.default_model || null,
         })
         await syncTeamSection(db, proj)
         return `Created agent @${ag.slug} (${ag.id}).`

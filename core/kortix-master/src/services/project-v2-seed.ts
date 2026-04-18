@@ -30,6 +30,7 @@ export const TEAM_SECTION_START = '<!-- KORTIX:TEAM:START -->'
 export const TEAM_SECTION_END = '<!-- KORTIX:TEAM:END -->'
 
 export const DEFAULT_PM_SLUG = 'project-manager'
+export const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-6'
 
 export interface ProjectRowLite {
   id: string
@@ -112,6 +113,9 @@ Once confirmed, use your \`project_manage\` tools to act:
   - \`team_create_agent\` for each approved team member. Pick a clear
     display name and slug; draft a short system prompt describing their
     responsibilities and when they should hand back to @${'${USER_HANDLE}'}.
+    **Always pass the same model as yours on every agent you create** — by
+    default \`anthropic/claude-sonnet-4-6\` — unless the human explicitly
+    asked for a different one.
   - \`project_columns_update\` / \`project_templates_update\` /
     \`project_fields_update\` if the user approved changes.
 
@@ -172,6 +176,7 @@ export async function seedV2Project(
       execution_mode: 'per_ticket',
       tool_groups: ['project_manage', 'project_action'],
       default_assignee_columns: ['backlog'],
+      default_model: DEFAULT_MODEL,
     }
     pm = insertAgent(db, project.id, input)
   }

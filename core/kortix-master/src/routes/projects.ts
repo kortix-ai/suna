@@ -166,32 +166,38 @@ function getOpenCodeClient(): OpenCodeClientLike {
 }
 
 function buildOnboardingPrompt(name: string, handle: string, description: string): string {
+  // Deliberately NO /autowork wrapper — onboarding is a real conversation with
+  // the human. Autowork would force the agent to simulate both sides and loop.
+  // Fire exactly one turn, then wait for the user's next message.
   return [
-    `/autowork --max-iterations 40`,
-    '',
     `You have just been activated on a fresh project "${name}".`,
     description ? `Description from the user: ${description}` : null,
     `The human on this project is @${handle}.`,
     '',
-    'Before touching any tools, start the onboarding interview described in',
-    'your persona. Ask one short, conversational question at a time — do not',
-    'batch them. Paraphrase answers back to confirm understanding.',
+    'Run the onboarding interview from your persona. Ask ONE short, conversational',
+    'question at a time — do not batch them, do not answer on behalf of the user.',
+    'After this turn, STOP and wait for the human to reply. The human will respond',
+    'in the same session; subsequent turns paraphrase their answer and ask the',
+    'next question.',
     '',
-    'The goals, in order:',
-    '  1. Learn what the project is about (one sentence).',
-    '  2. Learn the stack / surface area (tools, repos, services).',
-    `  3. Learn @${handle}'s role + reach-back preferences.`,
-    '  4. Propose a starting team (agents) and wait for confirmation.',
-    '  5. Propose column / template adjustments if they fit.',
+    'Across the full interview, collect (in order):',
+    '  1. What the project is about (one sentence).',
+    '  2. Stack / surface area (tools, repos, services).',
+    `  3. @${handle}'s role + reach-back preferences.`,
+    '  4. A proposed starting team (agents) — wait for explicit confirmation before',
+    '     calling `team_create_agent`.',
+    '  5. Column / template adjustments if they fit the project.',
     '',
-    'Only after the human approves each piece, use `project_context_write`,',
-    '`team_create_agent`, `project_columns_update`, `project_templates_update`,',
-    '`project_fields_update` to apply. Keep CONTEXT.md tight and high-signal.',
+    'Only after the human approves each piece, use your `project_manage` tools:',
+    '`project_context_write`, `team_create_agent`, `project_columns_update`,',
+    '`project_templates_update`, `project_fields_update`. Keep CONTEXT.md tight.',
     '',
-    'End with a short recap of what got set up and say you are ready for the',
-    'first ticket.',
+    'When you call `team_create_agent`, always pass `default_model: "anthropic/claude-sonnet-4-6"` unless the human asks for a different model.',
     '',
-    `Your first message to the user should briefly introduce yourself and ask question #1. Address the user as @${handle}.`,
+    'End with a short recap of what got set up and say you are ready for the first ticket.',
+    '',
+    `Your first message: briefly introduce yourself and ask question #1. Address the user as @${handle}.`,
+    'STOP after that first question.',
   ].filter(Boolean).join('\n')
 }
 
