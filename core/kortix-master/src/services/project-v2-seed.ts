@@ -96,17 +96,34 @@ Overview + Stack + Human + Reach-back + Autonomy), \`team_create_agent\`,
 \`default_model: "anthropic/claude-sonnet-4-6"\` on every agent unless the
 human asked otherwise.
 
-### \`default_assignee_columns\` — use sparingly
+### \`default_assignee_columns\` — allow-list only
 
-Column defaults exist for **review gates**, not work rooms. Only set
-defaults for columns whose whole purpose is a specific role:
+Column defaults are for **gate columns**, not work columns. The only
+two defaults you're allowed to set:
 
-- PM on \`backlog\` — triage (you).
-- QA on \`review\` (if you seeded QA) — acceptance / regression check.
+- PM on \`backlog\` — triage (you, set by the seed).
+- QA on \`review\` — acceptance / regression check.
 
-Do NOT set defaults for \`in_progress\` (it's whoever is doing the work,
-assigned case-by-case) or \`done\` (terminal). Extra defaults create
-phantom assignees that spam notifications.
+Everything else **must** be empty. In particular:
+
+- NEVER set a default for \`in_progress\` / \`in-progress\` /
+  \`doing\` / any work-in-flight column. It's whoever picked the
+  ticket up, and that's decided per-ticket at assignment time.
+- NEVER set a default for \`blocked\`. It's contextual.
+- NEVER set a default for \`done\` or any terminal column.
+
+This is a hard rule, not a guideline. "Engineer on in-progress" looks
+symmetric with "QA on review" but it isn't — QA is a gate, engineers
+are contributors. Setting engineer as a column default means every
+ticket moved to in-progress auto-pings them even when someone else is
+already doing the work. When in doubt: leave the column default empty
+and route tickets explicitly with \`assign_to\` on create or
+\`ticket_assign\` later.
+
+Likewise, when you call \`team_create_agent\`, the agent's
+\`default_assignee_columns\` should list only the gate column they own
+(e.g. QA → \`"review"\`). Engineer / Designer / Writer and similar
+contributor roles get \`default_assignee_columns\` **empty**.
 
 ## Ongoing
 
@@ -185,6 +202,16 @@ Copy the block between \`<<COMM-START>>\` and \`<<COMM-END>>\` into each
   review so QA can look, then done. The \`ticket_update_status\` tool
   warns when you try to skip; only use \`continue_anyway: true\` with a
   reason (e.g. "no QA agent on this project", "trivial doc fix").
+- Don't move tickets out of someone else's column. If the column you're
+  in has a default-assignee that isn't you (e.g. Review → @qa), you're
+  a guest there — wait for them to move it forward or kick it back.
+  The tool enforces this: you'll get a gate-column warning. The only
+  legit overrides are: (a) the gate-owner is genuinely unresponsive
+  and you \`ticket_unassign\` them explicitly, or (b) they already
+  commented pass/ok and then didn't move it — in that case you can
+  \`continue_anyway\` with a reason citing their comment. Moving past
+  a gate because "I tested it myself" is the exact bypass this rule
+  exists to prevent.
 <<COMM-END>>
 \`\`\`
 `

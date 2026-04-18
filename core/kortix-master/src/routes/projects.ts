@@ -165,6 +165,50 @@ function getOpenCodeClient(): OpenCodeClientLike {
   return _ocClient as unknown as OpenCodeClientLike
 }
 
+// POST /:id/pm-session — create a fresh chat session with the project's PM.
+// Each click = new session. The session is bound to the project and to the
+// PM agent (via project_agents.session_id) so findAgentForSession resolves
+// the right persona + tool groups. A short kickoff prompt is fired so PM
+// greets the user in-persona; subsequent turns continue with full context.
+projectsRouter.post('/:id/pm-session', async (c) => {
+  const db = getDb()
+  const pid = decodeURIComponent(c.req.param('id'))
+  const project = db.prepare('SELECT * FROM projects WHERE id=$id OR path=$id').get({ $id: pid }) as ProjectRow | null
+  if (!project) return c.json({ error: 'Project not found' }, 404)
+  if ((project as any).structure_version !== 2) {
+    return c.json({ error: 'PM chat is only available on v2 projects' }, 400)
+  }
+  const pm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)
+  if (!pm) return c.json({ error: 'Project Manager agent not found — run v2 seed first' }, 404)
+
+  // Clear PM's session pointer so wakeAgentForProject creates a fresh one.
+  // Latest "Ask PM" click becomes the canonical PM session; older sessions
+  // remain readable but are no longer bound (actions there attribute as user).
+  try { db.prepare('UPDATE project_agents SET session_id=NULL WHERE id=$id').run({ $id: pm.id }) } catch {}
+  const freshPm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)!
+
+  const userHandle = (project as any).user_handle || 'there'
+  const kickoff = [
+    `Human @${userHandle} just opened a direct chat with you from the project page.`,
+    'No task attached. Greet them briefly in your PM voice, then ask what they need.',
+    'One short paragraph. No bullet lists, no table. Stop after.',
+  ].join('\n')
+  try {
+    const sessionId = await wakeAgentForProject({
+      db,
+      client: getOpenCodeClient(),
+      projectId: project.id,
+      agent: freshPm,
+      sessionTitle: `PM · ${project.name}`,
+      prompt: kickoff,
+    })
+    if (!sessionId) return c.json({ error: 'Failed to create PM session' }, 500)
+    return c.json({ session_id: sessionId })
+  } catch (err) {
+    return c.json({ error: String(err) }, 500)
+  }
+})
+
 function buildOnboardingPrompt(name: string, handle: string, description: string): string {
   // No `/autowork` wrapper — onboarding is a real back-and-forth, not a task
   // loop. One turn, then wait for the human's reply.

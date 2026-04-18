@@ -316,24 +316,58 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         if (!pid) return 'Error: no project selected.'
         const actor = actorFromCtx(ctx)
 
-        // Skip-column guard — refuse to jump more than one column forward without
-        // continue_anyway. Backward moves are fine (rework).
         const t = getTicket(db, args.id)
         if (!t) return `Ticket not found: ${args.id}`
-        const cols = listColumns(db, pid)
-        const fromIdx = cols.findIndex((c) => c.key === t.status)
-        const toIdx = cols.findIndex((c) => c.key === args.status)
-        if (fromIdx === -1) {
-          // unknown source column — let the service surface the error below
-        } else if (toIdx === -1) {
-          return `Unknown status "${args.status}". Available: ${cols.map((c) => c.key).join(', ')}.`
-        } else if (toIdx > fromIdx + 1 && !args.continue_anyway) {
-          const skipped = cols.slice(fromIdx + 1, toIdx).map((c) => `"${c.key}"`).join(', ')
+        const allCols = listColumns(db, pid)
+        // On-flow columns drive the linear sequence; off-flow (e.g. "blocked")
+        // are side-channels reachable from any on-flow column. The skip-column
+        // guard indexes on-flow only so moves through blocked don't look like
+        // they're jumping past real gates, and the gate-column guard ignores
+        // off-flow source columns (nobody owns blocked the way QA owns review).
+        const flowCols = allCols.filter((c) => !c.is_off_flow)
+        const srcCol = allCols.find((c) => c.key === t.status) ?? null
+        const dstCol = allCols.find((c) => c.key === args.status) ?? null
+        if (!dstCol) {
+          return `Unknown status "${args.status}". Available: ${allCols.map((c) => c.key).join(', ')}.`
+        }
+
+        const srcFlowIdx = srcCol && !srcCol.is_off_flow ? flowCols.findIndex((c) => c.key === srcCol.key) : -1
+        const dstFlowIdx = !dstCol.is_off_flow ? flowCols.findIndex((c) => c.key === dstCol.key) : -1
+
+        // Skip-column guard — only meaningful when both source and destination
+        // are on-flow. Moving INTO or OUT OF an off-flow column never trips it.
+        if (srcFlowIdx !== -1 && dstFlowIdx !== -1 && dstFlowIdx > srcFlowIdx + 1 && !args.continue_anyway) {
+          const skipped = flowCols.slice(srcFlowIdx + 1, dstFlowIdx).map((c) => `"${c.key}"`).join(', ')
           return [
             `Skip-column warning: moving from "${t.status}" → "${args.status}" bypasses ${skipped}.`,
             `The flow expects one column at a time (e.g. in_progress → review → done) so the owner of each column can do their pass.`,
             `If this is intentional, re-call ticket_update_status with continue_anyway: true and a short reason.`,
           ].join(' ')
+        }
+
+        // Gate-column guard — refuse to move a ticket OUT of a column whose
+        // default assignee is a DIFFERENT agent who is still assigned. That's
+        // their column; only they should move it forward. Engineer moving out
+        // of "review" while @qa is still assigned = bypassing the QA gate.
+        // Backward moves are always fine (handing back for rework). Source
+        // must be on-flow — off-flow columns (blocked) have no owner.
+        if (srcCol && !srcCol.is_off_flow && srcFlowIdx !== -1 && dstFlowIdx > srcFlowIdx && actor.type === 'agent' && actor.id) {
+          if (srcCol.default_assignee_type === 'agent' && srcCol.default_assignee_id && srcCol.default_assignee_id !== actor.id) {
+            const gateAgent = getAgentById(db, srcCol.default_assignee_id)
+            if (gateAgent) {
+              const stillAssigned = db.prepare(
+                `SELECT 1 FROM ticket_assignees WHERE ticket_id=$tid AND assignee_type='agent' AND assignee_id=$aid`
+              ).get({ $tid: args.id, $aid: gateAgent.id })
+              if (stillAssigned && !args.continue_anyway) {
+                return [
+                  `Gate-column guard: "${t.status}" belongs to @${gateAgent.slug} (default assignee) and they are still on the ticket.`,
+                  `Let @${gateAgent.slug} move it forward themselves — that's the whole point of the gate.`,
+                  `If @${gateAgent.slug} is unresponsive or you're confident they're done, either (a) unassign them explicitly with ticket_unassign, or`,
+                  `(b) re-call ticket_update_status with continue_anyway: true and a reason naming why you're moving past them.`,
+                ].join(' ')
+              }
+            }
+          }
         }
 
         try {
@@ -343,8 +377,8 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           if (!r) return `Ticket not found: ${args.id}`
           // Record the reason as a comment when the skip was overridden so the
           // trail captures why a column was bypassed.
-          if (args.continue_anyway && toIdx > fromIdx + 1 && args.reason) {
-            const skipped = cols.slice(fromIdx + 1, toIdx).map((c) => c.key).join(', ')
+          if (args.continue_anyway && srcFlowIdx !== -1 && dstFlowIdx > srcFlowIdx + 1 && args.reason) {
+            const skipped = flowCols.slice(srcFlowIdx + 1, dstFlowIdx).map((c) => c.key).join(', ')
             addComment(db, {
               ticketId: args.id,
               body: `_Skipped ${skipped} intentionally: ${args.reason}_`,
@@ -578,7 +612,21 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     }),
 
     project_columns_update: tool({
-      description: 'Replace the project\'s column set. Pass JSON array of {key,label,default_assignee_type?,default_assignee_id?,is_terminal?}.',
+      description: [
+        'Replace the project\'s column set. Pass JSON array of',
+        '{key,label,default_assignee_type?,default_assignee_id?,is_terminal?,is_off_flow?}.',
+        'For `default_assignee_id` with type "agent", pass the agent SLUG',
+        '(e.g. "qa") — the tool resolves it to the real agent id. Only set',
+        'defaults for gate columns (backlog → PM, review → QA). NEVER set a',
+        'default for in_progress / doing / work columns — that\'s a persona',
+        'rule, not a UX convenience.',
+        '',
+        'is_off_flow=true marks a column as a side-channel (reachable from',
+        'any on-flow column, doesn\'t participate in linear flow). Use it for',
+        '"blocked" / "on hold" / similar parking columns. Skip-column and',
+        'gate-column guards ignore off-flow columns, so moves through them',
+        'don\'t trip false positives.',
+      ].join(' '),
       args: { columns_json: tool.schema.string().describe('JSON array of column definitions in display order.') },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
@@ -586,6 +634,18 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         let cols: any[]
         try { cols = JSON.parse(args.columns_json) } catch { return 'columns_json is not valid JSON.' }
         if (!Array.isArray(cols)) return 'columns_json must be an array.'
+        // Resolve agent slugs → real agent ids so column-default triggers
+        // actually fire. A column that stores `agent:<slug>` never matches a
+        // real agent row, so auto-assign and wake-up silently break.
+        for (const col of cols) {
+          if (col && col.default_assignee_type === 'agent' && typeof col.default_assignee_id === 'string') {
+            const raw = col.default_assignee_id
+            if (!raw.startsWith('ag-')) {
+              const ag = getAgentBySlug(db, pid, raw) || getAgentById(db, raw)
+              if (ag) col.default_assignee_id = ag.id
+            }
+          }
+        }
         replaceColumns(db, pid, cols)
         return `Replaced columns (${cols.length}).`
       },

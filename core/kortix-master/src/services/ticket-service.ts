@@ -66,6 +66,12 @@ export interface ProjectColumnRow {
   default_assignee_type: AssigneeType | null
   default_assignee_id: string | null
   is_terminal: number
+  /**
+   * Off-flow columns (e.g. "blocked") are side-channels — a ticket can enter
+   * or leave them from any main column, and they don't participate in the
+   * linear flow. Skip-column and gate-column guards ignore them.
+   */
+  is_off_flow: number
   icon: string | null
 }
 
@@ -181,6 +187,7 @@ export function ensureTicketTables(db: Database): void {
       default_assignee_type TEXT,
       default_assignee_id TEXT,
       is_terminal INTEGER NOT NULL DEFAULT 0,
+      is_off_flow INTEGER NOT NULL DEFAULT 0,
       icon TEXT,
       UNIQUE(project_id, key)
     );
@@ -231,6 +238,7 @@ export function ensureTicketTables(db: Database): void {
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN color_hue INTEGER`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN icon TEXT`) } catch {}
   try { db.exec(`ALTER TABLE project_columns ADD COLUMN icon TEXT`) } catch {}
+  try { db.exec(`ALTER TABLE project_columns ADD COLUMN is_off_flow INTEGER NOT NULL DEFAULT 0`) } catch {}
 }
 
 // ── Columns ───────────────────────────────────────────────────────────────────
@@ -249,6 +257,7 @@ export interface ColumnInput {
   default_assignee_type?: AssigneeType | null
   default_assignee_id?: string | null
   is_terminal?: boolean
+  is_off_flow?: boolean
   icon?: string | null
 }
 
@@ -256,8 +265,8 @@ export function replaceColumns(db: Database, projectId: string, columns: ColumnI
   db.prepare('DELETE FROM project_columns WHERE project_id=$pid').run({ $pid: projectId })
   columns.forEach((c, i) => {
     db.prepare(`INSERT INTO project_columns
-      (id, project_id, key, label, order_index, default_assignee_type, default_assignee_id, is_terminal, icon)
-      VALUES ($id, $pid, $k, $l, $o, $dat, $dai, $t, $icon)`).run({
+      (id, project_id, key, label, order_index, default_assignee_type, default_assignee_id, is_terminal, is_off_flow, icon)
+      VALUES ($id, $pid, $k, $l, $o, $dat, $dai, $t, $off, $icon)`).run({
       $id: genColumnId(),
       $pid: projectId,
       $k: c.key,
@@ -266,6 +275,7 @@ export function replaceColumns(db: Database, projectId: string, columns: ColumnI
       $dat: c.default_assignee_type ?? null,
       $dai: c.default_assignee_id ?? null,
       $t: c.is_terminal ? 1 : 0,
+      $off: c.is_off_flow ? 1 : 0,
       $icon: c.icon ?? null,
     })
   })
@@ -280,12 +290,14 @@ export function updateColumn(db: Database, projectId: string, key: string, patch
       default_assignee_type = $dat,
       default_assignee_id = $dai,
       is_terminal = COALESCE($t, is_terminal),
+      is_off_flow = COALESCE($off, is_off_flow),
       icon = CASE WHEN $iconSet=1 THEN $icon ELSE icon END
     WHERE project_id=$pid AND key=$k`).run({
     $label: patch.label ?? null,
     $dat: patch.default_assignee_type === undefined ? col.default_assignee_type : patch.default_assignee_type,
     $dai: patch.default_assignee_id === undefined ? col.default_assignee_id : patch.default_assignee_id,
     $t: patch.is_terminal === undefined ? null : (patch.is_terminal ? 1 : 0),
+    $off: patch.is_off_flow === undefined ? null : (patch.is_off_flow ? 1 : 0),
     $iconSet: patch.icon === undefined ? 0 : 1,
     $icon: patch.icon ?? null,
     $pid: projectId,
