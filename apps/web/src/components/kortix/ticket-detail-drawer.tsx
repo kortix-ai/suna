@@ -237,6 +237,9 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                         onChange={setBodyDraft}
                         onSave={saveBody}
                         onCancel={cancelBody}
+                        agents={agents}
+                        userHandle={userHandle}
+                        userAvatarUrl={myAvatarUrl}
                       />
                     ) : ticket.body_md ? (
                       <div className="rounded-xl border border-border/40 bg-card px-5 sm:px-6 py-5">
@@ -393,10 +396,13 @@ function TitleEditor({ value, onChange, onSave, onCancel }: {
   );
 }
 
-// ─── Body editor (mirrors About view) ──────────────────────────────────────
+// ─── Body editor — MentionTextarea with live md + @-mention highlighting ────
 
-function BodyEditor({ value, onChange, onSave, onCancel }: {
+function BodyEditor({
+  value, onChange, onSave, onCancel, agents, userHandle, userAvatarUrl,
+}: {
   value: string; onChange: (v: string) => void; onSave: () => void; onCancel: () => void;
+  agents: ProjectAgent[]; userHandle: string; userAvatarUrl: string | null;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -407,25 +413,26 @@ function BodyEditor({ value, onChange, onSave, onCancel }: {
   }, [value]);
   useEffect(() => { setTimeout(() => ref.current?.focus(), 0); }, []);
   return (
-    <textarea
-      ref={ref}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-        if (e.key === 's' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(); }
-      }}
-      spellCheck
-      className={cn(
-        'w-full resize-none overflow-hidden',
-        'bg-card border border-border/40 rounded-xl outline-none',
-        'text-[13px] text-foreground/85 leading-[1.7] font-mono',
-        'placeholder:text-muted-foreground/30',
-        'focus:border-primary/30 focus:ring-1 focus:ring-primary/20',
-        'p-5 transition-colors',
-      )}
-      placeholder="Description, acceptance criteria, notes…"
-    />
+    <div className="rounded-xl border border-border/40 bg-card focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/20 transition-colors p-5">
+      <MentionTextarea
+        ref={ref}
+        value={value}
+        onChange={onChange}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+          if (e.key === 's' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onSave(); }
+        }}
+        agents={agents}
+        userHandle={userHandle}
+        userAvatarUrl={userAvatarUrl}
+        placeholder="Description, acceptance criteria, notes…"
+        className={cn(
+          'w-full resize-none overflow-hidden border-0 outline-none',
+          'text-[13px] leading-[1.7] font-mono',
+          'placeholder:text-muted-foreground/30',
+        )}
+      />
+    </div>
   );
 }
 

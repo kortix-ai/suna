@@ -31,28 +31,181 @@ import {
 } from '@/components/kortix/agent-avatar';
 import type { ProjectAgent } from '@/hooks/kortix/use-kortix-tickets';
 
-// ─── Inline tokenizer: valid @mention only if the slug matches a team member.
-// Everything else stays plain so "email@host" doesn't light up.
+// ─── Tokenizer ────────────────────────────────────────────────────────────
+//
+// Produces character-exact runs so the overlay can be rendered without
+// changing any positions. Every character of the input appears in exactly
+// one run — that's how the overlay stays aligned with the textarea under
+// it when the content wraps.
+//
+// Recognised patterns (flat, no nesting):
+//   @slug         when the slug matches a known team member
+//   **bold**      markers dimmed, inner bold
+//   *italic*      markers dimmed, inner italic
+//   `code`        markers dimmed, inner monospace on muted bg
+//   ~~strike~~    markers dimmed, inner line-through
+//   # heading     leading hashes + space colored (can't change font-size
+//                 without breaking wrap alignment)
+//   - / * bullet  leading marker colored
+//   [label](url)  markers dimmed, label underlined + primary
+//
+// Email-style "foo@bar" stays plain because mentions require whitespace or
+// line start before the @.
 
-interface Token { type: 'text' | 'mention'; text: string }
+interface Run { text: string; className?: string }
 
-function tokenize(text: string, knownSlugs: Set<string>): Token[] {
-  const out: Token[] = [];
-  if (!text) return out;
-  const re = /(^|\s)@([a-z0-9_.-]+)/gi;
-  let cursor = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
-    const atIdx = m.index + m[1].length;
-    const slug = m[2].toLowerCase();
-    const end = atIdx + 1 + m[2].length;
-    if (atIdx > cursor) out.push({ type: 'text', text: text.slice(cursor, atIdx) });
-    if (knownSlugs.has(slug)) out.push({ type: 'mention', text: text.slice(atIdx, end) });
-    else out.push({ type: 'text', text: text.slice(atIdx, end) });
-    cursor = end;
+const CLS = {
+  mention:    'font-semibold text-primary rounded-sm px-0.5 bg-primary/10',
+  bold:       'font-semibold',
+  italic:     'italic',
+  code:       'bg-muted/50 rounded-sm px-0.5 font-mono text-foreground',
+  strike:     'line-through decoration-foreground/60',
+  link:       'text-primary underline underline-offset-2 decoration-primary/40',
+  dim:        'text-muted-foreground/40',
+  heading:    'text-primary/70 font-bold',
+  bullet:     'text-primary/70 font-semibold',
+} as const;
+
+function combine(a?: string, b?: string): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return `${a} ${b}`;
+}
+
+function tokenize(text: string, knownSlugs: Set<string>): Run[] {
+  const runs: Run[] = [];
+  const push = (seg: string, className?: string) => {
+    if (!seg) return;
+    const last = runs[runs.length - 1];
+    if (last && last.className === className) last.text += seg;
+    else runs.push({ text: seg, className });
+  };
+
+  let i = 0;
+  let atLineStart = true;
+  const N = text.length;
+
+  while (i < N) {
+    const ch = text[i];
+
+    // Newlines — reset line-start flag.
+    if (ch === '\n') {
+      push('\n');
+      atLineStart = true;
+      i++;
+      continue;
+    }
+
+    // Heading: ^#{1,6} + space (doesn't resize so wrap matches textarea).
+    if (atLineStart && ch === '#') {
+      let level = 0;
+      let j = i;
+      while (j < N && text[j] === '#' && level < 6) { level++; j++; }
+      if (j < N && text[j] === ' ') {
+        push(text.slice(i, j + 1), CLS.heading);
+        i = j + 1;
+        atLineStart = false;
+        continue;
+      }
+    }
+    // Bullet: ^(\s*)([-*+]|\d+\.) + space
+    if (atLineStart) {
+      const bm = /^(\s*)(-|\*|\+|\d+\.) /.exec(text.slice(i));
+      if (bm) {
+        push(bm[1]);
+        push(bm[2] + ' ', CLS.bullet);
+        i += bm[0].length;
+        atLineStart = false;
+        continue;
+      }
+    }
+    atLineStart = false;
+
+    // Inline code `...`
+    if (ch === '`') {
+      const end = text.indexOf('`', i + 1);
+      if (end > i && !text.slice(i + 1, end).includes('\n')) {
+        push('`', CLS.dim);
+        push(text.slice(i + 1, end), CLS.code);
+        push('`', CLS.dim);
+        i = end + 1;
+        continue;
+      }
+    }
+
+    // Bold **...**
+    if (ch === '*' && text[i + 1] === '*') {
+      const end = text.indexOf('**', i + 2);
+      if (end > i + 1 && !text.slice(i + 2, end).includes('\n')) {
+        push('**', CLS.dim);
+        push(text.slice(i + 2, end), CLS.bold);
+        push('**', CLS.dim);
+        i = end + 2;
+        continue;
+      }
+    }
+
+    // Italic *...* (only when not followed by another * — which would be
+    // bold and would already have matched).
+    if (ch === '*' && text[i + 1] !== '*') {
+      const end = text.indexOf('*', i + 1);
+      if (end > i && !text.slice(i + 1, end).includes('\n') && text[end + 1] !== '*') {
+        push('*', CLS.dim);
+        push(text.slice(i + 1, end), CLS.italic);
+        push('*', CLS.dim);
+        i = end + 1;
+        continue;
+      }
+    }
+
+    // Strike ~~...~~
+    if (ch === '~' && text[i + 1] === '~') {
+      const end = text.indexOf('~~', i + 2);
+      if (end > i + 1 && !text.slice(i + 2, end).includes('\n')) {
+        push('~~', CLS.dim);
+        push(text.slice(i + 2, end), CLS.strike);
+        push('~~', CLS.dim);
+        i = end + 2;
+        continue;
+      }
+    }
+
+    // Link [label](url)
+    if (ch === '[') {
+      const close = text.indexOf(']', i + 1);
+      if (close > i && text[close + 1] === '(' && !text.slice(i + 1, close).includes('\n')) {
+        const paren = text.indexOf(')', close + 2);
+        if (paren > close && !text.slice(close + 2, paren).includes('\n')) {
+          push('[', CLS.dim);
+          push(text.slice(i + 1, close), CLS.link);
+          push('](', CLS.dim);
+          push(text.slice(close + 2, paren), combine(CLS.dim, CLS.link));
+          push(')', CLS.dim);
+          i = paren + 1;
+          continue;
+        }
+      }
+    }
+
+    // Mention: @slug, preceded by whitespace or line start (already true if i === 0 or last pushed ended with whitespace). Re-check against source.
+    if (ch === '@' && (i === 0 || /\s/.test(text[i - 1]))) {
+      const m = /^@[a-z0-9_.-]+/i.exec(text.slice(i));
+      if (m) {
+        const slug = m[0].slice(1).toLowerCase();
+        if (knownSlugs.has(slug)) {
+          push(m[0], CLS.mention);
+          i += m[0].length;
+          continue;
+        }
+      }
+    }
+
+    // Ordinary character — coalesced into the previous run.
+    push(text[i]);
+    i++;
   }
-  if (cursor < text.length) out.push({ type: 'text', text: text.slice(cursor) });
-  return out;
+
+  return runs;
 }
 
 type Candidate =
@@ -211,27 +364,18 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
 
     return (
       <div className="relative">
-        {/* Syntax overlay — renders under the textarea, shows highlighted
-            @mentions and bold markdown markers in color. Transforms with the
-            textarea's scrollTop so long content stays in sync. */}
+        {/* Syntax overlay — renders under the textarea and paints styled
+            spans over every recognised markdown construct: @mentions, bold,
+            italic, code, strike, links, headings, bullets. Transforms with
+            the textarea's scrollTop so long content stays in sync. */}
         <div className={overlayCls} aria-hidden>
           <div style={{ transform: `translateY(${-scrollTop}px)` }}>
             {tokens.length === 0 ? (
-              // Reserve an empty line so the overlay doesn't collapse on empty
               <span>{'\u200B'}</span>
             ) : tokens.map((t, i) => (
-              t.type === 'mention' ? (
-                <span
-                  key={i}
-                  className="font-semibold text-primary rounded-sm px-0.5 bg-primary/10"
-                >
-                  {t.text}
-                </span>
-              ) : (
-                <span key={i}>{t.text}</span>
-              )
+              <span key={i} className={t.className}>{t.text}</span>
             ))}
-            {/* Keep trailing newline visible in wrap calc */}
+            {/* Keep trailing newline visible so wrap calc doesn't collapse */}
             {value.endsWith('\n') && <span>{'\u200B'}</span>}
           </div>
         </div>
