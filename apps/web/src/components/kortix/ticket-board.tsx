@@ -14,7 +14,7 @@
 import { useMemo, useState } from 'react';
 import {
   Circle,
-  Loader2,
+  CircleDot,
   CheckCircle2,
   Inbox,
   Search,
@@ -23,6 +23,13 @@ import {
   Trash2,
   MoreHorizontal,
   GripVertical,
+  AlertCircle,
+  Clock,
+  Hourglass,
+  Archive,
+  PauseCircle,
+  Zap,
+  type LucideIcon,
 } from 'lucide-react';
 import {
   DndContext,
@@ -54,7 +61,7 @@ import type {
   TicketColumn,
   ProjectAgent,
 } from '@/hooks/kortix/use-kortix-tickets';
-import { parseCustomFields } from '@/hooks/kortix/use-kortix-tickets';
+import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
 
 interface Props {
   tickets: Ticket[];
@@ -247,10 +254,11 @@ function Column({ column, count, onAdd, isActiveDrag, children }: {
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.key });
   const Icon = iconForColumn(column);
+  const tint = tintForColumn(column);
   return (
     <div className="flex flex-col w-[300px] shrink-0 h-full">
       <div className="flex items-center gap-2 mb-2 px-1 shrink-0">
-        <Icon />
+        <Icon className={cn('h-4 w-4', tint)} />
         <span className="text-[13px] font-semibold text-foreground tracking-tight">{column.label}</span>
         <span className="text-[11px] text-muted-foreground/40 tabular-nums">{count}</span>
         <Button
@@ -277,11 +285,46 @@ function Column({ column, count, onAdd, isActiveDrag, children }: {
   );
 }
 
-function iconForColumn(column: TicketColumn) {
-  if (column.is_terminal) return () => <CheckCircle2 className="h-4 w-4 text-emerald-500/60" />;
-  if (column.key === 'in_progress') return () => <Loader2 className="h-4 w-4 text-blue-500/80 animate-spin" />;
-  if (column.key === 'review') return () => <Circle className="h-4 w-4 text-amber-500/60" />;
-  return () => <Circle className="h-4 w-4 text-muted-foreground/40" />;
+// ─── Column icons ───────────────────────────────────────────────────────────
+// A small curated set — user picks one per column in Settings → Columns.
+// Named by a stable key so storage stays decoupled from the icon rendering.
+
+export const COLUMN_ICONS: Record<string, { Icon: LucideIcon; tint: string; label: string }> = {
+  backlog: { Icon: Circle, tint: 'text-muted-foreground/55', label: 'Backlog' },
+  progress: { Icon: CircleDot, tint: 'text-blue-500/80', label: 'In progress' },
+  review: { Icon: AlertCircle, tint: 'text-amber-500/70', label: 'Review' },
+  done: { Icon: CheckCircle2, tint: 'text-emerald-500/70', label: 'Done' },
+  waiting: { Icon: PauseCircle, tint: 'text-muted-foreground/55', label: 'Waiting' },
+  queued: { Icon: Hourglass, tint: 'text-amber-500/60', label: 'Queued' },
+  scheduled: { Icon: Clock, tint: 'text-sky-500/70', label: 'Scheduled' },
+  priority: { Icon: Zap, tint: 'text-amber-400/80', label: 'Priority' },
+  archive: { Icon: Archive, tint: 'text-muted-foreground/45', label: 'Archive' },
+};
+
+export const COLUMN_ICON_KEYS = Object.keys(COLUMN_ICONS);
+
+/** Derive a default icon key from a column's key when the user hasn't picked one. */
+export function defaultColumnIcon(key: string): string {
+  const k = key.toLowerCase();
+  if (k.includes('in_progress') || k.includes('progress') || k.includes('working')) return 'progress';
+  if (k.includes('review') || k.includes('qa') || k.includes('test')) return 'review';
+  if (k.includes('done') || k.includes('complete') || k.includes('closed') || k.includes('shipped')) return 'done';
+  if (k.includes('wait') || k.includes('block')) return 'waiting';
+  if (k.includes('queue')) return 'queued';
+  if (k.includes('schedule')) return 'scheduled';
+  if (k.includes('priority') || k.includes('urgent')) return 'priority';
+  if (k.includes('archive')) return 'archive';
+  return 'backlog';
+}
+
+function iconForColumn(column: TicketColumn): LucideIcon {
+  const iconKey = (column as any).icon || defaultColumnIcon(column.key);
+  return (COLUMN_ICONS[iconKey] ?? COLUMN_ICONS.backlog).Icon;
+}
+
+function tintForColumn(column: TicketColumn): string {
+  const iconKey = (column as any).icon || defaultColumnIcon(column.key);
+  return (COLUMN_ICONS[iconKey] ?? COLUMN_ICONS.backlog).tint;
 }
 
 // ─── Draggable card ─────────────────────────────────────────────────────────
@@ -339,18 +382,7 @@ function TicketCardInner({
   dragging?: boolean;
   showGripAffordance?: boolean;
 }) {
-  const fields = useMemo(() => parseCustomFields(ticket.custom_fields_json), [ticket.custom_fields_json]);
-  const fieldEntries = Object.entries(fields)
-    .filter(([, v]) => v !== null && v !== undefined && v !== '')
-    .slice(0, 3);
-
-  const assigneeLabels = ticket.assignees.slice(0, 3).map((a) => {
-    if (a.assignee_type === 'agent') {
-      const ag = agentById.get(a.assignee_id);
-      return ag ? `@${ag.slug}` : '@agent';
-    }
-    return `@${a.assignee_id}`;
-  });
+  const { handle: currentHandle, avatarUrl: currentAvatarUrl } = useCurrentUserAvatarProps();
 
   return (
     <div
@@ -411,30 +443,39 @@ function TicketCardInner({
         )}
       </div>
 
-      {(fieldEntries.length > 0 || assigneeLabels.length > 0) && (
-        <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
-          {fieldEntries.map(([k, v]) => (
-            <span
-              key={k}
-              className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-medium bg-muted/50 text-muted-foreground/80"
-            >
-              {k}: {String(v)}
-            </span>
-          ))}
-          {assigneeLabels.map((l) => (
-            <span
-              key={l}
-              className="inline-flex items-center h-4 px-1.5 rounded-full text-[10px] font-mono bg-primary/10 text-primary"
-            >
-              {l}
-            </span>
-          ))}
-        </div>
-      )}
-
       <div className="flex items-center gap-2 mt-2.5 text-[10px] text-muted-foreground/40">
         <span className="font-mono tabular-nums">#{ticket.number}</span>
-        <span className="ml-auto tabular-nums">{new Date(ticket.updated_at).toLocaleDateString()}</span>
+        <span className="tabular-nums">{new Date(ticket.updated_at).toLocaleDateString()}</span>
+
+        {ticket.assignees.length > 0 && (
+          <div className="ml-auto flex items-center -space-x-1.5">
+            {ticket.assignees.slice(0, 4).map((a, i) => {
+              if (a.assignee_type === 'agent') {
+                const ag = agentById.get(a.assignee_id);
+                if (!ag) return null;
+                return (
+                  <span key={`a:${a.assignee_id}`} style={{ zIndex: 10 - i }} className="ring-2 ring-card rounded-full">
+                    <AgentAvatar hue={ag.color_hue} icon={ag.icon} slug={ag.slug} name={ag.name} size="sm" />
+                  </span>
+                );
+              }
+              const isMe = a.assignee_id === currentHandle;
+              return (
+                <span key={`u:${a.assignee_id}`} style={{ zIndex: 10 - i }} className="ring-2 ring-card rounded-full">
+                  <UserAvatar handle={a.assignee_id} avatarUrl={isMe ? currentAvatarUrl : null} size="sm" />
+                </span>
+              );
+            })}
+            {ticket.assignees.length > 4 && (
+              <span
+                className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-muted/60 text-[9px] font-semibold text-muted-foreground/80 ring-2 ring-card"
+                style={{ zIndex: 6 }}
+              >
+                +{ticket.assignees.length - 4}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
