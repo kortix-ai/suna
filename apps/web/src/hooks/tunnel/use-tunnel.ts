@@ -103,7 +103,10 @@ export function useTunnelConnections() {
   return useQuery({
     queryKey: tunnelKeys.connections(),
     queryFn: async () => {
-      const res = await backendApi.get<TunnelConnection[]>('/tunnel/connections');
+      const res = await backendApi.get<TunnelConnection[]>('/tunnel/connections', {
+        showErrors: false,
+        timeout: 10_000,
+      });
       if (!res.success) throw new Error(res.error?.message || 'Failed to fetch connections');
       return res.data!;
     },
@@ -118,7 +121,10 @@ export function useTunnelConnection(tunnelId: string) {
   return useQuery({
     queryKey: tunnelKeys.connection(tunnelId),
     queryFn: async () => {
-      const res = await backendApi.get<TunnelConnection>(`/tunnel/connections/${tunnelId}`);
+      const res = await backendApi.get<TunnelConnection>(`/tunnel/connections/${tunnelId}`, {
+        showErrors: false,
+        timeout: 10_000,
+      });
       if (!res.success) throw new Error(res.error?.message || 'Failed to fetch connection');
       return res.data!;
     },
@@ -183,7 +189,10 @@ export function useTunnelPermissions(tunnelId: string) {
   return useQuery({
     queryKey: tunnelKeys.permissions(tunnelId),
     queryFn: async () => {
-      const res = await backendApi.get<TunnelPermission[]>(`/tunnel/permissions/${tunnelId}`);
+      const res = await backendApi.get<TunnelPermission[]>(`/tunnel/permissions/${tunnelId}`, {
+        showErrors: false,
+        timeout: 10_000,
+      });
       if (!res.success) throw new Error(res.error?.message || 'Failed to fetch permissions');
       return res.data!;
     },
@@ -230,7 +239,10 @@ export function useTunnelPermissionRequests() {
   return useQuery({
     queryKey: tunnelKeys.permissionRequests(),
     queryFn: async () => {
-      const res = await backendApi.get<TunnelPermissionRequest[]>('/tunnel/permission-requests');
+      const res = await backendApi.get<TunnelPermissionRequest[]>('/tunnel/permission-requests', {
+        showErrors: false,
+        timeout: 10_000,
+      });
       if (!res.success) throw new Error(res.error?.message || 'Failed to fetch requests');
       return res.data!;
     },
@@ -288,7 +300,10 @@ export function useDeviceAuthInfo(code: string) {
   return useQuery({
     queryKey: tunnelKeys.deviceAuth(code),
     queryFn: async () => {
-      const res = await backendApi.get<DeviceAuthInfo>(`/tunnel/device-auth/${code}/info`);
+      const res = await backendApi.get<DeviceAuthInfo>(`/tunnel/device-auth/${code}/info`, {
+        showErrors: false,
+        timeout: 10_000,
+      });
       if (!res.success) throw new Error(res.error?.message || 'Failed to fetch device auth info');
       return res.data!;
     },
@@ -339,7 +354,10 @@ export function useTunnelAuditLogs(tunnelId: string, page = 1, limit = 50) {
   return useQuery({
     queryKey: tunnelKeys.auditLogs(tunnelId, page),
     queryFn: async () => {
-      const res = await backendApi.get<AuditLogPage>(`/tunnel/audit/${tunnelId}?page=${page}&limit=${limit}`);
+      const res = await backendApi.get<AuditLogPage>(`/tunnel/audit/${tunnelId}?page=${page}&limit=${limit}`, {
+        showErrors: false,
+        timeout: 10_000,
+      });
       if (!res.success) throw new Error(res.error?.message || 'Failed to fetch audit logs');
       return res.data!;
     },

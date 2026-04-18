@@ -3,6 +3,7 @@ import './lib/sentry';
 import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
 import { logger as appLogger } from './lib/logger';
 import { runWithContext, setContextField } from './lib/request-context';
+import { getRequestUrl } from './lib/request-url';
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -1289,7 +1290,7 @@ export default {
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
     const host = req.headers.get('host') || '';
-    const url = new URL(req.url);
+    const url = getRequestUrl(req, config.PORT);
     const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket';
 
     // ── Subdomain preview routing (primary) ────────────────────────────
