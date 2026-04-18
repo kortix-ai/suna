@@ -1,20 +1,19 @@
 'use client';
 
 /**
- * New-ticket flow.
+ * New-ticket composer.
  *
- * Two steps:
- *   1. Template picker — grid of cards (Blank + user's templates). Skipped
- *      entirely when no templates are defined (auto-advance to the form).
- *   2. Form — title, markdown body pre-filled from the picked template,
- *      destination column selector.
+ * Flow:
+ *   - No templates defined → form directly.
+ *   - Templates present → step-1 picker (grid of cards), then form.
  *
- * Keyboard:
- *   ⌘↵ submits from the form.
- *   Esc closes either step.
+ * Layout mirrors the seamless GitHub / Linear composer — title input flows
+ * straight into the markdown body with no visible textarea border. Meta
+ * (status, assignees, template) lives in a clearly labeled metadata block
+ * below the body, styled like the project About view.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -23,19 +22,38 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { ArrowLeft, FileText, Sparkles, Bug, Zap, Wrench } from 'lucide-react';
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
+  ArrowLeft,
+  FileText,
+  Sparkles,
+  Bug,
+  Zap,
+  Wrench,
+  X,
+  UserPlus,
+  Check,
+  LayoutGrid,
+  UserCircle2,
+  Bot,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   useCreateTicket,
+  useAssignTicket,
   useTemplates,
+  useProjectAgents,
+  useUserHandle,
   type TicketColumn,
   type TicketTemplate,
+  type ProjectAgent,
+  type AssigneeType,
 } from '@/hooks/kortix/use-kortix-tickets';
 
 interface Props {
@@ -46,38 +64,38 @@ interface Props {
   defaultStatus?: string;
 }
 
-const BLANK_TEMPLATE_ID = '__blank';
-
 type Step = 'pick' | 'form';
+
+interface PendingAssignee { type: AssigneeType; id: string; label: string }
 
 export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaultStatus }: Props) {
   const { data: templatesData } = useTemplates(projectId);
+  const { data: agentsData } = useProjectAgents(projectId);
   const templates = useMemo(() => templatesData ?? [], [templatesData]);
+  const agents = useMemo(() => agentsData ?? [], [agentsData]);
   const hasTemplates = templates.length > 0;
+  const userHandle = useUserHandle();
+
   const create = useCreateTicket();
+  const assign = useAssignTicket();
 
   const [step, setStep] = useState<Step>('pick');
   const [template, setTemplate] = useState<TicketTemplate | null>(null);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [status, setStatus] = useState<string>('');
-  const titleRef = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState<PendingAssignee[]>([]);
 
   useEffect(() => {
     if (!open) return;
     setTitle('');
     setBody('');
     setTemplate(null);
+    setPending([]);
     setStatus(defaultStatus || columns[0]?.key || '');
     setStep(hasTemplates ? 'pick' : 'form');
-    if (!hasTemplates) setTimeout(() => titleRef.current?.focus(), 40);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-
-  // When we advance to the form, focus the title.
-  useEffect(() => {
-    if (step === 'form' && open) setTimeout(() => titleRef.current?.focus(), 40);
-  }, [step, open]);
 
   const goToForm = (t: TicketTemplate | null) => {
     setTemplate(t);
@@ -87,24 +105,36 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
 
   const submit = () => {
     if (!title.trim()) return;
-    create.mutate({
-      project_id: projectId,
-      title: title.trim(),
-      body_md: body,
-      status: status || undefined,
-      template_id: template?.id ?? null,
-    }, {
-      onSuccess: () => onOpenChange(false),
-    });
+    create.mutate(
+      {
+        project_id: projectId,
+        title: title.trim(),
+        body_md: body,
+        status: status || undefined,
+        template_id: template?.id ?? null,
+      },
+      {
+        onSuccess: (r) => {
+          // Apply any manually-picked assignees after create — the column rule
+          // may have auto-assigned someone (e.g. PM for backlog), so this adds
+          // on top. Duplicate-safe on the server.
+          for (const p of pending) {
+            assign.mutate({ id: r.ticket.id, assignee_type: p.type, assignee_id: p.id });
+          }
+          onOpenChange(false);
+        },
+      },
+    );
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          'p-0 overflow-hidden gap-0 border-border/60',
-          step === 'pick' ? 'max-w-xl' : 'max-w-3xl',
+          'p-0 overflow-hidden gap-0 border-border/60 bg-background',
+          step === 'pick' ? 'max-w-xl' : 'max-w-2xl',
         )}
+        hideCloseButton
       >
         <DialogTitle className="sr-only">New ticket</DialogTitle>
         <DialogDescription className="sr-only">Create a ticket</DialogDescription>
@@ -122,12 +152,17 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
             body={body}
             status={status}
             columns={columns}
-            titleRef={titleRef}
+            agents={agents}
+            userHandle={userHandle}
+            pending={pending}
             showBack={hasTemplates}
             onBack={() => setStep('pick')}
+            onClose={() => onOpenChange(false)}
             onTitleChange={setTitle}
             onBodyChange={setBody}
             onStatusChange={setStatus}
+            onAddAssignee={(a) => setPending((p) => (p.some((x) => x.type === a.type && x.id === a.id) ? p : [...p, a]))}
+            onRemoveAssignee={(a) => setPending((p) => p.filter((x) => !(x.type === a.type && x.id === a.id)))}
             onSubmit={submit}
             submitting={create.isPending}
           />
@@ -150,15 +185,20 @@ function TemplatePicker({
 }) {
   return (
     <div className="flex flex-col">
-      <div className="px-5 pt-5 pb-2">
-        <h2 className="text-[15px] font-semibold tracking-tight">Start from a template</h2>
-        <p className="text-[12px] text-muted-foreground/60 mt-0.5">Pick how you want to describe this work.</p>
+      <div className="flex items-center px-5 pt-5 pb-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">New ticket</div>
+          <h2 className="text-[15px] font-semibold tracking-tight mt-1">Start from a template</h2>
+        </div>
+        <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/60" onClick={onCancel}>
+          <X className="h-4 w-4" />
+        </Button>
       </div>
 
-      <div className="p-5 pt-3 grid grid-cols-2 gap-2.5">
+      <div className="px-5 pb-5 grid grid-cols-2 gap-2">
         <TemplateCard
           title="Blank"
-          hint="Start from an empty ticket."
+          hint="Empty ticket."
           icon={<FileText className="h-4 w-4 text-muted-foreground/60" />}
           onClick={() => onPick(null)}
         />
@@ -173,9 +213,8 @@ function TemplatePicker({
         ))}
       </div>
 
-      <div className="px-5 pb-4 flex items-center">
-        <span className="text-[11px] text-muted-foreground/50">Templates live in Settings → Templates.</span>
-        <Button variant="ghost" size="sm" className="ml-auto h-7 text-[12px]" onClick={onCancel}>Cancel</Button>
+      <div className="px-5 pb-4 text-[11px] text-muted-foreground/40">
+        Templates live in Settings → Templates.
       </div>
     </div>
   );
@@ -185,13 +224,13 @@ function TemplateCard({ title, hint, icon, onClick }: { title: string; hint: str
   return (
     <button
       onClick={onClick}
-      className="group text-left rounded-xl border border-border/50 bg-card/50 hover:bg-muted/30 hover:border-border p-3.5 transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      className="group text-left rounded-xl border border-border/40 bg-card/70 hover:bg-muted/30 hover:border-border p-3.5 transition-all cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
     >
       <div className="flex items-center gap-2 mb-1.5">
         {icon}
         <span className="text-[13px] font-semibold tracking-tight">{title}</span>
       </div>
-      <p className="text-[11.5px] text-muted-foreground/70 line-clamp-2 leading-relaxed">{hint}</p>
+      <p className="text-[11.5px] text-muted-foreground/65 line-clamp-2 leading-relaxed">{hint}</p>
     </button>
   );
 }
@@ -199,7 +238,7 @@ function TemplateCard({ title, hint, icon, onClick }: { title: string; hint: str
 function summarise(body: string): string {
   const clean = (body || '').replace(/^#+\s*/gm, '').replace(/\s+/g, ' ').trim();
   if (!clean) return 'Empty template.';
-  return clean.length > 120 ? `${clean.slice(0, 117)}…` : clean;
+  return clean.length > 110 ? `${clean.slice(0, 107)}…` : clean;
 }
 
 function iconForName(name: string): React.ReactNode {
@@ -219,12 +258,17 @@ function TicketForm({
   body,
   status,
   columns,
-  titleRef,
+  agents,
+  userHandle,
+  pending,
   showBack,
   onBack,
+  onClose,
   onTitleChange,
   onBodyChange,
   onStatusChange,
+  onAddAssignee,
+  onRemoveAssignee,
   onSubmit,
   submitting,
 }: {
@@ -233,22 +277,56 @@ function TicketForm({
   body: string;
   status: string;
   columns: TicketColumn[];
-  titleRef: React.RefObject<HTMLInputElement | null>;
+  agents: ProjectAgent[];
+  userHandle: string;
+  pending: PendingAssignee[];
   showBack: boolean;
   onBack: () => void;
+  onClose: () => void;
   onTitleChange: (v: string) => void;
   onBodyChange: (v: string) => void;
   onStatusChange: (v: string) => void;
+  onAddAssignee: (a: PendingAssignee) => void;
+  onRemoveAssignee: (a: PendingAssignee) => void;
   onSubmit: () => void;
   submitting: boolean;
 }) {
-  const onBodyKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-size title and body to fit content — the seamless feel requires that
+  // neither field has a visible edge.
+  useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [title]);
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.max(160, el.scrollHeight)}px`;
+  }, [body]);
+
+  useEffect(() => {
+    setTimeout(() => titleRef.current?.focus(), 40);
+  }, []);
+
+  const onTitleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      // Newlines in a title are pointless — jump to body.
+      e.preventDefault();
+      if ((e.metaKey || e.ctrlKey) && title.trim()) onSubmit();
+      else bodyRef.current?.focus();
+      return;
+    }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       onSubmit();
     }
   };
-  const onTitleKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const onBodyKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       onSubmit();
@@ -257,53 +335,69 @@ function TicketForm({
 
   return (
     <div className="flex flex-col">
-      <div className="px-5 pt-4 pb-3 flex items-center gap-2 border-b border-border/40">
-        {showBack && (
-          <Button variant="ghost" size="sm" className="h-6 px-1.5 -ml-1.5 text-muted-foreground/60" onClick={onBack}>
+      {/* Header */}
+      <div className="flex items-center px-5 pt-4 pb-3">
+        {showBack ? (
+          <Button variant="ghost" size="sm" className="h-6 px-1.5 -ml-1.5 text-muted-foreground/60 hover:text-foreground text-[11px]" onClick={onBack}>
             <ArrowLeft className="h-3.5 w-3.5 mr-1" />
             Templates
           </Button>
+        ) : (
+          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
+            New ticket{template ? ` · ${template.name}` : ''}
+          </div>
         )}
-        <span className="text-[11px] uppercase tracking-wider text-muted-foreground/60 font-medium">
-          {template ? `New ticket · ${template.name}` : 'New ticket'}
-        </span>
-        <div className="ml-auto">
-          <Select value={status} onValueChange={onStatusChange}>
-            <SelectTrigger size="sm" className="h-7 text-[12px] min-w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {columns.map((c) => (
-                <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
       </div>
 
-      <div className="px-5 pt-4">
-        <input
-          ref={titleRef as React.RefObject<HTMLInputElement>}
+      {/* Title + body — seamless editor */}
+      <div className="px-6 pb-4">
+        <textarea
+          ref={titleRef}
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
           onKeyDown={onTitleKey}
           placeholder="Ticket title"
-          className="w-full text-[22px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/30 py-1"
+          rows={1}
+          className="w-full text-[22px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight py-1"
         />
-      </div>
-
-      <div className="px-5 pb-4 pt-2 flex-1 min-h-0">
         <textarea
+          ref={bodyRef}
           value={body}
           onChange={(e) => onBodyChange(e.target.value)}
           onKeyDown={onBodyKey}
           placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Reference agents with @slug."}
-          rows={12}
-          className="w-full text-[13px] leading-relaxed bg-background/40 border border-border/40 rounded-lg px-3.5 py-3 outline-none focus-visible:border-border focus-visible:ring-2 focus-visible:ring-primary/20 resize-none font-mono placeholder:text-muted-foreground/30"
+          rows={8}
+          className="w-full mt-2 text-[13.5px] leading-[1.7] bg-transparent border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono overflow-hidden"
         />
       </div>
 
-      <div className="px-5 pb-4 pt-2 border-t border-border/40 flex items-center gap-3">
+      {/* Metadata block */}
+      <div className="border-t border-border/40 px-5 py-3 space-y-2 bg-muted/[0.04]">
+        <MetaRow
+          label="Status"
+          value={
+            <StatusPicker columns={columns} value={status} onChange={onStatusChange} />
+          }
+        />
+        <MetaRow
+          label="Assignees"
+          value={
+            <AssigneePicker
+              agents={agents}
+              userHandle={userHandle}
+              pending={pending}
+              onAdd={onAddAssignee}
+              onRemove={onRemoveAssignee}
+            />
+          }
+        />
+      </div>
+
+      {/* Footer */}
+      <div className="border-t border-border/40 px-5 py-2.5 flex items-center">
         <span className="text-[11px] text-muted-foreground/50">
           <kbd className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded border border-border/50 bg-muted/40 text-[10px] font-mono leading-none">⌘</kbd>
           <kbd className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 ml-0.5 rounded border border-border/50 bg-muted/40 text-[10px] font-mono leading-none">↵</kbd>
@@ -311,13 +405,130 @@ function TicketForm({
         </span>
         <Button
           size="sm"
-          className="ml-auto h-7.5 px-3.5 text-[12px]"
+          className="ml-auto h-7 px-3 text-[12px]"
           onClick={onSubmit}
           disabled={!title.trim() || submitting}
         >
           {submitting ? 'Creating…' : 'Create ticket'}
         </Button>
       </div>
+    </div>
+  );
+}
+
+// ─── Meta row ───────────────────────────────────────────────────────────────
+
+function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3 min-h-[28px]">
+      <span className="shrink-0 w-[78px] text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold pt-1.5">
+        {label}
+      </span>
+      <div className="flex-1 min-w-0">{value}</div>
+    </div>
+  );
+}
+
+// ─── Status picker: chips for every column ──────────────────────────────────
+
+function StatusPicker({ columns, value, onChange }: { columns: TicketColumn[]; value: string; onChange: (k: string) => void }) {
+  return (
+    <div className="flex items-center gap-1 flex-wrap">
+      {columns.map((c) => {
+        const active = c.key === value;
+        return (
+          <button
+            key={c.key}
+            onClick={() => onChange(c.key)}
+            className={cn(
+              'inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[11.5px] transition-colors cursor-pointer border',
+              active
+                ? 'bg-foreground text-background border-foreground'
+                : 'bg-transparent text-muted-foreground/70 hover:text-foreground border-border/50 hover:border-border',
+            )}
+            aria-pressed={active}
+          >
+            {active && <Check className="h-3 w-3" />}
+            {!active && <LayoutGrid className="h-3 w-3 opacity-40" />}
+            {c.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Assignee picker ────────────────────────────────────────────────────────
+
+function AssigneePicker({
+  agents,
+  userHandle,
+  pending,
+  onAdd,
+  onRemove,
+}: {
+  agents: ProjectAgent[];
+  userHandle: string;
+  pending: PendingAssignee[];
+  onAdd: (a: PendingAssignee) => void;
+  onRemove: (a: PendingAssignee) => void;
+}) {
+  const alreadyAdded = (t: AssigneeType, id: string) => pending.some((x) => x.type === t && x.id === id);
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap pt-1">
+      {pending.length === 0 && (
+        <span className="text-[11.5px] text-muted-foreground/40 h-6 inline-flex items-center">
+          Unassigned — column defaults still apply.
+        </span>
+      )}
+      {pending.map((a) => (
+        <span
+          key={`${a.type}:${a.id}`}
+          className="inline-flex items-center gap-1 h-6 pl-2 pr-1 rounded-full text-[11.5px] font-mono bg-primary/10 text-primary"
+        >
+          @{a.label}
+          <button
+            onClick={() => onRemove(a)}
+            className="h-4 w-4 inline-flex items-center justify-center rounded-full text-primary/60 hover:text-primary hover:bg-primary/10"
+            aria-label="Remove"
+          >
+            <X className="h-2.5 w-2.5" />
+          </button>
+        </span>
+      ))}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-[11.5px] gap-1 text-muted-foreground/70 hover:text-foreground border border-dashed border-border/50 rounded-full"
+          >
+            <UserPlus className="h-3 w-3" />
+            Add
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuLabel>Assign to</DropdownMenuLabel>
+          <DropdownMenuItem
+            disabled={alreadyAdded('user', userHandle)}
+            onClick={() => onAdd({ type: 'user', id: userHandle, label: userHandle })}
+          >
+            <UserCircle2 className="mr-2 h-3.5 w-3.5 text-primary" />
+            @{userHandle} <span className="ml-auto text-[10px] text-muted-foreground/40">you</span>
+          </DropdownMenuItem>
+          {agents.length > 0 && <DropdownMenuSeparator />}
+          {agents.map((a) => (
+            <DropdownMenuItem
+              key={a.id}
+              disabled={alreadyAdded('agent', a.id)}
+              onClick={() => onAdd({ type: 'agent', id: a.id, label: a.slug })}
+            >
+              <Bot className="mr-2 h-3.5 w-3.5 text-muted-foreground/60" />
+              @{a.slug}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
