@@ -80,6 +80,7 @@ import {
   useUserHandle,
   computeUnread,
   readLastSeen,
+  LAST_SEEN_EVENT,
 } from '@/hooks/kortix/use-kortix-tickets';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useServerStore } from '@/stores/server-store';
@@ -889,9 +890,23 @@ function SidebarProjectRow({
   React.useEffect(() => {
     if (!isV2 || !userHandle) return;
     setLastSeen(readLastSeen(project.id, userHandle));
-    // Re-read every 20s so visits from the project page propagate here.
-    const t = setInterval(() => setLastSeen(readLastSeen(project.id, userHandle)), 20_000);
-    return () => clearInterval(t);
+    // Instant update when the project page (or another row) writes a new
+    // last-seen — custom event dispatched from writeLastSeen().
+    const onCustom = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (d?.projectId === project.id && d?.handle === userHandle) setLastSeen(d.iso);
+    };
+    // Cross-tab updates still come through the native storage event.
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key?.startsWith('kortix:activity-last-seen:')) return;
+      setLastSeen(readLastSeen(project.id, userHandle));
+    };
+    window.addEventListener(LAST_SEEN_EVENT, onCustom);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(LAST_SEEN_EVENT, onCustom);
+      window.removeEventListener('storage', onStorage);
+    };
   }, [isV2, project.id, userHandle]);
   const unread = React.useMemo(
     () => (isV2 ? computeUnread(events, userHandle, lastSeen).total : 0),

@@ -239,6 +239,10 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
     const innerRef = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(forwardedRef, () => innerRef.current!);
 
+    // Guard against undefined leaking in — we always drive the textarea with
+    // a string so it's controlled from first render.
+    value = value ?? '';
+
     // Null query = dropdown closed. Empty string = just typed @ with nothing after.
     const [query, setQuery] = useState<string | null>(null);
     const [anchor, setAnchor] = useState<{ start: number; end: number } | null>(null);

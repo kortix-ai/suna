@@ -71,7 +71,11 @@ export function MarkdownField({
     else setLocalEditing(v);
   };
 
-  const [draft, setDraft] = useState(value);
+  // Always initialise to a string so the underlying <textarea> is controlled
+  // from the very first render. value can briefly be undefined while its
+  // useTicket query resolves — an undefined-then-string transition is what
+  // React warns about as "uncontrolled → controlled".
+  const [draft, setDraft] = useState<string>(value ?? '');
   const [saving, setSaving] = useState(false);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const { avatarUrl: selfAvatar } = useCurrentUserAvatarProps();
@@ -79,7 +83,7 @@ export function MarkdownField({
 
   // Mirror the latest saved value into the draft when we're not editing.
   useEffect(() => {
-    if (!editing) setDraft(value);
+    if (!editing) setDraft(value ?? '');
   }, [value, editing]);
 
   // Focus + auto-grow when entering edit mode.

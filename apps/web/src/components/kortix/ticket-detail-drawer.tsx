@@ -563,7 +563,10 @@ function EventRow({ event, agentById, userHandle, agents, focused }: { event: an
     return <UserAvatar handle={actorHandle} avatarUrl={isMeUser ? myAvatarUrl : null} size="sm" />;
   };
 
-  const focusRing = focused ? 'ring-2 ring-primary/40 ring-offset-0 bg-primary/[0.04]' : '';
+  // Subtle warm highlight on the notification-clicked event. No border — the
+  // tinted background is enough. Amber works in both themes against the
+  // bg-card activity list.
+  const focusRing = focused ? 'bg-amber-500/10 dark:bg-amber-500/15' : '';
 
   const p = safeJson(event.payload_json);
   let summary: React.ReactNode;

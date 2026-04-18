@@ -141,7 +141,9 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   const deleteTicket = useDeleteTicket();
 
   // Unread notifications for the current user. Recomputed on every activity
-  // tick against the last-seen timestamp saved in localStorage.
+  // tick against the last-seen timestamp saved in localStorage. We don't
+  // auto-clear on tab visit — the user wanted this strictly driven by the
+  // bell (open the panel → click an entry → read).
   const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);
   useEffect(() => {
     if (!loadV2 || !project?.id || !userHandle) return;
@@ -151,21 +153,6 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
     () => computeUnread(activity, userHandle, lastSeenAt),
     [activity, userHandle, lastSeenAt],
   );
-
-  // Clear notifications once the user has the board visible — a short delay
-  // so they actually see the badge before it zeroes out, and only if the
-  // route is currently active (not when the project page is a hidden tab).
-  useEffect(() => {
-    if (!loadV2 || !project?.id || !userHandle) return;
-    if (tab !== 'board' || !isProjectRouteActive) return;
-    if (!unread.latestAt) return;
-    const t = setTimeout(() => {
-      const iso = unread.latestAt!;
-      writeLastSeen(project.id, userHandle, iso);
-      setLastSeenAt(iso);
-    }, 2000);
-    return () => clearTimeout(t);
-  }, [tab, isProjectRouteActive, loadV2, project?.id, userHandle, unread.latestAt]);
 
   // ─── File explorer scoping ─────────────────────────────────────────────
   useEffect(() => {
@@ -269,7 +256,6 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
         structureVersion={project.structure_version}
         onNewTask={isV2 ? () => openNewTicket() : () => openNewTask()}
         newActionLabel={isV2 ? 'New ticket' : 'New task'}
-        tabBadges={isV2 ? { board: unread.total } : undefined}
         rightSlot={isV2 ? (
           <NotificationsBell
             projectId={project.id}
@@ -282,7 +268,20 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
               writeLastSeen(project.id, userHandle, iso);
               setLastSeenAt(iso);
             }}
-            onOpenTicket={(id, focusId) => { setOpenTicketId(id); setFocusEventId(focusId ?? null); }}
+            onOpenTicket={(id, focusId) => {
+              setOpenTicketId(id);
+              setFocusEventId(focusId ?? null);
+              // Clicking a notification is the "read" signal. Advance lastSeen
+              // to that event's timestamp so it (and anything older) drops
+              // from the unread count. Newer events stay unread.
+              if (focusId && activity) {
+                const ev = activity.find((e) => e.id === focusId);
+                if (ev && (!lastSeenAt || ev.created_at > lastSeenAt)) {
+                  writeLastSeen(project.id, userHandle, ev.created_at);
+                  setLastSeenAt(ev.created_at);
+                }
+              }
+            }}
           />
         ) : undefined}
       />

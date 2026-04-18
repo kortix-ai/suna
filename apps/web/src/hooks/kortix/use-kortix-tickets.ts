@@ -574,6 +574,7 @@ export function computeNotifications(
 }
 
 const LAST_SEEN_KEY = (projectId: string, handle: string) => `kortix:activity-last-seen:${projectId}:${handle}`;
+export const LAST_SEEN_EVENT = 'kortix:last-seen-changed';
 
 export function readLastSeen(projectId: string, handle: string): string | null {
   if (typeof window === 'undefined') return null;
@@ -581,7 +582,12 @@ export function readLastSeen(projectId: string, handle: string): string | null {
 }
 export function writeLastSeen(projectId: string, handle: string, iso: string): void {
   if (typeof window === 'undefined') return;
-  try { window.localStorage.setItem(LAST_SEEN_KEY(projectId, handle), iso); } catch {}
+  try {
+    window.localStorage.setItem(LAST_SEEN_KEY(projectId, handle), iso);
+    // Same-tab listeners (e.g. the sidebar project rows) don't receive the
+    // native 'storage' event — emit a custom one so they refresh instantly.
+    window.dispatchEvent(new CustomEvent(LAST_SEEN_EVENT, { detail: { projectId, handle, iso } }));
+  } catch {}
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
