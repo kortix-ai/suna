@@ -75,6 +75,8 @@ interface MarketplacePageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 const REGISTRY_URL = 'https://kortix-registry-6om.pages.dev';
@@ -445,7 +447,7 @@ function MarketplaceCard({
   );
 }
 
-export function MarketplacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: MarketplacePageProps) {
+export function MarketplacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: MarketplacePageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -587,6 +589,8 @@ export function MarketplacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer 
         }
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
       <PageContent>
       <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>

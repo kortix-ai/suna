@@ -362,9 +362,11 @@ interface MemoryPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer }: MemoryPageProps) {
+export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: MemoryPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -495,6 +497,8 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer }: MemoryPage
         }
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
       <PageContent>
       <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>

@@ -175,9 +175,11 @@ interface SecretsPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: SecretsPageProps) {
+export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: SecretsPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -324,6 +326,8 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: S
         title={page.label}
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>

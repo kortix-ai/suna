@@ -79,9 +79,11 @@ interface RunningServicesPageProps {
   onBack: () => void;
   onOpenDrawer: () => void;
   onOpenRightDrawer: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: RunningServicesPageProps) {
+export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: RunningServicesPageProps) {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -204,6 +206,8 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
         }
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           <Pressable onPress={handleReconcile} hitSlop={8} className="p-1">
             <Icon as={RefreshCw} size={18} color={mutedColor} strokeWidth={2} />

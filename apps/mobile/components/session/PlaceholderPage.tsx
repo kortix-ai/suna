@@ -19,9 +19,11 @@ interface PlaceholderPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: PlaceholderPageProps) {
+export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: PlaceholderPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -35,6 +37,8 @@ export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer 
         title={page.label}
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>

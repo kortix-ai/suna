@@ -76,6 +76,8 @@ interface ApiKeysTabPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 export function ApiKeysTabPage({
@@ -95,6 +97,10 @@ export function ApiKeysTabPage({
         title={page.label}
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
       <PageContent>
         <ApiKeysContent />

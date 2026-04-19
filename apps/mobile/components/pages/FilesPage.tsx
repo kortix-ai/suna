@@ -132,6 +132,8 @@ interface FilesPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
   onFileSelectionChange?: (file: SandboxFile | null) => void;
   /** Called when the file actions menu should open (e.g. after long-press) */
   onRequestMenu?: () => void;
@@ -532,6 +534,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
           title={page.label}
           onOpenDrawer={onOpenDrawer}
           onOpenRightDrawer={onOpenRightDrawer}
+          isDrawerOpen={isDrawerOpen}
+          isRightDrawerOpen={isRightDrawerOpen}
         />
         <PageContent>
           <View className="flex-1 items-center justify-center px-8">
@@ -551,6 +555,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         title="Files"
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           <View className="flex-row items-center" style={{ gap: 4 }}>
             {/* View mode toggle */}

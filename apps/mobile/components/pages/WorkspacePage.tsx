@@ -164,6 +164,8 @@ interface WorkspacePageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
   onCreateSessionWithPrompt?: (title: string, prompt: string) => void;
 }
 
@@ -553,6 +555,10 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
         title={page.label}
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>

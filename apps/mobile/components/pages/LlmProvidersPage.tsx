@@ -238,9 +238,11 @@ interface LlmProvidersPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: LlmProvidersPageProps) {
+export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: LlmProvidersPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -464,6 +466,8 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         }
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>

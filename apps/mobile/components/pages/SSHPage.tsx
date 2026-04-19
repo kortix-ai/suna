@@ -66,9 +66,11 @@ interface SSHPageProps {
   onBack: () => void;
   onOpenDrawer: () => void;
   onOpenRightDrawer: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: SSHPageProps) {
+export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: SSHPageProps) {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -188,6 +190,8 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: SSHPa
         title={page.label}
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>

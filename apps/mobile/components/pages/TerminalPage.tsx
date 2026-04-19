@@ -42,6 +42,8 @@ interface TerminalPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -365,7 +367,7 @@ function buildTerminalHtml(params: {
 
 // ─── TerminalPage ────────────────────────────────────────────────────────────
 
-export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: TerminalPageProps) {
+export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: TerminalPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -539,6 +541,8 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: 
         title="Terminal"
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {/* Status indicator */}

@@ -95,9 +95,11 @@ interface UpdatesPageProps {
   onBack: () => void;
   onOpenDrawer: () => void;
   onOpenRightDrawer: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: UpdatesPageProps) {
+export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: UpdatesPageProps) {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -222,6 +224,8 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: U
         title="Versions"
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>

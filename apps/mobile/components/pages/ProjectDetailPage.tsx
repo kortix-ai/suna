@@ -113,6 +113,8 @@ interface ProjectDetailPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -353,6 +355,8 @@ export function ProjectDetailPage({
         }
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           <TouchableOpacity
             onPress={handleDelete}

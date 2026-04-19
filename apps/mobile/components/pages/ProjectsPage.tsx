@@ -48,11 +48,13 @@ interface ProjectsPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: ProjectsPageProps) {
+export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: ProjectsPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -92,6 +94,8 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: 
         title={page.label}
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
       />
 
       <PageContent>
