@@ -140,7 +140,7 @@ interface FilesPageProps {
 }
 
 export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function FilesPage(
-  { page, onBack, onOpenDrawer, onOpenRightDrawer, onFileSelectionChange, onRequestMenu },
+  { page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onFileSelectionChange, onRequestMenu },
   ref,
 ) {
   const { colorScheme } = useColorScheme();

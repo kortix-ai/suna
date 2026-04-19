@@ -171,7 +171,7 @@ interface WorkspacePageProps {
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, onCreateSessionWithPrompt }, ref) {
+export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onCreateSessionWithPrompt }, ref) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -555,8 +555,6 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
         title={page.label}
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
       />

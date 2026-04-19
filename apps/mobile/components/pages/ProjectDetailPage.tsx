@@ -124,6 +124,8 @@ export function ProjectDetailPage({
   onBack,
   onOpenDrawer,
   onOpenRightDrawer,
+  isDrawerOpen,
+  isRightDrawerOpen,
 }: ProjectDetailPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
