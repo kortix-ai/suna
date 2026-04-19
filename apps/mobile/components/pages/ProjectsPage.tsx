@@ -100,7 +100,7 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
 
       <PageContent>
       {/* Search */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 8, gap: 10 }}>
         <View
           style={{
             flex: 1,

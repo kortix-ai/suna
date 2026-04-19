@@ -52,7 +52,11 @@ export function PageContent({
         style,
       ]}
     >
-      {children}
+      {/* Top breathing room between the card's rounded edge and the first
+          piece of content. Matches the session page's `contentContainerStyle={{ paddingTop: 16 }}` inset,
+          so every page has identical spacing below the header. Pages that manage
+          their own scroll/list padding should override via the `style` prop. */}
+      <View style={{ paddingTop: 16, flex: 1 }}>{children}</View>
     </View>
   );
 }

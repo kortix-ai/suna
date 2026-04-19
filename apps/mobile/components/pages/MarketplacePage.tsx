@@ -593,7 +593,7 @@ export function MarketplacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer,
         isRightDrawerOpen={isRightDrawerOpen}
       />
       <PageContent>
-      <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>
+      <View style={{ paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>
         <View>
           <SearchBar
             value={search}

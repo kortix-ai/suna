@@ -561,7 +561,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
 
       <PageContent>
       {/* Search */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 }}>
+      <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
         <View
           style={{
             flexDirection: 'row',
