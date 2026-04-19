@@ -16,6 +16,8 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getAuthToken } from '@/api/config';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -569,29 +571,26 @@ export function MarketplacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer 
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
-      <View style={{ paddingTop: insets.top + 8, paddingBottom: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: borderColor }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {onOpenDrawer && (
-              <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12 }}>
-                <Ionicons name="menu" size={24} color={fgColor} />
-              </TouchableOpacity>
-            )}
-            <View>
-              <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>{page.label}</Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>
-                {counts.all} components available
-              </Text>
-            </View>
+      <PageHeader
+        title={
+          <View style={{ flex: 1 }}>
+            <Text
+              className="text-base font-medium text-muted-foreground"
+              numberOfLines={1}
+            >
+              {page.label}
+            </Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>
+              {counts.all} components available
+            </Text>
           </View>
-          {onOpenRightDrawer && (
-            <TouchableOpacity onPress={onOpenRightDrawer}>
-              <Ionicons name="apps-outline" size={20} color={fgColor} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={{ marginTop: 12 }}>
+        }
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+      />
+      <PageContent>
+      <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>
+        <View>
           <SearchBar
             value={search}
             onChangeText={setSearch}
@@ -940,6 +939,7 @@ export function MarketplacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer 
           </View>
         )}
       </BottomSheetModal>
+      </PageContent>
     </View>
   );
 }

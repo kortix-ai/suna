@@ -50,6 +50,8 @@ import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import { SearchBar } from '@/components/ui/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -477,31 +479,27 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer }: MemoryPage
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top + 8, paddingBottom: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: borderColor }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {onOpenDrawer && (
-              <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12 }}>
-                <Ionicons name="menu" size={24} color={fgColor} />
-              </TouchableOpacity>
+      <PageHeader
+        title={
+          <View style={{ flex: 1 }}>
+            <Text
+              className="text-base font-medium text-muted-foreground"
+              numberOfLines={1}
+            >
+              {page.label}
+            </Text>
+            {!!statsText && (
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>{statsText}</Text>
             )}
-            <View>
-              <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>{page.label}</Text>
-              {!!statsText && (
-                <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>{statsText}</Text>
-              )}
-            </View>
           </View>
-          {onOpenRightDrawer && (
-            <TouchableOpacity onPress={onOpenRightDrawer}>
-              <Ionicons name="apps-outline" size={20} color={fgColor} />
-            </TouchableOpacity>
-          )}
-        </View>
-
+        }
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+      />
+      <PageContent>
+      <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>
         {/* Search */}
-        <View style={{ marginTop: 12 }}>
+        <View>
           <SearchBar
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -604,6 +602,7 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer }: MemoryPage
           </View>
         </BottomSheetView>
       </BottomSheetModal>
+      </PageContent>
     </View>
   );
 }

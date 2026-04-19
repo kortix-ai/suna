@@ -36,6 +36,8 @@ import {
   type ServiceAction,
 } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -188,28 +190,28 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
   const borderColor = isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)';
 
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
-      {/* Header */}
-      <View className="flex-row items-center px-4 py-3">
-        <Pressable onPress={onOpenDrawer} hitSlop={8} className="mr-3">
-          <Icon as={Menu} size={20} className="text-foreground" strokeWidth={2} />
-        </Pressable>
-        <View className="flex-1">
-          <Text className="text-[17px] font-roobert-semibold text-foreground" style={{ lineHeight: 18, includeFontPadding: false }}>
-            Service Manager
-          </Text>
-          <Text className="font-roobert text-[11px] text-muted-foreground" style={{ marginTop: -3, includeFontPadding: false }}>
-            {isLoading ? 'Loading...' : `${runningCount}/${totalCount} running`}
-          </Text>
-        </View>
-        <Pressable onPress={handleReconcile} hitSlop={8} className="ml-2 p-1">
-          <Icon as={RefreshCw} size={18} color={mutedColor} strokeWidth={2} />
-        </Pressable>
-        <Pressable onPress={onOpenRightDrawer} hitSlop={8} className="ml-2 p-1">
-          <Ionicons name="apps-outline" size={20} color={fgColor} />
-        </Pressable>
-      </View>
+    <View className="flex-1 bg-muted">
+      <PageHeader
+        title={
+          <View style={{ flex: 1 }}>
+            <Text className="text-base font-medium text-muted-foreground" numberOfLines={1}>
+              Service Manager
+            </Text>
+            <Text className="font-roobert text-[11px] text-muted-foreground" style={{ marginTop: -1, includeFontPadding: false }}>
+              {isLoading ? 'Loading...' : `${runningCount}/${totalCount} running`}
+            </Text>
+          </View>
+        }
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        rightActions={
+          <Pressable onPress={handleReconcile} hitSlop={8} className="p-1">
+            <Icon as={RefreshCw} size={18} color={mutedColor} strokeWidth={2} />
+          </Pressable>
+        }
+      />
 
+      <PageContent>
       {/* Filter chips */}
       <ScrollView
         horizontal
@@ -295,6 +297,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
           )}
         </View>
       </ScrollView>
+      </PageContent>
     </View>
   );
 }

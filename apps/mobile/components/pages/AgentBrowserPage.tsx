@@ -21,7 +21,9 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  Menu as MenuIcon,
 } from 'lucide-react-native';
+import { Icon } from '@/components/ui/icon';
 import { Ionicons } from '@expo/vector-icons';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
@@ -158,7 +160,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         {/* Left: menu + nav buttons */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Pressable onPress={onOpenDrawer} hitSlop={8} style={{ padding: 4 }}>
-            <Ionicons name="menu" size={24} color={fg} />
+            <Icon as={MenuIcon} size={20} color={fg} strokeWidth={2} />
           </Pressable>
 
           <Pressable

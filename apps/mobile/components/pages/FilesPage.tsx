@@ -64,6 +64,8 @@ import {
 } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 
 interface FilesTabState {
@@ -526,84 +528,35 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   if (!sandboxUrl) {
     return (
       <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>
-        {/* Header */}
-        <View style={{ paddingTop: insets.top }} className="px-4 pb-3 bg-background">
-          <View className="flex-row items-center">
-            <TouchableOpacity
-              onPress={onOpenDrawer}
-              className="mr-3 p-1"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="menu" size={24} color={fgColor} />
-            </TouchableOpacity>
-            <View className="flex-1">
-              <RNText
-                style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}
-                numberOfLines={1}
-              >
-                {page.label}
-              </RNText>
-            </View>
-            <TouchableOpacity
-              onPress={onOpenRightDrawer}
-              className="ml-3 p-1"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="apps-outline" size={20} color={fgColor} />
-            </TouchableOpacity>
+        <PageHeader
+          title={page.label}
+          onOpenDrawer={onOpenDrawer}
+          onOpenRightDrawer={onOpenRightDrawer}
+        />
+        <PageContent>
+          <View className="flex-1 items-center justify-center px-8">
+            <ActivityIndicator size="large" color={mutedColor} />
+            <Text className="text-sm mt-3 text-muted-foreground">
+              Connecting to sandbox...
+            </Text>
           </View>
-        </View>
-        <View className="flex-1 items-center justify-center px-8">
-          <ActivityIndicator size="large" color={mutedColor} />
-          <Text className="text-sm mt-3 text-muted-foreground">
-            Connecting to sandbox...
-          </Text>
-        </View>
+        </PageContent>
       </View>
     );
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>
-      {/* Header */}
-      <View
-        style={{
-          paddingTop: insets.top,
-          backgroundColor: isDark ? '#121215' : '#ffffff',
-          borderBottomWidth: 1,
-          borderBottomColor: isDark
-            ? 'rgba(248, 248, 248, 0.1)'
-            : 'rgba(18, 18, 21, 0.1)',
-        }}
-      >
-        <View className="px-4 py-3 flex-row items-center justify-between">
-          <View className="flex-row items-center flex-1">
-            <TouchableOpacity
-              onPress={onOpenDrawer}
-              className="mr-3 p-1"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="menu" size={24} color={fgColor} />
-            </TouchableOpacity>
-            <RNText
-              style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}
-              numberOfLines={1}
-            >
-              Files
-            </RNText>
-          </View>
-
-          {/* Action buttons */}
-          <View className="flex-row items-center gap-1">
+      <PageHeader
+        title="Files"
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        rightActions={
+          <View className="flex-row items-center" style={{ gap: 4 }}>
             {/* View mode toggle */}
             <AnimatedPressable
               onPress={() => setViewMode((v) => (v === 'list' ? 'grid' : 'list'))}
-              className="p-2.5 rounded-xl active:opacity-70"
-              style={{
-                backgroundColor: isDark
-                  ? 'rgba(248, 248, 248, 0.1)'
-                  : 'rgba(18, 18, 21, 0.05)',
-              }}
+              className="p-2 rounded-xl active:opacity-70"
             >
               <Icon
                 as={viewMode === 'list' ? LayoutGrid : List}
@@ -615,38 +568,31 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             {/* Upload */}
             <AnimatedPressable
               onPress={handleUploadDocument}
-              className="p-2.5 rounded-xl active:opacity-70"
-              style={{
-                backgroundColor: isDark
-                  ? 'rgba(248, 248, 248, 0.1)'
-                  : 'rgba(18, 18, 21, 0.05)',
-              }}
+              className="p-2 rounded-xl active:opacity-70"
             >
               <Icon as={Upload} size={18} color={fgColor} strokeWidth={2} />
             </AnimatedPressable>
             {/* New folder */}
             <AnimatedPressable
               onPress={openCreateFolder}
-              className="p-2.5 rounded-xl active:opacity-70"
-              style={{
-                backgroundColor: isDark
-                  ? 'rgba(248, 248, 248, 0.1)'
-                  : 'rgba(18, 18, 21, 0.05)',
-              }}
+              className="p-2 rounded-xl active:opacity-70"
             >
               <Icon as={FolderPlus} size={18} color={fgColor} strokeWidth={2} />
             </AnimatedPressable>
-            {/* Right drawer */}
-            <TouchableOpacity
-              onPress={onOpenRightDrawer}
-              className="p-1 ml-1"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="apps-outline" size={20} color={fgColor} />
-            </TouchableOpacity>
           </View>
-        </View>
+        }
+      />
 
+      <PageContent>
+      {/* Breadcrumbs container */}
+      <View
+        style={{
+          borderBottomWidth: 1,
+          borderBottomColor: isDark
+            ? 'rgba(248, 248, 248, 0.1)'
+            : 'rgba(18, 18, 21, 0.1)',
+        }}
+      >
         {/* Breadcrumbs */}
         <View className="pb-2">
           <ScrollView
@@ -1353,6 +1299,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         sandboxId={sandboxId || ''}
         sandboxUrl={sandboxUrl}
       />
+      </PageContent>
     </View>
   );
 });

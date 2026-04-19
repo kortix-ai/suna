@@ -70,6 +70,8 @@ import {
   type KortixTaskStatus,
 } from '@/lib/kortix';
 import { useTabStore } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -333,51 +335,35 @@ export function ProjectDetailPage({
 
   return (
     <View style={{ flex: 1, backgroundColor: bg }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 8 }}>
-        {/* Top row: menu + name + actions — all centered on one line */}
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {onOpenDrawer && (
-            <TouchableOpacity
-              onPress={onOpenDrawer}
-              style={{ marginRight: 12, padding: 4 }}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="menu" size={24} color={fg} />
-            </TouchableOpacity>
-          )}
-
+      <PageHeader
+        title={
           <TouchableOpacity
             onPress={() => handleEdit('name')}
             activeOpacity={0.7}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <FolderGit2 size={16} color={mutedStrong} />
             <Text
-              style={{ fontSize: 17, fontFamily: 'Roobert-SemiBold', color: fg, flexShrink: 1 }}
+              className="text-base font-medium text-muted-foreground"
+              style={{ flexShrink: 1 }}
               numberOfLines={1}>
               {project.name}
             </Text>
             <Pencil size={12} color={isDark ? '#3f3f46' : '#d4d4d8'} />
           </TouchableOpacity>
-
+        }
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        rightActions={
           <TouchableOpacity
             onPress={handleDelete}
-            style={{ padding: 6, marginLeft: 4 }}
+            style={{ padding: 6, marginRight: 4 }}
             hitSlop={8}>
             <Trash2 size={18} color={isDark ? '#52525b' : '#a1a1aa'} />
           </TouchableOpacity>
-          {onOpenRightDrawer && (
-            <TouchableOpacity
-              onPress={onOpenRightDrawer}
-              style={{ padding: 4 }}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="apps-outline" size={20} color={fg} />
-            </TouchableOpacity>
-          )}
-        </View>
+        }
+      />
 
-        {/* Path removed from header — now in About tab */}
-      </View>
-
+      <PageContent>
       {/* Tab bar */}
       <ScrollView
         ref={tabScrollRef}
@@ -1397,6 +1383,7 @@ export function ProjectDetailPage({
           })()}
         </BottomSheetView>
       </BottomSheetModal>
+      </PageContent>
     </View>
   );
 }

@@ -165,7 +165,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: B
       {/* Header */}
       <View className="flex-row items-center px-3 py-2" style={{ backgroundColor: barBg }}>
         <Pressable onPress={onOpenDrawer} hitSlop={8} className="mr-2 p-1">
-          <Icon as={Menu} size={18} className="text-foreground" strokeWidth={2} />
+          <Icon as={Menu} size={20} className="text-foreground" strokeWidth={2} />
         </Pressable>
 
         {/* Nav buttons */}

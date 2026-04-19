@@ -23,6 +23,8 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { getSSHConnection, setupSSH, type SSHConnectionInfo, type SSHSetupResult } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -181,27 +183,23 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: SSHPa
     : '';
 
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
-      {/* Header */}
-      <View className="flex-row items-center px-4 py-3">
-        <Pressable onPress={onOpenDrawer} hitSlop={8} className="mr-3">
-          <Icon as={Menu} size={20} className="text-foreground" strokeWidth={2} />
-        </Pressable>
-        <Text className="flex-1 text-lg font-roobert-medium text-foreground">{page.label}</Text>
-        <Pressable onPress={onOpenRightDrawer} hitSlop={8} className="ml-3 p-1">
-          <Ionicons name="apps-outline" size={20} color={isDark ? '#F8F8F8' : '#121215'} />
-        </Pressable>
-      </View>
+    <View className="flex-1 bg-muted">
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+      />
 
-      <ScrollView
-        ref={scrollRef}
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-        onScroll={handleScroll}
-        scrollEventThrottle={64}
-        onContentSizeChange={handleContentSizeChange}
-      >
+      <PageContent>
+        <ScrollView
+          ref={scrollRef}
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+          onScroll={handleScroll}
+          scrollEventThrottle={64}
+          onContentSizeChange={handleContentSizeChange}
+        >
         <View className="px-5 pt-2">
           {/* Title */}
           <Text className="text-2xl font-roobert-semibold text-foreground">SSH Access</Text>
@@ -392,7 +390,8 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: SSHPa
             </View>
           )}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </PageContent>
     </View>
   );
 }

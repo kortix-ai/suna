@@ -53,6 +53,8 @@ import {
 import { useThemeColors } from '@/lib/theme-colors';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import {
   useOpenCodeAgents,
   useOpenCodeCommands,
@@ -547,29 +549,15 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
 
   return (
     <View style={{ flex: 1, backgroundColor: bg }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {onOpenDrawer && (
-            <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12, padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="menu" size={24} color={fg} />
-            </TouchableOpacity>
-          )}
-          <View style={{ flex: 1 }}>
-            <RNText style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fg }} numberOfLines={1}>
-              {page.label}
-            </RNText>
-          </View>
-          {onOpenRightDrawer && (
-            <TouchableOpacity onPress={onOpenRightDrawer} style={{ padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="apps-outline" size={20} color={fg} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+      />
 
+      <PageContent>
       {/* Search */}
-      <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
+      <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8 }}>
         <View
           style={{
             flexDirection: 'row',
@@ -719,6 +707,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
 
       {/* Settings bottom sheet */}
       <WorkspaceSettingsSheet ref={settingsSheetRef} />
+      </PageContent>
     </View>
   );
 });

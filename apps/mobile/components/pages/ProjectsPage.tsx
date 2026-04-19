@@ -23,6 +23,8 @@ import { Search, X, FolderGit2, Clock, MessageSquare } from 'lucide-react-native
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 // import { useThemeColors } from '@/lib/theme-colors';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -86,29 +88,15 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: 
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {onOpenDrawer && (
-            <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12, padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="menu" size={24} color={fg} />
-            </TouchableOpacity>
-          )}
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fg }} numberOfLines={1}>
-              {page.label}
-            </Text>
-          </View>
-          {onOpenRightDrawer && (
-            <TouchableOpacity onPress={onOpenRightDrawer} style={{ padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="apps-outline" size={20} color={fg} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+      />
 
+      <PageContent>
       {/* Search */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 8, gap: 10 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 8, gap: 10 }}>
         <View
           style={{
             flex: 1,
@@ -231,6 +219,7 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: 
           </TouchableOpacity>
         ))}
       </ScrollView>
+      </PageContent>
     </View>
   );
 }

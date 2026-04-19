@@ -59,6 +59,8 @@ import {
 import { Globe } from 'lucide-react-native';
 import { SearchBar } from '@/components/ui/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 
 // ─── Provider branding ───────────────────────────────────────────────────────
@@ -446,29 +448,27 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top + 8, paddingBottom: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: borderColor }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {onOpenDrawer && (
-              <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12 }}>
-                <Ionicons name="menu" size={24} color={fgColor} />
-              </TouchableOpacity>
-            )}
-            <View>
-              <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>{page.label}</Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>
-                {connectedSet.size} connected
-              </Text>
-            </View>
+      <PageHeader
+        title={
+          <View style={{ flex: 1 }}>
+            <Text
+              className="text-base font-medium text-muted-foreground"
+              numberOfLines={1}
+            >
+              {page.label}
+            </Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>
+              {connectedSet.size} connected
+            </Text>
           </View>
-          {onOpenRightDrawer && (
-            <TouchableOpacity onPress={onOpenRightDrawer}>
-              <Ionicons name="apps-outline" size={20} color={fgColor} />
-            </TouchableOpacity>
-          )}
-        </View>
+        }
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+      />
 
+      <PageContent>
+      {/* Tabs */}
+      <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>
         {/* Tabs */}
         <View style={{ flexDirection: 'row', gap: 0, marginTop: 12, borderRadius: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 3 }}>
           {([
@@ -938,6 +938,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           </BottomSheetTouchable>
         </BottomSheetScrollView>
       </BottomSheetModal>
+      </PageContent>
     </View>
   );
 }
