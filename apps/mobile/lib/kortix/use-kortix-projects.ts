@@ -145,7 +145,40 @@ export const kortixKeys = {
     ['kortix', 'projects', url, id, 'sessions'] as const,
   tasks: (url: string, projectId: string) => ['kortix', 'tasks', url, projectId] as const,
   agents: (url: string, projectId: string) => ['kortix', 'agents', url, projectId] as const,
+  connectors: (url: string) => ['kortix', 'connectors', url] as const,
 };
+
+// ── Connector types & hooks ──────────────────────────────────────────────────
+
+export interface KortixConnector {
+  id: string;
+  name: string;
+  description: string | null;
+  source: string | null;
+  pipedream_slug: string | null;
+  env_keys: string[] | null;
+  notes: string | null;
+  auto_generated: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useKortixConnectors(sandboxUrl: string | undefined) {
+  return useQuery<KortixConnector[]>({
+    queryKey: kortixKeys.connectors(sandboxUrl || ''),
+    queryFn: async () => {
+      const data = await kortixFetch<{ connectors?: KortixConnector[] } | KortixConnector[]>(
+        sandboxUrl!,
+        '/kortix/connectors',
+      );
+      if (Array.isArray(data)) return data;
+      return data.connectors ?? [];
+    },
+    enabled: !!sandboxUrl,
+    staleTime: 30_000,
+    retry: 2,
+  });
+}
 
 // ── Project hooks ────────────────────────────────────────────────────────────
 

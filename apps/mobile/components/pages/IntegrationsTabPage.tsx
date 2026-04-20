@@ -45,8 +45,6 @@ export function IntegrationsTabPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
       />
       <PageContent>
         <IntegrationsPageContent />

@@ -13,8 +13,11 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
+  TextInput,
   Text as RNText,
 } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
+import { useQueryClient } from '@tanstack/react-query';
 
 const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 import { Text } from '@/components/ui/text';
@@ -46,12 +49,13 @@ import {
   Ban,
   FolderOpen,
   Code2,
+  FileText,
 } from 'lucide-react-native';
 
 import { FileItem } from '@/components/files/FileItem';
 import { FileViewer } from '@/components/files/FileViewer';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { useOpenCodeFiles } from '@/lib/files/hooks';
+import { useOpenCodeFiles, useOpenCodeFileContent, useOpenCodeUploadFile, fileKeys } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -202,6 +206,72 @@ export function ProjectDetailPage({
   useEffect(() => {
     if (project?.path) setFilePath(project.path);
   }, [project?.path]);
+
+  // ── CONTEXT.md hero (ported from web project-about.tsx) ──────────────────
+  const contextPath = useMemo(() => {
+    if (!project?.path || project.path === '/') return undefined;
+    return `${project.path.replace(/\/+$/, '')}/.kortix/CONTEXT.md`;
+  }, [project?.path]);
+
+  const {
+    data: contextContent,
+    isLoading: contextLoading,
+    error: contextError,
+  } = useOpenCodeFileContent(
+    tab === 'about' ? sandboxUrl : undefined,
+    tab === 'about' ? contextPath : undefined,
+    { staleTime: 30_000, retry: 1 },
+  );
+
+  const qc = useQueryClient();
+  const uploadMutation = useOpenCodeUploadFile();
+  const [contextEditing, setContextEditing] = useState(false);
+  const [contextDraft, setContextDraft] = useState('');
+  const [contextSaving, setContextSaving] = useState(false);
+
+  const saveContext = useCallback(async () => {
+    if (!sandboxUrl || !contextPath) return;
+    const current = (contextContent || '') as string;
+    if (contextDraft === current) {
+      setContextEditing(false);
+      return;
+    }
+    setContextSaving(true);
+    try {
+      const parts = contextPath.split('/');
+      const fileName = parts.pop() || 'CONTEXT.md';
+      const dirPath = parts.join('/');
+
+      // Write draft to cache, then upload the file to the project .kortix dir.
+      const cacheUri = `${FileSystem.cacheDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(cacheUri, contextDraft, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      await uploadMutation.mutateAsync({
+        sandboxUrl,
+        file: { uri: cacheUri, name: fileName, type: 'text/markdown' },
+        targetPath: dirPath,
+      });
+      // Invalidate the specific file-content query so the preview updates.
+      qc.invalidateQueries({ queryKey: fileKeys.opencodeFile(sandboxUrl, contextPath) });
+    } catch (err: any) {
+      Alert.alert('Save Failed', err?.message || 'Could not save CONTEXT.md');
+    } finally {
+      setContextSaving(false);
+      setContextEditing(false);
+    }
+  }, [sandboxUrl, contextPath, contextContent, contextDraft, uploadMutation, qc]);
+
+  const startContextEdit = useCallback(() => {
+    setContextDraft(((contextContent as string) || ''));
+    setContextEditing(true);
+  }, [contextContent]);
+
+  const cancelContextEdit = useCallback(() => {
+    setContextEditing(false);
+    setContextDraft('');
+    Keyboard.dismiss();
+  }, []);
 
   const { folders, regularFiles } = useMemo(() => {
     if (!files || !Array.isArray(files)) return { folders: [], regularFiles: [] };
@@ -669,6 +739,160 @@ export function ProjectDetailPage({
         {/* ── About Tab ── */}
         {tab === 'about' && (
           <View style={{ gap: 16 }}>
+            {/* CONTEXT.md — hero section (ported from web project-about.tsx) */}
+            {contextPath && (
+              <View
+                style={{
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: border,
+                  backgroundColor: cardBg,
+                  padding: 14,
+                }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 10,
+                  }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                    <FileText size={15} color={fg} />
+                    <RNText style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
+                      CONTEXT.md
+                    </RNText>
+                    <RNText
+                      style={{
+                        fontSize: 11,
+                        fontFamily: 'Menlo',
+                        color: mutedStrong,
+                        marginLeft: 2,
+                      }}
+                      numberOfLines={1}
+                    >
+                      .kortix/CONTEXT.md
+                    </RNText>
+                  </View>
+                  {!contextEditing ? (
+                    <TouchableOpacity
+                      onPress={startContextEdit}
+                      hitSlop={8}
+                      disabled={contextLoading}
+                    >
+                      <Pencil size={14} color={mutedStrong} />
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      <TouchableOpacity
+                        onPress={cancelContextEdit}
+                        disabled={contextSaving}
+                        hitSlop={6}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          borderRadius: 8,
+                          backgroundColor: isDark
+                            ? 'rgba(255,255,255,0.06)'
+                            : 'rgba(0,0,0,0.04)',
+                        }}
+                      >
+                        <RNText
+                          style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}
+                        >
+                          Cancel
+                        </RNText>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={saveContext}
+                        disabled={contextSaving}
+                        hitSlop={6}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          borderRadius: 8,
+                          backgroundColor: themeColors.primary,
+                          opacity: contextSaving ? 0.7 : 1,
+                        }}
+                      >
+                        {contextSaving ? (
+                          <ActivityIndicator size="small" color={themeColors.primaryForeground} />
+                        ) : (
+                          <RNText
+                            style={{
+                              fontSize: 12,
+                              fontFamily: 'Roobert-Medium',
+                              color: themeColors.primaryForeground,
+                            }}
+                          >
+                            Save
+                          </RNText>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+
+                {/* Body */}
+                {contextEditing ? (
+                  <TextInput
+                    value={contextDraft}
+                    onChangeText={setContextDraft}
+                    multiline
+                    placeholder={'# Project context\n\nWhat the agent should know about this project...'}
+                    placeholderTextColor={muted}
+                    style={{
+                      fontSize: 13,
+                      fontFamily: monoFont,
+                      color: fg,
+                      lineHeight: 20,
+                      minHeight: 180,
+                      textAlignVertical: 'top',
+                      padding: 10,
+                      borderRadius: 10,
+                      backgroundColor: isDark
+                        ? 'rgba(255,255,255,0.03)'
+                        : 'rgba(0,0,0,0.02)',
+                      borderWidth: 1,
+                      borderColor: themeColors.primary,
+                    }}
+                    autoFocus
+                  />
+                ) : contextLoading ? (
+                  <View style={{ paddingVertical: 18, alignItems: 'center' }}>
+                    <ActivityIndicator color={muted} />
+                  </View>
+                ) : contextError || !contextContent ? (
+                  <TouchableOpacity onPress={startContextEdit} activeOpacity={0.7}>
+                    <RNText
+                      style={{
+                        fontSize: 13,
+                        fontFamily: 'Roobert',
+                        color: mutedStrong,
+                        fontStyle: 'italic',
+                      }}
+                    >
+                      No CONTEXT.md yet — tap to create. Agents read this file first when working on
+                      the project.
+                    </RNText>
+                  </TouchableOpacity>
+                ) : (
+                  <SelectableMarkdownText
+                    style={{
+                      fontSize: 14,
+                      fontFamily: 'Roobert',
+                      color: fg,
+                      lineHeight: 21,
+                    }}
+                  >
+                    {contextContent as string}
+                  </SelectableMarkdownText>
+                )}
+              </View>
+            )}
+
             {/* Description */}
             <View
               style={{

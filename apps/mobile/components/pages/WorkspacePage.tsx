@@ -31,6 +31,7 @@ import {
   FolderOpen,
   Wrench,
   Plug,
+  Link as LinkIcon,
   ChevronRight,
   Copy,
   Check,
@@ -68,11 +69,12 @@ import {
   type Project,
   type McpStatus,
 } from '@/lib/opencode/hooks/use-opencode-data';
+import { useKortixConnectors, type KortixConnector } from '@/lib/kortix';
 import { WorkspaceSettingsSheet, type WorkspaceSettingsSheetRef } from './WorkspaceSettingsSheet';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type ItemKind = 'project' | 'agent' | 'skill' | 'command' | 'tool' | 'mcp';
+type ItemKind = 'project' | 'agent' | 'skill' | 'command' | 'tool' | 'mcp' | 'connector';
 type ItemScope = 'project' | 'global' | 'external' | 'built-in';
 type KindFilter = 'all' | ItemKind;
 
@@ -83,7 +85,7 @@ interface WorkspaceItem {
   kind: ItemKind;
   scope: ItemScope;
   meta?: string;
-  raw?: Agent | Skill | Command | Project | { toolId: string; server?: string } | { serverName: string; status: McpStatus };
+  raw?: Agent | Skill | Command | Project | KortixConnector | { toolId: string; server?: string } | { serverName: string; status: McpStatus };
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -113,6 +115,7 @@ const KIND_CONFIG: Record<ItemKind, { label: string; iconName: string }> = {
   command: { label: 'Command', iconName: 'terminal' },
   tool: { label: 'Tool', iconName: 'wrench' },
   mcp: { label: 'MCP', iconName: 'plug' },
+  connector: { label: 'Connector', iconName: 'link' },
 };
 
 const SCOPE_LABEL: Record<ItemScope, string> = {
@@ -129,6 +132,7 @@ const KIND_ICON_MAP: Record<ItemKind, React.ComponentType<any>> = {
   command: Terminal,
   tool: Wrench,
   mcp: Plug,
+  connector: LinkIcon,
 };
 
 // ─── Kind filter chips ──────────────────────────────────────────────────────
@@ -141,6 +145,7 @@ const KIND_TABS: { value: KindFilter; label: string }[] = [
   { value: 'command', label: 'Commands' },
   { value: 'tool', label: 'Tools' },
   { value: 'mcp', label: 'MCP' },
+  { value: 'connector', label: 'Connectors' },
 ];
 
 // ─── Quick action presets (same as frontend) ────────────────────────────────
@@ -202,12 +207,13 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
   const { data: projects, isLoading: lProjects, refetch: rProjects } = useOpenCodeProjects(sandboxUrl);
   const { data: toolIds, isLoading: lTools, refetch: rTools } = useOpenCodeToolIds(sandboxUrl);
   const { data: mcpStatus, isLoading: lMcp, refetch: rMcp } = useOpenCodeMcpStatus(sandboxUrl);
+  const { data: connectors, isLoading: lConnectors, refetch: rConnectors } = useKortixConnectors(sandboxUrl);
 
-  const isLoading = lAgents || lSkills || lCommands || lProjects || lTools || lMcp;
+  const isLoading = lAgents || lSkills || lCommands || lProjects || lTools || lMcp || lConnectors;
 
   const refetchAll = useCallback(async () => {
-    await Promise.all([rAgents(), rSkills(), rCommands(), rProjects(), rTools(), rMcp()]);
-  }, [rAgents, rSkills, rCommands, rProjects, rTools, rMcp]);
+    await Promise.all([rAgents(), rSkills(), rCommands(), rProjects(), rTools(), rMcp(), rConnectors()]);
+  }, [rAgents, rSkills, rCommands, rProjects, rTools, rMcp, rConnectors]);
 
   // Build unified items list (same logic as frontend)
   const allItems = useMemo<WorkspaceItem[]>(() => {
@@ -262,12 +268,26 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
       });
     }
 
+    if (connectors && Array.isArray(connectors)) {
+      for (const c of connectors) {
+        items.push({
+          id: `connector:${c.id}`,
+          name: c.name,
+          description: c.description || undefined,
+          kind: 'connector',
+          scope: 'project',
+          meta: c.source || 'custom',
+          raw: c,
+        });
+      }
+    }
+
     return items;
-  }, [projects, agents, skills, commands, toolIds, mcpStatus]);
+  }, [projects, agents, skills, commands, toolIds, mcpStatus, connectors]);
 
   // Kind counts
   const kindCounts = useMemo(() => {
-    const c: Record<KindFilter, number> = { all: allItems.length, project: 0, agent: 0, skill: 0, command: 0, tool: 0, mcp: 0 };
+    const c: Record<KindFilter, number> = { all: allItems.length, project: 0, agent: 0, skill: 0, command: 0, tool: 0, mcp: 0, connector: 0 };
     allItems.forEach((i) => c[i.kind]++);
     return c;
   }, [allItems]);
@@ -427,11 +447,21 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
         rows.push({ label: 'Error', value: m.status.error });
       }
     }
+    if (item.kind === 'connector' && item.raw) {
+      const c = item.raw as KortixConnector;
+      if (c.source) rows.push({ label: 'Source', value: c.source });
+      if (c.pipedream_slug) rows.push({ label: 'Pipedream', value: c.pipedream_slug, mono: true });
+      if (c.env_keys?.length) rows.push({ label: 'Env', value: c.env_keys.join(', '), mono: true });
+      if (c.auto_generated) rows.push({ label: 'Auto', value: 'Created by Pipedream OAuth' });
+      if (c.updated_at) rows.push({ label: 'Updated', value: new Date(c.updated_at).toLocaleString() });
+      if (c.notes) content = c.notes;
+    }
 
     const contentLabel =
       item.kind === 'skill' ? 'SKILL.md' :
       item.kind === 'command' ? 'Template' :
       item.kind === 'agent' ? 'System Prompt' :
+      item.kind === 'connector' ? 'Notes' :
       'Content';
 
     return (
