@@ -166,6 +166,67 @@ function getOpenCodeClient(): OpenCodeClientLike {
   return _ocClient as unknown as OpenCodeClientLike
 }
 
+// POST /:id/pm-review — periodic board check-in, typically wired to a cron
+// trigger. The trigger (action=http) hits this endpoint, we spawn a fresh PM
+// session scoped to the project's directory and fire a board-review prompt.
+// Kept here (not in triggers) so the engine stays untouched: the trigger
+// doesn't need to know about project directories — it just POSTs.
+projectsRouter.post('/:id/pm-review', async (c) => {
+  const db = getDb()
+  const pid = decodeURIComponent(c.req.param('id'))
+  const project = db.prepare('SELECT * FROM projects WHERE id=$id OR path=$id').get({ $id: pid }) as ProjectRow | null
+  if (!project) return c.json({ error: 'Project not found' }, 404)
+  if ((project as any).structure_version !== 2) {
+    return c.json({ error: 'pm-review is v2-only' }, 400)
+  }
+  const pm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)
+  if (!pm) return c.json({ error: 'PM agent not found for this project' }, 404)
+
+  const prompt = [
+    `Scheduled board check-in for "${project.name}".`,
+    '',
+    'Open `project_context_read` to load CONTEXT.md.',
+    'List tickets with `ticket_list` filtered by each status key.',
+    '',
+    'For every ticket in `in_progress` or `review`:',
+    '1. Call `ticket_events` to see last activity timestamp + assignee history.',
+    '2. If last activity is >1h old: post a tight comment on that ticket',
+    '   flagging the stall — name the assignee, note what was last done,',
+    '   suggest a next step or reassignment.',
+    '3. If the review-column ticket has no QA activity but QA is assigned,',
+    '   nudge: "@qa reminder on #N".',
+    '',
+    'After scanning everything, post ONE summary comment on the project\'s',
+    'most recent goal ticket (parent_id IS NULL, newest created_at) —',
+    'shape: "Board check · <timestamp>: N in-progress, M in review, K stalled."',
+    'No tables, no emoji verdicts, no re-listing everything. One line per',
+    'signal. Then stop.',
+    '',
+    'This is an automated cron check. Do NOT tag the human unless a',
+    'ticket is genuinely blocked and needs their input per CONTEXT.md.',
+  ].join('\n')
+
+  // Force a fresh session for each review — we don't want consecutive cron
+  // fires to stack up context in the same thread. Clearing pm.session_id
+  // makes wakeAgentForProject create+bind a new one.
+  try { db.prepare('UPDATE project_agents SET session_id=NULL WHERE id=$id').run({ $id: pm.id }) } catch {}
+  const freshPm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)!
+  try {
+    const sid = await wakeAgentForProject({
+      db,
+      client: getOpenCodeClient(),
+      projectId: project.id,
+      agent: freshPm,
+      sessionTitle: `PM review · ${project.name} · ${new Date().toISOString().slice(0, 16)}`,
+      prompt,
+    })
+    if (!sid) return c.json({ error: 'Failed to spawn PM review session' }, 500)
+    return c.json({ session_id: sid })
+  } catch (err) {
+    return c.json({ error: String(err) }, 500)
+  }
+})
+
 // POST /:id/pm-session — create a fresh chat session bound to the project's
 // PM. Each click = new session, no kickoff, no fake user-message. The user
 // types the first message themselves. The plugin's system-prompt transform

@@ -190,6 +190,15 @@ next. STOP after each question until the human replies.
      obviously needs them.
    Wait for explicit approval before creating.
 
+5. **Board check-in cadence.** Ask:
+
+   > "How often should I sweep the board and post a status
+   > check-in? e.g. 'every hour', 'every 30 min', 'daily at 9am',
+   > or 'none' (no auto-check). Default: none."
+
+   If the human gives a cadence, you'll register a cron trigger
+   after team setup (see "Scheduled board review" below).
+
 ### Apply in strict order
 
 1. \`project_context_write\` — tight Overview + Stack + Autonomy.
@@ -207,6 +216,42 @@ in Settings if your flow differs."
 slug in \`default_assignee_id\` (e.g. \`review → "qa"\`). If the column
 lands before the agent exists, the slug stores unresolved and the gate
 silently never fires.
+
+## Scheduled board review (cron trigger)
+
+If the human gave a cadence in onboarding Q5, register it via the
+\`triggers\` tool AFTER team + columns + templates are in place:
+
+\`\`\`
+triggers(
+  action="create",
+  name="<project-name>-pm-review",
+  source_type="cron",
+  cron_expr="<cron expression; see table below>",
+  timezone="UTC",
+  action_type="http",
+  url="http://localhost:8000/kortix/projects/<this project's id>/pm-review",
+  method="POST",
+)
+\`\`\`
+
+The endpoint spawns a fresh PM session scoped to the project and prompts
+you to sweep the board. Cadence → cron mapping:
+
+| Human says | cron_expr |
+|---|---|
+| every hour | \`0 0 * * * *\` |
+| every 30 min | \`0 */30 * * * *\` |
+| every 15 min | \`0 */15 * * * *\` |
+| daily 9am | \`0 0 9 * * *\` |
+| twice daily | \`0 0 9,17 * * *\` |
+| weekdays 9am | \`0 0 9 * * 1-5\` |
+
+If the human said "none" / "no" / "never" / didn't answer, SKIP the
+trigger — do not create one.
+
+After creating, confirm in one line: "Scheduled PM check-ins
+<human cadence>."
 
 ## Column default assignees — allow-list
 
