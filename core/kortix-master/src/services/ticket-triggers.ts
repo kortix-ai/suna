@@ -24,6 +24,7 @@ import {
   setTicketAgentSession,
 } from './ticket-service'
 import { fireOpencodeDispose, tryReadContext } from './project-v2-seed'
+import * as configModule from '../config'
 
 export interface OpenCodeClientLike {
   session: {
@@ -293,10 +294,16 @@ export async function fireAgentTriggers(opts: {
  * refresh pass — the timer resets on each call.
  */
 const _refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
-// Tuned long enough that PM's post-tool text response typically finishes
-// before we reload config. Not bulletproof against a user mid-typing a
-// follow-up — that's accepted churn for now.
-const REFRESH_DEBOUNCE_MS = 20_000
+// Initial delay after a CRUD call before we start checking for an idle
+// directory. Gives PM a chance to chain follow-up tool calls without each
+// one re-scheduling from zero.
+const REFRESH_INITIAL_DELAY_MS = 5_000
+// Poll interval when any session in the directory is busy — re-check idle.
+const REFRESH_POLL_INTERVAL_MS = 3_000
+// Absolute cap: if a session stays "busy" for longer than this (e.g. it's
+// actually a stuck zombie — tool_use corruption), fire dispose anyway.
+// Aborting a truly-stuck session is a fine outcome.
+const REFRESH_MAX_WAIT_MS = 180_000
 
 export interface ScheduleRefreshOpts {
   db: Database
@@ -306,11 +313,45 @@ export interface ScheduleRefreshOpts {
   bindSessionToProject?: (sessionId: string, projectId: string) => void | Promise<void>
 }
 
+/**
+ * Is any opencode session in this directory currently non-idle? The session
+ * status endpoint is project-global — we filter by our session_projects view.
+ */
+async function anyBusySessionIn(db: Database, directory: string): Promise<boolean> {
+  const proj = db.prepare('SELECT id FROM projects WHERE path=$d').get({ $d: directory }) as { id: string } | null
+  if (!proj) return false
+  const rows = db.prepare('SELECT session_id FROM session_projects WHERE project_id=$pid').all({ $pid: proj.id }) as Array<{ session_id: string }>
+  const ids = new Set(rows.map((r) => r.session_id))
+  if (!ids.size) return false
+  const baseUrl = `http://${configModule.config.OPENCODE_HOST}:${configModule.config.OPENCODE_PORT}`
+  try {
+    const res = await fetch(`${baseUrl}/session/status`, { signal: AbortSignal.timeout(3_000) })
+    if (!res.ok) return false
+    const all = await res.json() as Record<string, { type?: string }>
+    for (const [sid, status] of Object.entries(all)) {
+      if (ids.has(sid) && status?.type && status.type !== 'idle') return true
+    }
+  } catch {
+    return false
+  }
+  return false
+}
+
 export function scheduleAgentRefresh(opts: ScheduleRefreshOpts): void {
   const { db, client, directory, projectId, bindSessionToProject } = opts
-  const existing = _refreshTimers.get(directory)
-  if (existing) clearTimeout(existing)
-  _refreshTimers.set(directory, setTimeout(async () => {
+  const startedAt = Date.now()
+
+  const attempt = async () => {
+    // Safety valve — fire anyway after the hard cap.
+    const waited = Date.now() - startedAt
+    const forceFlush = waited >= REFRESH_MAX_WAIT_MS
+
+    if (!forceFlush && await anyBusySessionIn(db, directory)) {
+      // Directory still active — reschedule another poll.
+      _refreshTimers.set(directory, setTimeout(attempt, REFRESH_POLL_INTERVAL_MS))
+      return
+    }
+
     _refreshTimers.delete(directory)
     const ok = await fireOpencodeDispose(directory)
     if (!ok) {
@@ -332,7 +373,11 @@ export function scheduleAgentRefresh(opts: ScheduleRefreshOpts): void {
         console.warn('[ticket-triggers] drain replay failed for agent', agent.slug, err)
       }
     }
-  }, REFRESH_DEBOUNCE_MS))
+  }
+
+  const existing = _refreshTimers.get(directory)
+  if (existing) clearTimeout(existing)
+  _refreshTimers.set(directory, setTimeout(attempt, REFRESH_INITIAL_DELAY_MS))
 }
 
 /** Flush any pending refresh immediately. Mostly for tests / shutdown. */
