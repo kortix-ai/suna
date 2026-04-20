@@ -57,7 +57,6 @@ import {
 import {
   fireAgentTrigger as svcFireAgentTrigger,
   fireAgentTriggers as svcFireAgentTriggers,
-  scheduleAgentRefresh,
 } from '../../../src/services/ticket-triggers'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
@@ -635,16 +634,13 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           default_model: args.default_model || null,
         })
         await syncTeamSection(db, proj)
-        // Schedule a debounced opencode refresh so the new agent becomes
-        // routable without aborting the turn we're running in right now.
-        // Any assign_to or column-default trigger for this agent issued
-        // before the refresh lands is queued in pending_agent_triggers
-        // and drained automatically when ready_at flips.
-        scheduleAgentRefresh({
-          db, client, directory: proj.path, projectId: pid,
-          bindSessionToProject: (sid, pid) => mgr.setSessionProject(sid, pid),
-        })
-        return `Created agent @${ag.slug} (${ag.id}). Will be routable in ~20s (opencode cache refresh). Triggers issued before then will be queued and fire automatically.`
+        // NOTE: opencode's per-directory agent cache is NOT refreshed here.
+        // The agent file + DB row exist; opencode won't see @${slug} as
+        // dispatchable until its config is reloaded (either by a future
+        // /instance/dispose on this directory, or a server restart). This
+        // is a known limitation; a project-scoped trigger for "refresh
+        // opencode config for this directory" is the future home.
+        return `Created agent @${ag.slug} (${ag.id}). File and DB row written. Routability via opencode requires a /instance/dispose on ${proj.path} — not fired automatically.`
       },
     }),
 
@@ -714,11 +710,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         // dispatch waits for the refresh cycle to pick up the new file.
         try { db.prepare('UPDATE project_agents SET ready_at=NULL WHERE id=$id').run({ $id: ag.id }) } catch {}
         await syncTeamSection(db, proj)
-        scheduleAgentRefresh({
-          db, client, directory: proj.path, projectId: pid,
-          bindSessionToProject: (sid, pid) => mgr.setSessionProject(sid, pid),
-        })
-        return `Updated agent @${args.slug}. Refresh scheduled (~20s).`
+        return `Updated agent @${args.slug}. File rewritten. Routability requires a /instance/dispose on ${proj.path}.`
       },
     }),
 
@@ -738,10 +730,6 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         db.prepare('DELETE FROM project_agents WHERE id=$id').run({ $id: ag.id })
         db.prepare('DELETE FROM ticket_agent_sessions WHERE agent_id=$id').run({ $id: ag.id })
         db.prepare('DELETE FROM pending_agent_triggers WHERE agent_id=$id').run({ $id: ag.id })
-        scheduleAgentRefresh({
-          db, client, directory: proj.path, projectId: pid,
-          bindSessionToProject: (sid, pid) => mgr.setSessionProject(sid, pid),
-        })
         await syncTeamSection(db, proj)
         return `Deleted agent @${args.slug}.`
       },

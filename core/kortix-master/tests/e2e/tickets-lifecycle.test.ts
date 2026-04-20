@@ -552,69 +552,6 @@ describe('listing + filtering', () => {
   })
 })
 
-describe('agent readiness + pending-trigger drain', () => {
-  test('fireAgentTrigger queues for a not-ready agent instead of dispatching', async () => {
-    const fx = await setupSeededProject()
-    const persona = path.join(fx.project.path, '.opencode', 'agent', 'scout.md')
-    await fs.mkdir(path.dirname(persona), { recursive: true })
-    await fs.writeFile(persona, '# Scout', 'utf8')
-    // NB: _insertAgentRaw leaves ready_at null — we want exactly that here to
-    // simulate the window between write-file and dispose-completes.
-    const agent = _insertAgentRaw(fx.db, fx.project.id, {
-      slug: 'scout', name: 'Scout', file_path: persona,
-      tool_groups: ['project_action'],
-    })
-    expect(agent.ready_at).toBeNull()
-
-    const { ticket } = createTicket(fx.db, { project_id: fx.project.id, title: 'queued' })
-    const sid = await fireAgentTrigger({
-      db: fx.db, client: fx.mock.client, projectId: fx.project.id, ticketId: ticket.id,
-      agent, reason: 'freshly-created',
-    })
-    // No dispatch — session NOT created.
-    expect(sid).toBeNull()
-    expect(fx.mock.createCount()).toBe(0)
-    // Pending row written.
-    const pending = fx.db.prepare(
-      'SELECT * FROM pending_agent_triggers WHERE agent_id=$aid'
-    ).all({ $aid: agent.id }) as any[]
-    expect(pending).toHaveLength(1)
-    expect(pending[0].ticket_id).toBe(ticket.id)
-    expect(pending[0].reason).toBe('freshly-created')
-  })
-
-  test('drain dispatches queued triggers once agents flip ready', async () => {
-    const { markAgentsReadyForProject, drainPendingTriggersForAgents } = await import('../../src/services/ticket-service')
-    const fx = await setupSeededProject()
-    const persona = path.join(fx.project.path, '.opencode', 'agent', 'ranger.md')
-    await fs.mkdir(path.dirname(persona), { recursive: true })
-    await fs.writeFile(persona, '# Ranger', 'utf8')
-    const agent = _insertAgentRaw(fx.db, fx.project.id, {
-      slug: 'ranger', name: 'Ranger', file_path: persona,
-      tool_groups: ['project_action'],
-    })
-    const { ticket } = createTicket(fx.db, { project_id: fx.project.id, title: 'queued for drain' })
-    await fireAgentTrigger({
-      db: fx.db, client: fx.mock.client, projectId: fx.project.id, ticketId: ticket.id,
-      agent, reason: 'assigned',
-    })
-    expect(fx.mock.createCount()).toBe(0)
-
-    // Flip ready + drain — emulates what scheduleAgentRefresh does after dispose.
-    const flipped = markAgentsReadyForProject(fx.db, fx.project.id)
-    expect(flipped.map((a) => a.slug)).toContain('ranger')
-    const drained = drainPendingTriggersForAgents(fx.db, flipped.map((a) => a.id))
-    expect(drained).toHaveLength(1)
-    // Replay — now the agent is ready, dispatch goes through.
-    const readyAgent = { ...agent, ready_at: new Date().toISOString() }
-    await fireAgentTrigger({
-      db: fx.db, client: fx.mock.client, projectId: fx.project.id, ticketId: drained[0].ticket_id,
-      agent: readyAgent, reason: drained[0].reason,
-    })
-    expect(fx.mock.createCount()).toBe(1)
-  })
-})
-
 describe('sub-tickets + parent_id permission', () => {
   test('createTicket persists parent_id when valid', async () => {
     const fx = await setupSeededProject()
