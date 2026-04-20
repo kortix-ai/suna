@@ -1,419 +1,300 @@
 'use client';
 
 /**
- * Project Triggers tab — list / create / run / pause / delete.
- * Engine untouched; this is a filtered view over the global triggers table.
+ * Project Triggers tab — filtered view of the global triggers pool.
+ *
+ * Reuses TaskListItem / TaskDetailPanel / TaskConfigDialog from scheduled-tasks
+ * so the project view is identical to the workspace-global Triggers page,
+ * just scoped via `project_id`. Creating here stamps project_id so the new
+ * trigger surfaces in this tab.
  */
 
-import { useMemo, useState } from 'react';
-import {
-  Plus, Play, Pause, Trash2, Loader2, Timer, Link2, CircleCheck, CircleX,
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { useTriggers, useDeleteTrigger, type Trigger } from '@/hooks/scheduled-tasks';
+import { TaskConfigDialog } from '@/components/scheduled-tasks/task-config-dialog';
+import { TaskDetailPanel } from '@/components/scheduled-tasks/task-detail-panel';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Timer, Webhook, Clock, CheckCircle2, Trash2, MessageSquare, Terminal, Globe, Calendar, Ticket as TicketIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import {
-  useProjectTriggers,
-  useTriggerExecutions,
-  useCreateProjectTrigger,
-  useRunProjectTrigger,
-  usePauseProjectTrigger,
-  useDeleteProjectTrigger,
-  type ProjectTrigger,
-} from '@/hooks/kortix/use-project-triggers';
 import { toast } from 'sonner';
+import { useTickets, type Ticket } from '@/hooks/kortix/use-kortix-tickets';
 
-const CADENCE_PRESETS: Array<{ label: string; cron: string }> = [
-  { label: 'Every 15 min', cron: '0 */15 * * * *' },
-  { label: 'Every 30 min', cron: '0 */30 * * * *' },
-  { label: 'Every hour', cron: '0 0 * * * *' },
-  { label: 'Daily 9am', cron: '0 0 9 * * *' },
-  { label: 'Weekdays 9am', cron: '0 0 9 * * 1-5' },
-  { label: 'Twice daily (9am, 5pm)', cron: '0 0 9,17 * * *' },
-];
+// ─── Helpers (same as ScheduledTasksPage) ───────────────────────────────────
+
+function describeCron(expr: string): string {
+  try {
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length !== 6) return expr;
+    const [sec, min, hour, day, month, weekday] = parts;
+    if (sec.startsWith('*/') && min === '*' && hour === '*') return `Every ${sec.slice(2)} seconds`;
+    if (sec === '0' && min.startsWith('*/') && hour === '*') {
+      const n = min.slice(2);
+      return `Every ${n} minute${n === '1' ? '' : 's'}`;
+    }
+    if (sec === '0' && min === '0' && hour.startsWith('*/')) {
+      const n = hour.slice(2);
+      return `Every ${n} hour${n === '1' ? '' : 's'}`;
+    }
+    if (sec === '0' && !min.includes('*') && !hour.includes('*') && day === '*' && month === '*') {
+      if (weekday === '*') return `Daily at ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
+      if (weekday === '1-5') return `Weekdays at ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
+      return `At ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
+    }
+    return expr;
+  } catch {
+    return expr;
+  }
+}
+
+function formatRelativeTime(dateStr: string | null): string {
+  if (!dateStr) return 'Never';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const absDiff = Math.abs(diffMs);
+  if (absDiff < 60_000) return diffMs > 0 ? 'in <1m' : '<1m ago';
+  if (absDiff < 3_600_000) {
+    const mins = Math.round(absDiff / 60_000);
+    return diffMs > 0 ? `in ${mins}m` : `${mins}m ago`;
+  }
+  if (absDiff < 86_400_000) {
+    const hrs = Math.round(absDiff / 3_600_000);
+    return diffMs > 0 ? `in ${hrs}h` : `${hrs}h ago`;
+  }
+  const days = Math.round(absDiff / 86_400_000);
+  return diffMs > 0 ? `in ${days}d` : `${days}d ago`;
+}
+
+// ─── Row ────────────────────────────────────────────────────────────────────
+
+function TriggerRow({
+  trigger,
+  selected,
+  onClick,
+  onDelete,
+  deleting,
+  boundTicket,
+}: {
+  trigger: Trigger;
+  selected: boolean;
+  onClick: () => void;
+  onDelete: (e: React.MouseEvent) => void;
+  deleting: boolean;
+  boundTicket?: Ticket;
+}) {
+  const actionType = trigger.action_type ?? 'prompt';
+  const actionIcon = actionType === 'command'
+    ? <Terminal className="h-3 w-3" />
+    : actionType === 'http'
+      ? <Globe className="h-3 w-3" />
+      : <MessageSquare className="h-3 w-3" />;
+
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        'group flex items-center justify-between p-4 cursor-pointer transition-colors',
+        selected ? 'bg-muted/50' : 'hover:bg-muted/30',
+      )}
+    >
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-card border border-border/50 shrink-0">
+          {trigger.type === 'cron'
+            ? <Timer className="h-4 w-4 text-foreground" />
+            : <Webhook className="h-4 w-4 text-foreground" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <h3 className="text-[13px] font-medium text-foreground truncate">{trigger.name}</h3>
+            <Badge variant={trigger.isActive ? 'highlight' : 'secondary'} className="text-[10px] px-1.5 py-0 h-4">
+              {trigger.isActive ? 'Active' : 'Paused'}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 flex items-center gap-1">
+              {actionIcon}
+              <span className="capitalize">{actionType}</span>
+            </Badge>
+            {trigger.ticket_id && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 flex items-center gap-1 text-foreground/80">
+                <TicketIcon className="h-3 w-3" />
+                {boundTicket ? `#${boundTicket.number}` : 'ticket'}
+              </Badge>
+            )}
+          </div>
+          <p className="text-[12px] text-muted-foreground/70 truncate">
+            {trigger.type === 'cron'
+              ? `${describeCron(trigger.cronExpr || '')} · ${trigger.timezone}`
+              : `POST ${trigger.webhook?.path || ''}`}
+            {boundTicket ? ` · → ${boundTicket.title}` : ''}
+          </p>
+        </div>
+      </div>
+      <div className="ml-3 flex items-center gap-3 shrink-0">
+        <div className="hidden sm:flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+            <Clock className="h-3 w-3" />
+            <span>
+              {trigger.type === 'cron'
+                ? `Next: ${trigger.isActive ? formatRelativeTime(trigger.nextRunAt) : '--'}`
+                : 'On demand'}
+            </span>
+          </div>
+          {trigger.lastRunAt && (
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70">
+              <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+              <span>Last: {formatRelativeTime(trigger.lastRunAt)}</span>
+            </div>
+          )}
+        </div>
+        <Button
+          onClick={onDelete}
+          disabled={deleting}
+          variant="ghost"
+          size="icon-sm"
+          className={cn(
+            'opacity-0 group-hover:opacity-100 focus:opacity-100 h-7 w-7',
+            'text-muted-foreground hover:text-red-500 hover:bg-red-500/10',
+            deleting && 'opacity-100 text-red-500',
+          )}
+          title="Delete trigger"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main ───────────────────────────────────────────────────────────────────
 
 interface Props {
   projectId: string;
   projectPath: string;
 }
 
-export function TriggersTab({ projectId, projectPath }: Props) {
-  const { data, isLoading } = useProjectTriggers(projectId);
-  const triggers = data?.triggers ?? [];
-  const [createOpen, setCreateOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+export function TriggersTab({ projectId }: Props) {
+  const { data: allTriggers = [], isLoading } = useTriggers();
+  const { data: projectTickets = [] } = useTickets(projectId);
+  const deleteMutation = useDeleteTrigger();
+  const [selected, setSelected] = useState<Trigger | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const triggers = useMemo(
+    () => allTriggers
+      .filter((t) => t.project_id === projectId)
+      .sort((a, b) => {
+        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      }),
+    [allTriggers, projectId],
+  );
+
+  // id → ticket index so each row can resolve its bound ticket without
+  // a separate per-row fetch.
+  const ticketById = useMemo(() => {
+    const m = new Map<string, Ticket>();
+    for (const t of projectTickets) m.set(t.id, t);
+    return m;
+  }, [projectTickets]);
+
+  // Keep selection in sync with refetched data
+  React.useEffect(() => {
+    if (!selected) return;
+    const match = triggers.find((t) => t.id === selected.id);
+    if (match) setSelected(match);
+    else setSelected(null);
+  }, [triggers, selected]);
+
+  const handleDelete = async (e: React.MouseEvent, trigger: Trigger) => {
+    e.stopPropagation();
+    if (!trigger.id) return;
+    if (!confirm(`Delete "${trigger.name}"? This cannot be undone.`)) return;
+    try {
+      await deleteMutation.mutateAsync(trigger.id);
+      toast.success('Trigger deleted');
+      if (selected?.id === trigger.id) setSelected(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete');
+    }
+  };
 
   return (
-    <div className="h-full overflow-y-auto animate-in fade-in-0 duration-300 fill-mode-both">
-      <div className="container mx-auto max-w-4xl px-4 sm:px-6 lg:px-10 py-8 sm:py-10 space-y-8">
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <Timer className="h-3.5 w-3.5 text-muted-foreground/45" />
-            <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Project triggers</span>
-            <div className="ml-auto">
-              <Button
-                variant="ghost" size="sm"
-                className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
-                onClick={() => setCreateOpen(true)}
-              >
-                <Plus className="h-3 w-3" />
-                New trigger
-              </Button>
+    <div className="h-full overflow-hidden flex">
+      {/* List */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="container mx-auto max-w-4xl px-4 sm:px-6 py-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold tracking-tight">Triggers</h2>
+              <p className="text-[12px] text-muted-foreground/60 mt-0.5">
+                Cron + webhook triggers scoped to this project.
+              </p>
             </div>
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Add Trigger
+            </Button>
           </div>
-          <p className="text-[12px] text-muted-foreground/55 -mt-2 mb-3">
-            Cron + webhook triggers scoped to this project. Engine runs them the same as workspace triggers;
-            a mirror copy lives in <code className="font-mono text-[10.5px] px-1 py-0.5 rounded bg-muted/30">{projectPath}/.kortix/triggers.yaml</code>.
-          </p>
 
-          <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+          <div className="rounded-xl border border-border/50 divide-y divide-border/40 overflow-hidden bg-card/40">
             {isLoading && (
-              <div className="py-8 text-center text-[12px] text-muted-foreground/50">Loading…</div>
+              <div className="p-4 space-y-3">
+                {[1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-10 w-10 rounded-xl" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-3 w-32" />
+                      <Skeleton className="h-3 w-48" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
             {!isLoading && triggers.length === 0 && (
-              <div className="py-10 text-center text-[12px] text-muted-foreground/50">
-                No triggers yet. The PM onboarding cadence question creates one automatically;
-                you can also add more from here.
+              <div className="py-12 px-6 text-center">
+                <div className="mx-auto w-10 h-10 rounded-full bg-muted/50 flex items-center justify-center mb-3">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <p className="text-[13px] font-medium mb-1">No triggers in this project</p>
+                <p className="text-[12px] text-muted-foreground/60 mb-4">
+                  Cron or webhook — runs a prompt, command, or HTTP call when it fires.
+                </p>
+                <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Add trigger
+                </Button>
               </div>
             )}
             {triggers.map((t) => (
               <TriggerRow
                 key={t.id}
-                projectId={projectId}
                 trigger={t}
-                onOpen={() => setSelectedId(t.id === selectedId ? null : t.id)}
-                expanded={selectedId === t.id}
+                selected={selected?.id === t.id}
+                onClick={() => setSelected(selected?.id === t.id ? null : t)}
+                onDelete={(e) => handleDelete(e, t)}
+                deleting={deleteMutation.isPending}
+                boundTicket={t.ticket_id ? ticketById.get(t.ticket_id) : undefined}
               />
             ))}
           </div>
-        </section>
+        </div>
       </div>
 
-      <CreateTriggerDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
+      {/* Detail panel */}
+      {selected && (
+        <div className="w-[520px] shrink-0 border-l border-border/60 h-full overflow-y-auto bg-background">
+          <TaskDetailPanel trigger={selected} onClose={() => setSelected(null)} />
+        </div>
+      )}
+
+      {/* Create dialog — stamps project_id */}
+      <TaskConfigDialog
+        open={showCreate}
+        onOpenChange={setShowCreate}
+        onCreated={() => setShowCreate(false)}
         projectId={projectId}
       />
     </div>
   );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Row
-// ═══════════════════════════════════════════════════════════════════════════
-
-function TriggerRow({
-  projectId, trigger, onOpen, expanded,
-}: {
-  projectId: string;
-  trigger: ProjectTrigger;
-  onOpen: () => void;
-  expanded: boolean;
-}) {
-  const run = useRunProjectTrigger();
-  const pause = usePauseProjectTrigger();
-  const del = useDeleteProjectTrigger();
-
-  const sourceLabel = useMemo(() => {
-    if (trigger.source_type === 'cron') {
-      return (trigger.source_config.cron_expr as string) || 'cron';
-    }
-    if (trigger.source_type === 'webhook') {
-      const method = (trigger.source_config.method as string) || 'POST';
-      const path = (trigger.source_config.path as string) || '';
-      return `${method} ${path}`;
-    }
-    return trigger.source_type;
-  }, [trigger]);
-
-  return (
-    <div>
-      <div className="flex items-center gap-3 px-3 py-2.5">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex-1 min-w-0 text-left flex items-center gap-3 cursor-pointer"
-        >
-          <span className={cn(
-            'inline-flex items-center gap-1 h-5 px-1.5 rounded text-[10px] font-mono',
-            trigger.is_active ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted/40 text-muted-foreground/60',
-          )}>
-            {trigger.is_active ? <CircleCheck className="h-2.5 w-2.5" /> : <CircleX className="h-2.5 w-2.5" />}
-            {trigger.source_type}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-[12.5px] font-medium truncate">{trigger.name}</div>
-            <div className="text-[10.5px] text-muted-foreground/60 truncate font-mono">{sourceLabel}</div>
-          </div>
-          <div className="text-[10.5px] text-muted-foreground/50 shrink-0">
-            {trigger.next_run_at ? `next: ${formatNext(trigger.next_run_at)}` : '—'}
-          </div>
-          <div className="text-[10.5px] text-muted-foreground/50 shrink-0 tabular-nums">
-            {trigger.event_count}×
-          </div>
-        </button>
-        <div className="flex items-center gap-0.5 shrink-0">
-          <Button
-            variant="ghost" size="sm"
-            className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              run.mutate({ projectId, triggerId: trigger.id }, {
-                onSuccess: () => toast.success('Trigger fired'),
-                onError: (err) => toast.error(`Run failed: ${err instanceof Error ? err.message : String(err)}`),
-              });
-            }}
-            disabled={run.isPending}
-            title="Run now"
-          >
-            {run.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-          </Button>
-          <Button
-            variant="ghost" size="sm"
-            className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              pause.mutate({ projectId, triggerId: trigger.id, resume: !trigger.is_active });
-            }}
-            disabled={pause.isPending}
-            title={trigger.is_active ? 'Pause' : 'Resume'}
-          >
-            <Pause className={cn('h-3 w-3', !trigger.is_active && 'opacity-50')} />
-          </Button>
-          <Button
-            variant="ghost" size="sm"
-            className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (confirm(`Delete trigger "${trigger.name}"?`)) {
-                del.mutate({ projectId, triggerId: trigger.id });
-              }
-            }}
-            disabled={del.isPending}
-            title="Delete"
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </div>
-      </div>
-      {expanded && <ExecutionsList projectId={projectId} triggerId={trigger.id} />}
-    </div>
-  );
-}
-
-function ExecutionsList({ projectId, triggerId }: { projectId: string; triggerId: string }) {
-  const { data, isLoading } = useTriggerExecutions(projectId, triggerId);
-  const rows = data?.executions ?? [];
-  return (
-    <div className="bg-muted/10 border-t border-border/20 px-3 py-2 text-[11px]">
-      <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 mb-1.5 font-semibold">Recent fires</div>
-      {isLoading && <div className="text-muted-foreground/50">Loading…</div>}
-      {!isLoading && rows.length === 0 && <div className="text-muted-foreground/50">No runs yet.</div>}
-      {rows.slice(0, 10).map((r) => (
-        <div key={r.id} className="flex items-center gap-2 py-0.5 font-mono">
-          <span className={cn(
-            'h-1.5 w-1.5 rounded-full shrink-0',
-            r.status === 'completed' ? 'bg-emerald-500'
-              : r.status === 'running' ? 'bg-amber-500'
-              : r.status === 'failed' ? 'bg-destructive'
-              : 'bg-muted-foreground/40',
-          )} />
-          <span className="text-muted-foreground/70 w-24 shrink-0">{r.started_at.slice(11, 19)}</span>
-          <span className="w-16 shrink-0">{r.status}</span>
-          <span className="w-16 shrink-0 text-muted-foreground/60">
-            {r.duration_ms != null ? `${r.duration_ms}ms` : '—'}
-          </span>
-          {r.http_status != null && (
-            <span className="w-12 shrink-0 text-muted-foreground/60">{r.http_status}</span>
-          )}
-          {r.error_message && (
-            <span className="truncate text-destructive/80 flex-1">{r.error_message}</span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Create dialog — cron + prompt or http action
-// ═══════════════════════════════════════════════════════════════════════════
-
-function CreateTriggerDialog({
-  open, onOpenChange, projectId,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  projectId: string;
-}) {
-  const create = useCreateProjectTrigger();
-  const [name, setName] = useState('');
-  const [cron, setCron] = useState(CADENCE_PRESETS[2].cron); // every hour default
-  const [actionType, setActionType] = useState<'prompt' | 'http'>('prompt');
-  const [prompt, setPrompt] = useState('');
-  const [agent, setAgent] = useState('project-manager');
-  const [url, setUrl] = useState('');
-
-  const canSubmit = name.trim() && cron.trim() && (
-    (actionType === 'prompt' && prompt.trim()) ||
-    (actionType === 'http' && url.trim())
-  );
-
-  const submit = () => {
-    if (!canSubmit) return;
-    create.mutate({
-      projectId,
-      input: {
-        name: name.trim(),
-        source: { type: 'cron', cron_expr: cron.trim(), timezone: 'UTC' },
-        action: actionType === 'prompt'
-          ? { type: 'prompt', prompt: prompt.trim(), agent: agent.trim() || undefined }
-          : { type: 'http', url: url.trim() },
-      },
-    }, {
-      onSuccess: () => {
-        toast.success(`Trigger "${name}" created`);
-        onOpenChange(false);
-        setName(''); setPrompt(''); setUrl('');
-      },
-      onError: (err) => toast.error(`Create failed: ${err instanceof Error ? err.message : String(err)}`),
-    });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>New project trigger</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4 py-2">
-          <Field label="Name">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="daily-board-summary"
-              className="h-8 w-full text-[12.5px] bg-muted/30 border border-border/40 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
-            />
-          </Field>
-
-          <Field label="Cadence">
-            <Select value={cron} onValueChange={setCron}>
-              <SelectTrigger size="sm" className="h-8 w-full text-[12px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CADENCE_PRESETS.map((p) => (
-                  <SelectItem key={p.cron} value={p.cron}>
-                    {p.label} <span className="ml-2 font-mono text-[10.5px] opacity-55">{p.cron}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <input
-              value={cron}
-              onChange={(e) => setCron(e.target.value)}
-              placeholder="0 0 9 * * *"
-              className="mt-1.5 h-7 w-full text-[11px] font-mono bg-muted/20 border border-border/30 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            <p className="text-[10.5px] text-muted-foreground/55 mt-1">
-              6-field cron (seconds minutes hours day month weekday). Pick a preset or edit inline.
-            </p>
-          </Field>
-
-          <Field label="Action">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setActionType('prompt')}
-                className={cn(
-                  'h-7 px-3 rounded text-[11.5px] border transition-colors',
-                  actionType === 'prompt' ? 'border-primary bg-primary/10 text-foreground' : 'border-border/40 text-muted-foreground/70 hover:text-foreground',
-                )}
-              >prompt</button>
-              <button
-                type="button"
-                onClick={() => setActionType('http')}
-                className={cn(
-                  'h-7 px-3 rounded text-[11.5px] border transition-colors',
-                  actionType === 'http' ? 'border-primary bg-primary/10 text-foreground' : 'border-border/40 text-muted-foreground/70 hover:text-foreground',
-                )}
-              >http</button>
-            </div>
-          </Field>
-
-          {actionType === 'prompt' && (
-            <>
-              <Field label="Agent">
-                <input
-                  value={agent}
-                  onChange={(e) => setAgent(e.target.value)}
-                  placeholder="project-manager"
-                  className="h-8 w-full text-[12.5px] bg-muted/30 border border-border/40 rounded px-2 font-mono outline-none focus:ring-2 focus:ring-primary/20"
-                />
-              </Field>
-              <Field label="Prompt">
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  rows={6}
-                  placeholder="What should this agent do when the trigger fires?"
-                  className="w-full text-[12px] bg-muted/30 border border-border/40 rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-primary/20 resize-y"
-                />
-              </Field>
-            </>
-          )}
-
-          {actionType === 'http' && (
-            <Field label="URL">
-              <input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="http://localhost:8000/kortix/projects/.../pm-review"
-                className="h-8 w-full text-[12px] font-mono bg-muted/30 border border-border/40 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </Field>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button
-            size="sm"
-            onClick={submit}
-            disabled={!canSubmit || create.isPending}
-            className="gap-1"
-          >
-            {create.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-            Create
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="block text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-1">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function formatNext(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const diff = d.getTime() - Date.now();
-    if (diff < 0) return 'now';
-    const mins = Math.round(diff / 60000);
-    if (mins < 60) return `${mins}m`;
-    const hrs = Math.round(mins / 60);
-    if (hrs < 24) return `${hrs}h`;
-    return `${Math.round(hrs / 24)}d`;
-  } catch { return '—'; }
 }

@@ -27,8 +27,10 @@ import * as path from 'node:path'
 import { config } from '../config'
 import {
   ensureTicketTables,
+  createTicket,
   listAgents,
   listColumns,
+  listTickets,
   insertAgent,
   markAgentReady,
   replaceColumns,
@@ -75,6 +77,23 @@ export interface AgentFileMeta {
  * of truth for persona + opencode config; the DB is our source of truth for
  * kortix tool gating.
  */
+/**
+ * Per-project agents must NEVER call workspace-global project CRUD —
+ * they're already scoped inside a project. Mirrors `worker.md`'s deny
+ * policy for project_create/delete/update while keeping list/get/select
+ * open so `<project_status>` injection can still resolve. Emitted on
+ * every agent file rendered by `renderAgentFile` so PM, engineer, qa,
+ * and any `team_create_agent`-seeded role inherit the same boundary.
+ */
+const PER_PROJECT_AGENT_PERMISSIONS: Record<string, 'allow' | 'deny'> = {
+  project_create: 'deny',
+  project_delete: 'deny',
+  project_update: 'deny',
+  project_get: 'allow',
+  project_list: 'allow',
+  project_select: 'allow',
+}
+
 export function renderAgentFile(meta: AgentFileMeta, body: string): string {
   const mode = meta.mode ?? 'primary'
   const cleanBody = (body || '').replace(/^---[\s\S]*?---\s*/m, '').trim()
@@ -87,6 +106,10 @@ export function renderAgentFile(meta: AgentFileMeta, body: string): string {
   lines.push(`mode: ${mode}`)
   if (meta.model && meta.model.trim()) {
     lines.push(`model: ${meta.model.trim()}`)
+  }
+  lines.push('permission:')
+  for (const [tool, verdict] of Object.entries(PER_PROJECT_AGENT_PERMISSIONS)) {
+    lines.push(`  ${tool}: ${verdict}`)
   }
   // Kortix bookkeeping — opencode ignores, plugin reads via DB
   lines.push(`display_name: ${JSON.stringify(meta.name)}`)
@@ -181,13 +204,33 @@ next. STOP after each question until the human replies.
    - Medium = team ships routine, flags architecture / dep choices in
      comments before landing.
    - Strict = human approval at Review before move-to-done.
-4. **Team.** Propose:
-   - \`engineer\` + \`qa\` — baseline.
-   - \`tech-lead\` — add when features are fuzzy or span multiple
-     components. TL turns a requirement into 3-5 sharp tickets with
-     concrete ACs; you route the results.
+4. **Team.** Read the scope you just locked in, then propose a
+   concrete roster. You decide based on shape, not templates:
+
+   - Baseline **everywhere**: \`engineer\` + \`qa\`.
+   - **Add \`tech-lead\` by default** when any of these hold — say so
+     in your proposal and name the subsystems:
+     * The project splits into 3+ subsystems (fetch + diff + store +
+       CLI, or API + worker + UI, etc.)
+     * Requirements are fuzzy / user asked for "something that does X"
+       without pinning architecture
+     * Multiple external integrations (APIs, providers, services)
+     * Anything cross-cutting (caching, schema versioning, migration)
+     TL turns those into 3–5 sharp tickets with concrete ACs per
+     engineer task — skipping them means the engineer stalls on
+     decomposition or ships under-specified work.
    - \`designer\` / \`writer\` / \`researcher\` — only when the domain
      obviously needs them.
+
+   Write the proposal like: "I'm proposing @engineer + @qa + @tech-lead
+   because this splits into 4 pieces: fetch, diff, classify, store.
+   Without a TL you'll get one fat ticket per API. OK?"
+
+   If the human pushes back with "just engineer + qa", accept it but
+   flag once: "Got it — I'll have @engineer decompose on the fly. If
+   that gets lossy we can add TL later." Do NOT silently drop TL when
+   the scope clearly warrants it.
+
    Wait for explicit approval before creating.
 
 5. **Board check-in cadence.** Ask:
@@ -199,14 +242,30 @@ next. STOP after each question until the human replies.
    If the human gives a cadence, you'll register a cron trigger
    after team setup (see "Scheduled board review" below).
 
+### NEVER call these
+
+You ARE the PM of an **existing** project. These tools are workspace-global
+and will hard-abort your turn on permission-deny:
+
+- \`project_create\` — you are not bootstrapping. Call \`project_context_write\`
+  to seed/update CONTEXT.md instead.
+- \`project_delete\`, \`project_update\` — deny-listed.
+
+If you feel the urge to "set up the project" or "create it," STOP. The project
+already exists. Jump straight to step 1 below.
+
 ### Apply in strict order
 
 1. \`project_context_write\` — tight Overview + Stack + Autonomy.
 2. \`team_create_agent\` for each approved role. Pass
    \`default_model: "anthropic/claude-sonnet-4-6"\` unless the human
    asked otherwise.
-3. \`project_columns_update\` — auto-apply the defaults (backlog →
-   in_progress → review → done, plus blocked as off_flow). Don't ask.
+3. \`project_columns_update\` — EXACTLY these 5 columns, in order:
+   \`backlog\` → \`in_progress\` → \`review\` (default_assignee: @qa) →
+   \`done\` (terminal), plus \`blocked\` (off_flow). No extra "qa"
+   column — QA gates via the review column's default_assignee. Do
+   not invent extra columns (triage, staging, released, etc.).
+   Don't ask.
 4. \`project_templates_update\` — Feature, Bug, Chore. Don't ask.
 
 One line to the human when done: "Board set. Tweak columns or templates
@@ -217,10 +276,35 @@ slug in \`default_assignee_id\` (e.g. \`review → "qa"\`). If the column
 lands before the agent exists, the slug stores unresolved and the gate
 silently never fires.
 
+## Commenting discipline
+
+When you post a \`ticket_comment\` — especially on the dashboard ticket
+during a cron-fired board sweep — **do NOT use @-mentions for agents
+unless you need them to act**. An \`@slug\` string in a comment body
+fires a wake-up session for that agent via \`addComment\`'s mention
+extraction; using it in a status recap pulls the engineer / qa into a
+needless new turn and clutters their history.
+
+**Rule:** in status / sweep comments, write agent slugs plainly —
+"backend-engineer shipped #3" — without the leading \`@\`. Reserve
+\`@slug\` for when you genuinely want that agent to pick something up
+(e.g. "@backend-engineer — can you rebase #5?").
+
+Decomposition work (turning a fuzzy goal into 3-5 sharp tickets)
+belongs with \`@tech-lead\` when the project has one. PM's own
+\`ticket_create\` calls should be triage-routing only (moving existing
+work around), not fresh architectural decomposition.
+
 ## Scheduled board review (cron trigger)
 
-If the human gave a cadence in onboarding Q5, register it via the
-\`triggers\` tool AFTER team + columns + templates are in place:
+Your project was seeded with a **Board operations — ongoing** ticket
+owned by you (@project-manager) in \`in_progress\`. This ticket is the
+running-review thread; every board-sweep fire threads onto its session
+so you see history. Look it up once with \`ticket_list\` and grab its id.
+
+If the human gave a cadence in onboarding Q5, register the cron via the
+\`triggers\` tool AFTER team + columns + templates are in place, and
+**bind it to the dashboard ticket** so fires thread correctly:
 
 \`\`\`
 triggers(
@@ -229,11 +313,18 @@ triggers(
   source_type="cron",
   cron_expr="<cron expression; see table below>",
   timezone="UTC",
-  action_type="http",
-  url="http://localhost:8000/kortix/projects/<this project's id>/pm-review",
-  method="POST",
+  action_type="prompt",
+  prompt="Sweep the board. Unblock what's stuck. Post ONE concise ticket_comment on this ticket summarizing delta since last fire — no noise if nothing changed. IMPORTANT: when referring to team agents in the sweep post, use their plain slug (e.g. 'backend-engineer' or 'qa'), NOT an @-mention. @-mentions spawn new agent sessions even when nothing actionable is being asked — status sweeps should never wake anyone.",
+  agent="project-manager",
+  project_id="<this project's id>",
+  ticket_id="<the dashboard ticket's id>",
 )
 \`\`\`
+
+The \`project_id\` arg stamps the trigger so it surfaces in this project's
+Triggers tab. The \`ticket_id\` arg binds it to the dashboard ticket —
+each fire reuses the same session and the reverse-lookup badge on the
+dashboard card reads "ongoing" with the cadence in its tooltip.
 
 The endpoint spawns a fresh PM session scoped to the project and prompts
 you to sweep the board. Cadence → cron mapping:
@@ -465,8 +556,50 @@ export async function seedV2Project(
 
   await syncTeamSection(db, project)
 
+  // Seed the PM's persistent "board operations" ticket. Always in_progress,
+  // assigned to PM. Acts as the running review thread: the board-sweep cron
+  // trigger binds to it via ticket_id so every fire threads onto one session
+  // (see prompt-action.ts session_key defaulting). The ticket never closes —
+  // it's the living dashboard that accumulates status-update comments from
+  // every PM sweep.
+  if (!listTickets(db, { projectId: project.id }).some((t) => t.created_by_type === 'system' && t.title === PM_DASHBOARD_TITLE)) {
+    try {
+      createTicket(db, {
+        project_id: project.id,
+        title: PM_DASHBOARD_TITLE,
+        body_md: PM_DASHBOARD_BODY,
+        status: PM_DASHBOARD_STATUS,
+        assign_to: [{ type: 'agent', id: pm.id }],
+        created_by_type: 'system',
+        created_by_id: null,
+      })
+    } catch (err) {
+      console.warn('[project-v2-seed] failed to seed PM dashboard ticket:', err instanceof Error ? err.message : err)
+    }
+  }
+
   return { pmAgent: pm }
 }
+
+// PM dashboard ticket — seeded once per project. Left as a constant so tests
+// and the persona body reference the same title/body.
+export const PM_DASHBOARD_TITLE = 'Board operations — ongoing'
+export const PM_DASHBOARD_STATUS = 'in_progress'
+export const PM_DASHBOARD_BODY = [
+  '**@project-manager\'s running review thread.**',
+  '',
+  'This ticket stays in `in_progress` for the life of the project. Every board-sweep',
+  'cron fire threads onto the same session via `ticket_id` → status updates accumulate',
+  'as comments here. Use it to:',
+  '',
+  '- Skim what the team is working on without opening every ticket.',
+  '- See PM\'s latest sweep verdict (stalled tickets, blockers, missing reviews).',
+  '- Audit the cron\'s history — every fire is a comment.',
+  '',
+  'When you wire the board-sweep trigger during onboarding, bind it to THIS ticket\'s',
+  'id via the `ticket_id` arg on the `triggers` tool. The reverse-lookup badge on',
+  'this card will then read "ongoing" with the cadence in its tooltip.',
+].join('\n')
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONTEXT.md "## Team" section — auto-maintained on any agent CRUD

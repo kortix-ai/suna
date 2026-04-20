@@ -238,6 +238,16 @@ export class ProjectManager {
 
 	async createProject(name: string, desc: string, customPath: string): Promise<ProjectRow> {
 		const pp = customPath || path.join(this.workspaceRoot, "projects", name)
+		// Guard: never register a project AT the workspace root — that's the
+		// "workspace" meta-project's slot. Callers that pass path=workspace
+		// usually mean "create a sub-project"; picking a subfolder is safer
+		// than silently creating a duplicate meta-project there.
+		if (path.resolve(pp) === path.resolve(this.workspaceRoot)) {
+			throw new Error(
+				`Refusing to create project at workspace root (${pp}). ` +
+				`Pass a subfolder path, e.g. ${path.join(this.workspaceRoot, name)}.`,
+			)
+		}
 		const existing = this.db.prepare("SELECT * FROM projects WHERE path=$p").get({ $p: pp }) as ProjectRow | null
 		if (existing) {
 			if (desc) { this.db.prepare("UPDATE projects SET description=$d WHERE id=$id").run({ $d: desc, $id: existing.id }); existing.description = desc }

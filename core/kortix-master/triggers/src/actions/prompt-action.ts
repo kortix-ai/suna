@@ -3,6 +3,50 @@
  * This is the existing dispatch behavior, extracted into its own module.
  */
 import type { MinimalOpenCodeClient, TriggerRecord, ExecutionRecord, PromptActionConfig, ContextConfig } from "../types.js"
+import { Database } from "bun:sqlite"
+import { join } from "path"
+import {
+  getAgentBySlug,
+  setTicketAgentSession,
+} from "../../../src/services/ticket-service"
+
+function getWorkspaceDbPath(): string {
+  const root = process.env.WORKSPACE_DIR || process.env.KORTIX_WORKSPACE || "/workspace"
+  return join(root, ".kortix", "kortix.db")
+}
+
+/**
+ * Bind a freshly-created trigger-dispatched session to the project + (if
+ * ticket-bound) the agent slug the trigger fires, so downstream tool calls
+ * (ticket_comment / ticket_update / ticket_create) can resolve actor to the
+ * real agent via findAgentForSession. Without this, a board-sweep cron's
+ * comments land with actor_type="user" — the UI attributes them to the human.
+ */
+function registerTriggerSession(
+  sessionId: string,
+  trigger: TriggerRecord,
+  agentSlug: string | null | undefined,
+): void {
+  const projectId = (trigger as any).project_id as string | null | undefined
+  const ticketId = (trigger as any).ticket_id as string | null | undefined
+  if (!projectId) return
+  let db: Database | null = null
+  try {
+    db = new Database(getWorkspaceDbPath())
+    db.exec("PRAGMA busy_timeout=5000")
+    db.prepare(
+      "INSERT OR REPLACE INTO session_projects (session_id, project_id, set_at) VALUES ($sid, $pid, $now)",
+    ).run({ $sid: sessionId, $pid: projectId, $now: new Date().toISOString() })
+    if (ticketId && agentSlug) {
+      const agent = getAgentBySlug(db, projectId, agentSlug)
+      if (agent) setTicketAgentSession(db, ticketId, agent.id, sessionId)
+    }
+  } catch (err) {
+    console.warn(`[prompt-action] registerTriggerSession failed:`, err instanceof Error ? err.message : err)
+  } finally {
+    try { db?.close() } catch {}
+  }
+}
 
 function parseModel(modelId?: string | null): { providerID: string; modelID: string } | undefined {
   if (!modelId) return undefined
@@ -65,9 +109,17 @@ export async function executePromptAction(
     sections.push("", "<trigger_context_values>", JSON.stringify(extracted, null, 2), "</trigger_context_values>")
   }
 
+  // Surface the additive scoping columns (project_id, ticket_id) in the
+  // event payload. The columns live outside the engine's type but the
+  // dispatcher sees the raw record, so the agent gets the linkage for free
+  // and can call ticket_get / ticket_comment against the bound ticket.
+  const ticketId = (trigger as any).ticket_id as string | null | undefined
+  const projectId = (trigger as any).project_id as string | null | undefined
   const normalizedEvent = {
     type: event.type,
     trigger: trigger.name,
+    ...(projectId ? { project_id: projectId } : {}),
+    ...(ticketId ? { ticket_id: ticketId } : {}),
     data: event.data ?? { timestamp: event.timestamp, manual: event.manual ?? false },
   }
 
@@ -80,13 +132,24 @@ export async function executePromptAction(
   // Session management
   const agentName = trigger.agent_name ?? actionConfig.agent
   const modelId = trigger.model_id ?? actionConfig.model
-  const sessionMode = trigger.session_mode ?? actionConfig.session_mode ?? "new"
+  // A ticket-bound trigger implies the ticket IS the thread — force reuse so
+  // every fire lands on the same per-ticket session and the agent sees prior
+  // fires in its history. The DB default for session_mode is "new" (not
+  // null), so we have to branch on ticketId before the nullish chain.
+  const sessionMode = ticketId
+    ? "reuse"
+    : (trigger.session_mode ?? actionConfig.session_mode ?? "new")
   // Dynamic reuse key: render session_key template with extracted values
   // so each unique key (e.g. per chat_id) gets its own persistent session.
+  // When the trigger is bound to a ticket and no explicit template is set,
+  // default to a per-ticket key so repeated fires thread onto one session
+  // (the ticket becomes the running review thread).
   const hasDynamicKey = !!contextConfig.session_key
   const reuseKey = hasDynamicKey
     ? renderPrompt(contextConfig.session_key!, { ...flatData, ...extracted })
-    : `trigger:${trigger.name}`
+    : ticketId
+      ? `ticket:${ticketId}`
+      : `trigger:${trigger.name}`
   // With a dynamic key, only check the reusedSessions map (not trigger.session_id,
   // which is a single-value fallback for the "one session per trigger" pattern).
   let sessionId = sessionMode === "reuse"
@@ -103,6 +166,9 @@ export async function executePromptAction(
     sessionId = created.data?.id ?? created.id
     if (!sessionId) throw new Error("session.create did not return an id")
     if (sessionMode === "reuse") options.reusedSessions.set(reuseKey, sessionId)
+    // Bind fresh session to project (+ ticket-agent when ticket-bound) so
+    // subsequent tool calls resolve actor to the real agent.
+    registerTriggerSession(sessionId, trigger, agentName)
   }
 
   await client.session.promptAsync({

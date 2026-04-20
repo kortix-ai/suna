@@ -42,6 +42,11 @@ export class TriggerManager {
     this.webhookServer = new WebhookTriggerServer(host, port, (route, payload) => this.dispatchWebhook(route, payload))
     // Pipedream handler: route events from Pipedream through the webhook server
     this.webhookServer.setPipedreamHandler((listenerId, payload) => this.dispatchPipedreamEvent(listenerId, payload))
+    // Reload handler: external CRUD paths (kortix-master's /kortix/triggers
+    // route) bypass manager.createTrigger and hit the store directly. They
+    // POST /internal/reload on this server after mutating the DB so we
+    // re-read and re-register runtime (cron + webhook routes).
+    this.webhookServer.setReloadHandler(() => this.rebuildRuntime())
   }
 
   private resolveDbPath(directory: string): string {

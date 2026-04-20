@@ -107,10 +107,32 @@ Examples:
             body_template: tool.schema.string().optional(),
             timeout_ms: tool.schema.number().optional(),
             is_active: tool.schema.string().optional(),
+            project_id: tool.schema.string().optional(),
+            ticket_id: tool.schema.string().optional(),
+            // action_type="ticket_create" args
+            ticket_title: tool.schema.string().optional(),
+            ticket_body: tool.schema.string().optional(),
+            ticket_template_id: tool.schema.string().optional(),
+            ticket_column: tool.schema.string().optional(),
+            ticket_assignees: tool.schema.string().optional().describe('Comma-separated agent slugs, e.g. "engineer,qa".'),
           },
-          async execute(args) {
+          async execute(args, toolCtx) {
             try {
               const store = manager.getStore()
+
+              // Auto-stamp project_id from the session's bound project when
+              // the caller (a per-project agent, typically PM) forgets to
+              // pass it. Prevents "orphan" triggers that don't show up in
+              // any project's Triggers tab even though they were created
+              // inside a project session.
+              if (!args.project_id && toolCtx?.sessionID) {
+                try {
+                  const row = (store as any).db
+                    ?.query?.('SELECT project_id FROM session_projects WHERE session_id = ?')
+                    .get(toolCtx.sessionID) as { project_id?: string } | null
+                  if (row?.project_id) args.project_id = row.project_id
+                } catch { /* best-effort — missing table or row is fine */ }
+              }
 
               switch (args.action) {
                 case "list": {
@@ -162,8 +184,19 @@ Examples:
                     if (args.method) actionConfig.method = args.method
                     if (args.body_template) actionConfig.body_template = args.body_template
                     if (args.timeout_ms) actionConfig.timeout_ms = args.timeout_ms
+                  } else if (actionType === "ticket_create") {
+                    if (!args.ticket_title) return "Error: ticket_title is required for ticket_create actions."
+                    if (!args.project_id) return "Error: project_id is required for ticket_create (the ticket's target project)."
+                    actionConfig.title = args.ticket_title
+                    if (args.ticket_body) actionConfig.body_md = args.ticket_body
+                    if (args.ticket_template_id) actionConfig.template_id = args.ticket_template_id
+                    if (args.ticket_column) actionConfig.column = args.ticket_column
+                    if (args.ticket_assignees) {
+                      actionConfig.assignee_slugs = args.ticket_assignees
+                        .split(",").map((s: string) => s.trim()).filter(Boolean)
+                    }
                   } else {
-                    return "Error: action_type must be 'prompt', 'command', or 'http'."
+                    return "Error: action_type must be 'prompt', 'command', 'http', or 'ticket_create'."
                   }
 
                   const trigger = manager.createTrigger({
@@ -177,6 +210,37 @@ Examples:
                     model_id: args.model_id,
                     session_mode: args.session_mode,
                   })
+
+                  // Optional scoping columns — stamped via direct SQL so the
+                  // engine stays unaware of these additive fields. The web UI
+                  // reads them to filter the Triggers tab by project and to
+                  // render per-ticket links on rows + detail drawers.
+                  if (args.project_id || args.ticket_id) {
+                    try {
+                      ;(store as any).db?.exec?.(
+                        `ALTER TABLE triggers ADD COLUMN project_id TEXT`,
+                      )
+                    } catch {}
+                    try {
+                      ;(store as any).db?.exec?.(
+                        `ALTER TABLE triggers ADD COLUMN ticket_id TEXT`,
+                      )
+                    } catch {}
+                    if (args.project_id) {
+                      try {
+                        ;(store as any).db
+                          ?.query?.(`UPDATE triggers SET project_id = ? WHERE id = ?`)
+                          .run(args.project_id, trigger.id)
+                      } catch {}
+                    }
+                    if (args.ticket_id) {
+                      try {
+                        ;(store as any).db
+                          ?.query?.(`UPDATE triggers SET ticket_id = ? WHERE id = ?`)
+                          .run(args.ticket_id, trigger.id)
+                      } catch {}
+                    }
+                  }
                   return `Trigger created: ${trigger.name} (${trigger.id})\n${formatTriggerForDisplay(trigger)}`
                 }
 

@@ -1,7 +1,7 @@
 // ─── Unified Trigger System Types ────────────────────────────────────────────
 
 export type SourceType = "cron" | "webhook"
-export type ActionType = "prompt" | "command" | "http"
+export type ActionType = "prompt" | "command" | "http" | "ticket_create"
 export type ExecutionStatus = "running" | "completed" | "failed" | "skipped"
 
 // ─── Trigger Record (DB row) ────────────────────────────────────────────────
@@ -106,6 +106,26 @@ export interface HttpActionConfig {
   timeout_ms?: number
 }
 
+/**
+ * Ticket-create action — fires when the trigger source fires (cron tick,
+ * webhook POST, manual run) and creates a ticket in the trigger's project
+ * via ticket-service.createTicket. Title/body templates render against
+ * event.data (webhook payloads) or the event envelope (cron).
+ *
+ * Team routing: `assignee_slugs` (comma-separated during YAML/API ingestion,
+ * array after parse) resolves to agent IDs at dispatch time. If empty, the
+ * ticket's landing column's default_assignee rules fire.
+ */
+export interface TicketCreateActionConfig {
+  title: string
+  body_md?: string
+  template_id?: string
+  /** Column key (e.g. "backlog", "in_progress"). Default: first column. */
+  column?: string
+  /** Agent slugs to tag. Empty = let the column's default_assignee rule fire. */
+  assignee_slugs?: string[]
+}
+
 // ─── Context Config ─────────────────────────────────────────────────────────
 
 export interface ContextConfig {
@@ -158,6 +178,12 @@ export interface YamlTriggerEntry {
     method?: string
     headers?: Record<string, string>
     body_template?: string
+    // ticket_create fields
+    title?: string
+    body_md?: string
+    template_id?: string
+    column?: string
+    assignee_slugs?: string[]
   }
   context?: ContextConfig
   pipedream?: PipedreamConfig
@@ -217,6 +243,10 @@ export interface TriggerResponse {
   agentFilePath: string | null
   maxRetries: number
   timeoutMs: number
+  project_id: string | null
+  /** Optional ticket this trigger is bound to. Each fire reuses a per-ticket
+   * session (session_key=`ticket:<id>`) so the agent has continuity. */
+  ticket_id: string | null
 }
 
 export interface ExecutionResponse {

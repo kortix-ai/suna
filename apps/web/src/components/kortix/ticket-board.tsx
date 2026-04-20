@@ -64,6 +64,44 @@ import type {
   ProjectAgent,
 } from '@/hooks/kortix/use-kortix-tickets';
 import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
+import { useTriggers, type Trigger } from '@/hooks/scheduled-tasks';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { Timer as TimerIcon, Webhook as WebhookIcon } from 'lucide-react';
+
+// Compact human form of a 6-field cron expression for tooltips.
+function describeCron(expr: string): string {
+  try {
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length !== 6) return expr;
+    const [sec, min, hour, day, _mo, wd] = parts;
+    if (sec === '0' && min.startsWith('*/') && hour === '*') {
+      const n = min.slice(2);
+      return `every ${n} min`;
+    }
+    if (sec === '0' && min === '0' && hour.startsWith('*/')) {
+      return `every ${hour.slice(2)}h`;
+    }
+    if (sec === '0' && !min.includes('*') && !hour.includes('*') && day === '*') {
+      const hh = hour.padStart(2, '0'), mm = min.padStart(2, '0');
+      if (wd === '1-5') return `weekdays ${hh}:${mm}`;
+      if (wd === '*') return `daily ${hh}:${mm}`;
+      return `${hh}:${mm}`;
+    }
+    return expr;
+  } catch {
+    return expr;
+  }
+}
+
+function formatRelative(ts: string | null): string {
+  if (!ts) return 'never';
+  const d = new Date(ts).getTime() - Date.now();
+  const abs = Math.abs(d);
+  if (abs < 60_000) return d > 0 ? 'in <1m' : 'just now';
+  if (abs < 3_600_000) return d > 0 ? `in ${Math.round(abs / 60_000)}m` : `${Math.round(abs / 60_000)}m ago`;
+  if (abs < 86_400_000) return d > 0 ? `in ${Math.round(abs / 3_600_000)}h` : `${Math.round(abs / 3_600_000)}h ago`;
+  return d > 0 ? `in ${Math.round(abs / 86_400_000)}d` : `${Math.round(abs / 86_400_000)}d ago`;
+}
 
 interface Props {
   tickets: Ticket[];
@@ -95,6 +133,21 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
     for (const t of tickets) m.set(t.id, t);
     return m;
   }, [tickets]);
+
+  // Ticket → triggers pointing at it (ticket_id === <id>). One `useTriggers`
+  // call for the whole board; each card gets its own slice via lookup.
+  const { data: allTriggers = [] } = useTriggers();
+  const triggersByTicket = useMemo(() => {
+    const m = new Map<string, Trigger[]>();
+    for (const t of allTriggers) {
+      const tid = t.ticket_id ?? null;
+      if (!tid) continue;
+      const arr = m.get(tid) ?? [];
+      arr.push(t);
+      m.set(tid, arr);
+    }
+    return m;
+  }, [allTriggers]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return tickets;
@@ -211,6 +264,7 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
                         onSelect={() => onOpenTicket(t)}
                         onUpdateStatus={onUpdateStatus}
                         onDelete={() => setDeleteTarget(t)}
+                        triggersOn={triggersByTicket.get(t.id)}
                       />
                     ))
                   )}
@@ -331,13 +385,14 @@ function tintForColumn(column: TicketColumn): string {
 
 // ─── Draggable card ─────────────────────────────────────────────────────────
 
-function DraggableTicketCard({ ticket, columns, agentById, onSelect, onUpdateStatus, onDelete }: {
+function DraggableTicketCard({ ticket, columns, agentById, onSelect, onUpdateStatus, onDelete, triggersOn }: {
   ticket: Ticket;
   columns: TicketColumn[];
   agentById: Map<string, ProjectAgent>;
   onSelect: () => void;
   onUpdateStatus: (id: string, status: string) => void;
   onDelete: () => void;
+  triggersOn?: Trigger[];
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: ticket.id });
 
@@ -358,6 +413,7 @@ function DraggableTicketCard({ ticket, columns, agentById, onSelect, onUpdateSta
         onUpdateStatus={onUpdateStatus}
         onDelete={onDelete}
         columns={columns}
+        triggersOn={triggersOn}
       />
     </div>
   );
@@ -371,6 +427,7 @@ function TicketCardInner({
   onDelete,
   columns,
   dragging,
+  triggersOn,
 }: {
   ticket: Ticket;
   agentById: Map<string, ProjectAgent>;
@@ -379,6 +436,7 @@ function TicketCardInner({
   onDelete?: () => void;
   columns?: TicketColumn[];
   dragging?: boolean;
+  triggersOn?: Trigger[];
 }) {
   const { handle: currentHandle, avatarUrl: currentAvatarUrl } = useCurrentUserAvatarProps();
 
@@ -393,8 +451,13 @@ function TicketCardInner({
     >
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] font-mono tabular-nums text-muted-foreground/40 leading-none mb-1">
-            #{ticket.number}
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="text-[10px] font-mono tabular-nums text-muted-foreground/40 leading-none">
+              #{ticket.number}
+            </div>
+            {triggersOn && triggersOn.length > 0 && (
+              <TriggersOnBadge triggers={triggersOn} />
+            )}
           </div>
           <p className="text-[13.5px] font-medium leading-snug line-clamp-3 tracking-tight text-foreground/90">
             {ticket.title}
@@ -491,5 +554,65 @@ function TicketCardInner({
         )}
       </div>
     </div>
+  );
+}
+
+// ─── "Ongoing" badge — triggers pointing at this ticket ─────────────────────
+
+function TriggersOnBadge({ triggers }: { triggers: Trigger[] }) {
+  const active = triggers.filter((t) => t.isActive);
+  const hasAny = triggers.length > 0;
+  const hasCron = triggers.some((t) => t.type === 'cron');
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              'inline-flex items-center gap-1 h-4 px-1.5 rounded-full border',
+              'text-[9.5px] font-medium tabular-nums leading-none uppercase tracking-[0.06em]',
+              active.length > 0
+                ? 'border-emerald-400/35 bg-emerald-400/8 text-emerald-400/90'
+                : 'border-muted/40 bg-muted/20 text-muted-foreground/55',
+            )}
+          >
+            {hasCron
+              ? <TimerIcon className="h-[9px] w-[9px]" />
+              : <WebhookIcon className="h-[9px] w-[9px]" />}
+            {active.length > 0 ? 'ongoing' : 'paused'}
+            {triggers.length > 1 && <span className="opacity-60">·{triggers.length}</span>}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" align="start" className="p-2 max-w-[280px] bg-popover border border-border/60">
+          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/60 font-semibold mb-1.5">
+            {hasAny ? `${triggers.length} trigger${triggers.length > 1 ? 's' : ''} on this ticket` : 'No triggers'}
+          </div>
+          <ul className="space-y-1.5">
+            {triggers.map((t) => (
+              <li key={t.id} className="text-[11.5px] leading-tight">
+                <div className="flex items-center gap-1.5">
+                  {t.type === 'cron'
+                    ? <TimerIcon className="h-3 w-3 text-muted-foreground/70" />
+                    : <WebhookIcon className="h-3 w-3 text-muted-foreground/70" />}
+                  <span className="font-medium text-foreground/95 truncate">{t.name}</span>
+                  {!t.isActive && <span className="text-[9px] text-muted-foreground/55">(paused)</span>}
+                </div>
+                <div className="ml-4 mt-0.5 text-[10.5px] text-muted-foreground/70 font-mono">
+                  {t.type === 'cron'
+                    ? `${describeCron(t.cronExpr || '')} · ${t.timezone || 'UTC'} · next ${formatRelative(t.nextRunAt)}`
+                    : `POST ${t.webhook?.path || ''}`}
+                </div>
+                {t.lastRunAt && (
+                  <div className="ml-4 text-[10.5px] text-muted-foreground/55">
+                    last ran {formatRelative(t.lastRunAt)}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

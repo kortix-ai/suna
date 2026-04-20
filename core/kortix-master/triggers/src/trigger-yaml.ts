@@ -97,6 +97,12 @@ export class TriggerYaml {
         method: typeof (action as any).method === "string" ? (action as any).method : undefined,
         headers: action.headers && typeof action.headers === "object" ? action.headers as Record<string, string> : undefined,
         body_template: typeof action.body_template === "string" ? action.body_template : undefined,
+        // ticket_create action fields
+        title: typeof action.title === "string" ? action.title : undefined,
+        body_md: typeof action.body_md === "string" ? action.body_md : undefined,
+        template_id: typeof action.template_id === "string" ? action.template_id : undefined,
+        column: typeof action.column === "string" ? action.column : undefined,
+        assignee_slugs: Array.isArray(action.assignee_slugs) ? action.assignee_slugs.map(String) : undefined,
       },
       context: entry.context ? {
         extract: (entry.context as any).extract,
@@ -331,6 +337,15 @@ export class TriggerYaml {
         headers: entry.action.headers,
         body_template: entry.action.body_template,
         timeout_ms: entry.action.timeout_ms,
+      }
+    }
+    if (type === "ticket_create") {
+      return {
+        title: entry.action.title ?? "",
+        body_md: entry.action.body_md,
+        template_id: entry.action.template_id,
+        column: entry.action.column,
+        assignee_slugs: entry.action.assignee_slugs,
       }
     }
     return {}

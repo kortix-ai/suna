@@ -793,6 +793,7 @@ export function createTicket(db: Database, input: CreateTicketInput): CreateTick
 
   if (input.assign_to && input.assign_to.length > 0) {
     // Explicit routing — the creator made the call. Skip the column default.
+    let routedToAgent = false
     for (const a of input.assign_to) {
       // Never self-attach: if the creator is an agent asking to assign
       // themselves, just ignore — creating a ticket for yourself to do is
@@ -806,8 +807,29 @@ export function createTicket(db: Database, input: CreateTicketInput): CreateTick
         actor_id: input.created_by_id ?? null,
       })
       if (r.added && a.type === 'agent') {
+        routedToAgent = true
         const ag = getAgentById(db, a.id)
         if (ag) triggered.push({ agent_id: ag.id, agent_slug: ag.slug, reason: 'column_default' })
+      }
+    }
+    // Auto-advance out of the first column (typically "backlog") when the
+    // ticket was routed to a contributor agent on create — otherwise a
+    // freshly-routed ticket looks "new / untouched" on the board even though
+    // the agent was already woken. The caller can still pass an explicit
+    // `status` to override this (e.g. open directly in "review").
+    if (routedToAgent && !input.status && status === columns[0].key) {
+      const workCol = columns.find((c) => c.key === 'in_progress') || columns[1]
+      if (workCol && workCol.key !== status) {
+        db.prepare('UPDATE tickets SET status=$s, updated_at=$now WHERE id=$id')
+          .run({ $s: workCol.key, $now: nowIso(), $id: id })
+        recordTicketEvent(db, {
+          ticketId: id,
+          actor_type: input.created_by_type ?? 'system',
+          actor_id: input.created_by_id ?? null,
+          type: 'status_changed',
+          message: `${status} → ${workCol.key}`,
+          payload: { from: status, to: workCol.key, reason: 'routed_on_create' },
+        })
       }
     }
   } else if (input.auto_assign !== false) {

@@ -6,6 +6,7 @@ import { TriggerStore } from "./trigger-store.js"
 import { executePromptAction } from "./actions/prompt-action.js"
 import { executeCommandAction } from "./actions/command-action.js"
 import { executeHttpAction } from "./actions/http-action.js"
+import { executeTicketCreateAction } from "./actions/ticket-create-action.js"
 
 export interface DispatchEvent {
   type: string       // "cron.tick" | "webhook.request" | "manual"
@@ -128,6 +129,13 @@ export class ActionDispatcher {
           httpStatus: result.httpStatus,
           httpBody: result.httpBody,
         }
+      }
+
+      case "ticket_create": {
+        const result = await executeTicketCreateAction(this.client, trigger, event)
+        // Surface the created ticket in stdout so the execution row is
+        // searchable by ticket id — no schema change needed.
+        return { stdout: `created ticket #${result.ticketNumber} (${result.ticketId})` }
       }
 
       default:

@@ -52,6 +52,7 @@ import {
   writeContextPreservingTeam,
   renderAgentFile,
   agentFilePath,
+  fireOpencodeDispose,
   type AgentFileMeta,
 } from '../../../src/services/project-v2-seed'
 import {
@@ -60,6 +61,31 @@ import {
 } from '../../../src/services/ticket-triggers'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agent cache refresh — debounced per-directory
+// ─────────────────────────────────────────────────────────────────────────────
+// After writing an agent file (team_create_agent / team_update_agent) opencode
+// still has its per-directory agent list cached, so dispatching to the new
+// slug silently no-ops and the agent never wakes. We have to invalidate via
+// POST /instance/dispose — but doing so while a session is generating kills
+// the turn (the PM is usually in one). Debounce: each call resets a 1.5s
+// timer; when the timer fires we assume the directory is quiet and dispose.
+// Good enough for the common pattern (several team_create_agent + tickets in
+// one PM turn — the PM's turn ends, then the timer fires just after).
+const pendingDisposes = new Map<string, ReturnType<typeof setTimeout>>()
+const DISPOSE_DEBOUNCE_MS = 1500
+function scheduleAgentRefresh(directory: string) {
+  const existing = pendingDisposes.get(directory)
+  if (existing) clearTimeout(existing)
+  const handle = setTimeout(() => {
+    pendingDisposes.delete(directory)
+    fireOpencodeDispose(directory).catch((err) => {
+      console.warn('[ticket-tools] scheduled dispose failed for', directory, err)
+    })
+  }, DISPOSE_DEBOUNCE_MS)
+  pendingDisposes.set(directory, handle)
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool → required group mapping
@@ -634,13 +660,8 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           default_model: args.default_model || null,
         })
         await syncTeamSection(db, proj)
-        // NOTE: opencode's per-directory agent cache is NOT refreshed here.
-        // The agent file + DB row exist; opencode won't see @${slug} as
-        // dispatchable until its config is reloaded (either by a future
-        // /instance/dispose on this directory, or a server restart). This
-        // is a known limitation; a project-scoped trigger for "refresh
-        // opencode config for this directory" is the future home.
-        return `Created agent @${ag.slug} (${ag.id}). File and DB row written. Routability via opencode requires a /instance/dispose on ${proj.path} — not fired automatically.`
+        scheduleAgentRefresh(proj.path)
+        return `Created agent @${ag.slug} (${ag.id}). File + DB row written. Opencode agent cache refresh scheduled (~${DISPOSE_DEBOUNCE_MS}ms after the last team write) so @${ag.slug} becomes dispatchable.`
       },
     }),
 
@@ -710,7 +731,8 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         // dispatch waits for the refresh cycle to pick up the new file.
         try { db.prepare('UPDATE project_agents SET ready_at=NULL WHERE id=$id').run({ $id: ag.id }) } catch {}
         await syncTeamSection(db, proj)
-        return `Updated agent @${args.slug}. File rewritten. Routability requires a /instance/dispose on ${proj.path}.`
+        scheduleAgentRefresh(proj.path)
+        return `Updated agent @${args.slug}. File rewritten + opencode agent cache refresh scheduled.`
       },
     }),
 

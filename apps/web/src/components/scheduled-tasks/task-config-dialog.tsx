@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calendar, ArrowRight, ArrowLeft, Loader2, Timer, Webhook, MessageSquare, Terminal, Globe } from 'lucide-react';
+import { Calendar, ArrowRight, ArrowLeft, Loader2, Timer, Webhook, MessageSquare, Terminal, Globe, Ticket as TicketIcon } from 'lucide-react';
 import {
   useCreateTrigger,
   type SessionMode,
@@ -31,6 +31,7 @@ import { getSandboxUrl } from '@/lib/platform-client';
 import { toast } from 'sonner';
 import { ScheduleBuilder } from './schedule-builder';
 import { cn } from '@/lib/utils';
+import { useTickets, useColumns, useProjectAgents } from '@/hooks/kortix/use-kortix-tickets';
 
 // Shared selectors from ChatInput (same as used in channels)
 import { AgentSelector, flattenModels } from '@/components/session/session-chat-input';
@@ -41,6 +42,10 @@ interface TaskConfigDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated?: () => void;
+  /** Scope the new trigger to a project — shows up in that project's Triggers tab. */
+  projectId?: string;
+  /** Pre-select a ticket to bind. Only meaningful when `projectId` is set. */
+  defaultTicketId?: string;
 }
 
 const TIMEZONES = [
@@ -51,7 +56,7 @@ const TIMEZONES = [
 
 type Step = 'source' | 'action' | 'config';
 
-export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDialogProps) {
+export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, defaultTicketId }: TaskConfigDialogProps) {
   const [step, setStep] = useState<Step>('source');
 
   // Source
@@ -80,6 +85,19 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
   const [httpUrl, setHttpUrl] = useState('');
   const [httpMethod, setHttpMethod] = useState('POST');
   const [httpBody, setHttpBody] = useState('');
+
+  // ticket_create action (only usable when scoped to a project — the new
+  // ticket lands in that project)
+  const [newTicketTitle, setNewTicketTitle] = useState('');
+  const [newTicketBody, setNewTicketBody] = useState('');
+  const [newTicketColumn, setNewTicketColumn] = useState<string>('');
+  const [newTicketAssignees, setNewTicketAssignees] = useState<string>(''); // comma-separated slugs
+
+  // Optional ticket binding (only surfaces when scoped to a project)
+  const [ticketId, setTicketId] = useState<string>(defaultTicketId ?? '');
+  const { data: projectTickets = [] } = useTickets(projectId, { enabled: !!projectId });
+  const { data: projectColumns = [] } = useColumns(projectId);
+  const { data: projectAgents = [] } = useProjectAgents(projectId);
 
   const { sandbox } = useSandbox();
   const createMutation = useCreateTrigger();
@@ -116,6 +134,11 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
     setHttpUrl('');
     setHttpMethod('POST');
     setHttpBody('');
+    setNewTicketTitle('');
+    setNewTicketBody('');
+    setNewTicketColumn('');
+    setNewTicketAssignees('');
+    setTicketId(defaultTicketId ?? '');
     onOpenChange(false);
   };
 
@@ -147,6 +170,12 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
       action.url = httpUrl.trim();
       action.method = httpMethod;
       if (httpBody.trim()) action.body_template = httpBody.trim();
+    } else if (actionType === 'ticket_create') {
+      action.title = newTicketTitle.trim();
+      if (newTicketBody.trim()) action.body_md = newTicketBody.trim();
+      if (newTicketColumn) action.column = newTicketColumn;
+      const slugs = newTicketAssignees.split(',').map((s) => s.trim()).filter(Boolean);
+      if (slugs.length) action.assignee_slugs = slugs;
     }
 
     try {
@@ -154,6 +183,8 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
         name: name.trim(),
         source,
         action,
+        ...(projectId ? { project_id: projectId } : {}),
+        ...(ticketId ? { ticket_id: ticketId } : {}),
       });
       toast.success('Trigger created');
       handleClose();
@@ -170,6 +201,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
     if (actionType === 'prompt' && !prompt.trim()) return false;
     if (actionType === 'command' && !command.trim()) return false;
     if (actionType === 'http' && !httpUrl.trim()) return false;
+    if (actionType === 'ticket_create' && (!newTicketTitle.trim() || !projectId)) return false;
     return true;
   };
 
@@ -282,7 +314,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
           {step === 'action' && (
             <div className="space-y-4">
               <Label>Action Type</Label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <Button
                   type="button"
                   onClick={() => setActionType('prompt')}
@@ -322,6 +354,21 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
                   <div className="text-sm font-medium">HTTP</div>
                   <div className="text-xs text-muted-foreground text-center">Call external URL</div>
                 </Button>
+                <Button
+                  type="button"
+                  onClick={() => setActionType('ticket_create')}
+                  disabled={!projectId}
+                  variant="outline"
+                  title={!projectId ? 'Only available when the trigger is scoped to a project' : undefined}
+                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", actionType === 'ticket_create'
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50 hover:bg-muted/30",
+                    !projectId && "opacity-50 cursor-not-allowed")}
+                >
+                  <TicketIcon className="h-5 w-5" />
+                  <div className="text-sm font-medium">Create Ticket</div>
+                  <div className="text-xs text-muted-foreground text-center">Drop a new ticket on the board</div>
+                </Button>
               </div>
             </div>
           )}
@@ -333,6 +380,31 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
                 <Label htmlFor="task-name">Name</Label>
                 <Input type="text" id="task-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Daily Report" className="rounded-xl" />
               </div>
+
+              {/* Ticket binding — only when scoped to a project. Binding makes
+                  the ticket the running review thread: every fire threads onto
+                  the same session and the agent sees ticket_id in its event. */}
+              {projectId && projectTickets.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Bind to ticket (optional)</Label>
+                  <Select value={ticketId || '__none__'} onValueChange={(v) => setTicketId(v === '__none__' ? '' : v)}>
+                    <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
+                      <SelectValue placeholder="No ticket" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__" className="cursor-pointer text-muted-foreground">No ticket — generic project trigger</SelectItem>
+                      {projectTickets.map((t) => (
+                        <SelectItem key={t.id} value={t.id} className="cursor-pointer">
+                          #{t.number} · {t.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Each fire threads onto one session per ticket — the agent sees prior fires and can post <code className="font-mono">ticket_comment</code> status updates.
+                  </p>
+                </div>
+              )}
 
               {actionType === 'prompt' && (
                 <>
@@ -435,6 +507,64 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated }: TaskConfigDi
                     <Label>Body Template (optional)</Label>
                     <Textarea value={httpBody} onChange={(e) => setHttpBody(e.target.value)} placeholder='{"text": "Alert: {{ message }}"}' rows={3} className="rounded-xl" />
                     <p className="text-xs text-muted-foreground">{'Use {{ var }} for template variables from webhook payloads'}</p>
+                  </div>
+                </>
+              )}
+
+              {actionType === 'ticket_create' && (
+                <>
+                  <div className="space-y-2">
+                    <Label>Ticket title</Label>
+                    <Input
+                      type="text"
+                      value={newTicketTitle}
+                      onChange={(e) => setNewTicketTitle(e.target.value)}
+                      placeholder="{{ summary }} — {{ source }}"
+                      className="rounded-xl"
+                    />
+                    <p className="text-xs text-muted-foreground">{'Supports {{ var }} substitution from webhook payloads.'}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Body (optional)</Label>
+                    <Textarea
+                      value={newTicketBody}
+                      onChange={(e) => setNewTicketBody(e.target.value)}
+                      rows={3}
+                      placeholder="From {{ user }}:\n\n{{ text }}"
+                      className="rounded-xl"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>Land in column</Label>
+                      <Select value={newTicketColumn || '__default__'} onValueChange={(v) => setNewTicketColumn(v === '__default__' ? '' : v)}>
+                        <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
+                          <SelectValue placeholder="Backlog (default)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__default__" className="cursor-pointer text-muted-foreground">First column (default)</SelectItem>
+                          {projectColumns.map((c) => (
+                            <SelectItem key={c.key} value={c.key} className="cursor-pointer">{c.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Assign to</Label>
+                      <Input
+                        type="text"
+                        value={newTicketAssignees}
+                        onChange={(e) => setNewTicketAssignees(e.target.value)}
+                        placeholder="engineer,qa"
+                        className="rounded-xl font-mono text-[13px]"
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        Comma-separated agent slugs.
+                        {projectAgents.length > 0 && (
+                          <> Available: {projectAgents.map((a) => a.slug).join(', ')}</>
+                        )}
+                      </p>
+                    </div>
                   </div>
                 </>
               )}

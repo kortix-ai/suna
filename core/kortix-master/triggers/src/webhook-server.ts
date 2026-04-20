@@ -35,12 +35,20 @@ export class WebhookTriggerServer {
   private server: Server | null = null
   private routes = new Map<string, WebhookRoute>()
   private pipedreamHandler: PipedreamEventHandler | null = null
+  private reloadHandler: (() => Promise<void> | void) | null = null
 
   constructor(
     private readonly host: string,
     private readonly port: number,
     private readonly dispatch: DispatchHandler,
   ) {}
+
+  /** Register a callback for POST /internal/reload. Used by kortix-master's
+   *  HTTP triggers route to poke the in-plugin manager after creating a
+   *  trigger via direct DB access (since that path bypasses manager.createTrigger). */
+  setReloadHandler(handler: () => Promise<void> | void): void {
+    this.reloadHandler = handler
+  }
 
   private routeKey(method: string, path: string): string {
     return `${method.toUpperCase()} ${path}`
@@ -68,6 +76,26 @@ export class WebhookTriggerServer {
       if (pathname === "/health") {
         res.writeHead(200, { "Content-Type": "application/json" })
         res.end(JSON.stringify({ ok: true, service: "kortix-triggers", routes: this.routes.size }))
+        return
+      }
+
+      // Internal reload — kortix-master hits this after a /kortix/triggers
+      // CRUD call to force the in-plugin manager to re-register cron jobs +
+      // webhook routes from the DB.
+      if (method === "POST" && pathname === "/internal/reload") {
+        if (!this.reloadHandler) {
+          res.writeHead(503, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ ok: false, error: "reload_handler_not_registered" }))
+          return
+        }
+        try {
+          await this.reloadHandler()
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ ok: true, routes: this.routes.size }))
+        } catch (err) {
+          res.writeHead(500, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }))
+        }
         return
       }
 
