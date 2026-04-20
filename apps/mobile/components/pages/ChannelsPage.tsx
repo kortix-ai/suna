@@ -251,22 +251,22 @@ function ChannelsContent() {
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: inputBg,
-            borderRadius: 12,
-            paddingHorizontal: 12,
-            height: 40,
+            borderRadius: 9999,
+            paddingHorizontal: 16,
+            height: 42,
           }}
         >
-          <Search size={16} color={muted} />
+          <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search channels..."
-            placeholderTextColor={muted}
-            style={{ flex: 1, marginLeft: 8, fontSize: 14, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
+            placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+            style={{ flex: 1, marginLeft: 8, fontSize: 15, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery('')} hitSlop={10}>
-              <X size={16} color={muted} />
+              <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
             </Pressable>
           )}
         </View>
@@ -274,7 +274,7 @@ function ChannelsContent() {
           onPress={handleOpenAdd}
           activeOpacity={0.8}
           style={{
-            width: 40, height: 40, borderRadius: 12,
+            width: 42, height: 42, borderRadius: 9999,
             backgroundColor: theme.primary,
             alignItems: 'center', justifyContent: 'center',
           }}

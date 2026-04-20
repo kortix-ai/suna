@@ -240,17 +240,17 @@ function ScheduledTasksContent() {
           flexDirection: 'row',
           alignItems: 'center',
           backgroundColor: inputBg,
-          borderRadius: 12,
-          paddingHorizontal: 12,
+          borderRadius: 9999,
+          paddingHorizontal: 16,
           height: 42,
         }}
       >
-        <Search size={16} color={muted} />
+        <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder="Search tasks..."
-          placeholderTextColor={muted}
+          placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
           style={{
             flex: 1,
             marginLeft: 8,
@@ -264,14 +264,14 @@ function ScheduledTasksContent() {
         />
         {searchQuery.length > 0 && (
           <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-            <X size={16} color={muted} />
+            <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
           </Pressable>
         )}
       </View>
       <Pressable
         onPress={handleOpenCreate}
         style={{
-          width: 42, height: 42, borderRadius: 12,
+          width: 42, height: 42, borderRadius: 9999,
           backgroundColor: theme.primary,
           alignItems: 'center', justifyContent: 'center',
         }}

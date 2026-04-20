@@ -267,7 +267,7 @@ export default function InstancesScreen() {
       <View style={{ position: 'absolute', bottom: insets.bottom + 16, left: 20, right: 20 }}>
         <Pressable
           onPress={openAddSheet}
-          className="flex-row items-center justify-center rounded-2xl py-3.5 active:opacity-90"
+          className="flex-row items-center justify-center rounded-full py-3.5 active:opacity-90"
           style={{ backgroundColor: themeColors.primary }}
         >
           <Icon as={Plus} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
