@@ -470,28 +470,8 @@ describe('tool_group enforcement', () => {
     const gate = ticketToolGateHook(fx.db)
     await expect(gate({ tool: 'ticket_comment', sessionID: 'ses-worker-1', callID: 'c1' }, { args: {} })).resolves.toBeUndefined()
     await expect(gate({ tool: 'team_create_agent', sessionID: 'ses-worker-1', callID: 'c2' }, { args: {} })).rejects.toThrow(/project_manage/)
-    // ticket_create is project_manage: contributors (project_action only) can't call it.
-    await expect(gate({ tool: 'ticket_create', sessionID: 'ses-worker-1', callID: 'c3' }, { args: {} })).rejects.toThrow(/project_manage/)
-  })
-
-  test('PM (project_manage + project_action) can call ticket_create; engineer cannot', async () => {
-    const fx = await setupSeededProject()
-    // PM is the seeded orchestrator — gets both groups.
-    const pm = getAgentBySlug(fx.db, fx.project.id, DEFAULT_PM_SLUG)!
-    fx.db.prepare('INSERT INTO ticket_agent_sessions (ticket_id, agent_id, session_id, created_at) VALUES (\'t0\',$a,\'ses-pm\',$c)').run({ $a: pm.id, $c: new Date().toISOString() })
-
-    const engPath = path.join(fx.project.path, '.kortix', 'agents', 'engineer.md')
-    await fs.mkdir(path.dirname(engPath), { recursive: true })
-    await fs.writeFile(engPath, '# Engineer', 'utf8')
-    const eng = insertAgent(fx.db, fx.project.id, {
-      slug: 'engineer', name: 'Engineer', file_path: engPath,
-      tool_groups: ['project_action'],
-    })
-    fx.db.prepare('INSERT INTO ticket_agent_sessions (ticket_id, agent_id, session_id, created_at) VALUES (\'t1\',$a,\'ses-eng\',$c)').run({ $a: eng.id, $c: new Date().toISOString() })
-
-    const gate = ticketToolGateHook(fx.db)
-    await expect(gate({ tool: 'ticket_create', sessionID: 'ses-pm', callID: 'p1' }, { args: {} })).resolves.toBeUndefined()
-    await expect(gate({ tool: 'ticket_create', sessionID: 'ses-eng', callID: 'e1' }, { args: {} })).rejects.toThrow(/project_manage/)
+    // ticket_create is project_action at the hook layer; fine-grained check happens in the tool body (tested separately via createTicket service + isAgentAssignedTo).
+    await expect(gate({ tool: 'ticket_create', sessionID: 'ses-worker-1', callID: 'c3' }, { args: {} })).resolves.toBeUndefined()
   })
 
   test('user/interactive session (no bound agent) bypasses gating', async () => {
@@ -632,5 +612,67 @@ describe('agent readiness + pending-trigger drain', () => {
       agent: readyAgent, reason: drained[0].reason,
     })
     expect(fx.mock.createCount()).toBe(1)
+  })
+})
+
+describe('sub-tickets + parent_id permission', () => {
+  test('createTicket persists parent_id when valid', async () => {
+    const fx = await setupSeededProject()
+    const { ticket: parent } = createTicket(fx.db, { project_id: fx.project.id, title: 'parent goal' })
+    const { ticket: child } = createTicket(fx.db, {
+      project_id: fx.project.id, title: 'sub ticket',
+      parent_id: parent.id,
+    })
+    expect(child.parent_id).toBe(parent.id)
+    const { listSubTickets } = await import('../../src/services/ticket-service')
+    const subs = listSubTickets(fx.db, parent.id)
+    expect(subs.map((s) => s.id)).toEqual([child.id])
+  })
+
+  test('createTicket rejects parent_id pointing at unknown ticket', async () => {
+    const fx = await setupSeededProject()
+    expect(() => createTicket(fx.db, {
+      project_id: fx.project.id, title: 'orphan',
+      parent_id: 'tk-does-not-exist',
+    })).toThrow(/Parent ticket not found/)
+  })
+
+  test('createTicket rejects parent_id from a different project', async () => {
+    // Two projects in the SAME db so the cross-project lookup finds the parent
+    // but rejects on project_id mismatch.
+    const fx = await setupSeededProject()
+    const otherDir = mkdtempSync(path.join(tmpdir(), 'kortix-other-'))
+    fixtures.push({ ...fx, dir: otherDir } as Fixture)
+    const otherId = `proj-other-${Date.now().toString(36)}`
+    fx.db.prepare('INSERT INTO projects (id,name,path,description,created_at) VALUES ($id,$n,$p,$d,$c)').run({
+      $id: otherId, $n: 'other', $p: otherDir, $d: '', $c: new Date().toISOString(),
+    })
+    setProjectStructureVersion(fx.db, otherId, 2)
+    await seedV2Project(fx.db, { id: otherId, name: 'other', path: otherDir, description: '' })
+    const { ticket: parentOther } = createTicket(fx.db, { project_id: otherId, title: 'parent in other' })
+    expect(() => createTicket(fx.db, {
+      project_id: fx.project.id, title: 'cross-project sub',
+      parent_id: parentOther.id,
+    })).toThrow(/different project/)
+  })
+
+  test('isAgentAssignedTo reports correct membership', async () => {
+    const { isAgentAssignedTo } = await import('../../src/services/ticket-service')
+    const fx = await setupSeededProject()
+    const engPath = path.join(fx.project.path, '.opencode', 'agent', 'eng.md')
+    await fs.mkdir(path.dirname(engPath), { recursive: true })
+    await fs.writeFile(engPath, '# Engineer', 'utf8')
+    const eng = insertAgent(fx.db, fx.project.id, {
+      slug: 'eng', name: 'Eng', file_path: engPath,
+      tool_groups: ['project_action'],
+    })
+    const { ticket } = createTicket(fx.db, {
+      project_id: fx.project.id, title: 'parent',
+      assign_to: [{ type: 'agent', id: eng.id }],
+    })
+    expect(isAgentAssignedTo(fx.db, ticket.id, eng.id)).toBe(true)
+    // Different agent is not on the ticket
+    const qa = getAgentBySlug(fx.db, fx.project.id, DEFAULT_PM_SLUG)!
+    expect(isAgentAssignedTo(fx.db, ticket.id, qa.id)).toBe(false)
   })
 })

@@ -34,6 +34,13 @@ export interface TicketRow {
   created_by_id: string | null
   created_at: string
   updated_at: string
+  /**
+   * If non-null, this ticket is a sub-ticket decomposed from the parent
+   * (same project). Used by the tool-level permission logic to let
+   * contributors create children of tickets they're assigned to, without
+   * being able to spawn rogue top-level tickets.
+   */
+  parent_id: string | null
 }
 
 export interface TicketAssigneeRow {
@@ -166,6 +173,7 @@ export function ensureTicketTables(db: Database): void {
       custom_fields_json TEXT NOT NULL DEFAULT '{}',
       created_by_type TEXT NOT NULL DEFAULT 'user',
       created_by_id TEXT,
+      parent_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(project_id, number)
@@ -268,6 +276,7 @@ export function ensureTicketTables(db: Database): void {
   try { db.exec(`ALTER TABLE project_columns ADD COLUMN icon TEXT`) } catch {}
   try { db.exec(`ALTER TABLE project_columns ADD COLUMN is_off_flow INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN ready_at TEXT`) } catch {}
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN parent_id TEXT`) } catch {}
 }
 
 // ── Columns ───────────────────────────────────────────────────────────────────
@@ -572,6 +581,11 @@ export interface CreateTicketInput {
    * is pointless).
    */
   assign_to?: Array<{ type: AssigneeType; id: string }>
+  /**
+   * Parent ticket id. When set, this ticket is a sub-ticket of the parent.
+   * Parent must exist and belong to the same project.
+   */
+  parent_id?: string | null
 }
 
 export function listTickets(db: Database, filters: { projectId?: string; status?: string } = {}): TicketWithRelations[] {
@@ -588,6 +602,21 @@ export function getTicket(db: Database, id: string): TicketWithRelations | null 
   const row = db.prepare('SELECT * FROM tickets WHERE id=$id').get({ $id: id }) as TicketRow | null
   if (!row) return null
   return enrichTicket(db, row)
+}
+
+/** Sub-tickets of a parent, ordered by number. */
+export function listSubTickets(db: Database, parentId: string): TicketWithRelations[] {
+  const rows = db.prepare('SELECT * FROM tickets WHERE parent_id=$pid ORDER BY number ASC').all({ $pid: parentId }) as TicketRow[]
+  return rows.map((r) => enrichTicket(db, r))
+}
+
+/** Is the given agent currently assigned to this ticket? */
+export function isAgentAssignedTo(db: Database, ticketId: string, agentId: string): boolean {
+  const row = db.prepare(
+    `SELECT 1 FROM ticket_assignees
+     WHERE ticket_id=$tid AND assignee_type='agent' AND assignee_id=$aid`
+  ).get({ $tid: ticketId, $aid: agentId })
+  return !!row
 }
 
 export function getTicketByNumber(db: Database, projectId: string, number: number): TicketWithRelations | null {
@@ -723,11 +752,20 @@ export function createTicket(db: Database, input: CreateTicketInput): CreateTick
   const id = genTicketId()
   const now = nowIso()
 
+  // Validate parent_id if provided — must exist, same project.
+  let parentId: string | null = null
+  if (input.parent_id) {
+    const parent = db.prepare('SELECT id, project_id FROM tickets WHERE id=$id').get({ $id: input.parent_id }) as { id: string; project_id: string } | null
+    if (!parent) throw new Error(`Parent ticket not found: ${input.parent_id}`)
+    if (parent.project_id !== input.project_id) throw new Error(`Parent ticket belongs to a different project: ${input.parent_id}`)
+    parentId = parent.id
+  }
+
   db.prepare(`INSERT INTO tickets
       (id, project_id, number, title, body_md, status, template_id,
-       custom_fields_json, created_by_type, created_by_id, created_at, updated_at)
+       custom_fields_json, created_by_type, created_by_id, parent_id, created_at, updated_at)
     VALUES ($id, $pid, $num, $title, $body, $status, $tpl,
-       $fields, $cbt, $cbi, $now, $now)`).run({
+       $fields, $cbt, $cbi, $parent, $now, $now)`).run({
     $id: id,
     $pid: input.project_id,
     $num: number,
@@ -738,6 +776,7 @@ export function createTicket(db: Database, input: CreateTicketInput): CreateTick
     $fields: JSON.stringify(input.custom_fields ?? {}),
     $cbt: input.created_by_type ?? 'user',
     $cbi: input.created_by_id ?? null,
+    $parent: parentId,
     $now: now,
   })
   recordTicketEvent(db, {
@@ -746,7 +785,7 @@ export function createTicket(db: Database, input: CreateTicketInput): CreateTick
     actor_id: input.created_by_id ?? null,
     type: 'created',
     message: input.title,
-    payload: { status },
+    payload: { status, ...(parentId ? { parent_id: parentId } : {}) },
   })
 
   const triggered: CreateTicketResult['triggered'] = []

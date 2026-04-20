@@ -28,6 +28,7 @@ import {
   getAgentBySlug,
   getTicket,
   insertAgent,
+  isAgentAssignedTo,
   listAgents,
   listColumns,
   listTickets,
@@ -69,6 +70,11 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
   // project_action — contributors (engineer, qa, designer, writer) + PM
   ticket_list: 'project_action',
   ticket_get: 'project_action',
+  // ticket_create is project_action at the hook layer, but the tool body
+  // enforces a finer rule: contributors can only create SUB-tickets (via
+  // parent_id) of tickets they're already assigned to. Top-level tickets
+  // (no parent_id) still require project_manage.
+  ticket_create: 'project_action',
   ticket_update: 'project_action',
   ticket_update_status: 'project_action',
   ticket_assign: 'project_action',
@@ -78,10 +84,6 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
   team_list: 'project_action',
   project_context_read: 'project_action',
   // project_manage — PM only (and anyone PM explicitly gives this group to)
-  // ticket_create is project_manage: contributors don't spawn tickets. If they
-  // see scope that needs splitting or new work, they comment + tag @pm and PM
-  // decides whether to decompose (via tech-lead) or create directly.
-  ticket_create: 'project_manage',
   team_create_agent: 'project_manage',
   team_update_agent: 'project_manage',
   team_delete_agent: 'project_manage',
@@ -230,23 +232,55 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
 
     ticket_create: tool({
       description: [
-        'Create a new ticket in the current project. Lands in the first column by default.',
-        'Pass `assign_to` (comma-separated agent slugs, or "user" for the human)',
-        'to route the ticket to its owner in the same call — wakes them up and',
-        'skips the column\'s default-assignee rule. If omitted, the first column\'s',
-        'default assignee is attached instead (you, probably).',
+        'Create a ticket. Two modes:',
+        '  (1) Top-level (no parent_id) — PM-only. Requires project_manage group.',
+        '  (2) Sub-ticket (parent_id set) — any contributor assigned to the parent can use this to decompose work. Tech Lead does this for goal tickets; engineer/QA can file sub-work items against tickets they own.',
+        'Always pass `assign_to` on create to route the ticket and wake the owner (omitting it leaves the ticket attached only to you).',
       ].join(' '),
       args: {
         title: tool.schema.string().describe('Short ticket title'),
-        body_md: tool.schema.string().optional().describe('Markdown body (description, acceptance criteria, …). Describe the work — do NOT @-tag agents or the human inside the body.'),
+        body_md: tool.schema.string().optional().describe('Markdown body — Goal + `- [ ]` AC checkboxes. No @-tags inside bodies.'),
         status: tool.schema.string().optional().describe('Column key — defaults to first column (e.g. "backlog")'),
         template_id: tool.schema.string().optional(),
-        assign_to: tool.schema.string().optional().describe('Comma-separated assignees to route the ticket to, in "slug" form (e.g. "engineer" or "engineer,qa"). Use "user" for the human. The column\'s default-assignee rule is skipped when this is set.'),
+        assign_to: tool.schema.string().optional().describe('Comma-separated assignees (slugs). "user" for the human. Skips the column default-assignee when set.'),
+        parent_id: tool.schema.string().optional().describe('Parent ticket id (tk-… or #number) to make this a sub-ticket. Required for contributors (non-PM). PM can also use it for explicit parent-child links.'),
       },
-      async execute(args: { title: string; body_md?: string; status?: string; template_id?: string; assign_to?: string }, ctx: ToolContext): Promise<string> {
+      async execute(args: { title: string; body_md?: string; status?: string; template_id?: string; assign_to?: string; parent_id?: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
         if (!pid) return 'Error: no project selected.'
         const actor = actorFromCtx(ctx)
+
+        // Resolve parent_id — accept #number or tk-… id.
+        let parentTicketId: string | null = null
+        if (args.parent_id) {
+          let resolved = getTicket(db, args.parent_id)
+          if (!resolved && /^#?\d+$/.test(args.parent_id)) {
+            const n = Number(args.parent_id.replace('#', ''))
+            const row = db.prepare('SELECT id FROM tickets WHERE project_id=$pid AND number=$n').get({ $pid: pid, $n: n }) as { id: string } | null
+            if (row) resolved = getTicket(db, row.id)
+          }
+          if (!resolved) return `Parent ticket not found: ${args.parent_id}`
+          if (resolved.project_id !== pid) return `Parent ticket belongs to a different project.`
+          parentTicketId = resolved.id
+        }
+
+        // Fine-grained permission. Agent sessions only — user/interactive bypass.
+        if (actor.type === 'agent' && actor.id) {
+          const agent = getAgentById(db, actor.id)
+          const groups = agent ? JSON.parse(agent.tool_groups_json || '[]') as string[] : []
+          const isPM = groups.includes('project_manage')
+          if (!isPM) {
+            // Contributor — must pass parent_id AND be assigned to that parent.
+            if (!parentTicketId) {
+              return `Permission denied: top-level tickets require the project_manage tool group (PM only). If you need sub-work on a ticket you own, pass parent_id=<that ticket>. If a new top-level ticket is genuinely needed, comment + tag @pm.`
+            }
+            if (!isAgentAssignedTo(db, parentTicketId, actor.id)) {
+              const parent = getTicket(db, parentTicketId)
+              return `Permission denied: you can only create sub-tickets of tickets you're assigned to. You are not on #${parent?.number} (${parentTicketId}).`
+            }
+          }
+        }
+
         // Resolve assign_to slugs to typed assignees.
         const parsed: Array<{ type: AssigneeType; id: string }> = []
         if (args.assign_to) {
@@ -269,6 +303,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           created_by_type: actor.type,
           created_by_id: actor.id,
           assign_to: parsed.length ? parsed : undefined,
+          parent_id: parentTicketId,
         })
         await pluginFireAgentTriggers(db, mgr, client, pid, result.ticket.id,
           result.triggered.map((t) => ({ ...t, reason: `You were assigned to ticket #${result.ticket.number} on creation.` })),
@@ -276,7 +311,10 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         const routed = parsed.length
           ? ` routed to ${parsed.map((p) => p.type === 'agent' ? '@' + (getAgentById(db, p.id)?.slug ?? p.id) : '@' + p.id).join(', ')}`
           : ''
-        return `Created ticket **#${result.ticket.number}** (${result.ticket.id}) in ${result.ticket.status}${routed}.`
+        const parentRef = parentTicketId
+          ? ` (sub of #${getTicket(db, parentTicketId)?.number})`
+          : ''
+        return `Created ticket **#${result.ticket.number}** (${result.ticket.id})${parentRef} in ${result.ticket.status}${routed}.`
       },
     }),
 
