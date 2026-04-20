@@ -73,6 +73,7 @@ import { TicketDetailDrawer } from '@/components/kortix/ticket-detail-drawer';
 import { NewTicketDialog } from '@/components/kortix/new-ticket-dialog';
 import { TeamTab } from '@/components/kortix/team-tab';
 import { TicketSettingsTab } from '@/components/kortix/ticket-settings-tab';
+import { TriggersTab } from '@/components/kortix/triggers-tab';
 import { NotificationsBell } from '@/components/kortix/notifications-bell';
 import { useIsRouteActive } from '@/hooks/utils/use-is-route-active';
 
@@ -363,6 +364,9 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
             </TabPanel>
             <TabPanel active={tab === 'team'}>
               <TeamTab projectId={project.id} />
+            </TabPanel>
+            <TabPanel active={tab === 'triggers'}>
+              <TriggersTab projectId={project.id} projectPath={project.path} />
             </TabPanel>
             <TabPanel active={tab === 'settings'}>
               <TicketSettingsTab projectId={project.id} />

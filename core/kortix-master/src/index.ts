@@ -29,6 +29,7 @@ import suggestionsRouter from './routes/suggestions'
 import coreRouter from './routes/core'
 import reloadRouter from './routes/reload'
 import triggersRouter from './routes/triggers'
+import projectTriggersRouter from './routes/project-triggers'
 import shareRouter from './routes/share'
 import shareProxyRouter from './routes/share-proxy'
 import marketplaceRouter from './routes/marketplace'
@@ -402,6 +403,7 @@ app.route('/kortix/tasks/', tasksRouter)
 app.route('/kortix/tickets', ticketsRouter)
 app.route('/kortix/tickets/', ticketsRouter)
 app.route('/kortix/projects', ticketProjectsRouter)
+app.route('/kortix/projects', projectTriggersRouter)
 app.route('/kortix/projects/', ticketProjectsRouter)
 
 // Public URL sharing — /kortix/share/:port returns the public URL for a sandbox port
