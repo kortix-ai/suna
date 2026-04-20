@@ -15,7 +15,7 @@ import * as path from "node:path"
 import { Database } from "bun:sqlite"
 import type { Plugin } from "@opencode-ai/plugin"
 
-import { initProjectsDb, ProjectManager, projectTools, projectGateHook } from "./projects"
+import { initProjectsDb, ProjectManager, projectTools, projectGateHook, projectStatusTransform } from "./projects"
 import { agentTaskTools, handleAgentTaskSessionEvent } from "./agent-tasks"
 import { ticketTools, ticketToolGateHook } from "./ticket-tools"
 import { ensureTasksTable, reconcileAllRunningTasks } from "../../../src/services/task-service"
@@ -173,6 +173,7 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	// ── Merge all tools ──
 	const projectGate = projectGateHook(mgr)
 	const ticketGate = ticketToolGateHook(db)
+	const projectStatus = projectStatusTransform(mgr, () => currentSessionId)
 	return {
 		tool: {
 			...projectTools(mgr, db),
@@ -202,6 +203,12 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 			if (auth?.["experimental.chat.system.transform"]) {
 				await auth["experimental.chat.system.transform"](input, output)
 			}
+		},
+
+		// Inject the project status / no-project gate / v2-route-only reminder
+		// into the last user message before each LLM call.
+		"experimental.chat.messages.transform": async (input: any, output: { messages: any[] }) => {
+			await projectStatus(input, output).catch(() => {})
 		},
 
 		// BTW command

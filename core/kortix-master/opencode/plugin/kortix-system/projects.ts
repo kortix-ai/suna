@@ -290,6 +290,8 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 				"Create a v2 project (folder + Project Manager agent + default columns + PM onboarding session).",
 				"Always seeds a real `.opencode/agent/project-manager.md` so PM is a first-class opencode agent in that project.",
 				"If user_handle is provided, a PM onboarding chat is kicked off in a fresh session and that session id is returned — direct the human there to continue setup.",
+				"WHEN TO CALL: ONLY when the user explicitly mentions the word \"project\" (e.g. \"create a project for X\", \"spin up a project to Y\", \"I want a project that Z\"). For any other \"build me X\" / \"make me Y\" request, do NOT call this tool — handle it directly as a hands-on lead.",
+				"WHAT HAPPENS AFTER: A project is its own workhouse — once created, the project's PM + team execute the work via tickets. The agent that calls this tool DOES NOT execute on the project itself (no scaffolding, no edits, no bash). Your job after this call ends with handing the user off to the PM session. Do not load skills, write files, or run commands toward the project's goal — the team does that.",
 			].join(" "),
 			args: {
 				name: tool.schema.string().describe("Project name"),
@@ -344,10 +346,22 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 								console.warn("[project_create] PM onboarding wake failed:", err)
 								return null
 							})
-							if (sid) sessionLine = `\n\nPM onboarding started → session \`${sid}\`. Direct @${args.user_handle} there to continue setup.`
+							if (sid) sessionLine = `\n\nPM onboarding started → session \`${sid}\`.`
 						}
 					}
-					return `Project **${p.name}** at \`${p.path}\` (${p.id}) — v2 seeded (PM + default columns).${sessionLine}`
+					const remainingAction = args.user_handle
+						? `Your ONLY remaining action: tell @${args.user_handle} to switch to the PM onboarding session above and continue there. ONE short sentence.`
+						: `Your ONLY remaining action: in ONE short sentence, tell the user the project is created and the PM is ready — they should open the project to chat with PM. (No user_handle was passed, so no onboarding session was auto-spawned.)`
+					const handoff = [
+						"",
+						"<system-reminder>",
+						"STOP. The project has been created and its PM team owns it from here.",
+						remainingAction,
+						"DO NOT call any other tool. DO NOT load skills. DO NOT write/edit/scaffold files. DO NOT run bash. The PM and the team execute the project's work via tickets — that is not your role.",
+						"A project is its own workhouse. You are the router; the team is the workforce.",
+						"</system-reminder>",
+					].join("\n")
+					return `Project **${p.name}** at \`${p.path}\` (${p.id}) — v2 seeded (PM + default columns).${sessionLine}${handoff}`
 				} catch (e) { return `Failed: ${e instanceof Error ? e.message : "unknown"}` }
 			},
 		}),
@@ -430,12 +444,37 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 		}),
 
 		project_select: tool({
-			description: "Set the active project for this session. Must be called before file/bash/edit tools.",
+			description: [
+				"Set the active project for this session. Must be called before file/bash/edit tools.",
+				"WHEN TO CALL: only when the user explicitly asks to switch into an existing project (e.g. \"open the X project\", \"switch to Y\"). Do NOT call this just because you want to do file work — if the user only said \"build me X\", handle it directly without selecting a project.",
+				"v2 PROJECT BLOCK: v2 projects (PM + team + tickets) refuse selection from agents outside their team. The session will NOT be bound; you will get a refusal — your only follow-up is to tell the user to switch to the PM session.",
+			].join(" "),
 			args: { project: tool.schema.string().describe('Project name or path.') },
 			async execute(args: { project: string }, toolCtx: ToolContext): Promise<string> {
 				if (!toolCtx?.sessionID) return "Error: no session context."
 				const p = mgr.getProject(args.project)
 				if (!p) return `Project "${args.project}" not found. Use project_list or project_create.`
+				const sv = (p as unknown as { structure_version?: number }).structure_version ?? 1
+				if (sv === 2) {
+					// v2 enforcement: only team members of this project may bind the
+					// session. Everyone else (general, orchestrator, etc.) gets refused.
+					// Session stays UNBOUND → gate continues blocking hands-on tools.
+					const isTeamMember = !!mgr.db.prepare(
+						"SELECT 1 FROM project_agents WHERE project_id=$pid AND slug=$slug"
+					).get({ $pid: p.id, $slug: toolCtx.agent })
+					if (!isTeamMember) {
+						return [
+							`REFUSED. Cannot select v2 project "${p.name}" — agent "${toolCtx.agent}" is not on this project's team.`,
+							`The session has NOT been bound. All hands-on tools (bash, edit, write, skill, etc.) will continue to be blocked.`,
+							``,
+							`<system-reminder>`,
+							`STOP. v2 projects are owned by their PM + team via tickets. You are NOT on this project's team.`,
+							`Your only remaining action: tell the user in ONE short sentence to switch to the @project-manager session for "${p.name}". That session is where the work happens.`,
+							`Do NOT call any other tool. The session is unbound by design — you cannot proceed.`,
+							`</system-reminder>`,
+						].join("\n")
+					}
+				}
 				mgr.setSessionProject(toolCtx.sessionID, p.id)
 				return `Project **${p.name}** selected for this session.\nPath: \`${p.path}\`\nYou can now use file, bash, and edit tools.`
 			},
@@ -489,7 +528,36 @@ export function projectStatusTransform(mgr: ProjectManager, getCurrentSessionId:
 			try {
 				const project = mgr.getSessionProject(sid)
 				if (project) {
-					statusXml = `<project_status selected="${project.name}" path="${project.path}" />`
+					const sv = (project as unknown as { structure_version?: number }).structure_version ?? 1
+					// What agent is the current session running as? Pull from the latest msg.
+					let currentAgent: string | null = null
+					for (let i = output.messages.length - 1; i >= 0; i--) {
+						const a = output.messages[i]?.info?.agent
+						if (a) { currentAgent = a; break }
+					}
+					// v2 projects have a PM + team that owns execution. Non-team agents
+					// (general, orchestrator, etc.) must NOT do hands-on work here —
+					// they route the user to the appropriate team session.
+					const isTeamAgent = !!currentAgent && !!mgr.db.prepare(
+						"SELECT 1 FROM project_agents WHERE project_id=$pid AND slug=$slug"
+					).get({ $pid: project.id, $slug: currentAgent })
+					if (sv === 2 && !isTeamAgent) {
+						statusXml = [
+							`<system-reminder>`,
+							`STOP. Session is bound to v2 project "${project.name}" (${project.path}).`,
+							`A v2 project owns its own execution: the Project Manager + the team it builds do the work via tickets. You (${currentAgent || "this agent"}) are NOT a team member of this project.`,
+							``,
+							`Your role here is ROUTING ONLY:`,
+							`  - If the user wants the project's work done → tell them to switch to the @project-manager session for that project. ONE short sentence.`,
+							`  - If the user wants something OUTSIDE this project → tell them you can't act here and to start a new general session (no project bound).`,
+							``,
+							`DO NOT call: bash, edit, write, skill, web_search, webfetch, scrape_webpage, read, grep, glob, pty_*, task_create, or any other hands-on tool. The team executes — not you.`,
+							`Tools you MAY use: project_list, project_get, question, show.`,
+							`</system-reminder>`,
+						].join("\n")
+					} else {
+						statusXml = `<project_status selected="${project.name}" path="${project.path}" version="${sv}" />`
+					}
 				} else {
 					let projectList = ""
 					try {
