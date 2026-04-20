@@ -11,11 +11,17 @@ import {
   RefreshControl,
   Alert,
   ActivityIndicator,
+  ActionSheetIOS,
   Keyboard,
   Platform,
+  Switch,
   TextInput,
+  Image,
   Text as RNText,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -50,6 +56,12 @@ import {
   FolderOpen,
   Code2,
   FileText,
+  Plus,
+  Play,
+  Paperclip,
+  X as XIcon,
+  File as FileIcon,
+  Search,
 } from 'lucide-react-native';
 
 import { FileItem } from '@/components/files/FileItem';
@@ -66,6 +78,7 @@ import {
   useKortixTasks,
   useUpdateProject,
   useDeleteProject,
+  useCreateKortixTask,
   useUpdateKortixTask,
   useDeleteKortixTask,
   useStartKortixTask,
@@ -142,6 +155,7 @@ export function ProjectDetailPage({
   const { data: tasks } = useKortixTasks(sandboxUrl, project?.id);
   const updateProject = useUpdateProject(sandboxUrl);
   const deleteProject = useDeleteProject(sandboxUrl);
+  const createTask = useCreateKortixTask(sandboxUrl);
   const updateTask = useUpdateKortixTask(sandboxUrl);
   const deleteTask = useDeleteKortixTask(sandboxUrl);
   const startTask = useStartKortixTask(sandboxUrl);
@@ -159,12 +173,209 @@ export function ProjectDetailPage({
   const [tab, setTab] = useState<Tab>('files');
   const editSheetRef = useRef<BottomSheetModal>(null);
   const taskSheetRef = useRef<BottomSheetModal>(null);
+  const newTaskSheetRef = useRef<BottomSheetModal>(null);
   const sheetPadding = useSheetBottomPadding();
   const tabScrollRef = useRef<ScrollView>(null);
   const tabLayoutsRef = useRef<Record<number, { x: number; width: number }>>({});
   const [editField, setEditField] = useState<'name' | 'description'>('name');
   const [editValue, setEditValue] = useState('');
   const [selectedTask, setSelectedTask] = useState<KortixTask | null>(null);
+
+  // ── New task state (ported from web new-task-dialog) ────────────────────
+  type TaskAttachment = { uri: string; name: string; mimeType: string; isImage: boolean };
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
+  const [newTaskVerification, setNewTaskVerification] = useState('');
+  const [showVerification, setShowVerification] = useState(false);
+  const [autoRun, setAutoRun] = useState(true);
+  const [createMore, setCreateMore] = useState(false);
+  const [newTaskFiles, setNewTaskFiles] = useState<TaskAttachment[]>([]);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const [taskSearch, setTaskSearch] = useState('');
+  const uploadMutForTasks = useOpenCodeUploadFile();
+
+  const resetNewTaskForm = useCallback(() => {
+    setNewTaskTitle('');
+    setNewTaskDescription('');
+    setNewTaskVerification('');
+    setShowVerification(false);
+    setNewTaskFiles([]);
+  }, []);
+
+  const openNewTaskSheet = useCallback(() => {
+    resetNewTaskForm();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    newTaskSheetRef.current?.present();
+  }, [resetNewTaskForm]);
+
+  const addTaskFiles = useCallback((files: TaskAttachment[]) => {
+    if (files.length === 0) return;
+    setNewTaskFiles((prev) => [...prev, ...files]);
+  }, []);
+
+  const removeTaskFile = useCallback((index: number) => {
+    setNewTaskFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const pickFromPhotos = useCallback(async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.9,
+    });
+    if (!result.canceled) {
+      addTaskFiles(
+        result.assets.map((a) => ({
+          uri: a.uri,
+          name: a.fileName || a.uri.split('/').pop() || `image_${Date.now()}.jpg`,
+          mimeType: a.mimeType || 'image/jpeg',
+          isImage: true,
+        })),
+      );
+    }
+  }, [addTaskFiles]);
+
+  const takePhoto = useCallback(async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission required', 'Camera access is needed to take photos.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.9 });
+    if (!result.canceled) {
+      const a = result.assets[0];
+      addTaskFiles([
+        {
+          uri: a.uri,
+          name: a.fileName || `photo_${Date.now()}.jpg`,
+          mimeType: a.mimeType || 'image/jpeg',
+          isImage: true,
+        },
+      ]);
+    }
+  }, [addTaskFiles]);
+
+  const pickDocuments = useCallback(async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      multiple: true,
+      copyToCacheDirectory: true,
+    });
+    if (!result.canceled) {
+      addTaskFiles(
+        result.assets.map((a) => ({
+          uri: a.uri,
+          name: a.name,
+          mimeType: a.mimeType || 'application/octet-stream',
+          isImage: (a.mimeType || '').startsWith('image/'),
+        })),
+      );
+    }
+  }, [addTaskFiles]);
+
+  const openAttachmentPicker = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Photo Library', 'Take Photo', 'Browse Files'],
+          cancelButtonIndex: 0,
+        },
+        async (buttonIndex) => {
+          if (buttonIndex === 1) await pickFromPhotos();
+          else if (buttonIndex === 2) await takePhoto();
+          else if (buttonIndex === 3) await pickDocuments();
+        },
+      );
+    } else {
+      Alert.alert('Attach file', 'Choose source', [
+        { text: 'Photo Library', onPress: pickFromPhotos },
+        { text: 'Take Photo', onPress: takePhoto },
+        { text: 'Browse Files', onPress: pickDocuments },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  }, [pickFromPhotos, takePhoto, pickDocuments]);
+
+  const submitNewTask = useCallback(async () => {
+    if (!project) return;
+    const title = newTaskTitle.trim();
+    if (!title) return;
+    Keyboard.dismiss();
+
+    // Upload attachments first (matches web flow — upload to /workspace/uploads, then append refs).
+    let attachmentPaths: string[] = [];
+    if (newTaskFiles.length > 0 && sandboxUrl) {
+      setUploadingAttachments(true);
+      try {
+        const uploadDir = '/workspace/uploads';
+        const results = await Promise.all(
+          newTaskFiles.map((f) =>
+            uploadMutForTasks.mutateAsync({
+              sandboxUrl,
+              file: { uri: f.uri, name: f.name, type: f.mimeType },
+              targetPath: uploadDir,
+            }),
+          ),
+        );
+        attachmentPaths = results
+          .flat()
+          .map((r: any) => r?.path || r?.file?.path)
+          .filter(Boolean);
+      } catch (err: any) {
+        setUploadingAttachments(false);
+        Alert.alert('Upload failed', err?.message || 'Could not upload attachments.');
+        return;
+      }
+      setUploadingAttachments(false);
+    }
+
+    let fullDescription = newTaskDescription.trim();
+    if (attachmentPaths.length > 0) {
+      const refs = attachmentPaths.map((p) => `- ${p}`).join('\n');
+      fullDescription = fullDescription
+        ? `${fullDescription}\n\nAttachments:\n${refs}`
+        : `Attachments:\n${refs}`;
+    }
+
+    createTask.mutate(
+      {
+        project_id: project.id,
+        title,
+        description: fullDescription,
+        verification_condition: newTaskVerification.trim(),
+        status: 'todo',
+      },
+      {
+        onSuccess: (task) => {
+          if (autoRun && task?.id) {
+            startTask.mutate({ id: task.id });
+          }
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          if (createMore) {
+            resetNewTaskForm();
+          } else {
+            newTaskSheetRef.current?.dismiss();
+          }
+        },
+        onError: (err: any) => {
+          Alert.alert('Failed to create task', err?.message || 'Something went wrong.');
+        },
+      },
+    );
+  }, [
+    project,
+    sandboxUrl,
+    newTaskTitle,
+    newTaskDescription,
+    newTaskVerification,
+    newTaskFiles,
+    autoRun,
+    createMore,
+    createTask,
+    startTask,
+    uploadMutForTasks,
+    resetNewTaskForm,
+  ]);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
@@ -181,6 +392,15 @@ export function ProjectDetailPage({
     ));
   }, [sessions]);
   const taskList = tasks ?? [];
+  const filteredTaskList = useMemo(() => {
+    if (!taskSearch.trim()) return taskList;
+    const q = taskSearch.toLowerCase();
+    return taskList.filter(
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        (t.description || '').toLowerCase().includes(q),
+    );
+  }, [taskList, taskSearch]);
 
   const taskStats = useMemo(() => {
     const done = taskList.filter((t) => t.status === 'completed').length;
@@ -636,29 +856,99 @@ export function ProjectDetailPage({
         {/* ── Tasks Tab ── */}
         {tab === 'tasks' &&
           (taskList.length === 0 ? (
-            <EmptyState
-              icon={ListTodo}
-              text="No tasks yet"
-              sub="Tasks appear here as Kortix works on this project"
-              isDark={isDark}
-            />
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <ListTodo
+                size={32}
+                color={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}
+                style={{ marginBottom: 10 }}
+              />
+              <RNText
+                style={{
+                  fontSize: 14,
+                  fontFamily: 'Roobert-Medium',
+                  color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)',
+                  marginBottom: 4,
+                }}>
+                No tasks yet
+              </RNText>
+              <RNText
+                style={{
+                  fontSize: 12,
+                  fontFamily: 'Roobert',
+                  color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)',
+                  textAlign: 'center',
+                  marginBottom: 18,
+                  paddingHorizontal: 20,
+                  lineHeight: 17,
+                }}>
+                Create tasks so Kortix knows what to work on next.
+              </RNText>
+              <TouchableOpacity
+                onPress={openNewTaskSheet}
+                activeOpacity={0.85}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  paddingHorizontal: 18,
+                  paddingVertical: 11,
+                  borderRadius: 9999,
+                  backgroundColor: themeColors.primary,
+                }}>
+                <Plus size={15} color={themeColors.primaryForeground} />
+                <RNText
+                  style={{
+                    fontSize: 14,
+                    fontFamily: 'Roobert-Medium',
+                    color: themeColors.primaryForeground,
+                  }}>
+                  New task
+                </RNText>
+              </TouchableOpacity>
+            </View>
           ) : (
             <>
-              {/* Progress bar */}
+              {/* Progress bar + new task button */}
               {taskStats.total > 0 && (
                 <View style={{ marginBottom: 14 }}>
                   <View
                     style={{
                       flexDirection: 'row',
+                      alignItems: 'center',
                       justifyContent: 'space-between',
-                      marginBottom: 6,
+                      marginBottom: 8,
+                      gap: 10,
                     }}>
                     <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedStrong }}>
                       {Math.round((taskStats.done / taskStats.total) * 100)}% complete
+                      {'  '}
+                      <RNText style={{ color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)' }}>
+                        {taskStats.done}/{taskStats.total}
+                      </RNText>
                     </RNText>
-                    <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedStrong }}>
-                      {taskStats.done}/{taskStats.total}
-                    </RNText>
+                    <TouchableOpacity
+                      onPress={openNewTaskSheet}
+                      activeOpacity={0.85}
+                      hitSlop={6}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        paddingHorizontal: 12,
+                        paddingVertical: 7,
+                        borderRadius: 9999,
+                        backgroundColor: themeColors.primary,
+                      }}>
+                      <Plus size={13} color={themeColors.primaryForeground} />
+                      <RNText
+                        style={{
+                          fontSize: 12,
+                          fontFamily: 'Roobert-Medium',
+                          color: themeColors.primaryForeground,
+                        }}>
+                        New task
+                      </RNText>
+                    </TouchableOpacity>
                   </View>
                   <View
                     style={{
@@ -679,6 +969,54 @@ export function ProjectDetailPage({
                 </View>
               )}
 
+              {/* Task search */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                  borderRadius: 9999,
+                  paddingHorizontal: 14,
+                  height: 38,
+                  marginBottom: 10,
+                }}>
+                <Search size={14} color={isDark ? '#71717a' : '#a1a1aa'} />
+                <TextInput
+                  value={taskSearch}
+                  onChangeText={setTaskSearch}
+                  placeholder="Search tasks..."
+                  placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+                  style={{
+                    flex: 1,
+                    marginLeft: 6,
+                    fontSize: 14,
+                    fontFamily: 'Roobert',
+                    color: fg,
+                    paddingVertical: 0,
+                  }}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                />
+                {taskSearch.length > 0 && (
+                  <TouchableOpacity onPress={() => setTaskSearch('')} hitSlop={8}>
+                    <XIcon size={14} color={isDark ? '#71717a' : '#a1a1aa'} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {filteredTaskList.length === 0 ? (
+                <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+                  <RNText
+                    style={{
+                      fontSize: 13,
+                      fontFamily: 'Roobert',
+                      color: mutedStrong,
+                    }}>
+                    No tasks match &ldquo;{taskSearch}&rdquo;
+                  </RNText>
+                </View>
+              ) : (
               <View
                 style={{
                   borderRadius: 12,
@@ -687,7 +1025,7 @@ export function ProjectDetailPage({
                   backgroundColor: cardBg,
                   overflow: 'hidden',
                 }}>
-                {taskList.map((t: KortixTask, i: number) => {
+                {filteredTaskList.map((t: KortixTask, i: number) => {
                   const sc = STATUS_CONFIG[t.status] || STATUS_CONFIG.todo;
                   const StatusIcon = sc.icon;
                   const isTerminal = t.status === 'completed' || t.status === 'cancelled';
@@ -705,7 +1043,7 @@ export function ProjectDetailPage({
                         paddingHorizontal: 14,
                         paddingVertical: 11,
                         gap: 10,
-                        borderBottomWidth: i < taskList.length - 1 ? 1 : 0,
+                        borderBottomWidth: i < filteredTaskList.length - 1 ? 1 : 0,
                         borderBottomColor: border,
                         opacity: isTerminal ? 0.55 : 1,
                       }}>
@@ -733,6 +1071,7 @@ export function ProjectDetailPage({
                   );
                 })}
               </View>
+              )}
             </>
           ))}
 
@@ -1612,6 +1951,434 @@ export function ProjectDetailPage({
             );
           })()}
         </BottomSheetView>
+      </BottomSheetModal>
+
+      {/* New task sheet — ported from web new-task-dialog */}
+      <BottomSheetModal
+        ref={newTaskSheetRef}
+        snapPoints={['75%', '95%']}
+        enablePanDownToClose
+        backdropComponent={renderBackdrop}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
+        backgroundStyle={{
+          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+          width: 36,
+          height: 5,
+          borderRadius: 3,
+        }}>
+        <BottomSheetScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{
+            paddingHorizontal: 24,
+            paddingTop: 4,
+            paddingBottom: sheetPadding,
+          }}>
+          {/* Breadcrumb header */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginBottom: 14,
+              gap: 6,
+            }}>
+            <RNText
+              style={{
+                fontSize: 13,
+                fontFamily: 'Roobert-Medium',
+                color: fg,
+                letterSpacing: -0.1,
+              }}
+              numberOfLines={1}>
+              {project?.name || 'Project'}
+            </RNText>
+            <RNText
+              style={{
+                fontSize: 13,
+                fontFamily: 'Roobert',
+                color: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.25)',
+              }}>
+              ›
+            </RNText>
+            <RNText
+              style={{
+                fontSize: 13,
+                fontFamily: 'Roobert',
+                color: mutedStrong,
+              }}>
+              New task
+            </RNText>
+          </View>
+
+          {/* Title — big, bold */}
+          <BottomSheetTextInput
+            value={newTaskTitle}
+            onChangeText={setNewTaskTitle}
+            autoFocus
+            placeholder="Task title"
+            placeholderTextColor={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)'}
+            style={{
+              fontSize: 22,
+              fontFamily: 'Roobert-Semibold',
+              color: fg,
+              paddingVertical: 0,
+              paddingHorizontal: 0,
+              marginBottom: 10,
+              letterSpacing: -0.3,
+            }}
+          />
+
+          {/* Description */}
+          <BottomSheetTextInput
+            value={newTaskDescription}
+            onChangeText={setNewTaskDescription}
+            multiline
+            placeholder="Add description..."
+            placeholderTextColor={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)'}
+            style={{
+              fontSize: 14,
+              fontFamily: 'Roobert',
+              color: fg,
+              paddingVertical: 0,
+              paddingHorizontal: 0,
+              minHeight: 96,
+              textAlignVertical: 'top',
+              lineHeight: 20,
+              marginBottom: 12,
+            }}
+          />
+
+          {/* Verification condition — collapsible */}
+          {showVerification ? (
+            <View style={{ marginBottom: 12 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 6,
+                }}>
+                <RNText
+                  style={{
+                    fontSize: 10,
+                    fontFamily: 'Roobert-Semibold',
+                    color: mutedStrong,
+                    letterSpacing: 1,
+                    textTransform: 'uppercase',
+                  }}>
+                  Verification condition
+                </RNText>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowVerification(false);
+                    setNewTaskVerification('');
+                  }}
+                  hitSlop={6}>
+                  <RNText
+                    style={{
+                      fontSize: 11,
+                      fontFamily: 'Roobert-Medium',
+                      color: mutedStrong,
+                    }}>
+                    Remove
+                  </RNText>
+                </TouchableOpacity>
+              </View>
+              <BottomSheetTextInput
+                value={newTaskVerification}
+                onChangeText={setNewTaskVerification}
+                multiline
+                placeholder="How will we know this task is actually done?"
+                placeholderTextColor={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)'}
+                style={{
+                  fontSize: 13,
+                  fontFamily: 'Roobert',
+                  color: fg,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+                  borderRadius: 10,
+                  minHeight: 56,
+                  textAlignVertical: 'top',
+                  lineHeight: 19,
+                }}
+              />
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={() => setShowVerification(true)}
+              hitSlop={6}
+              style={{ alignSelf: 'flex-start', marginBottom: 14 }}>
+              <RNText
+                style={{
+                  fontSize: 12,
+                  fontFamily: 'Roobert-Medium',
+                  color: mutedStrong,
+                }}>
+                + Add verification condition
+              </RNText>
+            </TouchableOpacity>
+          )}
+
+          {/* Attachment strip */}
+          {newTaskFiles.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 10, marginHorizontal: -24 }}
+              contentContainerStyle={{ paddingHorizontal: 24, gap: 8 }}
+            >
+              {newTaskFiles.map((f, i) => (
+                <View
+                  key={`${f.uri}-${i}`}
+                  style={{
+                    width: 112,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: border,
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                    overflow: 'hidden',
+                    position: 'relative',
+                  }}
+                >
+                  {f.isImage ? (
+                    <Image
+                      source={{ uri: f.uri }}
+                      style={{ width: '100%', height: 64 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        height: 64,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                      }}
+                    >
+                      <FileIcon size={22} color={mutedStrong} />
+                    </View>
+                  )}
+                  <View
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 6,
+                      borderTopWidth: 1,
+                      borderTopColor: border,
+                    }}
+                  >
+                    <RNText
+                      numberOfLines={1}
+                      style={{
+                        fontSize: 11,
+                        fontFamily: 'Roobert-Medium',
+                        color: fg,
+                      }}
+                    >
+                      {f.name}
+                    </RNText>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => removeTaskFile(i)}
+                    hitSlop={8}
+                    style={{
+                      position: 'absolute',
+                      top: 4,
+                      right: 4,
+                      width: 18,
+                      height: 18,
+                      borderRadius: 9,
+                      backgroundColor: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.6)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <XIcon size={10} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+
+          {/* Divider */}
+          <View
+            style={{
+              height: 1,
+              backgroundColor: border,
+              marginTop: 4,
+              marginBottom: 14,
+            }}
+          />
+
+          {/* Attach button + toggles */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginBottom: 14,
+            }}
+          >
+            <TouchableOpacity
+              onPress={openAttachmentPicker}
+              hitSlop={6}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 12,
+                paddingVertical: 7,
+                borderRadius: 9999,
+                borderWidth: 1,
+                borderColor: border,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+              }}
+            >
+              <Paperclip size={13} color={mutedStrong} />
+              <RNText
+                style={{
+                  fontSize: 12,
+                  fontFamily: 'Roobert-Medium',
+                  color: mutedStrong,
+                }}
+              >
+                Attach{newTaskFiles.length > 0 ? ` (${newTaskFiles.length})` : ''}
+              </RNText>
+            </TouchableOpacity>
+          </View>
+
+          {/* Toggles */}
+          <View style={{ gap: 10, marginBottom: 18 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+              <View style={{ flex: 1 }}>
+                <RNText
+                  style={{
+                    fontSize: 14,
+                    fontFamily: 'Roobert-Medium',
+                    color: fg,
+                  }}>
+                  Auto-run
+                </RNText>
+                <RNText
+                  style={{
+                    fontSize: 12,
+                    fontFamily: 'Roobert',
+                    color: mutedStrong,
+                    marginTop: 2,
+                  }}>
+                  Start the task immediately after creating.
+                </RNText>
+              </View>
+              <Switch
+                value={autoRun}
+                onValueChange={setAutoRun}
+                trackColor={{
+                  false: isDark ? '#333' : '#ddd',
+                  true: themeColors.primary,
+                }}
+                thumbColor="#fff"
+              />
+            </View>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}>
+              <View style={{ flex: 1 }}>
+                <RNText
+                  style={{
+                    fontSize: 14,
+                    fontFamily: 'Roobert-Medium',
+                    color: fg,
+                  }}>
+                  Create more
+                </RNText>
+                <RNText
+                  style={{
+                    fontSize: 12,
+                    fontFamily: 'Roobert',
+                    color: mutedStrong,
+                    marginTop: 2,
+                  }}>
+                  Keep this open to add more tasks back-to-back.
+                </RNText>
+              </View>
+              <Switch
+                value={createMore}
+                onValueChange={setCreateMore}
+                trackColor={{
+                  false: isDark ? '#333' : '#ddd',
+                  true: themeColors.primary,
+                }}
+                thumbColor="#fff"
+              />
+            </View>
+          </View>
+
+          {/* Submit button */}
+          {(() => {
+            const isBusy = createTask.isPending || startTask.isPending || uploadingAttachments;
+            const canSubmit = !!newTaskTitle.trim() && !isBusy;
+            return (
+              <BottomSheetTouchable
+                onPress={submitNewTask}
+                disabled={!canSubmit}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  backgroundColor: canSubmit
+                    ? themeColors.primary
+                    : isDark
+                      ? 'rgba(248, 248, 248, 0.08)'
+                      : 'rgba(18, 18, 21, 0.06)',
+                  borderRadius: 9999,
+                  paddingVertical: 15,
+                  opacity: canSubmit ? 1 : 0.55,
+                }}>
+                {isBusy ? (
+                  <ActivityIndicator size="small" color={themeColors.primaryForeground} />
+                ) : autoRun ? (
+                  <Play
+                    size={14}
+                    color={canSubmit ? themeColors.primaryForeground : mutedStrong}
+                    fill={canSubmit ? themeColors.primaryForeground : 'transparent'}
+                  />
+                ) : null}
+                <RNText
+                  style={{
+                    fontSize: 15,
+                    fontFamily: 'Roobert-Semibold',
+                    color: canSubmit
+                      ? themeColors.primaryForeground
+                      : isDark
+                        ? 'rgba(248, 248, 248, 0.4)'
+                        : 'rgba(18, 18, 21, 0.4)',
+                  }}>
+                  {uploadingAttachments
+                    ? 'Uploading…'
+                    : createTask.isPending || startTask.isPending
+                      ? 'Creating...'
+                      : autoRun
+                        ? 'Create & run'
+                        : 'Create task'}
+                </RNText>
+              </BottomSheetTouchable>
+            );
+          })()}
+        </BottomSheetScrollView>
       </BottomSheetModal>
       </PageContent>
     </View>
