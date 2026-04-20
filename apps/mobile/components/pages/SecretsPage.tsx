@@ -339,8 +339,8 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-            borderRadius: 12,
-            paddingHorizontal: 12,
+            borderRadius: 9999,
+            paddingHorizontal: 16,
             height: 42,
           }}
         >
@@ -366,7 +366,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
           style={{
             width: 42,
             height: 42,
-            borderRadius: 12,
+            borderRadius: 9999,
             backgroundColor: themeColors.primary,
             alignItems: 'center',
             justifyContent: 'center',
