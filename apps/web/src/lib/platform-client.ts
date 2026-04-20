@@ -393,6 +393,10 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
   if (ownMatch) return ownMatch;
 
   try {
+    // Admin-scoped fallback — if the user isn't admin, the 403 is expected
+    // for non-owners. Suppress the automatic error toast/log so the
+    // instance-detail page doesn't scream about an expected 403 just
+    // because the sandbox isn't in the caller's own listing.
     const response = await backendApi.get<{
       sandbox: {
         sandboxId: string;
@@ -405,7 +409,7 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
         createdAt: string;
         updatedAt: string;
       };
-    }>(`/admin/api/sandboxes/${normalizedSandboxId}`);
+    }>(`/admin/api/sandboxes/${normalizedSandboxId}`, { showErrors: false });
 
     const row = response.data?.sandbox;
     if (!row) return null;
