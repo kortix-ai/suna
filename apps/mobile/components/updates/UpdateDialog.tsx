@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Easing,
+  Modal,
   Pressable,
   ScrollView,
   View,
@@ -26,16 +26,15 @@ import {
   RotateCw,
   Shield,
   Sparkles,
-  X,
   XCircle,
   Zap,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
+import { KortixLogo } from '@/components/ui/KortixLogo';
 import { useThemeColors } from '@/lib/theme-colors';
-import type { ChangelogChange, ChangelogEntry, UpdatePhase } from '@/lib/platform/client';
-import Svg, { Circle } from 'react-native-svg';
+import type { ChangelogEntry } from '@/lib/platform/client';
 
 type DialogStep = 'confirm' | 'updating' | 'done' | 'failed';
 
@@ -117,25 +116,32 @@ export function UpdateDialog({
   const sheetRef = useRef<BottomSheetModal>(null);
   const dismissingRef = useRef(false);
 
-  // Sync external `open` prop to imperative sheet API
+  // The bottom sheet is only used for the 'confirm' step. All other steps
+  // (updating / done / failed) render a full-screen splash modal matching
+  // the web UpdateDialog look.
+  const isConfirm = step === 'confirm';
+  const isSplash = step === 'updating' || step === 'done' || step === 'failed';
+
+  // Sync `open` + step to bottom-sheet imperative API (present only while confirming).
   useEffect(() => {
-    if (open) {
+    if (open && isConfirm) {
       dismissingRef.current = false;
       sheetRef.current?.present();
     } else {
       dismissingRef.current = true;
       sheetRef.current?.dismiss();
     }
-  }, [open]);
+  }, [open, isConfirm]);
 
   const handleSheetDismiss = useCallback(() => {
-    // Only invoke onClose when dismissal originated from user gesture
-    // (not when we programmatically dismissed because `open` flipped to false)
-    if (!dismissingRef.current) {
+    // Only invoke onClose when dismissal originated from user gesture,
+    // and only while we're still in the confirm step — otherwise a
+    // programmatic dismiss triggered by step transition would close the flow.
+    if (!dismissingRef.current && isConfirm) {
       onClose();
     }
     dismissingRef.current = false;
-  }, [onClose]);
+  }, [onClose, isConfirm]);
 
   const renderBackdrop = useMemo(
     () => (props: BottomSheetBackdropProps) => (
@@ -144,10 +150,10 @@ export function UpdateDialog({
         appearsOnIndex={0}
         disappearsOnIndex={-1}
         opacity={0.5}
-        pressBehavior={step === 'confirm' || step === 'done' || step === 'failed' ? 'close' : 'none'}
+        pressBehavior="close"
       />
     ),
-    [step],
+    [],
   );
 
   const isFailed = phase === 'failed';
@@ -201,217 +207,191 @@ export function UpdateDialog({
   const hasMore = changes.length > 4 && !expanded;
 
   const bgColor = isDark ? '#0D0D0D' : '#FFFFFF';
-  const borderColor = isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)';
-  const mutedColor = isDark ? '#888' : '#777';
-
-  const isInteractiveStep = step === 'confirm' || step === 'done' || step === 'failed';
 
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      enableDynamicSizing
-      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
-      enablePanDownToClose={isInteractiveStep}
-      enableOverDrag={false}
-      onDismiss={handleSheetDismiss}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
-      backgroundStyle={{
-        backgroundColor: bgColor,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-      }}
-      backdropComponent={renderBackdrop}
-    >
-      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
-        <View>
-          {/* ── Confirm Step ── */}
-          {step === 'confirm' && (
-            <View>
-              {/* Header */}
-              <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 }}>
-                <View className="flex-row items-center" style={{ gap: 8 }}>
-                  <Icon as={ArrowDownToLine} size={18} style={{ color: themeColors.primary }} strokeWidth={2.5} />
-                  <Text className="font-roobert-semibold text-[17px] text-foreground">
-                    Update to {formatVersion(latestVersion)}
-                  </Text>
-                </View>
-                <Text className="font-roobert text-[13px] text-muted-foreground mt-1.5">
-                  {currentVersion
-                    ? <>Your sandbox is running <Text className="font-mono font-roobert-medium text-foreground">{formatVersion(currentVersion)}</Text>. </>
-                    : 'A new version is available. '}
-                  This will restart your sandbox.
+    <>
+      {/* Bottom sheet — confirm step only */}
+      <BottomSheetModal
+        ref={sheetRef}
+        enableDynamicSizing
+        maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
+        enablePanDownToClose
+        enableOverDrag={false}
+        onDismiss={handleSheetDismiss}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+          width: 36,
+          height: 5,
+          borderRadius: 3,
+        }}
+        backgroundStyle={{
+          backgroundColor: bgColor,
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+        }}
+        backdropComponent={renderBackdrop}
+      >
+        <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
+          <View>
+            {/* Header */}
+            <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 }}>
+              <View className="flex-row items-center" style={{ gap: 8 }}>
+                <Icon as={ArrowDownToLine} size={18} style={{ color: themeColors.primary }} strokeWidth={2.5} />
+                <Text className="font-roobert-semibold text-[17px] text-foreground">
+                  Update to {formatVersion(latestVersion)}
                 </Text>
               </View>
-
-              {/* Changes list */}
-              {changes.length > 0 && (
-                <View
-                  style={{
-                    marginHorizontal: 20,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.06)',
-                    backgroundColor: isDark ? 'rgba(248,248,248,0.02)' : 'rgba(18,18,21,0.015)',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <ScrollView
-                    style={{ maxHeight: 220, paddingHorizontal: 12, paddingVertical: 10 }}
-                    showsVerticalScrollIndicator={false}
-                    nestedScrollEnabled
-                  >
-                    {visibleChanges.map((change, i) => {
-                      const config = CHANGE_TYPE_CONFIG[change.type] ?? CHANGE_TYPE_CONFIG.improvement;
-                      return (
-                        <View key={i} className="flex-row items-start" style={{ paddingVertical: 3, gap: 8 }}>
-                          <View style={{ marginTop: 2 }}>
-                            <Icon as={config.icon} size={13} style={{ color: config.color }} strokeWidth={2.2} />
-                          </View>
-                          <Text className="flex-1 font-roobert text-[13px] text-foreground/80" style={{ lineHeight: 18 }}>
-                            {change.text}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </ScrollView>
-                  {hasMore && (
-                    <Pressable
-                      onPress={() => setExpanded(true)}
-                      style={{
-                        borderTopWidth: 1,
-                        borderTopColor: isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.04)',
-                        paddingVertical: 8,
-                        alignItems: 'center',
-                      }}
-                    >
-                      <Text className="font-roobert text-[12px]" style={{ color: themeColors.primary }}>
-                        Show {changes.length - 4} more changes
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
-              )}
-
-              {/* Buttons */}
-              <View className="flex-row items-center justify-end" style={{ paddingHorizontal: 20, paddingVertical: 16, gap: 10 }}>
-                <Button variant="outline" onPress={onClose}>
-                  <Text className="font-roobert-medium text-foreground">Cancel</Text>
-                </Button>
-                <Button onPress={handleConfirm} style={{ backgroundColor: themeColors.primary }}>
-                  <Icon as={ArrowDownToLine} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
-                  <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
-                    Update now
-                  </Text>
-                </Button>
-              </View>
+              <Text className="font-roobert text-[13px] text-muted-foreground mt-1.5">
+                {currentVersion
+                  ? <>Your sandbox is running <Text className="font-mono font-roobert-medium text-foreground">{formatVersion(currentVersion)}</Text>. </>
+                  : 'A new version is available. '}
+                This will restart your sandbox.
+              </Text>
             </View>
-          )}
 
-          {/* ── Updating Step ── */}
-          {step === 'updating' && (
-            <View style={{ alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20 }}>
-              <CircularProgress
-                progress={phaseProgress}
-                size={120}
-                strokeWidth={8}
-                primaryColor={themeColors.primary}
-                trackColor={isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'}
-                isDark={isDark}
-              />
-
-              <View style={{ marginTop: 24, alignItems: 'center', minHeight: 48 }}>
-                <Text className="font-roobert-medium text-[15px] text-foreground">
-                  {PHASE_LABEL[phase] ?? 'Updating...'}
-                </Text>
-                <Text className="font-roobert text-[12px] text-muted-foreground mt-1">
-                  Updating to {formatVersion(latestVersion)}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* ── Done Step ── */}
-          {step === 'done' && (
-            <View style={{ alignItems: 'center', paddingVertical: 48, paddingHorizontal: 20 }}>
-              <SuccessCheckmark />
-
-              <View style={{ marginTop: 16, alignItems: 'center' }}>
-                <Text className="font-roobert-semibold text-[16px] text-foreground">Update Complete</Text>
-                <Text className="font-roobert text-[13px] text-muted-foreground mt-1">
-                  Now running {formatVersion(updateResult?.currentVersion ?? latestVersion)}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* ── Failed Step ── */}
-          {step === 'failed' && (
-            <View style={{ paddingHorizontal: 20, paddingVertical: 20 }}>
-              {/* Error icon */}
-              <View style={{ alignItems: 'center', paddingVertical: 16 }}>
-                <View
-                  style={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: 28,
-                    backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.08)',
-                    borderWidth: 2,
-                    borderColor: isDark ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.2)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Icon as={XCircle} size={28} style={{ color: '#EF4444' }} strokeWidth={2} />
-                </View>
-                <Text className="font-roobert-semibold text-[16px] text-foreground mt-4">Update Failed</Text>
-              </View>
-
-              {/* Error details */}
+            {/* Changes list */}
+            {changes.length > 0 && (
               <View
                 style={{
+                  marginHorizontal: 20,
                   borderRadius: 12,
                   borderWidth: 1,
-                  borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)',
-                  backgroundColor: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.03)',
-                  padding: 12,
+                  borderColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.06)',
+                  backgroundColor: isDark ? 'rgba(248,248,248,0.02)' : 'rgba(18,18,21,0.015)',
+                  overflow: 'hidden',
                 }}
               >
-                <View className="flex-row items-start" style={{ gap: 8 }}>
-                  <Icon as={XCircle} size={14} style={{ color: '#EF4444', marginTop: 1 }} strokeWidth={2} />
-                  <Text className="flex-1 font-roobert text-[13px] text-foreground/80" style={{ lineHeight: 18 }}>
-                    {phaseMessage || 'Something went wrong during the update.'}
-                  </Text>
-                </View>
-                {errorMessage && (
-                  <ScrollView
+                <ScrollView
+                  style={{ maxHeight: 220, paddingHorizontal: 12, paddingVertical: 10 }}
+                  showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled
+                >
+                  {visibleChanges.map((change, i) => {
+                    const config = CHANGE_TYPE_CONFIG[change.type] ?? CHANGE_TYPE_CONFIG.improvement;
+                    return (
+                      <View key={i} className="flex-row items-start" style={{ paddingVertical: 3, gap: 8 }}>
+                        <View style={{ marginTop: 2 }}>
+                          <Icon as={config.icon} size={13} style={{ color: config.color }} strokeWidth={2.2} />
+                        </View>
+                        <Text className="flex-1 font-roobert text-[13px] text-foreground/80" style={{ lineHeight: 18 }}>
+                          {change.text}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+                {hasMore && (
+                  <Pressable
+                    onPress={() => setExpanded(true)}
                     style={{
-                      maxHeight: 120,
-                      marginTop: 8,
-                      borderRadius: 8,
-                      backgroundColor: isDark ? 'rgba(248,248,248,0.03)' : 'rgba(18,18,21,0.02)',
-                      padding: 8,
+                      borderTopWidth: 1,
+                      borderTopColor: isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.04)',
+                      paddingVertical: 8,
+                      alignItems: 'center',
                     }}
-                    nestedScrollEnabled
                   >
-                    <Text className="font-mono text-[11px] text-foreground/60" style={{ lineHeight: 16 }}>
-                      {errorMessage}
+                    <Text className="font-roobert text-[12px]" style={{ color: themeColors.primary }}>
+                      Show {changes.length - 4} more changes
                     </Text>
-                  </ScrollView>
+                  </Pressable>
                 )}
               </View>
+            )}
 
-              {/* Buttons */}
-              <View className="flex-row items-center justify-end mt-4" style={{ gap: 10 }}>
-                <Button variant="outline" onPress={onClose}>
+            {/* Buttons */}
+            <View className="flex-row items-center justify-end" style={{ paddingHorizontal: 20, paddingVertical: 16, gap: 10 }}>
+              <Button variant="outline" onPress={onClose}>
+                <Text className="font-roobert-medium text-foreground">Cancel</Text>
+              </Button>
+              <Button onPress={handleConfirm} style={{ backgroundColor: themeColors.primary }}>
+                <Icon as={ArrowDownToLine} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+                <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
+                  Update now
+                </Text>
+              </Button>
+            </View>
+          </View>
+        </BottomSheetView>
+      </BottomSheetModal>
+
+      {/* Full-screen splash — updating / done / failed (mirrors web UpdateDialog) */}
+      <Modal
+        visible={open && isSplash}
+        animationType="fade"
+        transparent={false}
+        statusBarTranslucent
+        onRequestClose={step === 'failed' ? onClose : undefined}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: bgColor,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          {step === 'updating' && (
+            <UpdatingSplash
+              label={PHASE_LABEL[phase] ?? 'Updating...'}
+              message={phaseMessage || `Updating to ${formatVersion(latestVersion)}`}
+              progress={phaseProgress}
+              isDark={isDark}
+            />
+          )}
+
+          {step === 'done' && (
+            <View style={{ alignItems: 'center' }}>
+              <SuccessCheckmark />
+              <Text className="font-roobert-medium text-[13px] text-foreground/90 mt-5 tracking-tight">
+                Updated to {formatVersion(updateResult?.currentVersion ?? latestVersion)}
+              </Text>
+            </View>
+          )}
+
+          {step === 'failed' && (
+            <View style={{ alignItems: 'center', maxWidth: 360, width: '100%' }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon as={XCircle} size={20} style={{ color: '#EF4444' }} strokeWidth={2} />
+              </View>
+              <Text className="font-roobert-medium text-[13px] text-foreground/90 mt-5 tracking-tight">
+                Update failed
+              </Text>
+              <Text className="font-roobert text-[11px] text-muted-foreground/70 mt-1 text-center">
+                {phaseMessage || 'Something went wrong.'}
+              </Text>
+              {errorMessage && (
+                <ScrollView
+                  style={{
+                    marginTop: 20,
+                    maxHeight: 128,
+                    width: '100%',
+                    borderRadius: 8,
+                    backgroundColor: isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.03)',
+                    padding: 10,
+                  }}
+                  nestedScrollEnabled
+                >
+                  <Text className="font-mono text-[10px] text-foreground/70" style={{ lineHeight: 14 }}>
+                    {errorMessage}
+                  </Text>
+                </ScrollView>
+              )}
+              <View className="flex-row items-center mt-6" style={{ gap: 10 }}>
+                <Button variant="outline" size="sm" onPress={onClose}>
                   <Text className="font-roobert-medium text-foreground">Close</Text>
                 </Button>
-                <Button onPress={handleRetry} style={{ backgroundColor: themeColors.primary }}>
-                  <Icon as={RotateCw} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+                <Button size="sm" onPress={handleRetry} style={{ backgroundColor: themeColors.primary }}>
+                  <Icon as={RotateCw} size={14} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
                   <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
                     Retry
                   </Text>
@@ -420,86 +400,89 @@ export function UpdateDialog({
             </View>
           )}
         </View>
-      </BottomSheetView>
-    </BottomSheetModal>
+      </Modal>
+    </>
   );
 }
 
-// ── Circular Progress ────────────────────────────────────────────────────
+// ── Updating Splash ──────────────────────────────────────────────────────
 
-function CircularProgress({
+function UpdatingSplash({
+  label,
+  message,
   progress,
-  size,
-  strokeWidth,
-  primaryColor,
-  trackColor,
   isDark,
 }: {
+  label: string;
+  message: string;
   progress: number;
-  size: number;
-  strokeWidth: number;
-  primaryColor: string;
-  trackColor: string;
   isDark: boolean;
 }) {
-  const animatedValue = useRef(new Animated.Value(0)).current;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
+  const pct = Math.max(0, Math.min(100, progress));
+  const widthAnim = useRef(new Animated.Value(pct)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(animatedValue, {
-      toValue: Math.min(progress, 100),
-      duration: 500,
-      easing: Easing.out(Easing.ease),
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+  }, [fadeAnim]);
+
+  useEffect(() => {
+    Animated.timing(widthAnim, {
+      toValue: pct,
+      duration: 800,
+      easing: Easing.bezier(0.22, 1, 0.36, 1),
       useNativeDriver: false,
     }).start();
-  }, [progress, animatedValue]);
+  }, [pct, widthAnim]);
 
-  const strokeDashoffset = animatedValue.interpolate({
-    inputRange: [0, 100],
-    outputRange: [circumference, 0],
-  });
+  const trackWidth = 240;
+  const trackColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.1)';
+  const fillColor = isDark ? '#f8f8f8' : '#121215';
 
   return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
-        {/* Track */}
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={trackColor}
-          strokeWidth={strokeWidth}
-          fill="none"
+    <Animated.View style={{ alignItems: 'center', opacity: fadeAnim }}>
+      <KortixLogo size={28} variant="symbol" />
+      <Text
+        className="font-roobert-medium text-foreground/90 tracking-tight"
+        style={{ fontSize: 13, marginTop: 20 }}
+      >
+        {label}
+      </Text>
+      <Text
+        className="font-roobert text-muted-foreground/70 text-center"
+        style={{ fontSize: 11, marginTop: 4, maxWidth: 340 }}
+      >
+        {message || 'Preparing update...'}
+      </Text>
+      <View
+        style={{
+          marginTop: 32,
+          height: 2,
+          width: trackWidth,
+          borderRadius: 9999,
+          backgroundColor: trackColor,
+          overflow: 'hidden',
+        }}
+      >
+        <Animated.View
+          style={{
+            height: '100%',
+            backgroundColor: fillColor,
+            width: widthAnim.interpolate({
+              inputRange: [0, 100],
+              outputRange: [0, trackWidth],
+              extrapolate: 'clamp',
+            }),
+          }}
         />
-        {/* Progress */}
-        <AnimatedCircle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={primaryColor}
-          strokeWidth={strokeWidth}
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          strokeLinecap="round"
-        />
-      </Svg>
-
-      {/* Percentage text */}
-      <View style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center' }}>
-        <Text
-          className="font-roobert-semibold text-foreground"
-          style={{ fontSize: size * 0.2 }}
-        >
-          {Math.round(progress)}%
-        </Text>
       </View>
-    </View>
+    </Animated.View>
   );
 }
-
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // ── Success Checkmark ────────────────────────────────────────────────────
 
