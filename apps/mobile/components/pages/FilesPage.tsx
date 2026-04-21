@@ -577,14 +577,40 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>
       <PageHeader
-        title="Files"
+        title={
+          isSearchOpen ? (
+            <View className="flex-1 flex-row items-center" style={{ gap: 8 }}>
+              <Icon as={Search} size={16} color={mutedColor} strokeWidth={2} />
+              <TextInput
+                ref={searchInputRef}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search files in this folder"
+                placeholderTextColor={mutedColor}
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={{
+                  flex: 1,
+                  color: fgColor,
+                  fontSize: 16,
+                  fontFamily: 'Roobert-Regular',
+                  padding: 0,
+                }}
+              />
+            </View>
+          ) : (
+            'Files'
+          )
+        }
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
+        hideRightDrawerToggle={isSearchOpen}
         rightActions={
           <View className="flex-row items-center" style={{ gap: 4 }}>
-            {/* Search */}
+            {/* Search — always visible; icon flips between Search and X. */}
             <AnimatedPressable
               onPress={isSearchOpen ? closeSearch : openSearch}
               className="p-2 rounded-xl active:opacity-70"
@@ -596,92 +622,40 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                 strokeWidth={2}
               />
             </AnimatedPressable>
-            {/* View mode toggle */}
-            <AnimatedPressable
-              onPress={() => setViewMode((v) => (v === 'list' ? 'grid' : 'list'))}
-              className="p-2 rounded-xl active:opacity-70"
-            >
-              <Icon
-                as={viewMode === 'list' ? LayoutGrid : List}
-                size={18}
-                color={fgColor}
-                strokeWidth={2}
-              />
-            </AnimatedPressable>
-            {/* Upload */}
-            <AnimatedPressable
-              onPress={handleUploadDocument}
-              className="p-2 rounded-xl active:opacity-70"
-            >
-              <Icon as={Upload} size={18} color={fgColor} strokeWidth={2} />
-            </AnimatedPressable>
-            {/* New folder */}
-            <AnimatedPressable
-              onPress={openCreateFolder}
-              className="p-2 rounded-xl active:opacity-70"
-            >
-              <Icon as={FolderPlus} size={18} color={fgColor} strokeWidth={2} />
-            </AnimatedPressable>
+
+            {/* Other actions hide while search is active to free up header space. */}
+            {!isSearchOpen && (
+              <>
+                <AnimatedPressable
+                  onPress={() => setViewMode((v) => (v === 'list' ? 'grid' : 'list'))}
+                  className="p-2 rounded-xl active:opacity-70"
+                >
+                  <Icon
+                    as={viewMode === 'list' ? LayoutGrid : List}
+                    size={18}
+                    color={fgColor}
+                    strokeWidth={2}
+                  />
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={handleUploadDocument}
+                  className="p-2 rounded-xl active:opacity-70"
+                >
+                  <Icon as={Upload} size={18} color={fgColor} strokeWidth={2} />
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={openCreateFolder}
+                  className="p-2 rounded-xl active:opacity-70"
+                >
+                  <Icon as={FolderPlus} size={18} color={fgColor} strokeWidth={2} />
+                </AnimatedPressable>
+              </>
+            )}
           </View>
         }
       />
 
       <PageContent>
-      {/* Search bar — toggled via the header Search icon. Renders above the
-          breadcrumbs so the current path stays visible while filtering. */}
-      {isSearchOpen && (
-        <View
-          className="px-4 pt-2 pb-2"
-          style={{
-            borderBottomWidth: 1,
-            borderBottomColor: isDark
-              ? 'rgba(248, 248, 248, 0.08)'
-              : 'rgba(18, 18, 21, 0.08)',
-          }}
-        >
-          <View
-            className="flex-row items-center rounded-xl"
-            style={{
-              backgroundColor: isDark
-                ? 'rgba(248, 248, 248, 0.06)'
-                : 'rgba(18, 18, 21, 0.04)',
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-              gap: 8,
-            }}
-          >
-            <Icon
-              as={Search}
-              size={16}
-              color={mutedColor}
-              strokeWidth={2}
-            />
-            <TextInput
-              ref={searchInputRef}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search files in this folder"
-              placeholderTextColor={mutedColor}
-              returnKeyType="search"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={{
-                flex: 1,
-                color: fgColor,
-                fontSize: 14,
-                fontFamily: 'Roobert-Regular',
-                padding: 0,
-              }}
-            />
-            {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery('')} hitSlop={8} className="active:opacity-70">
-                <Icon as={XIcon} size={14} color={mutedColor} strokeWidth={2} />
-              </Pressable>
-            )}
-          </View>
-        </View>
-      )}
-
       {/* Breadcrumbs container */}
       <View
         style={{
