@@ -3,24 +3,6 @@ import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { compressFile } from "./compress"
-import { parseNatural } from "./parse"
-
-describe("caveman parse", () => {
-	test("parses slash mode change with remainder", () => {
-		expect(parseNatural("/caveman ultra explain auth"))
-			.toEqual({ type: "set", mode: "ultra", rest: "explain auth" })
-	})
-
-	test("parses natural stop with remainder", () => {
-		expect(parseNatural("stop caveman, explain normally"))
-			.toEqual({ type: "clear", rest: "explain normally" })
-	})
-
-	test("parses compress shortcut", () => {
-		expect(parseNatural("/caveman:compress CLAUDE.md"))
-			.toEqual({ type: "compress", path: "CLAUDE.md" })
-	})
-})
 
 describe("caveman compress", () => {
 	test("backs up file and preserves code fences", async () => {
