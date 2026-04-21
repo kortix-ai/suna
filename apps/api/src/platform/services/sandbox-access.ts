@@ -1,13 +1,39 @@
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+/**
+ * Back-compat shim. The canonical access logic lives in `src/teams`.
+ *
+ * This file keeps the old `findAccessibleSandbox(For)User`/
+ * `listAccessibleSandbox(es)ForUser` signatures alive so callers in
+ * sandbox-cloud.ts, ssh.ts, sandbox-update.ts, sandbox-backups.ts, etc.,
+ * keep working — internally it now routes through the teams module's
+ * visibleSandboxFilter + loadUserTeamContext.
+ *
+ * New callers should import from '@kortix/api/teams' directly.
+ */
+
+import { and, desc, eq, inArray, ne, type SQL } from 'drizzle-orm';
 import { sandboxes, type Database } from '@kortix/db';
-import { isPlatformAdmin } from '../../shared/platform-roles';
+import {
+  loadUserTeamContext,
+  visibleSandboxFilter,
+  getAccountRole,
+  type UserTeamContext,
+} from '../../teams';
 
 type SandboxRecord = typeof sandboxes.$inferSelect;
 type SandboxStatus = SandboxRecord['status'];
+type AccountRole = 'owner' | 'admin' | 'member';
 
 export interface SandboxAccessContext {
+  userId: string;
   accountId: string;
+  accountRole: AccountRole | null;
+  isPlatformAdmin: boolean;
+  /** Legacy alias kept for callers reading `access.isAdmin`. */
   isAdmin: boolean;
+  isAccountManager: boolean;
+  allAccountIds: string[];
+  managerAccountIds: string[];
+  ownerAccountIds: string[];
 }
 
 export interface SandboxLookupOptions {
@@ -23,17 +49,19 @@ interface SandboxLookupForUserOptions extends SandboxLookupOptions {
   resolveAccountId: (userId: string) => Promise<string>;
 }
 
-function buildSandboxWhere(access: SandboxAccessContext, options: SandboxLookupOptions = {}) {
+function buildExtraFilters(
+  ctx: UserTeamContext,
+  db: Database,
+  options: SandboxLookupOptions,
+): SQL | undefined {
   const clauses: any[] = [];
 
   if (options.sandboxId) {
     clauses.push(eq(sandboxes.sandboxId, options.sandboxId));
-    if (!access.isAdmin) {
-      clauses.push(eq(sandboxes.accountId, access.accountId));
-    }
-  } else {
-    clauses.push(eq(sandboxes.accountId, access.accountId));
   }
+
+  const visibility = visibleSandboxFilter(db, ctx);
+  if (visibility) clauses.push(visibility);
 
   if (!options.includeArchived) {
     clauses.push(ne(sandboxes.status, 'archived'));
@@ -47,16 +75,53 @@ function buildSandboxWhere(access: SandboxAccessContext, options: SandboxLookupO
     clauses.push(inArray(sandboxes.status, options.statuses as SandboxStatus[]));
   }
 
-  return clauses.length === 1 ? clauses[0] : and(...clauses);
+  if (clauses.length === 0) return undefined;
+  return clauses.length === 1 ? (clauses[0] as SQL) : (and(...clauses) as SQL);
+}
+
+function toLegacyAccess(
+  ctx: UserTeamContext,
+  primaryAccountId: string,
+  primaryRole: AccountRole | null,
+): SandboxAccessContext {
+  const isAccountManager = primaryRole === 'owner' || primaryRole === 'admin';
+  return {
+    userId: ctx.userId,
+    accountId: primaryAccountId,
+    accountRole: primaryRole,
+    isPlatformAdmin: ctx.isPlatformAdmin,
+    isAdmin: ctx.isPlatformAdmin,
+    isAccountManager,
+    allAccountIds: ctx.allAccountIds,
+    managerAccountIds: ctx.managerAccountIds,
+    ownerAccountIds: ctx.ownerAccountIds,
+  };
 }
 
 export async function resolveSandboxAccessContext(
   userId: string,
   resolveAccountId: (userId: string) => Promise<string>,
+  db?: Database,
 ): Promise<SandboxAccessContext> {
   const accountId = await resolveAccountId(userId);
-  const isAdmin = await isPlatformAdmin(accountId);
-  return { accountId, isAdmin };
+  if (!db) {
+    // Legacy path without db — fall back to minimal context. Modern callers
+    // always pass db through findAccessibleSandboxForUser / listAccessibleSandboxesForUser.
+    return {
+      userId,
+      accountId,
+      accountRole: null,
+      isPlatformAdmin: false,
+      isAdmin: false,
+      isAccountManager: false,
+      allAccountIds: [],
+      managerAccountIds: [],
+      ownerAccountIds: [],
+    };
+  }
+  const ctx = await loadUserTeamContext(db, userId, accountId);
+  const primaryRole = await getAccountRole(db, userId, accountId);
+  return toLegacyAccess(ctx, accountId, primaryRole);
 }
 
 export async function findAccessibleSandbox(
@@ -64,13 +129,20 @@ export async function findAccessibleSandbox(
   access: SandboxAccessContext,
   options: SandboxLookupOptions = {},
 ): Promise<SandboxRecord | null> {
+  const ctx: UserTeamContext = {
+    userId: access.userId,
+    isPlatformAdmin: access.isPlatformAdmin,
+    allAccountIds: access.allAccountIds,
+    managerAccountIds: access.managerAccountIds,
+    ownerAccountIds: access.ownerAccountIds,
+  };
+  const where = buildExtraFilters(ctx, db, options);
   const [sandbox] = await db
     .select()
     .from(sandboxes)
-    .where(buildSandboxWhere(access, options))
+    .where(where ?? undefined as any)
     .orderBy(desc(sandboxes.createdAt))
     .limit(1);
-
   return sandbox ?? null;
 }
 
@@ -79,21 +151,39 @@ export async function listAccessibleSandboxes(
   access: SandboxAccessContext,
   options: SandboxLookupOptions = {},
 ): Promise<SandboxRecord[]> {
+  const ctx: UserTeamContext = {
+    userId: access.userId,
+    isPlatformAdmin: access.isPlatformAdmin,
+    allAccountIds: access.allAccountIds,
+    managerAccountIds: access.managerAccountIds,
+    ownerAccountIds: access.ownerAccountIds,
+  };
+  const where = buildExtraFilters(ctx, db, options);
   return db
     .select()
     .from(sandboxes)
-    .where(buildSandboxWhere(access, options))
+    .where(where ?? undefined as any)
     .orderBy(desc(sandboxes.createdAt));
 }
 
 export async function findAccessibleSandboxForUser(options: SandboxLookupForUserOptions) {
-  const access = await resolveSandboxAccessContext(options.userId, options.resolveAccountId);
+  const access = await resolveSandboxAccessContext(
+    options.userId,
+    options.resolveAccountId,
+    options.db,
+  );
   const sandbox = await findAccessibleSandbox(options.db, access, options);
   return { access, sandbox };
 }
 
 export async function listAccessibleSandboxesForUser(options: SandboxLookupForUserOptions) {
-  const access = await resolveSandboxAccessContext(options.userId, options.resolveAccountId);
+  const access = await resolveSandboxAccessContext(
+    options.userId,
+    options.resolveAccountId,
+    options.db,
+  );
   const sandboxesList = await listAccessibleSandboxes(options.db, access, options);
   return { access, sandboxes: sandboxesList };
 }
+
+export { getAccountRole };

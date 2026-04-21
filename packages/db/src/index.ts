@@ -20,6 +20,8 @@ export {
   accountMembersRelations,
   // Kortix tables
   sandboxes,
+  sandboxMembers,
+  sandboxInvites,
   deployments,
   kortixApiKeys,
   integrationCredentials,
@@ -30,6 +32,8 @@ export {
   integrationStatusEnum,
   // Relations
   sandboxesRelations,
+  sandboxMembersRelations,
+  sandboxInvitesRelations,
   deploymentsRelations,
   kortixApiKeysRelations,
   integrationsRelations,

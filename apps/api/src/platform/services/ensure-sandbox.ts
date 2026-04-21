@@ -17,6 +17,7 @@ import {
   retrySandboxProvisionCreate,
   SANDBOX_INIT_MAX_ATTEMPTS,
 } from './sandbox-init-state';
+import { registerCreator as ensureSandboxCreatorMember } from '../../teams';
 
 export interface EnsureSandboxResult {
   row: typeof sandboxes.$inferSelect;
@@ -60,7 +61,7 @@ export async function ensureSandbox(opts: {
   await checkProviderCredits(providerName, accountId, opts.isIncluded);
 
   if (config.isPoolEnabled()) {
-    const claimed = await tryClaimFromPool(accountId, opts);
+    const claimed = await tryClaimFromPool(accountId, userId, opts);
     if (claimed) return claimed;
   }
 
@@ -125,6 +126,7 @@ async function checkProviderCredits(providerName: ProviderName, accountId: strin
 
 async function tryClaimFromPool(
   accountId: string,
+  userId: string,
   opts: { serverType?: string; location?: string; isIncluded?: boolean },
 ): Promise<EnsureSandboxResult | null> {
   let claimed: Awaited<ReturnType<typeof pool.grab>> = null;
@@ -154,6 +156,8 @@ async function tryClaimFromPool(
       title: 'Sandbox Token',
       type: 'sandbox',
     });
+
+    await ensureSandboxCreatorMember(db, row.sandboxId, userId);
 
     await db
       .update(sandboxes)
@@ -193,7 +197,7 @@ export async function createSandbox(opts: {
   console.log(`[createSandbox] poolEnabled=${poolEnabled}, provider=${providerName}`);
 
   if (poolEnabled) {
-    const claimed = await tryClaimFromPool(opts.accountId, opts);
+    const claimed = await tryClaimFromPool(opts.accountId, opts.userId, opts);
     console.log(`[createSandbox] pool grab result: ${claimed ? 'CLAIMED' : 'null'}`);
     if (claimed) return claimed;
   }
@@ -210,6 +214,7 @@ async function provisionNewSandbox(
   const provider = getProvider(providerName);
 
   const sandbox = await insertProvisioningRow(accountId, providerName, opts.isIncluded);
+  await ensureSandboxCreatorMember(db, sandbox.sandboxId, userId);
   const sandboxKey = await createSandboxApiKey(sandbox.sandboxId, accountId);
 
   const createOpts = {

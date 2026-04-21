@@ -132,6 +132,48 @@ export const sandboxes = kortixSchema.table(
   ],
 );
 
+export const sandboxMembers = kortixSchema.table(
+  'sandbox_members',
+  {
+    sandboxId: uuid('sandbox_id')
+      .notNull()
+      .references(() => sandboxes.sandboxId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    addedBy: uuid('added_by'),
+    addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_sandbox_members_unique').on(table.sandboxId, table.userId),
+    index('idx_sandbox_members_user').on(table.userId),
+    index('idx_sandbox_members_sandbox').on(table.sandboxId),
+  ],
+);
+
+// Pending invites for users who haven't signed up yet. Claimed and converted
+// to sandboxMembers + accountMembers rows on first login of the invitee.
+export const sandboxInvites = kortixSchema.table(
+  'sandbox_invites',
+  {
+    inviteId: uuid('invite_id').defaultRandom().primaryKey(),
+    sandboxId: uuid('sandbox_id')
+      .notNull()
+      .references(() => sandboxes.sandboxId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    email: varchar('email', { length: 255 }).notNull(),
+    invitedBy: uuid('invited_by'),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true })
+      .default(sql`now() + interval '14 days'`)
+      .notNull(),
+  },
+  (table) => [
+    index('idx_sandbox_invites_email').on(table.email),
+    index('idx_sandbox_invites_sandbox').on(table.sandboxId),
+    index('idx_sandbox_invites_expires_at').on(table.expiresAt),
+  ],
+);
+
 // ─── Pool Resources ─────────────────────────────────────────────────────────
 
 export const poolResources = kortixSchema.table(
@@ -421,6 +463,21 @@ export const sandboxesRelations = relations(sandboxes, ({ one, many }) => ({
   deployments: many(deployments),
   apiKeys: many(kortixApiKeys),
   sandboxIntegrationLinks: many(sandboxIntegrations),
+  members: many(sandboxMembers),
+}));
+
+export const sandboxMembersRelations = relations(sandboxMembers, ({ one }) => ({
+  sandbox: one(sandboxes, {
+    fields: [sandboxMembers.sandboxId],
+    references: [sandboxes.sandboxId],
+  }),
+}));
+
+export const sandboxInvitesRelations = relations(sandboxInvites, ({ one }) => ({
+  sandbox: one(sandboxes, {
+    fields: [sandboxInvites.sandboxId],
+    references: [sandboxes.sandboxId],
+  }),
 }));
 
 export const deploymentsRelations = relations(deployments, ({ one }) => ({

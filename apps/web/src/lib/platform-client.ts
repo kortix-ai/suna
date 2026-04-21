@@ -105,6 +105,8 @@ export interface SandboxInfo {
   auto_update?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  /** True when the current viewer is the account owner (or a platform admin) — gates rename/manage UI. */
+  can_manage?: boolean;
 }
 
 function normalizeSandboxId(value: unknown): string | undefined {
@@ -431,6 +433,184 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
     };
   } catch {
     return null;
+  }
+}
+
+export async function renameSandbox(sandboxId: string, name: string): Promise<SandboxInfo> {
+  const result = await platformFetch<SandboxInfo>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to rename sandbox');
+  }
+  return result.data;
+}
+
+// ─── Sandbox members (team access) ───────────────────────────────────────────
+
+export type SandboxMemberRole = 'owner' | 'admin' | 'member';
+
+export interface SandboxMember {
+  user_id: string;
+  email: string | null;
+  role: SandboxMemberRole | null;
+  added_by: string | null;
+  added_at: string;
+}
+
+export interface SandboxPendingInvite {
+  invite_id: string;
+  email: string;
+  invited_by: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface SandboxMembersResponse {
+  sandbox_id: string;
+  can_manage: boolean;
+  viewer_user_id: string;
+  members: SandboxMember[];
+  pending_invites: SandboxPendingInvite[];
+}
+
+export interface AddSandboxMemberResult {
+  status: 'added' | 'invited';
+  user_id?: string;
+  email?: string;
+}
+
+export async function listSandboxMembers(sandboxId: string): Promise<SandboxMembersResponse> {
+  const result = await platformFetch<SandboxMembersResponse>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members`,
+    { method: 'GET' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to list members');
+  }
+  return result.data;
+}
+
+export async function addSandboxMember(
+  sandboxId: string,
+  email: string,
+): Promise<AddSandboxMemberResult> {
+  const result = await platformFetch<AddSandboxMemberResult>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to add member');
+  }
+  return result.data;
+}
+
+export async function removeSandboxMember(sandboxId: string, userId: string): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to remove member');
+  }
+}
+
+export async function updateSandboxMemberRole(
+  sandboxId: string,
+  userId: string,
+  role: SandboxMemberRole,
+): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to change role');
+  }
+}
+
+export async function revokeSandboxInvite(sandboxId: string, inviteId: string): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/invites/${encodeURIComponent(inviteId)}`,
+    { method: 'DELETE' },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to revoke invite');
+  }
+}
+
+// ─── Invite accept/decline ───────────────────────────────────────────────────
+
+// Visible form — viewer is the intended recipient, so all details are returned.
+export interface InviteDetailsVisible {
+  invite_id: string;
+  sandbox_id: string;
+  sandbox_name: string | null;
+  email: string;
+  inviter_email: string | null;
+  created_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+  email_matches_caller: true;
+  expired: boolean;
+}
+
+// Redacted form — viewer is signed in as someone else. We never leak which
+// account or address an invite belongs to if the viewer isn't the recipient.
+export interface InviteDetailsRedacted {
+  invite_id: string;
+  sandbox_id: null;
+  sandbox_name: null;
+  email: null;
+  inviter_email: null;
+  created_at: null;
+  expires_at: null;
+  accepted_at: string | null;
+  email_matches_caller: false;
+  expired: boolean;
+}
+
+export type InviteDetails = InviteDetailsVisible | InviteDetailsRedacted;
+
+export async function getInvite(inviteId: string): Promise<InviteDetails> {
+  const result = await platformFetch<InviteDetails>(
+    `/platform/invites/${encodeURIComponent(inviteId)}`,
+    { method: 'GET' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Invite not found');
+  }
+  return result.data;
+}
+
+export async function acceptInvite(inviteId: string): Promise<{ status: string; sandbox_id: string }> {
+  const result = await platformFetch<{ status: string; sandbox_id: string }>(
+    `/platform/invites/${encodeURIComponent(inviteId)}/accept`,
+    { method: 'POST' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to accept invite');
+  }
+  return result.data;
+}
+
+export async function declineInvite(inviteId: string): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/invites/${encodeURIComponent(inviteId)}/decline`,
+    { method: 'POST' },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to decline invite');
   }
 }
 
