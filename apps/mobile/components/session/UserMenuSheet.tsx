@@ -7,6 +7,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useInstanceProgress } from '@/stores/instance-progress';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
+import { SandboxConfigHealthBanner } from './SandboxConfigHealthBanner';
 import {
   ArrowDownToLine,
   Check,
@@ -175,6 +176,12 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               <Text className="font-roobert text-[14px] text-muted-foreground">Manage instances</Text>
             </View>
           </Pressable>
+        </View>
+
+        {/* OpenCode config health — sits above the update banner.
+            Renders nothing when /config/status is valid. */}
+        <View className="mt-2">
+          <SandboxConfigHealthBanner />
         </View>
 
         {/* Update — available / in progress / complete / error */}
