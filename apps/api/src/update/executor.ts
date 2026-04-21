@@ -24,6 +24,48 @@ import {
   verifyContainer,
 } from './steps';
 
+async function verifyRuntimeVersion(
+  endpoint: { url: string; headers: Record<string, string> },
+  targetVersion: string,
+  targetImage: string,
+): Promise<{ runtimeVersion: string; opencodeStorageBase: string | null; persistentMode: boolean }> {
+  let lastVersion = 'unknown';
+  let lastError = 'sandbox unreachable';
+  let lastStorageBase: string | null = null;
+  let lastPersistentMode = false;
+
+  for (let i = 0; i < 12; i++) {
+    try {
+      const res = await fetch(`${endpoint.url}/kortix/update/version`, {
+        headers: endpoint.headers,
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (res.ok) {
+        const body = await res.json() as {
+          version?: string | null;
+          opencodeStorageBase?: string | null;
+          persistentMode?: boolean;
+        };
+        lastVersion = body.version?.replace(/^v/, '').trim() || 'unknown';
+        lastStorageBase = body.opencodeStorageBase ?? null;
+        lastPersistentMode = body.persistentMode === true;
+        if (lastVersion === targetVersion.replace(/^v/, '').trim() && lastPersistentMode && lastStorageBase === '/persistent/opencode') {
+          return { runtimeVersion: lastVersion, opencodeStorageBase: lastStorageBase, persistentMode: true };
+        }
+        lastError = `reported runtime version ${lastVersion}, storage ${lastStorageBase ?? 'unknown'}, persistent=${lastPersistentMode}`;
+      } else {
+        lastError = `HTTP ${res.status}`;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+
+  throw new Error(`Runtime verification failed after update. Expected v${targetVersion}, image ${targetImage}, storage /persistent/opencode; got version=${lastVersion}, storage=${lastStorageBase ?? 'unknown'}, persistent=${lastPersistentMode} (${lastError})`);
+}
+
 function imageForVersion(version: string): string {
   const current = config.SANDBOX_IMAGE;
   const colonIdx = current.lastIndexOf(':');
@@ -213,11 +255,26 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
     }
 
     // ── Verify ──
-    await setPhase(sandboxId, 'verifying', 80, 'Verifying new container...');
+    await setPhase(sandboxId, 'verifying', 80, 'Verifying new container...', {
+      diagnostics: {
+        stage: 'verify_container',
+        expectedImage: targetImage,
+        expectedVersion: targetVersion,
+      },
+    });
     const verifyResult = await verifyContainer(endpoint, targetImage, updatedConfig.name);
     if (!verifyResult.success) {
       throw new Error(`Container failed to start with ${targetImage}. ${verifyResult.stderr}`);
     }
+
+    await setPhase(sandboxId, 'verifying', 90, 'Verifying sandbox runtime version...', {
+      diagnostics: {
+        stage: 'verify_runtime',
+        expectedImage: targetImage,
+        expectedVersion: targetVersion,
+      },
+    });
+    const runtimeCheck = await verifyRuntimeVersion(endpoint, targetVersion, targetImage);
 
     // ── Persist config only after verified ──
     await writeContainerConfig(endpoint, updatedConfig);
@@ -236,6 +293,13 @@ export async function executeUpdate(sandboxId: string, targetVersion: string): P
     // ── Complete ──
     await setPhase(sandboxId, 'complete', 100, `Updated to v${targetVersion}`, {
       currentVersion: targetVersion,
+      diagnostics: {
+        stage: 'update_complete',
+        expectedImage: targetImage,
+        runtimeVersion: runtimeCheck.runtimeVersion,
+        opencodeStorageBase: runtimeCheck.opencodeStorageBase,
+        persistentMode: runtimeCheck.persistentMode,
+      },
     });
 
     console.log(`[UPDATE] Sandbox ${sandboxId} updated to ${targetImage} (pull: ${pullElapsed}s)`);

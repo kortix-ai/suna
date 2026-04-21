@@ -9,12 +9,17 @@ const TERMINAL_PHASES = new Set<UpdatePhase>(['idle', 'complete', 'failed']);
 const SELF_UPDATE_RECOVERY_PHASES = new Set<UpdatePhase>(['restarting', 'verifying']);
 
 const UPDATE_PHASE_TIMEOUT_MS: Record<Exclude<UpdatePhase, 'idle' | 'complete' | 'failed'>, number> = {
+  preflight: 5 * 60_000,
   pulling: 30 * 60_000,
   patching: 10 * 60_000,
   backing_up: 30 * 60_000,
   stopping: 3 * 60_000,
+  removing: 3 * 60_000,
+  recreating: 5 * 60_000,
   restarting: 3 * 60_000,
   verifying: 3 * 60_000,
+  starting: 3 * 60_000,
+  health_check: 5 * 60_000,
 };
 
 export function coerceStaleUpdateStatus(status: UpdateStatus, now = Date.now()): UpdateStatus {

@@ -31,11 +31,11 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type Channel = 'stable' | 'dev';
+export type VersionChannel = 'stable' | 'dev';
 
 interface VersionEntry {
   version: string;
-  channel: Channel;
+  channel: VersionChannel;
   date: string;
   title: string;
   body?: string;
@@ -43,9 +43,9 @@ interface VersionEntry {
   current: boolean;
 }
 
-interface LatestVersionResult {
+export interface LatestVersionResult {
   version: string;
-  channel: Channel;
+  channel: VersionChannel;
   date?: string;
   title?: string;
   sha?: string;
@@ -93,7 +93,7 @@ function getRunningVersion(): string {
   return process.env.SANDBOX_VERSION || config.SANDBOX_VERSION_OVERRIDE || 'unknown';
 }
 
-function getRunningChannel(): Channel {
+function getRunningChannel(): VersionChannel {
   const version = getRunningVersion();
   return version.startsWith('dev-') ? 'dev' : 'stable';
 }
@@ -264,7 +264,7 @@ versionRouter.get('/', async (c) => {
  * Query: ?channel=stable (default) | dev
  */
 versionRouter.get('/latest', async (c) => {
-  const channel = (c.req.query('channel') || 'stable') as Channel;
+  const channel = (c.req.query('channel') || 'stable') as VersionChannel;
 
   if (channel === 'dev') {
     const latest = await getLatestDev();
@@ -351,3 +351,24 @@ versionRouter.get('/changelog', async (c) => {
 });
 
 export { versionRouter };
+export function detectVersionChannel(version: string | null | undefined): VersionChannel {
+  return version?.startsWith('dev-') ? 'dev' : 'stable';
+}
+
+export function hasNewerSandboxVersion(current: string, latest: string, channel: VersionChannel): boolean {
+  if (channel === 'dev') return current !== latest;
+  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number);
+  const c = parse(current);
+  const l = parse(latest);
+  for (let i = 0; i < Math.max(c.length, l.length); i++) {
+    const cv = c[i] ?? 0;
+    const lv = l[i] ?? 0;
+    if (lv > cv) return true;
+    if (lv < cv) return false;
+  }
+  return false;
+}
+
+export async function getLatestVersionForChannel(channel: VersionChannel): Promise<LatestVersionResult> {
+  return channel === 'dev' ? getLatestDev() : getLatestStable();
+}

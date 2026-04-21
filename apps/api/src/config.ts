@@ -183,6 +183,9 @@ const envSchema = z.object({
   // ── Version / GitHub (optional) ───────────────────────────────────────────
   SANDBOX_VERSION:             optStr,  // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN:                optStr,  // optional: authenticated GitHub API calls for changelog
+  SANDBOX_AUTO_UPDATE_ENABLED: optBoolTrue,
+  SANDBOX_AUTO_UPDATE_INTERVAL_MS: optInt(10 * 60_000),
+  SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: optInt(6 * 60 * 60_000),
 
   // ── Mailtrap (optional — provisioning email notifications) ────────────────
   MAILTRAP_API_TOKEN:          optStr,
@@ -515,6 +518,9 @@ export const config = {
   /** Dev override: force a specific sandbox version via env var. */
   SANDBOX_VERSION_OVERRIDE: env.SANDBOX_VERSION,
   GITHUB_TOKEN: env.GITHUB_TOKEN,
+  SANDBOX_AUTO_UPDATE_ENABLED: env.SANDBOX_AUTO_UPDATE_ENABLED,
+  SANDBOX_AUTO_UPDATE_INTERVAL_MS: env.SANDBOX_AUTO_UPDATE_INTERVAL_MS,
+  SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: env.SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS,
 
   // ─── Mailtrap (Email Notifications) ────────────────────────────────────────
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,

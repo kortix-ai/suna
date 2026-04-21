@@ -8,6 +8,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,6 +52,8 @@ def inspect_state(root: Path) -> dict:
         "ok": False,
         "sessions": 0,
         "messages": 0,
+        "latest_session_update": 0,
+        "db_size": db_path.stat().st_size if db_path.exists() else 0,
         "error": None,
     }
     if not db_path.exists():
@@ -69,8 +72,16 @@ def inspect_state(root: Path) -> dict:
             except sqlite3.DatabaseError:
                 return 0
 
+        def latest_session_update() -> int:
+            try:
+                row = cur.execute("SELECT MAX(time_updated) FROM session").fetchone()
+                return int(row[0] if row and row[0] is not None else 0)
+            except sqlite3.DatabaseError:
+                return 0
+
         info["sessions"] = count("session")
         info["messages"] = count("message")
+        info["latest_session_update"] = latest_session_update()
         info["ok"] = True
     except Exception as exc:  # noqa: BLE001
         info["error"] = str(exc)
@@ -80,6 +91,18 @@ def inspect_state(root: Path) -> dict:
 
     info["score"] = info["messages"] if info["messages"] > 0 else info["sessions"]
     return info
+
+
+def is_richer(candidate: dict, current: dict) -> bool:
+    if candidate["score"] != current["score"]:
+        return candidate["score"] > current["score"]
+    if candidate["messages"] != current["messages"]:
+        return candidate["messages"] > current["messages"]
+    if candidate["sessions"] != current["sessions"]:
+        return candidate["sessions"] > current["sessions"]
+    if candidate["latest_session_update"] != current["latest_session_update"]:
+        return candidate["latest_session_update"] > current["latest_session_update"]
+    return candidate["db_size"] > current["db_size"]
 
 
 def stage_copy(src: Path, dst: Path) -> None:
@@ -95,6 +118,7 @@ def stage_copy(src: Path, dst: Path) -> None:
         finally:
             target.close()
             source.close()
+        sync_ownership(src_db, dst_db)
 
     for item in src.iterdir() if src.exists() else []:
         if item.name in IGNORE_NAMES:
@@ -109,6 +133,24 @@ def stage_copy(src: Path, dst: Path) -> None:
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(item, target)
+        sync_ownership(item, target)
+
+    sync_ownership(src, dst)
+
+
+def sync_ownership(src: Path, dst: Path) -> None:
+    try:
+        stat = os.lstat(src)
+    except FileNotFoundError:
+        return
+
+    try:
+        if dst.is_symlink() and hasattr(os, "lchown"):
+            os.lchown(dst, stat.st_uid, stat.st_gid)
+        else:
+            os.chown(dst, stat.st_uid, stat.st_gid)
+    except (PermissionError, FileNotFoundError):
+        pass
 
 
 def trim_archives() -> None:
@@ -124,6 +166,10 @@ def archive_snapshot(source: Path, label: str | None) -> Path:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     safe_label = "manual" if not label else "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in label)
     archive_dir = ARCHIVE_ROOT / f"{ts}-{safe_label}"
+    index = 1
+    while archive_dir.exists():
+        archive_dir = ARCHIVE_ROOT / f"{ts}-{safe_label}-{index}"
+        index += 1
     tmp_dir = Path(tempfile.mkdtemp(prefix=f".{archive_dir.name}.", dir=str(ARCHIVE_ROOT)))
     stage_copy(source, tmp_dir)
     tmp_dir.rename(archive_dir)
@@ -146,8 +192,8 @@ def sync_state(create_archive: bool, archive_label: str | None) -> dict:
     shadow = inspect_state(SHADOW_ROOT)
     if not live["db_exists"]:
         return {"action": "skip", "reason": "live-db-missing", "live": live, "shadow": shadow}
-    if shadow["score"] > 0 and live["score"] == 0:
-        return {"action": "skip", "reason": "live-state-empty-shadow-preserved", "live": live, "shadow": shadow}
+    if shadow["score"] > 0 and is_richer(shadow, live):
+        return {"action": "skip", "reason": "shadow-state-richer-than-live", "live": live, "shadow": shadow}
 
     staged = Path(tempfile.mkdtemp(prefix=f".{SHADOW_ROOT.name}.", dir=str(SHADOW_ROOT.parent)))
     stage_copy(LIVE_ROOT, staged)
@@ -173,12 +219,12 @@ def guard_state() -> dict:
     live = inspect_state(LIVE_ROOT)
     shadow = inspect_state(SHADOW_ROOT)
 
-    if shadow["score"] > 0 and live["score"] == 0:
+    if shadow["score"] > 0 and is_richer(shadow, live):
         restored = restore_state()
-        restored["reason"] = "live-empty-shadow-restored"
+        restored["reason"] = "live-state-older-than-shadow-restored"
         return restored
 
-    if live["score"] > 0 and shadow["score"] == 0:
+    if live["score"] > 0 and (shadow["score"] == 0 or is_richer(live, shadow)):
         return sync_state(create_archive=False, archive_label=None)
 
     return {"action": "noop", "live": live, "shadow": shadow}

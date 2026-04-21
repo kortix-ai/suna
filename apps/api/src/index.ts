@@ -10,7 +10,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { HTTPException } from 'hono/http-exception';
-import { config } from './config';
+import { config, SANDBOX_VERSION } from './config';
 import { BillingError } from './errors';
 
 // ─── Sub-Service Imports ──────────────────────────────────────────────────── 
@@ -41,6 +41,7 @@ import { initModelPricing, stopModelPricing } from './router/config/model-pricin
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { startSandboxHealthMonitor, stopSandboxHealthMonitor } from './platform/services/sandbox-health';
 import { startProvisionPoller, stopProvisionPoller } from './platform/services/sandbox-provision-poller';
+import { defaultSandboxAutoUpdatePolicy, startSandboxAutoUpdateLoop, stopSandboxAutoUpdateLoop } from './update/auto-update';
 import { startAutoReplenish, stopAutoReplenish } from './pool';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
@@ -926,7 +927,7 @@ async function ensureLocalSandboxRegistered() {
       externalId: CONTAINER_NAME,
       baseUrl,
       config: {},
-      metadata: {},
+      metadata: { autoUpdate: defaultSandboxAutoUpdatePolicy(SANDBOX_VERSION) },
     })
     .returning()
     .then(([r]) => r);
@@ -1031,6 +1032,7 @@ ensureSchema()
     if (config.isJustAVPSEnabled()) {
       startProvisionPoller();
     }
+    startSandboxAutoUpdateLoop();
   })
   .catch(async (err) => {
     console.error('[startup] ensureSchema failed, starting services anyway:', err);
@@ -1051,6 +1053,7 @@ ensureSchema()
     if (config.isJustAVPSEnabled()) {
       startProvisionPoller();
     }
+    startSandboxAutoUpdateLoop();
   });
 
 // Graceful shutdown
@@ -1061,6 +1064,7 @@ async function shutdown(signal: string) {
   stopTunnelService();
   stopSandboxHealthMonitor();
   stopProvisionPoller();
+  stopSandboxAutoUpdateLoop();
   stopAutoReplenish();
   stopAccessControlCache();
   // Flush observability data before exit
