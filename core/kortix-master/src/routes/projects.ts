@@ -87,7 +87,18 @@ projectsRouter.post('/', async (c) => {
   try {
     const db = getDb()
     const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string; structure_version?: number; user_handle?: string }>().catch(() => ({} as { id?: string; name?: string; path?: string; description?: string; structure_version?: number; user_handle?: string }))
-    const projectPath = body.path?.trim() || '/workspace'
+    const rawPath = body.path?.trim() || ''
+    // Refuse workspace-root paths. v2 seed writes PM agent files under
+    // <path>/.opencode/agent/ — if path is the workspace root, those files
+    // pollute the global agent picker (every session in /workspace tree
+    // would discover the PM as a global agent). Past incidents created a
+    // rogue /workspace/.opencode/agent/project-manager.md exactly this way.
+    if (!rawPath || rawPath === '/workspace' || rawPath === '/workspace/') {
+      return c.json({
+        error: `path is required and must be a subdirectory of /workspace, e.g. /workspace/${(body.name?.trim() || 'my-project').replace(/[^\w-]/g, '-').toLowerCase()}. Refusing to create a project at the workspace root.`,
+      }, 400)
+    }
+    const projectPath = rawPath
     const existing = db.prepare('SELECT * FROM projects WHERE path=$path').get({ $path: projectPath }) as ProjectRow | null
     if (existing) {
       if (body.user_handle && body.user_handle.trim() && !(existing as any).user_handle) {

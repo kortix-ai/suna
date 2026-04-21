@@ -69,12 +69,18 @@ import * as path from 'node:path'
 // still has its per-directory agent list cached, so dispatching to the new
 // slug silently no-ops and the agent never wakes. We have to invalidate via
 // POST /instance/dispose — but doing so while a session is generating kills
-// the turn (the PM is usually in one). Debounce: each call resets a 1.5s
-// timer; when the timer fires we assume the directory is quiet and dispose.
-// Good enough for the common pattern (several team_create_agent + tickets in
-// one PM turn — the PM's turn ends, then the timer fires just after).
+// the turn (the PM is usually in one). Debounce: each call resets the timer;
+// when it fires we assume the directory is quiet and dispose.
+//
+// 1.5s was too short — PM's multi-tool turns (team_create_agent → next tool)
+// have sub-second gaps. Timer fired during the next LLM step → MessageAborted.
+// 30s gives PM plenty of headroom to finish its onboarding sequence before
+// we flush. Cost: agent isn't dispatchable for ~30s after creation, fine for
+// the typical onboarding flow (PM creates everyone, then ends turn).
+// TODO: subscribe to opencode's session.idle bus event for per-directory
+//   coordination so we dispose the moment the session is actually idle.
 const pendingDisposes = new Map<string, ReturnType<typeof setTimeout>>()
-const DISPOSE_DEBOUNCE_MS = 1500
+const DISPOSE_DEBOUNCE_MS = 30000
 function scheduleAgentRefresh(directory: string) {
   const existing = pendingDisposes.get(directory)
   if (existing) clearTimeout(existing)

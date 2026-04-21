@@ -315,13 +315,17 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 						description: p.description,
 						user_handle: args.user_handle || null,
 					})
-					// Fire PM onboarding if we have a handle to address the human.
+					// Always spawn the PM onboarding session so the response can hand
+					// the user a clickable link. user_handle is optional — if missing,
+					// PM addresses the human generically ("hey").
 					let sessionLine = ""
-					if (args.user_handle) {
+					{
 						const pm = getAgentBySlug(db, p.id, DEFAULT_PM_SLUG)
 						if (pm) {
+							const handleStr = args.user_handle ? `@${args.user_handle}` : "the human"
+							const introAddressee = args.user_handle ? `@${args.user_handle}` : "them"
 							const prompt = [
-								`Fresh project "${p.name}". Human: @${args.user_handle}.`,
+								`Fresh project "${p.name}". Human: ${handleStr}.`,
 								p.description ? `User's description: ${p.description}` : null,
 								"",
 								"Run the onboarding interview from your persona. ONE short question at a time — no batching, no answering for the user. STOP after each turn and wait for their reply.",
@@ -332,7 +336,7 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 								"",
 								"Your messages follow the same rules as the team: short, decisive, no tables, no verdict banners.",
 								"",
-								`First message: brief intro + question #1, addressed to @${args.user_handle}. Then STOP.`,
+								`First message: brief intro + question #1, addressed to ${introAddressee}. Then STOP.`,
 							].filter(Boolean).join("\n")
 							const sid = await wakeAgentForProject({
 								db,
@@ -346,22 +350,19 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 								console.warn("[project_create] PM onboarding wake failed:", err)
 								return null
 							})
-							if (sid) sessionLine = `\n\nPM onboarding started → session \`${sid}\`.`
+							if (sid) sessionLine = `\n\n→ [Open PM onboarding chat](/sessions/${sid})`
 						}
 					}
-					const remainingAction = args.user_handle
-						? `Your ONLY remaining action: tell @${args.user_handle} to switch to the PM onboarding session above and continue there. ONE short sentence.`
-						: `Your ONLY remaining action: in ONE short sentence, tell the user the project is created and the PM is ready — they should open the project to chat with PM. (No user_handle was passed, so no onboarding session was auto-spawned.)`
 					const handoff = [
 						"",
 						"<system-reminder>",
-						"STOP. The project has been created and its PM team owns it from here.",
-						remainingAction,
+						"STOP. The project scaffold is created — PM agent, default columns, dashboard ticket are all in place.",
+						"Your ONLY remaining action: in ONE short sentence, tell the user the project is created and link the PM onboarding chat (use the markdown link above verbatim if a session was spawned, otherwise tell them to open the project from the sidebar to chat with PM).",
 						"DO NOT call any other tool. DO NOT load skills. DO NOT write/edit/scaffold files. DO NOT run bash. The PM and the team execute the project's work via tickets — that is not your role.",
 						"A project is its own workhouse. You are the router; the team is the workforce.",
 						"</system-reminder>",
 					].join("\n")
-					return `Project **${p.name}** at \`${p.path}\` (${p.id}) — v2 seeded (PM + default columns).${sessionLine}${handoff}`
+					return `Project **${p.name}** scaffolded at \`${p.path}\` (${p.id}) — PM agent + default columns + dashboard ticket ready.${sessionLine}${handoff}`
 				} catch (e) { return `Failed: ${e instanceof Error ? e.message : "unknown"}` }
 			},
 		}),

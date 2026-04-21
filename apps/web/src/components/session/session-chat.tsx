@@ -4085,22 +4085,30 @@ export function SessionChat({
     }
   }, [selectedProjectId, kortixProjects, selectedProject, setSelectedProjectId]);
 
-  // Sessions titled "PM · <project>" default the agent picker to the
-  // project's PM on first render. OpenCode now returns project-scoped
-  // agents via useOpenCodeAgents({ directory }), so `project-manager` is
-  // a real entry in `local.agent.list` — nothing else to wire.
-  const defaultedPmRef = useRef(false);
+  // Default the agent picker to whichever agent owns the latest assistant
+  // turn in this session. Catches PM onboarding sessions (first turn was PM),
+  // "Ask PM" sessions, team-agent ticket sessions, etc. — without relying on
+  // title patterns. Falls through if there's no assistant msg yet.
+  const defaultedAgentRef = useRef(false);
   useEffect(() => {
-    if (defaultedPmRef.current) return;
-    const title = session?.title || '';
-    if (!/^PM\s·/i.test(title)) return;
-    const pm = local.agent.list.find((a: any) => a?.name === 'project-manager');
-    if (!pm) return;
-    if (local.agent.current?.name !== 'project-manager') {
-      local.agent.set('project-manager');
+    if (defaultedAgentRef.current) return;
+    if (!messages || messages.length === 0) return;
+    let lastAgent: string | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const info = messages[i]?.info as any;
+      if (info?.role === 'assistant' && info?.agent) {
+        lastAgent = info.agent as string;
+        break;
+      }
     }
-    defaultedPmRef.current = true;
-  }, [session?.title, local.agent]);
+    if (!lastAgent) return;
+    const agentEntry = local.agent.list.find((a: any) => a?.name === lastAgent);
+    if (!agentEntry) return;
+    if (local.agent.current?.name !== lastAgent) {
+      local.agent.set(lastAgent);
+    }
+    defaultedAgentRef.current = true;
+  }, [messages, local.agent]);
 
   const pendingPromptHandled = useRef(false);
 
@@ -6060,8 +6068,24 @@ export function SessionChat({
           <KortixLoader size="small" />
         </div>
       ) : isNotFound ? (
-        <div className="flex-1 flex items-center justify-center min-h-0 text-sm text-muted-foreground">
-          Session not found
+        <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-3 text-center px-6">
+          <div className="text-sm text-muted-foreground">
+            This session no longer exists — it was deleted or never finished
+            saving.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                const sid = session?.id || sessionId;
+                if (sid) useTabStore.getState().closeTab?.(sid);
+              } catch {}
+              if (typeof window !== 'undefined') window.location.assign('/');
+            }}
+            className="text-sm text-primary hover:underline"
+          >
+            ← Go to home
+          </button>
         </div>
       ) : (
         <div ref={chatAreaRef} className="relative flex-1 min-h-0 z-10">

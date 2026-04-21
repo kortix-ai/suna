@@ -92,6 +92,11 @@ const PER_PROJECT_AGENT_PERMISSIONS: Record<string, 'allow' | 'deny'> = {
   project_get: 'allow',
   project_list: 'allow',
   project_select: 'allow',
+  // The 'question' tool puts the session in a structured-form-pending state —
+  // free-text replies don't satisfy it, lock breaks if user types instead of
+  // clicking, and the session permanently stalls. PM persona explicitly says
+  // "ONE short question at a time" in plain text, so deny the structured tool.
+  question: 'deny',
 }
 
 export function renderAgentFile(meta: AgentFileMeta, body: string): string {
