@@ -51,6 +51,8 @@ import { useThemeColors } from '@/lib/theme-colors';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import {
   useChannels,
   useUpdateChannel,
@@ -105,6 +107,8 @@ interface ChannelsTabPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 export function ChannelsTabPage({
@@ -112,6 +116,8 @@ export function ChannelsTabPage({
   onBack,
   onOpenDrawer,
   onOpenRightDrawer,
+  isDrawerOpen,
+  isRightDrawerOpen,
 }: ChannelsTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -120,33 +126,17 @@ export function ChannelsTabPage({
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity
-            onPress={onOpenDrawer}
-            style={{ marginRight: 12, padding: 4 }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="menu" size={24} color={fgColor} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <RNText style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>
-              {page.label}
-            </RNText>
-          </View>
-          <TouchableOpacity
-            onPress={onOpenRightDrawer}
-            style={{ marginLeft: 12, padding: 4 }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="apps-outline" size={20} color={fgColor} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
 
-      {/* Content */}
-      <ChannelsContent />
+      <PageContent>
+        <ChannelsContent />
+      </PageContent>
     </View>
   );
 }
@@ -259,22 +249,22 @@ function ChannelsContent() {
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: inputBg,
-            borderRadius: 12,
-            paddingHorizontal: 12,
-            height: 40,
+            borderRadius: 9999,
+            paddingHorizontal: 16,
+            height: 42,
           }}
         >
-          <Search size={16} color={muted} />
+          <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search channels..."
-            placeholderTextColor={muted}
-            style={{ flex: 1, marginLeft: 8, fontSize: 14, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
+            placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+            style={{ flex: 1, marginLeft: 8, fontSize: 15, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery('')} hitSlop={10}>
-              <X size={16} color={muted} />
+              <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
             </Pressable>
           )}
         </View>
@@ -282,7 +272,7 @@ function ChannelsContent() {
           onPress={handleOpenAdd}
           activeOpacity={0.8}
           style={{
-            width: 40, height: 40, borderRadius: 12,
+            width: 42, height: 42, borderRadius: 9999,
             backgroundColor: theme.primary,
             alignItems: 'center', justifyContent: 'center',
           }}

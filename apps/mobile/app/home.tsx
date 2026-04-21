@@ -189,13 +189,21 @@ function AnimatedChevron({ expanded, color, size = 16 }: { expanded: boolean; co
 // Ported from web's connecting-screen.tsx (commits 345b805, a13fd57).
 // Shows a restart button after 10s so users can recover a stuck sandbox.
 
-function ConnectingToWorkspace({ isDark }: { isDark: boolean }) {
-  const [showRestart, setShowRestart] = useState(false);
+function ConnectingToWorkspace({
+  isDark,
+  phase,
+}: {
+  isDark: boolean;
+  /** What we're actually waiting for — helps the user diagnose a stuck state. */
+  phase: 'awaiting-sandbox' | 'provisioning' | 'checking-env';
+}) {
+  const router = useRouter();
+  const [showEscape, setShowEscape] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
-  // Show restart button after 10 seconds of waiting
+  // Show recovery buttons after 10 seconds of waiting
   useEffect(() => {
-    const timer = setTimeout(() => setShowRestart(true), 10_000);
+    const timer = setTimeout(() => setShowEscape(true), 10_000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -214,6 +222,23 @@ function ConnectingToWorkspace({ isDark }: { isDark: boolean }) {
     }
   }, [restarting]);
 
+  const handleBackToInstances = useCallback(() => {
+    router.push('/(settings)/instances');
+  }, [router]);
+
+  // Diagnostic message — tells the user what we're actually waiting on so a
+  // stuck state is less confusing. `awaiting-sandbox` is the one that hangs
+  // silently with no polling activity; the others have logs ticking.
+  const phaseText =
+    phase === 'awaiting-sandbox'
+      ? 'Waiting for sandbox to be assigned.'
+      : phase === 'provisioning'
+      ? 'Sandbox is still provisioning.'
+      : 'Checking sandbox health and restoring your session.';
+
+  // Restart only makes sense if we actually have a sandbox to talk to.
+  const canRestart = phase === 'checking-env';
+
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#09090b' : '#FFFFFF', paddingHorizontal: 40 }}>
       <View style={{ flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 24 }}>
@@ -224,36 +249,61 @@ function ConnectingToWorkspace({ isDark }: { isDark: boolean }) {
       </View>
       <ActivityIndicator size="small" color={isDark ? '#ffffff' : '#000000'} />
       <Text style={{ marginTop: 24, fontSize: 14, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)', textAlign: 'center', lineHeight: 22, maxWidth: 300 }}>
-        Checking sandbox health and restoring your session.
+        {phaseText}
       </Text>
 
-      {/* Restart button — appears after 10s of waiting (matches web) */}
-      {showRestart && (
-        <TouchableOpacity
-          onPress={handleRestart}
-          disabled={restarting}
-          activeOpacity={0.7}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-            marginTop: 20,
-            paddingHorizontal: 16,
-            paddingVertical: 10,
-            borderRadius: 999,
-            backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-            opacity: restarting ? 0.5 : 1,
-          }}
-        >
-          <Ionicons
-            name="refresh-outline"
-            size={14}
-            color={isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)'}
-          />
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
-            {restarting ? 'Restarting…' : 'Restart'}
-          </Text>
-        </TouchableOpacity>
+      {/* Recovery row — appears after 10s of waiting */}
+      {showEscape && (
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {canRestart && (
+            <TouchableOpacity
+              onPress={handleRestart}
+              disabled={restarting}
+              activeOpacity={0.7}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderRadius: 999,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                opacity: restarting ? 0.5 : 1,
+              }}
+            >
+              <Ionicons
+                name="refresh-outline"
+                size={14}
+                color={isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)'}
+              />
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
+                {restarting ? 'Restarting…' : 'Restart'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={handleBackToInstances}
+            activeOpacity={0.7}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 999,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            }}
+          >
+            <Ionicons
+              name="arrow-back-outline"
+              size={14}
+              color={isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)'}
+            />
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
+              Back to Instances
+            </Text>
+          </TouchableOpacity>
+        </View>
       )}
     </View>
   );
@@ -1400,11 +1450,17 @@ export default function HomeScreen() {
   // "Connecting to Workspace" skeleton screen.
   // Includes a restart button that appears after a delay (ported from web 345b805 / a13fd57).
   if (setupState === 'checking') {
+    const phase: 'awaiting-sandbox' | 'provisioning' | 'checking-env' =
+      !sandboxUrl && isProvisioning
+        ? 'provisioning'
+        : !sandboxUrl
+        ? 'awaiting-sandbox'
+        : 'checking-env';
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-        <ConnectingToWorkspace isDark={isDark} />
+        <ConnectingToWorkspace isDark={isDark} phase={phase} />
       </>
     );
   }
@@ -1507,8 +1563,10 @@ export default function HomeScreen() {
               ref={filesPageRef}
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
               onFileSelectionChange={(file) => setFilesSelectedName(file?.name ?? null)}
               onRequestMenu={() => bottomBarRef.current?.presentMenu()}
             />
@@ -1518,8 +1576,10 @@ export default function HomeScreen() {
             <MemoryPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — LLM Providers */
@@ -1527,8 +1587,10 @@ export default function HomeScreen() {
             <LlmProvidersPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Secrets */
@@ -1536,8 +1598,10 @@ export default function HomeScreen() {
             <SecretsPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Terminal */
@@ -1545,8 +1609,10 @@ export default function HomeScreen() {
             <TerminalPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Marketplace */
@@ -1554,8 +1620,10 @@ export default function HomeScreen() {
             <MarketplacePage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Updates */
@@ -1563,8 +1631,10 @@ export default function HomeScreen() {
             <UpdatesPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — SSH */
@@ -1572,8 +1642,10 @@ export default function HomeScreen() {
             <SSHPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Running Services */
@@ -1581,8 +1653,10 @@ export default function HomeScreen() {
             <RunningServicesPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Browser */
@@ -1590,8 +1664,10 @@ export default function HomeScreen() {
             <BrowserPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Agent Browser */
@@ -1599,8 +1675,10 @@ export default function HomeScreen() {
             <AgentBrowserPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Integrations */
@@ -1608,8 +1686,10 @@ export default function HomeScreen() {
             <IntegrationsTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Triggers / Scheduled Tasks */
@@ -1617,8 +1697,10 @@ export default function HomeScreen() {
             <ScheduledTasksTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — API Keys */
@@ -1626,8 +1708,10 @@ export default function HomeScreen() {
             <ApiKeysTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Channels */
@@ -1635,8 +1719,10 @@ export default function HomeScreen() {
             <ChannelsTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Tunnel */
@@ -1644,8 +1730,10 @@ export default function HomeScreen() {
             <TunnelTabPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Workspace */
@@ -1654,8 +1742,10 @@ export default function HomeScreen() {
               ref={workspacePageRef}
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
               onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
             />
 
@@ -1664,8 +1754,10 @@ export default function HomeScreen() {
             <ProjectsPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — Single project detail (dynamic: page:project:{id}) */
@@ -1676,8 +1768,10 @@ export default function HomeScreen() {
                 // Go back to projects list
                 useTabStore.getState().navigateToPage('page:projects');
               }}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active page tab — other pages (placeholder) */
@@ -1685,8 +1779,10 @@ export default function HomeScreen() {
             <PlaceholderPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
-              onOpenDrawer={handleDrawerOpen}
-              onOpenRightDrawer={handleRightDrawerOpen}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
             />
 
           /* Active session */

@@ -66,58 +66,9 @@ import type { SandboxFile } from '@/api/types';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 
-/**
- * Cross-fades + rotates between an arbitrary icon and the close icon based on `open`.
- */
-function AnimatedToggleIcon({
-  open,
-  color,
-  icon,
-  size = 24,
-}: {
-  open: boolean;
-  color: string;
-  icon: keyof typeof Ionicons.glyphMap | 'menu-lucide';
-  size?: number;
-}) {
-  const progress = useSharedValue(open ? 1 : 0);
-
-  useEffect(() => {
-    progress.value = withTiming(open ? 1 : 0, { duration: 220 });
-  }, [open, progress]);
-
-  const baseStyle = useAnimatedStyle(() => ({
-    position: 'absolute',
-    opacity: interpolate(progress.value, [0, 1], [1, 0]),
-    transform: [{ rotate: `${interpolate(progress.value, [0, 1], [0, 90])}deg` }],
-  }));
-
-  const closeStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ rotate: `${interpolate(progress.value, [0, 1], [-90, 0])}deg` }],
-  }));
-
-  const renderBase = () => {
-    if (icon === 'menu-lucide') {
-      return <Icon as={MenuIcon} size={size} color={color} strokeWidth={2} />;
-    }
-    return <Ionicons name={icon} size={size} color={color} />;
-  };
-
-  const renderClose = () => {
-    if (icon === 'menu-lucide') {
-      return <Icon as={CloseIcon} size={size} color={color} strokeWidth={2} />;
-    }
-    return <Ionicons name="close" size={size} color={color} />;
-  };
-
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Reanimated.View style={baseStyle}>{renderBase()}</Reanimated.View>
-      <Reanimated.View style={closeStyle}>{renderClose()}</Reanimated.View>
-    </View>
-  );
-}
+// AnimatedToggleIcon was extracted to components/ui/animated-toggle-icon.tsx
+// so it can be shared with PageHeader and page-level headers across the app.
+import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
 
 interface SessionPageProps {
   sessionId: string;

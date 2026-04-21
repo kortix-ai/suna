@@ -31,6 +31,8 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -40,6 +42,8 @@ interface TerminalPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -363,7 +367,7 @@ function buildTerminalHtml(params: {
 
 // ─── TerminalPage ────────────────────────────────────────────────────────────
 
-export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: TerminalPageProps) {
+export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: TerminalPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -533,30 +537,13 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: 
 
   return (
     <View style={{ flex: 1, backgroundColor: terminalBg }}>
-      {/* Header */}
-      <View
-        style={{
-          paddingTop: insets.top + 8,
-          paddingBottom: 10,
-          paddingHorizontal: 16,
-          borderBottomWidth: 1,
-          borderBottomColor: borderColor,
-          backgroundColor: headerBg,
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-            {onOpenDrawer && (
-              <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12 }}>
-                <Ionicons name="menu-outline" size={22} color={fgColor} />
-              </TouchableOpacity>
-            )}
-            <Ionicons name="terminal-outline" size={18} color={fgColor} style={{ marginRight: 8 }} />
-            <Text style={{ fontSize: 17, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
-              Terminal
-            </Text>
-          </View>
-
+      <PageHeader
+        title="Terminal"
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+        rightActions={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             {/* Status indicator */}
             <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 4 }}>
@@ -573,32 +560,19 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: 
                 {statusLabel}
               </Text>
             </View>
-
             {/* Reconnect button */}
             <TouchableOpacity
               onPress={handleReconnect}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 8,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ padding: 6 }}
             >
-              <Ionicons name="refresh-outline" size={16} color={fgColor} />
+              <Ionicons name="refresh-outline" size={18} color={fgColor} />
             </TouchableOpacity>
-
-            {onOpenRightDrawer && (
-              <TouchableOpacity onPress={onOpenRightDrawer}>
-                <Ionicons name="apps-outline" size={22} color={fgColor} />
-              </TouchableOpacity>
-            )}
           </View>
-        </View>
-      </View>
+        }
+      />
 
+      <PageContent backgroundColor={terminalBg}>
       {/* Content */}
       {!sandboxUrl ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -683,6 +657,7 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: 
           )}
         </View>
       )}
+      </PageContent>
     </View>
   );
 }
