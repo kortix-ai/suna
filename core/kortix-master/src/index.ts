@@ -1,5 +1,6 @@
 import { timingSafeEqual, createHash } from 'crypto'
-import { existsSync, mkdirSync, readFileSync } from 'fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync } from 'fs'
+import { Database } from 'bun:sqlite'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -229,6 +230,56 @@ let openCodeReady = false
 let openCodeLastCheck = 0
 const OPENCODE_CHECK_INTERVAL = 5_000 // recheck every 5s when not ready
 
+function inspectOpencodeDb(path: string | null) {
+  if (!path || !existsSync(path)) return { sessionCount: null, latestSessionUpdate: null }
+  let db: Database | null = null
+  try {
+    db = new Database(path, { readonly: true })
+    const row = db.query('SELECT COUNT(*) as count, MAX(time_updated) as latest FROM session').get() as { count?: number; latest?: number | null } | null
+    return {
+      sessionCount: typeof row?.count === 'number' ? row.count : 0,
+      latestSessionUpdate: typeof row?.latest === 'number' ? row.latest : 0,
+    }
+  } catch {
+    return { sessionCount: null, latestSessionUpdate: null }
+  } finally {
+    if (db) db.close()
+  }
+}
+
+function inspectOpencodeState() {
+  const storageBase = process.env.OPENCODE_STORAGE_BASE || null
+  const shadowBase = process.env.OPENCODE_SHADOW_STORAGE_BASE || null
+  const persistentRoot = process.env.KORTIX_PERSISTENT_ROOT || null
+  const live = inspectOpencodeDb(storageBase ? `${storageBase}/opencode.db` : null)
+  const shadow = inspectOpencodeDb(shadowBase ? `${shadowBase}/opencode.db` : null)
+  const persistentMode = storageBase === '/persistent/opencode' && persistentRoot === '/persistent'
+  const opencodeLegacyLinked = (() => {
+    try {
+      return lstatSync('/workspace/.local/share/opencode').isSymbolicLink()
+        && readlinkSync('/workspace/.local/share/opencode') === '/persistent/opencode'
+    } catch {
+      return false
+    }
+  })()
+  const opencodeStateMismatch = typeof shadow.sessionCount === 'number'
+    && typeof live.sessionCount === 'number'
+    && (shadow.sessionCount > live.sessionCount
+      || (shadow.sessionCount === live.sessionCount
+        && (shadow.latestSessionUpdate ?? 0) > (live.latestSessionUpdate ?? 0)))
+
+  return {
+    opencodeStorageBase: storageBase,
+    persistentRoot,
+    persistentMode,
+    opencodeLegacyLinked,
+    opencodeStateGuardAvailable: existsSync('/usr/local/bin/kortix-opencode-state'),
+    opencodeSessionCount: live.sessionCount,
+    opencodeShadowSessionCount: shadow.sessionCount,
+    opencodeStateMismatch,
+  }
+}
+
 async function checkOpenCodeReady(): Promise<boolean> {
   const now = Date.now()
   if (now - openCodeLastCheck < OPENCODE_CHECK_INTERVAL) return openCodeReady
@@ -326,7 +377,7 @@ app.get('/kortix/health',
     await checkOpenCodeReady()
     const status = openCodeReady ? 'ok' : 'starting'
     const httpStatus = openCodeReady ? 200 : 503
-    return c.json({ status, version, imageVersion: version, activeWs: activeConnections, runtimeReady: openCodeReady }, httpStatus)
+    return c.json({ status, version, imageVersion: version, activeWs: activeConnections, runtimeReady: openCodeReady, ...inspectOpencodeState() }, httpStatus)
   },
 )
 

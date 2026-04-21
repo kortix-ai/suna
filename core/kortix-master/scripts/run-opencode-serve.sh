@@ -12,6 +12,7 @@ export XDG_DATA_HOME="${XDG_DATA_HOME:-${KORTIX_PERSISTENT_ROOT}}"
 export OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 export OPENCODE_FILE_ROOT=/
 export PATH="/opt/bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+CANONICAL_OPENCODE_STORAGE_BASE="/persistent/opencode"
 if [ -x "/usr/local/bin/opencode-kortix" ]; then
   export OPENCODE_BIN_PATH="/usr/local/bin/opencode-kortix"
 fi
@@ -19,6 +20,26 @@ OPENCODE_BIN="$(command -v opencode || true)"
 
 if [ -z "$OPENCODE_BIN" ]; then
   echo "[opencode-serve] ERROR: opencode binary not found on PATH"
+  exit 1
+fi
+
+if [ "$OPENCODE_STORAGE_BASE" != "$CANONICAL_OPENCODE_STORAGE_BASE" ]; then
+  echo "[opencode-serve] ERROR: OPENCODE_STORAGE_BASE must be $CANONICAL_OPENCODE_STORAGE_BASE, got $OPENCODE_STORAGE_BASE"
+  exit 1
+fi
+
+if [ "$XDG_DATA_HOME" != "$KORTIX_PERSISTENT_ROOT" ]; then
+  echo "[opencode-serve] ERROR: XDG_DATA_HOME must equal KORTIX_PERSISTENT_ROOT ($KORTIX_PERSISTENT_ROOT), got $XDG_DATA_HOME"
+  exit 1
+fi
+
+if [ ! -L "/workspace/.local/share/opencode" ] || [ "$(readlink /workspace/.local/share/opencode 2>/dev/null || true)" != "$CANONICAL_OPENCODE_STORAGE_BASE" ]; then
+  echo "[opencode-serve] ERROR: /workspace/.local/share/opencode must symlink to $CANONICAL_OPENCODE_STORAGE_BASE"
+  exit 1
+fi
+
+if ! command -v kortix-opencode-state >/dev/null 2>&1; then
+  echo "[opencode-serve] ERROR: kortix-opencode-state is required but missing"
   exit 1
 fi
 

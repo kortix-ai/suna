@@ -249,6 +249,14 @@ export const HealthResponse = z.object({
   imageVersion: z.string().describe('Version baked into the Docker image'),
   activeWs: z.number().int().describe('Active WebSocket connections'),
   runtimeReady: z.boolean().describe('Whether the agent runtime is ready'),
+  opencodeStorageBase: z.string().nullable().describe('Configured OpenCode storage base path'),
+  persistentRoot: z.string().nullable().describe('Configured persistent root path'),
+  persistentMode: z.boolean().describe('True when OpenCode is using the canonical /persistent storage path'),
+  opencodeLegacyLinked: z.boolean().describe('True when /workspace/.local/share/opencode is linked to the canonical persistent path'),
+  opencodeStateGuardAvailable: z.boolean().describe('True when kortix-opencode-state is installed in the runtime'),
+  opencodeSessionCount: z.number().int().nullable().describe('Live OpenCode session count from the active DB'),
+  opencodeShadowSessionCount: z.number().int().nullable().describe('Shadow OpenCode session count from preserved state'),
+  opencodeStateMismatch: z.boolean().describe('True when preserved shadow state is richer than the active live DB'),
 })
 
 export const PortsResponse = z.object({
