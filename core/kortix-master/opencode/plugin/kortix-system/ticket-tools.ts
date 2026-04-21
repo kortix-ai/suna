@@ -62,35 +62,17 @@ import {
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Agent cache refresh — debounced per-directory
-// ─────────────────────────────────────────────────────────────────────────────
-// After writing an agent file (team_create_agent / team_update_agent) opencode
-// still has its per-directory agent list cached, so dispatching to the new
-// slug silently no-ops and the agent never wakes. We have to invalidate via
-// POST /instance/dispose — but doing so while a session is generating kills
-// the turn (the PM is usually in one). Debounce: each call resets the timer;
-// when it fires we assume the directory is quiet and dispose.
-//
-// 1.5s was too short — PM's multi-tool turns (team_create_agent → next tool)
-// have sub-second gaps. Timer fired during the next LLM step → MessageAborted.
-// 30s gives PM plenty of headroom to finish its onboarding sequence before
-// we flush. Cost: agent isn't dispatchable for ~30s after creation, fine for
-// the typical onboarding flow (PM creates everyone, then ends turn).
-// TODO: subscribe to opencode's session.idle bus event for per-directory
-//   coordination so we dispose the moment the session is actually idle.
-const pendingDisposes = new Map<string, ReturnType<typeof setTimeout>>()
-const DISPOSE_DEBOUNCE_MS = 30000
-function scheduleAgentRefresh(directory: string) {
-  const existing = pendingDisposes.get(directory)
-  if (existing) clearTimeout(existing)
-  const handle = setTimeout(() => {
-    pendingDisposes.delete(directory)
-    fireOpencodeDispose(directory).catch((err) => {
-      console.warn('[ticket-tools] scheduled dispose failed for', directory, err)
-    })
-  }, DISPOSE_DEBOUNCE_MS)
-  pendingDisposes.set(directory, handle)
+// Agent-cache refresh coordination moved to fireAgentTrigger in
+// ticket-triggers.ts, which polls /agent and issues a targeted dispose
+// RIGHT BEFORE dispatching to a newly-created agent. The previous approach
+// (scheduleAgentRefresh with a 30s debounce) was racing PM's own turn AND
+// later agents' work — either the timer fired mid-PM-turn and aborted PM,
+// or it fired mid-newly-woken-agent-turn and aborted them. Now:
+//   • team_create_agent just writes the file + DB row, no side-effects.
+//   • fireAgentTrigger polls /agent, disposes only if the slug isn't
+//     listed yet, then dispatches. No stray timers to collide with.
+function scheduleAgentRefresh(_directory: string) {
+  // no-op: cache refresh now handled at wake time, not on agent creation.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
