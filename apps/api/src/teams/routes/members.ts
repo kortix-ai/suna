@@ -112,6 +112,7 @@ export function createMembersRouter(
           pending_invites: pendingInvites.map((i) => ({
             invite_id: i.inviteId,
             email: i.email,
+            role: i.initialRole,
             invited_by: i.invitedBy,
             created_at: i.createdAt.toISOString(),
             expires_at: i.expiresAt.toISOString(),
@@ -129,6 +130,10 @@ export function createMembersRouter(
       const body = await c.req.json().catch(() => ({}));
       const inviterEmail = (c.get('userEmail') as string | undefined) || null;
 
+      const rawRole = body?.role;
+      const role: 'admin' | 'member' | undefined =
+        rawRole === 'admin' || rawRole === 'member' ? rawRole : undefined;
+
       const { invite, status } = await createInvite(deps.db, {
         sandboxId: sandbox.sandboxId,
         accountId: sandbox.accountId,
@@ -136,6 +141,7 @@ export function createMembersRouter(
         email: String(body?.email ?? ''),
         invitedBy: userId,
         inviterEmail,
+        role,
       });
 
       return c.json({
@@ -144,6 +150,7 @@ export function createMembersRouter(
           status: status === 'reused' ? 'invited' : 'invited',
           email: invite?.email ?? null,
           invite_id: invite?.inviteId ?? null,
+          role: invite?.initialRole ?? null,
         },
       });
     } catch (err) {

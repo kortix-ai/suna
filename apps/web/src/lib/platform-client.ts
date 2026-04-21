@@ -465,6 +465,7 @@ export interface SandboxMember {
 export interface SandboxPendingInvite {
   invite_id: string;
   email: string;
+  role: 'admin' | 'member';
   invited_by: string | null;
   created_at: string;
   expires_at: string;
@@ -482,6 +483,7 @@ export interface AddSandboxMemberResult {
   status: 'added' | 'invited';
   user_id?: string;
   email?: string;
+  role?: 'admin' | 'member';
 }
 
 export async function listSandboxMembers(sandboxId: string): Promise<SandboxMembersResponse> {
@@ -498,12 +500,13 @@ export async function listSandboxMembers(sandboxId: string): Promise<SandboxMemb
 export async function addSandboxMember(
   sandboxId: string,
   email: string,
+  role: 'admin' | 'member' = 'member',
 ): Promise<AddSandboxMemberResult> {
   const result = await platformFetch<AddSandboxMemberResult>(
     `/platform/sandbox/${encodeURIComponent(sandboxId)}/members`,
     {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, role }),
     },
   );
   if (!result.success || !result.data) {

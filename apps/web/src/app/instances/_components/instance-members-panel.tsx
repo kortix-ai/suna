@@ -32,6 +32,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
   const [removeTarget, setRemoveTarget] = useState<SandboxMember | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<SandboxPendingInvite | null>(null);
 
@@ -41,16 +42,16 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
   });
 
   const addMutation = useMutation({
-    mutationFn: (targetEmail: string) => addSandboxMember(sandboxId, targetEmail),
+    mutationFn: (input: { email: string; role: 'admin' | 'member' }) =>
+      addSandboxMember(sandboxId, input.email, input.role),
     onSuccess: (data, variables) => {
       if (data.status === 'added') {
-        sonnerToast.success(`${variables} now has access`);
+        sonnerToast.success(`${variables.email} now has access`);
       } else {
-        sonnerToast.success(`Invite sent to ${variables}`, {
-          description: 'They will join automatically when they sign up.',
-        });
+        sonnerToast.success(`Invite sent to ${variables.email}`);
       }
       setEmail('');
+      setInviteRole('member');
       queryClient.invalidateQueries({ queryKey: ['sandbox', 'members', sandboxId] });
     },
     onError: (err) => {
@@ -115,7 +116,9 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
           className="flex items-start gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            if (emailValid) addMutation.mutate(email.trim());
+            if (emailValid) {
+              addMutation.mutate({ email: email.trim(), role: inviteRole });
+            }
           }}
         >
           <Input
@@ -125,6 +128,19 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
             onChange={(e) => setEmail(e.target.value)}
             disabled={addMutation.isPending}
           />
+          <Select
+            value={inviteRole}
+            onValueChange={(v) => setInviteRole(v as 'admin' | 'member')}
+            disabled={addMutation.isPending}
+          >
+            <SelectTrigger className="w-[120px] shrink-0 capitalize">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="member">Member</SelectItem>
+              <SelectItem value="admin">Admin</SelectItem>
+            </SelectContent>
+          </Select>
           <Button type="submit" disabled={!emailValid || addMutation.isPending}>
             {addMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -160,9 +176,11 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
                 {members.map((member) => {
                   const isSelf = member.user_id === viewerUserId;
                   const isOwner = member.role === 'owner';
-                  // Owner can't be removed (they always have access via account role)
-                  // and users can't remove themselves.
-                  const showRemove = canManage && !isOwner && !isSelf;
+                  // Only plain members can be removed from a sandbox — removing an
+                  // admin's sandbox_members row is a no-op because admins have
+                  // implicit access through their account role. They'd have to be
+                  // demoted first, which is a different (future) flow.
+                  const showRemove = canManage && member.role === 'member' && !isSelf;
                   const roleEditable = canManage && !isOwner && !isSelf;
                   const roleChanging =
                     roleMutation.isPending && roleMutation.variables?.userId === member.user_id;
@@ -213,7 +231,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
           {pending.length > 0 ? (
             <section className="space-y-2">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Pending signup ({pending.length})
+                Invites ({pending.length})
               </div>
               <div className="space-y-2">
                 {pending.map((invite) => (
@@ -229,6 +247,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
                         Invited {new Date(invite.created_at).toLocaleDateString()}
                       </div>
                     </div>
+                    <RoleBadge role={invite.role} />
                     {canManage ? (
                       <Button
                         size="sm"

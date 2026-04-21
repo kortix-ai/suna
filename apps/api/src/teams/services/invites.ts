@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Database } from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
+import { invalidatePreviewCacheForUser } from '../../shared/preview-ownership';
 
 import {
   AlreadyAcceptedError,
@@ -10,7 +11,7 @@ import {
   ValidationError,
   WrongEmailError,
 } from '../domain/errors';
-import type { SandboxInvite } from '../domain/types';
+import type { AccountRole, SandboxInvite } from '../domain/types';
 import { ensureAccountMember } from '../repositories/accounts';
 import {
   addSandboxMember,
@@ -65,9 +66,15 @@ export async function createInvite(
     email: string;
     invitedBy: string;
     inviterEmail: string | null;
+    /** Role the invitee will receive on accept. Defaults to 'member'. */
+    role?: 'admin' | 'member';
   },
 ): Promise<{ invite: SandboxInvite | null; status: 'invited' | 'reused' }> {
   const email = normalizeEmail(input.email);
+  const initialRole: 'admin' | 'member' = input.role ?? 'member';
+  if (initialRole !== 'admin' && initialRole !== 'member') {
+    throw new ValidationError(`Invalid role: ${initialRole}`);
+  }
 
   const existingUserId = await findAuthUserIdByEmail(db, email);
   if (existingUserId && (await memberExists(db, input.sandboxId, existingUserId))) {
@@ -79,6 +86,7 @@ export async function createInvite(
     accountId: input.accountId,
     email,
     invitedBy: input.invitedBy,
+    initialRole,
   });
   let status: 'invited' | 'reused' = 'invited';
   if (!invite) {
@@ -91,6 +99,7 @@ export async function createInvite(
     sandboxName: input.sandboxName,
     inviterEmail: input.inviterEmail,
     inviteId: invite?.inviteId ?? null,
+    role: invite?.initialRole === 'admin' ? 'admin' : 'member',
   });
 
   return { invite, status };
@@ -141,13 +150,20 @@ export async function acceptInvite(
     throw new WrongEmailError('This invite is addressed to a different account.');
   }
 
-  await ensureAccountMember(db, input.userId, invite.accountId, 'member');
+  // Use the role the inviter preselected. Accept never promotes to owner.
+  const grantedRole: AccountRole =
+    invite.initialRole === 'admin' ? 'admin' : 'member';
+  await ensureAccountMember(db, input.userId, invite.accountId, grantedRole);
   await addSandboxMember(db, {
     sandboxId: invite.sandboxId,
     userId: input.userId,
     addedBy: invite.invitedBy ?? null,
   });
   await markInviteAccepted(db, invite.inviteId);
+
+  // Flush any cached "denied" decisions from before the accept so the proxy
+  // immediately recognises the new access grant.
+  invalidatePreviewCacheForUser(input.userId);
 
   return { sandboxId: invite.sandboxId, alreadyAccepted: false };
 }
@@ -189,7 +205,9 @@ export async function claimPendingInvitesOnSignup(
   if (pending.length === 0) return null;
 
   for (const invite of pending) {
-    await ensureAccountMember(db, userId, invite.accountId, 'member');
+    const grantedRole: AccountRole =
+      invite.initialRole === 'admin' ? 'admin' : 'member';
+    await ensureAccountMember(db, userId, invite.accountId, grantedRole);
     await addSandboxMember(db, {
       sandboxId: invite.sandboxId,
       userId,
@@ -198,5 +216,6 @@ export async function claimPendingInvitesOnSignup(
     await markInviteAccepted(db, invite.inviteId);
   }
 
+  invalidatePreviewCacheForUser(userId);
   return pending[0].accountId;
 }

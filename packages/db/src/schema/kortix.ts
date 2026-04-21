@@ -149,8 +149,6 @@ export const sandboxMembers = kortixSchema.table(
   ],
 );
 
-// Pending invites for users who haven't signed up yet. Claimed and converted
-// to sandboxMembers + accountMembers rows on first login of the invitee.
 export const sandboxInvites = kortixSchema.table(
   'sandbox_invites',
   {
@@ -161,6 +159,7 @@ export const sandboxInvites = kortixSchema.table(
     accountId: uuid('account_id').notNull(),
     email: varchar('email', { length: 255 }).notNull(),
     invitedBy: uuid('invited_by'),
+    initialRole: accountRoleEnum('initial_role').default('member').notNull(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true })

@@ -9,6 +9,7 @@ function toDomain(row: typeof sandboxInvites.$inferSelect): SandboxInvite {
     accountId: row.accountId,
     email: row.email,
     invitedBy: row.invitedBy ?? null,
+    initialRole: row.initialRole,
     acceptedAt: row.acceptedAt ?? null,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
@@ -33,6 +34,7 @@ export async function findInviteById(
       accountId: sandboxInvites.accountId,
       email: sandboxInvites.email,
       invitedBy: sandboxInvites.invitedBy,
+      initialRole: sandboxInvites.initialRole,
       acceptedAt: sandboxInvites.acceptedAt,
       createdAt: sandboxInvites.createdAt,
       expiresAt: sandboxInvites.expiresAt,
@@ -49,6 +51,7 @@ export async function findInviteById(
     accountId: row.accountId,
     email: row.email,
     invitedBy: row.invitedBy ?? null,
+    initialRole: row.initialRole,
     acceptedAt: row.acceptedAt ?? null,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
@@ -128,6 +131,7 @@ export async function createInvite(
     accountId: string;
     email: string;
     invitedBy: string | null;
+    initialRole: 'admin' | 'member';
   },
 ): Promise<SandboxInvite | null> {
   const [row] = await db
@@ -137,6 +141,7 @@ export async function createInvite(
       accountId: input.accountId,
       email: input.email.toLowerCase(),
       invitedBy: input.invitedBy,
+      initialRole: input.initialRole,
     })
     .onConflictDoNothing()
     .returning();

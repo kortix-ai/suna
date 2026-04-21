@@ -18,8 +18,6 @@ export interface SandboxMember {
   sandboxId: string;
   userId: string;
   email: string | null;
-  /** Role in the sandbox's own account. Null when the user has a
-   * sandbox_members row but is no longer part of the account (edge case). */
   accountRole: AccountRole | null;
   addedBy: string | null;
   addedAt: Date;
@@ -31,6 +29,7 @@ export interface SandboxInvite {
   accountId: string;
   email: string;
   invitedBy: string | null;
+  initialRole: AccountRole;
   acceptedAt: Date | null;
   createdAt: Date;
   expiresAt: Date;

@@ -49,3 +49,18 @@ export async function canAccessPreviewSandbox(input: {
 export function clearPreviewOwnershipCache(): void {
   ownershipCache.clear();
 }
+
+/**
+ * Drop every cached decision for a given user. Called when a user's sandbox
+ * access changes (membership removed, role changed, invite revoked), so the
+ * next preview-proxy request re-evaluates from the database instead of
+ * hitting a stale "allowed" entry.
+ */
+export function invalidatePreviewCacheForUser(userId: string): void {
+  const suffix = `:${userId}`;
+  for (const key of ownershipCache.keys()) {
+    if (key.endsWith(suffix)) {
+      ownershipCache.delete(key);
+    }
+  }
+}
