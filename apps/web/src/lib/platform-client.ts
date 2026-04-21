@@ -88,6 +88,11 @@ export interface SandboxInfo {
   provider: SandboxProviderName;
   base_url: string;
   status: string;
+  lifecycle_status?: string;
+  init_status?: 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
+  health_status?: 'healthy' | 'degraded' | 'offline' | 'unknown';
+  init_attempts?: number;
+  last_init_error?: string | null;
   version?: string | null;
   metadata?: Record<string, unknown>;
   is_included?: boolean;
@@ -95,6 +100,9 @@ export interface SandboxInfo {
   stripe_subscription_item_id?: string | null;
   cancel_at_period_end?: boolean;
   cancel_at?: string | null;
+  auto_update_enabled?: boolean;
+  auto_update_channel?: 'stable' | 'dev';
+  auto_update?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }

@@ -10,6 +10,13 @@ import {
 import { config } from '../../config';
 import { checkCredits } from '../../router/services/billing';
 import * as pool from '../../pool';
+import {
+  buildSandboxInitAttemptMetadata,
+  buildSandboxInitFailureMetadata,
+  buildSandboxInitSuccessMetadata,
+  retrySandboxProvisionCreate,
+  SANDBOX_INIT_MAX_ATTEMPTS,
+} from './sandbox-init-state';
 
 export interface EnsureSandboxResult {
   row: typeof sandboxes.$inferSelect;
@@ -233,7 +240,12 @@ async function insertProvisioningRow(accountId: string, providerName: ProviderNa
       status: 'provisioning',
       baseUrl: '',
       config: {},
-      metadata: {},
+      metadata: {
+        initStatus: 'pending',
+        initAttempts: 0,
+        initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
+        healthStatus: 'unknown',
+      },
       isIncluded: isIncluded ?? false,
     })
     .returning();
@@ -261,19 +273,61 @@ async function provisionAsync(
     .update(sandboxes)
     .set({
       config: { serviceKey },
-      metadata: { provisioningStage: firstStage?.id, provisioningMessage: firstStage?.message },
+      metadata: buildSandboxInitAttemptMetadata(
+        sandbox.metadata as Record<string, unknown> | null,
+        1,
+        'provisioning',
+        firstStage?.id,
+        firstStage?.message,
+      ),
       updatedAt: new Date(),
     })
     .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
 
   try {
-    const result = await provider.create(createOpts);
+    const { result, attempts } = await retrySandboxProvisionCreate(provider, createOpts, {
+      onAttemptStart: async (attempt) => {
+        if (attempt === 1) return;
+        await db
+          .update(sandboxes)
+          .set({
+            metadata: buildSandboxInitAttemptMetadata(
+              sandbox.metadata as Record<string, unknown> | null,
+              attempt,
+              'retrying',
+              firstStage?.id,
+              `Retrying initialization (${attempt}/${SANDBOX_INIT_MAX_ATTEMPTS})…`,
+            ),
+            updatedAt: new Date(),
+          })
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+      },
+      onAttemptFailure: async (attempt, error, willRetry) => {
+        await db
+          .update(sandboxes)
+          .set({
+            ...(willRetry ? { status: 'provisioning' as const } : { status: 'error' as const }),
+            metadata: buildSandboxInitFailureMetadata(
+              sandbox.metadata as Record<string, unknown> | null,
+              error,
+              attempt,
+              willRetry,
+            ),
+            updatedAt: new Date(),
+          })
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+      },
+    });
     const [updated] = await db
       .update(sandboxes)
       .set({
         externalId: result.externalId,
         baseUrl: result.baseUrl || '',
-        metadata: { ...result.metadata, provisioningStage: firstStage?.id },
+        metadata: buildSandboxInitSuccessMetadata(
+          sandbox.metadata as Record<string, unknown> | null,
+          { ...result.metadata, provisioningStage: firstStage?.id },
+          attempts,
+        ),
         updatedAt: new Date(),
       })
       .where(eq(sandboxes.sandboxId, sandbox.sandboxId))
@@ -281,7 +335,6 @@ async function provisionAsync(
 
     return { row: updated, created: true };
   } catch (err) {
-    await markSandboxError(sandbox.sandboxId, err);
     throw err;
   }
 }
@@ -293,14 +346,47 @@ async function provisionSync(
   createOpts: Parameters<ReturnType<typeof getProvider>['create']>[0],
 ): Promise<EnsureSandboxResult> {
   try {
-    const result = await provider.create(createOpts);
+    const { result, attempts } = await retrySandboxProvisionCreate(provider, createOpts, {
+      onAttemptStart: async (attempt) => {
+        await db
+          .update(sandboxes)
+          .set({
+            metadata: buildSandboxInitAttemptMetadata(
+              sandbox.metadata as Record<string, unknown> | null,
+              attempt,
+              attempt === 1 ? 'provisioning' : 'retrying',
+            ),
+            updatedAt: new Date(),
+          })
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+      },
+      onAttemptFailure: async (attempt, error, willRetry) => {
+        await db
+          .update(sandboxes)
+          .set({
+            ...(willRetry ? { status: 'provisioning' as const } : { status: 'error' as const }),
+            metadata: buildSandboxInitFailureMetadata(
+              sandbox.metadata as Record<string, unknown> | null,
+              error,
+              attempt,
+              willRetry,
+            ),
+            updatedAt: new Date(),
+          })
+          .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+      },
+    });
     const [updated] = await db
       .update(sandboxes)
       .set({
         externalId: result.externalId,
         status: 'active',
         baseUrl: result.baseUrl,
-        metadata: result.metadata,
+        metadata: buildSandboxInitSuccessMetadata(
+          sandbox.metadata as Record<string, unknown> | null,
+          result.metadata,
+          attempts,
+        ),
         config: { serviceKey },
         updatedAt: new Date(),
       })
@@ -309,21 +395,6 @@ async function provisionSync(
 
     return { row: updated, created: true };
   } catch (err) {
-    await markSandboxError(sandbox.sandboxId, err);
     throw err;
   }
-}
-
-async function markSandboxError(sandboxId: string, err: unknown): Promise<void> {
-  await db
-    .update(sandboxes)
-    .set({
-      status: 'error',
-      metadata: {
-        provisioningStage: 'error',
-        provisioningError: err instanceof Error ? err.message : String(err),
-      },
-      updatedAt: new Date(),
-    })
-    .where(eq(sandboxes.sandboxId, sandboxId));
 }

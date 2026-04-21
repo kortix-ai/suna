@@ -669,6 +669,7 @@ export function InstanceSettingsModal({
       case 'start_workload': return 'Workload start initiated';
       case 'restart_workload': return 'Workload restart initiated';
       case 'stop_workload': return 'Workload stop initiated';
+      case 'reinitialize': return 'Workspace reinitialization initiated';
       case 'restart_runtime': return 'Core runtime restart initiated';
       case 'restart_service': return `${serviceId || 'Service'} restart initiated`;
       default: return 'Action initiated';
@@ -975,6 +976,9 @@ export function InstanceSettingsModal({
 
     if (activeTab === 'overview') {
       const meta = sandbox.metadata as Record<string, unknown> | undefined;
+      const initStatus = sandbox.init_status || sandbox.status;
+      const healthStatus = adminHealth?.overall_status || sandbox.health_status || 'unknown';
+      const lastInitError = sandbox.last_init_error || null;
       return (
         <div className="p-6 space-y-6">
           <section className="space-y-3">
@@ -1039,8 +1043,13 @@ export function InstanceSettingsModal({
                 <div className="font-medium">{sandbox.name || 'Untitled instance'}</div>
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
-                <div className="text-xs text-muted-foreground">Status</div>
-                <div className="font-medium capitalize">{sandbox.status}</div>
+                <div className="text-xs text-muted-foreground">Init status</div>
+                <div className="font-medium capitalize">{initStatus}</div>
+                {sandbox.init_attempts && sandbox.init_attempts > 1 ? <div className="text-[11px] text-muted-foreground">Attempt {sandbox.init_attempts}</div> : null}
+              </div>
+              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+                <div className="text-xs text-muted-foreground">Health status</div>
+                <div className="font-medium capitalize">{healthStatus}</div>
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Provider</div>
@@ -1059,6 +1068,12 @@ export function InstanceSettingsModal({
                 <div className="font-medium font-mono">{(meta?.serverType as string) || '—'}</div>
               </div>
             </div>
+            {lastInitError ? (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 space-y-2">
+                <div className="text-sm font-medium text-foreground">Last initialization error</div>
+                <div className="text-xs text-muted-foreground break-words">{lastInitError}</div>
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
@@ -1070,9 +1085,20 @@ export function InstanceSettingsModal({
               <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] })}>
                 Reload details
               </Button>
+              {isAdmin && initStatus === 'failed' ? (
+                <Button variant="secondary" onClick={() => triggerRepairAction('reinitialize')} disabled={hostActionPending}>
+                  {hostActionPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Reinitialize
+                </Button>
+              ) : null}
+              {isAdmin ? (
+                <Button variant="outline" onClick={() => setActiveTab('host')}>
+                  Open health
+                </Button>
+              ) : null}
             </div>
             <p className="text-xs text-muted-foreground">
-              Use the Health tab to inspect host, workload, and runtime layers separately.
+              Initialization tracks workspace bootstrapping. Health tracks the live host, workload, and runtime after initialization.
             </p>
           </section>
         </div>
@@ -1341,6 +1367,19 @@ export function InstanceSettingsModal({
                 {latestVersionQuery.isLoading ? 'Checking…' : latestVersion || 'Unavailable'}
               </div>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-2">
+            <div className="text-xs text-muted-foreground">Auto-update</div>
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-medium">{sandbox?.auto_update_enabled === false ? 'Disabled' : 'Enabled by default'}</span>
+              <span className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] font-mono text-muted-foreground">
+                {sandbox?.auto_update_channel === 'dev' ? 'dev channel' : 'stable channel'}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              New releases are installed automatically on this instance unless explicitly turned off. Each auto-update targets the exact versioned image and runs the same post-update verification as manual updates.
+            </p>
           </div>
 
           <VersionHistoryPanel

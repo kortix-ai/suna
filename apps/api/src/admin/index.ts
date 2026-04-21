@@ -21,6 +21,17 @@ import { eq, desc } from 'drizzle-orm';
 import type { AppEnv } from '../types';
 import { config } from '../config';
 import { checkLocalSandboxHealth, type LocalSandboxHealthCheck } from '../platform/services/local-sandbox-health';
+import {
+  deriveSandboxHealthStatus,
+  deriveSandboxInitStatus,
+  getSandboxInitAttempts,
+  getSandboxLastInitError,
+  getSandboxMetadata,
+} from '../platform/services/sandbox-init-state';
+import {
+  reprovisionFailedJustAvpsSandbox,
+  shouldReprovisionFailedJustAvpsSandbox,
+} from '../platform/services/sandbox-reinitialize';
 import { PROVIDER_REGISTRY, buildProviderKeySchema, LLM_PROVIDERS, TOOL_PROVIDERS } from '../providers/registry';
 import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
@@ -516,7 +527,18 @@ adminApp.get('/api/sandboxes', async (c) => {
         .where(where),
     ]);
 
-    return c.json({ sandboxes: redactAdminSecrets(rows), total, page, limit });
+    const enriched = rows.map((row) => {
+      const metadata = getSandboxMetadata(row.metadata);
+      return {
+        ...row,
+        initStatus: deriveSandboxInitStatus(row.status, metadata),
+        healthStatus: deriveSandboxHealthStatus(row.status, metadata),
+        initAttempts: getSandboxInitAttempts(metadata),
+        lastInitError: getSandboxLastInitError(metadata),
+      };
+    });
+
+    return c.json({ sandboxes: redactAdminSecrets(enriched), total, page, limit });
   } catch (e: any) {
     return c.json({ sandboxes: [], total: 0, page: 1, limit: 50, error: e?.message || String(e) }, 500);
   }
@@ -945,8 +967,15 @@ adminApp.get('/api/sandboxes/:id', async (c) => {
       }
     }
 
+    const metadata = getSandboxMetadata(row.metadata);
     return c.json({
-      sandbox: redactAdminSecrets(row),
+      sandbox: redactAdminSecrets({
+        ...row,
+        initStatus: deriveSandboxInitStatus(row.status, metadata),
+        healthStatus: deriveSandboxHealthStatus(row.status, metadata),
+        initAttempts: getSandboxInitAttempts(metadata),
+        lastInitError: getSandboxLastInitError(metadata),
+      }),
       provider_detail: providerDetail, // ssh.private_key / setup_command left intact — admin needs them
       provider_error: providerError,
     });
@@ -1019,6 +1048,64 @@ adminApp.get('/api/sandboxes/:id/health', async (c) => {
   }
 });
 
+/** POST /v1/admin/api/sandboxes/health-batch — layered health for current page */
+adminApp.post('/api/sandboxes/health-batch', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({})) as { sandboxIds?: unknown };
+    const sandboxIds = Array.isArray(body.sandboxIds)
+      ? body.sandboxIds.filter((value): value is string => typeof value === 'string' && value.length > 0).slice(0, 50)
+      : [];
+
+    if (sandboxIds.length === 0) {
+      return c.json({ items: [] });
+    }
+
+    const { db } = await import('../shared/db');
+    const { sandboxes } = await import('@kortix/db');
+    const { inArray } = await import('drizzle-orm');
+    const rows = await db.select().from(sandboxes).where(inArray(sandboxes.sandboxId, sandboxIds));
+
+    const { getProvider } = await import('../platform/providers');
+    const { JustAVPSProvider } = await import('../platform/providers/justavps');
+    const { createUnsupportedInstanceHealth, getJustAvpsInstanceHealth } = await import('../platform/services/instance-health');
+
+    const healthById = new Map<string, Awaited<ReturnType<typeof getJustAvpsInstanceHealth>> | ReturnType<typeof createUnsupportedInstanceHealth>>();
+
+    await Promise.all(rows.map(async (row) => {
+      if (row.provider !== 'justavps' || !row.externalId) {
+        healthById.set(row.sandboxId, createUnsupportedInstanceHealth(row.sandboxId, row.provider));
+        return;
+      }
+
+      const provider = getProvider('justavps') as InstanceType<typeof JustAVPSProvider>;
+      let endpoint = null;
+      let endpointError: string | null = null;
+      try {
+        endpoint = await provider.resolveEndpoint(row.externalId);
+      } catch (error) {
+        endpointError = error instanceof Error ? error.message : String(error);
+      }
+
+      try {
+        const health = await getJustAvpsInstanceHealth(row.sandboxId, row.externalId, endpoint, endpointError);
+        healthById.set(row.sandboxId, health);
+      } catch (error) {
+        const fallback = createUnsupportedInstanceHealth(row.sandboxId, row.provider);
+        fallback.layers.host.summary = error instanceof Error ? error.message : String(error);
+        healthById.set(row.sandboxId, fallback);
+      }
+    }));
+
+    return c.json({
+      items: sandboxIds
+        .map((sandboxId) => healthById.get(sandboxId))
+        .filter((item): item is NonNullable<typeof item> => Boolean(item)),
+    });
+  } catch (e: any) {
+    return c.json({ items: [], error: e?.message || String(e) }, 502);
+  }
+});
+
 /** POST /v1/admin/api/sandboxes/:id/repair — host/workload/runtime actions */
 adminApp.post('/api/sandboxes/:id/repair', async (c) => {
   try {
@@ -1033,6 +1120,7 @@ adminApp.post('/api/sandboxes/:id/repair', async (c) => {
       'start_workload',
       'restart_workload',
       'stop_workload',
+      'reinitialize',
       'restart_runtime',
       'restart_service',
     ]);
@@ -1045,8 +1133,11 @@ adminApp.post('/api/sandboxes/:id/repair', async (c) => {
     const { eq } = await import('drizzle-orm');
     const [row] = await db.select().from(sandboxes).where(eq(sandboxes.sandboxId, sandboxId)).limit(1);
     if (!row) return c.json({ error: 'Sandbox not found' }, 404);
-    if (row.provider !== 'justavps' || !row.externalId) {
+    if (row.provider !== 'justavps') {
       return c.json({ error: `Repair not supported for provider: ${row.provider}` }, 400);
+    }
+    if (!row.externalId && action !== 'reinitialize') {
+      return c.json({ error: 'Repair requires a provider machine id' }, 400);
     }
 
     const { getProvider } = await import('../platform/providers');
@@ -1102,6 +1193,21 @@ adminApp.post('/api/sandboxes/:id/repair', async (c) => {
       }
       case 'start_workload':
       case 'restart_workload': {
+        queueRecovery(provider.ensureRunning(row.externalId), action);
+        await db.update(sandboxes).set({ status: 'active' }).where(eq(sandboxes.sandboxId, sandboxId));
+        return c.json({ success: true, action, state: 'recovering' }, 202);
+      }
+      case 'reinitialize': {
+        const providerStatus = row.externalId ? await provider.getStatus(row.externalId) : null;
+        if (shouldReprovisionFailedJustAvpsSandbox(row.status, row.externalId, providerStatus)) {
+          const refreshed = await reprovisionFailedJustAvpsSandbox({
+            db,
+            sandbox: row,
+            provider,
+            userId: row.accountId,
+          });
+          return c.json({ success: true, action, state: 'reprovisioned', sandbox: refreshed });
+        }
         queueRecovery(provider.ensureRunning(row.externalId), action);
         await db.update(sandboxes).set({ status: 'active' }).where(eq(sandboxes.sandboxId, sandboxId));
         return c.json({ success: true, action, state: 'recovering' }, 202);
