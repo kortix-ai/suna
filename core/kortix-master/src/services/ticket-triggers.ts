@@ -149,25 +149,72 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
     contextBody,
   })
 
+  // Race guard: when PM creates a new agent and assigns a ticket to them in
+  // the same turn, opencode's per-directory agent cache may not have picked
+  // up the agent file yet — promptAsync returns 2xx but no LLM loop starts
+  // (opencode logs `undefined is not an object (evaluating 'agent.variant')`).
+  // Detect + recover: after ~4s check if any assistant message landed. If
+  // the session is still empty, force a dispose (refresh cache) and retry.
+  await promptWithAgentRefreshRetry({
+    client,
+    sessionId,
+    directory: project.path,
+    agentSlug: agent.slug,
+    modelSpec: parseModel(agent.default_model),
+    prompt,
+  })
+
+  return sessionId
+}
+
+async function promptWithAgentRefreshRetry(opts: {
+  client: OpenCodeClientLike
+  sessionId: string
+  directory: string
+  agentSlug: string
+  modelSpec: { providerID: string; modelID: string } | null
+  prompt: string
+}): Promise<void> {
+  const { client, sessionId, directory, agentSlug, modelSpec, prompt } = opts
+  const body = {
+    agent: agentSlug,
+    parts: [{ type: 'text', text: prompt }],
+    ...(modelSpec ? { model: modelSpec } : {}),
+  }
   try {
     await client.session.promptAsync({
       path: { id: sessionId },
-      // Dispatch under the agent's real opencode name — opencode loads the
-      // persona + config from `<project>/.opencode/agent/<slug>.md`. The
-      // `directory` query param is required every call so opencode resolves
-      // agents against this project's `.opencode/agent/` tree.
-      query: { directory: project.path },
-      body: {
-        agent: agent.slug,
-        parts: [{ type: 'text', text: prompt }],
-        ...(parseModel(agent.default_model) ? { model: parseModel(agent.default_model)! } : {}),
-      },
+      query: { directory },
+      body,
     })
   } catch (err) {
     console.warn('[ticket-triggers] promptAsync failed:', err)
+    return
   }
 
-  return sessionId
+  // Wait briefly, then check if the session produced any assistant turn.
+  // If it's still empty, the agent-cache race hit — dispose + retry once.
+  await new Promise((r) => setTimeout(r, 4000))
+  try {
+    const res = await (client.session as any).message?.list?.({ path: { id: sessionId } })
+    const msgs = (res?.data as Array<{ info?: { role?: string } }> | undefined) ?? []
+    const hasAssistant = msgs.some((m) => m?.info?.role === 'assistant')
+    if (hasAssistant) return
+  } catch {}
+
+  console.warn('[ticket-triggers] agent cache miss detected, forcing dispose + retry')
+  try {
+    await fetch(`http://localhost:4096/instance/dispose?directory=${encodeURIComponent(directory)}`, { method: 'POST' })
+  } catch {}
+  try {
+    await client.session.promptAsync({
+      path: { id: sessionId },
+      query: { directory },
+      body,
+    })
+  } catch (err) {
+    console.warn('[ticket-triggers] retry promptAsync failed:', err)
+  }
 }
 
 /**
