@@ -366,7 +366,7 @@ function ApiKeysContent() {
                       gap: 5,
                       paddingHorizontal: 10,
                       paddingVertical: 5,
-                      borderRadius: 8,
+                      borderRadius: 9999,
                       backgroundColor: theme.primary,
                     }}
                   >
@@ -428,7 +428,7 @@ function ApiKeysContent() {
                       gap: 5,
                       paddingHorizontal: 10,
                       paddingVertical: 5,
-                      borderRadius: 8,
+                      borderRadius: 9999,
                       backgroundColor: theme.primary,
                     }}
                   >
@@ -797,7 +797,7 @@ function CreateApiKeySheet({
             alignItems: 'center',
             justifyContent: 'center',
             paddingVertical: 14,
-            borderRadius: 14,
+            borderRadius: 9999,
             backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
             ...(!title.trim() ? {} : { backgroundColor: theme.primary }),
           }}
@@ -913,7 +913,7 @@ function SecretKeySheet({
             alignItems: 'center',
             justifyContent: 'center',
             paddingVertical: 14,
-            borderRadius: 14,
+            borderRadius: 9999,
             backgroundColor: theme.primary,
           }}
         >
@@ -1203,7 +1203,7 @@ function CreatePublicLinkSheet({
             alignItems: 'center',
             justifyContent: 'center',
             paddingVertical: 14,
-            borderRadius: 14,
+            borderRadius: 9999,
             backgroundColor: (!sandboxId || !port) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary,
           }}
         >

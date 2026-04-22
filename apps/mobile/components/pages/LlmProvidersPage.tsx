@@ -725,7 +725,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             disabled={!apiKey.trim() || isSaving}
             style={{
               backgroundColor: apiKey.trim() ? themeColors.primary : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
-              borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+              borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
               opacity: apiKey.trim() && !isSaving ? 1 : 0.5,
             }}
           >
@@ -765,14 +765,14 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <BottomSheetTouchable
               onPress={() => disconnectSheetRef.current?.dismiss()}
-              style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: fgColor }}>Cancel</Text>
             </BottomSheetTouchable>
             <BottomSheetTouchable
               onPress={handleDisconnect}
               disabled={isDisconnecting}
-              style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDisconnecting ? 0.5 : 1 }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDisconnecting ? 0.5 : 1 }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: '#FFFFFF' }}>
                 {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
@@ -924,7 +924,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
               backgroundColor: (customForm.providerID.trim() && customForm.name.trim() && customForm.baseURL.trim() && customForm.modelId.trim() && customForm.modelName.trim())
                 ? themeColors.primary
                 : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
-              borderRadius: 14,
+              borderRadius: 9999,
               paddingVertical: 15,
               alignItems: 'center',
               opacity: isCustomSaving ? 0.5 : 1,

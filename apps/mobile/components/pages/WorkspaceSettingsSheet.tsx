@@ -803,7 +803,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                 onPress={handleAddMcpServer}
                 disabled={addMcpServer.isPending}
                 style={{
-                  marginTop: 16, backgroundColor: theme.primary, borderRadius: 12,
+                  marginTop: 16, backgroundColor: theme.primary, borderRadius: 9999,
                   paddingVertical: 14, alignItems: 'center',
                   opacity: addMcpServer.isPending ? 0.6 : 1,
                 }}
@@ -863,7 +863,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     onPress={handleMcpAuthSubmit}
                     disabled={mcpAuthCallback.isPending || !mcpAuthCode.trim()}
                     style={{
-                      backgroundColor: theme.primary, borderRadius: 12,
+                      backgroundColor: theme.primary, borderRadius: 9999,
                       paddingVertical: 14, alignItems: 'center',
                       opacity: mcpAuthCallback.isPending || !mcpAuthCode.trim() ? 0.6 : 1,
                     }}
@@ -900,14 +900,14 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                 }
                 setHasDraft(false);
               }}
-              style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: chipBg }}
+              style={{ flex: 1, paddingVertical: 12, borderRadius: 9999, alignItems: 'center', backgroundColor: chipBg }}
             >
               <RNText style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Discard</RNText>
             </Pressable>
             <Pressable
               onPress={handleSave}
               disabled={updateConfig.isPending}
-              style={{ flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', backgroundColor: theme.primary, opacity: updateConfig.isPending ? 0.6 : 1 }}
+              style={{ flex: 1, paddingVertical: 12, borderRadius: 9999, alignItems: 'center', backgroundColor: theme.primary, opacity: updateConfig.isPending ? 0.6 : 1 }}
             >
               {updateConfig.isPending ? (
                 <ActivityIndicator color={theme.primaryForeground} size="small" />

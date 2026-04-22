@@ -590,14 +590,14 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <BottomSheetTouchable
               onPress={() => deleteSheetRef.current?.dismiss()}
-              style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: fgColor }}>Cancel</Text>
             </BottomSheetTouchable>
             <BottomSheetTouchable
               onPress={handleDelete}
               disabled={isDeleting}
-              style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDeleting ? 0.5 : 1 }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDeleting ? 0.5 : 1 }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: '#FFFFFF' }}>
                 {isDeleting ? 'Deleting...' : 'Delete'}

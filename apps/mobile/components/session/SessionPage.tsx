@@ -56,6 +56,8 @@ import { log } from '@/lib/logger';
 
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
 import { ProjectPicker } from './ProjectPicker';
+import { SandboxHealthPill } from './SandboxHealthPill';
+import { useRouter } from 'expo-router';
 import { useAudioRecorder } from '@/hooks/media/useAudioRecorder';
 import { useAudioRecordingHandlers } from '@/hooks/media/useAudioRecordingHandlers';
 import { transcribeAudio } from '@/lib/chat/transcription';
@@ -87,6 +89,7 @@ interface SessionPageProps {
 }
 
 export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+  const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -114,17 +117,24 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   const { data: session } = useSession(sandboxUrl, sessionId);
   const { data: allSessions = [] } = useSessions(sandboxUrl);
 
-  // Fork origin — check server parentID and AsyncStorage fallback
+  // Fork origin — check server parentID, with AsyncStorage fallback only for
+  // the current session. The effect MUST clear stale state first so the
+  // banner disappears immediately when switching to a non-forked session;
+  // otherwise the previous session's parentID would bleed into the new one.
+  // The async AsyncStorage read is guarded by a cancelled flag so a slow
+  // lookup for a previous sessionId can't resurrect the banner.
   const [forkParentId, setForkParentId] = useState<string | null>(null);
   useEffect(() => {
-    const parentFromServer = (session as any)?.parentID;
-    if (parentFromServer) {
-      setForkParentId(parentFromServer);
-      return;
-    }
+    const parentFromServer = (session as any)?.parentID ?? null;
+    setForkParentId(parentFromServer);
+    if (parentFromServer) return;
+
+    let cancelled = false;
     AsyncStorage.getItem(`fork_origin_${sessionId}`).then((val) => {
+      if (cancelled) return;
       if (val) setForkParentId(val);
     });
+    return () => { cancelled = true; };
   }, [sessionId, session]);
   const { data: parentSession } = useSession(sandboxUrl, forkParentId ?? undefined);
 
@@ -783,6 +793,20 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
             </TouchableOpacity>
           )}
           <View className="flex-1 flex-row items-center">
+            {/* Status dot before the title (matches web session-list):
+                amber when a question is waiting, green while working,
+                hidden otherwise. */}
+            {!onboardingMode && !isEditingTitle && (isBusy || pendingQuestions.length > 0) && (
+              <View
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: pendingQuestions.length > 0 ? '#F59E0B' : '#10B981',
+                  marginRight: 8,
+                }}
+              />
+            )}
             {isEditingTitle ? (
               <TextInput
                 ref={titleInputRef}
@@ -819,12 +843,6 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
                   {title}
                 </Text>
               </TouchableOpacity>
-            )}
-            {isBusy && !onboardingMode && !isEditingTitle && (
-              <View className="flex-row items-center mt-0.5">
-                <View className="h-1.5 w-1.5 rounded-full bg-muted-foreground mr-1" />
-                <Text className="text-xs text-muted-foreground">Working</Text>
-              </View>
             )}
           </View>
           {!onboardingMode && (
@@ -965,6 +983,15 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           scopes the next `/kortix/task`-creating send. */}
       {showFreshHero && !onboardingMode && !hasQuestion && (
         <ProjectPicker />
+      )}
+
+      {/* Sandbox health pill — full-width row immediately above the chat
+          input. Self-hides (returns null) when the sandbox is reachable,
+          so it takes no layout space the rest of the time. */}
+      {!onboardingMode && !hasQuestion && (
+        <SandboxHealthPill
+          onSwitch={() => router.push('/(settings)/instances')}
+        />
       )}
 
       {/* Bottom area — question prompt OR chat input */}
