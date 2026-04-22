@@ -1745,10 +1745,10 @@ function SlashCommandSuggestions({
 
 type ConfigTab = 'agent' | 'model' | 'thinking';
 
-const TAB_CONFIG: { key: ConfigTab; label: string; icon: string; color: string }[] = [
-  { key: 'agent', label: 'Agent', icon: 'person-outline', color: '#a78bfa' },
-  { key: 'model', label: 'Model', icon: 'hardware-chip-outline', color: '#60a5fa' },
-  { key: 'thinking', label: 'Thinking', icon: 'flash-outline', color: '#fbbf24' },
+const TAB_CONFIG: { key: ConfigTab; label: string; icon: string }[] = [
+  { key: 'agent', label: 'Agent', icon: 'person-outline' },
+  { key: 'model', label: 'Model', icon: 'hardware-chip-outline' },
+  { key: 'thinking', label: 'Thinking', icon: 'flash-outline' },
 ];
 
 function ConfigSheet({
@@ -1856,7 +1856,7 @@ function ConfigSheet({
               <Ionicons
                 name={tab.icon as any}
                 size={14}
-                color={isActive ? tab.color : mutedColor}
+                color={isActive ? fgColor : mutedColor}
               />
               <Text
                 style={{
@@ -1915,7 +1915,7 @@ function ConfigSheet({
                 ) : null}
               </View>
               {isSelected && (
-                <Ionicons name="checkmark-circle" size={22} color="#a78bfa" />
+                <Ionicons name="checkmark" size={20} color={fgColor} />
               )}
             </TouchableOpacity>
           );
@@ -2007,7 +2007,7 @@ function ConfigSheet({
                       </Text>
                     </View>
                     {isSelected && (
-                      <Ionicons name="checkmark-circle" size={22} color="#60a5fa" />
+                      <Ionicons name="checkmark" size={20} color={fgColor} />
                     )}
                   </TouchableOpacity>
                 );
@@ -2045,7 +2045,7 @@ function ConfigSheet({
                 </Text>
               </View>
               {!selectedVariant && (
-                <Ionicons name="checkmark-circle" size={22} color="#fbbf24" />
+                <Ionicons name="checkmark" size={20} color={fgColor} />
               )}
             </TouchableOpacity>
             {variants.map((v) => {
@@ -2068,7 +2068,7 @@ function ConfigSheet({
                       style={{
                         fontSize: 16,
                         fontFamily: isSelected ? 'Roobert-Medium' : 'Roobert',
-                        color: isSelected ? (isDark ? '#fbbf24' : '#d97706') : fgColor,
+                        color: fgColor,
                         textTransform: 'capitalize',
                       }}
                     >
@@ -2079,7 +2079,7 @@ function ConfigSheet({
                     </Text>
                   </View>
                   {isSelected && (
-                    <Ionicons name="checkmark-circle" size={22} color="#fbbf24" />
+                    <Ionicons name="checkmark" size={20} color={fgColor} />
                   )}
                 </TouchableOpacity>
               );
