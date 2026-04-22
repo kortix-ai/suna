@@ -480,7 +480,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             disabled={!newKey.trim() || isSaving}
             style={{
               backgroundColor: newKey.trim() ? themeColors.primary : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
-              borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+              borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
               opacity: newKey.trim() && !isSaving ? 1 : 0.5,
             }}
           >
@@ -537,7 +537,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             onPress={handleSave}
             disabled={isSaving}
             style={{
-              backgroundColor: themeColors.primary, borderRadius: 14, paddingVertical: 15,
+              backgroundColor: themeColors.primary, borderRadius: 9999, paddingVertical: 15,
               alignItems: 'center', opacity: isSaving ? 0.5 : 1,
             }}
           >
@@ -586,7 +586,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             <BottomSheetTouchable
               onPress={() => deleteSheetRef.current?.dismiss()}
               style={{
-                flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+                flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
                 borderWidth: 1, borderColor: borderColor,
               }}
             >
@@ -596,7 +596,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               onPress={handleDelete}
               disabled={isDeleting}
               style={{
-                flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+                flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
                 backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDeleting ? 0.5 : 1,
               }}
             >

@@ -231,7 +231,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                 justifyContent: 'center',
                 gap: 6,
                 paddingVertical: 12,
-                borderRadius: 12,
+                borderRadius: 9999,
                 borderWidth: 1,
                 borderColor: border,
                 backgroundColor: cardBg,
@@ -260,7 +260,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
                 justifyContent: 'center',
                 gap: 6,
                 paddingVertical: 12,
-                borderRadius: 12,
+                borderRadius: 9999,
                 backgroundColor: fg,
                 opacity: transcript && !sharing ? 1 : 0.4,
               }}

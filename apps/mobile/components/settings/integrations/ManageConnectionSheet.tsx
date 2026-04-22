@@ -403,7 +403,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
               alignItems: 'center',
               justifyContent: 'center',
               paddingVertical: 14,
-              borderRadius: 14,
+              borderRadius: 9999,
               backgroundColor: !renameDraft.trim() ? (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)') : fg,
               opacity: !renameDraft.trim() ? 0.5 : 1,
             }}
