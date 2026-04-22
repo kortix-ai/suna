@@ -13,7 +13,6 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  Modal,
   ScrollView,
   Platform,
   Animated,
@@ -21,6 +20,7 @@ import {
   ActionSheetIOS,
   Alert,
   Image,
+  useWindowDimensions,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
 } from 'react-native';
@@ -43,6 +43,7 @@ import {
   BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetView,
+  BottomSheetScrollView,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -1132,27 +1133,21 @@ export function SessionChatInput({
         onboardingMode={onboardingMode}
       />
 
-      {/* Config bottom sheet — agent, model, variant */}
-      <Modal
+      {/* Config bottom sheet — agent, model, variant (dynamic-sized) */}
+      <ConfigSheet
         visible={showConfigSheet}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowConfigSheet(false)}
-      >
-        <ConfigSheet
-          isDark={isDark}
-          agents={agents}
-          selectedAgent={agent || null}
-          onAgentChange={(name) => { onAgentChange?.(name); }}
-          models={models}
-          selectedModel={model || null}
-          onModelChange={(pid, mid) => { onModelChange?.(pid, mid); }}
-          variants={variants}
-          selectedVariant={variant || null}
-          onVariantSet={(v) => onVariantSet?.(v)}
-          onClose={() => setShowConfigSheet(false)}
-        />
-      </Modal>
+        isDark={isDark}
+        agents={agents}
+        selectedAgent={agent || null}
+        onAgentChange={(name) => { onAgentChange?.(name); }}
+        models={models}
+        selectedModel={model || null}
+        onModelChange={(pid, mid) => { onModelChange?.(pid, mid); }}
+        variants={variants}
+        selectedVariant={variant || null}
+        onVariantSet={(v) => onVariantSet?.(v)}
+        onClose={() => setShowConfigSheet(false)}
+      />
 
       <AutoContinueSheet
         visible={showAutoSheet}
@@ -1342,17 +1337,9 @@ function ActionsSheet({
       backdropComponent={renderBackdrop}
     >
       <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
-        {/* Header */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 20,
-            paddingTop: 6,
-            paddingBottom: 10,
-          }}
-        >
+        {/* Header — drag handle is the only affordance; swipe down or tap
+            backdrop to dismiss. */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 10 }}>
           <Text
             style={{
               fontSize: 18,
@@ -1362,9 +1349,6 @@ function ActionsSheet({
           >
             Actions
           </Text>
-          <TouchableOpacity onPress={onClose} hitSlop={10}>
-            <Icon as={XIcon} size={20} color={muted} strokeWidth={2.2} />
-          </TouchableOpacity>
         </View>
 
         {/* Settings-style rows: plain stroked lucide icon, title + subtitle,
@@ -1477,9 +1461,42 @@ function AutoContinueSheet({
     return preferred?.id ?? algorithms[0]?.id ?? null;
   }, [algorithms]);
 
+  const { height: screenHeight } = useWindowDimensions();
   const muted = isDark ? '#a1a1aa' : '#71717a';
   const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
   const bg = isDark ? '#121215' : '#FFFFFF';
+
+  // Bridge `visible` prop to the imperative BottomSheetModal API.
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const dismissingRef = useRef(false);
+
+  useEffect(() => {
+    if (visible) {
+      dismissingRef.current = false;
+      sheetRef.current?.present();
+    } else {
+      dismissingRef.current = true;
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  const handleSheetDismiss = useCallback(() => {
+    if (!dismissingRef.current) onClose();
+    dismissingRef.current = false;
+  }, [onClose]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.4}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
 
   useEffect(() => {
     if (!visible) {
@@ -1490,36 +1507,37 @@ function AutoContinueSheet({
   if (algorithms.length === 0) return null;
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
+    <BottomSheetModal
+      ref={sheetRef}
+      enableDynamicSizing
+      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
+      enablePanDownToClose={!detailAlg}
+      enableOverDrag={false}
+      onDismiss={handleSheetDismiss}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: bg,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+      }}
+      backdropComponent={renderBackdrop}
     >
-      <View style={{ flex: 1, backgroundColor: bg }}>
-        <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
-          <View
-            style={{
-              width: 36,
-              height: 5,
-              borderRadius: 3,
-              backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-            }}
-          />
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12 }}>
+      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
+        {/* Header — drag handle + backdrop tap dismiss, no explicit close. */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
           <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
             AutoContinue
           </Text>
-          <TouchableOpacity onPress={onClose} hitSlop={10}>
-            <Ionicons name="close" size={24} color={muted} />
-          </TouchableOpacity>
         </View>
 
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        <BottomSheetScrollView
+          style={{ maxHeight: Math.floor(screenHeight * 0.6) }}
+          contentContainerStyle={{ paddingBottom: 12 }}
           showsVerticalScrollIndicator={false}
         >
           <View>
@@ -1626,11 +1644,11 @@ function AutoContinueSheet({
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </BottomSheetScrollView>
 
         {detailAlg && (
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: bg, zIndex: 50 }]}> 
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top + 10, paddingHorizontal: 20, paddingBottom: 12 }}>
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: bg, zIndex: 50 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 10, paddingHorizontal: 20, paddingBottom: 12 }}>
               <TouchableOpacity onPress={() => setDetailAlg(null)} hitSlop={12} style={{ marginRight: 12 }}>
                 <Ionicons name="chevron-back" size={22} color={muted} />
               </TouchableOpacity>
@@ -1652,9 +1670,9 @@ function AutoContinueSheet({
                 <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />
               </TouchableOpacity>
             </View>
-            <ScrollView
+            <BottomSheetScrollView
               style={{ flex: 1 }}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 32 }}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
               showsVerticalScrollIndicator={false}
             >
               <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
@@ -1707,11 +1725,11 @@ function AutoContinueSheet({
               <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? '#e4e4e7' : '#1f2937' }}>
                 {detailAlg.howItWorks}
               </Text>
-            </ScrollView>
+            </BottomSheetScrollView>
           </View>
         )}
-      </View>
-    </Modal>
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
 
@@ -1803,6 +1821,7 @@ const TAB_CONFIG: { key: ConfigTab; label: string; icon: string }[] = [
 
 function ConfigSheet({
   isDark,
+  visible,
   agents,
   selectedAgent,
   onAgentChange,
@@ -1815,6 +1834,7 @@ function ConfigSheet({
   onClose,
 }: {
   isDark: boolean;
+  visible: boolean;
   agents: Agent[];
   selectedAgent: Agent | null;
   onAgentChange: (name: string) => void;
@@ -1827,12 +1847,47 @@ function ConfigSheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<ConfigTab>('agent');
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#a1a1aa' : '#71717a';
   const selectedBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
   const tabBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
   const tabActiveBg = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)';
+  const bg = isDark ? '#121215' : '#FFFFFF';
+
+  // Imperative BottomSheetModal ↔ visible prop bridge (same pattern as
+  // ActionsSheet/UserMenuSheet elsewhere in the app).
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const dismissingRef = useRef(false);
+
+  useEffect(() => {
+    if (visible) {
+      dismissingRef.current = false;
+      sheetRef.current?.present();
+    } else {
+      dismissingRef.current = true;
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  const handleSheetDismiss = useCallback(() => {
+    if (!dismissingRef.current) onClose();
+    dismissingRef.current = false;
+  }, [onClose]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.4}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
 
   // Filter tabs to only show ones with content
   const visibleTabs = TAB_CONFIG.filter((t) => {
@@ -1843,35 +1898,32 @@ function ConfigSheet({
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#FFFFFF' }}>
-      {/* Handle */}
-      <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
-        <View
-          style={{
-            width: 36,
-            height: 5,
-            borderRadius: 3,
-            backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          }}
-        />
-      </View>
-
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: 20,
-          paddingBottom: 12,
-        }}
-      >
+    <BottomSheetModal
+      ref={sheetRef}
+      enableDynamicSizing
+      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
+      enablePanDownToClose
+      enableOverDrag={false}
+      onDismiss={handleSheetDismiss}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: bg,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+      }}
+      backdropComponent={renderBackdrop}
+    >
+      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
+      {/* Header — no close glyph; drag handle + backdrop tap dismiss. */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
         <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
           Configuration
         </Text>
-        <TouchableOpacity onPress={onClose} activeOpacity={0.7} hitSlop={10}>
-          <Ionicons name="close" size={24} color={mutedColor} />
-        </TouchableOpacity>
       </View>
 
       {/* Tabs */}
@@ -1923,9 +1975,9 @@ function ConfigSheet({
       </View>
 
       {/* Content */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+      <BottomSheetScrollView
+        style={{ maxHeight: Math.floor(screenHeight * 0.6) }}
+        contentContainerStyle={{ paddingBottom: 12 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Agent tab */}
@@ -2136,7 +2188,8 @@ function ConfigSheet({
             })}
           </>
         )}
-      </ScrollView>
-    </View>
+      </BottomSheetScrollView>
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
