@@ -795,7 +795,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             </Text>
             <Pressable
               onPress={() => refetch()}
-              className="px-8 py-3.5 rounded-2xl active:opacity-80"
+              className="px-8 py-3.5 rounded-full active:opacity-80"
               style={{ backgroundColor: isDark ? '#f8f8f8' : '#121215' }}
             >
               <Text
@@ -1161,7 +1161,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                   : isDark
                     ? 'rgba(248, 248, 248, 0.08)'
                     : 'rgba(18, 18, 21, 0.06)',
-              borderRadius: 14,
+              borderRadius: 9999,
               paddingVertical: 15,
               alignItems: 'center',
               opacity: newFolderName.trim() && !folderNameExists ? 1 : 0.5,
@@ -1315,7 +1315,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                     : isDark
                       ? 'rgba(248, 248, 248, 0.08)'
                       : 'rgba(18, 18, 21, 0.06)',
-                  borderRadius: 14,
+                  borderRadius: 9999,
                   paddingVertical: 15,
                   alignItems: 'center',
                   opacity: canRename ? 1 : 0.5,
