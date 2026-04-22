@@ -129,6 +129,25 @@ export async function executePromptAction(
 
   const bodyText = sections.join("\n")
 
+  // Gate: if the trigger is bound to a ticket that's currently `blocked`,
+  // SKIP the fire entirely. Blocked means "waiting on a human or external
+  // input" — waking the agent just to have them re-post "still blocked"
+  // is spam. Trigger will fire again next cron boundary; if the human
+  // unblocks by then, work resumes; if not, we quietly no-op.
+  if (ticketId) {
+    let gateDb: Database | null = null
+    try {
+      gateDb = new Database(getWorkspaceDbPath())
+      gateDb.exec("PRAGMA busy_timeout=5000")
+      const row = gateDb.prepare("SELECT status FROM tickets WHERE id=$id").get({ $id: ticketId }) as { status?: string } | undefined
+      if (row?.status === "blocked") {
+        // Skip the fire — return without dispatching. sessionId omitted.
+        return { sessionId: undefined as unknown as string }
+      }
+    } catch {}
+    finally { try { gateDb?.close() } catch {} }
+  }
+
   // Session management
   const agentName = trigger.agent_name ?? actionConfig.agent
   const modelId = trigger.model_id ?? actionConfig.model
