@@ -56,6 +56,8 @@ import { log } from '@/lib/logger';
 
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
 import { ProjectPicker } from './ProjectPicker';
+import { SandboxHealthPill } from './SandboxHealthPill';
+import { useRouter } from 'expo-router';
 import { useAudioRecorder } from '@/hooks/media/useAudioRecorder';
 import { useAudioRecordingHandlers } from '@/hooks/media/useAudioRecordingHandlers';
 import { transcribeAudio } from '@/lib/chat/transcription';
@@ -87,6 +89,7 @@ interface SessionPageProps {
 }
 
 export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+  const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -1055,6 +1058,16 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         sandboxId=""
         sandboxUrl={sandboxUrl}
       />
+
+      {/* Sandbox health pill — floating bottom-right, appears only when the
+          sandbox is unreachable. Mirrors the web ReconnectPill. Lifted above
+          the chat input so it doesn't overlap. */}
+      {!onboardingMode && (
+        <SandboxHealthPill
+          bottomOffset={120}
+          onSwitch={() => router.push('/(settings)/instances')}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
