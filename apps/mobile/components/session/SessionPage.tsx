@@ -985,6 +985,15 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         <ProjectPicker />
       )}
 
+      {/* Sandbox health pill — full-width row immediately above the chat
+          input. Self-hides (returns null) when the sandbox is reachable,
+          so it takes no layout space the rest of the time. */}
+      {!onboardingMode && !hasQuestion && (
+        <SandboxHealthPill
+          onSwitch={() => router.push('/(settings)/instances')}
+        />
+      )}
+
       {/* Bottom area — question prompt OR chat input */}
       <View style={onboardingMode ? { paddingBottom: insets.bottom } : undefined}>
         {hasQuestion && activeQuestion ? (
@@ -1058,16 +1067,6 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         sandboxId=""
         sandboxUrl={sandboxUrl}
       />
-
-      {/* Sandbox health pill — floating bottom-right, appears only when the
-          sandbox is unreachable. Mirrors the web ReconnectPill. Lifted above
-          the chat input so it doesn't overlap. */}
-      {!onboardingMode && (
-        <SandboxHealthPill
-          bottomOffset={120}
-          onSwitch={() => router.push('/(settings)/instances')}
-        />
-      )}
     </KeyboardAvoidingView>
   );
 }
