@@ -156,10 +156,46 @@ export async function executePromptAction(
     ? (options.reusedSessions.get(reuseKey) ?? (hasDynamicKey ? undefined : trigger.session_id) ?? undefined)
     : undefined
 
+  // Probe the reused session. If it's been deleted from opencode (user
+  // wiped it, restart cleared state, ttl expired) we'd otherwise dispatch
+  // to a dead id and promptAsync silently no-ops — session stays empty,
+  // no messages ever appear, trigger executions all report "completed"
+  // while nothing actually runs. Drop the stale id so the create-path
+  // below mints a fresh session.
+  if (sessionId) {
+    try {
+      const probe = await (client as unknown as { session: { get: (args: { path: { id: string } }) => Promise<unknown> } }).session.get?.({ path: { id: sessionId } }) as { data?: { id?: string }; id?: string } | undefined
+      const resolvedId = (probe as { data?: { id?: string } })?.data?.id ?? (probe as { id?: string })?.id
+      if (!resolvedId) throw new Error("session.get returned no id")
+    } catch {
+      options.reusedSessions.delete(reuseKey)
+      sessionId = undefined
+    }
+  }
+
+  // Resolve the project's actual directory (where its `.opencode/agent/`
+  // tree lives) — opencode looks up agents per-directory, so without
+  // this query.directory below, dispatching to a per-project agent slug
+  // (engineer / qa / tech-lead) silently no-ops because opencode only
+  // sees the global agent list.
+  const projectDirectory = projectId
+    ? (() => {
+        let probeDb: Database | null = null
+        try {
+          probeDb = new Database(getWorkspaceDbPath())
+          probeDb.exec("PRAGMA busy_timeout=5000")
+          const row = probeDb.prepare("SELECT path FROM projects WHERE id=$id").get({ $id: projectId }) as { path?: string } | undefined
+          return row?.path
+        } catch { return undefined }
+        finally { try { probeDb?.close() } catch {} }
+      })()
+    : undefined
+  const dispatchDirectory = projectDirectory ?? options.directory
+
   if (!sessionId) {
     const created = await client.session.create({
       body: {
-        directory: options.directory,
+        directory: dispatchDirectory,
         title: trigger.name,
       },
     }) as { data?: { id: string }; id?: string }
@@ -173,6 +209,11 @@ export async function executePromptAction(
 
   await client.session.promptAsync({
     path: { id: sessionId },
+    // Pass directory in query — opencode resolves per-project agents
+    // (in <dir>/.opencode/agent/<slug>.md) against this. Without it,
+    // promptAsync returns 2xx but no LLM loop runs because the agent
+    // slug isn't visible in the workspace-root agent cache.
+    query: { directory: dispatchDirectory },
     body: {
       agent: agentName ?? undefined,
       model: parseModel(modelId),
