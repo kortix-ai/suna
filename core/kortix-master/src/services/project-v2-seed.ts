@@ -393,9 +393,13 @@ project already exists. Jump straight to the setup sequence below.
            every literal identifier from the spec verbatim.
          - \`status\`: "in_progress". **This ticket stays
            in_progress for the life of the project. Never close it.**
-         - \`assign_to\`: the primary contributor (usually
-           @engineer; @tech-lead if the work is triage-heavy
-           rather than execution).
+         - \`assign_to\`: **@tech-lead by default** (TL is the
+           orchestrator — they read findings, decide actionable,
+           and raise fix-tickets to @engineer). Only assign
+           directly to @engineer if the project has no TL AND the
+           run is pure execution with no triage step (rare).
+           Never put pure execution responsibility on the monitor
+           ticket — fix-tickets are where execution happens.
 
      (b) \`triggers(action="create", ...)\` — the recurring fire:
          - \`source_type="cron"\`, \`cron_expr\` = user's cadence
