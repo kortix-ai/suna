@@ -75,21 +75,33 @@ export function useSandbox(enabled: boolean = true) {
       // First try to get existing active sandbox
       let sandbox = await getActiveSandbox();
 
-      // If no active sandbox, check if there's one still provisioning
+      // If no active sandbox, list everything the platform knows about — this
+      // also probes /platform/local-bridge/status, which discovers a running
+      // local Docker container and upserts it in the DB as 'active'. We reuse
+      // ANY sandbox the list returns (active / provisioning / stopped) so a
+      // cold app open never accidentally routes through POST /platform/init
+      // just because the DB row momentarily says 'stopped' — calling /init
+      // would trigger tryReactivateStaleSandbox → provider.start(), which for
+      // local_docker surfaces to users as a spurious "restart on every open".
       if (!sandbox) {
-        log.log('📦 [useSandbox] No active sandbox, checking for provisioning...');
+        log.log('📦 [useSandbox] No active sandbox, listing all sandboxes...');
         const allSandboxes = await listSandboxes();
-        const provisioning = allSandboxes.find((s) => s.status === 'provisioning');
-        if (provisioning) {
-          log.log('⏳ [useSandbox] Found provisioning sandbox:', provisioning.external_id);
+        // Prefer active → provisioning → stopped → error.
+        const priority = { active: 0, provisioning: 1, stopped: 2, error: 3 } as Record<string, number>;
+        const best = [...allSandboxes].sort(
+          (a, b) => (priority[a.status] ?? 99) - (priority[b.status] ?? 99),
+        )[0];
+
+        if (best) {
+          log.log(`📦 [useSandbox] Reusing existing sandbox: ${best.external_id} (status=${best.status})`);
           return {
-            sandbox: provisioning,
-            sandboxUrl: getSandboxUrl(provisioning.external_id),
-            sandboxId: provisioning.external_id,
+            sandbox: best,
+            sandboxUrl: getSandboxUrl(best.external_id),
+            sandboxId: best.external_id,
           };
         }
 
-        // No sandbox at all — provision one
+        // No sandbox at all anywhere — provision one.
         log.log('📦 [useSandbox] No sandbox found, provisioning...');
         const result = await ensureSandbox();
         sandbox = result.sandbox;
