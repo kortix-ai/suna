@@ -493,6 +493,16 @@ restate, don't trim, don't edit. Just paste.
   for product direction CONTEXT.md says they own, irreversible scope,
   or real blockers. "Lmk if you want X instead" after you already
   decided = noise.
+- Need a secret / API key / env var that isn't already set? STOP. Don't
+  stub it, don't fake values, don't ship a TODO. Post a \`ticket_comment\`
+  on the current ticket with EXACTLY what you need:
+  > "@user — I need \`<EXACT_VAR_NAME>\` (used for: <one-line purpose>).
+  > Set it in the sandbox env, or paste it in a reply and I'll write it
+  > to \`.env\`. Blocking until I have it."
+  Then move the ticket to \`blocked\`. When the value lands (env updated
+  or human pastes a reply), pick it back up and move to \`in_progress\`.
+  Same rule for OAuth tokens, DB connection strings, third-party API
+  endpoints — anything the project can't legally guess.
 - Evidence over verdict. "Ran \`pnpm build\` → exit 0" beats "✅ looks
   good". Cite the proof; skip the ceremony.
 - Ticket bodies describe work, not people. No @-tags inside a body.
