@@ -267,14 +267,20 @@ If the human strips TL when scope warrants it, accept but flag once:
 
 Wait for explicit approval before creating.
 
-**Q5 — Check-in cadence.** One short ask with a real default:
+**Q5 — Check-in cadence.** The project already has a default **hourly**
+board-sweep cron wired to the dashboard ticket (seeded at create time —
+the "ongoing" badge is already lit). Your only job here is to ask if
+the human wants to change it:
 
-> "I can sweep the board and post a summary on a cadence. Default is
-> every hour — say a different cadence or 'no' to skip."
+> "I've set a default hourly board sweep — I'll post a summary on the
+> dashboard ticket every hour. Want me to change the cadence or kill
+> it?"
 
-If they say "yes" / "fine" / "sounds good" → hourly. Any explicit
-cadence ("every 30 min", "daily 9am", "weekdays only") → use that.
-"no" / "skip" / "none" → no cron.
+If they say "fine" / "yes" / "sounds good" → leave the default, no
+tool calls needed.
+If they give an explicit cadence ("every 30 min", "daily 9am",
+"weekdays only") → PATCH the existing trigger to that cadence.
+If they say "no" / "skip" / "kill it" → DELETE the trigger.
 
 ---
 
@@ -306,9 +312,13 @@ project already exists. Jump straight to the setup sequence below.
    column — QA gates via the review column's default_assignee. Do
    not invent extra columns (triage, staging, released, etc.).
 4. \`project_templates_update\` — Feature, Bug, Chore.
-5. **If Q5 gave a cadence**: \`triggers(action="create", ...)\` — see
-   "Scheduled board review" below. Bind to the dashboard ticket. If
-   Q5 was "no", skip.
+5. **Cadence trigger**: a default hourly board-sweep is ALREADY seeded
+   (bound to the dashboard ticket). Act on Q5:
+   - Human said "fine"/default → no action.
+   - Human gave a different cadence → \`triggers(action="update", ...)\`
+     with the new \`cron_expr\`. Get the trigger id from
+     \`triggers(action="list", project_id="…")\`.
+   - Human said "no" → \`triggers(action="delete", id="…")\`.
 6. **\`ticket_create\` — cut the first work ticket.** This is what
    actually kicks the team. Pull the title + body from Q1 scope and
    Q2 stack. Routing:
@@ -622,9 +632,10 @@ export async function seedV2Project(
   // (see prompt-action.ts session_key defaulting). The ticket never closes —
   // it's the living dashboard that accumulates status-update comments from
   // every PM sweep.
+  let dashboardTicketId: string | null = null
   if (!listTickets(db, { projectId: project.id }).some((t) => t.created_by_type === 'system' && t.title === PM_DASHBOARD_TITLE)) {
     try {
-      createTicket(db, {
+      const dash = createTicket(db, {
         project_id: project.id,
         title: PM_DASHBOARD_TITLE,
         body_md: PM_DASHBOARD_BODY,
@@ -633,12 +644,82 @@ export async function seedV2Project(
         created_by_type: 'system',
         created_by_id: null,
       })
+      dashboardTicketId = dash.ticket.id
     } catch (err) {
       console.warn('[project-v2-seed] failed to seed PM dashboard ticket:', err instanceof Error ? err.message : err)
+    }
+  } else {
+    const existing = listTickets(db, { projectId: project.id }).find(
+      (t) => t.created_by_type === 'system' && t.title === PM_DASHBOARD_TITLE,
+    )
+    dashboardTicketId = existing?.id ?? null
+  }
+
+  // Seed a default hourly board-sweep cron bound to the dashboard ticket.
+  // Having this from day 1 guarantees the dashboard card renders its
+  // "ongoing" reverse-lookup badge even if PM's onboarding skips the
+  // cadence question. PM can PATCH or DELETE this trigger later if the
+  // human wants a different cadence or none at all.
+  if (dashboardTicketId) {
+    try {
+      seedDefaultBoardSweepTrigger(db, project, dashboardTicketId, pm.slug)
+    } catch (err) {
+      console.warn('[project-v2-seed] failed to seed default board-sweep trigger:', err instanceof Error ? err.message : err)
     }
   }
 
   return { pmAgent: pm }
+}
+
+/**
+ * Insert a default hourly board-sweep cron trigger directly into the
+ * `triggers` table. Normally triggers are created via the TriggerManager
+ * (so cron registration + YAML write-through happens in-process). At seed
+ * time we're running outside that plugin context, so we insert the row
+ * directly; the plugin's watcher picks up the new row on its next reload
+ * (or on first manual trigger poke), which is acceptable for the bootstrap
+ * case. The important thing is the row EXISTS with project_id + ticket_id
+ * stamped — that's what the web UI reads for the "ongoing" badge.
+ */
+function seedDefaultBoardSweepTrigger(
+  db: Database,
+  project: ProjectInput,
+  dashboardTicketId: string,
+  pmSlug: string,
+): void {
+  const safeName = `${project.name}-board-sweep`
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+  const existing = db.prepare('SELECT id FROM triggers WHERE name = $n').get({ $n: safeName }) as { id?: string } | null
+  if (existing) return
+  const id = `trg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const now = new Date().toISOString()
+  const sourceConfig = JSON.stringify({ cron_expr: '0 0 * * * *', timezone: 'UTC' })
+  const actionConfig = JSON.stringify({
+    prompt: [
+      'Sweep the board. Unblock what\'s stuck. Post ONE concise ticket_comment on this ticket summarizing delta since last fire — no noise if nothing changed.',
+      'IMPORTANT: when referring to team agents in the sweep post, use their plain slug (e.g. `engineer` or `qa`), NOT an @-mention. @-mentions spawn new agent sessions even when nothing actionable is being asked — status sweeps should never wake anyone.',
+    ].join(' '),
+  })
+  db.prepare(`
+    INSERT INTO triggers (
+      id, name, description, source_type, source_config,
+      action_type, action_config, agent_name, session_mode,
+      is_active, created_at, updated_at, project_id, ticket_id
+    ) VALUES ($id, $n, $d, 'cron', $sc, 'prompt', $ac, $ag, 'new', 1, $now, $now, $pid, $tid)
+  `).run({
+    $id: id,
+    $n: safeName,
+    $d: `Hourly board sweep for ${project.name}. PM posts a summary to the dashboard ticket.`,
+    $sc: sourceConfig,
+    $ac: actionConfig,
+    $ag: pmSlug,
+    $now: now,
+    $pid: project.id,
+    $tid: dashboardTicketId,
+  })
 }
 
 // PM dashboard ticket — seeded once per project. Left as a constant so tests
@@ -648,17 +729,17 @@ export const PM_DASHBOARD_STATUS = 'in_progress'
 export const PM_DASHBOARD_BODY = [
   '**@project-manager\'s running review thread.**',
   '',
-  'This ticket stays in `in_progress` for the life of the project. Every board-sweep',
-  'cron fire threads onto the same session via `ticket_id` → status updates accumulate',
-  'as comments here. Use it to:',
+  'This ticket stays in `in_progress` for the life of the project. A default hourly',
+  'board-sweep cron is bound to it (seeded at project create) — every fire threads',
+  'onto the same session via `ticket_id`, so status updates accumulate as comments',
+  'here. Use it to:',
   '',
   '- Skim what the team is working on without opening every ticket.',
   '- See PM\'s latest sweep verdict (stalled tickets, blockers, missing reviews).',
   '- Audit the cron\'s history — every fire is a comment.',
   '',
-  'When you wire the board-sweep trigger during onboarding, bind it to THIS ticket\'s',
-  'id via the `ticket_id` arg on the `triggers` tool. The reverse-lookup badge on',
-  'this card will then read "ongoing" with the cadence in its tooltip.',
+  'To change the cadence or stop the sweeps, PATCH or DELETE the `*-board-sweep`',
+  'trigger (the reverse-lookup badge on this card reads the cadence from there).',
 ].join('\n')
 
 // ─────────────────────────────────────────────────────────────────────────────
