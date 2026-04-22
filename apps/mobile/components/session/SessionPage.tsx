@@ -114,17 +114,24 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   const { data: session } = useSession(sandboxUrl, sessionId);
   const { data: allSessions = [] } = useSessions(sandboxUrl);
 
-  // Fork origin — check server parentID and AsyncStorage fallback
+  // Fork origin — check server parentID, with AsyncStorage fallback only for
+  // the current session. The effect MUST clear stale state first so the
+  // banner disappears immediately when switching to a non-forked session;
+  // otherwise the previous session's parentID would bleed into the new one.
+  // The async AsyncStorage read is guarded by a cancelled flag so a slow
+  // lookup for a previous sessionId can't resurrect the banner.
   const [forkParentId, setForkParentId] = useState<string | null>(null);
   useEffect(() => {
-    const parentFromServer = (session as any)?.parentID;
-    if (parentFromServer) {
-      setForkParentId(parentFromServer);
-      return;
-    }
+    const parentFromServer = (session as any)?.parentID ?? null;
+    setForkParentId(parentFromServer);
+    if (parentFromServer) return;
+
+    let cancelled = false;
     AsyncStorage.getItem(`fork_origin_${sessionId}`).then((val) => {
+      if (cancelled) return;
       if (val) setForkParentId(val);
     });
+    return () => { cancelled = true; };
   }, [sessionId, session]);
   const { data: parentSession } = useSession(sandboxUrl, forkParentId ?? undefined);
 
