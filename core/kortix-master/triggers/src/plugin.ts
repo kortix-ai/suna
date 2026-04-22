@@ -186,7 +186,37 @@ Examples:
                     if (args.timeout_ms) actionConfig.timeout_ms = args.timeout_ms
                   } else if (actionType === "ticket_create") {
                     if (!args.ticket_title) return "Error: ticket_title is required for ticket_create actions."
-                    if (!args.project_id) return "Error: project_id is required for ticket_create (the ticket's target project)."
+                    // Validate / auto-derive project_id. PMs frequently hallucinate
+                    // an ID like "proj-<random>" instead of the real one. If the
+                    // passed ID doesn't exist in the projects table, override
+                    // with the session's bound project (the source of truth).
+                    if (args.project_id || args.ticket_id) {
+                      try {
+                        const path = require("node:path") as typeof import("node:path")
+                        const root = process.env.WORKSPACE_DIR || process.env.KORTIX_WORKSPACE || normalizedOptions.directory || "/workspace"
+                        const dbPath = path.join(root, ".kortix", "kortix.db")
+                        const { Database } = require("bun:sqlite") as typeof import("bun:sqlite")
+                        const wsDb = new Database(dbPath)
+                        try {
+                          if (args.project_id) {
+                            const exists = wsDb.prepare("SELECT 1 FROM projects WHERE id=$id").get({ $id: args.project_id })
+                            if (!exists) {
+                              // Look up via session binding
+                              const sessId = (toolCtx as { sessionID?: string } | undefined)?.sessionID
+                              const bound = sessId ? wsDb.prepare("SELECT project_id FROM session_projects WHERE session_id=$s").get({ $s: sessId }) as { project_id?: string } | undefined : undefined
+                              if (bound?.project_id) {
+                                logger("warn", `[triggers] passed project_id="${args.project_id}" not found; using session-bound project "${bound.project_id}"`)
+                                args.project_id = bound.project_id
+                              } else {
+                                return `Error: project_id "${args.project_id}" not found, and no session binding to fall back on. Call project_get or project_list to get the real ID.`
+                              }
+                            }
+                          }
+                        } finally { wsDb.close() }
+                      } catch (err) {
+                        logger("warn", `[triggers] project_id validation skipped: ${(err as Error).message}`)
+                      }
+                    }
                     actionConfig.title = args.ticket_title
                     if (args.ticket_body) actionConfig.body_md = args.ticket_body
                     if (args.ticket_template_id) actionConfig.template_id = args.ticket_template_id

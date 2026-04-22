@@ -58,6 +58,26 @@ export async function executeTicketCreateAction(
   if (!projectId) {
     throw new Error("ticket_create: trigger must be bound to a project (project_id unset)")
   }
+  // Fire-time validation: verify the stored project_id still exists in the
+  // DB. PM-authored triggers have hallucinated IDs in the past (`proj-<random>`
+  // that never mapped to a real project) — at creation they stamp whatever
+  // PM typed, and every fire then fails with a useless "column not found"
+  // error because listColumns returns []. Fail FAST with a clear message
+  // that names the bad ID, so operators can patch or recreate the trigger.
+  {
+    const probeDb = new Database(getWorkspaceDbPath())
+    probeDb.exec("PRAGMA busy_timeout=5000")
+    try {
+      const exists = probeDb.prepare("SELECT 1 FROM projects WHERE id=$id").get({ $id: projectId })
+      if (!exists) {
+        throw new Error(
+          `ticket_create: trigger is stamped with project_id="${projectId}" but that project does not exist. ` +
+          `The trigger was likely created with a hallucinated id. ` +
+          `Fix via PATCH /kortix/triggers/<id> or recreate with the correct project_id.`,
+        )
+      }
+    } finally { probeDb.close() }
+  }
 
   // Build a template context. Webhook payloads come nested under
   // `event.data.body` (the parsed JSON body), while cron fires have

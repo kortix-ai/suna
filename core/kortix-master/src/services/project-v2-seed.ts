@@ -368,29 +368,62 @@ project already exists. Jump straight to the setup sequence below.
      implementer (usually \`@engineer\`). Put in \`in_progress\` so
      they wake immediately.
 
-   - **Ops workflow shape**: do NOT cut a build ticket. Instead call
-     \`triggers(action="create", ...)\` with:
-     * \`source_type="cron"\`, \`cron_expr\` = the user's cadence
-       (e.g. "0 */10 * * * *" for every 10 min).
-     * \`action_type="ticket_create"\`.
-     * \`action_config.title\` = a templated run name, e.g.
-       \`"<ProjectName> run — {{ event.timestamp }}"\`.
-     * \`action_config.body_md\` = the task the engineer should run
-       on each fire ("Fetch X via Y, dump results to
-       \`runs/{{ event.timestamp | date }}/\`, then tag @tech-lead
-       with findings. Tech-lead will decide actionable."). Preserve
-       every literal identifier from the user's spec verbatim
-       (API names, endpoint URLs, file paths).
-     * \`action_config.assignee_slugs=["engineer"]\` (or whichever
-       contributor runs the task).
-     * \`action_config.column="in_progress"\`.
-     * \`project_id\` = this project's id.
-     Then also cut ONE bootstrap ticket that kicks off the first
-     run immediately (don't wait for the first cron boundary) —
-     \`ticket_create\` titled \`"<ProjectName> run — bootstrap"\`
-     with the same body, assigned to engineer in \`in_progress\`.
-     No "build" ticket, no TL decomposition up front — TL appears
-     later per-run, when engineer tags them with findings.
+   - **Ops workflow shape**: do NOT cut a build ticket and do NOT
+     cut a fresh ticket per cron fire. You want ONE persistent
+     "ongoing monitor" ticket — same pattern as the dashboard
+     ticket — where every cron fire threads onto the same session
+     and appends a comment. The ticket is the running thread; fix-
+     tickets spawn only when findings warrant them.
+
+     **Execute in order:**
+
+     (a) \`ticket_create\` — the monitor ticket:
+         - \`title\`: \`"<Project name> — ongoing monitor"\` (fixed,
+           not templated with a timestamp)
+         - \`body_md\`: the full task list the agent runs on each
+           fire. Write it so someone waking with no other context
+           can execute: (1) read prior runs under \`runs/\`, (2)
+           fetch current state via the API/endpoint/command the
+           user specified, (3) diff vs prior, (4) classify findings
+           (new / recurring / recovered / none), (5) for any
+           actionable finding call \`ticket_create\` with
+           \`parent_id\` = this monitor ticket's id, assigning
+           @engineer or @tech-lead, (6) post ONE summary comment
+           on THIS ticket ("no changes" is a valid summary). Preserve
+           every literal identifier from the spec verbatim.
+         - \`status\`: "in_progress". **This ticket stays
+           in_progress for the life of the project. Never close it.**
+         - \`assign_to\`: the primary contributor (usually
+           @engineer; @tech-lead if the work is triage-heavy
+           rather than execution).
+
+     (b) \`triggers(action="create", ...)\` — the recurring fire:
+         - \`source_type="cron"\`, \`cron_expr\` = user's cadence
+           ("0 */10 * * * *" for every 10 min, etc.)
+         - \`action_type="prompt"\` (**NOT** ticket_create — using
+           ticket_create spawns a new ticket per fire, which defeats
+           the single-thread pattern).
+         - \`prompt\`: short pointer, e.g. \`"Ongoing monitor just
+           fired. Read the ticket body for the task list; execute
+           steps 1-6; stop when done. Don't create a new top-level
+           ticket for the run — this ticket IS the run."\`
+         - \`agent_name\`: same slug as the monitor ticket's
+           assignee.
+         - \`project_id\`: this project's id.
+         - \`ticket_id\`: the monitor ticket's id (critical — this
+           is what binds the cron's session to the ticket, makes
+           every fire thread onto the same opencode session, and
+           lights the "ongoing" reverse-lookup badge on the card).
+
+     (c) No bootstrap ticket, no separate "first run." The first
+         real fire happens at the next cron boundary. If the user
+         wants an immediate kickoff, they can manually run the
+         trigger from the Triggers tab.
+
+     **IMPORTANT: get the project_id from \`project_get\` — do not
+     generate / guess it.** PM-hallucinated IDs (like
+     \`proj-<random6>\`) have broken past runs; always fetch the
+     real \`proj-<slug>-<timestamp>\` via a tool call.
 
    - **Modify-existing shape**: same as Build, but the body must
      explicitly reference the existing repo layout (engineer should
@@ -895,11 +928,14 @@ export const PM_DASHBOARD_BODY = [
  * humans and other agents on the project are. Never uses "you" — every agent
  * reads this file and "you" is ambiguous.
  *
- * If `userHandle` is unset we fall back to a neutral `human` placeholder but
- * the UI should always pass a real handle.
+ * If `userHandle` is unset we fall back to `user` because `@user` is the
+ * kortix-system mention convention that actually triggers a human
+ * notification. `@human` isn't a real slug; agents that see "@human" in
+ * the team section will tag a slug that doesn't exist → nobody gets the
+ * message. The UI should still pass the real handle when it has one.
  */
 export function buildTeamSection(agents: ProjectAgentRow[], userHandle?: string | null): string {
-  const handle = (userHandle && userHandle.trim()) || 'human'
+  const handle = (userHandle && userHandle.trim()) || 'user'
   const lines = ['## Team', '']
   lines.push(`- **@${handle}** — the real human on this project. Tag with \`@${handle}\` when a decision or information is needed that an agent can't make on its own.`)
   for (const a of agents) {
