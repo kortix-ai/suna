@@ -27,7 +27,24 @@ import {
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
-import { Infinity as InfinityIcon, Slash as SlashIcon, Info as InfoIcon, X as XIcon, Plus as PlusIcon, Mic as MicIcon } from 'lucide-react-native';
+import {
+  Infinity as InfinityIcon,
+  Slash as SlashIcon,
+  Info as InfoIcon,
+  X as XIcon,
+  Plus as PlusIcon,
+  Mic as MicIcon,
+  Paperclip as PaperclipIcon,
+  Settings as SettingsIcon,
+  ChevronRight as ChevronRightIcon,
+} from 'lucide-react-native';
+import { Icon } from '@/components/ui/icon';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetView,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -1231,159 +1248,192 @@ function ActionsSheet({
 }: ActionsSheetProps) {
   const insets = useSafeAreaInsets();
   const muted = isDark ? '#a1a1aa' : '#71717a';
+  const fgColor = isDark ? '#F8F8F8' : '#121215';
   const bg = isDark ? '#1a1a1d' : '#FFFFFF';
-  const rowBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const rowBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+  // Sync `visible` prop to the imperative BottomSheetModal API so the caller
+  // API stays unchanged. Dismiss originating from user gesture flows back
+  // through onClose; programmatic dismissals are guarded by dismissingRef.
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const dismissingRef = useRef(false);
+
+  useEffect(() => {
+    if (visible) {
+      dismissingRef.current = false;
+      sheetRef.current?.present();
+    } else {
+      dismissingRef.current = true;
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  const handleSheetDismiss = useCallback(() => {
+    if (!dismissingRef.current) onClose();
+    dismissingRef.current = false;
+  }, [onClose]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.4}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
+  const rows: Array<{
+    key: string;
+    icon: typeof PaperclipIcon;
+    label: string;
+    description: string;
+    onPress: () => void;
+  }> = [];
+
+  if (!onboardingMode) {
+    rows.push({
+      key: 'attach',
+      icon: PaperclipIcon,
+      label: 'Attach files',
+      description: 'Photos, documents, or files',
+      onPress: onAttach,
+    });
+  }
+  rows.push({
+    key: 'config',
+    icon: SettingsIcon,
+    label: 'Agent & Model',
+    description: configLabel,
+    onPress: onConfig,
+  });
+  if (onAutoContinue) {
+    rows.push({
+      key: 'autocontinue',
+      icon: InfinityIcon,
+      label: 'AutoContinue',
+      description: autocontinueActive
+        ? `Active · ${autocontinueLabel}`
+        : 'Off — manual mode',
+      onPress: onAutoContinue,
+    });
+  }
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
+    <BottomSheetModal
+      ref={sheetRef}
+      enableDynamicSizing
+      enablePanDownToClose
+      enableOverDrag={false}
+      onDismiss={handleSheetDismiss}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: bg,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+      }}
+      backdropComponent={renderBackdrop}
     >
-      <View style={{ flex: 1, backgroundColor: bg }}>
-        {/* Drag handle */}
-        <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 8 }}>
-          <View style={{ width: 36, height: 5, borderRadius: 3, backgroundColor: isDark ? '#3F3F46' : '#D4D4D8' }} />
-        </View>
-
+      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
         {/* Header */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 16 }}>
-          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 20,
+            paddingTop: 6,
+            paddingBottom: 10,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 18,
+              fontFamily: 'Roobert-SemiBold',
+              color: fgColor,
+            }}
+          >
             Actions
           </Text>
           <TouchableOpacity onPress={onClose} hitSlop={10}>
-            <Ionicons name="close" size={22} color={muted} />
+            <Icon as={XIcon} size={20} color={muted} strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
 
-        {/* Action rows */}
-        <View style={{ paddingHorizontal: 16 }}>
-          {/* Attach files */}
-          {!onboardingMode && (
-            <TouchableOpacity
-              onPress={onAttach}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 14,
-                paddingHorizontal: 16,
-                borderRadius: 14,
-                backgroundColor: rowBg,
-                marginBottom: 8,
-              }}
-            >
-              <View style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 14,
-              }}>
-                <Ionicons name="attach" size={18} color={isDark ? '#d4d4d8' : '#52525b'} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
-                  Attach files
-                </Text>
-                <Text style={{ fontSize: 12, color: muted, marginTop: 2 }}>
-                  Photos, documents, or files
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={isDark ? '#3F3F46' : '#D4D4D8'} />
-            </TouchableOpacity>
-          )}
-
-          {/* Agent & Model config */}
-          <TouchableOpacity
-            onPress={onConfig}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingVertical: 14,
-              paddingHorizontal: 16,
-              borderRadius: 14,
-              backgroundColor: rowBg,
-              marginBottom: 8,
-            }}
-          >
-            <View style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginRight: 14,
-            }}>
-              <Ionicons name="settings-outline" size={17} color={isDark ? '#d4d4d8' : '#52525b'} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
-                Agent & Model
-              </Text>
-              <Text style={{ fontSize: 12, color: muted, marginTop: 2 }} numberOfLines={1}>
-                {configLabel}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={isDark ? '#3F3F46' : '#D4D4D8'} />
-          </TouchableOpacity>
-
-          {/* AutoContinue */}
-          {onAutoContinue && (
-            <TouchableOpacity
-              onPress={onAutoContinue}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 14,
-                paddingHorizontal: 16,
-                borderRadius: 14,
-                backgroundColor: autocontinueActive
-                  ? (isDark ? 'rgba(109,40,217,0.12)' : 'rgba(99,102,241,0.08)')
-                  : rowBg,
-                marginBottom: 8,
-                borderWidth: autocontinueActive ? 1 : 0,
-                borderColor: autocontinueActive ? (isDark ? 'rgba(192,132,252,0.25)' : 'rgba(99,102,241,0.25)') : 'transparent',
-              }}
-            >
-              <View style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                backgroundColor: autocontinueActive
-                  ? (isDark ? 'rgba(192,132,252,0.15)' : 'rgba(99,102,241,0.12)')
-                  : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 14,
-              }}>
-                <InfinityIcon
-                  size={17}
-                  color={autocontinueActive ? (isDark ? '#c4b5fd' : '#6366f1') : (isDark ? '#d4d4d8' : '#52525b')}
-                  strokeWidth={2.2}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
-                  AutoContinue
-                </Text>
-                <Text style={{ fontSize: 12, color: autocontinueActive ? (isDark ? '#c4b5fd' : '#4c1d95') : muted, marginTop: 2 }}>
-                  {autocontinueActive ? `Active · ${autocontinueLabel}` : 'Off — manual mode'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={isDark ? '#3F3F46' : '#D4D4D8'} />
-            </TouchableOpacity>
-          )}
+        {/* Settings-style rows: plain stroked lucide icon, title + subtitle,
+            chevron, and a thin divider between rows (no per-row card bg). */}
+        <View style={{ paddingHorizontal: 20 }}>
+          {rows.map((row, idx) => {
+            const isLast = idx === rows.length - 1;
+            return (
+              <React.Fragment key={row.key}>
+                <TouchableOpacity
+                  onPress={row.onPress}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                  }}
+                >
+                  <Icon
+                    as={row.icon}
+                    size={18}
+                    color={isDark ? 'rgba(248,248,248,0.8)' : 'rgba(18,18,21,0.8)'}
+                    strokeWidth={2.2}
+                  />
+                  <View style={{ marginLeft: 16, flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontFamily: 'Roobert-Medium',
+                        color: fgColor,
+                      }}
+                    >
+                      {row.label}
+                    </Text>
+                    <Text
+                      style={{
+                        marginTop: 2,
+                        fontSize: 12,
+                        fontFamily: 'Roobert',
+                        color: muted,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {row.description}
+                    </Text>
+                  </View>
+                  <Icon
+                    as={ChevronRightIcon}
+                    size={16}
+                    color={isDark ? 'rgba(248,248,248,0.35)' : 'rgba(18,18,21,0.35)'}
+                    strokeWidth={2.2}
+                  />
+                </TouchableOpacity>
+                {!isLast && (
+                  <View
+                    style={{
+                      height: 1,
+                      backgroundColor: isDark
+                        ? 'rgba(248,248,248,0.08)'
+                        : 'rgba(18,18,21,0.08)',
+                    }}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
         </View>
-      </View>
-    </Modal>
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
 
