@@ -1527,19 +1527,103 @@ function AutoContinueSheet({
       }}
       backdropComponent={renderBackdrop}
     >
-      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
+      {detailAlg ? (
+        /* Detail view — algorithm deep-dive with its own scroller. */
+        <BottomSheetScrollView
+          contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, paddingHorizontal: 20, paddingBottom: 12 }}>
+            <TouchableOpacity onPress={() => setDetailAlg(null)} hitSlop={12} style={{ marginRight: 12 }}>
+              <Ionicons name="chevron-back" size={22} color={muted} />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
+              {detailAlg.label}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                onSelect(detailAlg.id);
+                setDetailAlg(null);
+                onClose();
+              }}
+              style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              hitSlop={10}
+            >
+              <Text style={{ color: isDark ? '#c4b5fd' : '#4c1d95', fontFamily: 'Roobert-Medium', fontSize: 13 }}>
+                Use
+              </Text>
+              <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ paddingHorizontal: 20 }}>
+            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Role
+            </Text>
+            <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? '#F8F8F8' : '#121215' }}>
+              {detailAlg.role}
+            </Text>
+
+            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Description
+            </Text>
+            <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
+              {detailAlg.description}
+            </Text>
+
+            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Best for
+            </Text>
+            <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
+              {detailAlg.bestFor}
+            </Text>
+
+            <View style={{ flexDirection: 'row', marginTop: 4 }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                  Strengths
+                </Text>
+                {detailAlg.strengths.map((s, idx) => (
+                  <Text key={idx} style={{ fontSize: 13, color: isDark ? '#bbf7d0' : '#166534', marginBottom: 6 }}>
+                    • {s}
+                  </Text>
+                ))}
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                  Weaknesses
+                </Text>
+                {detailAlg.weaknesses.map((s, idx) => (
+                  <Text key={idx} style={{ fontSize: 13, color: isDark ? '#fed7aa' : '#9a3412', marginBottom: 6 }}>
+                    • {s}
+                  </Text>
+                ))}
+              </View>
+            </View>
+
+            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
+              How it works
+            </Text>
+            <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? '#e4e4e7' : '#1f2937' }}>
+              {detailAlg.howItWorks}
+            </Text>
+          </View>
+        </BottomSheetScrollView>
+      ) : (
+        /* List view — Off / On toggle + algorithm list. Top-level scroller so
+           scroll gestures actually work inside the sheet. */
+        <BottomSheetScrollView
+          contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
+          showsVerticalScrollIndicator={false}
+        >
         {/* Header — drag handle + backdrop tap dismiss, no explicit close. */}
         <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
-          <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
+          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
             AutoContinue
           </Text>
         </View>
 
-        <BottomSheetScrollView
-          style={{ maxHeight: Math.floor(screenHeight * 0.6) }}
-          contentContainerStyle={{ paddingBottom: 12 }}
-          showsVerticalScrollIndicator={false}
-        >
+        <View>
           <View>
             <TouchableOpacity
               onPress={() => { onSelect(null); onClose(); }}
@@ -1644,91 +1728,9 @@ function AutoContinueSheet({
               </TouchableOpacity>
             );
           })}
+        </View>
         </BottomSheetScrollView>
-
-        {detailAlg && (
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: bg, zIndex: 50 }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 10, paddingHorizontal: 20, paddingBottom: 12 }}>
-              <TouchableOpacity onPress={() => setDetailAlg(null)} hitSlop={12} style={{ marginRight: 12 }}>
-                <Ionicons name="chevron-back" size={22} color={muted} />
-              </TouchableOpacity>
-              <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
-                {detailAlg.label}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  onSelect(detailAlg.id);
-                  setDetailAlg(null);
-                  onClose();
-                }}
-                style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                hitSlop={10}
-              >
-                <Text style={{ color: isDark ? '#c4b5fd' : '#4c1d95', fontFamily: 'Roobert-Medium', fontSize: 13 }}>
-                  Use
-                </Text>
-                <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />
-              </TouchableOpacity>
-            </View>
-            <BottomSheetScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
-              showsVerticalScrollIndicator={false}
-            >
-              <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                Role
-              </Text>
-              <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? '#F8F8F8' : '#121215' }}>
-                {detailAlg.role}
-              </Text>
-
-              <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                Description
-              </Text>
-              <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
-                {detailAlg.description}
-              </Text>
-
-              <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                Best for
-              </Text>
-              <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
-                {detailAlg.bestFor}
-              </Text>
-
-              <View style={{ flexDirection: 'row', marginTop: 4 }}>
-                <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                    Strengths
-                  </Text>
-                  {detailAlg.strengths.map((s, idx) => (
-                    <Text key={idx} style={{ fontSize: 13, color: isDark ? '#bbf7d0' : '#166534', marginBottom: 6 }}>
-                      • {s}
-                    </Text>
-                  ))}
-                </View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                    Weaknesses
-                  </Text>
-                  {detailAlg.weaknesses.map((s, idx) => (
-                    <Text key={idx} style={{ fontSize: 13, color: isDark ? '#fed7aa' : '#9a3412', marginBottom: 6 }}>
-                      • {s}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-
-              <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
-                How it works
-              </Text>
-              <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? '#e4e4e7' : '#1f2937' }}>
-                {detailAlg.howItWorks}
-              </Text>
-            </BottomSheetScrollView>
-          </View>
-        )}
-      </BottomSheetView>
+      )}
     </BottomSheetModal>
   );
 }
@@ -1918,68 +1920,74 @@ function ConfigSheet({
       }}
       backdropComponent={renderBackdrop}
     >
-      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
-      {/* Header — no close glyph; drag handle + backdrop tap dismiss. */}
-      <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
-        <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
-          Configuration
-        </Text>
-      </View>
-
-      {/* Tabs */}
-      <View
-        style={{
-          flexDirection: 'row',
-          marginHorizontal: 20,
-          marginBottom: 16,
-          borderRadius: 12,
-          backgroundColor: tabBg,
-          padding: 3,
-        }}
+      {/* Top-level BottomSheetScrollView so scroll gestures work. Header +
+          tabs are wrapped in a single sticky block (index 0) so they stay
+          pinned while the items list scrolls underneath. The sheet still
+          sizes to content via enableDynamicSizing; scroll only activates
+          when content exceeds maxDynamicContentSize. */}
+      <BottomSheetScrollView
+        contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
+        showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={[0]}
       >
-        {visibleTabs.map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              activeOpacity={0.7}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingVertical: 8,
-                borderRadius: 10,
-                backgroundColor: isActive ? tabActiveBg : 'transparent',
-                gap: 5,
-              }}
-            >
-              <Ionicons
-                name={tab.icon as any}
-                size={14}
-                color={isActive ? fgColor : mutedColor}
-              />
-              <Text
+      {/* Sticky header block: title + tab bar. Solid bg so scrolled items
+          don't show through. */}
+      <View style={{ backgroundColor: bg }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
+          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
+            Configuration
+          </Text>
+        </View>
+        <View
+          style={{
+            flexDirection: 'row',
+            marginHorizontal: 20,
+            marginBottom: 16,
+            borderRadius: 12,
+            backgroundColor: tabBg,
+            padding: 3,
+          }}
+        >
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                onPress={() => setActiveTab(tab.key)}
+                activeOpacity={0.7}
                 style={{
-                  fontSize: 13,
-                  fontFamily: isActive ? 'Roobert-SemiBold' : 'Roobert-Medium',
-                  color: isActive ? fgColor : mutedColor,
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  backgroundColor: isActive ? tabActiveBg : 'transparent',
+                  gap: 5,
                 }}
               >
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+                <Ionicons
+                  name={tab.icon as any}
+                  size={14}
+                  color={isActive ? fgColor : mutedColor}
+                />
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontFamily: isActive ? 'Roobert-SemiBold' : 'Roobert-Medium',
+                    color: isActive ? fgColor : mutedColor,
+                  }}
+                >
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
-      {/* Content */}
-      <BottomSheetScrollView
-        style={{ maxHeight: Math.floor(screenHeight * 0.6) }}
-        contentContainerStyle={{ paddingBottom: 12 }}
-        showsVerticalScrollIndicator={false}
-      >
+      {/* Content (items flow below the sticky header block) */}
+      <View>
         {/* Agent tab */}
         {activeTab === 'agent' && agents.filter((a) => !a.hidden).map((a) => {
           const isSelected = selectedAgent?.name === a.name;
@@ -2188,8 +2196,8 @@ function ConfigSheet({
             })}
           </>
         )}
+      </View>
       </BottomSheetScrollView>
-      </BottomSheetView>
     </BottomSheetModal>
   );
 }
