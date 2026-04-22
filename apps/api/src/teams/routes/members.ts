@@ -20,6 +20,7 @@ import {
   listMembers,
   removeMember,
 } from '../services/membership';
+import { setSandboxMemberSpendCap } from '../repositories/members';
 import { ValidationError } from '../domain/errors';
 import type { AccountRole } from '../domain/types';
 import { listPendingInvitesForSandbox } from '../repositories/invites';
@@ -108,6 +109,8 @@ export function createMembersRouter(
             role: m.accountRole,
             added_by: m.addedBy,
             added_at: m.addedAt.toISOString(),
+            monthly_spend_cap_cents: m.monthlySpendCapCents,
+            current_period_cents: m.currentPeriodCents,
           })),
           pending_invites: pendingInvites.map((i) => ({
             invite_id: i.inviteId,
@@ -173,24 +176,48 @@ export function createMembersRouter(
       const { userId: callerUserId, sandbox } = await resolveManagerSandbox(c, deps);
       const targetUserId = c.req.param('userId');
 
-      if (targetUserId === callerUserId) {
-        throw new ValidationError('You cannot change your own role');
-      }
-
       const body = await c.req.json().catch(() => ({}));
-      const role = body?.role as AccountRole | undefined;
-      if (!role) {
-        throw new ValidationError('role is required');
+      const hasRole = typeof body?.role === 'string';
+      const hasCap = 'monthly_spend_cap_cents' in (body ?? {});
+
+      if (!hasRole && !hasCap) {
+        throw new ValidationError('role or monthly_spend_cap_cents is required');
       }
 
-      await changeMemberRole(deps.db, {
-        accountId: sandbox.accountId,
-        targetUserId,
-        role,
-      });
+      if (hasRole) {
+        if (targetUserId === callerUserId) {
+          throw new ValidationError('You cannot change your own role');
+        }
+        await changeMemberRole(deps.db, {
+          accountId: sandbox.accountId,
+          targetUserId,
+          role: body.role as AccountRole,
+        });
+      }
+
+      if (hasCap) {
+        const raw = body.monthly_spend_cap_cents;
+        let capCents: number | null;
+        if (raw === null) {
+          capCents = null;
+        } else if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) {
+          capCents = Math.floor(raw);
+        } else {
+          throw new ValidationError(
+            'monthly_spend_cap_cents must be a non-negative number or null',
+          );
+        }
+        await setSandboxMemberSpendCap(
+          deps.db,
+          sandbox.sandboxId,
+          targetUserId,
+          capCents,
+        );
+      }
+
       return c.json({ success: true });
     } catch (err) {
-      return respondWithDomainError(c, err, '[MEMBERS] role change error:');
+      return respondWithDomainError(c, err, '[MEMBERS] update error:');
     }
   });
 
@@ -203,6 +230,10 @@ export function createMembersRouter(
       return respondWithDomainError(c, err, '[MEMBERS] revoke error:');
     }
   });
+
+  // Per-project ACL lives in kortix-master's sqlite (co-located with the
+  // projects themselves). Frontend calls those routes via the preview proxy
+  // at /v1/p/:sandbox/8000/kortix/projects/:id/members.
 
   return router;
 }

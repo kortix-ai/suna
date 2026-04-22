@@ -9,6 +9,7 @@ import { Clock, Loader2 } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { cn } from '@/lib/utils';
 import { acceptInvite, declineInvite, getInvite } from '@/lib/platform-client';
@@ -141,30 +142,43 @@ export default function InvitePage() {
 
   return (
     <BrandSurface>
-      <InviteCard kicker="You're invited">
-        <div className="text-[15px] text-foreground/50 leading-relaxed">
-          {invite.inviter_email ? (
-            <>
-              <span className="text-foreground/80 font-medium">{invite.inviter_email}</span>{' '}
-              invited you to collaborate on
-            </>
-          ) : (
-            <>You have been invited to collaborate on</>
-          )}
+      <InviteCard kicker="Invitation">
+        {invite.inviter_email ? (
+          <div className="flex items-center gap-3">
+            <UserAvatar email={invite.inviter_email} size="lg" />
+            <div className="min-w-0">
+              <div className="text-foreground/85 truncate text-[14px] font-medium">
+                {invite.inviter_email}
+              </div>
+              <div className="text-foreground/40 mt-0.5 text-[12px]">
+                invited you to collaborate
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-foreground/50 text-[14px] leading-relaxed">
+            You have been invited to collaborate.
+          </div>
+        )}
+
+        <div className="mt-5 flex items-center gap-3 rounded-2xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-3.5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] text-foreground/60">
+            <KortixLogo size={16} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-foreground/85 truncate text-[14px] font-medium">
+              {invite.sandbox_name || 'Sandbox'}
+            </div>
+            <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-[11px]">
+              <Clock className="size-3" />
+              Expires {formatWhen(invite.expires_at)}
+            </div>
+          </div>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-foreground/[0.08] bg-foreground/[0.03] px-5 py-4">
-          <div className="text-[15px] font-medium text-foreground/85 truncate">
-            {invite.sandbox_name || 'Sandbox'}
-          </div>
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-foreground/30">
-            <Clock className="size-3" />
-            Expires {formatWhen(invite.expires_at)}
-          </div>
-        </div>
-
-        <p className="mt-4 text-[12px] text-foreground/30 leading-relaxed">
-          Accepting adds you to the owner's team as a member and gives you access to this workspace.
+        <p className="text-foreground/35 mt-4 text-[11px] leading-relaxed">
+          You'll join as a member and see projects the owner gives you access
+          to.
         </p>
 
         {errorMessage ? (

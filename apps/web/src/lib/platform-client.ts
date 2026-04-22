@@ -460,6 +460,8 @@ export interface SandboxMember {
   role: SandboxMemberRole | null;
   added_by: string | null;
   added_at: string;
+  monthly_spend_cap_cents?: number | null;
+  current_period_cents?: number;
 }
 
 export interface SandboxPendingInvite {
@@ -540,6 +542,123 @@ export async function updateSandboxMemberRole(
   if (!result.success) {
     throw new Error(result.error || 'Failed to change role');
   }
+}
+
+export async function updateSandboxMemberSpendCap(
+  sandboxId: string,
+  userId: string,
+  capCents: number | null,
+): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ monthly_spend_cap_cents: capCents }),
+    },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to update spending cap');
+  }
+}
+
+export interface SandboxProjectSummary {
+  id: string;
+  name: string;
+  path: string;
+  description?: string;
+  created_at?: string;
+  opencode_id?: string | null;
+  sessionCount?: number;
+}
+
+
+export async function listSandboxProjects(sandbox: SandboxInfo): Promise<SandboxProjectSummary[]> {
+  const base = getSandboxUrl(sandbox);
+  const res = await authenticatedFetch(`${base.replace(/\/+$/, '')}/kortix/projects`, {
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(body || `Failed to list projects (${res.status})`);
+  }
+  const data = await res.json();
+  return Array.isArray(data) ? (data as SandboxProjectSummary[]) : [];
+}
+
+// ─── Per-project ACL inside a sandbox ────────────────────────────────────────
+//
+// The ACL lives in kortix-master's sqlite next to the projects it governs, so
+// these helpers talk to kortix-master via the preview proxy. Emails aren't
+// known inside the sandbox — hydrate them client-side by joining against the
+// sandbox member list (which does carry emails).
+
+export interface SandboxProjectMember {
+  user_id: string;
+  role: 'owner' | 'admin' | 'member';
+  added_by: string | null;
+  added_at: string;
+}
+
+export interface SandboxProjectMembersResponse {
+  project_id: string;
+  members: SandboxProjectMember[];
+}
+
+async function fetchKortixMaster<T>(
+  sandbox: SandboxInfo,
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const base = getSandboxUrl(sandbox);
+  const res = await authenticatedFetch(`${base.replace(/\/+$/, '')}${path}`, {
+    signal: AbortSignal.timeout(8_000),
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(body || `Request failed (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+
+export async function listSandboxProjectMembers(
+  sandbox: SandboxInfo,
+  projectId: string,
+): Promise<SandboxProjectMembersResponse> {
+  return fetchKortixMaster<SandboxProjectMembersResponse>(
+    sandbox,
+    `/kortix/projects/${encodeURIComponent(projectId)}/members`,
+    { method: 'GET' },
+  );
+}
+
+export async function grantSandboxProjectAccess(
+  sandbox: SandboxInfo,
+  projectId: string,
+  userId: string,
+  role: 'admin' | 'member' = 'member',
+): Promise<void> {
+  await fetchKortixMaster<void>(
+    sandbox,
+    `/kortix/projects/${encodeURIComponent(projectId)}/members`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, role }),
+    },
+  );
+}
+
+export async function revokeSandboxProjectAccess(
+  sandbox: SandboxInfo,
+  projectId: string,
+  userId: string,
+): Promise<void> {
+  await fetchKortixMaster<void>(
+    sandbox,
+    `/kortix/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  );
 }
 
 export async function revokeSandboxInvite(sandboxId: string, inviteId: string): Promise<void> {

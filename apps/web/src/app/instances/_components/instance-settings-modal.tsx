@@ -11,6 +11,7 @@ import {
   KeyRound,
   Loader2,
   Cpu,
+  Folder,
   MemoryStick,
   RotateCw,
   RefreshCw,
@@ -40,6 +41,7 @@ import {
 } from '@/lib/platform-client';
 import { hasNewerVersion, InstanceUpdateDialog } from './instance-update-dialog';
 import { InstanceMembersPanel } from './instance-members-panel';
+import { InstanceProjectsPanel } from './instance-projects-panel';
 import { VersionHistoryPanel } from '@/components/changelog/version-history-panel';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxAction, useAdminSandboxDetail, useAdminSandboxHealth, useAdminSandboxRepair, type AdminInstanceLayerAction, type AdminInstanceLayerHealth } from '@/hooks/admin/use-admin-sandboxes';
@@ -60,7 +62,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useServerStore } from '@/stores/server-store';
 
-type TabId = 'overview' | 'host' | 'members' | 'updates' | 'backups';
+type TabId = 'overview' | 'host' | 'members' | 'projects' | 'updates' | 'backups';
 
 interface TabDef {
   id: TabId;
@@ -532,9 +534,11 @@ export function InstanceSettingsModal({
     { id: 'overview', label: 'General', icon: Settings2 },
     { id: 'host', label: 'Health', icon: Server },
     { id: 'members', label: 'Members', icon: Users },
+    // Projects tab is owner-only (Phase 2 ACL is strictly an owner tool).
+    { id: 'projects', label: 'Projects', icon: Folder, hidden: !canManageSandbox },
     { id: 'updates', label: 'Updates', icon: ArrowDownToLine, hidden: !supportsUpdates },
     { id: 'backups', label: 'Backups', icon: Archive, hidden: !supportsBackups },
-  ], [supportsBackups, supportsUpdates]);
+  ], [canManageSandbox, supportsBackups, supportsUpdates]);
 
   const visibleTabs = tabs.filter((tab) => !tab.hidden);
   const sandboxUrl = useMemo(() => {
@@ -1424,6 +1428,10 @@ export function InstanceSettingsModal({
 
     if (activeTab === 'members') {
       return <InstanceMembersPanel sandboxId={sandbox.sandbox_id} />;
+    }
+
+    if (activeTab === 'projects') {
+      return <InstanceProjectsPanel sandbox={sandbox} canManage={canManageSandbox} />;
     }
 
     if (activeTab === 'updates') {

@@ -115,7 +115,9 @@ export type SettingsTabId =
   | 'billing'
   | 'transactions'
   | 'referrals'
-  | 'shortcuts';
+  | 'shortcuts'
+  | 'instance-members'
+  | 'instance-projects';
 
 /** The group / section a menu item belongs to. */
 export type MenuGroup =
@@ -856,6 +858,19 @@ export function getPreferenceTabs(): SettingsTab[] {
     }
     return { id: tabId, label: item.label, icon: item.icon };
   });
+}
+
+/**
+ * Instance-scoped tabs. Only injected into the settings modal when the
+ * current route is inside an instance (`/instances/:id/...`). Returns an
+ * empty array otherwise so the "Instance" section disappears entirely
+ * on `/instances` list or account-level pages.
+ */
+export function getInstanceTabs(): SettingsTab[] {
+  return [
+    { id: 'instance-members', label: 'Team', icon: Users },
+    { id: 'instance-projects', label: 'Projects', icon: FolderKanban },
+  ];
 }
 
 /** Account tabs for the settings modal */

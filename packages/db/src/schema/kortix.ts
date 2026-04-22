@@ -141,6 +141,9 @@ export const sandboxMembers = kortixSchema.table(
     userId: uuid('user_id').notNull(),
     addedBy: uuid('added_by'),
     addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
+    monthlySpendCapCents: integer('monthly_spend_cap_cents'),
+    currentPeriodCents: integer('current_period_cents').notNull().default(0),
+    currentPeriodStart: bigint('current_period_start', { mode: 'number' }),
   },
   (table) => [
     uniqueIndex('idx_sandbox_members_unique').on(table.sandboxId, table.userId),

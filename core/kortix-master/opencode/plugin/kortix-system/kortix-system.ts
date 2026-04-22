@@ -160,6 +160,7 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 		const btwRaw = (await import("./btw")).default
 		return typeof btwRaw === "object" && "server" in btwRaw ? await btwRaw.server(ctx) : await btwRaw(ctx)
 	})
+	const spendingCap = await load("spending-cap", () => import("./spending-cap").then(m => m.default(ctx)))
 	
 	console.log("[kortix-system] Plugin initialized. Tools:", Object.keys(projectTools(mgr, db)).length, "project +", Object.keys(agentTaskTools(db, mgr, client)).length, "task")
 	scheduleStartupBusySessionCleanup(client, db, startupCleanupStartedAt)
@@ -208,6 +209,12 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 			}
 			if (todoEnforcer?.["chat.message"]) {
 				await todoEnforcer["chat.message"](input, output).catch(() => {})
+			}
+		},
+
+		"chat.headers": async (input: any, output: any) => {
+			if (spendingCap?.["chat.headers"]) {
+				await spendingCap["chat.headers"](input, output).catch(() => {})
 			}
 		},
 

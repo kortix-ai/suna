@@ -11,6 +11,7 @@ import { buildMergedSpec } from './services/spec-merger'
 import { proxyToOpenCode } from './services/proxy'
 import { SecretStore } from './services/secret-store'
 import { syncAuthToSecrets, startWatcher as startAuthWatcher } from './services/auth-sync'
+import { kortixUserContextMiddleware } from './services/kortix-user-middleware'
 // REMOVED: opencode-hotreload watcher — it auto-disposed the OpenCode instance on
 // ANY .opencode/ file change, killing all active agent sessions mid-operation.
 // Dispose is now handled explicitly by:
@@ -157,6 +158,14 @@ const extraCorsOrigins = process.env.CORS_ALLOWED_ORIGINS
   : []
 const corsOrigins = [...new Set([...defaultCorsOrigins, ...extraCorsOrigins])]
 app.use('*', cors({ origin: corsOrigins }))
+
+// ─── Identity from preview proxy ─────────────────────────────────────────────
+// Parses the signed `X-Kortix-User-Context` header the Kortix API preview
+// proxy attaches to every authenticated user request. Attaches the parsed
+// context to `c.get('kortixUser')` for downstream route handlers. Purely
+// additive — missing/invalid header is treated as "no user identity" and
+// the existing service-key bearer auth remains the hard access gate.
+app.use('*', kortixUserContextMiddleware())
 
 // ─── Timing-safe token comparison ─────────────────────────────────────────────
 // Hash both values so timingSafeEqual always compares equal-length buffers,
@@ -536,6 +545,62 @@ app.route('/legacy', legacyMigrateRouter)
 // [channels v2] The old channels proxy to port 3456 has been removed.
 // Channel CLIs (telegram.ts, slack.ts) are standalone scripts.
 // Channel webhooks are handled directly by channel-webhooks.ts (mounted above /hooks/* proxy).
+
+// ─── Per-user session scoping ───────────────────────────────────────────────
+// Intercept opencode /session list + create BEFORE the catch-all proxy so we
+// can (a) stamp ownership on new sessions and (b) filter the list to sessions
+// the caller created. Sessions are strictly per-user — even the sandbox owner
+// only sees their own sessions. Service-key traffic (no identity header)
+// bypasses filtering so backend workers can still enumerate everything.
+import {
+  filterVisibleSessions,
+  stampSessionOwner,
+} from './services/session-ownership'
+
+app.get('/session', async (c) => {
+  const upstream = await proxyToOpenCode(c)
+  const user = c.get('kortixUser')
+  if (!user || upstream.status !== 200) return upstream
+  const body = await upstream.json().catch(() => null)
+  const list = Array.isArray(body) ? body : body?.data ?? []
+  if (!Array.isArray(list)) return new Response(JSON.stringify(body), {
+    status: upstream.status,
+    headers: upstream.headers,
+  })
+  // Legacy unstamped sessions predate the per-user layer — they belonged
+  // to whoever first set up the sandbox. Show them to owner/platform_admin
+  // only; admins weren't necessarily around back then.
+  const canSeeLegacy =
+    user.sandboxRole === 'platform_admin' || user.sandboxRole === 'owner'
+  const filtered = filterVisibleSessions(
+    list as Array<{ id: string }>,
+    user.userId,
+    canSeeLegacy,
+  )
+  const out = Array.isArray(body) ? filtered : { ...body, data: filtered }
+  const headers = new Headers(upstream.headers)
+  headers.delete('content-length')
+  return new Response(JSON.stringify(out), { status: 200, headers })
+})
+
+app.post('/session', async (c) => {
+  const upstream = await proxyToOpenCode(c)
+  const user = c.get('kortixUser')
+  if (!user || upstream.status >= 400) return upstream
+  
+  const raw = await upstream.text()
+  try {
+    const json = JSON.parse(raw) as { id?: string }
+    const sessionId = json?.id
+    if (sessionId) stampSessionOwner(sessionId, user.userId)
+  } catch {
+    // If opencode returned a non-JSON body we can't extract the id; skip
+    // stamping. Legacy-null semantics keep the session visible until next create.
+  }
+  const headers = new Headers(upstream.headers)
+  headers.delete('content-length')
+  return new Response(raw, { status: upstream.status, headers })
+})
 
 // Proxy all other requests to OpenCode
 app.all('*',

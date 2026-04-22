@@ -21,6 +21,8 @@ export interface SandboxMember {
   accountRole: AccountRole | null;
   addedBy: string | null;
   addedAt: Date;
+  monthlySpendCapCents: number | null;
+  currentPeriodCents: number;
 }
 
 export interface SandboxInvite {

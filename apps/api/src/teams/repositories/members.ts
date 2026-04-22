@@ -6,6 +6,8 @@ export interface SandboxMemberRow {
   userId: string;
   addedBy: string | null;
   addedAt: Date;
+  monthlySpendCapCents: number | null;
+  currentPeriodCents: number;
 }
 
 export async function listMembersForSandbox(
@@ -21,6 +23,8 @@ export async function listMembersForSandbox(
     userId: r.userId,
     addedBy: r.addedBy ?? null,
     addedAt: r.addedAt,
+    monthlySpendCapCents: r.monthlySpendCapCents ?? null,
+    currentPeriodCents: r.currentPeriodCents ?? 0,
   }));
 }
 
@@ -69,5 +73,17 @@ export async function removeSandboxMember(
 ): Promise<void> {
   await db
     .delete(sandboxMembers)
+    .where(and(eq(sandboxMembers.sandboxId, sandboxId), eq(sandboxMembers.userId, userId)));
+}
+
+export async function setSandboxMemberSpendCap(
+  db: Database,
+  sandboxId: string,
+  userId: string,
+  capCents: number | null,
+): Promise<void> {
+  await db
+    .update(sandboxMembers)
+    .set({ monthlySpendCapCents: capCents })
     .where(and(eq(sandboxMembers.sandboxId, sandboxId), eq(sandboxMembers.userId, userId)));
 }

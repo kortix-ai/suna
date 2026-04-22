@@ -32,19 +32,9 @@ export async function removeMember(
   userId: string,
 ): Promise<void> {
   await repoRemove(db, sandboxId, userId);
-  // The removed member may still have a "preview allowed" cache entry — drop
-  // it immediately so the kick takes effect on the next request.
   invalidatePreviewCacheForUser(userId);
 }
 
-/**
- * Change a teammate's account role. V1 policy:
- *   - only 'admin' ⇄ 'member' transitions allowed
- *   - promoting or demoting the `owner` role is an ownership transfer and is
- *     explicitly out of scope until we build that separate flow
- *
- * The owner-only gate lives in the route (`manage_members` action).
- */
 export async function changeMemberRole(
   db: Database,
   input: {
@@ -69,8 +59,6 @@ export async function changeMemberRole(
   }
 
   await updateAccountRole(db, input.targetUserId, input.accountId, input.role);
-  // Role change alters blanket visibility (admin → member loses all sandboxes
-  // they don't have explicit grants for). Force a re-evaluation next request.
   invalidatePreviewCacheForUser(input.targetUserId);
 }
 
@@ -80,17 +68,6 @@ const ROLE_RANK: Record<AccountRole, number> = {
   member: 2,
 };
 
-/**
- * Who can access this sandbox right now. Union of:
- *   - explicit sandbox_members grants (plain members added individually)
- *   - every owner/admin of the sandbox's account (implicit access via role)
- *
- * We expose both in the list so the Members panel always shows the owner
- * and admins, not just explicitly granted users. Without this, sandboxes
- * created before registerCreator existed would have no owner row at all.
- *
- * Sorted owners → admins → members, then alphabetically by email.
- */
 export async function listMembers(
   db: Database,
   sandboxId: string,
@@ -104,7 +81,6 @@ export async function listMembers(
   const roleByUser = new Map(accountRoster.map((r) => [r.userId, r.role]));
   const sandboxRowByUser = new Map(sandboxRows.map((r) => [r.userId, r]));
 
-  // Build the union of user ids to display.
   const userIds = new Set<string>();
   for (const r of sandboxRows) userIds.add(r.userId);
   for (const r of accountRoster) {
@@ -113,7 +89,6 @@ export async function listMembers(
 
   if (userIds.size === 0) return [];
 
-  // Hydrate emails for every unique user, in parallel.
   const supabase = getSupabase();
   const emails = new Map<string, string | null>();
   await Promise.all(
@@ -135,9 +110,9 @@ export async function listMembers(
       email: emails.get(userId) ?? null,
       accountRole: roleByUser.get(userId) ?? null,
       addedBy: sbRow?.addedBy ?? null,
-      // Owners/admins surfaced implicitly don't have a sandbox_members row;
-      // fall back to epoch so sort-by-addedAt is deterministic.
       addedAt: sbRow?.addedAt ?? new Date(0),
+      monthlySpendCapCents: sbRow?.monthlySpendCapCents ?? null,
+      currentPeriodCents: sbRow?.currentPeriodCents ?? 0,
     };
   });
 
