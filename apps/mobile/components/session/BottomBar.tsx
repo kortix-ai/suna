@@ -406,7 +406,43 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
           </TouchableOpacity>
         </Reanimated.View>
 
-        {/* Tab pills — tap to switch, long-press + drag to scrub iPhone-camera style */}
+        {/* Tab pills — tap to switch, long-press + drag to scrub iPhone-camera style.
+            With a single tab we skip the bordered/scrollable strip entirely
+            and just render the pill on its own, centered in the remaining
+            row space. The multi-tab path keeps the drag-to-scrub gesture. */}
+        {tabs.length <= 1 ? (
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+            {tabs.length === 0 ? (
+              <TouchableOpacity onPress={onOpenTabs} activeOpacity={0.7} className="px-3 py-2">
+                <Text className="text-sm text-muted-foreground">No tabs</Text>
+              </TouchableOpacity>
+            ) : (
+              (() => {
+                const tab = tabs[0];
+                const isActive = tab.id === activeTabId;
+                return (
+                  <TouchableOpacity
+                    onPress={() => onSelectTab(tab.id)}
+                    activeOpacity={0.7}
+                    className={`items-center justify-center rounded-full px-3 py-1 ${isActive ? 'bg-muted' : ''}`}
+                    style={{ maxWidth: 220 }}
+                  >
+                    <RNText
+                      numberOfLines={1}
+                      style={{
+                        fontSize: 13,
+                        fontFamily: isActive ? 'Roobert-Medium' : 'Roobert',
+                        color: isActive ? iconColor : (isDark ? '#aaa' : '#666'),
+                      }}
+                    >
+                      {tab.label}
+                    </RNText>
+                  </TouchableOpacity>
+                );
+              })()
+            )}
+          </View>
+        ) : (
         <GestureDetector gesture={dragGesture}>
         <View
           className="border border-border rounded-full mx-1 overflow-hidden"
@@ -519,6 +555,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
             )}
         </View>
         </GestureDetector>
+        )}
 
         {/* More (...) — collapses when the pill strip is held */}
         <Reanimated.View style={[sideButtonStyle, { overflow: 'hidden' }]}>
