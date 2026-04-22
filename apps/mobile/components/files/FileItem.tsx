@@ -8,13 +8,29 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { 
-  Folder, 
-  File, 
-  FileText, 
-  FileImage, 
+import {
+  Folder,
+  FolderOpen,
+  File,
+  FileText,
+  FileImage,
+  FileVideo,
+  FileAudio,
+  FileMusic,
   FileCode,
+  FileCode2,
+  FileJson,
+  FileCog,
+  FileTerminal,
   FileSpreadsheet,
+  FileType,
+  FileArchive,
+  FileLock,
+  FileBox,
+  FileKey,
+  FileBadge,
+  FileChartLine,
+  Database,
   ChevronRight,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
@@ -25,178 +41,134 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import type { SandboxFile } from '@/api/types';
-// FilePreviewRenderers used for viewer, not needed for icon mapping
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-// Helper to get file extension
-function getExt(name: string): string {
-  const i = name.lastIndexOf('.');
-  return i > 0 ? name.slice(i).toLowerCase() : '';
-}
+type IconComponent = typeof File;
 
-// Helper to get base filename
 function getBasename(name: string): string {
   return name.toLowerCase();
+}
+
+function getExt(name: string): string {
+  const base = getBasename(name);
+  const i = base.lastIndexOf('.');
+  return i > 0 ? base.slice(i + 1) : '';
+}
+
+/**
+ * Muted foreground color matching the mobile app's --muted-foreground token.
+ * Mirrors web's `text-muted-foreground` usage on file icons.
+ */
+export function getMutedIconColor(isDark: boolean): string {
+  return isDark ? '#a1a1aa' : '#71717a';
+}
+
+/**
+ * Returns a Lucide icon component for the given file, mirroring the web
+ * `getFileIcon` mapping (Google Drive-style monochrome icons).
+ *
+ * The returned icon is rendered with a muted color by callers — this helper
+ * only picks the right glyph.
+ */
+export function getFileIconComponent(
+  file: SandboxFile,
+  options: { isOpen?: boolean } = {},
+): IconComponent {
+  if (file.type === 'directory') {
+    return options.isOpen ? FolderOpen : Folder;
+  }
+
+  const name = getBasename(file.name);
+  const ext = getExt(file.name);
+
+  // ── Special filenames ──────────────────────────────────────────
+  if (name === 'dockerfile' || name.startsWith('docker-compose')) return FileBox;
+  if (name === '.env' || name.startsWith('.env.')) return FileKey;
+  if (['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb'].includes(name)) return FileBox;
+  if (['license', 'license.md', 'license.txt'].includes(name)) return FileBadge;
+  if (['.gitignore', '.gitattributes', '.gitmodules'].includes(name)) return FileCog;
+  if (['makefile', 'cmakelists.txt'].includes(name)) return FileTerminal;
+
+  // ── By extension ───────────────────────────────────────────────
+
+  // JS/TS family
+  if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'vue', 'svelte'].includes(ext)) return FileCode2;
+
+  // Other code languages + markup
+  if ([
+    'py', 'pyi', 'pyx', 'pyw', 'rs', 'go', 'rb', 'erb', 'gemspec',
+    'java', 'kt', 'kts', 'c', 'cpp', 'cc', 'cxx', 'h', 'hpp', 'hxx',
+    'm', 'mm', 'cs', 'swift', 'php', 'lua', 'hs', 'lhs', 'r', 'rmd',
+    'html', 'htm', 'css', 'scss', 'sass', 'less', 'styl',
+    'xml', 'xsl', 'xslt', 'wsdl',
+  ].includes(ext)) return FileCode;
+
+  // Data / config
+  if (['json', 'jsonc', 'json5'].includes(ext)) return FileJson;
+  if (['yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'properties', 'editorconfig'].includes(ext)) return FileCog;
+
+  // Shell
+  if (['sh', 'bash', 'zsh', 'fish', 'bat', 'cmd', 'ps1'].includes(ext)) return FileTerminal;
+
+  // Text / docs
+  if (['md', 'mdx', 'txt', 'rst', 'rtf', 'log'].includes(ext)) return FileText;
+
+  // Images
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp', 'avif', 'tiff', 'tif', 'heic', 'heif'].includes(ext)) return FileImage;
+
+  // Video
+  if (['mp4', 'webm', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'ogv'].includes(ext)) return FileVideo;
+
+  // Audio
+  if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus'].includes(ext)) return FileAudio;
+  if (['mid', 'midi'].includes(ext)) return FileMusic;
+
+  // Spreadsheets
+  if (['xlsx', 'xls', 'csv', 'tsv', 'ods'].includes(ext)) return FileSpreadsheet;
+
+  // Databases
+  if (['db', 'sqlite', 'sqlite3', 'db3', 'sdb', 's3db'].includes(ext)) return Database;
+  if (ext === 'sql') return FileChartLine;
+
+  // PDF / Documents
+  if (['pdf', 'doc', 'docx', 'odt', 'ppt', 'pptx', 'odp'].includes(ext)) return FileType;
+
+  // Archives
+  if (['zip', 'tar', 'gz', 'bz2', 'xz', 'rar', '7z', 'tgz', 'zst'].includes(ext)) return FileArchive;
+
+  // Lock / security
+  if (['lock', 'pem', 'crt', 'cer', 'key'].includes(ext)) return FileLock;
+
+  // Protobuf / GraphQL
+  if (['proto', 'graphql', 'gql'].includes(ext)) return FileCode2;
+
+  // WASM
+  if (['wasm', 'wat'].includes(ext)) return FileBox;
+
+  // Config dotfiles
+  if (name.startsWith('.') && (name.endsWith('rc') || name.endsWith('rc.js') || name.endsWith('rc.json') || name.endsWith('rc.yml'))) return FileCog;
+  if (name.includes('eslint') || name.includes('prettier') || name.includes('babel')) return FileCog;
+  if (name.startsWith('tsconfig') || name.startsWith('jsconfig')) return FileCog;
+
+  return File;
+}
+
+/**
+ * Backwards-compatible helper returning a Lucide icon and a muted color.
+ * The color is theme-aware and mirrors web's `text-muted-foreground` look.
+ */
+export function getFileIconAndColor(
+  file: SandboxFile,
+  isDark: boolean,
+): { icon: IconComponent; color: string } {
+  return { icon: getFileIconComponent(file), color: getMutedIconColor(isDark) };
 }
 
 interface FileItemProps {
   file: SandboxFile;
   onPress: (file: SandboxFile) => void;
   onLongPress?: (file: SandboxFile) => void;
-}
-
-/**
- * Get icon + color for a file, matching the frontend's colored file-icon mapping.
- */
-export function getFileIconAndColor(
-  file: SandboxFile,
-  isDark: boolean,
-): { icon: typeof File; color: string } {
-  if (file.type === 'directory') {
-    return { icon: Folder, color: '#60a5fa' }; // blue-400
-  }
-
-  const ext = getExt(file.name);
-  const base = getBasename(file.name);
-
-  // ── Special filenames ────────────────────────────────────────────────
-  if (base === 'dockerfile' || base.startsWith('docker-compose'))
-    return { icon: FileCode, color: '#38bdf8' }; // sky-400
-  if (base === '.env' || base.startsWith('.env.'))
-    return { icon: FileCode, color: '#eab308' }; // yellow-500
-  if (base === 'package.json' || base.includes('-lock') || base === 'yarn.lock' || base === 'bun.lockb')
-    return { icon: FileCode, color: '#4ade80' }; // green-400
-  if (base === 'license' || base === 'license.md' || base === 'license.txt')
-    return { icon: FileText, color: '#fbbf24' }; // amber-400
-  if (base === '.gitignore' || base === '.gitattributes' || base === '.gitmodules')
-    return { icon: FileCode, color: '#fb923c' }; // orange-400
-  if (base === 'makefile' || base === 'cmakelists.txt')
-    return { icon: FileCode, color: '#f59e0b' }; // amber-500
-  if (base.startsWith('tsconfig') || base.startsWith('jsconfig'))
-    return { icon: FileCode, color: '#60a5fa' }; // blue-400
-
-  // ── Extensions ───────────────────────────────────────────────────────
-  switch (ext) {
-    // TypeScript
-    case '.ts': case '.tsx':
-      return { icon: FileCode, color: '#60a5fa' }; // blue-400
-
-    // JavaScript
-    case '.js': case '.jsx': case '.mjs': case '.cjs':
-      return { icon: FileCode, color: '#facc15' }; // yellow-400
-
-    // Python
-    case '.py': case '.pyi': case '.pyx': case '.pyw':
-      return { icon: FileCode, color: '#38bdf8' }; // sky-400
-
-    // Rust
-    case '.rs':
-      return { icon: FileCode, color: '#fb923c' }; // orange-400
-
-    // Go
-    case '.go':
-      return { icon: FileCode, color: '#22d3ee' }; // cyan-400
-
-    // Ruby
-    case '.rb': case '.erb': case '.gemspec':
-      return { icon: FileCode, color: '#f87171' }; // red-400
-
-    // Java / Kotlin
-    case '.java': case '.kt': case '.kts':
-      return { icon: FileCode, color: '#f97316' }; // orange-500
-
-    // C / C++ / Obj-C
-    case '.c': case '.cpp': case '.cc': case '.cxx': case '.h': case '.hpp': case '.hxx': case '.m': case '.mm':
-      return { icon: FileCode, color: '#3b82f6' }; // blue-500
-
-    // C#
-    case '.cs':
-      return { icon: FileCode, color: '#a78bfa' }; // violet-400
-
-    // Swift
-    case '.swift':
-      return { icon: FileCode, color: '#fb923c' }; // orange-400
-
-    // PHP
-    case '.php':
-      return { icon: FileCode, color: '#818cf8' }; // indigo-400
-
-    // Shell
-    case '.sh': case '.bash': case '.zsh': case '.fish': case '.bat': case '.cmd': case '.ps1':
-      return { icon: FileCode, color: '#4ade80' }; // green-400
-
-    // Lua
-    case '.lua':
-      return { icon: FileCode, color: '#2563eb' }; // blue-600
-
-    // Haskell
-    case '.hs': case '.lhs':
-      return { icon: FileCode, color: '#a78bfa' }; // violet-400
-
-    // R
-    case '.r': case '.rmd':
-      return { icon: FileCode, color: '#60a5fa' }; // blue-400
-
-    // Frontend / Web
-    case '.vue':
-      return { icon: FileCode, color: '#34d399' }; // emerald-400
-    case '.svelte':
-      return { icon: FileCode, color: '#f97316' }; // orange-500
-    case '.html': case '.htm':
-      return { icon: FileCode, color: '#fb923c' }; // orange-400
-    case '.css': case '.scss': case '.sass': case '.less': case '.styl':
-      return { icon: FileCode, color: '#f472b6' }; // pink-400
-
-    // Data / Config
-    case '.json': case '.jsonc': case '.json5':
-      return { icon: FileCode, color: '#eab308' }; // yellow-500
-    case '.yaml': case '.yml': case '.toml':
-      return { icon: FileCode, color: '#c084fc' }; // purple-400
-    case '.xml': case '.xsl': case '.xslt':
-      return { icon: FileCode, color: '#f59e0b' }; // amber-500
-    case '.ini': case '.cfg': case '.conf': case '.properties': case '.editorconfig':
-      return { icon: FileCode, color: isDark ? '#a1a1aa' : '#9ca3af' }; // gray-400
-    case '.sql': case '.sqlite': case '.db':
-      return { icon: FileCode, color: '#60a5fa' }; // blue-400
-    case '.proto': case '.graphql': case '.gql':
-      return { icon: FileCode, color: '#ec4899' }; // pink-500
-
-    // Documents
-    case '.md': case '.mdx':
-      return { icon: FileText, color: isDark ? '#a1a1aa' : '#71717a' };
-    case '.txt': case '.rst': case '.rtf':
-      return { icon: FileText, color: isDark ? '#a1a1aa' : '#71717a' };
-    case '.pdf':
-      return { icon: FileText, color: '#ef4444' }; // red-500
-    case '.doc': case '.docx': case '.odt':
-      return { icon: FileText, color: '#3b82f6' }; // blue-500
-
-    // Images
-    case '.png': case '.jpg': case '.jpeg': case '.gif': case '.svg': case '.webp': case '.ico': case '.bmp': case '.tiff':
-      return { icon: FileImage, color: '#c084fc' }; // purple-400
-
-    // Spreadsheets
-    case '.csv': case '.tsv':
-      return { icon: FileSpreadsheet, color: '#4ade80' }; // green-400
-    case '.xlsx': case '.xls': case '.ods':
-      return { icon: FileSpreadsheet, color: '#4ade80' }; // green-400
-
-    // Archives
-    case '.zip': case '.tar': case '.gz': case '.bz2': case '.7z': case '.rar': case '.xz':
-      return { icon: File, color: '#f59e0b' }; // amber-500
-
-    // Lock / secrets
-    case '.lock': case '.pem': case '.crt': case '.cer': case '.key':
-      return { icon: File, color: '#eab308' }; // yellow-500
-
-    // Log
-    case '.log':
-      return { icon: FileText, color: isDark ? '#a1a1aa' : '#9ca3af' };
-
-    default:
-      return { icon: File, color: isDark ? '#a1a1aa' : '#71717a' };
-  }
 }
 
 /**
@@ -234,26 +206,19 @@ export function FileItem({ file, onPress, onLongPress }: FileItemProps) {
       onPress={handlePress}
       onLongPress={handleLongPress}
       style={animatedStyle}
-      className="flex-row items-center justify-between active:opacity-70 mb-2"
+      className="flex-row items-center justify-between active:opacity-70 py-2"
       accessibilityRole="button"
       accessibilityLabel={file.type === 'directory' ? `Folder ${file.name}` : `File ${file.name}`}
     >
       {/* Left: Icon + Text */}
       <View className="flex-row items-center gap-3 flex-1 min-w-0">
-        {/* Icon Container - 48x48 matching avatar size */}
-        <View
-          style={{
-            backgroundColor: isDark ? '#232324' : '#f4f4f5',
-            width: 48,
-            height: 48,
-          }}
-          className="rounded-xl items-center justify-center flex-shrink-0"
-        >
-          <Icon 
-            as={IconComponent} 
-            size={20} 
+        {/* Icon — monochrome, matches web file-icon (no background container) */}
+        <View className="w-6 items-center justify-center flex-shrink-0">
+          <Icon
+            as={IconComponent}
+            size={22}
             color={iconColor}
-            strokeWidth={2}
+            strokeWidth={1.75}
           />
         </View>
 

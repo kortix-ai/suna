@@ -1,4 +1,4 @@
-import React, { forwardRef, useMemo, useState } from 'react';
+import React, { forwardRef, useMemo } from 'react';
 import { ActivityIndicator, Pressable, View, useWindowDimensions } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -7,6 +7,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useInstanceProgress } from '@/stores/instance-progress';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
+import { SandboxConfigHealthBanner } from './SandboxConfigHealthBanner';
 import {
   ArrowDownToLine,
   Check,
@@ -69,20 +70,11 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
     [],
   );
 
-  const [contentHeight, setContentHeight] = useState(0);
-  const snapPoints = useMemo(() => {
-    const minHeight = 360;
-    const maxHeight = Math.floor(screenHeight * 0.86);
-    const target = contentHeight > 0 ? Math.ceil(contentHeight + 26) : 420;
-    return [Math.max(minHeight, Math.min(target, maxHeight))];
-  }, [contentHeight, screenHeight]);
-
   return (
     <BottomSheetModal
       ref={ref}
-      index={0}
-      snapPoints={snapPoints}
-      enableDynamicSizing={false}
+      enableDynamicSizing
+      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
       enableOverDrag={false}
       enablePanDownToClose
       handleIndicatorStyle={{
@@ -101,9 +93,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
       <BottomSheetScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 }}
         showsVerticalScrollIndicator={false}
-        onContentSizeChange={(_: number, h: number) => {
-          setContentHeight((prev) => (Math.abs(prev - h) < 1 ? prev : h));
-        }}
       >
         {/* Instances */}
         <View className="px-1">
@@ -175,6 +164,12 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               <Text className="font-roobert text-[14px] text-muted-foreground">Manage instances</Text>
             </View>
           </Pressable>
+        </View>
+
+        {/* OpenCode config health — sits above the update banner.
+            Renders nothing when /config/status is valid. */}
+        <View className="mt-2">
+          <SandboxConfigHealthBanner />
         </View>
 
         {/* Update — available / in progress / complete / error */}

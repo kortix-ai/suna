@@ -144,7 +144,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           {/* Title */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
             <Ionicons name="download-outline" size={18} color={fg} />
-            <Text style={{ fontSize: 17, fontFamily: 'Roobert-Medium', color: fg }}>
+            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fg }}>
               Export Transcript
             </Text>
           </View>

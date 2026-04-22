@@ -77,6 +77,34 @@ function methodLabel(method: { type: string; label: string }) {
   return method.label || 'OAuth';
 }
 
+/**
+ * Coerce any thrown value into a user-readable string.
+ *
+ * The OpenCode SDK rejects with plain error-shaped objects (not `Error`
+ * instances), so `String(err)` used to render the useless `[object Object]`.
+ * This drills into common error shapes before falling back to JSON.stringify.
+ */
+function formatOauthError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === 'object') {
+    const e = err as Record<string, unknown>;
+    if (typeof e.message === 'string' && e.message) return e.message;
+    if (typeof e.error === 'string' && e.error) return e.error;
+    if (e.error && typeof e.error === 'object') {
+      const inner = e.error as Record<string, unknown>;
+      if (typeof inner.message === 'string' && inner.message) return inner.message;
+    }
+    if (typeof e.name === 'string' && typeof e.code === 'string') {
+      return `${e.name}: ${e.code}`;
+    }
+    try {
+      const json = JSON.stringify(err);
+      if (json && json !== '{}') return json;
+    } catch { /* fall through */ }
+  }
+  return typeof err === 'string' ? err : 'Something went wrong. Please try again.';
+}
+
 /** Get an icon for the auth method based on its label/type */
 function methodIcon(method: { type: string; label: string }) {
   const label = method.label.toLowerCase();
@@ -295,7 +323,7 @@ export function ConnectProviderContent({
           }
         } catch (err) {
           setOauthState('error');
-          setError(err instanceof Error ? err.message : String(err));
+          setError(formatOauthError(err));
         }
       }
     },

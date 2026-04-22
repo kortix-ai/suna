@@ -16,6 +16,7 @@ import {
   RefreshControl,
   Keyboard,
   ActivityIndicator,
+  TextInput,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -30,6 +31,8 @@ import {
   ChevronRight,
   Folder,
   Home,
+  Search,
+  X as XIcon,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,7 +55,12 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { FileItem, getFileIconAndColor } from '@/components/files/FileItem';
+import {
+  FileItem,
+  getFileIconAndColor,
+  getFileIconComponent,
+  getMutedIconColor,
+} from '@/components/files/FileItem';
 import { FileBreadcrumb } from '@/components/files/FileBreadcrumb';
 import { FileViewer } from '@/components/files/FileViewer';
 import {
@@ -160,6 +168,21 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
 
   // Show/hide dotfiles (hidden by default, same as frontend)
   const [showHidden, setShowHidden] = useState(savedTabState?.showHidden ?? false);
+
+  // Search state — filters files in the current directory by name.
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<TextInput>(null);
+  const openSearch = useCallback(() => {
+    setIsSearchOpen(true);
+    // Give the input a moment to mount before focusing.
+    setTimeout(() => searchInputRef.current?.focus(), 50);
+  }, []);
+  const closeSearch = useCallback(() => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    Keyboard.dismiss();
+  }, []);
 
   // Navigation state
   const [currentPath, setCurrentPath] = useState(savedTabState?.currentPath ?? '/workspace');
@@ -275,11 +298,13 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
       return { folders: [], regularFiles: [] };
     }
     const visible = showHidden ? files : files.filter((f) => !f.name.startsWith('.'));
+    const q = searchQuery.trim().toLowerCase();
+    const searched = q ? visible.filter((f) => f.name.toLowerCase().includes(q)) : visible;
     const sortFn = (a: SandboxFile, b: SandboxFile) => a.name.localeCompare(b.name);
-    const folders = visible.filter((f) => f.type === 'directory').sort(sortFn);
-    const regularFiles = visible.filter((f) => f.type === 'file').sort(sortFn);
+    const folders = searched.filter((f) => f.type === 'directory').sort(sortFn);
+    const regularFiles = searched.filter((f) => f.type === 'file').sort(sortFn);
     return { folders, regularFiles };
-  }, [files, showHidden]);
+  }, [files, showHidden, searchQuery]);
 
   // All sibling names in current directory (for duplicate detection)
   const siblingNames = useMemo(() => {
@@ -552,39 +577,80 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>
       <PageHeader
-        title="Files"
+        title={
+          isSearchOpen ? (
+            <View className="flex-1 flex-row items-center" style={{ gap: 8 }}>
+              <Icon as={Search} size={16} color={mutedColor} strokeWidth={2} />
+              <TextInput
+                ref={searchInputRef}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search files in this folder"
+                placeholderTextColor={mutedColor}
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={{
+                  flex: 1,
+                  color: fgColor,
+                  fontSize: 16,
+                  fontFamily: 'Roobert-Regular',
+                  padding: 0,
+                }}
+              />
+            </View>
+          ) : (
+            'Files'
+          )
+        }
         onOpenDrawer={onOpenDrawer}
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
+        hideRightDrawerToggle={isSearchOpen}
         rightActions={
           <View className="flex-row items-center" style={{ gap: 4 }}>
-            {/* View mode toggle */}
+            {/* Search — always visible; icon flips between Search and X. */}
             <AnimatedPressable
-              onPress={() => setViewMode((v) => (v === 'list' ? 'grid' : 'list'))}
+              onPress={isSearchOpen ? closeSearch : openSearch}
               className="p-2 rounded-xl active:opacity-70"
             >
               <Icon
-                as={viewMode === 'list' ? LayoutGrid : List}
+                as={isSearchOpen ? XIcon : Search}
                 size={18}
                 color={fgColor}
                 strokeWidth={2}
               />
             </AnimatedPressable>
-            {/* Upload */}
-            <AnimatedPressable
-              onPress={handleUploadDocument}
-              className="p-2 rounded-xl active:opacity-70"
-            >
-              <Icon as={Upload} size={18} color={fgColor} strokeWidth={2} />
-            </AnimatedPressable>
-            {/* New folder */}
-            <AnimatedPressable
-              onPress={openCreateFolder}
-              className="p-2 rounded-xl active:opacity-70"
-            >
-              <Icon as={FolderPlus} size={18} color={fgColor} strokeWidth={2} />
-            </AnimatedPressable>
+
+            {/* Other actions hide while search is active to free up header space. */}
+            {!isSearchOpen && (
+              <>
+                <AnimatedPressable
+                  onPress={() => setViewMode((v) => (v === 'list' ? 'grid' : 'list'))}
+                  className="p-2 rounded-xl active:opacity-70"
+                >
+                  <Icon
+                    as={viewMode === 'list' ? LayoutGrid : List}
+                    size={18}
+                    color={fgColor}
+                    strokeWidth={2}
+                  />
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={handleUploadDocument}
+                  className="p-2 rounded-xl active:opacity-70"
+                >
+                  <Icon as={Upload} size={18} color={fgColor} strokeWidth={2} />
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPress={openCreateFolder}
+                  className="p-2 rounded-xl active:opacity-70"
+                >
+                  <Icon as={FolderPlus} size={18} color={fgColor} strokeWidth={2} />
+                </AnimatedPressable>
+              </>
+            )}
           </View>
         }
       />
@@ -872,34 +938,13 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                       key={file.path}
                       style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}
                     >
-                      <Pressable
+                      <FileRowCard
+                        file={file}
+                        isDark={isDark}
+                        fgColor={fgColor}
                         onPress={() => handleFilePress(file)}
                         onLongPress={() => handleFileLongPress(file)}
-                        className="flex-row items-center rounded-xl border active:opacity-70"
-                        style={{
-                          borderColor: isDark
-                            ? 'rgba(248, 248, 248, 0.1)'
-                            : 'rgba(18, 18, 21, 0.1)',
-                          backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
-                          paddingHorizontal: 12,
-                          paddingVertical: 10,
-                        }}
-                      >
-                        <Icon
-                          as={Folder}
-                          size={18}
-                          color="#3b82f6"
-                          strokeWidth={2}
-                          style={{ marginRight: 8 }}
-                        />
-                        <Text
-                          style={{ color: fgColor }}
-                          className="text-sm font-roobert-medium flex-1"
-                          numberOfLines={1}
-                        >
-                          {file.name}
-                        </Text>
-                      </Pressable>
+                      />
                     </View>
                   ))}
                 </View>
@@ -925,7 +970,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
                       key={file.path}
                       style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}
                     >
-                      <FileGridCard
+                      <FileRowCard
                         file={file}
                         isDark={isDark}
                         fgColor={fgColor}
@@ -1310,9 +1355,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   );
 });
 
-// ── Grid card for files ────────────────────────────────────────────────────
+// ── Unified row card for folders + files ───────────────────────────────────
+// Single compact row variant (matches the FOLDERS row style in the screenshot)
+// so folders and files share identical card chrome. Icon uses the same
+// monochrome mapping as the web file tree and the FileItem list view.
 
-function FileGridCard({
+function FileRowCard({
   file,
   isDark,
   fgColor,
@@ -1325,50 +1373,37 @@ function FileGridCard({
   onPress: () => void;
   onLongPress: () => void;
 }) {
-  const { icon: IconComponent, color: iconColor } = getFileIconAndColor(file, isDark);
+  const IconComponent = getFileIconComponent(file);
+  const iconColor = getMutedIconColor(isDark);
 
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
-      className="rounded-xl border overflow-hidden active:opacity-70"
+      className="flex-row items-center rounded-xl border active:opacity-70"
       style={{
         borderColor: isDark
           ? 'rgba(248, 248, 248, 0.1)'
           : 'rgba(18, 18, 21, 0.1)',
         backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
       }}
     >
-      {/* Thumbnail area */}
-      <View
-        className="items-center justify-center"
-        style={{
-          height: 80,
-          backgroundColor: isDark
-            ? 'rgba(248, 248, 248, 0.03)'
-            : 'rgba(18, 18, 21, 0.02)',
-        }}
+      <Icon
+        as={IconComponent}
+        size={18}
+        color={iconColor}
+        strokeWidth={2}
+        style={{ marginRight: 8 }}
+      />
+      <Text
+        style={{ color: fgColor }}
+        className="text-sm font-roobert-medium flex-1"
+        numberOfLines={1}
       >
-        <Icon as={IconComponent} size={28} color={iconColor} strokeWidth={1.5} />
-      </View>
-      {/* Name */}
-      <View
-        className="px-3 py-2.5"
-        style={{
-          borderTopWidth: 1,
-          borderTopColor: isDark
-            ? 'rgba(248, 248, 248, 0.05)'
-            : 'rgba(18, 18, 21, 0.05)',
-        }}
-      >
-        <Text
-          style={{ color: fgColor }}
-          className="text-sm font-roobert-medium"
-          numberOfLines={1}
-        >
-          {file.name}
-        </Text>
-      </View>
+        {file.name}
+      </Text>
     </Pressable>
   );
 }

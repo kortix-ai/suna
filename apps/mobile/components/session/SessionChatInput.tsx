@@ -13,7 +13,6 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  Modal,
   ScrollView,
   Platform,
   Animated,
@@ -21,13 +20,32 @@ import {
   ActionSheetIOS,
   Alert,
   Image,
+  useWindowDimensions,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
-import { Infinity as InfinityIcon, Slash as SlashIcon, Info as InfoIcon, X as XIcon, Plus as PlusIcon, Mic as MicIcon } from 'lucide-react-native';
+import {
+  Infinity as InfinityIcon,
+  Slash as SlashIcon,
+  Info as InfoIcon,
+  X as XIcon,
+  Plus as PlusIcon,
+  Mic as MicIcon,
+  Paperclip as PaperclipIcon,
+  Settings as SettingsIcon,
+  ChevronRight as ChevronRightIcon,
+} from 'lucide-react-native';
+import { Icon } from '@/components/ui/icon';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetView,
+  BottomSheetScrollView,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -1115,27 +1133,21 @@ export function SessionChatInput({
         onboardingMode={onboardingMode}
       />
 
-      {/* Config bottom sheet — agent, model, variant */}
-      <Modal
+      {/* Config bottom sheet — agent, model, variant (dynamic-sized) */}
+      <ConfigSheet
         visible={showConfigSheet}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowConfigSheet(false)}
-      >
-        <ConfigSheet
-          isDark={isDark}
-          agents={agents}
-          selectedAgent={agent || null}
-          onAgentChange={(name) => { onAgentChange?.(name); }}
-          models={models}
-          selectedModel={model || null}
-          onModelChange={(pid, mid) => { onModelChange?.(pid, mid); }}
-          variants={variants}
-          selectedVariant={variant || null}
-          onVariantSet={(v) => onVariantSet?.(v)}
-          onClose={() => setShowConfigSheet(false)}
-        />
-      </Modal>
+        isDark={isDark}
+        agents={agents}
+        selectedAgent={agent || null}
+        onAgentChange={(name) => { onAgentChange?.(name); }}
+        models={models}
+        selectedModel={model || null}
+        onModelChange={(pid, mid) => { onModelChange?.(pid, mid); }}
+        variants={variants}
+        selectedVariant={variant || null}
+        onVariantSet={(v) => onVariantSet?.(v)}
+        onClose={() => setShowConfigSheet(false)}
+      />
 
       <AutoContinueSheet
         visible={showAutoSheet}
@@ -1231,159 +1243,181 @@ function ActionsSheet({
 }: ActionsSheetProps) {
   const insets = useSafeAreaInsets();
   const muted = isDark ? '#a1a1aa' : '#71717a';
+  const fgColor = isDark ? '#F8F8F8' : '#121215';
   const bg = isDark ? '#1a1a1d' : '#FFFFFF';
-  const rowBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const rowBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+
+  // Sync `visible` prop to the imperative BottomSheetModal API so the caller
+  // API stays unchanged. Dismiss originating from user gesture flows back
+  // through onClose; programmatic dismissals are guarded by dismissingRef.
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const dismissingRef = useRef(false);
+
+  useEffect(() => {
+    if (visible) {
+      dismissingRef.current = false;
+      sheetRef.current?.present();
+    } else {
+      dismissingRef.current = true;
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  const handleSheetDismiss = useCallback(() => {
+    if (!dismissingRef.current) onClose();
+    dismissingRef.current = false;
+  }, [onClose]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.4}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
+  const rows: Array<{
+    key: string;
+    icon: typeof PaperclipIcon;
+    label: string;
+    description: string;
+    onPress: () => void;
+  }> = [];
+
+  if (!onboardingMode) {
+    rows.push({
+      key: 'attach',
+      icon: PaperclipIcon,
+      label: 'Attach files',
+      description: 'Photos, documents, or files',
+      onPress: onAttach,
+    });
+  }
+  rows.push({
+    key: 'config',
+    icon: SettingsIcon,
+    label: 'Agent & Model',
+    description: configLabel,
+    onPress: onConfig,
+  });
+  if (onAutoContinue) {
+    rows.push({
+      key: 'autocontinue',
+      icon: InfinityIcon,
+      label: 'AutoContinue',
+      description: autocontinueActive
+        ? `Active · ${autocontinueLabel}`
+        : 'Off — manual mode',
+      onPress: onAutoContinue,
+    });
+  }
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
+    <BottomSheetModal
+      ref={sheetRef}
+      enableDynamicSizing
+      enablePanDownToClose
+      enableOverDrag={false}
+      onDismiss={handleSheetDismiss}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: bg,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+      }}
+      backdropComponent={renderBackdrop}
     >
-      <View style={{ flex: 1, backgroundColor: bg }}>
-        {/* Drag handle */}
-        <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 8 }}>
-          <View style={{ width: 36, height: 5, borderRadius: 3, backgroundColor: isDark ? '#3F3F46' : '#D4D4D8' }} />
-        </View>
-
-        {/* Header */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 16 }}>
-          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
-            Actions
-          </Text>
-          <TouchableOpacity onPress={onClose} hitSlop={10}>
-            <Ionicons name="close" size={22} color={muted} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Action rows */}
-        <View style={{ paddingHorizontal: 16 }}>
-          {/* Attach files */}
-          {!onboardingMode && (
-            <TouchableOpacity
-              onPress={onAttach}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 14,
-                paddingHorizontal: 16,
-                borderRadius: 14,
-                backgroundColor: rowBg,
-                marginBottom: 8,
-              }}
-            >
-              <View style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 14,
-              }}>
-                <Ionicons name="attach" size={18} color={isDark ? '#d4d4d8' : '#52525b'} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
-                  Attach files
-                </Text>
-                <Text style={{ fontSize: 12, color: muted, marginTop: 2 }}>
-                  Photos, documents, or files
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={isDark ? '#3F3F46' : '#D4D4D8'} />
-            </TouchableOpacity>
-          )}
-
-          {/* Agent & Model config */}
-          <TouchableOpacity
-            onPress={onConfig}
-            activeOpacity={0.7}
+      <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
+        {/* Header — drag handle is the only affordance; swipe down or tap
+            backdrop to dismiss. */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 10 }}>
+          <Text
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingVertical: 14,
-              paddingHorizontal: 16,
-              borderRadius: 14,
-              backgroundColor: rowBg,
-              marginBottom: 8,
+              fontSize: 18,
+              fontFamily: 'Roobert-SemiBold',
+              color: fgColor,
             }}
           >
-            <View style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginRight: 14,
-            }}>
-              <Ionicons name="settings-outline" size={17} color={isDark ? '#d4d4d8' : '#52525b'} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
-                Agent & Model
-              </Text>
-              <Text style={{ fontSize: 12, color: muted, marginTop: 2 }} numberOfLines={1}>
-                {configLabel}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={isDark ? '#3F3F46' : '#D4D4D8'} />
-          </TouchableOpacity>
-
-          {/* AutoContinue */}
-          {onAutoContinue && (
-            <TouchableOpacity
-              onPress={onAutoContinue}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingVertical: 14,
-                paddingHorizontal: 16,
-                borderRadius: 14,
-                backgroundColor: autocontinueActive
-                  ? (isDark ? 'rgba(109,40,217,0.12)' : 'rgba(99,102,241,0.08)')
-                  : rowBg,
-                marginBottom: 8,
-                borderWidth: autocontinueActive ? 1 : 0,
-                borderColor: autocontinueActive ? (isDark ? 'rgba(192,132,252,0.25)' : 'rgba(99,102,241,0.25)') : 'transparent',
-              }}
-            >
-              <View style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                backgroundColor: autocontinueActive
-                  ? (isDark ? 'rgba(192,132,252,0.15)' : 'rgba(99,102,241,0.12)')
-                  : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 14,
-              }}>
-                <InfinityIcon
-                  size={17}
-                  color={autocontinueActive ? (isDark ? '#c4b5fd' : '#6366f1') : (isDark ? '#d4d4d8' : '#52525b')}
-                  strokeWidth={2.2}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
-                  AutoContinue
-                </Text>
-                <Text style={{ fontSize: 12, color: autocontinueActive ? (isDark ? '#c4b5fd' : '#4c1d95') : muted, marginTop: 2 }}>
-                  {autocontinueActive ? `Active · ${autocontinueLabel}` : 'Off — manual mode'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={isDark ? '#3F3F46' : '#D4D4D8'} />
-            </TouchableOpacity>
-          )}
+            Actions
+          </Text>
         </View>
-      </View>
-    </Modal>
+
+        {/* Settings-style rows: plain stroked lucide icon, title + subtitle,
+            chevron, and a thin divider between rows (no per-row card bg). */}
+        <View style={{ paddingHorizontal: 20 }}>
+          {rows.map((row, idx) => {
+            const isLast = idx === rows.length - 1;
+            return (
+              <React.Fragment key={row.key}>
+                <TouchableOpacity
+                  onPress={row.onPress}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                  }}
+                >
+                  <Icon
+                    as={row.icon}
+                    size={18}
+                    color={isDark ? 'rgba(248,248,248,0.8)' : 'rgba(18,18,21,0.8)'}
+                    strokeWidth={2.2}
+                  />
+                  <View style={{ marginLeft: 16, flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontFamily: 'Roobert-Medium',
+                        color: fgColor,
+                      }}
+                    >
+                      {row.label}
+                    </Text>
+                    <Text
+                      style={{
+                        marginTop: 2,
+                        fontSize: 12,
+                        fontFamily: 'Roobert',
+                        color: muted,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {row.description}
+                    </Text>
+                  </View>
+                  <Icon
+                    as={ChevronRightIcon}
+                    size={16}
+                    color={isDark ? 'rgba(248,248,248,0.35)' : 'rgba(18,18,21,0.35)'}
+                    strokeWidth={2.2}
+                  />
+                </TouchableOpacity>
+                {!isLast && (
+                  <View
+                    style={{
+                      height: 1,
+                      backgroundColor: isDark
+                        ? 'rgba(248,248,248,0.08)'
+                        : 'rgba(18,18,21,0.08)',
+                    }}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </View>
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 }
 
@@ -1427,9 +1461,42 @@ function AutoContinueSheet({
     return preferred?.id ?? algorithms[0]?.id ?? null;
   }, [algorithms]);
 
+  const { height: screenHeight } = useWindowDimensions();
   const muted = isDark ? '#a1a1aa' : '#71717a';
   const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
   const bg = isDark ? '#121215' : '#FFFFFF';
+
+  // Bridge `visible` prop to the imperative BottomSheetModal API.
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const dismissingRef = useRef(false);
+
+  useEffect(() => {
+    if (visible) {
+      dismissingRef.current = false;
+      sheetRef.current?.present();
+    } else {
+      dismissingRef.current = true;
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  const handleSheetDismiss = useCallback(() => {
+    if (!dismissingRef.current) onClose();
+    dismissingRef.current = false;
+  }, [onClose]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.4}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
 
   useEffect(() => {
     if (!visible) {
@@ -1440,38 +1507,123 @@ function AutoContinueSheet({
   if (algorithms.length === 0) return null;
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
+    <BottomSheetModal
+      ref={sheetRef}
+      enableDynamicSizing
+      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
+      enablePanDownToClose={!detailAlg}
+      enableOverDrag={false}
+      onDismiss={handleSheetDismiss}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: bg,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+      }}
+      backdropComponent={renderBackdrop}
     >
-      <View style={{ flex: 1, backgroundColor: bg }}>
-        <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
-          <View
-            style={{
-              width: 36,
-              height: 5,
-              borderRadius: 3,
-              backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-            }}
-          />
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12 }}>
-          <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
-            AutoContinue
-          </Text>
-          <TouchableOpacity onPress={onClose} hitSlop={10}>
-            <Ionicons name="close" size={24} color={muted} />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+      {detailAlg ? (
+        /* Detail view — algorithm deep-dive with its own scroller. */
+        <BottomSheetScrollView
+          contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
           showsVerticalScrollIndicator={false}
         >
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, paddingHorizontal: 20, paddingBottom: 12 }}>
+            <TouchableOpacity onPress={() => setDetailAlg(null)} hitSlop={12} style={{ marginRight: 12 }}>
+              <Ionicons name="chevron-back" size={22} color={muted} />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
+              {detailAlg.label}
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                onSelect(detailAlg.id);
+                setDetailAlg(null);
+                onClose();
+              }}
+              style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              hitSlop={10}
+            >
+              <Text style={{ color: isDark ? '#c4b5fd' : '#4c1d95', fontFamily: 'Roobert-Medium', fontSize: 13 }}>
+                Use
+              </Text>
+              <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ paddingHorizontal: 20 }}>
+            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Role
+            </Text>
+            <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? '#F8F8F8' : '#121215' }}>
+              {detailAlg.role}
+            </Text>
+
+            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Description
+            </Text>
+            <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
+              {detailAlg.description}
+            </Text>
+
+            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Best for
+            </Text>
+            <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
+              {detailAlg.bestFor}
+            </Text>
+
+            <View style={{ flexDirection: 'row', marginTop: 4 }}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                  Strengths
+                </Text>
+                {detailAlg.strengths.map((s, idx) => (
+                  <Text key={idx} style={{ fontSize: 13, color: isDark ? '#bbf7d0' : '#166534', marginBottom: 6 }}>
+                    • {s}
+                  </Text>
+                ))}
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+                  Weaknesses
+                </Text>
+                {detailAlg.weaknesses.map((s, idx) => (
+                  <Text key={idx} style={{ fontSize: 13, color: isDark ? '#fed7aa' : '#9a3412', marginBottom: 6 }}>
+                    • {s}
+                  </Text>
+                ))}
+              </View>
+            </View>
+
+            <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
+              How it works
+            </Text>
+            <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? '#e4e4e7' : '#1f2937' }}>
+              {detailAlg.howItWorks}
+            </Text>
+          </View>
+        </BottomSheetScrollView>
+      ) : (
+        /* List view — Off / On toggle + algorithm list. Top-level scroller so
+           scroll gestures actually work inside the sheet. */
+        <BottomSheetScrollView
+          contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
+          showsVerticalScrollIndicator={false}
+        >
+        {/* Header — drag handle + backdrop tap dismiss, no explicit close. */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
+          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
+            AutoContinue
+          </Text>
+        </View>
+
+        <View>
           <View>
             <TouchableOpacity
               onPress={() => { onSelect(null); onClose(); }}
@@ -1576,92 +1728,10 @@ function AutoContinueSheet({
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
-
-        {detailAlg && (
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: bg, zIndex: 50 }]}> 
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: insets.top + 10, paddingHorizontal: 20, paddingBottom: 12 }}>
-              <TouchableOpacity onPress={() => setDetailAlg(null)} hitSlop={12} style={{ marginRight: 12 }}>
-                <Ionicons name="chevron-back" size={22} color={muted} />
-              </TouchableOpacity>
-              <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
-                {detailAlg.label}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  onSelect(detailAlg.id);
-                  setDetailAlg(null);
-                  onClose();
-                }}
-                style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                hitSlop={10}
-              >
-                <Text style={{ color: isDark ? '#c4b5fd' : '#4c1d95', fontFamily: 'Roobert-Medium', fontSize: 13 }}>
-                  Use
-                </Text>
-                <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 32 }}
-              showsVerticalScrollIndicator={false}
-            >
-              <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                Role
-              </Text>
-              <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? '#F8F8F8' : '#121215' }}>
-                {detailAlg.role}
-              </Text>
-
-              <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                Description
-              </Text>
-              <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
-                {detailAlg.description}
-              </Text>
-
-              <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                Best for
-              </Text>
-              <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
-                {detailAlg.bestFor}
-              </Text>
-
-              <View style={{ flexDirection: 'row', marginTop: 4 }}>
-                <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                    Strengths
-                  </Text>
-                  {detailAlg.strengths.map((s, idx) => (
-                    <Text key={idx} style={{ fontSize: 13, color: isDark ? '#bbf7d0' : '#166534', marginBottom: 6 }}>
-                      • {s}
-                    </Text>
-                  ))}
-                </View>
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-                    Weaknesses
-                  </Text>
-                  {detailAlg.weaknesses.map((s, idx) => (
-                    <Text key={idx} style={{ fontSize: 13, color: isDark ? '#fed7aa' : '#9a3412', marginBottom: 6 }}>
-                      • {s}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-
-              <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
-                How it works
-              </Text>
-              <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? '#e4e4e7' : '#1f2937' }}>
-                {detailAlg.howItWorks}
-              </Text>
-            </ScrollView>
-          </View>
-        )}
-      </View>
-    </Modal>
+        </View>
+        </BottomSheetScrollView>
+      )}
+    </BottomSheetModal>
   );
 }
 
@@ -1745,14 +1815,15 @@ function SlashCommandSuggestions({
 
 type ConfigTab = 'agent' | 'model' | 'thinking';
 
-const TAB_CONFIG: { key: ConfigTab; label: string; icon: string; color: string }[] = [
-  { key: 'agent', label: 'Agent', icon: 'person-outline', color: '#a78bfa' },
-  { key: 'model', label: 'Model', icon: 'hardware-chip-outline', color: '#60a5fa' },
-  { key: 'thinking', label: 'Thinking', icon: 'flash-outline', color: '#fbbf24' },
+const TAB_CONFIG: { key: ConfigTab; label: string; icon: string }[] = [
+  { key: 'agent', label: 'Agent', icon: 'person-outline' },
+  { key: 'model', label: 'Model', icon: 'hardware-chip-outline' },
+  { key: 'thinking', label: 'Thinking', icon: 'flash-outline' },
 ];
 
 function ConfigSheet({
   isDark,
+  visible,
   agents,
   selectedAgent,
   onAgentChange,
@@ -1765,6 +1836,7 @@ function ConfigSheet({
   onClose,
 }: {
   isDark: boolean;
+  visible: boolean;
   agents: Agent[];
   selectedAgent: Agent | null;
   onAgentChange: (name: string) => void;
@@ -1777,12 +1849,47 @@ function ConfigSheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<ConfigTab>('agent');
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#a1a1aa' : '#71717a';
   const selectedBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
   const tabBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
   const tabActiveBg = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)';
+  const bg = isDark ? '#121215' : '#FFFFFF';
+
+  // Imperative BottomSheetModal ↔ visible prop bridge (same pattern as
+  // ActionsSheet/UserMenuSheet elsewhere in the app).
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const dismissingRef = useRef(false);
+
+  useEffect(() => {
+    if (visible) {
+      dismissingRef.current = false;
+      sheetRef.current?.present();
+    } else {
+      dismissingRef.current = true;
+      sheetRef.current?.dismiss();
+    }
+  }, [visible]);
+
+  const handleSheetDismiss = useCallback(() => {
+    if (!dismissingRef.current) onClose();
+    dismissingRef.current = false;
+  }, [onClose]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.4}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
 
   // Filter tabs to only show ones with content
   const visibleTabs = TAB_CONFIG.filter((t) => {
@@ -1793,91 +1900,94 @@ function ConfigSheet({
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#FFFFFF' }}>
-      {/* Handle */}
-      <View style={{ alignItems: 'center', paddingTop: 10, paddingBottom: 6 }}>
+    <BottomSheetModal
+      ref={sheetRef}
+      enableDynamicSizing
+      maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
+      enablePanDownToClose
+      enableOverDrag={false}
+      onDismiss={handleSheetDismiss}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: bg,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+      }}
+      backdropComponent={renderBackdrop}
+    >
+      {/* Top-level BottomSheetScrollView so scroll gestures work. Header +
+          tabs are wrapped in a single sticky block (index 0) so they stay
+          pinned while the items list scrolls underneath. The sheet still
+          sizes to content via enableDynamicSizing; scroll only activates
+          when content exceeds maxDynamicContentSize. */}
+      <BottomSheetScrollView
+        contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
+        showsVerticalScrollIndicator={false}
+        stickyHeaderIndices={[0]}
+      >
+      {/* Sticky header block: title + tab bar. Solid bg so scrolled items
+          don't show through. */}
+      <View style={{ backgroundColor: bg }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
+          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
+            Configuration
+          </Text>
+        </View>
         <View
           style={{
-            width: 36,
-            height: 5,
-            borderRadius: 3,
-            backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+            flexDirection: 'row',
+            marginHorizontal: 20,
+            marginBottom: 16,
+            borderRadius: 12,
+            backgroundColor: tabBg,
+            padding: 3,
           }}
-        />
-      </View>
-
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: 20,
-          paddingBottom: 12,
-        }}
-      >
-        <Text style={{ fontSize: 20, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
-          Configuration
-        </Text>
-        <TouchableOpacity onPress={onClose} activeOpacity={0.7} hitSlop={10}>
-          <Ionicons name="close" size={24} color={mutedColor} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Tabs */}
-      <View
-        style={{
-          flexDirection: 'row',
-          marginHorizontal: 20,
-          marginBottom: 16,
-          borderRadius: 12,
-          backgroundColor: tabBg,
-          padding: 3,
-        }}
-      >
-        {visibleTabs.map((tab) => {
-          const isActive = activeTab === tab.key;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              activeOpacity={0.7}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingVertical: 8,
-                borderRadius: 10,
-                backgroundColor: isActive ? tabActiveBg : 'transparent',
-                gap: 5,
-              }}
-            >
-              <Ionicons
-                name={tab.icon as any}
-                size={14}
-                color={isActive ? tab.color : mutedColor}
-              />
-              <Text
+        >
+          {visibleTabs.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <TouchableOpacity
+                key={tab.key}
+                onPress={() => setActiveTab(tab.key)}
+                activeOpacity={0.7}
                 style={{
-                  fontSize: 13,
-                  fontFamily: isActive ? 'Roobert-SemiBold' : 'Roobert-Medium',
-                  color: isActive ? fgColor : mutedColor,
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  backgroundColor: isActive ? tabActiveBg : 'transparent',
+                  gap: 5,
                 }}
               >
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+                <Ionicons
+                  name={tab.icon as any}
+                  size={14}
+                  color={isActive ? fgColor : mutedColor}
+                />
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontFamily: isActive ? 'Roobert-SemiBold' : 'Roobert-Medium',
+                    color: isActive ? fgColor : mutedColor,
+                  }}
+                >
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
-      {/* Content */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-        showsVerticalScrollIndicator={false}
-      >
+      {/* Content (items flow below the sticky header block) */}
+      <View>
         {/* Agent tab */}
         {activeTab === 'agent' && agents.filter((a) => !a.hidden).map((a) => {
           const isSelected = selectedAgent?.name === a.name;
@@ -1915,7 +2025,7 @@ function ConfigSheet({
                 ) : null}
               </View>
               {isSelected && (
-                <Ionicons name="checkmark-circle" size={22} color="#a78bfa" />
+                <Ionicons name="checkmark" size={20} color={fgColor} />
               )}
             </TouchableOpacity>
           );
@@ -2007,7 +2117,7 @@ function ConfigSheet({
                       </Text>
                     </View>
                     {isSelected && (
-                      <Ionicons name="checkmark-circle" size={22} color="#60a5fa" />
+                      <Ionicons name="checkmark" size={20} color={fgColor} />
                     )}
                   </TouchableOpacity>
                 );
@@ -2045,7 +2155,7 @@ function ConfigSheet({
                 </Text>
               </View>
               {!selectedVariant && (
-                <Ionicons name="checkmark-circle" size={22} color="#fbbf24" />
+                <Ionicons name="checkmark" size={20} color={fgColor} />
               )}
             </TouchableOpacity>
             {variants.map((v) => {
@@ -2068,7 +2178,7 @@ function ConfigSheet({
                       style={{
                         fontSize: 16,
                         fontFamily: isSelected ? 'Roobert-Medium' : 'Roobert',
-                        color: isSelected ? (isDark ? '#fbbf24' : '#d97706') : fgColor,
+                        color: fgColor,
                         textTransform: 'capitalize',
                       }}
                     >
@@ -2079,14 +2189,15 @@ function ConfigSheet({
                     </Text>
                   </View>
                   {isSelected && (
-                    <Ionicons name="checkmark-circle" size={22} color="#fbbf24" />
+                    <Ionicons name="checkmark" size={20} color={fgColor} />
                   )}
                 </TouchableOpacity>
               );
             })}
           </>
         )}
-      </ScrollView>
-    </View>
+      </View>
+      </BottomSheetScrollView>
+    </BottomSheetModal>
   );
 }
