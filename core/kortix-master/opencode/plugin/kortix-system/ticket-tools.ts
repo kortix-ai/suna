@@ -649,7 +649,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         })
         await syncTeamSection(db, proj)
         scheduleAgentRefresh(proj.path)
-        return `Created agent @${ag.slug} (${ag.id}). File + DB row written. Opencode agent cache refresh scheduled (~${DISPOSE_DEBOUNCE_MS}ms after the last team write) so @${ag.slug} becomes dispatchable.`
+        return `Created agent @${ag.slug} (${ag.id}). File + DB row written. Opencode agent cache will be flushed at next wake (fireAgentTrigger calls ensureAgentCacheFresh before promptAsync).`
       },
     }),
 
