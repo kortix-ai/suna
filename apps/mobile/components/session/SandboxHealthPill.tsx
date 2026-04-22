@@ -10,7 +10,6 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { ArrowLeftRight, CircleAlert } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
@@ -26,15 +25,12 @@ interface SandboxHealthPillProps {
   onSwitch?: () => void;
   /** Optional — opens a detailed health sheet. Hidden when omitted. */
   onHealth?: () => void;
-  /** Optional bottom inset override (e.g. to sit above the chat input). */
-  bottomOffset?: number;
 }
 
-export function SandboxHealthPill({ onSwitch, onHealth, bottomOffset }: SandboxHealthPillProps) {
+export function SandboxHealthPill({ onSwitch, onHealth }: SandboxHealthPillProps) {
   const { sandboxUrl } = useSandboxContext();
   const { reachable, downSince, checked } = useSandboxReachability(sandboxUrl);
   const elapsed = useElapsedSince(downSince);
-  const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -69,21 +65,12 @@ export function SandboxHealthPill({ onSwitch, onHealth, bottomOffset }: SandboxH
   const pingOpacity = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] });
 
   return (
-    <View
-      pointerEvents="box-none"
-      style={{
-        position: 'absolute',
-        right: 12,
-        bottom: (bottomOffset ?? 0) + Math.max(insets.bottom, 12),
-        zIndex: 60,
-      }}
-    >
+    <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
       <View
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          gap: 8,
-          paddingLeft: 12,
+          paddingLeft: 14,
           paddingRight: 6,
           paddingVertical: 6,
           borderRadius: 9999,
@@ -97,81 +84,107 @@ export function SandboxHealthPill({ onSwitch, onHealth, bottomOffset }: SandboxH
           elevation: 4,
         }}
       >
-        {/* Amber dot with ping halo */}
-        <View style={{ width: 8, height: 8, alignItems: 'center', justifyContent: 'center' }}>
-          <Animated.View
-            style={{
-              position: 'absolute',
-              width: 8,
-              height: 8,
-              borderRadius: 4,
-              backgroundColor: '#F59E0B',
-              opacity: pingOpacity,
-              transform: [{ scale: pingScale }],
-            }}
-          />
-          <View
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 4,
-              backgroundColor: '#F59E0B',
-            }}
-          />
-        </View>
+      {/* Amber dot with ping halo */}
+      <View
+        style={{
+          width: 8,
+          height: 8,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: 8,
+        }}
+      >
+        <Animated.View
+          style={{
+            position: 'absolute',
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: '#F59E0B',
+            opacity: pingOpacity,
+            transform: [{ scale: pingScale }],
+          }}
+        />
+        <View
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: '#F59E0B',
+          }}
+        />
+      </View>
 
-        {/* Label + elapsed */}
-        <Text
-          style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}
-          numberOfLines={1}
+      {/* Label + elapsed — flex:1 so it takes remaining space and pushes
+          the action buttons to the right edge. */}
+      <Text
+        style={{
+          flex: 1,
+          fontSize: 12,
+          fontFamily: 'Roobert',
+          color: muted,
+        }}
+        numberOfLines={1}
+      >
+        Unreachable
+        {elapsed ? (
+          <Text style={{ color: mutedFaint }}>{` · ${elapsed}`}</Text>
+        ) : null}
+      </Text>
+
+      {/* Health action (optional) */}
+      {onHealth && (
+        <Pressable
+          onPress={onHealth}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            borderRadius: 9999,
+            backgroundColor: buttonBg,
+            marginLeft: 6,
+          }}
         >
-          Unreachable
-          {elapsed ? (
-            <Text style={{ color: mutedFaint }}>{` · ${elapsed}`}</Text>
-          ) : null}
-        </Text>
+          <Icon
+            as={CircleAlert}
+            size={12}
+            color={fg}
+            strokeWidth={2.2}
+            style={{ marginRight: 4 }}
+          />
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>
+            Health
+          </Text>
+        </Pressable>
+      )}
 
-        {/* Health action (optional) */}
-        {onHealth && (
-          <Pressable
-            onPress={onHealth}
-            style={({ pressed }) => ({
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-              paddingHorizontal: 10,
-              paddingVertical: 5,
-              borderRadius: 9999,
-              backgroundColor: pressed ? border : buttonBg,
-            })}
-          >
-            <Icon as={CircleAlert} size={11} color={fg} strokeWidth={2.2} />
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: fg }}>
-              Health
-            </Text>
-          </Pressable>
-        )}
-
-        {/* Switch action — always present */}
-        {onSwitch && (
-          <Pressable
-            onPress={onSwitch}
-            style={({ pressed }) => ({
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-              paddingHorizontal: 10,
-              paddingVertical: 5,
-              borderRadius: 9999,
-              backgroundColor: pressed ? border : buttonBg,
-            })}
-          >
-            <Icon as={ArrowLeftRight} size={11} color={fg} strokeWidth={2.2} />
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: fg }}>
-              Switch
-            </Text>
-          </Pressable>
-        )}
+      {/* Switch action — always present */}
+      {onSwitch && (
+        <Pressable
+          onPress={onSwitch}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            borderRadius: 9999,
+            backgroundColor: buttonBg,
+            marginLeft: 6,
+          }}
+        >
+          <Icon
+            as={ArrowLeftRight}
+            size={12}
+            color={fg}
+            strokeWidth={2.2}
+            style={{ marginRight: 4 }}
+          />
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>
+            Switch
+          </Text>
+        </Pressable>
+      )}
       </View>
     </View>
   );
