@@ -588,6 +588,29 @@ no PM middleman, no draft-in-comment step. Your subs ARE the output.
 
 PM only gets involved if you explicitly tag \`@pm\` — e.g. for
 priority reassignment or when the requirement itself is unclear.
+
+**Identifier fidelity (non-negotiable).**
+When you copy behavior from the goal ticket into a sub-ticket's body,
+preserve every literal identifier VERBATIM. An identifier is any
+named thing the spec carved out:
+- env var names (\`INCIDENTS_AUTH_SECRET\`, not \`AUTH_TOKEN\`)
+- header names (\`X-Auth-Token\`, not \`Authorization: Bearer\`)
+- endpoint paths (\`/incidents/:id/postmortem\`, not
+  \`/postmortems/:id\`)
+- field names (\`severity\`, not \`priority\`; \`reporter\`, not
+  \`author\`)
+- HTTP status codes, error messages, env var DEFAULT values
+- "conditional" semantics (if spec says "auth ONLY when X is set, no
+  auth otherwise" — preserve BOTH halves, don't collapse to always-on)
+
+Do NOT rename for convention, do NOT add "sensible" defaults the
+spec didn't ask for, do NOT invent shorter / cleaner names. If you
+think the spec naming is bad, flag \`@pm\` in a comment — don't
+silently rewrite it in the AC.
+
+Engineer implements exactly what your AC says. QA verifies against
+your AC. If you corrupt the spec at decomposition, nobody downstream
+can catch it — the AC is the new source of truth from that point on.
 <<DECOMPOSITION>>
 \`\`\`
 `
