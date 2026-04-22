@@ -924,7 +924,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
               backgroundColor: (customForm.providerID.trim() && customForm.name.trim() && customForm.baseURL.trim() && customForm.modelId.trim() && customForm.modelName.trim())
                 ? themeColors.primary
                 : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
-              borderRadius: 14,
+              borderRadius: 9999,
               paddingVertical: 15,
               alignItems: 'center',
               opacity: isCustomSaving ? 0.5 : 1,

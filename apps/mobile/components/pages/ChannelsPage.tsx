@@ -657,7 +657,7 @@ function ChannelDetailSheet({
           <Pressable
             onPress={handleSave}
             disabled={saving}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary, marginBottom: 16 }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary, marginBottom: 16 }}
           >
             {saving ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -674,7 +674,7 @@ function ChannelDetailSheet({
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete Channel</Text>
               <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: isDark ? 'rgba(239,68,68,0.7)' : 'rgba(239,68,68,0.6)', marginTop: 2 }}>Permanently remove this channel</Text>
             </View>
-            <Pressable onPress={() => onDelete(channel)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)' }}>
+            <Pressable onPress={() => onDelete(channel)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999, backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)' }}>
               <Trash2 size={14} color="#ef4444" />
               <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete</Text>
             </Pressable>
@@ -872,7 +872,7 @@ function AddChannelSheet({
             <Pressable
               onPress={handleCreate}
               disabled={!channelName.trim() || isCreating}
-              style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, backgroundColor: !channelName.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
+              style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999, backgroundColor: !channelName.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
             >
               {isCreating ? (
                 <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -1065,7 +1065,7 @@ function TelegramWizard({
 
       {/* Action buttons */}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-        <Pressable onPress={onBack} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor }}>
+        <Pressable onPress={onBack} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
           <ArrowLeft size={16} color={fg} />
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
         </Pressable>
@@ -1073,7 +1073,7 @@ function TelegramWizard({
           <Pressable
             onPress={handleVerify}
             disabled={!botToken.trim() || isWorking}
-            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, backgroundColor: !botToken.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: !botToken.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
           >
             {verifyMutation.isPending ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -1085,7 +1085,7 @@ function TelegramWizard({
           <Pressable
             onPress={handleConnect}
             disabled={isWorking}
-            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary }}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary }}
           >
             {connectMutation.isPending ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -1266,7 +1266,7 @@ function SlackWizard({
           <Pressable
             onPress={handleGenerateManifest}
             disabled={generateManifest.isPending}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary, alignSelf: 'flex-end', paddingHorizontal: 20 }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary, alignSelf: 'flex-end', paddingHorizontal: 20 }}
           >
             {generateManifest.isPending ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -1306,11 +1306,11 @@ function SlackWizard({
           </Pressable>
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable onPress={() => setStep(1)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor }}>
+            <Pressable onPress={() => setStep(1)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
               <ArrowLeft size={16} color={fg} />
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
             </Pressable>
-            <Pressable onPress={() => setStep(3)} style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary }}>
+            <Pressable onPress={() => setStep(3)} style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary }}>
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Next</Text>
               <ArrowRight size={16} color={theme.primaryForeground} />
             </Pressable>
@@ -1356,7 +1356,7 @@ function SlackWizard({
           />
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable onPress={() => setStep(2)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor }}>
+            <Pressable onPress={() => setStep(2)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
               <ArrowLeft size={16} color={fg} />
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
             </Pressable>
@@ -1364,7 +1364,7 @@ function SlackWizard({
               onPress={handleConnect}
               disabled={!botToken.trim() || !signingSecret.trim() || connectMutation.isPending}
               style={{
-                flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14,
+                flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999,
                 backgroundColor: (!botToken.trim() || !signingSecret.trim()) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary,
               }}
             >
