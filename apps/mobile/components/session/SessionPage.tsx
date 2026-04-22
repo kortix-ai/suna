@@ -55,6 +55,7 @@ import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
+import { ProjectPicker } from './ProjectPicker';
 import { useAudioRecorder } from '@/hooks/media/useAudioRecorder';
 import { useAudioRecordingHandlers } from '@/hooks/media/useAudioRecordingHandlers';
 import { transcribeAudio } from '@/lib/chat/transcription';
@@ -958,6 +959,14 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
         />
       )}
 
+      {/* Project picker — only on fresh sessions, above the chat input.
+          Mirrors the web's dashboard/empty-state ProjectSelector: shared
+          selection store so the picked project survives app restarts and
+          scopes the next `/kortix/task`-creating send. */}
+      {showFreshHero && !onboardingMode && !hasQuestion && (
+        <ProjectPicker />
+      )}
+
       {/* Bottom area — question prompt OR chat input */}
       <View style={onboardingMode ? { paddingBottom: insets.bottom } : undefined}>
         {hasQuestion && activeQuestion ? (
@@ -1101,40 +1110,47 @@ function FreshSessionHero({
         opacity,
       }}
     >
-      <Animated.View
+      {/* Logo + greeting share the same absolutely-positioned box so the
+          text stays centered in the logo regardless of screen height. */}
+      <View
         style={{
           position: 'absolute',
           top: 0,
           left: -80 + leftOffset,
           width: 554,
           height: 462,
-          opacity: Animated.multiply(logoOpacity, 0.4),
         }}
       >
-        <Symbol width={554} height={462} />
-      </Animated.View>
-
-      <Animated.View
-        style={{
-          flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: textOpacity,
-          transform: [{ translateY: textTranslateY }],
-        }}
-      >
-        <RNText
+        <Animated.View
           style={{
-            fontSize: 14,
-            fontFamily: 'Roobert',
-            color: isDark ? 'rgba(248,248,248,0.46)' : 'rgba(18,18,21,0.4)',
-            letterSpacing: 0.28,
-            marginTop: -88,
+            ...StyleSheet.absoluteFillObject,
+            opacity: Animated.multiply(logoOpacity, 0.4),
           }}
         >
-          {greeting}
-        </RNText>
-      </Animated.View>
+          <Symbol width={554} height={462} />
+        </Animated.View>
+
+        <Animated.View
+          style={{
+            ...StyleSheet.absoluteFillObject,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: textOpacity,
+            transform: [{ translateY: textTranslateY }],
+          }}
+        >
+          <RNText
+            style={{
+              fontSize: 14,
+              fontFamily: 'Roobert',
+              color: isDark ? 'rgba(248,248,248,0.46)' : 'rgba(18,18,21,0.4)',
+              letterSpacing: 0.28,
+            }}
+          >
+            {greeting}
+          </RNText>
+        </Animated.View>
+      </View>
     </Animated.View>
   );
 }
