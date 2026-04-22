@@ -783,6 +783,20 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
             </TouchableOpacity>
           )}
           <View className="flex-1 flex-row items-center">
+            {/* Status dot before the title (matches web session-list):
+                amber when a question is waiting, green while working,
+                hidden otherwise. */}
+            {!onboardingMode && !isEditingTitle && (isBusy || pendingQuestions.length > 0) && (
+              <View
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: pendingQuestions.length > 0 ? '#F59E0B' : '#10B981',
+                  marginRight: 8,
+                }}
+              />
+            )}
             {isEditingTitle ? (
               <TextInput
                 ref={titleInputRef}
@@ -819,12 +833,6 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
                   {title}
                 </Text>
               </TouchableOpacity>
-            )}
-            {isBusy && !onboardingMode && !isEditingTitle && (
-              <View className="flex-row items-center mt-0.5">
-                <View className="h-1.5 w-1.5 rounded-full bg-muted-foreground mr-1" />
-                <Text className="text-xs text-muted-foreground">Working</Text>
-              </View>
             )}
           </View>
           {!onboardingMode && (
