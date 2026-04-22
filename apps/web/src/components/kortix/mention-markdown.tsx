@@ -44,7 +44,18 @@ export function MentionMarkdown({ content, agents, userHandle, className }: Prop
   useLayoutEffect(() => {
     const root = containerRef.current;
     if (!root) return;
-    decorate(root, slugs, userHandle.toLowerCase());
+    const undos = decorate(root, slugs, userHandle.toLowerCase());
+    // Revert every DOM mutation we made BEFORE React tries to unmount or
+    // reconcile the subtree. Without this, React's internal child list
+    // still points at the original text nodes we replaced, and it throws
+    //   "Failed to execute 'removeChild' on 'Node': The node to be
+    //    removed is not a child of this node"
+    // on the next re-render / unmount.
+    return () => {
+      for (let i = undos.length - 1; i >= 0; i--) {
+        try { undos[i](); } catch {}
+      }
+    };
   }, [content, slugs, userHandle]);
 
   return (
@@ -57,7 +68,7 @@ export function MentionMarkdown({ content, agents, userHandle, className }: Prop
   );
 }
 
-function decorate(root: HTMLElement, slugs: Set<string>, selfHandle: string) {
+function decorate(root: HTMLElement, slugs: Set<string>, selfHandle: string): Array<() => void> {
   // Walk text nodes, skipping anything inside <code>, <pre>, or already-decorated
   // spans. We collect candidates first, then mutate — mutating during the walk
   // invalidates the iterator.
@@ -83,6 +94,7 @@ function decorate(root: HTMLElement, slugs: Set<string>, selfHandle: string) {
   let n: Node | null;
   while ((n = walker.nextNode())) targets.push(n as Text);
 
+  const undos: Array<() => void> = [];
   const re = /(^|\s)@([a-z0-9_.-]+)/gi;
   for (const textNode of targets) {
     const text = textNode.nodeValue ?? '';
@@ -109,7 +121,28 @@ function decorate(root: HTMLElement, slugs: Set<string>, selfHandle: string) {
 
     if (frag) {
       if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
-      textNode.parentNode?.replaceChild(frag, textNode);
+      const parent = textNode.parentNode;
+      const nextSibling = textNode.nextSibling;
+      if (!parent) continue;
+      // Snapshot the fragment's children BEFORE replaceChild — the call
+      // empties the fragment, so we can't read from it afterwards.
+      const injected = Array.from(frag.childNodes);
+      parent.replaceChild(frag, textNode);
+      // Undo: remove our injected nodes and re-insert the original text
+      // node in its original position. React's internal child list still
+      // expects `textNode` to be there; this restoration keeps that list
+      // valid so reconciliation / unmount won't throw removeChild errors.
+      undos.push(() => {
+        for (const child of injected) {
+          if (child.parentNode === parent) parent.removeChild(child);
+        }
+        if (nextSibling && nextSibling.parentNode === parent) {
+          parent.insertBefore(textNode, nextSibling);
+        } else {
+          parent.appendChild(textNode);
+        }
+      });
     }
   }
+  return undos;
 }
