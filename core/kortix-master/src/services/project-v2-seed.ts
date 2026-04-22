@@ -609,9 +609,17 @@ restate, don't trim, don't edit. Just paste.
   for product direction CONTEXT.md says they own, irreversible scope,
   or real blockers. "Lmk if you want X instead" after you already
   decided = noise.
-- Need a secret / API key / env var that isn't already set? STOP. Don't
-  stub it, don't fake values, don't ship a TODO. Post a \`ticket_comment\`
-  on the current ticket with EXACTLY what you need:
+- Need a secret / API key / env var? BEFORE blocking, check these
+  in order (cheap — a few reads, takes seconds):
+  1. \`process.env.<VAR_NAME>\` — standard env.
+  2. Project-root \`.env\` — \`<project.path>/.env\`. Read it, look
+     for the VAR_NAME. If present, export/load it and proceed.
+  3. \`<project.path>/.kortix/.env\` (project-local secrets).
+  4. \`/workspace/.env\` (workspace-wide secrets).
+  If any of these has the value, use it — don't ask the human.
+  Only if NONE have it: STOP. Don't stub it, don't fake values, don't
+  ship a TODO. Post a \`ticket_comment\` on the current ticket with
+  EXACTLY what you need:
   > "@user — I need \`<EXACT_VAR_NAME>\` (used for: <one-line purpose>).
   > Set it in the sandbox env, or paste it in a reply and I'll write it
   > to \`.env\`. Blocking until I have it."
