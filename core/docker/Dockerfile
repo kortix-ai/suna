@@ -275,7 +275,7 @@ ENV KORTIX_WORKSPACE=/workspace
 COPY core/s6-services/ /etc/s6-overlay/s6-rc.d/
 RUN for svc in svc-kortix-master svc-opencode-serve svc-opencode-supervisor svc-opencode-state-sync \
         svc-chromium-persistent svc-agent-browser-session svc-agent-browser-viewer \
-        svc-static-web svc-lss-sync svc-sshd svc-docker; do \
+        svc-static-web svc-lss-sync svc-sshd svc-docker svc-port-shim; do \
         touch "/etc/s6-overlay/s6-rc.d/user/contents.d/${svc}"; \
     done \
     && chmod +x /etc/s6-overlay/s6-rc.d/svc-*/run \

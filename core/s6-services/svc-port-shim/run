@@ -1,0 +1,8 @@
+#!/usr/bin/with-contenv bash
+echo "[port-shim] Starting TCP forwarder 3456 -> 8000"
+
+exec env PATH="/opt/bun/bin:/usr/local/bin:/usr/bin:/bin" \
+     KORTIX_PORT_SHIM_LISTEN=3456 \
+     KORTIX_PORT_SHIM_TARGET_HOST=127.0.0.1 \
+     KORTIX_PORT_SHIM_TARGET_PORT=8000 \
+     /opt/bun/bin/bun run /ephemeral/kortix-master/scripts/port-shim.ts

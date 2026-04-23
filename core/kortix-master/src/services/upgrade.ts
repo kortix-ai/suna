@@ -31,7 +31,6 @@ export async function runUpgradeMigrations(): Promise<void> {
   console.log('[upgrade] starting migrations')
 
   backupKortixDb()
-  cleanStaleOpencodeServe()
 
   try {
     await ensureWorkspaceProject()

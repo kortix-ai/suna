@@ -21,15 +21,14 @@ export const JUSTAVPS_SERVICE_NAME = 'justavps-docker';
 export const JUSTAVPS_STARTUP_PATCH_HOST = '/usr/local/bin/kortix-startup-patch.sh';
 export const JUSTAVPS_STARTUP_PATCH_MOUNT = `${JUSTAVPS_STARTUP_PATCH_HOST}:/ephemeral/startup.sh:ro`;
 
-// Port mapping for cloud/JustAVPS sandboxes.
 export const DEFAULT_PORTS = [
-  '3000:3000', '8000:8000', '8080:8080',
+  '3000:3000', '3456:3456', '8000:8000', '8080:8080',
   '6080:6080', '6081:6081', '3210:3210',
   '3211:3211', '9223:9223', '9224:9224', '22222:22',
 ];
 
 export function sanitizePorts(ports: string[]): string[] {
-  return ports.filter((port) => port !== '3456:3456');
+  return ports;
 }
 
 export async function readContainerConfig(
@@ -132,7 +131,6 @@ export async function buildFromInspect(
 }
 
 function findEnvFile(hostConfig: Record<string, unknown>): string | null {
-  // Docker stores env-file contents inline, but we can check common paths
   return null;
 }
 
@@ -144,7 +142,6 @@ function formatShmSize(bytes: number | undefined): string {
   return `${Math.round(mb)}m`;
 }
 
-// Shell-quote a value: wraps in single quotes, escaping any embedded single quotes.
 function sq(val: string): string {
   return `'${val.replace(/'/g, "'\\''")}'`;
 }
@@ -172,8 +169,6 @@ function buildDockerRunCommandWithMode(config: ContainerConfig, detached: boolea
   args.push(`--name ${sq(config.name)}`);
   if (config.envFile) args.push(`--env-file ${sq(config.envFile)}`);
 
-  // Inject SANDBOX_VERSION from the image tag so the sandbox health endpoint
-  // reports the correct version. This overrides any stale value in the env file.
   const imageTag = config.image.includes(':') ? config.image.split(':').pop() : 'unknown';
   args.push(`-e SANDBOX_VERSION=${sq(imageTag!)}`);
   if (isJustAVPSManagedConfig(config)) {
