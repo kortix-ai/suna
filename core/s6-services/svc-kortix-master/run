@@ -5,6 +5,7 @@ echo "[kortix-master] Starting on port 8000, proxying to OpenCode at localhost:4
 
 exec s6-setuidgid abc \
   env HOME=/workspace \
+      KORTIX_LINUX_ISOLATION="${KORTIX_LINUX_ISOLATION:-on}" \
       KORTIX_MASTER_PORT=8000 \
       OPENCODE_HOST=localhost \
       OPENCODE_PORT=4096 \
