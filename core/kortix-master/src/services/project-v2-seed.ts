@@ -187,7 +187,11 @@ export function buildDefaultColumns(pmAgentId: string) {
 // PM persona — tight, minimal, opinionated
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function pmPersonaBody(projectName: string): string {
+export function pmPersonaBody(projectName: string, userHandle?: string | null): string {
+  // Real human's handle so COMM blocks, onboarding addressee, and
+  // escalation lines use @<vukasinkubet> not @user. Falls back to "user"
+  // only when no handle is available (anonymous / legacy projects).
+  const handle = (userHandle && userHandle.trim()) || 'user'
   return `# Project Manager — ${projectName}
 
 Board manager. You triage, route, and move tickets. You do NOT decompose
@@ -641,6 +645,12 @@ the agent learns THIS project.
 
 **2. Universal blocks — paste VERBATIM, no edits, no paraphrase.**
 
+The COMM block below is already templated with the human's handle
+(\`@${handle}\`). When pasting into each team agent's body_md, DO NOT
+rewrite it to \`@user\` or any other handle — the string inside these
+blocks is correct as-is. Your only job is paste + glue lines. Keep any
+\`@${handle}\` mentions intact.
+
 - COMM block — every agent.
 - \`<<REVIEW-RIGOR>>\` — append when creating \`@qa\`.
 - \`<<DECOMPOSITION>>\` — append when creating \`@tech-lead\`.
@@ -669,7 +679,7 @@ restate, don't trim, don't edit. Just paste.
   Only if NONE have it: STOP. Don't stub it, don't fake values, don't
   ship a TODO. Post a \`ticket_comment\` on the current ticket with
   EXACTLY what you need:
-  > "@user — I need \`<EXACT_VAR_NAME>\` (used for: <one-line purpose>).
+  > "@${handle} — I need \`<EXACT_VAR_NAME>\` (used for: <one-line purpose>).
   > Set it in the sandbox env, or paste it in a reply and I'll write it
   > to \`.env\`. Blocking until I have it."
   Then move the ticket to \`blocked\` and **END YOUR TURN**. Do NOT do
@@ -837,7 +847,7 @@ export async function seedV2Project(
       execution_mode: 'per_ticket',
       default_assignee_columns: ['backlog'],
     }
-    const contents = renderAgentFile(meta, pmPersonaBody(project.name))
+    const contents = renderAgentFile(meta, pmPersonaBody(project.name, project.user_handle))
     const writer = opts.writeFile ?? (async (fp: string, body: string) => {
       await fs.mkdir(path.dirname(fp), { recursive: true })
       await fs.writeFile(fp, body, 'utf8')
