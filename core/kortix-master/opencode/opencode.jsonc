@@ -77,18 +77,7 @@
   },
   "plugin": [
     "./plugin/kortix-system/kortix-system.ts",
-    [
-      "./plugin/opencode-caveman-plugin/opencode-caveman-plugin.ts",
-      {
-        "default_mode": "full",
-        "agent_modes": {
-          "general": "full",
-          "orchestrator": "lite",
-          "worker": "ultra",
-          "project-maintainer": "lite"
-        }
-      }
-    ]
+    "./plugin/opencode-caveman-plugin/opencode-caveman-plugin.ts"
   ],
   "mcp": {
     "context7": {
