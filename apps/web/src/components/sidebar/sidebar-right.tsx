@@ -31,7 +31,6 @@ import { openTabAndNavigate } from '@/stores/tab-store';
 import { SANDBOX_PORTS } from '@/lib/platform-client';
 import { SSHKeyDialog } from '@/components/sidebar/ssh-key-dialog';
 import {
-  getItemsByGroup,
   getNavItemsClustered,
   isItemActive,
   navSubGroupLabels,
@@ -43,6 +42,7 @@ import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { useSSHDialogStore } from '@/stores/ssh-dialog-store';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { toast } from '@/lib/toast';
+import { Button } from '../ui/button';
 
 
 // ============================================================================
@@ -207,19 +207,15 @@ export function SidebarRight() {
                             const isDisabled = isTerminal && createPty.isPending;
                             const label = isTerminal && createPty.isPending ? 'Creating...' : item.label;
                             return (
-                              <button
+                              <Button
                                 key={item.id}
                                 onClick={() => handleItemAction(item)}
                                 disabled={isDisabled}
-                                className={cn(
-                                  'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[13px] cursor-pointer',
-                                  'text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150',
-                                  'disabled:opacity-50 disabled:cursor-not-allowed',
-                                )}
+                                variant="sidebar"
                               >
-                                <Icon className="h-4 w-4 flex-shrink-0" />
+                                <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
                                 <span>{label}</span>
-                              </button>
+                              </Button>
                             );
                           })}
                         </div>
@@ -245,19 +241,14 @@ export function SidebarRight() {
                             const Icon = item.icon;
                             const active = isItemActive(item, pathname);
                             return (
-                              <button
+                              <Button
                                 key={item.id}
                                 onClick={() => handleItemAction(item)}
-                                className={cn(
-                                  'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[13px] transition-colors duration-150 cursor-pointer',
-                                  active
-                                    ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                                    : 'text-sidebar-foreground hover:bg-sidebar-accent',
-                                )}
+                                variant="sidebar"
                               >
                                 <Icon className="h-4 w-4 flex-shrink-0" />
                                 <span>{item.label}</span>
-                              </button>
+                              </Button>
                             );
                           })}
                         </div>
@@ -363,24 +354,14 @@ export function SidebarRight() {
                       const isTerminal = item.actionId === 'newTerminal';
                       const isDisabled = isTerminal && createPty.isPending;
                       return (
-                        <Tooltip key={item.id}>
-                          <TooltipTrigger asChild>
-                            <button
-                              onClick={() => handleItemAction(item)}
-                              disabled={isDisabled}
-                              className={cn(
-                                'flex items-center justify-center w-full py-2 rounded-lg cursor-pointer',
-                                'text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150',
-                                'disabled:opacity-50 disabled:cursor-not-allowed',
-                              )}
-                            >
-                              <Icon className="h-4 w-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left" sideOffset={12} className="text-xs">
-                            {item.label}
-                          </TooltipContent>
-                        </Tooltip>
+                        <Button
+                          onClick={() => handleItemAction(item)}
+                          disabled={isDisabled}
+                          variant="sidebar"
+                          className="rounded-lg"
+                        >
+                          <Icon className="h-4 w-4 text-sidebar-foreground" />
+                        </Button>
                       );
                     })}
                   </div>
@@ -399,17 +380,13 @@ export function SidebarRight() {
                       return (
                         <Tooltip key={item.id}>
                           <TooltipTrigger asChild>
-                            <button
+                            <Button
                               onClick={() => handleItemAction(item)}
-                              className={cn(
-                                'flex items-center justify-center w-full py-2 rounded-lg cursor-pointer transition-colors duration-150',
-                                active
-                                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                                  : 'text-sidebar-foreground hover:bg-sidebar-accent',
-                              )}
+                              variant="sidebar"
+                              className="rounded-lg"
                             >
-                              <Icon className="h-4 w-4" />
-                            </button>
+                              <Icon className="h-4 w-4 text-sidebar-foreground" />
+                            </Button>
                           </TooltipTrigger>
                           <TooltipContent side="left" sideOffset={12} className="text-xs">
                             {item.label}
@@ -442,26 +419,23 @@ export function SidebarRight() {
                           </span>
                         </div>
                       )}
-                      <div className="space-y-0.5">
+                      <div className="space-y-0.5 w-full">
                         {cluster.map((item) => {
                           const Icon = item.icon;
                           const isTerminal = item.actionId === 'newTerminal';
                           const isDisabled = isTerminal && createPty.isPending;
                           const label = isTerminal && createPty.isPending ? 'Creating...' : item.label;
                           return (
-                            <button
+                            <Button
                               key={item.id}
                               onClick={() => handleItemAction(item)}
                               disabled={isDisabled}
-                              className={cn(
-                                'flex items-center gap-3 w-full px-3 py-2 rounded-lg text-[13px] cursor-pointer',
-                                'text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150',
-                                'disabled:opacity-50 disabled:cursor-not-allowed',
-                              )}
+                              variant="sidebar"
+                              className="rounded-lg"
                             >
-                              <Icon className="h-4 w-4 flex-shrink-0" />
+                              <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
                               <span>{label}</span>
-                            </button>
+                            </Button>
                           );
                         })}
                       </div>
@@ -487,19 +461,15 @@ export function SidebarRight() {
                           const Icon = item.icon;
                           const active = isItemActive(item, pathname);
                           return (
-                            <button
+                            <Button
                               key={item.id}
                               onClick={() => handleItemAction(item)}
-                              className={cn(
-                                'flex items-center gap-3 w-full px-3 py-2 rounded-lg text-[13px] transition-colors duration-150 cursor-pointer',
-                                active
-                                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                                  : 'text-sidebar-foreground hover:bg-sidebar-accent',
-                              )}
+                              variant="sidebar"
+                              className="rounded-lg"
                             >
-                              <Icon className="h-4 w-4 flex-shrink-0" />
+                              <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
                               <span>{item.label}</span>
-                            </button>
+                            </Button>
                           );
                         })}
                       </div>

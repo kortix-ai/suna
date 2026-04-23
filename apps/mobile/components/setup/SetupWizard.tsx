@@ -51,7 +51,9 @@ import {
   ChevronLeft,
   Bot,
   MessageSquare,
+  ArrowLeft,
 } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 
 import {
   BottomSheetModal,
@@ -1234,6 +1236,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
   const insets = useSafeAreaInsets();
   const themeColors = useThemeColors();
   const { sandboxUrl } = useSandboxContext();
+  const router = useRouter();
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [completing, setCompleting] = useState(false);
@@ -1294,6 +1297,35 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
       {...panResponder.panHandlers}
     >
       <View style={{ flex: 1, paddingTop: insets.top + 24, paddingBottom: insets.bottom + 16, paddingHorizontal: 28 }}>
+        {/* Back to Instances — only on the first step, mirrors web 962b8a4. */}
+        {step === 1 && (
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/(settings)/instances');
+            }}
+            hitSlop={8}
+            style={{
+              position: 'absolute',
+              top: insets.top + 12,
+              left: 16,
+              zIndex: 10,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 999,
+              backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+            }}
+          >
+            <ArrowLeft size={12} color={isDark ? 'rgba(248,248,248,0.7)' : 'rgba(18,18,21,0.7)'} />
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.7)' : 'rgba(18,18,21,0.7)' }}>
+              Back to Instances
+            </Text>
+          </Pressable>
+        )}
+
         {/* ── Fixed header ── */}
         <View style={{ alignItems: 'center', marginBottom: 16 }}>
           <KortixLogo size={28} variant="symbol" color={isDark ? 'dark' : 'light'} />

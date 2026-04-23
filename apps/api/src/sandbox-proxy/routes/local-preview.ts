@@ -102,6 +102,7 @@ const STRIP_REQUEST_HEADERS = new Set([
   'keep-alive',
   'te',
   'upgrade',
+  'x-kortix-user-context',
 ]);
 
 // Hop-by-hop response headers must not be forwarded by proxies.

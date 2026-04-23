@@ -9,6 +9,36 @@ import { getAuthToken } from './routes/auth';
 import { shareApp } from './routes/share';
 import { db } from '../shared/db';
 import { isProxyTokenStale, refreshSandboxProxyToken } from '../platform/providers/justavps';
+import { resolvePreviewUserContext } from '../shared/preview-ownership';
+import {
+  encodeKortixUserContext,
+  KORTIX_USER_CONTEXT_HEADER,
+} from '../shared/kortix-user-context';
+
+async function buildSignedUserContextHeader(
+  sandboxId: string,
+  userId: string | undefined,
+  serviceKey: string | undefined,
+): Promise<Record<string, string>> {
+  if (!userId || !serviceKey) {
+    console.log(
+      `[PREVIEW] skip sign userId=${userId ?? 'none'} hasServiceKey=${!!serviceKey} sandbox=${sandboxId}`,
+    );
+    return {};
+  }
+  const payload = await resolvePreviewUserContext(sandboxId, userId);
+  if (!payload) {
+    console.log(
+      `[PREVIEW] no signed context resolved user=${userId} sandbox=${sandboxId} (denied or anonymous)`,
+    );
+    return {};
+  }
+  const signed = encodeKortixUserContext(payload, serviceKey);
+  console.log(
+    `[PREVIEW] signing X-Kortix-User-Context user=${userId} sandbox=${sandboxId} role=${payload.sandboxRole} tokenPrefix=${signed.slice(0, 16)}`,
+  );
+  return { [KORTIX_USER_CONTEXT_HEADER]: signed };
+}
 
 const sandboxProxyApp = new Hono();
 
@@ -193,7 +223,7 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
   sandboxProxyApp.route('/', localOnlyProxy);
 } else if (enabledCount === 1 && config.isJustAVPSEnabled()) {
   // JustAVPS-only: route through CF Worker proxy at {port}--{slug}.kortix.cloud
-  const justavpsOnlyProxy = new Hono();
+  const justavpsOnlyProxy = new Hono<{ Variables: { userId: string; userEmail: string } }>();
 
   justavpsOnlyProxy.all('/:sandboxId/:port/*', async (c) => {
     const sandboxId = c.req.param('sandboxId');
@@ -221,6 +251,8 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
     if (resolved.proxyToken) {
       extraHeaders['X-Proxy-Token'] = resolved.proxyToken;
     }
+    const userId = c.get('userId') || '';
+    Object.assign(extraHeaders, await buildSignedUserContextHeader(sandboxId, userId, resolved.serviceKey));
 
     return proxyToSandbox(sandboxId, 8000, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, cfProxyUrl, resolved.serviceKey, extraHeaders);
   });
@@ -250,8 +282,11 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
     const resolved = await resolveProvider(sandboxId);
     const request = await parseProxyRequest(c, sandboxId, port);
 
+    const userId = (c.get('userId') as string) || '';
+
     if (resolved?.provider === 'local_docker') {
-      return proxyToSandbox(sandboxId, port, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, undefined, resolved.serviceKey);
+      const extra = await buildSignedUserContextHeader(sandboxId, userId, resolved.serviceKey);
+      return proxyToSandbox(sandboxId, port, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, undefined, resolved.serviceKey, extra);
     }
 
     if (resolved?.provider === 'justavps') {
@@ -262,11 +297,11 @@ if (enabledCount === 1 && config.isDaytonaEnabled()) {
       if (resolved.proxyToken) {
         extra['X-Proxy-Token'] = resolved.proxyToken;
       }
+      Object.assign(extra, await buildSignedUserContextHeader(sandboxId, userId, resolved.serviceKey));
       return proxyToSandbox(sandboxId, 8000, request.method, request.remainingPath, request.queryString, request.headers, request.body, false, request.origin, cfProxyUrl, resolved.serviceKey, extra);
     }
 
     // Default: route to Daytona preview handler
-    const userId = (c.get('userId') as string) || '';
     return proxyToDaytona(sandboxId, port, userId, request.method, request.remainingPath, request.queryString, request.headers, request.body, request.origin);
   });
 

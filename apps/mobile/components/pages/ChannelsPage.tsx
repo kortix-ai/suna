@@ -51,6 +51,8 @@ import { useThemeColors } from '@/lib/theme-colors';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import {
   useChannels,
   useUpdateChannel,
@@ -105,6 +107,8 @@ interface ChannelsTabPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 export function ChannelsTabPage({
@@ -112,6 +116,8 @@ export function ChannelsTabPage({
   onBack,
   onOpenDrawer,
   onOpenRightDrawer,
+  isDrawerOpen,
+  isRightDrawerOpen,
 }: ChannelsTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -120,33 +126,17 @@ export function ChannelsTabPage({
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity
-            onPress={onOpenDrawer}
-            style={{ marginRight: 12, padding: 4 }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="menu" size={24} color={fgColor} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <RNText style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>
-              {page.label}
-            </RNText>
-          </View>
-          <TouchableOpacity
-            onPress={onOpenRightDrawer}
-            style={{ marginLeft: 12, padding: 4 }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="apps-outline" size={20} color={fgColor} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
 
-      {/* Content */}
-      <ChannelsContent />
+      <PageContent>
+        <ChannelsContent />
+      </PageContent>
     </View>
   );
 }
@@ -259,22 +249,22 @@ function ChannelsContent() {
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: inputBg,
-            borderRadius: 12,
-            paddingHorizontal: 12,
-            height: 40,
+            borderRadius: 9999,
+            paddingHorizontal: 16,
+            height: 42,
           }}
         >
-          <Search size={16} color={muted} />
+          <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search channels..."
-            placeholderTextColor={muted}
-            style={{ flex: 1, marginLeft: 8, fontSize: 14, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
+            placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+            style={{ flex: 1, marginLeft: 8, fontSize: 15, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery('')} hitSlop={10}>
-              <X size={16} color={muted} />
+              <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
             </Pressable>
           )}
         </View>
@@ -282,7 +272,7 @@ function ChannelsContent() {
           onPress={handleOpenAdd}
           activeOpacity={0.8}
           style={{
-            width: 40, height: 40, borderRadius: 12,
+            width: 42, height: 42, borderRadius: 9999,
             backgroundColor: theme.primary,
             alignItems: 'center', justifyContent: 'center',
           }}
@@ -667,7 +657,7 @@ function ChannelDetailSheet({
           <Pressable
             onPress={handleSave}
             disabled={saving}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary, marginBottom: 16 }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary, marginBottom: 16 }}
           >
             {saving ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -684,7 +674,7 @@ function ChannelDetailSheet({
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete Channel</Text>
               <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: isDark ? 'rgba(239,68,68,0.7)' : 'rgba(239,68,68,0.6)', marginTop: 2 }}>Permanently remove this channel</Text>
             </View>
-            <Pressable onPress={() => onDelete(channel)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)' }}>
+            <Pressable onPress={() => onDelete(channel)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999, backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)' }}>
               <Trash2 size={14} color="#ef4444" />
               <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete</Text>
             </Pressable>
@@ -882,7 +872,7 @@ function AddChannelSheet({
             <Pressable
               onPress={handleCreate}
               disabled={!channelName.trim() || isCreating}
-              style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14, backgroundColor: !channelName.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
+              style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999, backgroundColor: !channelName.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
             >
               {isCreating ? (
                 <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -1075,7 +1065,7 @@ function TelegramWizard({
 
       {/* Action buttons */}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-        <Pressable onPress={onBack} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor }}>
+        <Pressable onPress={onBack} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
           <ArrowLeft size={16} color={fg} />
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
         </Pressable>
@@ -1083,7 +1073,7 @@ function TelegramWizard({
           <Pressable
             onPress={handleVerify}
             disabled={!botToken.trim() || isWorking}
-            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, backgroundColor: !botToken.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: !botToken.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
           >
             {verifyMutation.isPending ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -1095,7 +1085,7 @@ function TelegramWizard({
           <Pressable
             onPress={handleConnect}
             disabled={isWorking}
-            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary }}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary }}
           >
             {connectMutation.isPending ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -1276,7 +1266,7 @@ function SlackWizard({
           <Pressable
             onPress={handleGenerateManifest}
             disabled={generateManifest.isPending}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary, alignSelf: 'flex-end', paddingHorizontal: 20 }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary, alignSelf: 'flex-end', paddingHorizontal: 20 }}
           >
             {generateManifest.isPending ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -1316,11 +1306,11 @@ function SlackWizard({
           </Pressable>
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable onPress={() => setStep(1)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor }}>
+            <Pressable onPress={() => setStep(1)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
               <ArrowLeft size={16} color={fg} />
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
             </Pressable>
-            <Pressable onPress={() => setStep(3)} style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, backgroundColor: theme.primary }}>
+            <Pressable onPress={() => setStep(3)} style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary }}>
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Next</Text>
               <ArrowRight size={16} color={theme.primaryForeground} />
             </Pressable>
@@ -1366,7 +1356,7 @@ function SlackWizard({
           />
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable onPress={() => setStep(2)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor }}>
+            <Pressable onPress={() => setStep(2)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
               <ArrowLeft size={16} color={fg} />
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
             </Pressable>
@@ -1374,7 +1364,7 @@ function SlackWizard({
               onPress={handleConnect}
               disabled={!botToken.trim() || !signingSecret.trim() || connectMutation.isPending}
               style={{
-                flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 14,
+                flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999,
                 backgroundColor: (!botToken.trim() || !signingSecret.trim()) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary,
               }}
             >

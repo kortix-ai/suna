@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   RefreshCw,
+  Wrench,
   Server,
   Trash2,
 } from 'lucide-react';
@@ -39,7 +40,10 @@ import { InstanceSettingsModal } from '@/app/instances/_components/instance-sett
 import type { SandboxInfo } from '@/lib/platform-client';
 import {
   useAdminSandboxes,
+  useAdminSandboxHealthBatch,
+  useAdminSandboxRepair,
   useDeleteAdminSandbox,
+  type AdminSandboxHealth,
   type AdminSandbox,
 } from '@/hooks/admin/use-admin-sandboxes';
 
@@ -69,13 +73,18 @@ function statusVariant(status: string | null): React.ComponentProps<typeof Badge
   switch (status.toLowerCase()) {
     case 'active':
     case 'running':
+    case 'ready':
+    case 'healthy':
       return 'success';
     case 'pooled':
       return 'info';
     case 'provisioning':
+    case 'retrying':
+    case 'degraded':
       return 'warning';
     case 'error':
     case 'failed':
+    case 'offline':
       return 'destructive';
     default:
       return 'secondary';
@@ -84,7 +93,9 @@ function statusVariant(status: string | null): React.ComponentProps<typeof Badge
 
 function formatDate(value: string | null) {
   if (!value) return '—';
-  return new Date(value).toLocaleDateString('en-US', {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -95,13 +106,48 @@ function formatDate(value: string | null) {
 
 function formatRelative(value: string | null) {
   if (!value) return '—';
-  const diff = Date.now() - new Date(value).getTime();
+  const date = new Date(value);
+  const timestamp = date.getTime();
+  if (Number.isNaN(timestamp)) return '—';
+  const diff = Date.now() - timestamp;
   if (diff < 60_000) return 'just now';
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   const days = Math.floor(diff / 86_400_000);
   if (days < 30) return `${days}d ago`;
   return formatDate(value);
+}
+
+function layerDotClass(status: AdminSandboxHealth['overall_status'] | 'healthy' | 'degraded' | 'offline' | 'unknown') {
+  switch (status) {
+    case 'healthy':
+      return 'bg-emerald-500';
+    case 'degraded':
+      return 'bg-amber-500';
+    case 'offline':
+      return 'bg-red-500';
+    default:
+      return 'bg-muted-foreground/30';
+  }
+}
+
+function HealthDots({ health }: { health: AdminSandboxHealth | null }) {
+  if (!health) return <span className="text-xs text-muted-foreground">—</span>;
+  const layers = [
+    { key: 'H', status: health.layers.host.status },
+    { key: 'W', status: health.layers.workload.status },
+    { key: 'R', status: health.layers.runtime.status },
+  ];
+  return (
+    <div className="flex items-center gap-2" title={`Host ${health.layers.host.status} · Workload ${health.layers.workload.status} · Runtime ${health.layers.runtime.status}`}>
+      {layers.map((layer) => (
+        <div key={layer.key} className="flex items-center gap-1">
+          <span className="text-[10px] text-muted-foreground">{layer.key}</span>
+          <span className={cn('inline-block h-2.5 w-2.5 rounded-full', layerDotClass(layer.status))} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function toSandboxInfo(sandbox: AdminSandbox): SandboxInfo {
@@ -112,6 +158,11 @@ function toSandboxInfo(sandbox: AdminSandbox): SandboxInfo {
     provider: (sandbox.provider as SandboxInfo['provider']) || 'justavps',
     base_url: sandbox.baseUrl || '',
     status: sandbox.status || 'unknown',
+    lifecycle_status: sandbox.status || 'unknown',
+    init_status: sandbox.initStatus,
+    health_status: sandbox.healthStatus,
+    init_attempts: sandbox.initAttempts,
+    last_init_error: sandbox.lastInitError,
     metadata: (sandbox.metadata as Record<string, unknown> | undefined) ?? undefined,
     created_at: sandbox.createdAt,
     updated_at: sandbox.updatedAt,
@@ -119,7 +170,6 @@ function toSandboxInfo(sandbox: AdminSandbox): SandboxInfo {
 }
 
 export default function AdminInstancesPage() {
-  const router = useRouter();
   const [searchInput, setSearchInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
@@ -145,14 +195,24 @@ export default function AdminInstancesPage() {
   const pooledQuery = useAdminSandboxes({ status: 'pooled', page: 1, limit: 1 });
 
   const deleteMutation = useDeleteAdminSandbox();
+  const repairMutation = useAdminSandboxRepair();
   const [confirmDelete, setConfirmDelete] = useState<AdminSandbox | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [selectedSandbox, setSelectedSandbox] = useState<SandboxInfo | null>(null);
+  const [selectedSandboxTab, setSelectedSandboxTab] = useState<'overview' | 'host'>('overview');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const list = useMemo(() => data?.sandboxes ?? [], [data?.sandboxes]);
+  const healthBatchQuery = useAdminSandboxHealthBatch(list.map((sandbox) => sandbox.sandboxId), list.length > 0);
   const total = data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const healthBySandboxId = useMemo(() => {
+    const map = new Map<string, AdminSandboxHealth>();
+    for (const item of healthBatchQuery.data?.items ?? []) {
+      map.set(item.sandbox_id, item);
+    }
+    return map;
+  }, [healthBatchQuery.data?.items]);
 
   // Reset selection when the underlying page changes.
   useEffect(() => {
@@ -210,6 +270,21 @@ export default function AdminInstancesPage() {
   }, [selectedIds, deleteMutation]);
 
   const hasFilters = !!(search || statusFilter || providerFilter);
+
+  const openSandbox = useCallback((sandbox: AdminSandbox, tab: 'overview' | 'host' = 'overview') => {
+    setSelectedSandboxTab(tab);
+    setSelectedSandbox(toSandboxInfo(sandbox));
+  }, []);
+
+  const handleReinitialize = useCallback(async (sandbox: AdminSandbox) => {
+    try {
+      await repairMutation.mutateAsync({ sandboxId: sandbox.sandboxId, action: 'reinitialize' });
+      toast.success(`Reinitialize started for ${sandbox.sandboxId.slice(0, 8)}`);
+      void refetch();
+    } catch (err: any) {
+      toast.error('Failed to reinitialize instance', { description: err.message });
+    }
+  }, [repairMutation, refetch]);
 
   return (
     <SectionContainer>
@@ -378,21 +453,23 @@ export default function AdminInstancesPage() {
                 <TableHead>Name</TableHead>
                 <TableHead>Account</TableHead>
                 <TableHead>Provider</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last active</TableHead>
-                <TableHead className="w-[160px] text-right">Actions</TableHead>
+                <TableHead>Init</TableHead>
+                <TableHead>Health</TableHead>
+                <TableHead className="w-[140px] text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {list.map((sandbox) => {
                 const selected = selectedIds.has(sandbox.sandboxId);
+                const health = healthBySandboxId.get(sandbox.sandboxId) ?? null;
+                const showRepair = sandbox.initStatus === 'failed' || (!!health && health.overall_status !== 'healthy');
                 return (
-                  <TableRow
-                    key={sandbox.sandboxId}
-                    data-state={selected ? 'selected' : undefined}
-                    className="group cursor-pointer"
-                    onClick={() => setSelectedSandbox(toSandboxInfo(sandbox))}
-                  >
+                    <TableRow
+                      key={sandbox.sandboxId}
+                      data-state={selected ? 'selected' : undefined}
+                      className="group cursor-pointer"
+                      onClick={() => openSandbox(sandbox)}
+                    >
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selected}
@@ -426,24 +503,52 @@ export default function AdminInstancesPage() {
                     <TableCell className="text-sm capitalize">
                       {sandbox.provider ?? <span className="text-muted-foreground">—</span>}
                     </TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant(sandbox.status)} size="sm" className="capitalize">
-                        {sandbox.status ?? 'unknown'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatRelative(sandbox.lastUsedAt || sandbox.updatedAt || sandbox.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2.5"
-                          onClick={() => router.push(`/instances/${sandbox.sandboxId}`)}
-                        >
-                          Connect
-                        </Button>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <Badge variant={statusVariant(sandbox.initStatus ?? sandbox.status)} size="sm" className="capitalize">
+                            {sandbox.initStatus ?? sandbox.status ?? 'unknown'}
+                          </Badge>
+                          {sandbox.initStatus === 'failed' && sandbox.lastInitError ? (
+                            <div className="max-w-[220px] truncate text-[11px] text-muted-foreground" title={sandbox.lastInitError}>
+                              {sandbox.lastInitError}
+                            </div>
+                          ) : sandbox.initAttempts && sandbox.initAttempts > 1 ? (
+                            <div className="text-[11px] text-muted-foreground">attempt {sandbox.initAttempts}</div>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <Badge variant={statusVariant(health?.overall_status ?? sandbox.healthStatus ?? 'unknown')} size="sm" className="capitalize">
+                            {health?.overall_status ?? sandbox.healthStatus ?? 'unknown'}
+                          </Badge>
+                          <HealthDots health={health} />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 w-7 p-0"
+                            asChild
+                          >
+                            <a href={`/instances/${sandbox.sandboxId}`} target="_blank" rel="noreferrer" aria-label="Connect instance in new tab">
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </Button>
+                          {sandbox.provider === 'justavps' && showRepair ? (
+                            <Button
+                              size="sm"
+                              variant={sandbox.initStatus === 'failed' ? 'secondary' : 'ghost'}
+                              className="h-7 w-7 p-0"
+                              onClick={() => sandbox.initStatus === 'failed' ? void handleReinitialize(sandbox) : openSandbox(sandbox, 'host')}
+                              disabled={repairMutation.isPending}
+                              aria-label={sandbox.initStatus === 'failed' ? 'Reinitialize instance' : 'Open repair tools'}
+                            >
+                              <Wrench className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : null}
                         <Button
                           size="sm"
                           variant="ghost"
@@ -565,8 +670,12 @@ export default function AdminInstancesPage() {
       <InstanceSettingsModal
         sandbox={selectedSandbox}
         open={!!selectedSandbox}
+        defaultTab={selectedSandboxTab}
         onOpenChange={(open) => {
-          if (!open) setSelectedSandbox(null);
+          if (!open) {
+            setSelectedSandbox(null);
+            setSelectedSandboxTab('overview');
+          }
         }}
       />
     </SectionContainer>

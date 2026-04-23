@@ -23,6 +23,8 @@ const buttonVariants = cva(
         // Tinted primary — bg-primary at 10% opacity
         subtle:
           "bg-primary/10 text-primary hover:bg-primary/15",
+        sidebar:
+          "font-medium text-sidebar-foreground hover:bg-sidebar-accent/80 flex items-center justify-start gap-3 w-full transition-colors duration-150",
         // Muted ghost — neutral background on hover
         muted:
           "text-muted-foreground hover:bg-muted hover:text-foreground",

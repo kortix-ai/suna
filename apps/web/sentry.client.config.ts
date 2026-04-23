@@ -7,12 +7,12 @@
  */
 
 import * as Sentry from '@sentry/nextjs';
-import { shouldIgnoreSentryBrowserNoise } from '@/lib/browser-error-noise';
+import { shouldIgnoreSentryNoiseEvent } from '@/lib/browser-error-noise';
 
 const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
 function isBrowserNoiseEvent(event: Sentry.ErrorEvent): boolean {
-  return shouldIgnoreSentryBrowserNoise(event);
+  return shouldIgnoreSentryNoiseEvent(event);
 }
 
 if (SENTRY_DSN) {
@@ -53,6 +53,13 @@ if (SENTRY_DSN) {
       "null is not an object (evaluating 'document.querySelector('video').webkitPresentationMode')",
       // Browser extension/runtime bridge noise
       'Invalid call to runtime.sendMessage(). Tab not found.',
+      // Third-party injected scripts / wallet extensions
+      'MetaMask extension not found',
+      'Looks like your website URL has changed',
+      'CookieYes account',
+      // Test-only synthetic events
+      'E2E FINAL:',
+      'E2E test:',
     ],
 
     // Filter out internal/low-value errors before sending

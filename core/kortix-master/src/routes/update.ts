@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
+import { existsSync, lstatSync, readlinkSync } from 'node:fs';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -28,6 +29,40 @@ async function readLocalVersion(): Promise<string> {
   return 'unknown';
 }
 
+interface VersionInfo {
+  version: string;
+  imageVersion: string;
+  opencodeStorageBase: string | null;
+  persistentRoot: string | null;
+  persistentMode: boolean;
+  opencodeLegacyLinked: boolean;
+  opencodeStateGuardAvailable: boolean;
+}
+
+function readVersionInfo(version: string): VersionInfo {
+  const opencodeStorageBase = process.env.OPENCODE_STORAGE_BASE || null;
+  const persistentRoot = process.env.KORTIX_PERSISTENT_ROOT || null;
+  const legacyPath = '/workspace/.local/share/opencode';
+  const opencodeLegacyLinked = (() => {
+    try {
+      return lstatSync(legacyPath).isSymbolicLink() && readlinkSync(legacyPath) === '/persistent/opencode';
+    } catch {
+      return false;
+    }
+  })();
+  const persistentMode = opencodeStorageBase?.startsWith('/persistent/') === true
+    && persistentRoot === '/persistent';
+
+  return {
+    version,
+    imageVersion: version,
+    opencodeStorageBase,
+    persistentRoot,
+    persistentMode,
+    opencodeLegacyLinked,
+    opencodeStateGuardAvailable: existsSync('/usr/local/bin/kortix-opencode-state'),
+  };
+}
 interface UpdateStatus {
   inProgress: boolean;
   phase: string;
@@ -144,7 +179,7 @@ updateRoutes.get(
   }),
   async (c) => {
     const version = await readLocalVersion();
-    return c.json({ version, imageVersion: version });
+    return c.json(readVersionInfo(version));
   },
 );
 

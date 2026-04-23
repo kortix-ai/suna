@@ -27,9 +27,12 @@ export interface StatusConfig {
 
 const STATUS_CONFIG: Record<string, StatusConfig> = {
   active: { label: 'Active', color: 'text-emerald-500', dotColor: 'bg-emerald-500' },
+  ready: { label: 'Ready', color: 'text-emerald-500', dotColor: 'bg-emerald-500' },
   provisioning: { label: 'Provisioning', color: 'text-amber-500', dotColor: 'bg-amber-400' },
+  retrying: { label: 'Retrying init', color: 'text-amber-500', dotColor: 'bg-amber-400' },
   stopped: { label: 'Stopped', color: 'text-muted-foreground', dotColor: 'bg-muted-foreground/40' },
-  error: { label: 'Error', color: 'text-red-400', dotColor: 'bg-red-400' },
+  error: { label: 'Init failed', color: 'text-red-400', dotColor: 'bg-red-400' },
+  failed: { label: 'Init failed', color: 'text-red-400', dotColor: 'bg-red-400' },
   available: { label: 'Available', color: 'text-blue-500', dotColor: 'bg-blue-500' },
   archived: { label: 'Archived', color: 'text-muted-foreground/50', dotColor: 'bg-muted-foreground/20' },
 };
@@ -151,7 +154,7 @@ export function InstanceCard({
   onClick: () => void;
   onSettings?: () => void;
 }) {
-  const status = getStatusConfig(sandbox.status);
+  const status = getStatusConfig(sandbox.init_status || sandbox.status);
   const meta = sandbox.metadata as Record<string, unknown> | undefined;
   const serverType = (meta?.serverType as string) || null;
 
@@ -175,7 +178,7 @@ export function InstanceCard({
             </span>
 
             <div className="flex items-center gap-3 mt-1.5">
-              <StatusPill status={status} animated={sandbox.status === 'provisioning'} />
+              <StatusPill status={status} animated={(sandbox.init_status || sandbox.status) === 'provisioning'} />
               {serverType && (
                 <span className="text-[11px] text-muted-foreground/50 font-mono">{serverType}</span>
               )}

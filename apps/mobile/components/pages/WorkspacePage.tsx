@@ -31,6 +31,7 @@ import {
   FolderOpen,
   Wrench,
   Plug,
+  Link as LinkIcon,
   ChevronRight,
   Copy,
   Check,
@@ -53,6 +54,8 @@ import {
 import { useThemeColors } from '@/lib/theme-colors';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import {
   useOpenCodeAgents,
   useOpenCodeCommands,
@@ -66,11 +69,12 @@ import {
   type Project,
   type McpStatus,
 } from '@/lib/opencode/hooks/use-opencode-data';
+import { useKortixConnectors, type KortixConnector } from '@/lib/kortix';
 import { WorkspaceSettingsSheet, type WorkspaceSettingsSheetRef } from './WorkspaceSettingsSheet';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type ItemKind = 'project' | 'agent' | 'skill' | 'command' | 'tool' | 'mcp';
+type ItemKind = 'project' | 'agent' | 'skill' | 'command' | 'tool' | 'mcp' | 'connector';
 type ItemScope = 'project' | 'global' | 'external' | 'built-in';
 type KindFilter = 'all' | ItemKind;
 
@@ -81,7 +85,7 @@ interface WorkspaceItem {
   kind: ItemKind;
   scope: ItemScope;
   meta?: string;
-  raw?: Agent | Skill | Command | Project | { toolId: string; server?: string } | { serverName: string; status: McpStatus };
+  raw?: Agent | Skill | Command | Project | KortixConnector | { toolId: string; server?: string } | { serverName: string; status: McpStatus };
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -111,6 +115,7 @@ const KIND_CONFIG: Record<ItemKind, { label: string; iconName: string }> = {
   command: { label: 'Command', iconName: 'terminal' },
   tool: { label: 'Tool', iconName: 'wrench' },
   mcp: { label: 'MCP', iconName: 'plug' },
+  connector: { label: 'Connector', iconName: 'link' },
 };
 
 const SCOPE_LABEL: Record<ItemScope, string> = {
@@ -127,6 +132,7 @@ const KIND_ICON_MAP: Record<ItemKind, React.ComponentType<any>> = {
   command: Terminal,
   tool: Wrench,
   mcp: Plug,
+  connector: LinkIcon,
 };
 
 // ─── Kind filter chips ──────────────────────────────────────────────────────
@@ -139,6 +145,7 @@ const KIND_TABS: { value: KindFilter; label: string }[] = [
   { value: 'command', label: 'Commands' },
   { value: 'tool', label: 'Tools' },
   { value: 'mcp', label: 'MCP' },
+  { value: 'connector', label: 'Connectors' },
 ];
 
 // ─── Quick action presets (same as frontend) ────────────────────────────────
@@ -162,12 +169,14 @@ interface WorkspacePageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
   onCreateSessionWithPrompt?: (title: string, prompt: string) => void;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, onCreateSessionWithPrompt }, ref) {
+export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onCreateSessionWithPrompt }, ref) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -198,12 +207,13 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
   const { data: projects, isLoading: lProjects, refetch: rProjects } = useOpenCodeProjects(sandboxUrl);
   const { data: toolIds, isLoading: lTools, refetch: rTools } = useOpenCodeToolIds(sandboxUrl);
   const { data: mcpStatus, isLoading: lMcp, refetch: rMcp } = useOpenCodeMcpStatus(sandboxUrl);
+  const { data: connectors, isLoading: lConnectors, refetch: rConnectors } = useKortixConnectors(sandboxUrl);
 
-  const isLoading = lAgents || lSkills || lCommands || lProjects || lTools || lMcp;
+  const isLoading = lAgents || lSkills || lCommands || lProjects || lTools || lMcp || lConnectors;
 
   const refetchAll = useCallback(async () => {
-    await Promise.all([rAgents(), rSkills(), rCommands(), rProjects(), rTools(), rMcp()]);
-  }, [rAgents, rSkills, rCommands, rProjects, rTools, rMcp]);
+    await Promise.all([rAgents(), rSkills(), rCommands(), rProjects(), rTools(), rMcp(), rConnectors()]);
+  }, [rAgents, rSkills, rCommands, rProjects, rTools, rMcp, rConnectors]);
 
   // Build unified items list (same logic as frontend)
   const allItems = useMemo<WorkspaceItem[]>(() => {
@@ -258,12 +268,26 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
       });
     }
 
+    if (connectors && Array.isArray(connectors)) {
+      for (const c of connectors) {
+        items.push({
+          id: `connector:${c.id}`,
+          name: c.name,
+          description: c.description || undefined,
+          kind: 'connector',
+          scope: 'project',
+          meta: c.source || 'custom',
+          raw: c,
+        });
+      }
+    }
+
     return items;
-  }, [projects, agents, skills, commands, toolIds, mcpStatus]);
+  }, [projects, agents, skills, commands, toolIds, mcpStatus, connectors]);
 
   // Kind counts
   const kindCounts = useMemo(() => {
-    const c: Record<KindFilter, number> = { all: allItems.length, project: 0, agent: 0, skill: 0, command: 0, tool: 0, mcp: 0 };
+    const c: Record<KindFilter, number> = { all: allItems.length, project: 0, agent: 0, skill: 0, command: 0, tool: 0, mcp: 0, connector: 0 };
     allItems.forEach((i) => c[i.kind]++);
     return c;
   }, [allItems]);
@@ -423,11 +447,21 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
         rows.push({ label: 'Error', value: m.status.error });
       }
     }
+    if (item.kind === 'connector' && item.raw) {
+      const c = item.raw as KortixConnector;
+      if (c.source) rows.push({ label: 'Source', value: c.source });
+      if (c.pipedream_slug) rows.push({ label: 'Pipedream', value: c.pipedream_slug, mono: true });
+      if (c.env_keys?.length) rows.push({ label: 'Env', value: c.env_keys.join(', '), mono: true });
+      if (c.auto_generated) rows.push({ label: 'Auto', value: 'Created by Pipedream OAuth' });
+      if (c.updated_at) rows.push({ label: 'Updated', value: new Date(c.updated_at).toLocaleString() });
+      if (c.notes) content = c.notes;
+    }
 
     const contentLabel =
       item.kind === 'skill' ? 'SKILL.md' :
       item.kind === 'command' ? 'Template' :
       item.kind === 'agent' ? 'System Prompt' :
+      item.kind === 'connector' ? 'Notes' :
       'Content';
 
     return (
@@ -547,27 +581,15 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
 
   return (
     <View style={{ flex: 1, backgroundColor: bg }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {onOpenDrawer && (
-            <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12, padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="menu" size={24} color={fg} />
-            </TouchableOpacity>
-          )}
-          <View style={{ flex: 1 }}>
-            <RNText style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fg }} numberOfLines={1}>
-              {page.label}
-            </RNText>
-          </View>
-          {onOpenRightDrawer && (
-            <TouchableOpacity onPress={onOpenRightDrawer} style={{ padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="apps-outline" size={20} color={fg} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
 
+      <PageContent>
       {/* Search */}
       <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
         <View
@@ -575,22 +597,22 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: inputBg,
-            borderRadius: 12,
-            paddingHorizontal: 12,
-            height: 40,
+            borderRadius: 9999,
+            paddingHorizontal: 16,
+            height: 42,
           }}
         >
-          <Search size={16} color={muted} />
+          <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search workspace..."
-            placeholderTextColor={muted}
-            style={{ flex: 1, marginLeft: 8, fontSize: 14, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
+            placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+            style={{ flex: 1, marginLeft: 8, fontSize: 15, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery('')} hitSlop={10}>
-              <X size={16} color={muted} />
+              <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
             </Pressable>
           )}
         </View>
@@ -719,6 +741,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
 
       {/* Settings bottom sheet */}
       <WorkspaceSettingsSheet ref={settingsSheetRef} />
+      </PageContent>
     </View>
   );
 });

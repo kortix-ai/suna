@@ -1,11 +1,16 @@
 export type UpdatePhase =
   | 'idle'
+  | 'preflight'
   | 'pulling'
   | 'patching'
   | 'backing_up'
   | 'stopping'
+  | 'removing'
+  | 'recreating'
   | 'restarting'
   | 'verifying'
+  | 'starting'
+  | 'health_check'
   | 'complete'
   | 'failed';
 

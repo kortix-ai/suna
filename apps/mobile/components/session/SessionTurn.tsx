@@ -14,6 +14,7 @@ import * as Clipboard from 'expo-clipboard';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/chat/SandboxPreviewCard';
 import { ReasoningSection, GroupedReasoningCard } from '@/components/chat';
+import { SessionErrorBanner } from './SessionErrorBanner';
 import ReAnimated, {
   useSharedValue,
   useAnimatedStyle,
@@ -3286,11 +3287,11 @@ export function SessionTurn({
             </View>
           )}
 
-          {/* Error */}
+          {/* Error — specialized card for insufficient-credits (no billing UI
+               on mobile; informational only), plain destructive card otherwise.
+               Mirrors web 6f6edee detection patterns. */}
           {!!turnError && !working && (
-            <View className="mt-2 rounded-lg bg-destructive/10 px-3 py-2">
-              <Text className="text-sm text-destructive">{turnError}</Text>
-            </View>
+            <SessionErrorBanner errorText={turnError} isDark={isDark} />
           )}
 
           {/* Duration + Actions (when done) */}

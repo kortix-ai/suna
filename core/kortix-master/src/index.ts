@@ -1,5 +1,6 @@
 import { timingSafeEqual, createHash } from 'crypto'
-import { existsSync, mkdirSync, readFileSync } from 'fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync } from 'fs'
+import { Database } from 'bun:sqlite'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
@@ -10,6 +11,7 @@ import { buildMergedSpec } from './services/spec-merger'
 import { proxyToOpenCode } from './services/proxy'
 import { SecretStore } from './services/secret-store'
 import { syncAuthToSecrets, startWatcher as startAuthWatcher } from './services/auth-sync'
+import { kortixUserContextMiddleware } from './services/kortix-user-middleware'
 // REMOVED: opencode-hotreload watcher — it auto-disposed the OpenCode instance on
 // ANY .opencode/ file change, killing all active agent sessions mid-operation.
 // Dispose is now handled explicitly by:
@@ -67,6 +69,11 @@ await secretStore.loadIntoProcessEnv()
 // Initialize share store (load persisted shares, start prune timer)
 import { initShareStore } from './services/share-store'
 initShareStore()
+
+import { runUpgradeMigrations } from './services/upgrade'
+void runUpgradeMigrations().catch((err) => {
+  console.warn('[kortix-master] upgrade migrations failed:', err)
+})
 
 // ─── Guarantee core auth vars in s6 env dir ──────────────────────────────────
 // These are injected as Docker env vars at container creation but never written
@@ -160,6 +167,14 @@ const extraCorsOrigins = process.env.CORS_ALLOWED_ORIGINS
 const corsOrigins = [...new Set([...defaultCorsOrigins, ...extraCorsOrigins])]
 app.use('*', cors({ origin: corsOrigins }))
 
+// ─── Identity from preview proxy ─────────────────────────────────────────────
+// Parses the signed `X-Kortix-User-Context` header the Kortix API preview
+// proxy attaches to every authenticated user request. Attaches the parsed
+// context to `c.get('kortixUser')` for downstream route handlers. Purely
+// additive — missing/invalid header is treated as "no user identity" and
+// the existing service-key bearer auth remains the hard access gate.
+app.use('*', kortixUserContextMiddleware())
+
 // ─── Timing-safe token comparison ─────────────────────────────────────────────
 // Hash both values so timingSafeEqual always compares equal-length buffers,
 // regardless of token length. Prevents timing side-channel attacks.
@@ -232,10 +247,70 @@ let openCodeReady = false
 let openCodeLastCheck = 0
 const OPENCODE_CHECK_INTERVAL = 5_000 // recheck every 5s when not ready
 
+function inspectOpencodeDb(path: string | null) {
+  if (!path || !existsSync(path)) return { sessionCount: null, latestSessionUpdate: null }
+  let db: Database | null = null
+  try {
+    db = new Database(path, { readonly: true })
+    const row = db.query('SELECT COUNT(*) as count, MAX(time_updated) as latest FROM session').get() as { count?: number; latest?: number | null } | null
+    return {
+      sessionCount: typeof row?.count === 'number' ? row.count : 0,
+      latestSessionUpdate: typeof row?.latest === 'number' ? row.latest : 0,
+    }
+  } catch {
+    return { sessionCount: null, latestSessionUpdate: null }
+  } finally {
+    if (db) db.close()
+  }
+}
+
+function inspectOpencodeState() {
+  const storageBase = process.env.OPENCODE_STORAGE_BASE || null
+  const shadowBase = process.env.OPENCODE_SHADOW_STORAGE_BASE || null
+  const persistentRoot = process.env.KORTIX_PERSISTENT_ROOT || null
+  const live = inspectOpencodeDb(storageBase ? `${storageBase}/opencode.db` : null)
+  const shadow = inspectOpencodeDb(shadowBase ? `${shadowBase}/opencode.db` : null)
+  const persistentMode = storageBase === '/persistent/opencode' && persistentRoot === '/persistent'
+  const opencodeLegacyLinked = (() => {
+    try {
+      return lstatSync('/workspace/.local/share/opencode').isSymbolicLink()
+        && readlinkSync('/workspace/.local/share/opencode') === '/persistent/opencode'
+    } catch {
+      return false
+    }
+  })()
+  const opencodeStateMismatch = typeof shadow.sessionCount === 'number'
+    && typeof live.sessionCount === 'number'
+    && (shadow.sessionCount > live.sessionCount
+      || (shadow.sessionCount === live.sessionCount
+        && (shadow.latestSessionUpdate ?? 0) > (live.latestSessionUpdate ?? 0)))
+
+  return {
+    opencodeStorageBase: storageBase,
+    persistentRoot,
+    persistentMode,
+    opencodeLegacyLinked,
+    opencodeStateGuardAvailable: existsSync('/usr/local/bin/kortix-opencode-state'),
+    opencodeSessionCount: live.sessionCount,
+    opencodeShadowSessionCount: shadow.sessionCount,
+    opencodeStateMismatch,
+  }
+}
+
 async function checkOpenCodeReady(): Promise<boolean> {
   const now = Date.now()
   if (now - openCodeLastCheck < OPENCODE_CHECK_INTERVAL) return openCodeReady
   openCodeLastCheck = now
+
+  if (process.env.KORTIX_LINUX_ISOLATION === 'on') {
+    const healthy = await isSupervisorReady()
+    if (healthy !== openCodeReady) {
+      console.log(`[Kortix Master] supervisor ${healthy ? 'ready' : 'unreachable'}`)
+    }
+    openCodeReady = healthy
+    return healthy
+  }
+
   try {
     const res = await fetch(`http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}/session`, {
       signal: AbortSignal.timeout(3_000),
@@ -245,7 +320,6 @@ async function checkOpenCodeReady(): Promise<boolean> {
         console.log('[Kortix Master] OpenCode is ready')
       }
       openCodeReady = true
-      // Consume body to free connection
       await res.arrayBuffer()
       return true
     }
@@ -259,8 +333,21 @@ async function checkOpenCodeReady(): Promise<boolean> {
   return false
 }
 
-// Fire initial check in background
-checkOpenCodeReady()
+async function isSupervisorReady(): Promise<boolean> {
+  const socket = process.env.KORTIX_SUPERVISOR_SOCKET || '/run/kortix/supervisor.sock'
+  try {
+    const res = await fetch('http://supervisor/health', {
+      // @ts-ignore Bun supports unix
+      unix: socket,
+      signal: AbortSignal.timeout(1_500),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+await checkOpenCodeReady()
 
 // ─── API Documentation ──────────────────────────────────────────────────────
 
@@ -329,7 +416,7 @@ app.get('/kortix/health',
     await checkOpenCodeReady()
     const status = openCodeReady ? 'ok' : 'starting'
     const httpStatus = openCodeReady ? 200 : 503
-    return c.json({ status, version, imageVersion: version, activeWs: activeConnections, runtimeReady: openCodeReady }, httpStatus)
+    return c.json({ status, version, imageVersion: version, activeWs: activeConnections, runtimeReady: openCodeReady, ...inspectOpencodeState() }, httpStatus)
   },
 )
 
@@ -416,6 +503,42 @@ app.route('/kortix/projects/', credentialsRouter)
 
 // Public URL sharing — /kortix/share/:port returns the public URL for a sandbox port
 app.route('/kortix/share', shareRouter)
+
+import { Database as _ScopeDb } from 'bun:sqlite'
+import { getUserScopes } from './services/user-scope-cache'
+
+app.get('/kortix/internal/session-scopes/:sessionId', async (c) => {
+  const sessionId = c.req.param('sessionId')
+  try {
+    const workspace =
+      process.env.KORTIX_WORKSPACE?.trim() ||
+      process.env.OPENCODE_CONFIG_DIR?.replace(/\/opencode\/?$/, '') ||
+      '/workspace'
+    const dbPath = `${workspace}/.kortix/kortix.db`
+    const db = new _ScopeDb(dbPath, { readonly: true })
+    try {
+      const row = db
+        .query('SELECT user_id FROM session_owners WHERE session_id = ? LIMIT 1')
+        .get(sessionId) as { user_id?: string } | null
+      const userId = row?.user_id ?? null
+      if (!userId) {
+        return c.json({ success: true, data: { user_id: null, scopes: null } })
+      }
+      const scopes = getUserScopes(userId)
+      return c.json({
+        success: true,
+        data: {
+          user_id: userId,
+          scopes: scopes ? Array.from(scopes) : null,
+        },
+      })
+    } finally {
+      db.close()
+    }
+  } catch (err) {
+    return c.json({ success: false, error: String(err) }, 500)
+  }
+})
 
 // Connectors — SQLite-backed CRUD
 app.route('/kortix/connectors', connectorsRouter)
@@ -505,6 +628,79 @@ app.route('/legacy', legacyMigrateRouter)
 // [channels v2] The old channels proxy to port 3456 has been removed.
 // Channel CLIs (telegram.ts, slack.ts) are standalone scripts.
 // Channel webhooks are handled directly by channel-webhooks.ts (mounted above /hooks/* proxy).
+
+// ─── Per-user session scoping ───────────────────────────────────────────────
+// Intercept opencode /session list + create BEFORE the catch-all proxy so we
+// can (a) stamp ownership on new sessions and (b) filter the list to sessions
+// the caller created. Sessions are strictly per-user — even the sandbox owner
+// only sees their own sessions. Service-key traffic (no identity header)
+// bypasses filtering so backend workers can still enumerate everything.
+import {
+  filterVisibleSessions,
+  stampSessionOwner,
+} from './services/session-ownership'
+
+app.get('/session', async (c) => {
+  const upstream = await proxyToOpenCode(c)
+  const user = c.get('kortixUser')
+  if (!user || upstream.status !== 200) return upstream
+  const body = await upstream.json().catch(() => null)
+  const list = Array.isArray(body) ? body : body?.data ?? []
+  if (!Array.isArray(list)) return new Response(JSON.stringify(body), {
+    status: upstream.status,
+    headers: upstream.headers,
+  })
+  const canSeeLegacy =
+    user.sandboxRole === 'platform_admin' || user.sandboxRole === 'owner'
+  const filtered = filterVisibleSessions(
+    list as Array<{ id: string }>,
+    user.userId,
+    canSeeLegacy,
+  )
+  const out = Array.isArray(body) ? filtered : { ...body, data: filtered }
+  const headers = new Headers(upstream.headers)
+  headers.delete('content-length')
+  return new Response(JSON.stringify(out), { status: 200, headers })
+})
+
+app.post('/session', async (c) => {
+  const upstream = await proxyToOpenCode(c)
+  const user = c.get('kortixUser')
+  if (!user || upstream.status >= 400) return upstream
+
+  const raw = await upstream.text()
+  try {
+    const json = JSON.parse(raw) as { id?: string }
+    const sessionId = json?.id
+    if (sessionId) stampSessionOwner(sessionId, user.userId)
+  } catch {
+    // non-JSON body — skip stamping.
+  }
+  const headers = new Headers(upstream.headers)
+  headers.delete('content-length')
+  return new Response(raw, { status: upstream.status, headers })
+})
+
+app.delete('/session/:id', async (c) => {
+  const user = c.get('kortixUser')
+  if (user) {
+    const sessionId = c.req.param('id')
+    const canSeeLegacy =
+      user.sandboxRole === 'platform_admin' || user.sandboxRole === 'owner'
+    const owned = filterVisibleSessions(
+      [{ id: sessionId }],
+      user.userId,
+      canSeeLegacy,
+    ).length > 0
+    if (!owned) {
+      return new Response(
+        JSON.stringify({ error: 'You can only delete your own sessions' }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      )
+    }
+  }
+  return proxyToOpenCode(c)
+})
 
 // Proxy all other requests to OpenCode
 app.all('*',

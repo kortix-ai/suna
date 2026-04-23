@@ -43,6 +43,8 @@ import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getAuthToken, getServerUrl } from '@/api/config';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import {
   useApiKeys,
   useCreateApiKey,
@@ -74,6 +76,8 @@ interface ApiKeysTabPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 export function ApiKeysTabPage({
@@ -81,6 +85,8 @@ export function ApiKeysTabPage({
   onBack,
   onOpenDrawer,
   onOpenRightDrawer,
+  isDrawerOpen,
+  isRightDrawerOpen,
 }: ApiKeysTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -89,22 +95,16 @@ export function ApiKeysTabPage({
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12, padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="menu" size={24} color={fgColor} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <RNText style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>
-              {page.label}
-            </RNText>
-          </View>
-          <TouchableOpacity onPress={onOpenRightDrawer} style={{ marginLeft: 12, padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="apps-outline" size={20} color={fgColor} />
-          </TouchableOpacity>
-        </View>
-      </View>
-      <ApiKeysContent />
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
+      <PageContent>
+        <ApiKeysContent />
+      </PageContent>
     </View>
   );
 }
@@ -366,7 +366,7 @@ function ApiKeysContent() {
                       gap: 5,
                       paddingHorizontal: 10,
                       paddingVertical: 5,
-                      borderRadius: 8,
+                      borderRadius: 9999,
                       backgroundColor: theme.primary,
                     }}
                   >
@@ -428,7 +428,7 @@ function ApiKeysContent() {
                       gap: 5,
                       paddingHorizontal: 10,
                       paddingVertical: 5,
-                      borderRadius: 8,
+                      borderRadius: 9999,
                       backgroundColor: theme.primary,
                     }}
                   >
@@ -797,7 +797,7 @@ function CreateApiKeySheet({
             alignItems: 'center',
             justifyContent: 'center',
             paddingVertical: 14,
-            borderRadius: 14,
+            borderRadius: 9999,
             backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
             ...(!title.trim() ? {} : { backgroundColor: theme.primary }),
           }}
@@ -913,7 +913,7 @@ function SecretKeySheet({
             alignItems: 'center',
             justifyContent: 'center',
             paddingVertical: 14,
-            borderRadius: 14,
+            borderRadius: 9999,
             backgroundColor: theme.primary,
           }}
         >
@@ -1203,7 +1203,7 @@ function CreatePublicLinkSheet({
             alignItems: 'center',
             justifyContent: 'center',
             paddingVertical: 14,
-            borderRadius: 14,
+            borderRadius: 9999,
             backgroundColor: (!sandboxId || !port) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary,
           }}
         >

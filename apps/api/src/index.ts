@@ -3,13 +3,14 @@ import './lib/sentry';
 import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
 import { logger as appLogger } from './lib/logger';
 import { runWithContext, setContextField } from './lib/request-context';
+import { getRequestUrl } from './lib/request-url';
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
 import { HTTPException } from 'hono/http-exception';
-import { config } from './config';
+import { config, SANDBOX_VERSION } from './config';
 import { BillingError } from './errors';
 
 // ─── Sub-Service Imports ──────────────────────────────────────────────────── 
@@ -40,6 +41,9 @@ import { initModelPricing, stopModelPricing } from './router/config/model-pricin
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { startSandboxHealthMonitor, stopSandboxHealthMonitor } from './platform/services/sandbox-health';
 import { startProvisionPoller, stopProvisionPoller } from './platform/services/sandbox-provision-poller';
+import { defaultSandboxAutoUpdatePolicy, startSandboxAutoUpdateLoop, stopSandboxAutoUpdateLoop } from './update/auto-update';
+import { startInviteCleanup, stopInviteCleanup } from './teams';
+import { db as appDb } from './shared/db';
 import { startAutoReplenish, stopAutoReplenish } from './pool';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
@@ -925,7 +929,7 @@ async function ensureLocalSandboxRegistered() {
       externalId: CONTAINER_NAME,
       baseUrl,
       config: {},
-      metadata: {},
+      metadata: { autoUpdate: defaultSandboxAutoUpdatePolicy(SANDBOX_VERSION) },
     })
     .returning()
     .then(([r]) => r);
@@ -1013,6 +1017,7 @@ ensureSchema()
     startDrainer();
     startTunnelService();
     startAutoReplenish();
+    startInviteCleanup(appDb);
 
     if (config.isLocalDockerEnabled() && config.DATABASE_URL) {
       // Non-blocking: sandbox registration + token sync runs in background.
@@ -1030,6 +1035,7 @@ ensureSchema()
     if (config.isJustAVPSEnabled()) {
       startProvisionPoller();
     }
+    startSandboxAutoUpdateLoop();
   })
   .catch(async (err) => {
     console.error('[startup] ensureSchema failed, starting services anyway:', err);
@@ -1038,6 +1044,7 @@ ensureSchema()
     startDrainer();
     startTunnelService();
     startAutoReplenish();
+    startInviteCleanup(appDb);
 
     if (config.isLocalDockerEnabled() && config.DATABASE_URL) {
       ensureLocalSandboxRegistered().catch((e) =>
@@ -1050,6 +1057,7 @@ ensureSchema()
     if (config.isJustAVPSEnabled()) {
       startProvisionPoller();
     }
+    startSandboxAutoUpdateLoop();
   });
 
 // Graceful shutdown
@@ -1060,8 +1068,10 @@ async function shutdown(signal: string) {
   stopTunnelService();
   stopSandboxHealthMonitor();
   stopProvisionPoller();
+  stopSandboxAutoUpdateLoop();
   stopAutoReplenish();
   stopAccessControlCache();
+  stopInviteCleanup();
   // Flush observability data before exit
   await Promise.allSettled([appLogger.flush(), flushSentry()]);
   process.exit(0);
@@ -1289,7 +1299,7 @@ export default {
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
     const host = req.headers.get('host') || '';
-    const url = new URL(req.url);
+    const url = getRequestUrl(req, config.PORT);
     const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket';
 
     // ── Subdomain preview routing (primary) ────────────────────────────

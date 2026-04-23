@@ -15,6 +15,10 @@ export interface AdminSandbox {
   lastUsedAt: string | null;
   accountName: string | null;
   ownerEmail: string | null;
+  initStatus?: 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
+  healthStatus?: 'healthy' | 'degraded' | 'offline' | 'unknown';
+  initAttempts?: number;
+  lastInitError?: string | null;
 }
 
 export interface AdminSandboxesParams {
@@ -70,7 +74,7 @@ export interface AdminSandboxDetail {
 export type AdminInstanceLayerStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
 
 export interface AdminInstanceLayerAction {
-  action: 'start_host' | 'reboot_host' | 'stop_host' | 'start_workload' | 'restart_workload' | 'stop_workload' | 'restart_runtime' | 'restart_service';
+  action: 'start_host' | 'reboot_host' | 'stop_host' | 'start_workload' | 'restart_workload' | 'stop_workload' | 'reinitialize' | 'restart_runtime' | 'restart_service';
   label: string;
   serviceId?: string;
 }
@@ -88,11 +92,16 @@ export interface AdminSandboxHealth {
   sandbox_id: string;
   overall_status: 'healthy' | 'degraded' | 'offline' | 'unknown';
   recommended_action: AdminInstanceLayerAction['action'] | null;
+  last_heartbeat_at?: string | null;
   layers: {
     host: AdminInstanceLayerHealth;
     workload: AdminInstanceLayerHealth;
     runtime: AdminInstanceLayerHealth;
   };
+}
+
+export interface AdminSandboxHealthBatchResponse {
+  items: AdminSandboxHealth[];
 }
 
 export interface ProviderMachineDetail {
@@ -147,6 +156,21 @@ export function useAdminSandboxHealth(sandboxId: string | null, enabled = true) 
       return response.data!;
     },
     refetchInterval: 10_000,
+  });
+}
+
+export function useAdminSandboxHealthBatch(sandboxIds: string[], enabled = true) {
+  const ids = sandboxIds.filter(Boolean);
+  return useQuery<AdminSandboxHealthBatchResponse>({
+    queryKey: ['admin', 'sandbox-health-batch', ids],
+    enabled: enabled && ids.length > 0,
+    queryFn: async () => {
+      const response = await backendApi.post<AdminSandboxHealthBatchResponse>('/admin/api/sandboxes/health-batch', { sandboxIds: ids }, { showErrors: false, timeout: 60000 });
+      if (response.error) throw new Error(response.error.message);
+      return response.data ?? { items: [] };
+    },
+    staleTime: 10_000,
+    refetchInterval: 15_000,
   });
 }
 

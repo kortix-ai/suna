@@ -5,6 +5,7 @@
  */
 
 import * as Sentry from '@sentry/nextjs';
+import { shouldIgnoreSentryNoiseEvent } from '@/lib/browser-error-noise';
 
 const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -15,5 +16,12 @@ if (SENTRY_DSN) {
 
     // Sample 10% of edge transactions
     tracesSampleRate: 0.1,
+
+    beforeSend(event) {
+      if (shouldIgnoreSentryNoiseEvent(event)) {
+        return null;
+      }
+      return event;
+    },
   });
 }

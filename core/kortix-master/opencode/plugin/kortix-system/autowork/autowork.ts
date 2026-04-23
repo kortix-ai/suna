@@ -2,36 +2,45 @@
  * Autowork plugin — single-owner persistent execution loop enforcer.
  *
  * `/autowork [--max-iterations N] <task>` activates the loop on a session.
- * Every `session.idle` the plugin scans the worker's assistant text for a
- * `<kortix_autowork_complete>` tag. If present and valid → stop. If missing
- * or malformed → inject a continuation (or a rejection if malformed).
+ * Every `session.idle` the plugin first enforces a planning phase, then an
+ * execution phase. The session must produce an approved
+ * `<kortix_autowork_plan>` before execution begins. Later, completion is only
+ * accepted when the latest `<kortix_autowork_complete>` is backed by real,
+ * transcript-visible verification after the last code change.
  *
  * The continuation prompt re-anchors the original user request via
  * `<kortix_autowork_request>` so the worker cannot drift across long loops.
  */
 
 import type { Plugin } from "@opencode-ai/plugin"
+import type { Todo } from "@opencode-ai/sdk"
 import { clearStartupAbortedSession, hasStartupAbortedSession } from "../lib/startup-aborted-sessions"
 import {
 	AUTOWORK_THRESHOLDS,
 	COMPLETION_TAG,
+	PLAN_TAG,
 	SYSTEM_WRAPPER_TAG,
+	VERIFIED_TAG,
 	createInitialAutoworkState,
 	parseAutoworkArgs,
 } from "./config"
 import {
+	approveAutoworkPlan,
 	advanceAutowork,
 	appendTaskContext,
 	loadAllAutoworkStates,
 	loadAutoworkState,
+	noteAutoworkAssistantMessage,
 	persistAutoworkState,
 	recordAutoworkAbort,
 	recordAutoworkFailure,
 	removeAutoworkState,
+	startAutoworkVerification,
 	startAutowork,
 	stopAutowork,
 } from "./state"
 import { checkAutoworkSafetyGates, evaluateAutowork } from "./engine"
+import { collectAutoworkTranscriptSignals } from "./transcript"
 
 export const autoworkActiveSessions = new Set<string>()
 
@@ -55,25 +64,15 @@ function extractMessageText(input: any): string {
  * are internal and should not be interpreted as user input.
  */
 function isInternalMessage(text: string): boolean {
-	return text.includes(`<${SYSTEM_WRAPPER_TAG}`) || text.includes(`<${COMPLETION_TAG}`)
+	return text.includes(`<${SYSTEM_WRAPPER_TAG}`) || text.includes(`<${COMPLETION_TAG}`) || text.includes(`<${PLAN_TAG}`) || text.includes(`<${VERIFIED_TAG}`)
+}
+
+function isSoftCooldownGate(gateResult: string): boolean {
+	return gateResult.startsWith("backoff cooldown") || gateResult.startsWith("minimum cooldown")
 }
 
 function startsWithSlashCommand(text: string, command: "autowork" | "autowork-cancel"): boolean {
 	return new RegExp(`^/${command}\\b`, "i").test(text.trim())
-}
-
-function extractAssistantTexts(messages: any[], fromIndex = 0): string[] {
-	const texts: string[] = []
-	for (let i = fromIndex; i < messages.length; i++) {
-		const message = messages[i]
-		if (message?.info?.role !== "assistant") continue
-		let text = ""
-		for (const part of message.parts ?? []) {
-			if (part.type === "text" && !part.synthetic && !part.ignored) text += `${part.text ?? ""}\n`
-		}
-		if (text.trim()) texts.push(text.trim())
-	}
-	return texts
 }
 
 function hasPendingQuestion(messages: any[]): boolean {
@@ -84,7 +83,7 @@ function hasPendingQuestion(messages: any[]): boolean {
 		if (role !== "assistant") continue
 		for (const part of message.parts ?? []) {
 			if (part.type !== "tool") continue
-			const toolName = (part.toolName ?? part.tool_name ?? part.name ?? "") as string
+			const toolName = (part.tool ?? part.toolName ?? part.tool_name ?? part.name ?? "") as string
 			const status = part.state?.status ?? ""
 			if ((toolName === "question" || toolName === "mcp_question") && (status === "running" || status === "pending")) return true
 		}
@@ -236,7 +235,7 @@ const AutoworkPlugin: Plugin = async ({ client }) => {
 						} catch {
 							// ignore
 						}
-						state = startAutowork(task, sessionId, msgCount, options.maxIterations)
+						state = startAutowork(task, sessionId, Math.max(0, msgCount - 1), options.maxIterations)
 						states.set(sessionId, state)
 						autoworkActiveSessions.add(sessionId)
 						log("info", `[autowork][${sid(sessionId)}] Activated: "${task.slice(0, 80)}"`)
@@ -321,6 +320,29 @@ const AutoworkPlugin: Plugin = async ({ client }) => {
 				}
 				if (!state.active) return
 
+				const [messagesRes, todoRes] = await Promise.all([
+					client.session.messages({ path: { id: sessionId } }).catch(() => ({ data: [] as any[] })),
+					typeof client.session.todo === "function"
+						? client.session.todo({ path: { id: sessionId } }).catch(() => ({ data: [] as Todo[] }))
+						: Promise.resolve({ data: [] as Todo[] }),
+				])
+				const messages = (messagesRes.data ?? []) as any[]
+				const todos = (todoRes.data ?? []) as Todo[]
+
+				if (hasPendingQuestion(messages)) {
+					log("info", `[autowork][${sid(sessionId)}] Skipped: pending question`)
+					return
+				}
+
+				const signals = collectAutoworkTranscriptSignals(
+					messages,
+					todos,
+					state,
+					(text) => text.includes(`<${SYSTEM_WRAPPER_TAG}`),
+				)
+				const latestAssistantMessageIndex = signals.latestAssistantMessage?.messageIndex ?? -1
+				const hasFreshAssistantMessage = latestAssistantMessageIndex > state.lastObservedAssistantMessageIndex
+
 				const gateResult = checkAutoworkSafetyGates(
 					state,
 					AUTOWORK_THRESHOLDS.abortGracePeriodMs,
@@ -333,21 +355,16 @@ const AutoworkPlugin: Plugin = async ({ client }) => {
 					state = { ...state, consecutiveFailures: 0 }
 					persistAutoworkState(state)
 					states.set(sessionId, state)
-				} else if (gateResult) {
+				} else if (gateResult && !(hasFreshAssistantMessage && isSoftCooldownGate(gateResult))) {
 					log("info", `[autowork][${sid(sessionId)}] Gate: ${gateResult}`)
 					return
 				}
 
-				const messagesRes = await client.session.messages({ path: { id: sessionId } }).catch(() => ({ data: [] as any[] }))
-				const messages = (messagesRes.data ?? []) as any[]
-
-				if (hasPendingQuestion(messages)) {
-					log("info", `[autowork][${sid(sessionId)}] Skipped: pending question`)
-					return
+				if (hasFreshAssistantMessage) {
+					state = noteAutoworkAssistantMessage(state, latestAssistantMessageIndex)
+					states.set(sessionId, state)
 				}
-
-				const assistantTexts = extractAssistantTexts(messages, state.messageCountAtStart)
-				const decision = evaluateAutowork(state, assistantTexts)
+				const decision = evaluateAutowork(state, signals)
 				log("info", `[autowork][${sid(sessionId)}] ${decision.action} — ${decision.reason}`)
 
 				if (decision.action === "stop") {
@@ -358,6 +375,13 @@ const AutoworkPlugin: Plugin = async ({ client }) => {
 				}
 
 				if (decision.prompt) {
+					if (decision.nextPhase === "execution" && decision.approvedPlan) {
+						state = approveAutoworkPlan(state, decision.approvedPlan)
+						states.set(sessionId, state)
+					} else if (decision.nextPhase === "verifying" && decision.approvedCompletion) {
+						state = startAutoworkVerification(state, decision.approvedCompletion)
+						states.set(sessionId, state)
+					}
 					state = advanceAutowork(state)
 					states.set(sessionId, state)
 					await client.session.promptAsync({

@@ -55,6 +55,9 @@ import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
+import { ProjectPicker } from './ProjectPicker';
+import { SandboxHealthPill } from './SandboxHealthPill';
+import { useRouter } from 'expo-router';
 import { useAudioRecorder } from '@/hooks/media/useAudioRecorder';
 import { useAudioRecordingHandlers } from '@/hooks/media/useAudioRecordingHandlers';
 import { transcribeAudio } from '@/lib/chat/transcription';
@@ -66,58 +69,9 @@ import type { SandboxFile } from '@/api/types';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 
-/**
- * Cross-fades + rotates between an arbitrary icon and the close icon based on `open`.
- */
-function AnimatedToggleIcon({
-  open,
-  color,
-  icon,
-  size = 24,
-}: {
-  open: boolean;
-  color: string;
-  icon: keyof typeof Ionicons.glyphMap | 'menu-lucide';
-  size?: number;
-}) {
-  const progress = useSharedValue(open ? 1 : 0);
-
-  useEffect(() => {
-    progress.value = withTiming(open ? 1 : 0, { duration: 220 });
-  }, [open, progress]);
-
-  const baseStyle = useAnimatedStyle(() => ({
-    position: 'absolute',
-    opacity: interpolate(progress.value, [0, 1], [1, 0]),
-    transform: [{ rotate: `${interpolate(progress.value, [0, 1], [0, 90])}deg` }],
-  }));
-
-  const closeStyle = useAnimatedStyle(() => ({
-    opacity: progress.value,
-    transform: [{ rotate: `${interpolate(progress.value, [0, 1], [-90, 0])}deg` }],
-  }));
-
-  const renderBase = () => {
-    if (icon === 'menu-lucide') {
-      return <Icon as={MenuIcon} size={size} color={color} strokeWidth={2} />;
-    }
-    return <Ionicons name={icon} size={size} color={color} />;
-  };
-
-  const renderClose = () => {
-    if (icon === 'menu-lucide') {
-      return <Icon as={CloseIcon} size={size} color={color} strokeWidth={2} />;
-    }
-    return <Ionicons name="close" size={size} color={color} />;
-  };
-
-  return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Reanimated.View style={baseStyle}>{renderBase()}</Reanimated.View>
-      <Reanimated.View style={closeStyle}>{renderClose()}</Reanimated.View>
-    </View>
-  );
-}
+// AnimatedToggleIcon was extracted to components/ui/animated-toggle-icon.tsx
+// so it can be shared with PageHeader and page-level headers across the app.
+import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
 
 interface SessionPageProps {
   sessionId: string;
@@ -135,6 +89,7 @@ interface SessionPageProps {
 }
 
 export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+  const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -162,17 +117,24 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
   const { data: session } = useSession(sandboxUrl, sessionId);
   const { data: allSessions = [] } = useSessions(sandboxUrl);
 
-  // Fork origin — check server parentID and AsyncStorage fallback
+  // Fork origin — check server parentID, with AsyncStorage fallback only for
+  // the current session. The effect MUST clear stale state first so the
+  // banner disappears immediately when switching to a non-forked session;
+  // otherwise the previous session's parentID would bleed into the new one.
+  // The async AsyncStorage read is guarded by a cancelled flag so a slow
+  // lookup for a previous sessionId can't resurrect the banner.
   const [forkParentId, setForkParentId] = useState<string | null>(null);
   useEffect(() => {
-    const parentFromServer = (session as any)?.parentID;
-    if (parentFromServer) {
-      setForkParentId(parentFromServer);
-      return;
-    }
+    const parentFromServer = (session as any)?.parentID ?? null;
+    setForkParentId(parentFromServer);
+    if (parentFromServer) return;
+
+    let cancelled = false;
     AsyncStorage.getItem(`fork_origin_${sessionId}`).then((val) => {
+      if (cancelled) return;
       if (val) setForkParentId(val);
     });
+    return () => { cancelled = true; };
   }, [sessionId, session]);
   const { data: parentSession } = useSession(sandboxUrl, forkParentId ?? undefined);
 
@@ -831,6 +793,20 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
             </TouchableOpacity>
           )}
           <View className="flex-1 flex-row items-center">
+            {/* Status dot before the title (matches web session-list):
+                amber when a question is waiting, green while working,
+                hidden otherwise. */}
+            {!onboardingMode && !isEditingTitle && (isBusy || pendingQuestions.length > 0) && (
+              <View
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: pendingQuestions.length > 0 ? '#F59E0B' : '#10B981',
+                  marginRight: 8,
+                }}
+              />
+            )}
             {isEditingTitle ? (
               <TextInput
                 ref={titleInputRef}
@@ -867,12 +843,6 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
                   {title}
                 </Text>
               </TouchableOpacity>
-            )}
-            {isBusy && !onboardingMode && !isEditingTitle && (
-              <View className="flex-row items-center mt-0.5">
-                <View className="h-1.5 w-1.5 rounded-full bg-muted-foreground mr-1" />
-                <Text className="text-xs text-muted-foreground">Working</Text>
-              </View>
             )}
           </View>
           {!onboardingMode && (
@@ -1004,6 +974,23 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           colors={isDark ? ['rgba(18,18,21,0)', 'rgba(18,18,21,1)'] : ['rgba(255,255,255,0)', 'rgba(255,255,255,1)']}
           style={{ height: 24, marginTop: -24, zIndex: 1 }}
           pointerEvents="none"
+        />
+      )}
+
+      {/* Project picker — only on fresh sessions, above the chat input.
+          Mirrors the web's dashboard/empty-state ProjectSelector: shared
+          selection store so the picked project survives app restarts and
+          scopes the next `/kortix/task`-creating send. */}
+      {showFreshHero && !onboardingMode && !hasQuestion && (
+        <ProjectPicker />
+      )}
+
+      {/* Sandbox health pill — full-width row immediately above the chat
+          input. Self-hides (returns null) when the sandbox is reachable,
+          so it takes no layout space the rest of the time. */}
+      {!onboardingMode && !hasQuestion && (
+        <SandboxHealthPill
+          onSwitch={() => router.push('/(settings)/instances')}
         />
       )}
 
@@ -1150,40 +1137,47 @@ function FreshSessionHero({
         opacity,
       }}
     >
-      <Animated.View
+      {/* Logo + greeting share the same absolutely-positioned box so the
+          text stays centered in the logo regardless of screen height. */}
+      <View
         style={{
           position: 'absolute',
           top: 0,
           left: -80 + leftOffset,
           width: 554,
           height: 462,
-          opacity: Animated.multiply(logoOpacity, 0.4),
         }}
       >
-        <Symbol width={554} height={462} />
-      </Animated.View>
-
-      <Animated.View
-        style={{
-          flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: textOpacity,
-          transform: [{ translateY: textTranslateY }],
-        }}
-      >
-        <RNText
+        <Animated.View
           style={{
-            fontSize: 14,
-            fontFamily: 'Roobert',
-            color: isDark ? 'rgba(248,248,248,0.46)' : 'rgba(18,18,21,0.4)',
-            letterSpacing: 0.28,
-            marginTop: -88,
+            ...StyleSheet.absoluteFillObject,
+            opacity: Animated.multiply(logoOpacity, 0.4),
           }}
         >
-          {greeting}
-        </RNText>
-      </Animated.View>
+          <Symbol width={554} height={462} />
+        </Animated.View>
+
+        <Animated.View
+          style={{
+            ...StyleSheet.absoluteFillObject,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: textOpacity,
+            transform: [{ translateY: textTranslateY }],
+          }}
+        >
+          <RNText
+            style={{
+              fontSize: 14,
+              fontFamily: 'Roobert',
+              color: isDark ? 'rgba(248,248,248,0.46)' : 'rgba(18,18,21,0.4)',
+              letterSpacing: 0.28,
+            }}
+          >
+            {greeting}
+          </RNText>
+        </Animated.View>
+      </View>
     </Animated.View>
   );
 }

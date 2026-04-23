@@ -11,6 +11,8 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { IntegrationsPageContent } from '@/components/settings/IntegrationsPage';
 
 interface IntegrationsTabPageProps {
@@ -18,6 +20,8 @@ interface IntegrationsTabPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 export function IntegrationsTabPage({
@@ -25,6 +29,8 @@ export function IntegrationsTabPage({
   onBack,
   onOpenDrawer,
   onOpenRightDrawer,
+  isDrawerOpen,
+  isRightDrawerOpen,
 }: IntegrationsTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -33,36 +39,16 @@ export function IntegrationsTabPage({
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top }} className="px-4 pb-3 bg-background">
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            onPress={onOpenDrawer}
-            className="mr-3 p-1"
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="menu" size={24} color={fgColor} />
-          </TouchableOpacity>
-          <View className="flex-1">
-            <RNText
-              style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}
-              numberOfLines={1}
-            >
-              {page.label}
-            </RNText>
-          </View>
-          <TouchableOpacity
-            onPress={onOpenRightDrawer}
-            className="ml-3 p-1"
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="apps-outline" size={20} color={fgColor} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Integrations content */}
-      <IntegrationsPageContent />
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
+      <PageContent>
+        <IntegrationsPageContent />
+      </PageContent>
     </View>
   );
 }

@@ -23,16 +23,39 @@ import {
   type ProviderName,
   type SandboxProvider,
 } from '../providers';
-import { config } from '../../config';
+import { config, SANDBOX_VERSION } from '../../config';
 import { justavpsFetch, listServerTypes as listJustAVPSServerTypes } from '../providers/justavps';
 import type { AuthVariables } from '../../types';
 import { resolveAccountId as defaultResolveAccountId } from '../../shared/resolve-account';
 import * as pool from '../../pool';
 import { generateSandboxName } from '../services/ensure-sandbox';
 import {
+  buildSandboxInitAttemptMetadata,
+  buildSandboxInitFailureMetadata,
+  buildSandboxInitSuccessMetadata,
+  deriveSandboxHealthStatus,
+  deriveSandboxInitStatus,
+  getSandboxInitAttempts,
+  getSandboxLastInitError,
+  getSandboxMetadata,
+  retrySandboxProvisionCreate,
+  SANDBOX_INIT_MAX_ATTEMPTS,
+} from '../services/sandbox-init-state';
+import {
+  reprovisionFailedJustAvpsSandbox,
+  shouldReprovisionFailedJustAvpsSandbox,
+} from '../services/sandbox-reinitialize';
+import {
   findAccessibleSandboxForUser,
+  hasSandboxScope,
   listAccessibleSandboxesForUser,
 } from '../services/sandbox-access';
+import { defaultSandboxAutoUpdatePolicy, getSandboxAutoUpdatePolicy } from '../../update/auto-update';
+import {
+  loadSandboxForUser,
+  loadUserTeamContext,
+  registerCreator,
+} from '../../teams';
 
 // ─── Dependency Injection ────────────────────────────────────────────────────
 
@@ -54,10 +77,17 @@ const defaultDeps: SandboxCloudRouterDeps = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function serializeSandbox(row: typeof sandboxes.$inferSelect) {
+function serializeSandbox(
+  row: typeof sandboxes.$inferSelect,
+  viewer?: { ownerAccountIds: string[]; isPlatformAdmin: boolean },
+) {
   const metadata = row.metadata as Record<string, unknown> | null;
   const cancelAtPeriodEnd = Boolean((metadata?.cancel_at_period_end as boolean) ?? false);
   const cancelAt = (metadata?.cancel_at as string) ?? null;
+  const autoUpdate = getSandboxAutoUpdatePolicy(metadata, typeof metadata?.version === 'string' ? metadata.version : null);
+  const canManage = viewer
+    ? viewer.isPlatformAdmin || viewer.ownerAccountIds.includes(row.accountId)
+    : false;
   return {
     sandbox_id: row.sandboxId,
     external_id: row.externalId,
@@ -72,8 +102,17 @@ function serializeSandbox(row: typeof sandboxes.$inferSelect) {
     stripe_subscription_item_id: row.stripeSubscriptionItemId ?? null,
     cancel_at_period_end: cancelAtPeriodEnd,
     cancel_at: cancelAt,
+    auto_update_enabled: autoUpdate.enabled,
+    auto_update_channel: autoUpdate.channel,
+    auto_update: autoUpdate,
+    lifecycle_status: row.status,
+    init_status: deriveSandboxInitStatus(row.status, metadata),
+    health_status: deriveSandboxHealthStatus(row.status, metadata),
+    init_attempts: getSandboxInitAttempts(metadata),
+    last_init_error: getSandboxLastInitError(metadata),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
+    can_manage: canManage,
   };
 }
 
@@ -99,17 +138,6 @@ function getProviderDisplayName(providerName: ProviderName): string {
     default:
       return providerName;
   }
-}
-
-function stripProvisioningFailureMetadata(metadata: Record<string, unknown> | null | undefined) {
-  const source = metadata ?? {};
-  const {
-    provisioningError: _provisioningError,
-    lastProvisioningError: _lastProvisioningError,
-    errorMessage: _errorMessage,
-    ...rest
-  } = source;
-  return rest;
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
@@ -379,12 +407,21 @@ export function createCloudSandboxRouter(
           status: 'provisioning',
           baseUrl: '',
           config: {},
-          metadata: stripeSubscriptionId ? { stripe_subscription_id: stripeSubscriptionId } : {},
+          metadata: {
+            ...(stripeSubscriptionId ? { stripe_subscription_id: stripeSubscriptionId } : {}),
+            autoUpdate: defaultSandboxAutoUpdatePolicy(SANDBOX_VERSION),
+            initStatus: 'pending',
+            initAttempts: 0,
+            initMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
+            healthStatus: 'unknown',
+          },
           isIncluded: false,
           stripeSubscriptionItemId,
         })
         .returning();
       createdSandboxId = sandbox.sandboxId;
+
+      await registerCreator(db, sandbox.sandboxId, userId);
 
       // Create a sandbox-managed API key (kortix_sb_)
       const sandboxKey = await createApiKey({
@@ -459,7 +496,39 @@ export function createCloudSandboxRouter(
         void (async () => {
           let bgExternalId: string | null = null;
           try {
-            const result = await provider.create(providerCreateInput);
+            const firstStage = provider.provisioning.stages[0];
+            const { result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
+              onAttemptStart: async (attempt) => {
+                await db
+                  .update(sandboxes)
+                  .set({
+                    metadata: buildSandboxInitAttemptMetadata(
+                      sandbox.metadata as Record<string, unknown> | null,
+                      attempt,
+                      attempt === 1 ? 'provisioning' : 'retrying',
+                      firstStage?.id,
+                      attempt === 1 ? firstStage?.message : `Retrying initialization (${attempt}/${SANDBOX_INIT_MAX_ATTEMPTS})…`,
+                    ),
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+              },
+              onAttemptFailure: async (attempt, error, willRetry) => {
+                await db
+                  .update(sandboxes)
+                  .set({
+                    ...(willRetry ? { status: 'provisioning' as const } : { status: 'error' as const }),
+                    metadata: buildSandboxInitFailureMetadata(
+                      sandbox.metadata as Record<string, unknown> | null,
+                      error,
+                      attempt,
+                      willRetry,
+                    ),
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+              },
+            });
             bgExternalId = result.externalId;
 
             await db
@@ -468,7 +537,11 @@ export function createCloudSandboxRouter(
                 externalId: result.externalId,
                 status: 'active',
                 baseUrl: result.baseUrl,
-                metadata: { ...((sandbox.metadata as Record<string, unknown>) ?? {}), ...result.metadata },
+                metadata: buildSandboxInitSuccessMetadata(
+                  sandbox.metadata as Record<string, unknown> | null,
+                  result.metadata,
+                  attempts,
+                ),
                 config: { serviceKey: sandboxKey.secretKey },
                 updatedAt: new Date(),
               })
@@ -514,7 +587,12 @@ export function createCloudSandboxRouter(
                 .set({
                   status: 'error',
                   metadata: {
-                    ...(sandbox.metadata as Record<string, unknown> || {}),
+                    ...buildSandboxInitFailureMetadata(
+                      sandbox.metadata as Record<string, unknown> | null,
+                      bgErr,
+                      SANDBOX_INIT_MAX_ATTEMPTS,
+                      false,
+                    ),
                     errorMessage: bgMessage.includes('server location disabled')
                       ? `Selected location is currently disabled by ${getProviderDisplayName(providerName)}. Choose another location.`
                       : `Provisioning failed via ${getProviderDisplayName(providerName)}. Please retry or choose a different server/location.`,
@@ -540,7 +618,39 @@ export function createCloudSandboxRouter(
         );
       }
 
-      const result = await provider.create(providerCreateInput);
+      const firstStage = provider.provisioning.stages[0];
+      const { result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
+        onAttemptStart: async (attempt) => {
+          await db
+            .update(sandboxes)
+            .set({
+              metadata: buildSandboxInitAttemptMetadata(
+                sandbox.metadata as Record<string, unknown> | null,
+                attempt,
+                attempt === 1 ? 'provisioning' : 'retrying',
+                firstStage?.id,
+                attempt === 1 ? firstStage?.message : `Retrying initialization (${attempt}/${SANDBOX_INIT_MAX_ATTEMPTS})…`,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+        },
+        onAttemptFailure: async (attempt, error, willRetry) => {
+          await db
+            .update(sandboxes)
+            .set({
+              ...(willRetry ? { status: 'provisioning' as const } : { status: 'error' as const }),
+              metadata: buildSandboxInitFailureMetadata(
+                sandbox.metadata as Record<string, unknown> | null,
+                error,
+                attempt,
+                willRetry,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+        },
+      });
       createdExternalId = result.externalId;
       providerUsed = providerName;
 
@@ -551,7 +661,11 @@ export function createCloudSandboxRouter(
           externalId: result.externalId,
           status: 'active',
           baseUrl: result.baseUrl,
-          metadata: { ...((sandbox.metadata as Record<string, unknown>) ?? {}), ...result.metadata },
+          metadata: buildSandboxInitSuccessMetadata(
+            sandbox.metadata as Record<string, unknown> | null,
+            result.metadata,
+            attempts,
+          ),
           config: { serviceKey: sandboxKey.secretKey },
           updatedAt: new Date(),
         })
@@ -642,7 +756,7 @@ export function createCloudSandboxRouter(
         return c.json({ status: 'not_found', error: 'Sandbox not found' }, 404);
       }
 
-      const metadata = (sandbox.metadata as Record<string, unknown> | null) ?? {};
+      const metadata = getSandboxMetadata(sandbox.metadata);
       const currentStatus = sandbox.status;
 
       // NOTE: Self-healing is now handled by the background provision-poller service
@@ -679,12 +793,15 @@ export function createCloudSandboxRouter(
 
       return c.json({
         status: currentStatus,
+        lifecycleStatus: currentStatus,
+        initStatus: deriveSandboxInitStatus(currentStatus, metadata),
+        healthStatus: deriveSandboxHealthStatus(currentStatus, metadata),
         stage: provisioningStage,
         stageProgress,
         stageMessage: provisioningMessage,
         machineInfo: publicIp ? { ip: publicIp, serverType: serverType ?? '', location: location ?? '' } : null,
         stages: null,
-        error: currentStatus === 'error' ? ((metadata.errorMessage as string) ?? 'Provisioning failed') : null,
+        error: currentStatus === 'error' ? (getSandboxLastInitError(metadata) ?? (metadata.errorMessage as string) ?? 'Provisioning failed') : null,
         startedAt: sandbox.createdAt?.toISOString() ?? null,
       });
     } catch (err) {
@@ -701,7 +818,7 @@ export function createCloudSandboxRouter(
 
     try {
       const requestedSandboxId = c.req.query('sandbox_id') || undefined;
-      const { sandboxes: rows } = await listAccessibleSandboxesForUser({
+      const { access, sandboxes: rows } = await listAccessibleSandboxesForUser({
         db,
         userId,
         sandboxId: requestedSandboxId,
@@ -709,7 +826,11 @@ export function createCloudSandboxRouter(
         resolveAccountId,
       });
 
-      return c.json({ success: true, data: rows.map(serializeSandbox) });
+      const viewer = {
+        ownerAccountIds: access.ownerAccountIds,
+        isPlatformAdmin: access.isPlatformAdmin,
+      };
+      return c.json({ success: true, data: rows.map((r) => serializeSandbox(r, viewer)) });
     } catch (err) {
       console.error('[SANDBOX-CLOUD] list error:', err);
       return c.json({ success: false, error: 'Failed to list sandboxes' }, 500);
@@ -789,61 +910,24 @@ export function createCloudSandboxRouter(
 
       const provider = getProvider(sandbox.provider);
 
-      if (sandbox.provider === 'justavps' && !sandbox.externalId && sandbox.status === 'error') {
-        const existingMeta = (sandbox.metadata as Record<string, unknown> | null) ?? {};
-        const existingConfig = (sandbox.config as Record<string, unknown> | null) ?? {};
-        const cleanMeta = stripProvisioningFailureMetadata(existingMeta);
+      if (sandbox.provider === 'justavps' && sandbox.status === 'error') {
+        const providerStatus = sandbox.externalId ? await provider.getStatus(sandbox.externalId) : null;
+        const shouldReprovision = shouldReprovisionFailedJustAvpsSandbox(sandbox.status, sandbox.externalId, providerStatus);
 
-        let serviceKey = typeof existingConfig.serviceKey === 'string' ? existingConfig.serviceKey : '';
-        if (!serviceKey) {
-          const sandboxKey = await createApiKey({
-            sandboxId: sandbox.sandboxId,
-            accountId: sandbox.accountId,
-            title: 'Sandbox Token (recovery)',
-            type: 'sandbox',
+        if (shouldReprovision) {
+          const refreshed = await reprovisionFailedJustAvpsSandbox({ db, sandbox, provider, userId });
+
+          console.log(`[PLATFORM] Re-provisioned failed sandbox ${sandbox.sandboxId} via ${sandbox.provider}${providerStatus === 'removed' ? ' after provider machine disappeared' : ''}`);
+
+          return c.json({
+            success: true,
+            data: {
+              ...(refreshed ? serializeSandbox(refreshed) : {}),
+              recovery_state: 'reprovisioning',
+              action: 'retry_provision',
+            },
           });
-          serviceKey = sandboxKey.secretKey;
         }
-
-        const reprovisioned = await provider.create({
-          accountId: sandbox.accountId,
-          userId,
-          name: sandbox.name,
-          serverType: typeof existingMeta.serverType === 'string' ? existingMeta.serverType : undefined,
-          location: typeof existingMeta.location === 'string' ? existingMeta.location : undefined,
-          envVars: {
-            KORTIX_TOKEN: serviceKey,
-          },
-        });
-
-        await db
-          .update(sandboxes)
-          .set({
-            externalId: reprovisioned.externalId,
-            status: 'active',
-            baseUrl: reprovisioned.baseUrl,
-            metadata: { ...cleanMeta, ...reprovisioned.metadata },
-            config: { ...existingConfig, serviceKey },
-            updatedAt: new Date(),
-          })
-          .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
-
-        const [refreshed] = await db
-          .select()
-          .from(sandboxes)
-          .where(eq(sandboxes.sandboxId, sandbox.sandboxId))
-          .limit(1);
-
-        console.log(`[PLATFORM] Re-provisioned failed sandbox ${sandbox.sandboxId} via ${sandbox.provider}`);
-
-        return c.json({
-          success: true,
-          data: {
-            ...(refreshed ? serializeSandbox(refreshed) : {}),
-            recovery_state: 'reprovisioning',
-            action: 'retry_provision',
-          },
-        });
       }
 
       if (!sandbox.externalId) {
@@ -923,7 +1007,7 @@ export function createCloudSandboxRouter(
     try {
       const body = await c.req.json().catch(() => ({}));
       const sandboxId = body?.sandbox_id as string | undefined;
-      const { sandbox } = await findAccessibleSandboxForUser({
+      const { sandbox, access } = await findAccessibleSandboxForUser({
         db,
         userId,
         sandboxId,
@@ -932,6 +1016,13 @@ export function createCloudSandboxRouter(
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No sandbox found' }, 404);
+      }
+
+      if (!(await hasSandboxScope(db, access, sandbox, 'billing:manage'))) {
+        return c.json(
+          { success: false, error: 'You do not have permission to change billing on this instance' },
+          403,
+        );
       }
 
       const existingMeta = (sandbox.metadata as Record<string, unknown> | null) ?? {};
@@ -993,7 +1084,7 @@ export function createCloudSandboxRouter(
     try {
       const body = await c.req.json().catch(() => ({}));
       const sandboxId = body?.sandbox_id as string | undefined;
-      const { sandbox } = await findAccessibleSandboxForUser({
+      const { sandbox, access } = await findAccessibleSandboxForUser({
         db,
         userId,
         sandboxId,
@@ -1002,6 +1093,13 @@ export function createCloudSandboxRouter(
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No sandbox found' }, 404);
+      }
+
+      if (!(await hasSandboxScope(db, access, sandbox, 'billing:manage'))) {
+        return c.json(
+          { success: false, error: 'You do not have permission to change billing on this instance' },
+          403,
+        );
       }
 
       const existingMeta = (sandbox.metadata as Record<string, unknown> | null) ?? {};
@@ -1142,6 +1240,59 @@ export function createCloudSandboxRouter(
     console.log(`[SANDBOX-CLOUD] Marked sandbox ${sandboxId} as error: ${errorMessage}`);
     return c.json({ success: true });
   });
+
+  router.patch('/:sandboxId', async (c) => {
+    const userId = c.get('userId');
+    const sandboxId = c.req.param('sandboxId');
+
+    try {
+      const primaryAccountId = await resolveAccountId(userId);
+      const ctx = await loadUserTeamContext(db, userId, primaryAccountId);
+      const { sandbox, decision } = await loadSandboxForUser(db, ctx, sandboxId, 'rename');
+      if (!decision.allowed) {
+        return c.json(
+          { success: false, error: 'Only the sandbox owner can rename this instance' },
+          403,
+        );
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const patch: { name?: string; updatedAt: Date } = { updatedAt: new Date() };
+
+      if (typeof body?.name === 'string') {
+        const trimmed = body.name.trim();
+        if (!trimmed || trimmed.length > 255) {
+          return c.json({ success: false, error: 'Name must be 1–255 characters' }, 400);
+        }
+        patch.name = trimmed;
+      }
+
+      if (Object.keys(patch).length === 1) {
+        return c.json({ success: false, error: 'No editable fields provided' }, 400);
+      }
+
+      const [updated] = await db
+        .update(sandboxes)
+        .set(patch)
+        .where(eq(sandboxes.sandboxId, sandbox.sandboxId))
+        .returning();
+
+      console.log(`[SANDBOX-CLOUD] Renamed sandbox ${sandbox.sandboxId} → "${patch.name}"`);
+      return c.json({
+        success: true,
+        data: serializeSandbox(updated, {
+          ownerAccountIds: ctx.ownerAccountIds,
+          isPlatformAdmin: ctx.isPlatformAdmin,
+        }),
+      });
+    } catch (err) {
+      console.error('[SANDBOX-CLOUD] patch error:', err);
+      return c.json({ success: false, error: 'Failed to update sandbox' }, 500);
+    }
+  });
+
+  // Members + invite routes live in the teams module and are mounted
+  // separately from platform/index.ts under /sandbox and /invites.
 
   return router;
 }

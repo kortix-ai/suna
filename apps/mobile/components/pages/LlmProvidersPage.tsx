@@ -59,6 +59,8 @@ import {
 import { Globe } from 'lucide-react-native';
 import { SearchBar } from '@/components/ui/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 
 // ─── Provider branding ───────────────────────────────────────────────────────
@@ -236,9 +238,11 @@ interface LlmProvidersPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: LlmProvidersPageProps) {
+export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: LlmProvidersPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -446,29 +450,29 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top + 8, paddingBottom: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: borderColor }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {onOpenDrawer && (
-              <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12 }}>
-                <Ionicons name="menu" size={24} color={fgColor} />
-              </TouchableOpacity>
-            )}
-            <View>
-              <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>{page.label}</Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>
-                {connectedSet.size} connected
-              </Text>
-            </View>
+      <PageHeader
+        title={
+          <View style={{ flex: 1 }}>
+            <Text
+              className="text-base font-medium text-muted-foreground"
+              numberOfLines={1}
+            >
+              {page.label}
+            </Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>
+              {connectedSet.size} connected
+            </Text>
           </View>
-          {onOpenRightDrawer && (
-            <TouchableOpacity onPress={onOpenRightDrawer}>
-              <Ionicons name="apps-outline" size={20} color={fgColor} />
-            </TouchableOpacity>
-          )}
-        </View>
+        }
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
 
+      <PageContent>
+      {/* Tabs */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>
         {/* Tabs */}
         <View style={{ flexDirection: 'row', gap: 0, marginTop: 12, borderRadius: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 3 }}>
           {([
@@ -721,7 +725,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             disabled={!apiKey.trim() || isSaving}
             style={{
               backgroundColor: apiKey.trim() ? themeColors.primary : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
-              borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+              borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
               opacity: apiKey.trim() && !isSaving ? 1 : 0.5,
             }}
           >
@@ -761,14 +765,14 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <BottomSheetTouchable
               onPress={() => disconnectSheetRef.current?.dismiss()}
-              style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: fgColor }}>Cancel</Text>
             </BottomSheetTouchable>
             <BottomSheetTouchable
               onPress={handleDisconnect}
               disabled={isDisconnecting}
-              style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDisconnecting ? 0.5 : 1 }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDisconnecting ? 0.5 : 1 }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: '#FFFFFF' }}>
                 {isDisconnecting ? 'Disconnecting...' : 'Disconnect'}
@@ -920,7 +924,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
               backgroundColor: (customForm.providerID.trim() && customForm.name.trim() && customForm.baseURL.trim() && customForm.modelId.trim() && customForm.modelName.trim())
                 ? themeColors.primary
                 : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
-              borderRadius: 14,
+              borderRadius: 9999,
               paddingVertical: 15,
               alignItems: 'center',
               opacity: isCustomSaving ? 0.5 : 1,
@@ -938,6 +942,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           </BottomSheetTouchable>
         </BottomSheetScrollView>
       </BottomSheetModal>
+      </PageContent>
     </View>
   );
 }

@@ -48,6 +48,8 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 
 // ─── API ─────────────────────────────────────────────────────────────────────
@@ -173,9 +175,11 @@ interface SecretsPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: SecretsPageProps) {
+export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: SecretsPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -318,25 +322,15 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: S
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {onOpenDrawer && (
-            <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12, padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="menu" size={24} color={fgColor} />
-            </TouchableOpacity>
-          )}
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>{page.label}</Text>
-          </View>
-          {onOpenRightDrawer && (
-            <TouchableOpacity onPress={onOpenRightDrawer} style={{ padding: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Ionicons name="apps-outline" size={20} color={fgColor} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
 
+      <PageContent>
       {/* Search + Add */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 8, gap: 10 }}>
         <View
@@ -345,8 +339,8 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: S
             flexDirection: 'row',
             alignItems: 'center',
             backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-            borderRadius: 12,
-            paddingHorizontal: 12,
+            borderRadius: 9999,
+            paddingHorizontal: 16,
             height: 42,
           }}
         >
@@ -372,7 +366,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: S
           style={{
             width: 42,
             height: 42,
-            borderRadius: 12,
+            borderRadius: 9999,
             backgroundColor: themeColors.primary,
             alignItems: 'center',
             justifyContent: 'center',
@@ -486,7 +480,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: S
             disabled={!newKey.trim() || isSaving}
             style={{
               backgroundColor: newKey.trim() ? themeColors.primary : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
-              borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+              borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
               opacity: newKey.trim() && !isSaving ? 1 : 0.5,
             }}
           >
@@ -543,7 +537,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: S
             onPress={handleSave}
             disabled={isSaving}
             style={{
-              backgroundColor: themeColors.primary, borderRadius: 14, paddingVertical: 15,
+              backgroundColor: themeColors.primary, borderRadius: 9999, paddingVertical: 15,
               alignItems: 'center', opacity: isSaving ? 0.5 : 1,
             }}
           >
@@ -592,7 +586,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: S
             <BottomSheetTouchable
               onPress={() => deleteSheetRef.current?.dismiss()}
               style={{
-                flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+                flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
                 borderWidth: 1, borderColor: borderColor,
               }}
             >
@@ -602,7 +596,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: S
               onPress={handleDelete}
               disabled={isDeleting}
               style={{
-                flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center',
+                flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
                 backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDeleting ? 0.5 : 1,
               }}
             >
@@ -613,6 +607,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: S
           </View>
         </BottomSheetView>
       </BottomSheetModal>
+      </PageContent>
     </View>
   );
 }

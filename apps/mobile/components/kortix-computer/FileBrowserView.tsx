@@ -4,11 +4,9 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
 import {
-  File,
   Folder,
   Upload,
   Home,
-  FileText,
   Presentation,
   Clock,
   ChevronDown,
@@ -16,6 +14,7 @@ import {
   AlertTriangle,
   X,
 } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -37,6 +36,7 @@ import {
 import type { SandboxFile } from '@/api/types';
 import { KortixComputerHeader, type BreadcrumbSegment } from './KortixComputerHeader';
 import { VersionBanner } from './VersionBanner';
+import { getFileIconComponent, getMutedIconColor } from '@/components/files/FileItem';
 
 interface FileBrowserViewProps {
   sandboxId: string;
@@ -87,6 +87,8 @@ export function FileBrowserView({
   project,
 }: FileBrowserViewProps) {
   const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const {
     currentPath,
     navigateToPath,
@@ -383,22 +385,24 @@ export function FileBrowserView({
     }
   };
 
+  const mutedIconColor = getMutedIconColor(isDark);
+
   const getFileIcon = useCallback((file: SandboxFile) => {
-    if (file.type === 'directory') {
-      if (isPresentationFolder(file)) {
-        return <Presentation size={36} className="text-primary" />;
-      }
-      return <Folder size={36} className="text-primary" />;
+    // Presentations keep their dedicated icon; everything else uses the same
+    // monochrome mapping as the web file tree / mobile files page.
+    if (file.type === 'directory' && isPresentationFolder(file)) {
+      return <Presentation size={34} color={mutedIconColor} strokeWidth={1.75} />;
     }
 
-    const extension = file.name.split('.').pop()?.toLowerCase();
-
-    if (['md', 'txt', 'doc'].includes(extension || '')) {
-      return <FileText size={32} className="text-primary opacity-50" />;
-    }
-
-    return <File size={32} className="text-primary opacity-50" />;
-  }, [isPresentationFolder]);
+    const IconComponent = getFileIconComponent(file);
+    return (
+      <IconComponent
+        size={file.type === 'directory' ? 34 : 32}
+        color={mutedIconColor}
+        strokeWidth={1.75}
+      />
+    );
+  }, [isPresentationFolder, mutedIconColor]);
 
   const hasSandbox = !!(project?.sandbox?.id || sandboxId);
   // Use sandbox status for accurate "started" check instead of just URL existence

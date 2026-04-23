@@ -38,7 +38,11 @@ import {
   Pencil,
   RotateCw,
   Calendar,
+  Save,
+  Copy,
+  Check,
 } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -47,7 +51,10 @@ import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetMod
 
 import { useThemeColors } from '@/lib/theme-colors';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
+import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import {
   useScheduledTasks,
   useCreateScheduledTask,
@@ -73,6 +80,8 @@ interface ScheduledTasksTabPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
 export function ScheduledTasksTabPage({
@@ -80,6 +89,8 @@ export function ScheduledTasksTabPage({
   onBack,
   onOpenDrawer,
   onOpenRightDrawer,
+  isDrawerOpen,
+  isRightDrawerOpen,
 }: ScheduledTasksTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -88,33 +99,17 @@ export function ScheduledTasksTabPage({
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity
-            onPress={onOpenDrawer}
-            style={{ marginRight: 12, padding: 4 }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="menu" size={24} color={fgColor} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <RNText style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>
-              {page.label}
-            </RNText>
-          </View>
-          <TouchableOpacity
-            onPress={onOpenRightDrawer}
-            style={{ marginLeft: 12, padding: 4 }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="apps-outline" size={20} color={fgColor} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
 
-      {/* Content */}
-      <ScheduledTasksContent />
+      <PageContent>
+        <ScheduledTasksContent />
+      </PageContent>
     </View>
   );
 }
@@ -248,17 +243,17 @@ function ScheduledTasksContent() {
           flexDirection: 'row',
           alignItems: 'center',
           backgroundColor: inputBg,
-          borderRadius: 12,
-          paddingHorizontal: 12,
+          borderRadius: 9999,
+          paddingHorizontal: 16,
           height: 42,
         }}
       >
-        <Search size={16} color={muted} />
+        <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder="Search tasks..."
-          placeholderTextColor={muted}
+          placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
           style={{
             flex: 1,
             marginLeft: 8,
@@ -272,14 +267,14 @@ function ScheduledTasksContent() {
         />
         {searchQuery.length > 0 && (
           <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-            <X size={16} color={muted} />
+            <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
           </Pressable>
         )}
       </View>
       <Pressable
         onPress={handleOpenCreate}
         style={{
-          width: 42, height: 42, borderRadius: 12,
+          width: 42, height: 42, borderRadius: 9999,
           backgroundColor: theme.primary,
           alignItems: 'center', justifyContent: 'center',
         }}
@@ -522,12 +517,54 @@ function TaskDetailSheet({
   const [isRunning, setIsRunning] = useState(false);
   const [localIsActive, setLocalIsActive] = useState<boolean | null>(null);
 
+  // Inline edit state (name + prompt only for now — cron/timezone requires ScheduleBuilder)
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPrompt, setEditPrompt] = useState('');
+  const [copiedField, setCopiedField] = useState<'url' | 'curl' | null>(null);
+  const updateTask = useUpdateScheduledTask();
+
   // Reset local state when trigger changes
   useEffect(() => {
     setLocalIsActive(null);
+    setIsEditing(false);
+    setEditName(trigger?.name ?? '');
+    setEditPrompt(trigger?.prompt ?? '');
   }, [trigger?.id]);
 
   const effectiveIsActive = localIsActive ?? trigger?.isActive ?? true;
+  const isDirty = !!trigger && (editName.trim() !== trigger.name || editPrompt !== trigger.prompt);
+
+  const handleSave = useCallback(async () => {
+    if (!trigger?.triggerId || !isDirty) return;
+    try {
+      await updateTask.mutateAsync({
+        id: trigger.triggerId,
+        data: {
+          name: editName.trim() || trigger.name,
+          prompt: editPrompt,
+        },
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setIsEditing(false);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to save changes');
+    }
+  }, [trigger, editName, editPrompt, isDirty, updateTask]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditName(trigger?.name ?? '');
+    setEditPrompt(trigger?.prompt ?? '');
+    setIsEditing(false);
+    Keyboard.dismiss();
+  }, [trigger]);
+
+  const copyToClipboard = useCallback(async (text: string, field: 'url' | 'curl') => {
+    await Clipboard.setStringAsync(text);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 1500);
+  }, []);
 
   const handleRunNow = useCallback(async () => {
     setIsRunning(true);
@@ -606,11 +643,49 @@ function TaskDetailSheet({
                 )}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>{trigger.name}</Text>
+                {isEditing && trigger.editable ? (
+                  <TextInput
+                    value={editName}
+                    onChangeText={setEditName}
+                    autoFocus
+                    style={{
+                      fontSize: 18,
+                      fontFamily: 'Roobert-Medium',
+                      color: fg,
+                      paddingVertical: 0,
+                      paddingHorizontal: 0,
+                      borderBottomWidth: 1,
+                      borderBottomColor: theme.primary,
+                    }}
+                    placeholder="Trigger name"
+                    placeholderTextColor={muted}
+                  />
+                ) : (
+                  <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>{trigger.name}</Text>
+                )}
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>
                   {trigger.type === 'webhook' ? 'Webhook' : describeCron(trigger.cronExpr)}
                 </Text>
               </View>
+              {trigger.editable && !isEditing && (
+                <Pressable
+                  onPress={() => {
+                    setIsEditing(true);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  hitSlop={10}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Pencil size={15} color={fg} />
+                </Pressable>
+              )}
               <Switch
                 value={effectiveIsActive}
                 onValueChange={handleToggle}
@@ -642,11 +717,26 @@ function TaskDetailSheet({
 
             {tab === 'settings' ? (
               <>
+                {/* Webhook URL block */}
+                {trigger.type === 'webhook' && trigger.webhook && (
+                  <WebhookUrlBlock
+                    trigger={trigger}
+                    isDark={isDark}
+                    fg={fg}
+                    muted={muted}
+                    subtleBg={subtleBg}
+                    borderColor={borderColor}
+                    copiedField={copiedField}
+                    onCopy={copyToClipboard}
+                  />
+                )}
+
                 {/* Info grid */}
                 <View style={{ gap: 12, marginBottom: 20 }}>
                   <InfoRow label="Next run" value={formatRelativeTime(trigger.nextRunAt)} isDark={isDark} />
                   <InfoRow label="Last run" value={formatRelativeTime(trigger.lastRunAt)} isDark={isDark} />
                   {trigger.agentName && <InfoRow label="Agent" value={trigger.agentName} isDark={isDark} />}
+                  {trigger.modelId && <InfoRow label="Model" value={trigger.modelId} isDark={isDark} />}
                   <InfoRow label="Session mode" value={trigger.sessionMode === 'reuse' ? 'Reuse session' : 'New session'} isDark={isDark} />
                   <InfoRow label="Max retries" value={String(trigger.maxRetries)} isDark={isDark} />
                   <InfoRow label="Timeout" value={formatDuration(trigger.timeoutMs)} isDark={isDark} />
@@ -654,22 +744,88 @@ function TaskDetailSheet({
                 </View>
 
                 {/* Prompt */}
-                {trigger.prompt && (
+                {(trigger.prompt || isEditing) && (
                   <View style={{ marginBottom: 20 }}>
                     <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
                       Prompt
                     </Text>
-                    <View style={{ padding: 12, borderRadius: 10, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor }}>
-                      <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: fg, lineHeight: 20 }}>
-                        {trigger.prompt}
-                      </Text>
-                    </View>
+                    {isEditing && trigger.editable ? (
+                      <TextInput
+                        value={editPrompt}
+                        onChangeText={setEditPrompt}
+                        multiline
+                        placeholder="Instruction sent to the agent..."
+                        placeholderTextColor={muted}
+                        style={{
+                          padding: 12,
+                          borderRadius: 10,
+                          backgroundColor: subtleBg,
+                          borderWidth: 1,
+                          borderColor: theme.primary,
+                          fontSize: 13,
+                          fontFamily: 'Roobert',
+                          color: fg,
+                          lineHeight: 20,
+                          minHeight: 96,
+                          textAlignVertical: 'top',
+                        }}
+                      />
+                    ) : (
+                      <View style={{ padding: 12, borderRadius: 10, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor }}>
+                        <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: fg, lineHeight: 20 }}>
+                          {trigger.prompt}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 )}
 
                 {/* Actions */}
                 <View style={{ gap: 10 }}>
-                  {trigger.type !== 'webhook' && (
+                  {/* Save / Cancel when editing */}
+                  {isEditing && trigger.editable && (
+                    <>
+                      <Pressable
+                        onPress={handleSave}
+                        disabled={!isDirty || updateTask.isPending}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                          paddingVertical: 13,
+                          borderRadius: 12,
+                          backgroundColor: isDirty ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                          opacity: updateTask.isPending ? 0.7 : 1,
+                        }}
+                      >
+                        {updateTask.isPending ? (
+                          <ActivityIndicator size="small" color={isDirty ? theme.primaryForeground : muted} />
+                        ) : (
+                          <Save size={16} color={isDirty ? theme.primaryForeground : muted} />
+                        )}
+                        <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDirty ? theme.primaryForeground : muted }}>
+                          {updateTask.isPending ? 'Saving...' : 'Save Changes'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={handleCancelEdit}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                          paddingVertical: 13,
+                          borderRadius: 12,
+                          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                        }}
+                      >
+                        <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>Cancel</Text>
+                      </Pressable>
+                    </>
+                  )}
+
+                  {!isEditing && trigger.type !== 'webhook' && (
                     <Pressable
                       onPress={handleRunNow}
                       disabled={isRunning}
@@ -696,29 +852,31 @@ function TaskDetailSheet({
                   )}
 
                   {/* Pause / Resume */}
-                  <Pressable
-                    onPress={handleToggle}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      paddingVertical: 13,
-                      borderRadius: 12,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-                    }}
-                  >
-                    {effectiveIsActive ? (
-                      <Pause size={16} color={fg} />
-                    ) : (
-                      <Play size={16} color={fg} />
-                    )}
-                    <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>
-                      {effectiveIsActive ? 'Pause' : 'Resume'}
-                    </Text>
-                  </Pressable>
+                  {!isEditing && (
+                    <Pressable
+                      onPress={handleToggle}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        paddingVertical: 13,
+                        borderRadius: 12,
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                      }}
+                    >
+                      {effectiveIsActive ? (
+                        <Pause size={16} color={fg} />
+                      ) : (
+                        <Play size={16} color={fg} />
+                      )}
+                      <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>
+                        {effectiveIsActive ? 'Pause' : 'Resume'}
+                      </Text>
+                    </Pressable>
+                  )}
 
-                  {trigger.editable && (
+                  {!isEditing && trigger.editable && (
                     <Pressable
                       onPress={onDelete}
                       style={{
@@ -759,6 +917,99 @@ function InfoRow({ label, value, isDark }: { label: string; value: string; isDar
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
       <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>{label}</Text>
       <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>{value}</Text>
+    </View>
+  );
+}
+
+// ─── Webhook URL Block (ported from web task-detail-panel) ──────────────────
+
+function WebhookUrlBlock({
+  trigger,
+  isDark,
+  fg,
+  muted,
+  subtleBg,
+  borderColor,
+  copiedField,
+  onCopy,
+}: {
+  trigger: Trigger;
+  isDark: boolean;
+  fg: string;
+  muted: string;
+  subtleBg: string;
+  borderColor: string;
+  copiedField: 'url' | 'curl' | null;
+  onCopy: (text: string, field: 'url' | 'curl') => void;
+}) {
+  const { sandboxUrl } = useSandboxContext();
+  const baseUrl = sandboxUrl || 'https://<sandbox-url>';
+  const path = trigger.webhook?.path || '/hooks/...';
+  const fullUrl = `${baseUrl.replace(/\/+$/, '')}${path}`;
+  const secretHeader = trigger.webhook?.secretProtected
+    ? ` \\\n  -H "X-Kortix-Trigger-Secret: <secret>"`
+    : '';
+  const curlExample = `curl -X POST "${fullUrl}"${secretHeader} \\\n  -H "Content-Type: application/json" \\\n  -d '{"key": "value"}'`;
+
+  return (
+    <View
+      style={{
+        marginBottom: 20,
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: subtleBg,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor,
+        gap: 8,
+      }}
+    >
+      {/* External URL */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          External URL
+        </Text>
+        <Pressable
+          onPress={() => onCopy(fullUrl, 'url')}
+          hitSlop={6}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}
+        >
+          {copiedField === 'url' ? <Check size={12} color={fg} /> : <Copy size={12} color={muted} />}
+          <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: copiedField === 'url' ? fg : muted }}>
+            {copiedField === 'url' ? 'Copied' : 'Copy'}
+          </Text>
+        </Pressable>
+      </View>
+      <Text selectable style={{ fontSize: 11, fontFamily: 'Menlo', color: fg, lineHeight: 16 }}>
+        {fullUrl}
+      </Text>
+
+      {/* Separator */}
+      <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: borderColor, marginVertical: 4 }} />
+
+      {/* Curl example */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          Example curl
+        </Text>
+        <Pressable
+          onPress={() => onCopy(curlExample, 'curl')}
+          hitSlop={6}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)' }}
+        >
+          {copiedField === 'curl' ? <Check size={12} color={fg} /> : <Copy size={12} color={muted} />}
+          <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: copiedField === 'curl' ? fg : muted }}>
+            {copiedField === 'curl' ? 'Copied' : 'Copy'}
+          </Text>
+        </Pressable>
+      </View>
+      <Text selectable style={{ fontSize: 10.5, fontFamily: 'Menlo', color: isDark ? 'rgba(248,248,248,0.7)' : 'rgba(18,18,21,0.7)', lineHeight: 15 }}>
+        {curlExample}
+      </Text>
+
+      {/* Secret hint */}
+      <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>
+        {trigger.webhook?.secretProtected ? 'Secret protected — include header above.' : 'No secret configured.'}
+      </Text>
     </View>
   );
 }

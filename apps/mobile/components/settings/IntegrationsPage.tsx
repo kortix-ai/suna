@@ -296,7 +296,7 @@ function IntegrationsContent({
 
   // ── Sticky search bar (rendered outside FlatList) ──
   const SearchBar = (
-    <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8, backgroundColor: isDark ? '#121215' : '#F8F8F8', flexDirection: 'row', alignItems: 'center' }}>
+    <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' }}>
       <View
         style={{
           flex: 1,

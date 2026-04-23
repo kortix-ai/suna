@@ -11,6 +11,15 @@ import { config, KORTIX_MARKUP, PLATFORM_FEE_MARKUP } from '../../config';
 import { checkCredits, deductToolCredits, deductLLMCredits } from '../services/billing';
 import { getModel, type ModelConfig } from '../config/models';
 import { calculateCost, extractUsage } from '../services/llm';
+import {
+  applyActorSpend,
+  dollarsToCents,
+  getSandboxMemberCapStatus,
+} from '../services/member-spend';
+import {
+  resolveActorFromRequest,
+  type ActorContext,
+} from '../../shared/actor-context';
 
 const proxy = new Hono();
 
@@ -83,6 +92,16 @@ async function handleKortixProxy(
     });
   }
 
+  const actor = resolveActorFromRequest(c, { logPrefix: '[PROXY]' });
+  if (actor) {
+    const status = await getSandboxMemberCapStatus(actor.sandboxId, actor.userId);
+    if (status && status.capCents !== null && status.currentCents >= status.capCents) {
+      throw new HTTPException(402, {
+        message: `Spending cap reached ($${(status.capCents / 100).toFixed(2)} / cycle). Ask the instance owner to raise or remove the cap.`,
+      });
+    }
+  }
+
   const creditCheck = await checkCredits(accountId, 0.01, { skipDevCheck: true });
   if (!creditCheck.hasCredits) {
     throw new HTTPException(402, { message: creditCheck.message });
@@ -124,7 +143,7 @@ async function handleKortixProxy(
   // LLM services: bill per-token at KORTIX_MARKUP (1.2×)
   if (service.isLlm === true) {
     if (upstream.ok) {
-      return billLlmKortixProxy(upstream, service, subPath, accountId);
+      return billLlmKortixProxy(upstream, service, subPath, accountId, actor);
     }
     // Upstream error — don't bill for failed requests
     console.warn(`[PROXY] LLM kortix proxy ${service.name} upstream error ${upstream.status} — no billing`);
@@ -163,6 +182,7 @@ async function billLlmKortixProxy(
   service: ProxyServiceConfig,
   subPath: string,
   accountId: string,
+  actor: ActorContext | null,
 ) {
   const contentType = upstream.headers.get('Content-Type') || '';
   const isStreaming = contentType.includes('text/event-stream');
@@ -176,7 +196,7 @@ async function billLlmKortixProxy(
     const [clientStream, billingStream] = upstreamBody.tee();
 
     // Fire-and-forget: extract usage from billing stream
-    extractUsageFromKortixProxyStream(billingStream, service, subPath, accountId);
+    extractUsageFromKortixProxyStream(billingStream, service, subPath, accountId, actor);
 
     return new Response(clientStream, {
       status: upstream.status,
@@ -228,7 +248,15 @@ async function billLlmKortixProxy(
       promptTokens,
       completionTokens,
       cost,
-    ).catch((err) => console.error(`[PROXY] LLM kortix billing error: ${err}`));
+    )
+      .then((res) => {
+        if (res.success && actor && cost > 0) {
+          applyActorSpend(actor.sandboxId, actor.userId, dollarsToCents(cost)).catch(
+            (err) => console.error('[PROXY] Actor spend attribution failed:', err),
+          );
+        }
+      })
+      .catch((err) => console.error(`[PROXY] LLM kortix billing error: ${err}`));
 
     console.log(`[PROXY] LLM kortix ${modelId}: ${promptTokens}/${completionTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`);
   } else {
@@ -251,6 +279,7 @@ async function extractUsageFromKortixProxyStream(
   service: ProxyServiceConfig,
   subPath: string,
   accountId: string,
+  actor: ActorContext | null,
 ) {
   try {
     const reader = stream.getReader();
@@ -307,7 +336,12 @@ async function extractUsageFromKortixProxyStream(
       }
       const modelConfig = getModel(detectedModel);
       const cost = calculateCost(modelConfig, anthropicInputTokens, anthropicOutputTokens, 0, 0, KORTIX_MARKUP);
-      await deductLLMCredits(accountId, detectedModel, anthropicInputTokens, anthropicOutputTokens, cost);
+      const res = await deductLLMCredits(accountId, detectedModel, anthropicInputTokens, anthropicOutputTokens, cost);
+      if (res.success && actor && cost > 0) {
+        applyActorSpend(actor.sandboxId, actor.userId, dollarsToCents(cost)).catch(
+          (err) => console.error('[PROXY] Actor spend attribution failed:', err),
+        );
+      }
       console.log(`[PROXY] LLM kortix stream ${detectedModel}: ${anthropicInputTokens}/${anthropicOutputTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`);
       return;
     }
@@ -321,7 +355,12 @@ async function extractUsageFromKortixProxyStream(
     if (promptTokens > 0 || completionTokens > 0) {
       const modelConfig = getModel(detectedModel);
       const cost = calculateCost(modelConfig, promptTokens, completionTokens, cachedTokens, cacheWriteTokens, KORTIX_MARKUP);
-      await deductLLMCredits(accountId, detectedModel, promptTokens, completionTokens, cost);
+      const res = await deductLLMCredits(accountId, detectedModel, promptTokens, completionTokens, cost);
+      if (res.success && actor && cost > 0) {
+        applyActorSpend(actor.sandboxId, actor.userId, dollarsToCents(cost)).catch(
+          (err) => console.error('[PROXY] Actor spend attribution failed:', err),
+        );
+      }
       console.log(`[PROXY] LLM kortix stream ${detectedModel}: ${promptTokens}/${completionTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`);
     } else {
       console.warn(`[PROXY] LLM kortix stream (${service.name}): zero tokens — billing skipped`);

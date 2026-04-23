@@ -810,9 +810,11 @@ export class ServiceManager {
   }) {
     this.registryFile = options?.registryFile || REGISTRY_FILE;
     this.logsDir = options?.logsDir || LOG_DIR;
-    this.builtins =
-      options?.builtins?.map(cloneServiceSpec) ||
-      BUILTIN_SERVICES.map(cloneServiceSpec);
+    const source = options?.builtins || BUILTIN_SERVICES;
+    const isolation = process.env.KORTIX_LINUX_ISOLATION === 'on';
+    this.builtins = source
+      .filter((spec) => !(isolation && spec.id === 'opencode-serve'))
+      .map(cloneServiceSpec);
   }
 
   private ensureStorage(): void {
@@ -1170,7 +1172,10 @@ export class ServiceManager {
 
   private async ensureInitialized(): Promise<void> {
     if (this.started) return;
-    const specs = this.loadRegistryFromDisk();
+    const isolation = process.env.KORTIX_LINUX_ISOLATION === 'on';
+    const specs = this.loadRegistryFromDisk().filter(
+      (spec) => !(isolation && spec.id === 'opencode-serve'),
+    );
     this.services.clear();
     for (const spec of specs) {
       this.services.set(spec.id, this.hydrateManagedService(spec));

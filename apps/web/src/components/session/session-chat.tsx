@@ -4366,10 +4366,9 @@ export function SessionChat({
               const uploadBlob = new File([af.file], safeName, {
                 type: af.file.type,
               });
-              const results = await uploadFile(
-                uploadBlob,
-                '/workspace/uploads',
-              );
+              const results = await uploadFile(uploadBlob, {
+                sessionId: sessionId ?? undefined,
+              });
               if (!results || results.length === 0) {
                 throw new Error(`Failed to upload file: ${af.file.name}`);
               }
@@ -5587,7 +5586,9 @@ export function SessionChat({
             const uploadBlob = new File([plan.file], plan.safeName, {
               type: plan.file.type,
             });
-            const results = await uploadFile(uploadBlob, '/workspace/uploads');
+            const results = await uploadFile(uploadBlob, {
+              sessionId: sessionId ?? undefined,
+            });
             if (!results || results.length === 0) {
               throw new Error(`Failed to upload file: ${plan.filename}`);
             }

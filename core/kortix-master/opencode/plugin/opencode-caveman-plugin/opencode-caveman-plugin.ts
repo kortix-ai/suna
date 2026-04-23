@@ -1,7 +1,11 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import { compressFile } from "./compress"
-import { parseNatural } from "./parse"
-import { clearMode, clearSession, getMode, isMode, MODES, setMode, type Mode } from "./state"
+import { clearMode, clearSession, getMode, getSessionState, isMode, MODES, rememberAgent, setMode, type Mode } from "./state"
+
+type CavemanOptions = {
+	default_mode?: Mode
+	agent_modes?: Record<string, Mode>
+}
 
 const prompts: Record<Mode, string> = {
 	lite: [
@@ -46,36 +50,30 @@ const guard = [
 	"Code blocks, commands, paths, URLs, quoted errors, and commit hashes stay exact.",
 ].join("\n")
 
-function confirm(mode: Mode) {
-	return `Caveman mode set to ${mode}. Confirm briefly.`
+function resolveOptions(options?: CavemanOptions) {
+	const defaultMode = options?.default_mode && isMode(options.default_mode) ? options.default_mode : null
+	const agentModes = Object.fromEntries(
+		Object.entries(options?.agent_modes ?? {}).filter(([, mode]) => isMode(mode)),
+	) as Record<string, Mode>
+	return { defaultMode, agentModes }
 }
 
-function disabled() {
-	return "Caveman mode disabled. Reply normal. Confirm briefly."
+function defaultModeFor(agent: string | null | undefined, settings: ReturnType<typeof resolveOptions>) {
+	if (agent && settings.agentModes[agent]) return settings.agentModes[agent]
+	return settings.defaultMode
 }
 
-function buildCompressPrompt(args: string) {
-	const path = args.trim()
-	if (!path) return "Use caveman_compress with file_path. Then report backup path and savings briefly."
-	return [
-		`Use caveman_compress on ${path}.`,
-		"Then report backup path and savings in <=4 bullets.",
-	].join(" ")
+function ensureDefaultMode(sessionID: string, agent: string | null | undefined, settings: ReturnType<typeof resolveOptions>) {
+	const state = agent ? rememberAgent(sessionID, agent) : getSessionState(sessionID)
+	if (state.disabled || state.mode) return state.mode
+	const mode = defaultModeFor(agent ?? state.agent, settings)
+	if (!mode) return null
+	setMode(sessionID, mode)
+	return mode
 }
 
-function maybeRewrite(text: string, sessionID: string) {
-	const ctl = parseNatural(text)
-	if (ctl.type === "none") return null
-	if (ctl.type === "compress") return buildCompressPrompt(ctl.path)
-	if (ctl.type === "clear") {
-		clearMode(sessionID)
-		return ctl.rest || disabled()
-	}
-	setMode(sessionID, ctl.mode)
-	return ctl.rest || confirm(ctl.mode)
-}
-
-const CavemanPlugin: Plugin = async () => {
+const CavemanPlugin: Plugin = async (_input, options?: CavemanOptions) => {
+	const settings = resolveOptions(options)
 	return {
 		tool: {
 			caveman_mode: tool({
@@ -85,14 +83,24 @@ const CavemanPlugin: Plugin = async () => {
 					mode: tool.schema.string().optional().describe(`Mode: ${MODES.join(", ")}`),
 				},
 				async execute(args, ctx) {
-					if (args.action === "get") return JSON.stringify({ session_id: ctx.sessionID, mode: getMode(ctx.sessionID) }, null, 2)
+					const state = rememberAgent(ctx.sessionID, ctx.agent)
+					if (args.action === "get") {
+						const effectiveMode = state.disabled ? null : state.mode ?? defaultModeFor(state.agent ?? ctx.agent, settings)
+						return JSON.stringify({
+							session_id: ctx.sessionID,
+							agent: state.agent ?? ctx.agent,
+							mode: state.mode,
+							effective_mode: effectiveMode,
+							disabled: state.disabled,
+						}, null, 2)
+					}
 					if (args.action === "clear") {
 						clearMode(ctx.sessionID)
-						return JSON.stringify({ session_id: ctx.sessionID, mode: null }, null, 2)
+						return JSON.stringify({ session_id: ctx.sessionID, mode: null, effective_mode: null, disabled: true }, null, 2)
 					}
 					if (args.action === "set") {
 						if (!args.mode || !isMode(args.mode)) throw new Error(`Invalid mode. Use one of: ${MODES.join(", ")}`)
-						return JSON.stringify({ session_id: ctx.sessionID, mode: setMode(ctx.sessionID, args.mode) }, null, 2)
+						return JSON.stringify({ session_id: ctx.sessionID, mode: setMode(ctx.sessionID, args.mode), effective_mode: args.mode, disabled: false }, null, 2)
 					}
 					throw new Error("Invalid action. Use get, set, or clear")
 				},
@@ -109,27 +117,23 @@ const CavemanPlugin: Plugin = async () => {
 			}),
 		},
 
-		"chat.message": async (input: { sessionID: string }, output: { parts: Array<any> }) => {
-			if (!Array.isArray(output.parts)) return
-			if (output.parts.length !== 1) return
-			const part = output.parts[0]
-			if (part?.type !== "text" || typeof part.text !== "string") return
-			const next = maybeRewrite(part.text, input.sessionID)
-			if (!next) return
-			part.text = next
+		"chat.message": async (input: { sessionID: string; agent?: string }, _output: { parts: Array<any> }) => {
+			if (input.agent) rememberAgent(input.sessionID, input.agent)
+			ensureDefaultMode(input.sessionID, input.agent, settings)
 		},
 
-		"experimental.chat.system.transform": async (_input: any, output: { system: string[] }) => {
-			const sessionID = _input?.sessionID
+		"experimental.chat.system.transform": async (input: any, output: { system: string[] }) => {
+			const sessionID = input?.sessionID
 			if (!sessionID) return
-			const mode = getMode(sessionID)
+			const state = getSessionState(sessionID)
+			const mode = state.disabled ? null : getMode(sessionID) ?? defaultModeFor(state.agent, settings)
 			if (!mode) return
 			output.system.push(`${prompts[mode]}\n${guard}`)
 		},
 
 		event: async ({ event }: { event: any }) => {
 			if (event?.type === "session.deleted") {
-				const sessionID = event?.properties?.sessionID
+				const sessionID = event?.properties?.sessionID ?? event?.properties?.info?.id
 				if (sessionID) clearSession(sessionID)
 			}
 		},

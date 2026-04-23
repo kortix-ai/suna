@@ -50,6 +50,8 @@ import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import { SearchBar } from '@/components/ui/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -360,9 +362,11 @@ interface MemoryPageProps {
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer }: MemoryPageProps) {
+export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: MemoryPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -477,31 +481,29 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer }: MemoryPage
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
-      {/* Header */}
-      <View style={{ paddingTop: insets.top + 8, paddingBottom: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: borderColor }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            {onOpenDrawer && (
-              <TouchableOpacity onPress={onOpenDrawer} style={{ marginRight: 12 }}>
-                <Ionicons name="menu" size={24} color={fgColor} />
-              </TouchableOpacity>
+      <PageHeader
+        title={
+          <View style={{ flex: 1 }}>
+            <Text
+              className="text-base font-medium text-muted-foreground"
+              numberOfLines={1}
+            >
+              {page.label}
+            </Text>
+            {!!statsText && (
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>{statsText}</Text>
             )}
-            <View>
-              <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }} numberOfLines={1}>{page.label}</Text>
-              {!!statsText && (
-                <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: mutedColor, marginTop: 1, includeFontPadding: false }}>{statsText}</Text>
-              )}
-            </View>
           </View>
-          {onOpenRightDrawer && (
-            <TouchableOpacity onPress={onOpenRightDrawer}>
-              <Ionicons name="apps-outline" size={20} color={fgColor} />
-            </TouchableOpacity>
-          )}
-        </View>
-
+        }
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
+      <PageContent>
+      <View style={{ paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>
         {/* Search */}
-        <View style={{ marginTop: 12 }}>
+        <View>
           <SearchBar
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -588,14 +590,14 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer }: MemoryPage
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <BottomSheetTouchable
               onPress={() => deleteSheetRef.current?.dismiss()}
-              style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: fgColor }}>Cancel</Text>
             </BottomSheetTouchable>
             <BottomSheetTouchable
               onPress={handleDelete}
               disabled={isDeleting}
-              style={{ flex: 1, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDeleting ? 0.5 : 1 }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDeleting ? 0.5 : 1 }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: '#FFFFFF' }}>
                 {isDeleting ? 'Deleting...' : 'Delete'}
@@ -604,6 +606,7 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer }: MemoryPage
           </View>
         </BottomSheetView>
       </BottomSheetModal>
+      </PageContent>
     </View>
   );
 }

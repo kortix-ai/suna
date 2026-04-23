@@ -178,11 +178,15 @@ export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> 
  * GET /platform/local-bridge/status
  */
 export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
+  const url = `${API_URL}/platform/local-bridge/status`;
   try {
     const token = await getAuthToken();
-    if (!token) return null;
+    if (!token) {
+      log.log('🔎 [discoverLocalSandbox] no auth token — skipping');
+      return null;
+    }
 
-    const res = await fetch(`${API_URL}/platform/local-bridge/status`, {
+    const res = await fetch(url, {
       method: 'GET',
       signal: AbortSignal.timeout(1500),
       headers: {
@@ -190,14 +194,26 @@ export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
         Authorization: `Bearer ${token}`,
       },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      log.log(`🔎 [discoverLocalSandbox] ${url} → ${res.status} (not-ok)`);
+      return null;
+    }
 
     const body = (await res.json()) as LocalBridgeSandboxResponse;
     if (!body.success || body.status !== 'ready' || !body.data?.sandbox_id) {
+      log.log(
+        `🔎 [discoverLocalSandbox] ${url} → status="${body.status}" data=${
+          body.data ? 'present' : 'null'
+        } — no local sandbox`,
+      );
       return null;
     }
+    log.log(
+      `🔎 [discoverLocalSandbox] found local sandbox: ${body.data.sandbox_id} (${body.data.external_id})`,
+    );
     return body.data;
-  } catch {
+  } catch (err: any) {
+    log.log(`🔎 [discoverLocalSandbox] ${url} failed:`, err?.message || err);
     return null;
   }
 }

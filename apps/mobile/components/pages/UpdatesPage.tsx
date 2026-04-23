@@ -20,6 +20,8 @@ import {
   type VersionChannel,
 } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
 import { Ionicons } from '@expo/vector-icons';
 import { UpdateDialog } from '@/components/updates/UpdateDialog';
@@ -93,9 +95,11 @@ interface UpdatesPageProps {
   onBack: () => void;
   onOpenDrawer: () => void;
   onOpenRightDrawer: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: UpdatesPageProps) {
+export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: UpdatesPageProps) {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -215,27 +219,25 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: U
   const borderColor = isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)';
 
   return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
-      {/* Header bar */}
-      <View className="flex-row items-center px-4 py-3">
-        <Pressable onPress={onOpenDrawer} hitSlop={8} className="mr-3">
-          <Icon as={Menu} size={20} className="text-foreground" strokeWidth={2} />
-        </Pressable>
-        <Text className="flex-1 text-lg font-roobert-medium text-foreground">Versions</Text>
-        <Pressable onPress={onOpenRightDrawer} hitSlop={8} className="ml-3 p-1">
-          <Ionicons name="apps-outline" size={20} color={fgColor} />
-        </Pressable>
-      </View>
+    <View className="flex-1 bg-muted">
+      <PageHeader
+        title="Versions"
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
 
-      <ScrollView
-        ref={scrollRef}
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
-        onScroll={handleScroll}
-        scrollEventThrottle={64}
-        onContentSizeChange={handleContentSizeChange}
-      >
+      <PageContent>
+        <ScrollView
+          ref={scrollRef}
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+          onScroll={handleScroll}
+          scrollEventThrottle={64}
+          onContentSizeChange={handleContentSizeChange}
+        >
         <View className="px-5 pt-2 pb-4">
           {/* Version info */}
           <View className="flex-row items-start justify-between">
@@ -357,7 +359,8 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: U
             </Text>
           )}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </PageContent>
 
       {/* Update dialog */}
       <UpdateDialog

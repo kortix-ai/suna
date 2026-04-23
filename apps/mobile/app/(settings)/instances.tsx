@@ -37,6 +37,7 @@ import {
 import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
 import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-progress';
 import { useThemeColors } from '@/lib/theme-colors';
+import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,14 @@ export default function InstancesScreen() {
 
   const { data: instances, isLoading, refetch, isRefetching } = useInstances();
   const themeColors = useThemeColors();
+
+  // Live version from /kortix/health for the active instance. The DB's
+  // metadata.version is a cache written at create time and only refreshed
+  // when an update completes — it can be null for older sandboxes and drifts
+  // after an update landed inside the image without a DB write. The running
+  // container is authoritative, so prefer this live value for the active row
+  // and fall back to the DB cache for inactive ones. Mirrors web 00dad14.
+  const { currentVersion: liveActiveVersion } = useGlobalSandboxUpdate();
 
   const addSheetRef = React.useRef<BottomSheetModal>(null);
   const renameSheetRef = React.useRef<BottomSheetModal>(null);
@@ -184,6 +193,9 @@ export default function InstancesScreen() {
                   const isActive = instance.external_id === sandboxId;
                   const isLast = idx === (instances?.length ?? 0) - 1;
                   const isProvisioning = !['running', 'ready', 'active', 'stopped', 'archived', 'error', 'failed'].includes(instance.status);
+                  // Prefer live /kortix/health version for the active instance;
+                  // fall back to the DB cache (instance.version) for others.
+                  const effectiveVersion = (isActive ? liveActiveVersion : null) || instance.version || null;
                   return (
                     <View key={instance.sandbox_id}>
                       <Pressable onPress={() => handleSelect(instance)} disabled={isProvisioning} className="py-3.5 active:opacity-85">
@@ -198,7 +210,7 @@ export default function InstancesScreen() {
                             </Text>
                             <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
                               {isProvisioning ? 'Provisioning...' : statusLabel(instance.status)}
-                              {instance.version ? ` · v${instance.version}` : ''}
+                              {effectiveVersion ? ` · v${effectiveVersion}` : ''}
                               {` · ${providerLabel(instance.provider)}`}
                             </Text>
                           </View>
@@ -255,7 +267,7 @@ export default function InstancesScreen() {
       <View style={{ position: 'absolute', bottom: insets.bottom + 16, left: 20, right: 20 }}>
         <Pressable
           onPress={openAddSheet}
-          className="flex-row items-center justify-center rounded-2xl py-3.5 active:opacity-90"
+          className="flex-row items-center justify-center rounded-full py-3.5 active:opacity-90"
           style={{ backgroundColor: themeColors.primary }}
         >
           <Icon as={Plus} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />

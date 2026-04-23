@@ -46,6 +46,7 @@ export interface AdminInstanceHealth {
   sandbox_id: string;
   overall_status: 'healthy' | 'degraded' | 'offline' | 'unknown';
   recommended_action: InstanceRepairAction | null;
+  last_heartbeat_at?: string | null;
   layers: {
     host: InstanceLayerHealth;
     workload: InstanceLayerHealth;
@@ -62,6 +63,7 @@ export function createUnsupportedInstanceHealth(
     sandbox_id: sandboxId,
     overall_status: 'unknown',
     recommended_action: null,
+    last_heartbeat_at: null,
     layers: {
       host: {
         key: 'host',
@@ -441,6 +443,7 @@ export async function getJustAvpsInstanceHealth(
     sandbox_id: sandboxId,
     overall_status: overall,
     recommended_action: deriveRecommendedAction(hostLayer, workloadLayer, runtimeLayer),
+    last_heartbeat_at: machine.health?.last_heartbeat_at ?? null,
     layers: {
       host: hostLayer,
       workload: workloadLayer,

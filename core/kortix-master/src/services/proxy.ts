@@ -2,6 +2,12 @@
 import type { Context } from 'hono'
 import { config } from '../config'
 import { serviceManager } from './service-manager'
+import { getMember } from './member-context'
+import {
+  ensureMemberDaemon,
+  invalidateSupervisorCache,
+  isIsolationEnabled,
+} from './supervisor-client'
 
 // 30s timeout for regular requests
 const FETCH_TIMEOUT_MS = 30_000
@@ -22,9 +28,9 @@ function recover(path: string): boolean {
   return path !== '/file/status'
 }
 
-async function isOpenCodeHealthy(): Promise<boolean> {
+async function isOpenCodeHealthy(host: string, port: number): Promise<boolean> {
   try {
-    const res = await fetch(`http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}/session`, {
+    const res = await fetch(`http://${host}:${port}/session`, {
       signal: AbortSignal.timeout(OPENCODE_HEALTH_TIMEOUT_MS),
     })
     await res.arrayBuffer().catch(() => {})
@@ -34,9 +40,51 @@ async function isOpenCodeHealthy(): Promise<boolean> {
   }
 }
 
+interface Target {
+  host: string
+  port: number
+  supabaseUserId: string | null
+}
+
+async function resolveTarget(c: Context): Promise<Target> {
+  const legacy: Target = {
+    host: config.OPENCODE_HOST,
+    port: config.OPENCODE_PORT,
+    supabaseUserId: null,
+  }
+  if (!isIsolationEnabled()) return legacy
+  const member = getMember(c)
+  if (!member) return legacy
+  const port = await ensureMemberDaemon(member)
+  return { host: '127.0.0.1', port, supabaseUserId: member.supabaseUserId }
+}
+
+async function triggerRecovery(c: Context, target: Target, path: string): Promise<boolean> {
+  if (target.supabaseUserId) {
+    const member = getMember(c)
+    if (!member) return false
+    invalidateSupervisorCache(target.supabaseUserId)
+    try {
+      await ensureMemberDaemon(member)
+      return true
+    } catch (err) {
+      console.error(
+        `[Kortix Master] supervisor recovery failed for ${member.supabaseUserId}: ${err instanceof Error ? err.message : err}`,
+      )
+      return false
+    }
+  }
+  const result = await serviceManager.requestRecovery(
+    'opencode-serve',
+    `proxy-connect:${path}`,
+  )
+  return !!result?.ok
+}
+
 export async function proxyToOpenCode(c: Context): Promise<Response> {
   const url = new URL(c.req.url)
-  const targetUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}${url.pathname}${url.search}`
+  const target = await resolveTarget(c)
+  const targetUrl = `http://${target.host}:${target.port}${url.pathname}${url.search}`
   const requestBody = c.req.method !== 'GET' && c.req.method !== 'HEAD'
     ? await c.req.raw.arrayBuffer()
     : undefined
@@ -137,9 +185,9 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
     // AbortError for manual controller.abort())
     if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
       if (!acceptsSSE) {
-        const healthy = await isOpenCodeHealthy()
+        const healthy = await isOpenCodeHealthy(target.host, target.port)
         if (!healthy && recover(url.pathname)) {
-          void serviceManager.requestRecovery('opencode-serve', `proxy-timeout:${url.pathname}`)
+          void triggerRecovery(c, target, url.pathname)
         }
         note(
           `timeout:${c.req.method}:${url.pathname}`,
@@ -155,12 +203,12 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
     if (isConnRefused) {
       note(
         `unreachable:${c.req.method}:${url.pathname}`,
-        `[Kortix Master] OpenCode unreachable on ${c.req.method} ${url.pathname}: ${errMsg} — is OpenCode running on ${config.OPENCODE_HOST}:${config.OPENCODE_PORT}?`,
+        `[Kortix Master] OpenCode unreachable on ${c.req.method} ${url.pathname}: ${errMsg} — is OpenCode running on ${target.host}:${target.port}?`,
       )
-      const recovery = recover(url.pathname)
-        ? await serviceManager.requestRecovery('opencode-serve', `proxy-connect:${url.pathname}`)
-        : null
-      if (recovery?.ok) {
+      const recovered = recover(url.pathname)
+        ? await triggerRecovery(c, target, url.pathname)
+        : false
+      if (recovered) {
         try {
           const retryResponse = await fetchUpstream()
           const retryContentType = retryResponse.headers.get('content-type') || ''

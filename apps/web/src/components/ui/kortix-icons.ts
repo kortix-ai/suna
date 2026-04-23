@@ -43,6 +43,7 @@ export {
   Pencil as IconEdit,
   Copy as IconCopy,
   Check as IconCheck,
+  Loader2 as IconLoader,
   RotateCw as IconRefresh,
   Download as IconDownload,
   Upload as IconUpload,
@@ -72,6 +73,7 @@ export {
   // ── People & comms ──────────────────────────────────────────
   User as IconUser,
   Users as IconUsers,
+  UserPlus as IconInvite,
   Bot as IconBot,
   MessageSquare as IconMessage,
   MessageCircle as IconComment,

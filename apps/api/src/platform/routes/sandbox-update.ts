@@ -28,7 +28,7 @@ import {
   requestUpdateCancellation,
 } from '../../update';
 import type { AuthVariables } from '../../types';
-import { findAccessibleSandboxForUser } from '../services/sandbox-access';
+import { findAccessibleSandboxForUser, hasSandboxScope } from '../services/sandbox-access';
 
 // ── Per-sandbox routes: /sandbox/:id/update/* ────────────────────────────────
 
@@ -45,6 +45,15 @@ async function findOwnedSandbox(userId: string, sandboxId: string) {
   return sandbox;
 }
 
+async function findOwnedSandboxWithAccess(userId: string, sandboxId: string) {
+  return findAccessibleSandboxForUser({
+    db,
+    userId,
+    sandboxId,
+    resolveAccountId,
+  });
+}
+
 sandboxIdUpdateRouter.post('/', async (c) => {
   const sandboxId = c.req.param('id') ?? '';
   const body = await c.req.json().catch(() => ({}));
@@ -55,10 +64,17 @@ sandboxIdUpdateRouter.post('/', async (c) => {
   }
 
   const userId = c.get('userId');
-  const sandbox = await findOwnedSandbox(userId, sandboxId);
+  const { sandbox, access } = await findOwnedSandboxWithAccess(userId, sandboxId);
 
   if (!sandbox) {
     return c.json({ success: false, error: 'Sandbox not found' }, 404);
+  }
+
+  if (!(await hasSandboxScope(db, access, sandbox, 'sandbox:upgrade'))) {
+    return c.json(
+      { success: false, error: 'You do not have permission to update this instance' },
+      403,
+    );
   }
 
   if (sandbox.provider === 'local_docker') {
@@ -139,10 +155,14 @@ sandboxIdUpdateRouter.get('/status', async (c) => {
 sandboxIdUpdateRouter.post('/reset', async (c) => {
   const sandboxId = c.req.param('id') ?? '';
   const userId = c.get('userId');
-  const sandbox = await findOwnedSandbox(userId, sandboxId);
+  const { sandbox, access } = await findOwnedSandboxWithAccess(userId, sandboxId);
 
   if (!sandbox) {
     return c.json({ success: false, error: 'Sandbox not found' }, 404);
+  }
+
+  if (!(await hasSandboxScope(db, access, sandbox, 'sandbox:upgrade'))) {
+    return c.json({ success: false, error: 'You do not have permission to manage updates' }, 403);
   }
 
   if (sandbox.provider === 'local_docker') {
@@ -157,10 +177,14 @@ sandboxIdUpdateRouter.post('/reset', async (c) => {
 sandboxIdUpdateRouter.post('/cancel', async (c) => {
   const sandboxId = c.req.param('id') ?? '';
   const userId = c.get('userId');
-  const sandbox = await findOwnedSandbox(userId, sandboxId);
+  const { sandbox, access } = await findOwnedSandboxWithAccess(userId, sandboxId);
 
   if (!sandbox) {
     return c.json({ success: false, error: 'Sandbox not found' }, 404);
+  }
+
+  if (!(await hasSandboxScope(db, access, sandbox, 'sandbox:upgrade'))) {
+    return c.json({ success: false, error: 'You do not have permission to cancel updates' }, 403);
   }
 
   if (sandbox.provider === 'local_docker') {

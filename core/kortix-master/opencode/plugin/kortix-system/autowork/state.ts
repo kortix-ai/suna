@@ -77,7 +77,11 @@ export function startAutowork(
 		active: true,
 		sessionId,
 		taskPrompt,
+		phase: "planning",
+		approvedPlan: null,
+		approvedCompletion: null,
 		messageCountAtStart,
+		lastObservedAssistantMessageIndex: messageCountAtStart - 1,
 		maxIterations,
 		startedAt: Date.now(),
 		stopped: false,
@@ -107,12 +111,43 @@ export function appendTaskContext(state: AutoworkState, text: string): AutoworkS
 	return updated
 }
 
+export function approveAutoworkPlan(state: AutoworkState, approvedPlan: string): AutoworkState {
+	const updated: AutoworkState = {
+		...state,
+		phase: "execution",
+		approvedPlan,
+		approvedCompletion: null,
+	}
+	persistAutoworkState(updated)
+	return updated
+}
+
+export function startAutoworkVerification(state: AutoworkState, approvedCompletion: string): AutoworkState {
+	const updated: AutoworkState = {
+		...state,
+		phase: "verifying",
+		approvedCompletion,
+	}
+	persistAutoworkState(updated)
+	return updated
+}
+
 export function advanceAutowork(state: AutoworkState): AutoworkState {
 	const updated: AutoworkState = {
 		...state,
 		iteration: state.iteration + 1,
 		lastInjectedAt: Date.now(),
 		consecutiveFailures: 0,
+	}
+	persistAutoworkState(updated)
+	return updated
+}
+
+export function noteAutoworkAssistantMessage(state: AutoworkState, messageIndex: number): AutoworkState {
+	if (messageIndex <= state.lastObservedAssistantMessageIndex) return state
+	const updated: AutoworkState = {
+		...state,
+		lastObservedAssistantMessageIndex: messageIndex,
 	}
 	persistAutoworkState(updated)
 	return updated

@@ -612,7 +612,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
         ) : (
           <div className="flex-1 flex items-center justify-center gap-1.5 h-7 text-[11px] font-medium text-amber-600 dark:text-amber-400">
             <Loader2 className="h-3 w-3 animate-spin" />
-            {phase === 'failed' ? 'Failed' : 'Updating...'}
+            Updating…
           </div>
         )}
         <Button
@@ -695,14 +695,14 @@ function SidebarSections() {
     <div className="flex flex-col min-h-0 flex-1 pt-0.5 space-y-0.5">
       {/* Projects — collapsible list above Sessions, same UX as Sessions */}
       {sortedProjects.length > 0 && (
-        <Collapsible defaultOpen={false} className="flex flex-col min-h-0">
+        <Collapsible defaultOpen={false} className="group/projects flex flex-col min-h-0">
           <div className="px-3 flex-shrink-0">
             <CollapsibleTrigger asChild>
-              <button className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[13px] text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer group">
-                <FolderKanban className="h-4 w-4 flex-shrink-0" />
+              <Button variant="sidebar" className="rounded-lg">
+                <FolderKanban className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
                 <span className="flex-1 text-left">Projects</span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]:-rotate-90" />
-              </button>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/projects:-rotate-90" />
+              </Button>
             </CollapsibleTrigger>
           </div>
           <CollapsibleContent className="min-h-0 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -724,18 +724,24 @@ function SidebarSections() {
       )}
 
       {/* Sessions — always visible, takes remaining space */}
-      <Collapsible defaultOpen className="flex flex-col min-h-0 flex-1">
+      <Collapsible defaultOpen className="group/sessions flex flex-col min-h-0 data-[state=open]:flex-1">
         <div className="px-3 flex-shrink-0">
           <CollapsibleTrigger asChild>
-            <button className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[13px] text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer group">
-              <ListTree className="h-4 w-4 flex-shrink-0" />
+            <Button variant="sidebar" className="rounded-lg">
+              <ListTree className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
               <span className="flex-1 text-left">Sessions</span>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]:-rotate-90" />
-            </button>
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
+            </Button>
           </CollapsibleTrigger>
         </div>
-        <CollapsibleContent className="flex-1 min-h-0 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <SessionList projectId={null} />
+        <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="relative">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute left-[31.5px] top-1 bottom-1 w-px bg-sidebar-foreground/20"
+            />
+            <SessionList projectId={null} />
+          </div>
         </CollapsibleContent>
       </Collapsible>
 
@@ -1486,25 +1492,21 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
           {/* Navigation */}
           <nav className="flex-shrink-0 px-3 pt-2 space-y-0.5">
             {/* New session */}
-            <button
+            <Button
               onClick={handleNewSession}
               disabled={createSession.isPending}
-              className={cn(
-                'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[13px] cursor-pointer',
-                'transition-colors duration-150',
-                'text-sidebar-foreground hover:bg-sidebar-accent',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
-              )}
+              variant="sidebar"
+              className="rounded-lg"
             >
-              <SquarePen className="h-4 w-4 flex-shrink-0" />
+              <SquarePen className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
               <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
               <kbd className="text-[10px] text-muted-foreground">
                 {isMac ? '\u2318J' : 'Ctrl J'}
               </kbd>
-            </button>
+            </Button>
 
             {/* Search */}
-            <button
+            <Button
               onClick={() => {
                 document.dispatchEvent(
                   new KeyboardEvent('keydown', {
@@ -1517,17 +1519,18 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
                   }),
                 );
               }}
-              className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[13px] text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer"
+              variant="sidebar"
+              className="rounded-lg"
             >
-              <Search className="h-4 w-4 flex-shrink-0" />
+              <Search className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
               <span className="flex-1 text-left">Search</span>
               <kbd className="text-[10px] text-muted-foreground">
                 {isMac ? '\u2318K' : 'Ctrl K'}
               </kbd>
-            </button>
+            </Button>
 
             {/* Files */}
-            <button
+            <Button
               onClick={() => {
                 openTabAndNavigate({
                   id: 'page:/files',
@@ -1536,17 +1539,12 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
                   href: '/files',
                 });
               }}
-              className={cn(
-                'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[13px] cursor-pointer',
-                'transition-colors duration-150',
-                pathname === '/files'
-                  ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent',
-              )}
+              variant="sidebar"
+              className="rounded-lg"
             >
-              <FolderOpen className="h-4 w-4 flex-shrink-0" />
+              <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
               <span className="flex-1 text-left">Files</span>
-            </button>
+            </Button>
 
             {/* Sessions — expandable, default open */}
             </nav>

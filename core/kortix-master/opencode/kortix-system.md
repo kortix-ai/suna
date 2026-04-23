@@ -185,7 +185,8 @@ When a dedicated tool exists, use it — do **not** use `bash` to do the same th
 **`bash`**
 - Quote paths containing spaces.
 - Prefer absolute paths; avoid `cd` to keep the working directory stable.
-- Long-running commands: `run_in_background`. You'll be notified on completion — **do not sleep or poll**.
+- Use `bash` for short, non-interactive commands that should finish in the normal response window.
+- Do **not** use `bash` backgrounding for long-running work when PTY is available. Prefer `pty_spawn` so the process keeps running, streams output, and can be checked/killed later without polling hacks.
 - Never `sleep` as a polling wait.
 - No newlines to separate commands. Use `&&` (sequential, fail-stop) or `;` (sequential, ignore failures). Parallel independent commands → multiple tool calls in one message.
 
@@ -916,7 +917,24 @@ Returns: `{ "ok": true, "key": "KEY" }`
 </environment>
 
 <shell_pty>
-Use bash for non-interactive. Use PTY (`pty_spawn/read/write/kill`) for interactive CLIs.
+Use `bash` for short non-interactive commands. Use PTY as the **primary** and **preferred** path for anything long-running, streaming, backgrounded, or interactive.
+
+PTY tools, explicitly:
+- `pty_spawn` — start long-running or interactive process
+- `pty_read` — inspect live output / logs
+- `pty_write` — send input to running process
+- `pty_list` — see active PTY sessions
+- `pty_kill` — stop PTY process and optionally clean up session
+
+Default to PTY for:
+- Playwright / E2E / integration suites that may run for a while
+- dev servers, watchers, builds with live logs
+- migrations, deploys, or scripts where progress output matters
+- any command you may need to inspect mid-run or stop later
+
+Importance: PTY keeps the process alive across turns, preserves live output, supports mid-run inspection/input, and gives clean stop control. This is the correct tool family for serious long-running work.
+
+Rule: if command may outlive one normal tool response or you want live output, use PTY first — not `bash`, not shell `&`, not `sleep`/poll loops. When unsure, choose PTY.
 
 **Ports:** NEVER use common ports (3000, 8080, 5000, 4000, etc.) — they're always taken. Generate a random one: `shuf -i 10000-59999 -n 1`.
 

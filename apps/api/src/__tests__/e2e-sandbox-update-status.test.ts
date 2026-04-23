@@ -36,6 +36,11 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+mock.module('../shared/platform-roles', () => ({
+  isPlatformAdmin: async () => false,
+  getPlatformRole: async () => 'user',
+}));
+
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => 'acct_test',
 }));
@@ -47,6 +52,7 @@ mock.module('../config', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: () => ({
       from: () => ({
@@ -74,6 +80,11 @@ mock.module('@kortix/db', () => ({
     sandboxId: 'sandboxId',
     accountId: 'accountId',
     metadata: 'metadata',
+  },
+  platformUserRoles: {
+    accountId: 'accountId',
+    userId: 'userId',
+    role: 'role',
   },
 }));
 

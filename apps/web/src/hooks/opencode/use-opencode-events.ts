@@ -203,7 +203,7 @@ export function useOpenCodeEventStream() {
 			clearPending();
 			useSyncStore.getState().reset();
 			useDiagnosticsStore.getState().clearAll();
-			queryClient.removeQueries({ queryKey: opcodeKeys.all });
+			queryClient.removeQueries({ queryKey: opencodeKeys.all });
 			resetPrefetchState();
 		} else if (didServerUrlChange) {
 			// URL changed on the same logical server (e.g. sandbox/proxy refresh).
@@ -273,7 +273,7 @@ export function useOpenCodeEventStream() {
 
 			if (options?.refetchSessions) {
 				queryClient.refetchQueries({
-					queryKey: opcodeKeys.sessions(),
+					queryKey: opencodeKeys.sessions(),
 					type: 'active',
 				});
 			}
@@ -895,12 +895,12 @@ export function useOpenCodeEventStream() {
 				// tools, and commands. Invalidate all cached app metadata so
 				// the UI picks up newly installed marketplace components or
 				// agent-created skills/agents immediately.
-				queryClient.invalidateQueries({ queryKey: opcodeKeys.sessions(), type: 'active' });
-				queryClient.invalidateQueries({ queryKey: opcodeKeys.mcpStatus(), type: 'active' });
-				queryClient.invalidateQueries({ queryKey: opcodeKeys.skills(), type: 'active' });
-				queryClient.invalidateQueries({ queryKey: opcodeKeys.agents(), type: 'active' });
-				queryClient.invalidateQueries({ queryKey: opcodeKeys.toolIds(), type: 'active' });
-				queryClient.invalidateQueries({ queryKey: opcodeKeys.commands(), type: 'active' });
+				queryClient.invalidateQueries({ queryKey: opencodeKeys.sessions(), type: 'active' });
+				queryClient.invalidateQueries({ queryKey: opencodeKeys.mcpStatus(), type: 'active' });
+				queryClient.invalidateQueries({ queryKey: opencodeKeys.skills(), type: 'active' });
+				queryClient.invalidateQueries({ queryKey: opencodeKeys.agents(), type: 'active' });
+				queryClient.invalidateQueries({ queryKey: opencodeKeys.toolIds(), type: 'active' });
+				queryClient.invalidateQueries({ queryKey: opencodeKeys.commands(), type: 'active' });
 				break;
 			}
 
@@ -1029,9 +1029,6 @@ export function useOpenCodeEventStream() {
 		stopCompaction,
 	]);
 }
-
-// Use the correct key reference
-const opcodeKeys = opencodeKeys;
 
 /**
  * Headless provider component that connects the SSE event stream.

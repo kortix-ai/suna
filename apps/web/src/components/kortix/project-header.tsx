@@ -17,12 +17,13 @@ export type ProjectTab =
   | 'tasks'       // v1
   | 'board'       // v2
   | 'milestones'  // v2
-  | 'team'        // v2
-  | 'credentials' // v2
-  | 'triggers'    // v2
+  | 'team'        // v2 (legacy — folded into Settings)
+  | 'credentials' // v2 (legacy — folded into Settings)
+  | 'triggers'    // v2 (legacy — folded into Settings)
   | 'settings'    // v2
   | 'files'
-  | 'sessions';
+  | 'sessions'
+  | 'members';    // from main — v1 team-based-access
 
 export interface ProjectHeaderProps {
   project: any;
@@ -44,6 +45,7 @@ const V1_TABS: Array<{ id: ProjectTab; label: string }> = [
   { id: 'tasks', label: 'Tasks' },
   { id: 'files', label: 'Files' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'members', label: 'Members' },
 ];
 
 // Top-level tabs intentionally stay lean — 6 work surfaces users actually

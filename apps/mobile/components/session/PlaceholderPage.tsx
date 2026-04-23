@@ -11,15 +11,19 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 
 interface PlaceholderPageProps {
   page: PageTab;
   onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: PlaceholderPageProps) {
+export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: PlaceholderPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -29,37 +33,15 @@ export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer 
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>
-      {/* Header */}
-      <View
-        style={{ paddingTop: insets.top }}
-        className="px-4 pb-3 bg-background"
-      >
-        <View className="flex-row items-center">
-          <TouchableOpacity
-            onPress={onOpenDrawer}
-            className="mr-3 p-1"
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="menu" size={24} color={fgColor} />
-          </TouchableOpacity>
-          <View className="flex-1">
-            <RNText
-              style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}
-              numberOfLines={1}
-            >
-              {page.label}
-            </RNText>
-          </View>
-          <TouchableOpacity
-            onPress={onOpenRightDrawer}
-            className="ml-3 p-1"
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="apps-outline" size={20} color={fgColor} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <PageHeader
+        title={page.label}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+      />
 
+      <PageContent>
       {/* Placeholder content */}
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
         <View
@@ -98,6 +80,7 @@ export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer 
           Coming soon. This feature is under development.
         </RNText>
       </View>
+      </PageContent>
     </View>
   );
 }

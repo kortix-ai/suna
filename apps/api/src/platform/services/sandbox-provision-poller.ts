@@ -1,11 +1,11 @@
 /**
  * sandbox-provision-poller.ts
  *
- * Background service that polls JustAVPS for all sandboxes stuck in 'provisioning'.
+ * Background service that polls JustAVPS for sandboxes that need lifecycle reconciliation.
  * Acts as a reliable fallback when webhooks are broken/unreachable (e.g. dead ngrok URL).
  *
  * On each tick:
- *   1. Finds all sandboxes with status='provisioning' and provider='justavps'
+ *   1. Finds all JustAVPS sandboxes in provisioning, plus errored rows that still have a provider machine
  *   2. Fetches each machine's current state from JustAVPS API
  *   3. Updates the DB stage (forward-only, same as webhook handler)
  *   4. Emits events via sandboxEventBus so SSE streams and in-memory listeners get notified
@@ -13,13 +13,20 @@
  *   6. Flips sandbox to 'error' when JustAVPS reports 'error' or 'deleted'
  */
 
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray, ne } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { sandboxEventBus } from './sandbox-events';
 import { probeJustAvpsSandboxReadiness } from './sandbox-readiness';
 import { sendWorkspaceReadyEmail } from './email-notification';
+import {
+  buildSandboxInitAttemptMetadata,
+  buildSandboxInitFailureMetadata,
+  buildSandboxInitSuccessMetadata,
+  getSandboxInitAttempts,
+  stripSandboxInitFailureMetadata,
+} from './sandbox-init-state';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +47,15 @@ const STAGE_ORDER: Record<string, number> = {
   services_starting: 5,
   services_ready: 6,
 };
+
+export function stripFailureMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+  return stripSandboxInitFailureMetadata(metadata);
+}
+
+export function nextRecoveredStatus(currentStatus: 'provisioning' | 'error', ready: boolean): 'provisioning' | 'active' {
+  if (ready) return 'active';
+  return currentStatus === 'error' ? 'provisioning' : currentStatus;
+}
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
@@ -83,14 +99,17 @@ async function pollProvisioningSandboxes(): Promise<void> {
   _running = true;
 
   try {
-    // Find all provisioning JustAVPS sandboxes
+    // Find all provisioning JustAVPS sandboxes plus error rows that still have
+    // a provider machine. This heals rows that were marked error transiently
+    // even though the provider-side VM later recovered and is healthy.
     const rows = await db
       .select()
       .from(sandboxes)
       .where(
         and(
-          eq(sandboxes.status, 'provisioning'),
+          inArray(sandboxes.status, ['provisioning', 'error']),
           eq(sandboxes.provider, 'justavps'),
+          ne(sandboxes.externalId, ''),
         ),
       );
 
@@ -168,11 +187,13 @@ async function pollSingleSandbox(sandbox: typeof sandboxes.$inferSelect): Promis
     const currentRank = STAGE_ORDER[currentStage] ?? 0;
     const incomingStage = machine.provisioning_stage || '';
     const incomingRank = STAGE_ORDER[incomingStage] ?? 0;
+    const sanitizedMeta = stripFailureMetadata(meta);
+    const initAttempts = Math.max(getSandboxInitAttempts(meta), 1);
 
     // ── Machine is ready → verify sandbox services before flipping active ──
     if (machine.status === 'ready') {
       const healedMeta = {
-        ...meta,
+        ...sanitizedMeta,
         provisioningStage: 'services_ready',
         provisioningMessage: 'VM is ready, verifying sandbox services...',
         ...(machine.ip ? { publicIp: machine.ip } : {}),
@@ -186,16 +207,27 @@ async function pollSingleSandbox(sandbox: typeof sandboxes.$inferSelect): Promis
       });
 
       if (!readiness.ready) {
+        const recoveredStatus = nextRecoveredStatus(sandbox.status, false);
         await db
           .update(sandboxes)
           .set({
-            metadata: {
-              ...healedMeta,
-              provisioningMessage: readiness.message,
-            },
+            ...(recoveredStatus !== sandbox.status ? { status: recoveredStatus } : {}),
+            metadata: buildSandboxInitAttemptMetadata(
+              {
+                ...healedMeta,
+              },
+              initAttempts,
+              'provisioning',
+              'services_ready',
+              readiness.message,
+            ),
             updatedAt: new Date(),
           })
           .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+
+        if (sandbox.status === 'error') {
+          console.log(`[provision-poller] ${sandbox.sandboxId} → provisioning (provider ready, waiting for sandbox services)`);
+        }
 
         sandboxEventBus.emit({
           sandboxId: sandbox.sandboxId,
@@ -210,15 +242,19 @@ async function pollSingleSandbox(sandbox: typeof sandboxes.$inferSelect): Promis
 
       await db
         .update(sandboxes)
-        .set({ status: 'active', metadata: healedMeta, updatedAt: new Date() })
+        .set({
+          status: nextRecoveredStatus(sandbox.status, true),
+          metadata: buildSandboxInitSuccessMetadata(meta, healedMeta, initAttempts),
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(sandboxes.sandboxId, sandbox.sandboxId),
-            eq(sandboxes.status, 'provisioning'),
+            inArray(sandboxes.status, ['provisioning', 'error']),
           ),
         );
 
-      console.log(`[provision-poller] ${sandbox.sandboxId} → active (sandbox services ready)`);
+      console.log(`[provision-poller] ${sandbox.sandboxId} → active (sandbox services ready${sandbox.status === 'error' ? ', healed from error' : ''})`);
 
       // Inject PUBLIC_BASE_URL so getMasterPublicBaseUrl() returns a public URL
       // instead of localhost inside the sandbox. Fire-and-forget — non-critical.
@@ -271,13 +307,17 @@ async function pollSingleSandbox(sandbox: typeof sandboxes.$inferSelect): Promis
 
     // ── Machine errored or deleted → flip to error ──
     if (machine.status === 'error' || machine.status === 'deleted') {
-      const errorMeta = {
-        ...meta,
-        provisioningStage: machine.provisioning_stage || 'error',
-        provisioningError: machine.status === 'deleted'
+      const errorMeta = buildSandboxInitFailureMetadata(
+        {
+          ...meta,
+          provisioningStage: machine.provisioning_stage || 'error',
+        },
+        machine.status === 'deleted'
           ? 'Machine was deleted by the provider'
           : `Machine provisioning failed (${machine.provisioning_stage || 'unknown'})`,
-      };
+        initAttempts,
+        false,
+      );
 
       await db
         .update(sandboxes)
@@ -300,18 +340,29 @@ async function pollSingleSandbox(sandbox: typeof sandboxes.$inferSelect): Promis
     // ── Stage progressed forward → update DB + emit event ──
     if (incomingStage && incomingRank > currentRank) {
       const updatedMeta = {
-        ...meta,
+        ...sanitizedMeta,
         provisioningStage: incomingStage,
         provisioningMessage: getStageMessage(incomingStage),
         ...(machine.ip ? { publicIp: machine.ip } : {}),
       };
+      const recoveredStatus = nextRecoveredStatus(sandbox.status, false);
 
       await db
         .update(sandboxes)
-        .set({ metadata: updatedMeta, updatedAt: new Date() })
+        .set({
+          ...(recoveredStatus !== sandbox.status ? { status: recoveredStatus } : {}),
+          metadata: buildSandboxInitAttemptMetadata(
+            updatedMeta,
+            initAttempts,
+            'provisioning',
+            incomingStage,
+            getStageMessage(incomingStage),
+          ),
+          updatedAt: new Date(),
+        })
         .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
 
-      console.log(`[provision-poller] ${sandbox.sandboxId} stage: ${currentStage || '(none)'} → ${incomingStage}`);
+      console.log(`[provision-poller] ${sandbox.sandboxId} stage: ${currentStage || '(none)'} → ${incomingStage}${sandbox.status === 'error' ? ' (healing from error)' : ''}`);
 
       sandboxEventBus.emit({
         sandboxId: sandbox.sandboxId,

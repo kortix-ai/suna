@@ -65,6 +65,7 @@ import {
   type ProjectTab,
 } from '@/components/kortix/project-header';
 import { ProjectAbout } from '@/components/kortix/project-about';
+import { ProjectMembersTab } from '@/components/kortix/project-members-tab';
 import { TasksTab } from '@/components/kortix/tasks-tab';
 import { TaskDetailView } from '@/components/kortix/task-detail-view';
 import { NewTaskDialog } from '@/components/kortix/new-task-dialog';
@@ -406,6 +407,10 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
             agents={agents}
             projectId={project.id}
           />
+        </TabPanel>
+
+        <TabPanel active={tab === 'members'}>
+          <ProjectMembersTab project={project} />
         </TabPanel>
       </div>
 
