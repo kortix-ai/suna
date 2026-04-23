@@ -46,7 +46,44 @@ export const MILESTONES_SECTION_START = '<!-- KORTIX:MILESTONES:START -->'
 export const MILESTONES_SECTION_END = '<!-- KORTIX:MILESTONES:END -->'
 
 export const DEFAULT_PM_SLUG = 'project-manager'
-export const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-6'
+
+/**
+ * Resolve the default `providerID/modelID` for seeded agents based on what
+ * the running sandbox actually has credentials for. Order (explicit signals
+ * win over inferred ones):
+ *   1. per-call `override` (e.g. the caller's session model)
+ *   2. `KORTIX_DEFAULT_AGENT_MODEL` env
+ *   3. direct `ANTHROPIC_API_KEY` — if the user set it, they want Anthropic
+ *   4. cloud: `kortix-yolo/think` when yolo keys are injected (prod billing)
+ *   5. local dev via kortix router: `kortix/minimax-m27`
+ *   6. last resort: `kortix-yolo/think` (upstream picks up when provisioned)
+ *
+ * Kept as a function so env changes between spawns (rare) are respected, and
+ * so callers that want to pass a session-level model can override per-call
+ * via `resolveDefaultModel({ override })`.
+ */
+export function resolveDefaultModel(opts?: { override?: string | null }): string {
+  const override = opts?.override?.trim()
+  if (override) return override
+  const envOverride = process.env.KORTIX_DEFAULT_AGENT_MODEL?.trim()
+  if (envOverride) return envOverride
+  if (process.env.ANTHROPIC_API_KEY) {
+    return 'anthropic/claude-sonnet-4-6'
+  }
+  if (process.env.KORTIX_YOLO_API_KEY && process.env.KORTIX_YOLO_URL) {
+    return 'kortix-yolo/think'
+  }
+  if (process.env.KORTIX_TOKEN && process.env.KORTIX_API_URL) {
+    return 'kortix/minimax-m27'
+  }
+  return 'kortix-yolo/think'
+}
+
+/**
+ * @deprecated — prefer `resolveDefaultModel()` so env changes are honored.
+ * Left as a string for callers that need a stable value at import time.
+ */
+export const DEFAULT_MODEL = resolveDefaultModel()
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Agent file layout + rendering
@@ -187,11 +224,15 @@ export function buildDefaultColumns(pmAgentId: string) {
 // PM persona — tight, minimal, opinionated
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function pmPersonaBody(projectName: string, userHandle?: string | null): string {
+export function pmPersonaBody(projectName: string, userHandle?: string | null, seededModel?: string | null): string {
   // Real human's handle so COMM blocks, onboarding addressee, and
   // escalation lines use @<vukasinkubet> not @user. Falls back to "user"
   // only when no handle is available (anonymous / legacy projects).
   const handle = (userHandle && userHandle.trim()) || 'user'
+  // Model string that the PM itself was seeded with — used in the persona's
+  // "Pass default_model: X" instruction so the rest of the team inherits the
+  // same provider/model PM is running on, not a hardcoded anthropic id.
+  const teamModel = (seededModel && seededModel.trim()) || resolveDefaultModel()
   return `# Project Manager — ${projectName}
 
 Board manager. You triage, route, and move tickets. You do NOT decompose
@@ -384,8 +425,11 @@ project already exists. Jump straight to the setup sequence below.
 1. \`project_context_write\` — tight Overview + Stack + Autonomy
    (three short sections, nothing else).
 2. \`team_create_agent\` for each approved role from Q4. Pass
-   \`default_model: "anthropic/claude-sonnet-4-6"\` unless the human
-   asked otherwise. **ALWAYS pass \`execution_mode: "persistent"\`**
+   \`default_model: "${teamModel}"\` (the model this project
+   was seeded with, mirroring what's actually provisioned in this
+   sandbox) unless the human asked for a different one during onboarding
+   — in which case use their pick verbatim. **ALWAYS pass
+   \`execution_mode: "persistent"\`**
    so each contributor (engineer, qa, tech-lead, designer, …) has
    ONE long-lived session that handles every ticket sequentially.
    Per-ticket sessions cause parallel-deadlock pain: two concurrent
@@ -832,6 +876,13 @@ can catch it — the AC is the new source of truth from that point on.
 export interface SeedOptions {
   /** Called to write agent markdown files. Swap in tests. */
   writeFile?: (filePath: string, contents: string) => Promise<void>
+  /**
+   * Explicit model override (`providerID/modelID`) to seed the PM with.
+   * Typically the model the caller's current session is using, or what
+   * the human picked during project creation. Falls back to
+   * `resolveDefaultModel()` when omitted.
+   */
+  defaultModel?: string | null
 }
 
 export async function seedV2Project(
@@ -842,6 +893,7 @@ export async function seedV2Project(
   ensureTicketTables(db)
   setProjectStructureVersion(db, project.id, 2)
 
+  const seededModel = resolveDefaultModel({ override: opts.defaultModel ?? null })
   const existingAgents = listAgents(db, project.id)
   let pm = existingAgents.find((a) => a.slug === DEFAULT_PM_SLUG) || null
 
@@ -852,12 +904,12 @@ export async function seedV2Project(
       name: 'Project Manager',
       description: 'Project Manager — triages backlog, shapes team, keeps the board moving.',
       mode: 'primary',
-      model: DEFAULT_MODEL,
+      model: seededModel,
       tool_groups: ['project_manage', 'project_action'],
       execution_mode: 'per_ticket',
       default_assignee_columns: ['backlog'],
     }
-    const contents = renderAgentFile(meta, pmPersonaBody(project.name, project.user_handle))
+    const contents = renderAgentFile(meta, pmPersonaBody(project.name, project.user_handle, seededModel))
     const writer = opts.writeFile ?? (async (fp: string, body: string) => {
       await fs.mkdir(path.dirname(fp), { recursive: true })
       await fs.writeFile(fp, body, 'utf8')
@@ -871,7 +923,7 @@ export async function seedV2Project(
       execution_mode: 'per_ticket',
       tool_groups: ['project_manage', 'project_action'],
       default_assignee_columns: ['backlog'],
-      default_model: DEFAULT_MODEL,
+      default_model: seededModel,
     }
     pm = insertAgent(db, project.id, input)
     // Seeding runs before any session exists in this directory, so calling

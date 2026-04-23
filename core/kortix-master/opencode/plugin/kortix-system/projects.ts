@@ -12,7 +12,7 @@ import * as path from "node:path"
 import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { ensureGlobalMemoryFiles } from "./lib/paths"
 import { ensureSchema } from "./lib/schema"
-import { seedV2Project, DEFAULT_PM_SLUG } from "../../../src/services/project-v2-seed"
+import { seedV2Project, DEFAULT_PM_SLUG, resolveDefaultModel } from "../../../src/services/project-v2-seed"
 import { wakeAgentForProject, type OpenCodeClientLike } from "../../../src/services/ticket-triggers"
 import { getAgentBySlug } from "../../../src/services/ticket-service"
 
@@ -298,8 +298,9 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 				description: tool.schema.string().describe('Description. "" if none.'),
 				path: tool.schema.string().describe('Absolute path. "" for default.'),
 				user_handle: tool.schema.string().optional().describe('Human\'s handle for @-mentions (e.g. "vukasinkubet"). If omitted, PM onboarding is NOT auto-fired and the project just gets seeded silently.'),
+				default_model: tool.schema.string().optional().describe('Optional model override in "providerID/modelID" form to seed the PM + team with (e.g. "kortix-yolo/think", "kortix/minimax-m27"). Leave empty to auto-pick based on what the sandbox has credentials for. Pass this when the user has explicitly chosen a model for the project.'),
 			},
-			async execute(args: { name: string; description: string; path: string; user_handle?: string }): Promise<string> {
+			async execute(args: { name: string; description: string; path: string; user_handle?: string; default_model?: string }, toolCtx: ToolContext): Promise<string> {
 				try {
 					const p = await mgr.createProject(args.name, args.description, args.path)
 					// Force v2 + record user handle if given. createProject inserts
@@ -307,6 +308,31 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 					db.prepare(
 						"UPDATE projects SET structure_version=2, user_handle=COALESCE($h, user_handle) WHERE id=$id"
 					).run({ $h: args.user_handle?.trim() || null, $id: p.id })
+					// Model to seed the PM + team with, in priority order:
+					//   1. explicit `default_model` arg
+					//   2. whatever model the CALLER session is using — so the
+					//      project inherits the human's current pick
+					//   3. fallback → resolveDefaultModel() in seedV2Project
+					let inheritedModel: string | null = null
+					if (!args.default_model?.trim() && toolCtx?.sessionID) {
+						try {
+							const msgsRes: any = await (mgr.client as any).session.messages({ path: { id: toolCtx.sessionID } })
+							const msgs = (msgsRes?.data ?? msgsRes ?? []) as Array<{ info?: { role?: string; providerID?: string; modelID?: string } }>
+							for (let i = msgs.length - 1; i >= 0; i--) {
+								const info = msgs[i]?.info
+								if (info?.role === 'assistant' && info.modelID) {
+									const provider = (info.providerID || '').trim()
+									const model = info.modelID.trim()
+									// kortix-yolo stores the full `provider/id` in
+									// modelID — avoid double-prefixing.
+									inheritedModel = model.includes('/') ? model : (provider ? `${provider}/${model}` : model)
+									break
+								}
+							}
+						} catch (err) {
+							console.warn('[project_create] failed to read caller session model:', (err as Error).message)
+						}
+					}
 					// Seed PM agent, default columns, CONTEXT.md team section.
 					await seedV2Project(db, {
 						id: p.id,
@@ -314,7 +340,7 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 						path: p.path,
 						description: p.description,
 						user_handle: args.user_handle || null,
-					})
+					}, { defaultModel: args.default_model?.trim() || inheritedModel || null })
 					// Always spawn the PM onboarding session so the response can hand
 					// the user a clickable link. user_handle is optional — if missing,
 					// PM addresses the human generically ("hey").
@@ -332,7 +358,7 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 								"",
 								"Cover (in order): project · stack · role + reach-back · autonomy · starting team · columns/templates. Apply each piece only after approval, using your `project_manage` tools. Keep CONTEXT.md tight.",
 								"",
-								'Pass `default_model: "anthropic/claude-sonnet-4-6"` on every agent. Copy the Communication discipline block from your persona into each agent body_md verbatim.',
+								`Pass \`default_model: "${resolveDefaultModel()}"\` on every agent (matches what this sandbox has credentials for) unless the human asked for a different one during onboarding — in which case use their pick. Copy the Communication discipline block from your persona into each agent body_md verbatim.`,
 								"",
 								"Your messages follow the same rules as the team: short, decisive, no tables, no verdict banners.",
 								"",

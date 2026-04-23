@@ -12,7 +12,7 @@ import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
 import { basename, dirname, join } from 'path'
 import { ensureTicketTables, getAgentBySlug } from '../services/ticket-service'
-import { seedV2Project, syncTeamSection, DEFAULT_PM_SLUG } from '../services/project-v2-seed'
+import { seedV2Project, syncTeamSection, DEFAULT_PM_SLUG, resolveDefaultModel } from '../services/project-v2-seed'
 import { wakeAgentForProject, type OpenCodeClientLike } from '../services/ticket-triggers'
 import { createOpencodeClient } from '@opencode-ai/sdk/client'
 import { config } from '../config'
@@ -294,7 +294,9 @@ function buildOnboardingPrompt(name: string, handle: string, description: string
     'starting team · columns/templates. Apply each piece only after approval,',
     'using your `project_manage` tools. Keep CONTEXT.md tight.',
     '',
-    'Pass `default_model: "anthropic/claude-sonnet-4-6"` on every agent. Copy',
+    `Pass \`default_model: "${resolveDefaultModel()}"\` on every agent (matches`,
+    'what this sandbox has credentials for) unless the human asked for a',
+    'different one during onboarding — in which case use their pick. Copy',
     'the Communication discipline block from your persona into each agent',
     'body_md verbatim — non-negotiable.',
     '',

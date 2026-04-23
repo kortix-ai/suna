@@ -684,7 +684,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         tool_groups: tool.schema.string().optional().describe('Comma-separated: "project_action" and/or "project_manage". Defaults to project_action.'),
         default_assignee_columns: tool.schema.string().optional().describe('Comma-separated column keys this agent auto-assigns for, e.g. "review".'),
         execution_mode: tool.schema.string().optional().describe('"per_ticket" (default), "per_assignment", or "persistent".'),
-        default_model: tool.schema.string().optional().describe('Model id in "providerID/modelID" form, e.g. "anthropic/claude-sonnet-4-6". Defaults to the session default.'),
+        default_model: tool.schema.string().optional().describe('Model id in "providerID/modelID" form (e.g. "kortix-yolo/think", "kortix/minimax-m27", "anthropic/claude-sonnet-4-6"). Omit to inherit the project\'s seeded default (matches whatever provider the sandbox has credentials for).'),
       },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
