@@ -335,12 +335,20 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       if (msgIdx < 0) return state;
 
       const msg = msgs[msgIdx];
-      let partIdx = msg.parts.findIndex((p) => p.id === partId);
+      const partIdx = msg.parts.findIndex((p) => p.id === partId);
 
       let updatedParts: Part[];
       if (partIdx < 0) {
-        // Part doesn't exist yet — create a stub text part
-        const stub: Part = { type: 'text', id: partId, [field]: delta } as any;
+        // Part doesn't exist — create a stub starting from an EMPTY string,
+        // then append the delta. Initializing with `delta` (the old behavior)
+        // caused streamed text to appear mid-word: later full-text snapshots
+        // were rejected by upsertPart's prefix-growth guard because they
+        // didn't start with the partial delta. Starting from "" matches web's
+        // applyPartDelta semantics (apps/web/src/stores/opencode-sync-store.ts).
+        // Callers (event handlers) should still pre-create an empty stub to
+        // avoid relying on this fallback, but this keeps delta data intact
+        // even when they don't.
+        const stub: Part = { type: field === 'reasoning' ? 'reasoning' : 'text', id: partId, [field]: delta } as any;
         updatedParts = [...msg.parts, stub];
       } else {
         updatedParts = msg.parts.map((p, i) => {

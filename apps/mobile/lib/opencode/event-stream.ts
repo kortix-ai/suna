@@ -203,16 +203,20 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       case 'message.part.delta': {
         const { messageID, partID, sessionID, field, delta } = props;
         if (messageID && partID && sessionID && field && delta) {
-          // Ensure the parent message exists before applying the delta.
-          // message.part.delta can arrive before message.updated —
-          // without a stub message, appendPartDelta silently drops
-          // the delta, causing the beginning of streamed text to be lost.
+          // Mirror web: ensure parent message + EMPTY stub part exist BEFORE
+          // appending the delta. If the stub part starts with the delta as
+          // its initial value (the old behavior), a later
+          // `message.part.updated` snapshot carrying the full text gets
+          // rejected by the prefix-growth guard in upsertPart — because the
+          // snapshot doesn't start with the mid-word delta fragment, only
+          // the other way around. That's why streamed text sometimes began
+          // mid-word on mobile. Starting from "" keeps the guard happy.
           const state = syncStore.getState();
           const msgs = state.messages[sessionID];
-          const msgExists = msgs?.some((m) => m.info.id === messageID);
-          if (!msgExists) {
-            // Only create the stub if a user message already exists
-            // for this session (avoids turn-grouping issues on refresh)
+          const msg = msgs?.find((m) => m.info.id === messageID);
+          if (!msg) {
+            // Only create the stub message if a user message already exists
+            // for this session (avoids turn-grouping issues on refresh).
             const hasUserMsg = msgs?.some((m) => m.info.role === 'user');
             if (hasUserMsg) {
               state.upsertMessage(sessionID, {
@@ -226,6 +230,22 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
               });
             }
           }
+
+          // Pre-create an empty stub part if it's missing, so appendPartDelta
+          // appends to "" rather than initializing the part with the partial
+          // delta. This matches web (apps/web/src/stores/opencode-sync-store.ts
+          // line 845-850).
+          const currentMsgs = syncStore.getState().messages[sessionID];
+          const currentMsg = currentMsgs?.find((m) => m.info.id === messageID);
+          const partExists = currentMsg?.parts.some((p) => p.id === partID);
+          if (currentMsg && !partExists) {
+            syncStore.getState().upsertPart(messageID, {
+              id: partID,
+              type: field === 'text' ? 'text' : 'reasoning',
+              [field]: '',
+            } as unknown as Part);
+          }
+
           syncStore.getState().appendPartDelta(messageID, partID, sessionID, field, delta);
         }
         break;
