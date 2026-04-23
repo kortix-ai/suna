@@ -484,7 +484,7 @@ describe('tool_group enforcement', () => {
     const knownGroups = new Set(['project_action', 'project_manage'])
     for (const [name, group] of Object.entries(TOOL_GROUPS)) {
       expect(knownGroups.has(group)).toBe(true)
-      expect(name).toMatch(/^(ticket_|team_|project_)/)
+      expect(name).toMatch(/^(ticket_|team_|project_|milestone_|credential_)/)
     }
   })
 })
