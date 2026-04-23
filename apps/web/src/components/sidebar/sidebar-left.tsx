@@ -605,7 +605,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
         ) : (
           <div className="flex-1 flex items-center justify-center gap-1.5 h-7 text-[11px] font-medium text-amber-600 dark:text-amber-400">
             <Loader2 className="h-3 w-3 animate-spin" />
-            {phase === 'failed' ? 'Failed' : 'Updating…'}
+            Updating…
           </div>
         )}
         <Button
