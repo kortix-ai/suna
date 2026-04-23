@@ -73,6 +73,12 @@ import {
   updateMilestone,
   computeMilestoneProgress,
 } from '../../../src/services/milestone-service'
+import {
+  deleteCredential,
+  listCredentials,
+  readCredential,
+  upsertCredential,
+} from '../../../src/services/credential-service'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 
@@ -127,6 +133,13 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
   milestone_close: 'project_manage',
   milestone_reopen: 'project_manage',
   ticket_set_milestone: 'project_manage',
+  // Project-scoped credentials — every team agent can READ values they need
+  // (via credential_get / credential_list); only PM can write/delete so we
+  // don't get credential sprawl from each contributor inventing names.
+  credential_list: 'project_action',
+  credential_get: 'project_action',
+  credential_set: 'project_manage',
+  credential_delete: 'project_manage',
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1067,6 +1080,95 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         } catch (err) {
           return `Error: ${err instanceof Error ? err.message : String(err)}`
         }
+      },
+    }),
+
+    // ── Project-scoped credentials ─────────────────────────────────────────
+    //
+    // These replace the old "grep env / walk .env files" pattern. When an
+    // agent needs a secret (API key, DB URL, token), it should:
+    //   1. `credential_get(NAME)` — project vault first
+    //   2. fall back to `getEnv(NAME)` for workspace-global defaults
+    //   3. only ping the human if neither exists
+    // Values never enter process.env or the s6 env dir — every access goes
+    // through this tool and is audit-logged.
+
+    credential_list: tool({
+      description: 'List the names + descriptions of credentials stored for THIS project. Values are NOT returned — call `credential_get(name)` for a specific one.',
+      args: {},
+      async execute(_args: Record<string, never>, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const list = listCredentials(db, pid)
+        if (!list.length) return '(no credentials set for this project)'
+        return list
+          .map((c) => `- **${c.name}**${c.description ? ` — ${c.description}` : ''}${c.last_read_at ? ` (last read ${c.last_read_at})` : ''}`)
+          .join('\n')
+      },
+    }),
+
+    credential_get: tool({
+      description: [
+        'Read the decrypted value of a project-scoped credential. Returns the raw secret — do NOT log, echo into a shell prompt, or paste into a ticket comment.',
+        'Use this when you need an API key / token / connection string the project owns. If the credential does not exist in the project vault, try `getEnv(NAME)` for workspace-global defaults, then fall back to pinging the human on the ticket.',
+        'Every call is audit-logged (actor + timestamp).',
+      ].join(' '),
+      args: { name: tool.schema.string().describe('Credential name — e.g. "STRIPE_API_KEY".') },
+      async execute(args: { name: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        try {
+          const result = await readCredential(db, {
+            project_id: pid, name: args.name,
+            actor_type: actor.type, actor_id: actor.id,
+          })
+          if (!result) return `not_found: no credential named "${args.name}" in this project's vault`
+          return result.value
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`
+        }
+      },
+    }),
+
+    credential_set: tool({
+      description: 'Upsert a project-scoped credential. The value is AES-256-GCM encrypted at rest and scoped to this project only — other projects cannot read it. Use this when the human replies with a secret value after a block-for-creds ticket.',
+      args: {
+        name: tool.schema.string().describe('Credential name — e.g. "STRIPE_API_KEY". Letters, digits, underscore; no leading digit.'),
+        value: tool.schema.string().describe('The secret value. Will be encrypted immediately; never logged.'),
+        description: tool.schema.string().optional().describe('Optional one-liner describing what the credential is for.'),
+      },
+      async execute(args: { name: string; value: string; description?: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        try {
+          const { created } = await upsertCredential(db, {
+            project_id: pid, name: args.name, value: args.value,
+            description: args.description ?? null,
+            actor_type: actor.type, actor_id: actor.id,
+          })
+          return `${created ? 'Created' : 'Updated'} credential **${args.name}** in this project's vault.`
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`
+        }
+      },
+    }),
+
+    credential_delete: tool({
+      description: 'Delete a project-scoped credential. Audit log entry is preserved (the name persists in the event row even after the row is gone).',
+      args: { name: tool.schema.string() },
+      async execute(args: { name: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        const deleted = deleteCredential(db, {
+          project_id: pid, name: args.name,
+          actor_type: actor.type, actor_id: actor.id,
+        })
+        return deleted
+          ? `Deleted credential **${args.name}**.`
+          : `No credential named "${args.name}" in this project's vault.`
       },
     }),
   }

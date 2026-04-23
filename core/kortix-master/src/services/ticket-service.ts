@@ -308,6 +308,37 @@ export function ensureTicketTables(db: Database): void {
       created_at    TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_milestone_events_milestone ON milestone_events(milestone_id);
+    CREATE TABLE IF NOT EXISTS project_credentials (
+      id              TEXT PRIMARY KEY,
+      project_id      TEXT NOT NULL,
+      name            TEXT NOT NULL,
+      ciphertext      TEXT NOT NULL,
+      iv              TEXT NOT NULL,
+      tag             TEXT NOT NULL,
+      description     TEXT,
+      created_by_type TEXT NOT NULL DEFAULT 'user',
+      created_by_id   TEXT,
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL,
+      last_read_at    TEXT,
+      last_read_by_type TEXT,
+      last_read_by_id   TEXT,
+      UNIQUE(project_id, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_credentials_project ON project_credentials(project_id);
+    CREATE TABLE IF NOT EXISTS project_credential_events (
+      id              TEXT PRIMARY KEY,
+      project_id      TEXT NOT NULL,
+      credential_id   TEXT,
+      credential_name TEXT NOT NULL,
+      actor_type      TEXT NOT NULL,
+      actor_id        TEXT,
+      action          TEXT NOT NULL,
+      message         TEXT,
+      created_at      TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_credential_events_project ON project_credential_events(project_id);
+    CREATE INDEX IF NOT EXISTS idx_project_credential_events_name ON project_credential_events(project_id, credential_name);
   `)
   try { db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 1`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN default_model TEXT`) } catch {}

@@ -670,18 +670,23 @@ restate, don't trim, don't edit. Just paste.
   decided = noise.
 - Need a secret / API key / env var? BEFORE blocking, check these
   in order (cheap — a few reads, takes seconds):
-  1. \`process.env.<VAR_NAME>\` — standard env.
-  2. Project-root \`.env\` — \`<project.path>/.env\`. Read it, look
+  1. **\`credential_get("<VAR_NAME>")\`** — project-scoped vault. Always
+     try this first. If it returns a value, use it; the value is
+     decrypted on demand and never needs to go into \`.env\` or
+     \`process.env\`. If it returns \`not_found:\`, continue.
+  2. \`process.env.<VAR_NAME>\` — workspace-global default.
+  3. Project-root \`.env\` — \`<project.path>/.env\`. Read it, look
      for the VAR_NAME. If present, export/load it and proceed.
-  3. \`<project.path>/.kortix/.env\` (project-local secrets).
-  4. \`/workspace/.env\` (workspace-wide secrets).
+  4. \`<project.path>/.kortix/.env\` (project-local secrets).
+  5. \`/workspace/.env\` (workspace-wide secrets).
   If any of these has the value, use it — don't ask the human.
   Only if NONE have it: STOP. Don't stub it, don't fake values, don't
   ship a TODO. Post a \`ticket_comment\` on the current ticket with
   EXACTLY what you need:
   > "@${handle} — I need \`<EXACT_VAR_NAME>\` (used for: <one-line purpose>).
-  > Set it in the sandbox env, or paste it in a reply and I'll write it
-  > to \`.env\`. Blocking until I have it."
+  > Paste the value in a reply and I'll store it in the project vault
+  > via \`credential_set\`, or set it in the sandbox env. Blocking until
+  > I have it."
   Then move the ticket to \`blocked\` and **END YOUR TURN**. Do NOT do
   any more tool calls. Do NOT self-unblock. Do NOT move the ticket back
   to \`in_progress\` later in the same turn, or in any turn, until a
@@ -692,6 +697,11 @@ restate, don't trim, don't edit. Just paste.
   visible human reply, you are violating this rule. Same discipline for
   OAuth tokens, DB connection strings, third-party API endpoints —
   anything the project can't legally guess.
+  WHEN THE HUMAN REPLIES with the value: call
+  \`credential_set(name=<EXACT_VAR_NAME>, value=<paste>)\` to store it
+  in the project vault, then resume via \`credential_get\`. Do NOT
+  echo the value back into a comment, a filename, or a bash prompt —
+  once it's in the vault, the vault is the source of truth.
 - Evidence over verdict. "Ran \`pnpm build\` → exit 0" beats "✅ looks
   good". Cite the proof; skip the ceremony.
 - Ticket bodies describe work, not people. No @-tags inside a body.
