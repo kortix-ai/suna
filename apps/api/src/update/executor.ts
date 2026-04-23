@@ -24,23 +24,34 @@ import {
   verifyContainer,
 } from './steps';
 
+const RUNTIME_VERIFY_TOTAL_MS = 180_000;
+const RUNTIME_VERIFY_INTERVAL_MS = 3_000;
+const RUNTIME_VERIFY_PROBE_TIMEOUT_MS = 5_000;
+
 async function verifyRuntimeVersion(
   endpoint: { url: string; headers: Record<string, string> },
   targetVersion: string,
   targetImage: string,
 ): Promise<{ runtimeVersion: string; opencodeStorageBase: string | null; persistentMode: boolean }> {
+  const wanted = targetVersion.replace(/^v/, '').trim();
+  const deadline = Date.now() + RUNTIME_VERIFY_TOTAL_MS;
+
   let lastVersion = 'unknown';
   let lastError = 'sandbox unreachable';
   let lastStorageBase: string | null = null;
   let lastPersistentMode = false;
+  let attempt = 0;
+  let reachedOnce = false;
 
-  for (let i = 0; i < 12; i++) {
+  while (Date.now() < deadline) {
+    attempt += 1;
     try {
       const res = await fetch(`${endpoint.url}/kortix/update/version`, {
         headers: endpoint.headers,
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(RUNTIME_VERIFY_PROBE_TIMEOUT_MS),
       });
       if (res.ok) {
+        reachedOnce = true;
         const body = await res.json() as {
           version?: string | null;
           opencodeStorageBase?: string | null;
@@ -49,10 +60,11 @@ async function verifyRuntimeVersion(
         lastVersion = body.version?.replace(/^v/, '').trim() || 'unknown';
         lastStorageBase = body.opencodeStorageBase ?? null;
         lastPersistentMode = body.persistentMode === true;
-        if (lastVersion === targetVersion.replace(/^v/, '').trim() && lastPersistentMode && lastStorageBase === '/persistent/opencode') {
+        if (lastVersion === wanted && lastPersistentMode && lastStorageBase === '/persistent/opencode') {
+          console.log(`[UPDATE] Runtime verified on attempt ${attempt} (${lastVersion})`);
           return { runtimeVersion: lastVersion, opencodeStorageBase: lastStorageBase, persistentMode: true };
         }
-        lastError = `reported runtime version ${lastVersion}, storage ${lastStorageBase ?? 'unknown'}, persistent=${lastPersistentMode}`;
+        lastError = `version=${lastVersion} storage=${lastStorageBase ?? 'unknown'} persistent=${lastPersistentMode}`;
       } else {
         lastError = `HTTP ${res.status}`;
       }
@@ -60,10 +72,20 @@ async function verifyRuntimeVersion(
       lastError = error instanceof Error ? error.message : String(error);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    if (attempt === 1 || attempt % 5 === 0) {
+      const elapsedMs = RUNTIME_VERIFY_TOTAL_MS - (deadline - Date.now());
+      console.log(`[UPDATE] Runtime still booting (attempt ${attempt}, ${Math.round(elapsedMs / 1000)}s elapsed): ${lastError}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, RUNTIME_VERIFY_INTERVAL_MS));
   }
 
-  throw new Error(`Runtime verification failed after update. Expected v${targetVersion}, image ${targetImage}, storage /persistent/opencode; got version=${lastVersion}, storage=${lastStorageBase ?? 'unknown'}, persistent=${lastPersistentMode} (${lastError})`);
+  const reachability = reachedOnce
+    ? 'runtime responded but never reported the expected version/storage'
+    : 'runtime never became reachable (container may still be booting or crashed)';
+  throw new Error(
+    `Runtime verification failed after ${Math.round(RUNTIME_VERIFY_TOTAL_MS / 1000)}s. Expected v${wanted}, image ${targetImage}, storage /persistent/opencode; got version=${lastVersion}, storage=${lastStorageBase ?? 'unknown'}, persistent=${lastPersistentMode} — ${reachability} (${lastError})`,
+  );
 }
 
 function imageForVersion(version: string): string {

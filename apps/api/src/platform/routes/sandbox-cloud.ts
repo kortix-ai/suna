@@ -823,6 +823,7 @@ export function createCloudSandboxRouter(
         userId,
         sandboxId: requestedSandboxId,
         includeArchived: true,
+        scopeToUser: true,
         resolveAccountId,
       });
 

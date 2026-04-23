@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, chmodSync, statSync } from 'fs'
 import { execFileSync, execSync } from 'child_process'
+import { sysbin } from './sysbin'
 import type {
   ProjectDeleteSpec,
   ProjectEnsureSpec,
@@ -87,7 +88,7 @@ export class ProjectLifecycle {
       const archiveDir = spec.archive_to || `${ARCHIVE_ROOT}/${spec.project_id}-${Date.now()}`
       ensureDir(ARCHIVE_ROOT, 0o700)
       try {
-        execFileSync('mv', [dir, archiveDir], { stdio: 'ignore' })
+        execFileSync(sysbin('mv'), [dir, archiveDir], { stdio: 'ignore' })
       } catch (err) {
         throw new Error(
           `archive failed for ${dir} -> ${archiveDir}: ${err instanceof Error ? err.message : err}`,
@@ -97,7 +98,7 @@ export class ProjectLifecycle {
 
     if (groupExists(group)) {
       try {
-        execFileSync('groupdel', [group], { stdio: 'ignore' })
+        execFileSync(sysbin('groupdel'), [group], { stdio: 'ignore' })
       } catch (err) {
         console.warn(
           `[supervisor] groupdel ${group} failed: ${err instanceof Error ? err.message : err}`,
@@ -110,21 +111,21 @@ export class ProjectLifecycle {
 
   private applyWorkspaceGroup(dir: string, gid: number): void {
     try {
-      execFileSync('chgrp', [String(gid), dir], { stdio: 'ignore' })
-      execFileSync('find', [
+      execFileSync(sysbin('chgrp'), [String(gid), dir], { stdio: 'ignore' })
+      execFileSync(sysbin('find'), [
         dir,
         '-mindepth', '1',
         '-not', '-path', `${dir}/.persistent-system*`,
         '-not', '-path', `${dir}/.secrets*`,
-        '-exec', 'chgrp', String(gid), '{}', '+',
+        '-exec', sysbin('chgrp'), String(gid), '{}', '+',
       ], { stdio: 'ignore' })
       chmodSync(dir, PROJECT_MODE)
-      execFileSync('find', [
+      execFileSync(sysbin('find'), [
         dir,
         '-type', 'd',
         '-not', '-path', `${dir}/.persistent-system*`,
         '-not', '-path', `${dir}/.secrets*`,
-        '-exec', 'chmod', 'g+s', '{}', '+',
+        '-exec', sysbin('chmod'), 'g+s', '{}', '+',
       ], { stdio: 'ignore' })
     } catch (err) {
       console.warn(
@@ -160,7 +161,7 @@ function ensureDir(dir: string, mode: number): void {
 function ensureGroup(name: string): void {
   if (groupExists(name)) return
   try {
-    execFileSync('groupadd', [name], { stdio: 'ignore' })
+    execFileSync(sysbin('groupadd'), [name], { stdio: 'ignore' })
   } catch (err) {
     if (!groupExists(name)) {
       throw new Error(
@@ -172,7 +173,7 @@ function ensureGroup(name: string): void {
 
 function groupExists(name: string): boolean {
   try {
-    execFileSync('getent', ['group', name], { stdio: 'ignore' })
+    execFileSync(sysbin('getent'), ['group', name], { stdio: 'ignore' })
     return true
   } catch {
     return false
@@ -180,7 +181,7 @@ function groupExists(name: string): boolean {
 }
 
 function getGroupGid(name: string): number {
-  const out = execFileSync('getent', ['group', name], { encoding: 'utf8' }).trim()
+  const out = execFileSync(sysbin('getent'), ['group', name], { encoding: 'utf8' }).trim()
   const parts = out.split(':')
   const gid = Number(parts[2])
   if (!Number.isFinite(gid)) throw new Error(`invalid gid for group ${name}`)
@@ -190,7 +191,7 @@ function getGroupGid(name: string): number {
 function ensureUserInGroup(username: string, group: string): void {
   if (userInGroup(username, group)) return
   try {
-    execFileSync('gpasswd', ['-a', username, group], { stdio: 'ignore' })
+    execFileSync(sysbin('gpasswd'), ['-a', username, group], { stdio: 'ignore' })
   } catch (err) {
     console.warn(
       `[supervisor] gpasswd -a ${username} ${group} failed: ${err instanceof Error ? err.message : err}`,
@@ -200,7 +201,7 @@ function ensureUserInGroup(username: string, group: string): void {
 
 function removeUserFromGroup(username: string, group: string): void {
   try {
-    execFileSync('gpasswd', ['-d', username, group], { stdio: 'ignore' })
+    execFileSync(sysbin('gpasswd'), ['-d', username, group], { stdio: 'ignore' })
   } catch (err) {
     console.warn(
       `[supervisor] gpasswd -d ${username} ${group} failed: ${err instanceof Error ? err.message : err}`,
@@ -210,7 +211,7 @@ function removeUserFromGroup(username: string, group: string): void {
 
 function userInGroup(username: string, group: string): boolean {
   try {
-    const out = execFileSync('id', ['-Gn', username], { encoding: 'utf8' })
+    const out = execFileSync(sysbin('id'), ['-Gn', username], { encoding: 'utf8' })
     return out.split(/\s+/).includes(group)
   } catch {
     return false
@@ -219,7 +220,7 @@ function userInGroup(username: string, group: string): boolean {
 
 function chownGroupRecursive(dir: string, gid: number): void {
   try {
-    execFileSync('chgrp', ['-R', String(gid), dir], { stdio: 'ignore' })
+    execFileSync(sysbin('chgrp'), ['-R', String(gid), dir], { stdio: 'ignore' })
   } catch (err) {
     console.warn(
       `[supervisor] chgrp -R ${gid} ${dir} failed: ${err instanceof Error ? err.message : err}`,
@@ -229,7 +230,7 @@ function chownGroupRecursive(dir: string, gid: number): void {
 
 function chownRecursive(dir: string, user: string, gid: number): void {
   try {
-    execFileSync('chown', ['-R', `${user}:${gid}`, dir], { stdio: 'ignore' })
+    execFileSync(sysbin('chown'), ['-R', `${user}:${gid}`, dir], { stdio: 'ignore' })
   } catch (err) {
     console.warn(
       `[supervisor] chown -R ${user}:${gid} ${dir} failed: ${err instanceof Error ? err.message : err}`,
@@ -239,7 +240,7 @@ function chownRecursive(dir: string, user: string, gid: number): void {
 
 function setgidRecursive(dir: string): void {
   try {
-    execFileSync('find', [dir, '-type', 'd', '-exec', 'chmod', 'g+s', '{}', '+'], {
+    execFileSync(sysbin('find'), [dir, '-type', 'd', '-exec', sysbin('chmod'), 'g+s', '{}', '+'], {
       stdio: 'ignore',
     })
   } catch (err) {
