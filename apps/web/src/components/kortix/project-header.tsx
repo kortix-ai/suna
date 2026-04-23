@@ -46,16 +46,16 @@ const V1_TABS: Array<{ id: ProjectTab; label: string }> = [
   { id: 'sessions', label: 'Sessions' },
 ];
 
+// Top-level tabs intentionally stay lean — 6 work surfaces users actually
+// scan every visit. Rarely-touched configuration (team, credentials,
+// triggers, board columns/fields/templates) lives inside Settings.
 const V2_TABS: Array<{ id: ProjectTab; label: string }> = [
   { id: 'about', label: 'About' },
   { id: 'board', label: 'Board' },
   { id: 'milestones', label: 'Milestones' },
-  { id: 'team', label: 'Team' },
-  { id: 'credentials', label: 'Credentials' },
-  { id: 'triggers', label: 'Triggers' },
-  { id: 'settings', label: 'Settings' },
   { id: 'files', label: 'Files' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 export function ProjectHeader({

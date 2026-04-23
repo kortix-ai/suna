@@ -71,11 +71,8 @@ import { NewTaskDialog } from '@/components/kortix/new-task-dialog';
 import { TicketBoard } from '@/components/kortix/ticket-board';
 import { TicketDetailDrawer } from '@/components/kortix/ticket-detail-drawer';
 import { NewTicketDialog } from '@/components/kortix/new-ticket-dialog';
-import { TeamTab } from '@/components/kortix/team-tab';
 import { MilestonesTab } from '@/components/kortix/milestones-tab';
-import { CredentialsTab } from '@/components/kortix/credentials-tab';
-import { TicketSettingsTab } from '@/components/kortix/ticket-settings-tab';
-import { TriggersTab } from '@/components/kortix/triggers-tab';
+import { ProjectSettingsTab } from '@/components/kortix/project-settings-tab';
 import { NotificationsBell } from '@/components/kortix/notifications-bell';
 import { useIsRouteActive } from '@/hooks/utils/use-is-route-active';
 
@@ -105,6 +102,9 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   }, [project?.id, isV2, userHandle, (project as any)?.user_handle]);
 
   const [tab, setTabState] = useState<ProjectTab>('about');
+  // Team/Credentials/Triggers live inside Settings now. If any caller passes
+  // those legacy values, route to Settings and pre-select the matching section.
+  const [settingsSection, setSettingsSection] = useState<'team' | 'credentials' | 'triggers' | 'board'>('team');
   const isProjectRouteActive = useIsRouteActive(`/projects/${encodeURIComponent(pid)}`);
 
   // ─── v1 state ──────────────────────────────────────────────────────────
@@ -199,7 +199,17 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
     }
   }, [tab, project?.path, projectFilesStore]);
 
-  const setTab = useCallback((next: ProjectTab) => setTabState(next), []);
+  const setTab = useCallback((next: ProjectTab) => {
+    // Legacy values from before the tab collapse — route them into Settings
+    // with the matching section pre-selected so old bookmarks / links still
+    // land on the right config pane.
+    if (next === 'team' || next === 'credentials' || next === 'triggers') {
+      setSettingsSection(next);
+      setTabState('settings');
+      return;
+    }
+    setTabState(next);
+  }, []);
   const openTask = useCallback((task: KortixTask) => setOpenTaskId(task.id), []);
   const closeTask = useCallback(() => setOpenTaskId(null), []);
   const openTicket = useCallback((t: Ticket) => setOpenTicketId(t.id), []);
@@ -367,17 +377,13 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
             <TabPanel active={tab === 'milestones'}>
               <MilestonesTab projectId={project.id} />
             </TabPanel>
-            <TabPanel active={tab === 'team'}>
-              <TeamTab projectId={project.id} />
-            </TabPanel>
-            <TabPanel active={tab === 'credentials'}>
-              <CredentialsTab projectId={project.id} />
-            </TabPanel>
-            <TabPanel active={tab === 'triggers'}>
-              <TriggersTab projectId={project.id} projectPath={project.path} />
-            </TabPanel>
             <TabPanel active={tab === 'settings'}>
-              <TicketSettingsTab projectId={project.id} />
+              <ProjectSettingsTab
+                projectId={project.id}
+                projectPath={project.path}
+                section={settingsSection}
+                onSectionChange={setSettingsSection}
+              />
             </TabPanel>
           </>
         )}
