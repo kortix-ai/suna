@@ -14,6 +14,20 @@ import { calculateCost, extractUsage } from '../services/llm';
 
 const proxy = new Hono();
 
+/**
+ * Strip hop-by-hop and transport-encoding headers that become invalid after
+ * Bun's fetch() auto-decompresses the upstream response body.
+ * Without this, clients see Content-Encoding: gzip on an already-decompressed
+ * body and get ZlibError when they try to decompress again.
+ */
+function stripTransportHeaders(headers: Headers): Headers {
+  const cleaned = new Headers(headers);
+  cleaned.delete('content-encoding');
+  cleaned.delete('content-length'); // length is wrong after decompression
+  cleaned.delete('transfer-encoding');
+  return cleaned;
+}
+
 const services = getProxyServices();
 
 for (const [prefix, serviceConfig] of Object.entries(services)) {
@@ -131,7 +145,7 @@ async function handleKortixProxy(
     return new Response(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
-      headers: upstream.headers,
+      headers: stripTransportHeaders(upstream.headers),
     });
   }
 
@@ -148,7 +162,7 @@ async function handleKortixProxy(
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
-    headers: upstream.headers,
+    headers: stripTransportHeaders(upstream.headers),
   });
 }
 
@@ -378,7 +392,7 @@ async function handleKortixPassthrough(
     return new Response(upstream.body, {
       status: upstream.status,
       statusText: upstream.statusText,
-      headers: upstream.headers,
+      headers: stripTransportHeaders(upstream.headers),
     });
   }
 
@@ -395,7 +409,7 @@ async function handleKortixPassthrough(
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
-    headers: upstream.headers,
+    headers: stripTransportHeaders(upstream.headers),
   });
 }
 
@@ -426,7 +440,7 @@ async function handlePassthrough(
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
-    headers: upstream.headers,
+    headers: stripTransportHeaders(upstream.headers),
   });
 }
 
