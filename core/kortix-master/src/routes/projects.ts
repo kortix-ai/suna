@@ -8,9 +8,95 @@
  */
 
 import { Hono } from 'hono'
-import { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
-import { basename, dirname, join } from 'path'
+import { basename } from 'path'
+import type { KortixUserContext } from '../services/kortix-user-context'
+import { hasScope } from '../services/permissions'
+import { getDb } from '../services/db'
+import {
+  deleteProjectWorkspace,
+  ensureProjectWorkspace,
+  grantProjectAccess,
+  revokeProjectAccess,
+} from '../services/project-access-client'
+import { getUidFor } from '../services/uid-map'
+import { WORKSPACE_ROOT } from '../services/workspace'
+
+const RESERVED_PATHS = new Set([
+  '/',
+  WORKSPACE_ROOT,
+  '/tmp',
+  '/opt',
+  '/srv',
+  '/srv/kortix',
+  '/home',
+  '/etc',
+  '/var',
+])
+
+function validateScopedProjectPath(raw: string): { ok: true } | { ok: false; reason: string } {
+  const normalized = (raw || '').trim().replace(/\/+$/, '')
+  if (!normalized) return { ok: false, reason: 'path is required' }
+  if (!normalized.startsWith('/')) return { ok: false, reason: 'path must be absolute' }
+  if (RESERVED_PATHS.has(normalized)) {
+    return { ok: false, reason: `path "${normalized}" is reserved` }
+  }
+  if (normalized === WORKSPACE_ROOT || normalized.includes('..')) {
+    return { ok: false, reason: `invalid path "${normalized}"` }
+  }
+  return { ok: true }
+}
+
+// Project ACL rule:
+//   - managers (owner / admin / platform_admin) see every project
+//   - plain members see only projects they have an explicit grant for
+//
+// No header at all = service-key / internal caller → bypass. Returns true
+// when the caller may see the project; callers render the deny response.
+function enforceProjectAccess(c: any, projectId: string): boolean {
+  const user = c.get('kortixUser') as KortixUserContext | undefined
+  if (!user) return true // service-key traffic
+  if (
+    user.sandboxRole === 'platform_admin' ||
+    user.sandboxRole === 'owner' ||
+    user.sandboxRole === 'admin'
+  ) {
+    return true
+  }
+  return userHasProjectGrant(projectId, user.userId)
+}
+
+function isProjectManager(c: any): boolean {
+  const user = c.get('kortixUser') as KortixUserContext | undefined
+  if (!user) return true // service-key path bypasses
+  return (
+    user.sandboxRole === 'platform_admin' ||
+    user.sandboxRole === 'owner' ||
+    user.sandboxRole === 'admin'
+  )
+}
+
+function userCan(c: any, scope: string): boolean {
+  const user = c.get('kortixUser') as KortixUserContext | undefined
+  return hasScope(user, scope)
+}
+
+/**
+ * Return the subset of `projectIds` visible to a non-manager user. Only
+ * projects with an explicit grant for this user pass through. Single
+ * indexed query.
+ */
+function filterVisibleProjectIdsForUser(projectIds: string[], user: KortixUserContext): string[] {
+  if (projectIds.length === 0) return projectIds
+  const db = getDb()
+  const placeholders = projectIds.map(() => '?').join(',')
+  const grantRows = db
+    .prepare(
+      `SELECT project_id FROM project_members WHERE user_id=? AND project_id IN (${placeholders})`,
+    )
+    .all(user.userId, ...projectIds) as Array<{ project_id: string }>
+  const allowedSet = new Set(grantRows.map((r) => r.project_id))
+  return projectIds.filter((pid) => allowedSet.has(pid))
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -19,52 +105,22 @@ interface ProjectRow {
   created_at: string; opencode_id: string | null
 }
 
-// ── DB singleton ─────────────────────────────────────────────────────────────
+// ── ACL helpers (used by the enforcement guard below) ──────────────────────
 
-let _db: Database | null = null
-
-function getDb(): Database {
-  if (_db) return _db
-
-  const workspace = process.env.KORTIX_WORKSPACE?.trim()
-    || process.env.OPENCODE_CONFIG_DIR?.replace(/\/opencode\/?$/, '')
-    || '/workspace'
-  const dbPath = join(workspace, '.kortix', 'kortix.db')
-
-  if (!existsSync(dirname(dbPath))) {
-    mkdirSync(dirname(dbPath), { recursive: true })
-  }
-
-  try {
-    const dbExists = existsSync(dbPath)
-    const dbEmpty = dbExists && statSync(dbPath).size === 0
-    if (!dbExists || dbEmpty) {
-      for (const suffix of ['', '-wal', '-shm', '-journal']) {
-        try { unlinkSync(dbPath + suffix) } catch {}
-      }
-    }
-  } catch {}
-
-  try {
-    _db = new Database(dbPath)
-  } catch {
-    for (const suffix of ['', '-wal', '-shm', '-journal']) {
-      try { unlinkSync(dbPath + suffix) } catch {}
-    }
-    _db = new Database(dbPath)
-  }
-
-  _db.exec('PRAGMA journal_mode=DELETE; PRAGMA busy_timeout=5000')
-
-  _db.exec(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
-      description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
-      opencode_id TEXT, maintainer_session_id TEXT
-    );
-  `)
-
-  return _db
+/**
+ * Does this user have an explicit grant on this project?
+ *
+ * Rule: managers (owner / admin / platform_admin) see everything unconditionally.
+ * Plain members only see a project when they are explicitly listed in
+ * project_members. No "open mode" fallback — if you want someone to see a
+ * project, add them.
+ */
+export function userHasProjectGrant(projectId: string, userId: string): boolean {
+  const db = getDb()
+  const row = db
+    .prepare('SELECT 1 as x FROM project_members WHERE project_id=$pid AND user_id=$uid')
+    .get({ $pid: projectId, $uid: userId }) as { x: number } | null
+  return !!row
 }
 
 // ── Router ───────────────────────────────────────────────────────────────────
@@ -73,21 +129,30 @@ const projectsRouter = new Hono()
 
 // POST / — create or ensure a project exists
 projectsRouter.post('/', async (c) => {
+  if (!userCan(c, 'projects:create')) {
+    return c.json({ error: 'Missing permission: projects:create' }, 403)
+  }
   try {
     const db = getDb()
     const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string }>().catch(() => ({}))
-    const projectPath = body.path?.trim() || '/workspace'
+    const rawPath = body.path?.trim() || ''
+
+    const validation = validateScopedProjectPath(rawPath)
+    if (!validation.ok) {
+      return c.json({ error: validation.reason }, 400)
+    }
+    const projectPath = rawPath.replace(/\/+$/, '')
+
     const existing = db.prepare('SELECT * FROM projects WHERE path=$path').get({ $path: projectPath }) as ProjectRow | null
     if (existing) return c.json(existing)
 
-    const fallbackName = projectPath === '/workspace' ? 'Workspace' : basename(projectPath) || 'Project'
-    const name = body.name?.trim() || fallbackName
+    const name = body.name?.trim() || basename(projectPath) || 'Project'
     const id = body.id?.trim() || `project_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
     const description = body.description ?? ''
     const createdAt = new Date().toISOString()
 
-    db.prepare(`INSERT INTO projects (id, name, path, description, created_at, opencode_id, maintainer_session_id)
-      VALUES ($id, $name, $path, $description, $createdAt, NULL, NULL)`)
+    db.prepare(`INSERT INTO projects (id, name, path, kind, description, created_at, opencode_id, maintainer_session_id)
+      VALUES ($id, $name, $path, 'scoped', $description, $createdAt, NULL, NULL)`)
       .run({
         $id: id,
         $name: name,
@@ -95,6 +160,19 @@ projectsRouter.post('/', async (c) => {
         $description: description,
         $createdAt: createdAt,
       })
+
+    try {
+      await ensureProjectWorkspace({
+        projectId: id,
+        kind: 'scoped',
+        members: [],
+        migrateFrom: projectPath,
+      })
+    } catch (err) {
+      console.warn(
+        `[projects] supervisor ensure failed for ${id}: ${err instanceof Error ? err.message : err}`,
+      )
+    }
 
     return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }))
   } catch (e) {
@@ -106,7 +184,15 @@ projectsRouter.post('/', async (c) => {
 projectsRouter.get('/', async (c) => {
   const db = getDb()
   const rows = db.prepare('SELECT * FROM projects ORDER BY created_at DESC').all() as ProjectRow[]
-  const enriched = rows.map((p) => {
+  // Filter out projects the caller can't see. Invisible to them by design —
+  // not 404, not 403. Managers and unauthenticated service traffic see everything.
+  const user = c.get('kortixUser') as KortixUserContext | undefined
+  let visible = rows
+  if (user && !isProjectManager(c)) {
+    const visibleIds = new Set(filterVisibleProjectIdsForUser(rows.map((r) => r.id), user))
+    visible = rows.filter((p) => visibleIds.has(p.id))
+  }
+  const enriched = visible.map((p) => {
     const sessionCount = (db.prepare(
       'SELECT COUNT(*) as c FROM session_projects WHERE project_id=$pid'
     ).get({ $pid: p.id }) as { c: number })?.c || 0
@@ -128,6 +214,11 @@ projectsRouter.get('/:id', async (c) => {
     || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
   ) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
+  if (!enforceProjectAccess(c, p.id)) {
+    // 404 instead of 403 so we don't confirm the project's existence to
+    // someone who shouldn't know it's there.
+    return c.json({ error: 'Project not found' }, 404)
+  }
 
   return c.json(p)
 })
@@ -143,6 +234,9 @@ projectsRouter.get('/:id/sessions', async (c) => {
     || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
   ) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
+  if (!enforceProjectAccess(c, p.id)) {
+    return c.json({ error: 'Project not found' }, 404)
+  }
 
   // Get session IDs linked to this project
   const links = db.prepare(
@@ -222,10 +316,24 @@ projectsRouter.delete('/:id', async (c) => {
     || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
   ) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
+  if (!enforceProjectAccess(c, p.id)) {
+    return c.json({ error: 'Project not found' }, 404)
+  }
+  if (!userCan(c, 'projects:delete')) {
+    return c.json({ error: 'Missing permission: projects:delete' }, 403)
+  }
 
-  // Clean up all related records
   try { db.prepare('DELETE FROM session_projects WHERE project_id=$pid').run({ $pid: p.id }) } catch {}
+  try { db.prepare('DELETE FROM project_members WHERE project_id=$pid').run({ $pid: p.id }) } catch {}
   db.prepare('DELETE FROM projects WHERE id=$id').run({ $id: p.id })
+
+  try {
+    await deleteProjectWorkspace({ projectId: p.id })
+  } catch (err) {
+    console.warn(
+      `[projects] supervisor delete failed for ${p.id}: ${err instanceof Error ? err.message : err}`,
+    )
+  }
 
   return c.json({ deleted: true, name: p.name, path: p.path })
 })
@@ -237,6 +345,12 @@ projectsRouter.patch('/:id', async (c) => {
   const body = await c.req.json<{ name?: string; description?: string }>()
   const p = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
+  if (!enforceProjectAccess(c, p.id)) {
+    return c.json({ error: 'Project not found' }, 404)
+  }
+  if (!userCan(c, 'projects:rename')) {
+    return c.json({ error: 'Missing permission: projects:rename' }, 403)
+  }
 
   if (body.name !== undefined) {
     db.prepare('UPDATE projects SET name=$n WHERE id=$id').run({ $n: body.name, $id: id })
@@ -278,6 +392,112 @@ projectsRouter.post('/:id/link-session', async (c) => {
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
+})
+
+// ─── Project members (local ACL) ─────────────────────────────────────────────
+// GET/POST/DELETE /:id/members. Manager-gated: owner / admin / platform_admin.
+// Target user ids are supabase auth user ids — we don't validate existence,
+// we just store the grant. Email hydration happens client-side by joining
+// against the already-fetched sandbox member list.
+
+function resolveProject(id: string): ProjectRow | null {
+  const db = getDb()
+  return (
+    db.prepare('SELECT * FROM projects WHERE id=$v').get({ $v: id })
+    || db.prepare('SELECT * FROM projects WHERE opencode_id=$v').get({ $v: id })
+    || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
+  ) as ProjectRow | null
+}
+
+projectsRouter.get('/:id/members', async (c) => {
+  if (!userCan(c, 'projects:access.manage')) {
+    return c.json({ error: 'Missing permission: projects:access.manage' }, 403)
+  }
+  const p = resolveProject(decodeURIComponent(c.req.param('id')))
+  if (!p) return c.json({ error: 'Project not found' }, 404)
+  const db = getDb()
+  const rows = db
+    .prepare('SELECT * FROM project_members WHERE project_id=$pid ORDER BY added_at ASC')
+    .all({ $pid: p.id }) as Array<{
+      project_id: string
+      user_id: string
+      role: string
+      added_by: string | null
+      added_at: string
+    }>
+  return c.json({
+    project_id: p.id,
+    members: rows.map((r) => ({
+      user_id: r.user_id,
+      role: r.role,
+      added_by: r.added_by,
+      added_at: r.added_at,
+    })),
+  })
+})
+
+projectsRouter.post('/:id/members', async (c) => {
+  if (!userCan(c, 'projects:access.manage')) {
+    return c.json({ error: 'Missing permission: projects:access.manage' }, 403)
+  }
+  const p = resolveProject(decodeURIComponent(c.req.param('id')))
+  if (!p) return c.json({ error: 'Project not found' }, 404)
+  const body = await c.req.json<{ user_id?: string; role?: string }>().catch(() => ({}))
+  const targetUserId = typeof body.user_id === 'string' ? body.user_id.trim() : ''
+  if (!targetUserId) return c.json({ error: 'user_id is required' }, 400)
+  const role = body.role === 'admin' ? 'admin' : 'member'
+  const addedBy = (c.get('kortixUser') as KortixUserContext | undefined)?.userId ?? null
+
+  const db = getDb()
+  db.prepare(
+    `INSERT INTO project_members (project_id, user_id, role, added_by)
+     VALUES ($pid, $uid, $role, $by)
+     ON CONFLICT(project_id, user_id) DO UPDATE SET role=$role`,
+  ).run({ $pid: p.id, $uid: targetUserId, $role: role, $by: addedBy })
+
+  const uid = getUidFor(targetUserId)
+  if (uid) {
+    try {
+      await grantProjectAccess({ projectId: p.id, username: uid.username, linuxUid: uid.linuxUid })
+    } catch (err) {
+      console.warn(
+        `[projects] supervisor grant failed for ${targetUserId} on ${p.id}: ${err instanceof Error ? err.message : err}`,
+      )
+    }
+  }
+
+  return c.json({ ok: true, project_id: p.id, user_id: targetUserId, role })
+})
+
+projectsRouter.delete('/:id/members/:userId', async (c) => {
+  if (!userCan(c, 'projects:access.manage')) {
+    return c.json({ error: 'Missing permission: projects:access.manage' }, 403)
+  }
+  const p = resolveProject(decodeURIComponent(c.req.param('id')))
+  if (!p) return c.json({ error: 'Project not found' }, 404)
+  const userId = c.req.param('userId')
+  const db = getDb()
+  db.prepare('DELETE FROM project_members WHERE project_id=$pid AND user_id=$uid').run({
+    $pid: p.id,
+    $uid: userId,
+  })
+
+  const uid = getUidFor(userId)
+  if (uid) {
+    try {
+      await revokeProjectAccess({
+        projectId: p.id,
+        username: uid.username,
+        supabaseUserId: userId,
+      })
+    } catch (err) {
+      console.warn(
+        `[projects] supervisor revoke failed for ${userId} on ${p.id}: ${err instanceof Error ? err.message : err}`,
+      )
+    }
+  }
+
+  return c.json({ ok: true })
 })
 
 export default projectsRouter

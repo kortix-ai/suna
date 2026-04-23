@@ -11,6 +11,7 @@ import {
   KeyRound,
   Loader2,
   Cpu,
+  Folder,
   MemoryStick,
   RotateCw,
   RefreshCw,
@@ -18,6 +19,7 @@ import {
   Settings2,
   Shield,
   TriangleAlert,
+  Users,
   WifiOff,
   X,
 } from 'lucide-react';
@@ -28,6 +30,7 @@ import {
   createBackup,
   getLatestSandboxVersion,
   getSSHConnection,
+  renameSandbox,
   restartSandbox,
   setupSSH,
   stopSandbox,
@@ -37,6 +40,9 @@ import {
   type SSHSetupResult,
 } from '@/lib/platform-client';
 import { hasNewerVersion, InstanceUpdateDialog } from './instance-update-dialog';
+import { useCan } from '@/hooks/platform/use-can';
+import { InstanceMembersPanel } from './instance-members-panel';
+import { InstanceProjectsPanel } from './instance-projects-panel';
 import { VersionHistoryPanel } from '@/components/changelog/version-history-panel';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxAction, useAdminSandboxDetail, useAdminSandboxHealth, useAdminSandboxRepair, type AdminInstanceLayerAction, type AdminInstanceLayerHealth } from '@/hooks/admin/use-admin-sandboxes';
@@ -57,7 +63,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useServerStore } from '@/stores/server-store';
 
-type TabId = 'overview' | 'host' | 'updates' | 'backups';
+type TabId = 'overview' | 'host' | 'members' | 'projects' | 'updates' | 'backups';
 
 interface TabDef {
   id: TabId;
@@ -453,6 +459,44 @@ export function InstanceSettingsModal({
   const isJustAVPS = sandbox?.provider === 'justavps';
   const supportsBackups = !!sandbox && isJustAVPS && ['active', 'stopped'].includes(sandbox.status);
   const supportsUpdates = !!sandbox && isJustAVPS && ['active', 'stopped', 'error'].includes(sandbox.status);
+  const canManageSandbox = Boolean(sandbox?.can_manage);
+  const canUpgrade = useCan(sandbox?.sandbox_id ?? null, 'sandbox:upgrade');
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  useEffect(() => {
+    // Drop any in-flight rename draft when the viewed sandbox changes or the
+    // modal closes; otherwise the next sandbox picks up a stale value.
+    setIsEditingName(false);
+    setNameDraft('');
+  }, [open, sandbox?.sandbox_id]);
+
+  const renameMutation = useMutation({
+    mutationFn: (nextName: string) => renameSandbox(sandbox!.sandbox_id, nextName),
+    onSuccess: () => {
+      setIsEditingName(false);
+      sonnerToast.success('Instance renamed');
+      queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox', 'detail'] });
+    },
+    onError: (err) => {
+      sonnerToast.error(err instanceof Error ? err.message : 'Failed to rename');
+    },
+  });
+
+  function submitRename() {
+    if (!sandbox) return;
+    const trimmed = nameDraft.trim();
+    if (!trimmed) {
+      setIsEditingName(false);
+      return;
+    }
+    if (trimmed === sandbox.name) {
+      setIsEditingName(false);
+      return;
+    }
+    renameMutation.mutate(trimmed);
+  }
 
   const adminDetailQuery = useAdminSandboxDetail(open && isAdmin && sandbox?.sandbox_id ? sandbox.sandbox_id : null);
   const adminHealthQuery = useAdminSandboxHealth(open && isAdmin && sandbox?.sandbox_id ? sandbox.sandbox_id : null, open && !!sandbox && isAdmin && isJustAVPS);
@@ -491,9 +535,12 @@ export function InstanceSettingsModal({
   const tabs = useMemo<TabDef[]>(() => [
     { id: 'overview', label: 'General', icon: Settings2 },
     { id: 'host', label: 'Health', icon: Server },
+    { id: 'members', label: 'Members', icon: Users },
+    // Projects tab is owner-only (Phase 2 ACL is strictly an owner tool).
+    { id: 'projects', label: 'Projects', icon: Folder, hidden: !canManageSandbox },
     { id: 'updates', label: 'Updates', icon: ArrowDownToLine, hidden: !supportsUpdates },
     { id: 'backups', label: 'Backups', icon: Archive, hidden: !supportsBackups },
-  ], [supportsBackups, supportsUpdates]);
+  ], [canManageSandbox, supportsBackups, supportsUpdates]);
 
   const visibleTabs = tabs.filter((tab) => !tab.hidden);
   const sandboxUrl = useMemo(() => {
@@ -1040,7 +1087,40 @@ export function InstanceSettingsModal({
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Name</div>
-                <div className="font-medium">{sandbox.name || 'Untitled instance'}</div>
+                {isEditingName ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      autoFocus
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') submitRename();
+                        if (e.key === 'Escape') setIsEditingName(false);
+                      }}
+                      onBlur={submitRename}
+                      disabled={renameMutation.isPending}
+                      maxLength={255}
+                      className="h-8"
+                    />
+                    {renameMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    ) : null}
+                  </div>
+                ) : canManageSandbox ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNameDraft(sandbox.name || '');
+                      setIsEditingName(true);
+                    }}
+                    className="text-left font-medium hover:text-foreground/80 transition-colors"
+                    title="Click to rename"
+                  >
+                    {sandbox.name || 'Untitled instance'}
+                  </button>
+                ) : (
+                  <div className="font-medium">{sandbox.name || 'Untitled instance'}</div>
+                )}
               </div>
               <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Init status</div>
@@ -1348,6 +1428,14 @@ export function InstanceSettingsModal({
       );
     }
 
+    if (activeTab === 'members') {
+      return <InstanceMembersPanel sandboxId={sandbox.sandbox_id} />;
+    }
+
+    if (activeTab === 'projects') {
+      return <InstanceProjectsPanel sandbox={sandbox} canManage={canManageSandbox} />;
+    }
+
     if (activeTab === 'updates') {
       return (
         <div className="p-6 space-y-6">
@@ -1382,12 +1470,20 @@ export function InstanceSettingsModal({
             </p>
           </div>
 
+          {!canUpgrade.loading && !canUpgrade.allowed ? (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-100">
+              You don't have permission to run updates on this instance.
+            </div>
+          ) : null}
+
           <VersionHistoryPanel
             currentVersion={effectiveVersion}
             latestVersion={latestVersion}
-            updateAvailable={updateAvailable}
+            updateAvailable={updateAvailable && canUpgrade.allowed}
             isUpdating={false}
-            onUpdateLatest={() => setUpdateDialogOpen(true)}
+            onUpdateLatest={
+              canUpgrade.allowed ? () => setUpdateDialogOpen(true) : undefined
+            }
             initialShowDev={(effectiveVersion || '').startsWith('dev-')}
             compact
             headerTitle="Versions"

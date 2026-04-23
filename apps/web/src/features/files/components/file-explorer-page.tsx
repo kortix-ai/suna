@@ -54,6 +54,8 @@ import { FileSearch } from './file-search';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { DRAG_MIME } from './file-tree-item';
+import { WorkspacePicker } from './workspace-picker';
+import { useDefaultWorkspace } from '../hooks/use-workspaces';
 
 /**
  * Google Drive-style file explorer page.
@@ -87,6 +89,19 @@ export function FileExplorerPage() {
 
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const { data: health, isLoading: isHealthLoading, refetch } = useServerHealth();
+
+  const defaultWorkspace = useDefaultWorkspace();
+  const didAutoJumpRef = useRef(false);
+  useEffect(() => {
+    if (didAutoJumpRef.current) return;
+    if (!defaultWorkspace) return;
+    if (currentPath === '/workspace') {
+      didAutoJumpRef.current = true;
+      navigateToPath(defaultWorkspace.path);
+    } else {
+      didAutoJumpRef.current = true;
+    }
+  }, [defaultWorkspace, currentPath, navigateToPath]);
 
   useFileEventInvalidation();
 
@@ -565,7 +580,8 @@ export function FileExplorerPage() {
       onDragOver={handlePageDragOver}
       onDrop={handlePageDrop}
     >
-      {/* Toolbar */}
+      <WorkspacePicker currentPath={currentPath} onSelect={(w) => navigateToPath(w.path)} />
+
       <DriveToolbar
         onUpload={handleUpload}
         onNewFolder={() => { setNewFolderName('New Folder'); setIsCreatingFolder(true); }}

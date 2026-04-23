@@ -810,9 +810,8 @@ export class ServiceManager {
   }) {
     this.registryFile = options?.registryFile || REGISTRY_FILE;
     this.logsDir = options?.logsDir || LOG_DIR;
-    this.builtins =
-      options?.builtins?.map(cloneServiceSpec) ||
-      BUILTIN_SERVICES.map(cloneServiceSpec);
+    const source = options?.builtins || BUILTIN_SERVICES;
+    this.builtins = source.map(cloneServiceSpec);
   }
 
   private ensureStorage(): void {

@@ -105,6 +105,8 @@ export interface SandboxInfo {
   auto_update?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  /** True when the current viewer is the account owner (or a platform admin) — gates rename/manage UI. */
+  can_manage?: boolean;
 }
 
 function normalizeSandboxId(value: unknown): string | undefined {
@@ -431,6 +433,378 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
     };
   } catch {
     return null;
+  }
+}
+
+export async function renameSandbox(sandboxId: string, name: string): Promise<SandboxInfo> {
+  const result = await platformFetch<SandboxInfo>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to rename sandbox');
+  }
+  return result.data;
+}
+
+// ─── Sandbox members (team access) ───────────────────────────────────────────
+
+export type SandboxMemberRole = 'owner' | 'admin' | 'member';
+
+export interface SandboxMember {
+  user_id: string;
+  email: string | null;
+  role: SandboxMemberRole | null;
+  added_by: string | null;
+  added_at: string;
+  monthly_spend_cap_cents?: number | null;
+  current_period_cents?: number;
+}
+
+export interface SandboxPendingInvite {
+  invite_id: string;
+  email: string;
+  role: 'admin' | 'member';
+  invited_by: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface SandboxMembersResponse {
+  sandbox_id: string;
+  can_manage: boolean;
+  viewer_user_id: string;
+  members: SandboxMember[];
+  pending_invites: SandboxPendingInvite[];
+}
+
+export interface AddSandboxMemberResult {
+  status: 'added' | 'invited';
+  user_id?: string;
+  email?: string;
+  role?: 'admin' | 'member';
+}
+
+export async function listSandboxMembers(sandboxId: string): Promise<SandboxMembersResponse> {
+  const result = await platformFetch<SandboxMembersResponse>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members`,
+    { method: 'GET' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to list members');
+  }
+  return result.data;
+}
+
+export async function addSandboxMember(
+  sandboxId: string,
+  email: string,
+  role: 'admin' | 'member' = 'member',
+): Promise<AddSandboxMemberResult> {
+  const result = await platformFetch<AddSandboxMemberResult>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to add member');
+  }
+  return result.data;
+}
+
+export async function removeSandboxMember(sandboxId: string, userId: string): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to remove member');
+  }
+}
+
+export async function updateSandboxMemberRole(
+  sandboxId: string,
+  userId: string,
+  role: SandboxMemberRole,
+): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to change role');
+  }
+}
+
+export async function updateSandboxMemberSpendCap(
+  sandboxId: string,
+  userId: string,
+  capCents: number | null,
+): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ monthly_spend_cap_cents: capCents }),
+    },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to update spending cap');
+  }
+}
+
+export type ScopeEffect = 'grant' | 'revoke' | null;
+
+export interface SandboxScopeCatalogEntry {
+  scope: string;
+  label: string;
+  description: string;
+  group: string;
+}
+
+export interface SandboxMemberScopes {
+  sandbox_id: string;
+  user_id: string;
+  role: 'owner' | 'admin' | 'member' | null;
+  inherited: string[];
+  grants: string[];
+  revokes: string[];
+  effective: string[];
+  catalog: SandboxScopeCatalogEntry[];
+  groups: Record<string, string[]>;
+}
+
+export interface SandboxViewerScopes {
+  sandbox_id: string;
+  role: 'owner' | 'admin' | 'member' | null;
+  scopes: string[];
+}
+
+export async function getViewerSandboxScopes(
+  sandboxId: string,
+): Promise<SandboxViewerScopes> {
+  const result = await platformFetch<SandboxViewerScopes>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/me/scopes`,
+    { method: 'GET' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to load scopes');
+  }
+  return result.data;
+}
+
+export async function getSandboxMemberScopes(
+  sandboxId: string,
+  userId: string,
+): Promise<SandboxMemberScopes> {
+  const result = await platformFetch<SandboxMemberScopes>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}/scopes`,
+    { method: 'GET' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to load scopes');
+  }
+  return result.data;
+}
+
+export async function updateSandboxMemberScope(
+  sandboxId: string,
+  userId: string,
+  scope: string,
+  effect: ScopeEffect,
+): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}/scopes`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ scope, effect }),
+    },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to update scope');
+  }
+}
+
+export interface SandboxProjectSummary {
+  id: string;
+  name: string;
+  path: string;
+  description?: string;
+  created_at?: string;
+  opencode_id?: string | null;
+  sessionCount?: number;
+}
+
+
+export async function listSandboxProjects(sandbox: SandboxInfo): Promise<SandboxProjectSummary[]> {
+  const base = getSandboxUrl(sandbox);
+  const res = await authenticatedFetch(`${base.replace(/\/+$/, '')}/kortix/projects`, {
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(body || `Failed to list projects (${res.status})`);
+  }
+  const data = await res.json();
+  return Array.isArray(data) ? (data as SandboxProjectSummary[]) : [];
+}
+
+// ─── Per-project ACL inside a sandbox ────────────────────────────────────────
+//
+// The ACL lives in kortix-master's sqlite next to the projects it governs, so
+// these helpers talk to kortix-master via the preview proxy. Emails aren't
+// known inside the sandbox — hydrate them client-side by joining against the
+// sandbox member list (which does carry emails).
+
+export interface SandboxProjectMember {
+  user_id: string;
+  role: 'owner' | 'admin' | 'member';
+  added_by: string | null;
+  added_at: string;
+}
+
+export interface SandboxProjectMembersResponse {
+  project_id: string;
+  members: SandboxProjectMember[];
+}
+
+async function fetchKortixMaster<T>(
+  sandbox: SandboxInfo,
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const base = getSandboxUrl(sandbox);
+  const res = await authenticatedFetch(`${base.replace(/\/+$/, '')}${path}`, {
+    signal: AbortSignal.timeout(8_000),
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(body || `Request failed (${res.status})`);
+  }
+  return (await res.json()) as T;
+}
+
+export async function listSandboxProjectMembers(
+  sandbox: SandboxInfo,
+  projectId: string,
+): Promise<SandboxProjectMembersResponse> {
+  return fetchKortixMaster<SandboxProjectMembersResponse>(
+    sandbox,
+    `/kortix/projects/${encodeURIComponent(projectId)}/members`,
+    { method: 'GET' },
+  );
+}
+
+export async function grantSandboxProjectAccess(
+  sandbox: SandboxInfo,
+  projectId: string,
+  userId: string,
+  role: 'admin' | 'member' = 'member',
+): Promise<void> {
+  await fetchKortixMaster<void>(
+    sandbox,
+    `/kortix/projects/${encodeURIComponent(projectId)}/members`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, role }),
+    },
+  );
+}
+
+export async function revokeSandboxProjectAccess(
+  sandbox: SandboxInfo,
+  projectId: string,
+  userId: string,
+): Promise<void> {
+  await fetchKortixMaster<void>(
+    sandbox,
+    `/kortix/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function revokeSandboxInvite(sandboxId: string, inviteId: string): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/invites/${encodeURIComponent(inviteId)}`,
+    { method: 'DELETE' },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to revoke invite');
+  }
+}
+
+// ─── Invite accept/decline ───────────────────────────────────────────────────
+
+// Visible form — viewer is the intended recipient, so all details are returned.
+export interface InviteDetailsVisible {
+  invite_id: string;
+  sandbox_id: string;
+  sandbox_name: string | null;
+  email: string;
+  inviter_email: string | null;
+  created_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+  email_matches_caller: true;
+  expired: boolean;
+}
+
+// Redacted form — viewer is signed in as someone else. We never leak which
+// account or address an invite belongs to if the viewer isn't the recipient.
+export interface InviteDetailsRedacted {
+  invite_id: string;
+  sandbox_id: null;
+  sandbox_name: null;
+  email: null;
+  inviter_email: null;
+  created_at: null;
+  expires_at: null;
+  accepted_at: string | null;
+  email_matches_caller: false;
+  expired: boolean;
+}
+
+export type InviteDetails = InviteDetailsVisible | InviteDetailsRedacted;
+
+export async function getInvite(inviteId: string): Promise<InviteDetails> {
+  const result = await platformFetch<InviteDetails>(
+    `/platform/invites/${encodeURIComponent(inviteId)}`,
+    { method: 'GET' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Invite not found');
+  }
+  return result.data;
+}
+
+export async function acceptInvite(inviteId: string): Promise<{ status: string; sandbox_id: string }> {
+  const result = await platformFetch<{ status: string; sandbox_id: string }>(
+    `/platform/invites/${encodeURIComponent(inviteId)}/accept`,
+    { method: 'POST' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to accept invite');
+  }
+  return result.data;
+}
+
+export async function declineInvite(inviteId: string): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/invites/${encodeURIComponent(inviteId)}/decline`,
+    { method: 'POST' },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to decline invite');
   }
 }
 

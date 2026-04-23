@@ -29,7 +29,7 @@ async function requireAccessibleJustavpsSandbox(
   getProvider: (name: ProviderName) => SandboxProvider,
   resolveAccountId: (userId: string) => Promise<string>,
 ) {
-  const { sandbox } = await findAccessibleSandboxForUser({
+  const { sandbox, access } = await findAccessibleSandboxForUser({
     db,
     userId,
     sandboxId,
@@ -37,6 +37,11 @@ async function requireAccessibleJustavpsSandbox(
   });
 
   if (!sandbox) return { error: 'Sandbox not found', status: 404 as const };
+  const isOwner =
+    access.isPlatformAdmin || access.ownerAccountIds.includes(sandbox.accountId);
+  if (!isOwner) {
+    return { error: 'Only the owner can manage backups', status: 403 as const };
+  }
   if (!sandbox.externalId) return { error: 'Sandbox has no external ID', status: 400 as const };
   if (sandbox.provider !== 'justavps') return { error: 'Backups are only supported for cloud sandboxes', status: 400 as const };
 

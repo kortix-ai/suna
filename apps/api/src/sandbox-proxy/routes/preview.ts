@@ -4,7 +4,14 @@ import { eq, and, ne } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
-import { canAccessPreviewSandbox } from '../../shared/preview-ownership';
+import {
+  canAccessPreviewSandbox,
+  resolvePreviewUserContext,
+} from '../../shared/preview-ownership';
+import {
+  encodeKortixUserContext,
+  KORTIX_USER_CONTEXT_HEADER,
+} from '../../shared/kortix-user-context';
 
 interface PreviewProxyContext {
   userId: string;
@@ -187,6 +194,30 @@ export async function proxyToDaytona(
       // This replaces the user's Supabase JWT with the sandbox's INTERNAL_SERVICE_KEY.
       if (serviceKey) {
         headers.set('Authorization', `Bearer ${serviceKey}`);
+      }
+
+      // Forward a signed identity context so kortix-master can enforce
+      // per-user authorization (project ACL + session scoping) without
+      // calling back to the API on every request. Only attached when we
+      // have both a real user and a shared secret — anonymous/service-only
+      // requests (share URLs, webhooks) proxy through unchanged.
+      if (userId && serviceKey) {
+        const payload = await resolvePreviewUserContext(sandboxId, userId);
+        if (payload) {
+          const signed = encodeKortixUserContext(payload, serviceKey);
+          headers.set(KORTIX_USER_CONTEXT_HEADER, signed);
+          console.log(
+            `[PREVIEW] signing X-Kortix-User-Context user=${userId} sandbox=${sandboxId} role=${payload.sandboxRole} tokenPrefix=${signed.slice(0, 16)}`,
+          );
+        } else {
+          console.log(
+            `[PREVIEW] no signed context resolved user=${userId} sandbox=${sandboxId} (denied or anonymous)`,
+          );
+        }
+      } else {
+        console.log(
+          `[PREVIEW] skipping signed context userId=${userId ?? 'none'} hasServiceKey=${!!serviceKey}`,
+        );
       }
 
       // Tell the sandbox what the public proxy base URL is so it can set the

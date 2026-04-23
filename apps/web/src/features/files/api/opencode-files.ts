@@ -270,21 +270,26 @@ export interface UploadResult {
  * @param file - The file or blob to upload
  * @param targetPath - Optional target directory (relative to project root)
  */
+export interface UploadOptions {
+  targetPath?: string;
+  sessionId?: string;
+}
+
 export async function uploadFile(
   file: File | Blob,
-  targetPath?: string,
+  options: string | UploadOptions = {},
 ): Promise<UploadResult[]> {
+  const opts: UploadOptions =
+    typeof options === 'string' ? { targetPath: options } : options;
   const baseUrl = getActiveOpenCodeUrl();
-  const rawPath = (targetPath ?? '').trim();
-  const normalizedPath =
-    !rawPath || rawPath === '/' || rawPath === '.'
-      ? '/workspace'
-      : rawPath.startsWith('/')
-        ? rawPath
-        : `/${rawPath}`;
 
   const form = new FormData();
-  form.append('path', normalizedPath);
+  const rawPath = (opts.targetPath ?? '').trim();
+  if (rawPath) {
+    const normalizedPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+    form.append('path', normalizedPath);
+  }
+  if (opts.sessionId) form.append('session_id', opts.sessionId);
   form.append('file', file);
 
   const res = await authenticatedFetch(`${baseUrl}/file/upload`, {

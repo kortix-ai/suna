@@ -32,6 +32,7 @@ import {
 import { useFilesStore } from '../store/files-store';
 import { useCurrentProject } from '../hooks';
 import { useInvalidateFileList } from '../hooks/use-file-list';
+import { useWorkspaces, friendlyBreadcrumbs } from '../hooks/use-workspaces';
 import { cn } from '@/lib/utils';
 import type { SortField } from '../store/files-store';
 
@@ -72,18 +73,21 @@ export function DriveToolbar({
 
   // Home destination: rootPath when sandboxed, otherwise /workspace
   const homePath = rootPath || '/workspace';
+  const { data: workspaces } = useWorkspaces();
+  const friendly = useMemo(
+    () => friendlyBreadcrumbs(workspaces, currentPath),
+    [workspaces, currentPath],
+  );
+
   const homeLabel = rootPath
     ? rootPath.split('/').filter(Boolean).pop() || 'root'
     : '/workspace';
 
-  // Breadcrumb segments
   const isRoot = currentPath === '/' || currentPath === '.' || currentPath === '';
   const allSegments = useMemo(
     () => (isRoot ? [] : currentPath.split('/').filter(Boolean)),
     [isRoot, currentPath],
   );
-
-  // When rootPath is set, only show segments at or below it
   const rootSegments = useMemo(
     () => (rootPath ? rootPath.split('/').filter(Boolean) : []),
     [rootPath],
@@ -162,42 +166,40 @@ export function DriveToolbar({
             onDoubleClick={handleDoubleClick}
             title="Double-click to edit path"
           >
-            {/* Home / root */}
-            <Button
-              onClick={() => navigateToPath(homePath)}
-              variant="ghost"
-              size="sm"
-              className={cn(
-                'gap-1.5 shrink-0',
-                segments.length === 0 ? 'text-foreground font-medium' : 'text-muted-foreground',
-              )}
-            >
-              <Home className="h-4 w-4" />
-              <span className="font-mono text-xs">{rootPath ? homeLabel : '/workspace'}</span>
-            </Button>
-
-            {segments.map((segment, index) => {
-              // Skip 'workspace' only when not sandboxed (rootPath null)
-              if (!rootPath && index === 0 && segment === 'workspace') return null;
-              const isLast = index === segments.length - 1;
-
-              return (
-                <div key={index} className="flex items-center gap-0.5 min-w-0 shrink-0">
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-                  <Button
-                    onClick={() => handleSegmentClick(index)}
-                    variant="ghost"
-                    size="sm"
-                    className={cn(
-                      'truncate max-w-[200px]',
-                      isLast ? 'text-foreground font-medium' : 'text-muted-foreground',
-                    )}
-                  >
-                    {segment}
-                  </Button>
-                </div>
-              );
-            })}
+            {friendly.length > 0 ? (
+              friendly.map((crumb, index) => {
+                const isLast = index === friendly.length - 1;
+                return (
+                  <div key={crumb.path} className="flex items-center gap-0.5 min-w-0 shrink-0">
+                    {index > 0 ? (
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                    ) : null}
+                    <Button
+                      onClick={() => navigateToPath(crumb.path)}
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        'gap-1.5 shrink-0 truncate max-w-[220px]',
+                        isLast ? 'text-foreground font-medium' : 'text-muted-foreground',
+                      )}
+                    >
+                      {crumb.isRoot ? <Home className="h-4 w-4" /> : null}
+                      <span className={crumb.isRoot ? 'text-xs' : 'text-xs'}>{crumb.label}</span>
+                    </Button>
+                  </div>
+                );
+              })
+            ) : (
+              <Button
+                onClick={() => navigateToPath(homePath)}
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 shrink-0 text-foreground font-medium"
+              >
+                <Home className="h-4 w-4" />
+                <span className="font-mono text-xs">{rootPath ? homeLabel : '/workspace'}</span>
+              </Button>
+            )}
           </nav>
         )}
       </div>

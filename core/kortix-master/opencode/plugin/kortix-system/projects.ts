@@ -12,6 +12,11 @@ import * as path from "node:path"
 import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { ensureGlobalMemoryFiles } from "./lib/paths"
 import { ensureSchema } from "./lib/schema"
+import { canForSession, denyMessage } from "./lib/scope-check"
+import {
+	deleteProjectWorkspace,
+	ensureProjectWorkspace,
+} from "../../../src/services/project-access-client"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -139,13 +144,14 @@ export function initProjectsDb(dbPath: string): Database {
 	db.exec("PRAGMA journal_mode=DELETE; PRAGMA busy_timeout=5000")
 
 	ensureSchema(db, "projects", [
-		{ name: "id",          type: "TEXT", notNull: true,  defaultValue: null,   primaryKey: true },
-		{ name: "name",        type: "TEXT", notNull: true,  defaultValue: null,   primaryKey: false },
-		{ name: "path",        type: "TEXT", notNull: true,  defaultValue: null,   primaryKey: false, unique: true },
-		{ name: "description", type: "TEXT", notNull: true,  defaultValue: "''",   primaryKey: false },
-		{ name: "created_at",  type: "TEXT", notNull: true,  defaultValue: null,   primaryKey: false },
-		{ name: "opencode_id", type: "TEXT", notNull: false, defaultValue: null,   primaryKey: false },
-		{ name: "maintainer_session_id", type: "TEXT", notNull: false, defaultValue: null,   primaryKey: false },
+		{ name: "id",          type: "TEXT", notNull: true,  defaultValue: null,      primaryKey: true },
+		{ name: "name",        type: "TEXT", notNull: true,  defaultValue: null,      primaryKey: false },
+		{ name: "path",        type: "TEXT", notNull: true,  defaultValue: null,      primaryKey: false, unique: true },
+		{ name: "description", type: "TEXT", notNull: true,  defaultValue: "''",      primaryKey: false },
+		{ name: "created_at",  type: "TEXT", notNull: true,  defaultValue: null,      primaryKey: false },
+		{ name: "opencode_id", type: "TEXT", notNull: false, defaultValue: null,      primaryKey: false },
+		{ name: "maintainer_session_id", type: "TEXT", notNull: false, defaultValue: null, primaryKey: false },
+		{ name: "kind",        type: "TEXT", notNull: true,  defaultValue: "'scoped'", primaryKey: false },
 	])
 
 	ensureSchema(db, "session_projects", [
@@ -254,14 +260,31 @@ export class ProjectManager {
 	}
 
 	listProjects(): ProjectRow[] {
-		return this.db.prepare("SELECT * FROM projects ORDER BY created_at DESC").all() as ProjectRow[]
+		const all = this.db
+			.prepare("SELECT * FROM projects ORDER BY created_at DESC")
+			.all() as ProjectRow[]
+		return this.filterForCurrentMember(all)
 	}
 
 	getProject(q: string): ProjectRow | null {
-		return (this.db.prepare("SELECT * FROM projects WHERE path=$v").get({ $v: q })
+		const hit = (this.db.prepare("SELECT * FROM projects WHERE path=$v").get({ $v: q })
 			|| this.db.prepare("SELECT * FROM projects WHERE LOWER(name)=LOWER($v)").get({ $v: q })
 			|| this.db.prepare("SELECT * FROM projects WHERE LOWER(name) LIKE LOWER($v)").get({ $v: `%${q}%` })
 		) as ProjectRow | null
+		if (!hit) return null
+		return this.filterForCurrentMember([hit]).at(0) ?? null
+	}
+
+	private filterForCurrentMember(rows: ProjectRow[]): ProjectRow[] {
+		const userId = process.env.KORTIX_USER_ID?.trim()
+		const role = process.env.KORTIX_USER_ROLE?.trim()
+		const isManager = role === "owner" || role === "admin" || role === "platform_admin"
+		if (!userId || isManager) return rows
+		const grantRows = this.db
+			.prepare("SELECT project_id FROM project_members WHERE user_id=$uid")
+			.all({ $uid: userId }) as Array<{ project_id: string }>
+		const allowed = new Set(grantRows.map((r) => r.project_id))
+		return rows.filter((p) => allowed.has(p.id))
 	}
 }
 
@@ -276,9 +299,24 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 				description: tool.schema.string().describe('Description. "" if none.'),
 				path: tool.schema.string().describe('Absolute path. "" for default.'),
 			},
-			async execute(args: { name: string; description: string; path: string }): Promise<string> {
+			async execute(args: { name: string; description: string; path: string }, toolCtx: ToolContext): Promise<string> {
+				if (!(await canForSession(toolCtx?.sessionID, "projects:create"))) {
+					return denyMessage("projects:create")
+				}
+				const rawPath = (args.path || "").trim().replace(/\/+$/, "")
+				const reserved = new Set(["/", "/workspace", "/tmp", "/opt", "/srv", "/srv/kortix", "/home", "/etc", "/var"])
+				if (!rawPath) return "Failed: path is required."
+				if (!rawPath.startsWith("/")) return "Failed: path must be absolute."
+				if (reserved.has(rawPath)) return `Failed: "${rawPath}" is reserved. Pick a subdirectory.`
+				if (rawPath.includes("..")) return `Failed: invalid path.`
+
 				try {
-					const p = await mgr.createProject(args.name, args.description, args.path)
+					const p = await mgr.createProject(args.name, args.description, rawPath)
+					try {
+						await ensureProjectWorkspace({ projectId: p.id, kind: "scoped", members: [], migrateFrom: rawPath })
+					} catch (err) {
+						console.warn(`[project_create] supervisor ensure failed for ${p.id}:`, err)
+					}
 					return `Project **${p.name}** at \`${p.path}\` (${p.id})`
 				} catch (e) { return `Failed: ${e instanceof Error ? e.message : "unknown"}` }
 			},
@@ -340,11 +378,37 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 				name: tool.schema.string().describe('"" to keep current'),
 				description: tool.schema.string().describe('"" to keep current'),
 			},
-			async execute(args: { project: string; name: string; description: string }): Promise<string> {
+			async execute(args: { project: string; name: string; description: string }, toolCtx: ToolContext): Promise<string> {
+				if (!(await canForSession(toolCtx?.sessionID, "projects:rename"))) {
+					return denyMessage("projects:rename")
+				}
 				const p = mgr.getProject(args.project)
 				if (!p) return "Not found."
-				const n = args.name || p.name, d = args.description || p.description
+				const n = args.name || p.name
+				const d = args.description || p.description
 				db.prepare("UPDATE projects SET name=$n,description=$d WHERE id=$id").run({ $n: n, $d: d, $id: p.id })
+
+				const ctxPath = path.join(p.path, ".kortix", "CONTEXT.md")
+				try {
+					await fs.mkdir(path.dirname(ctxPath), { recursive: true })
+					let content: string
+					try {
+						content = await fs.readFile(ctxPath, "utf8")
+					} catch {
+						content = ""
+					}
+					const trimmed = content.trimStart()
+					if (/^#\s+/.test(trimmed)) {
+						content = content.replace(/^(\s*)#\s+[^\n]*/, `$1# ${n}`)
+					} else {
+						const body = content ? `\n\n${content}` : ""
+						content = `# ${n}${d ? `\n\n${d}` : ""}${body || "\n"}`
+					}
+					await fs.writeFile(ctxPath, content, "utf8")
+				} catch (err) {
+					console.warn(`[project_update] CONTEXT.md sync failed for ${p.id}:`, err)
+				}
+
 				return `Updated: **${n}**`
 			},
 		}),
@@ -352,12 +416,21 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 		project_delete: tool({
 			description: "Delete a project from the registry. Does NOT delete files on disk.",
 			args: { project: tool.schema.string().describe("Project name or path") },
-			async execute(args: { project: string }): Promise<string> {
+			async execute(args: { project: string }, toolCtx: ToolContext): Promise<string> {
+				if (!(await canForSession(toolCtx?.sessionID, "projects:delete"))) {
+					return denyMessage("projects:delete")
+				}
 				const p = mgr.getProject(args.project)
 				if (!p) return `Project not found: "${args.project}"`
 				db.prepare("DELETE FROM session_projects WHERE project_id=$pid").run({ $pid: p.id })
+				db.prepare("DELETE FROM project_members WHERE project_id=$pid").run({ $pid: p.id })
 				db.prepare("DELETE FROM projects WHERE id=$id").run({ $id: p.id })
-				return `Project **${p.name}** deleted from registry.\nDirectory \`${p.path}\` untouched.`
+				try {
+					await deleteProjectWorkspace({ projectId: p.id })
+				} catch (err) {
+					console.warn(`[project_delete] supervisor delete failed for ${p.id}:`, err)
+				}
+				return `Project **${p.name}** deleted from registry.\nLegacy dir \`${p.path}\` untouched; isolated dir archived.`
 			},
 		}),
 
