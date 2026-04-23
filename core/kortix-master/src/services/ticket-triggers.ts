@@ -18,6 +18,7 @@ import {
   getTicketAgentSession,
   setAgentSession,
   setTicketAgentSession,
+  enqueuePendingTrigger,
 } from './ticket-service'
 import { tryReadContext } from './project-v2-seed'
 
@@ -25,6 +26,28 @@ export interface OpenCodeClientLike {
   session: {
     create(args: any): Promise<any>
     promptAsync(args: any): Promise<any>
+    message?: { list?: (args: { path: { id: string } }) => Promise<any> }
+  }
+}
+
+/**
+ * Probe whether a session is currently mid-LLM-turn. Used to avoid firing a
+ * new prompt at a busy persistent-mode session — opencode would abort the
+ * in-flight generation, losing whatever the agent was doing. If we detect
+ * busy, the caller queues the assignment in pending_agent_triggers and the
+ * session.idle hook will drain it when the agent is free.
+ */
+async function isSessionBusy(client: OpenCodeClientLike, sessionId: string): Promise<boolean> {
+  try {
+    const list = client.session.message?.list
+    if (!list) return false
+    const res = await list({ path: { id: sessionId } }) as { data?: Array<{ info?: { role?: string; time?: { completed?: number } } }> } | undefined
+    const msgs = res?.data ?? []
+    if (!msgs.length) return false
+    const last = msgs[msgs.length - 1].info ?? {}
+    return last.role === 'assistant' && !last.time?.completed
+  } catch {
+    return false
   }
 }
 
@@ -104,6 +127,18 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
     sessionId = bound?.session_id ?? null
   } else if (agent.execution_mode === 'persistent') {
     sessionId = agent.session_id
+  }
+
+  // Persistent-mode busy-check: if the agent's single session is mid-turn,
+  // firing now would abort their current work. Queue this assignment and
+  // bail — the session.idle hook in the kortix-system plugin will drain
+  // pending_agent_triggers for this agent the next time their session
+  // goes idle.
+  if (agent.execution_mode === 'persistent' && sessionId) {
+    if (await isSessionBusy(client, sessionId)) {
+      enqueuePendingTrigger(db, { agent_id: agent.id, ticket_id: ticketId, reason })
+      return null
+    }
   }
 
   if (!sessionId) {

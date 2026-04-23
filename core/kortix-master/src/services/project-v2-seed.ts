@@ -344,7 +344,15 @@ project already exists. Jump straight to the setup sequence below.
    (three short sections, nothing else).
 2. \`team_create_agent\` for each approved role from Q4. Pass
    \`default_model: "anthropic/claude-sonnet-4-6"\` unless the human
-   asked otherwise.
+   asked otherwise. **ALWAYS pass \`execution_mode: "persistent"\`**
+   so each contributor (engineer, qa, tech-lead, designer, …) has
+   ONE long-lived session that handles every ticket sequentially.
+   Per-ticket sessions cause parallel-deadlock pain: two concurrent
+   assignments would race on the agent file's persona, on opencode's
+   per-directory cache, and on shared resources in the project tree.
+   Persistent mode + the queue (see "session.idle drain" in the
+   triggers engine) gives sequential-by-default execution per agent
+   — assignments queue when busy, drain on idle.
 3. \`project_columns_update\` — EXACTLY these 5 columns, in order:
    \`backlog\` → \`in_progress\` → \`review\` (default_assignee: @qa) →
    \`done\` (terminal), plus \`blocked\` (off_flow). No extra "qa"

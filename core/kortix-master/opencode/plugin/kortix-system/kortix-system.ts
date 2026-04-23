@@ -247,6 +247,44 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 			)) {
 				handleAgentTaskSessionEvent(sid, payload.event.type, client, db, mgr).catch(() => {})
 			}
+
+			// Persistent-agent queue drain: when a persistent-mode agent's
+			// session goes idle, look for any pending_agent_triggers queued
+			// against that agent (assignments that arrived while the session
+			// was mid-turn) and fire the next one. Sequential per-agent
+			// execution — no parallel session deadlocks.
+			if (sid && payload.event.type === "session.idle") {
+				try {
+					const agent = db.prepare(
+						"SELECT * FROM project_agents WHERE session_id=$sid AND execution_mode='persistent'",
+					).get({ $sid: sid }) as { id: string; project_id: string } | undefined
+					if (agent) {
+						const { drainPendingTriggersForAgents } = await import("../../../src/services/ticket-service")
+						const { fireAgentTrigger } = await import("../../../src/services/ticket-triggers")
+						const pending = drainPendingTriggersForAgents(db, [agent.id])
+						if (pending.length) {
+							// Re-enqueue the rest (we drain all then re-enqueue tail
+							// because helper deletes them all in one shot)
+							const [next, ...rest] = pending
+							const { enqueuePendingTrigger } = await import("../../../src/services/ticket-service")
+							for (const r of rest) {
+								enqueuePendingTrigger(db, { agent_id: r.agent_id, ticket_id: r.ticket_id, reason: r.reason })
+							}
+							const fullAgent = db.prepare("SELECT * FROM project_agents WHERE id=$id").get({ $id: agent.id }) as any
+							await fireAgentTrigger({
+								db,
+								client: client as any,
+								projectId: agent.project_id,
+								ticketId: next.ticket_id,
+								agent: fullAgent,
+								reason: next.reason,
+							})
+						}
+					}
+				} catch (err) {
+					console.warn("[kortix-system] persistent-agent queue drain failed:", err)
+				}
+			}
 		},
 
 		// Compaction: inject active tasks
