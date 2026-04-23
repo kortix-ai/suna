@@ -149,7 +149,7 @@ export function initProjectsDb(dbPath: string): Database {
 		{ name: "created_at",  type: "TEXT",    notNull: true,  defaultValue: null, primaryKey: false },
 		{ name: "opencode_id", type: "TEXT",    notNull: false, defaultValue: null, primaryKey: false },
 		{ name: "maintainer_session_id", type: "TEXT", notNull: false, defaultValue: null, primaryKey: false },
-		{ name: "structure_version", type: "INTEGER", notNull: true, defaultValue: "1", primaryKey: false },
+		{ name: "structure_version", type: "INTEGER", notNull: true, defaultValue: "2", primaryKey: false },
 		{ name: "user_handle", type: "TEXT", notNull: false, defaultValue: null, primaryKey: false },
 	])
 
