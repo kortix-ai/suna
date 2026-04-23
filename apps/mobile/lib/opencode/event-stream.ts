@@ -48,6 +48,21 @@ const HEARTBEAT_TIMEOUT_MS = 15_000;
 // arrive, leaving the UI stale until manual refresh. Matches web a6e2d03.
 const REHYDRATE_GAP_MS = 5_000;
 
+// Flush queued SSE events on the next JS tick (setTimeout 0) rather than a
+// fixed 16ms window. That way we still coalesce events that arrive in the
+// same synchronous burst (typical when deltas stream at 50-100+ tokens/sec),
+// but we never hold a delta for an extra frame — rendering keeps pace with
+// the backend instead of feeling "chunky" on long responses. With a big
+// response where each render is expensive, a fixed 16ms window can cause
+// a doom loop (more events per flush → slower render → more events pile
+// up); setTimeout 0 avoids that by flushing as often as the JS thread is
+// free to paint.
+const FLUSH_DELAY_MS = 0;
+// Safety cap so a huge burst can't starve interactions. If more than this
+// many events queue up before the next tick we flush inline to keep the
+// queue bounded.
+const MAX_QUEUE_SIZE = 200;
+
 export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const queryClient = useQueryClient();
   const syncStore = useSyncStore;
@@ -59,6 +74,14 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
   const mountedRef = useRef(true);
   const sandboxUrlRef = useRef<string | undefined>(sandboxUrl);
   sandboxUrlRef.current = sandboxUrl;
+
+  // Event batching: queue SSE events and drain them on a timer so we re-render
+  // at most ~60fps instead of once per raw delta (deltas can arrive 100+/sec
+  // and each one used to trigger a full Zustand set() + React re-render, which
+  // saturated the JS thread and blocked tab switches / drawer opens while
+  // the assistant was streaming).
+  const queueRef = useRef<SSEEvent[]>([]);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Re-fetch messages for every session currently in the store. Called after
   // SSE reconnects that follow a significant gap — any streaming events that
@@ -203,16 +226,20 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       case 'message.part.delta': {
         const { messageID, partID, sessionID, field, delta } = props;
         if (messageID && partID && sessionID && field && delta) {
-          // Ensure the parent message exists before applying the delta.
-          // message.part.delta can arrive before message.updated —
-          // without a stub message, appendPartDelta silently drops
-          // the delta, causing the beginning of streamed text to be lost.
+          // Mirror web: ensure parent message + EMPTY stub part exist BEFORE
+          // appending the delta. If the stub part starts with the delta as
+          // its initial value (the old behavior), a later
+          // `message.part.updated` snapshot carrying the full text gets
+          // rejected by the prefix-growth guard in upsertPart — because the
+          // snapshot doesn't start with the mid-word delta fragment, only
+          // the other way around. That's why streamed text sometimes began
+          // mid-word on mobile. Starting from "" keeps the guard happy.
           const state = syncStore.getState();
           const msgs = state.messages[sessionID];
-          const msgExists = msgs?.some((m) => m.info.id === messageID);
-          if (!msgExists) {
-            // Only create the stub if a user message already exists
-            // for this session (avoids turn-grouping issues on refresh)
+          const msg = msgs?.find((m) => m.info.id === messageID);
+          if (!msg) {
+            // Only create the stub message if a user message already exists
+            // for this session (avoids turn-grouping issues on refresh).
             const hasUserMsg = msgs?.some((m) => m.info.role === 'user');
             if (hasUserMsg) {
               state.upsertMessage(sessionID, {
@@ -226,6 +253,22 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
               });
             }
           }
+
+          // Pre-create an empty stub part if it's missing, so appendPartDelta
+          // appends to "" rather than initializing the part with the partial
+          // delta. This matches web (apps/web/src/stores/opencode-sync-store.ts
+          // line 845-850).
+          const currentMsgs = syncStore.getState().messages[sessionID];
+          const currentMsg = currentMsgs?.find((m) => m.info.id === messageID);
+          const partExists = currentMsg?.parts.some((p) => p.id === partID);
+          if (currentMsg && !partExists) {
+            syncStore.getState().upsertPart(messageID, {
+              id: partID,
+              type: field === 'text' ? 'text' : 'reasoning',
+              [field]: '',
+            } as unknown as Part);
+          }
+
           syncStore.getState().appendPartDelta(messageID, partID, sessionID, field, delta);
         }
         break;
@@ -363,6 +406,85 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
     }
   }, [queryClient]);
 
+  // ── Event batching / coalescing ────────────────────────────────────────────
+  // Drain the queue, coalescing consecutive `message.part.delta` events that
+  // target the same (messageID, partID, field) into one combined delta so we
+  // only run one Zustand set() per part per flush instead of one per raw token.
+  const flushQueue = useCallback(() => {
+    flushTimerRef.current = null;
+    const queue = queueRef.current;
+    if (queue.length === 0) return;
+    queueRef.current = [];
+
+    // Coalesce deltas in-order. Any non-delta event (or a delta targeting a
+    // different part/field) closes the current delta run and resets the
+    // coalesce target — this preserves event ordering relative to other
+    // events like message.part.updated / session.idle.
+    type DeltaKey = string;
+    const keyFor = (p: any): DeltaKey =>
+      `${p?.messageID || ''}|${p?.partID || ''}|${p?.field || ''}`;
+
+    let coalescedKey: DeltaKey | null = null;
+    let coalescedBuf = '';
+    let coalescedTemplate: SSEEvent | null = null;
+
+    const emitCoalesced = () => {
+      if (coalescedTemplate && coalescedBuf.length > 0) {
+        handleEvent({
+          ...coalescedTemplate,
+          properties: {
+            ...coalescedTemplate.properties,
+            delta: coalescedBuf,
+          },
+        });
+      }
+      coalescedKey = null;
+      coalescedBuf = '';
+      coalescedTemplate = null;
+    };
+
+    for (const evt of queue) {
+      if (evt.type === 'message.part.delta') {
+        const key = keyFor(evt.properties);
+        if (key === coalescedKey) {
+          coalescedBuf += String(evt.properties?.delta ?? '');
+        } else {
+          emitCoalesced();
+          coalescedKey = key;
+          coalescedBuf = String(evt.properties?.delta ?? '');
+          coalescedTemplate = evt;
+        }
+      } else {
+        emitCoalesced();
+        handleEvent(evt);
+      }
+    }
+    emitCoalesced();
+  }, [handleEvent]);
+
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current) return;
+    flushTimerRef.current = setTimeout(() => {
+      if (!mountedRef.current) return;
+      flushQueue();
+    }, FLUSH_DELAY_MS);
+  }, [flushQueue]);
+
+  const enqueueEvent = useCallback((event: SSEEvent) => {
+    queueRef.current.push(event);
+    // If we've queued too many events (burst), flush immediately to avoid
+    // unbounded growth — but still only once per frame.
+    if (queueRef.current.length >= MAX_QUEUE_SIZE) {
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+      flushQueue();
+      return;
+    }
+    scheduleFlush();
+  }, [flushQueue, scheduleFlush]);
+
   const clearHeartbeat = useCallback(() => {
     if (heartbeatTimerRef.current) {
       clearTimeout(heartbeatTimerRef.current);
@@ -439,7 +561,7 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
               ? raw.payload
               : raw;
           if (!parsed?.type) return; // skip heartbeats / malformed
-          handleEvent(parsed);
+          enqueueEvent(parsed);
         } catch {
           // Ignore parse errors (heartbeats, etc.)
         }
@@ -486,6 +608,11 @@ export function useOpenCodeEventStream(sandboxUrl: string | undefined) {
       }
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
       if (heartbeatTimerRef.current) clearTimeout(heartbeatTimerRef.current);
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+      queueRef.current = [];
     };
   }, [sandboxUrl, connect]);
 
