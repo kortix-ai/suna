@@ -42,6 +42,7 @@ export interface SandboxLookupOptions {
   includeArchived?: boolean;
   defaultStatus?: SandboxStatus;
   statuses?: SandboxStatus[];
+  scopeToUser?: boolean;
 }
 
 interface SandboxLookupForUserOptions extends SandboxLookupOptions {
@@ -176,7 +177,7 @@ export async function listAccessibleSandboxes(
 ): Promise<SandboxRecord[]> {
   const ctx: UserTeamContext = {
     userId: access.userId,
-    isPlatformAdmin: access.isPlatformAdmin,
+    isPlatformAdmin: options.scopeToUser ? false : access.isPlatformAdmin,
     allAccountIds: access.allAccountIds,
     managerAccountIds: access.managerAccountIds,
     ownerAccountIds: access.ownerAccountIds,
