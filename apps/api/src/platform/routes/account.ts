@@ -26,6 +26,7 @@ import type { AuthVariables } from '../../types';
 import { resolveAccountId as defaultResolveAccountId } from '../../shared/resolve-account';
 import { config } from '../../config';
 import { generateSandboxName } from '../services/ensure-sandbox';
+import { registerCreator as ensureSandboxCreatorMember } from '../../teams';
 
 // ─── Dependency Injection ────────────────────────────────────────────────────
 
@@ -280,6 +281,8 @@ export function createAccountRouter(
           })
           .returning();
 
+        await ensureSandboxCreatorMember(db, sandbox.sandboxId, userId);
+
         // Create sandbox-managed API key
         const sandboxKey = await createApiKey({
           sandboxId: sandbox.sandboxId,
@@ -348,6 +351,8 @@ export function createAccountRouter(
           metadata: {},
         })
         .returning();
+
+      await ensureSandboxCreatorMember(db, placeholder.sandboxId, userId);
 
       // Create sandbox-managed API key (before background pull so it's ready)
       const sandboxKey = await createApiKey({

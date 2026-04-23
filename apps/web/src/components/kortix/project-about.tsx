@@ -9,6 +9,7 @@
  */
 
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { toast as sonnerToast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { useFileContent, useInvalidateFileContent } from '@/features/files/hooks/use-file-content';
@@ -83,11 +84,13 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
       const file = new File([draft], fileName, { type: 'text/markdown' });
       await uploadFile(file, dirPath);
       invalidateContent(contextPath);
-    } catch {
-      // silently fail — user can retry
+      setEditing(false);
+    } catch (err) {
+      sonnerToast.error(
+        err instanceof Error ? `Save failed: ${err.message}` : 'Save failed',
+      );
     } finally {
       setSaving(false);
-      setEditing(false);
     }
   }, [contextPath, draft, contextContent, invalidateContent]);
 

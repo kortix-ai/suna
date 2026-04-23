@@ -8,6 +8,7 @@ import { sshRouter } from './routes/ssh';
 import { sandboxWebhookRouter } from './routes/sandbox-webhooks';
 import { backupRouter } from './routes/sandbox-backups';
 import { localBridgeRouter } from './routes/local-bridge';
+import { membersRouter, invitesRouter } from '../teams';
 
 const platformApp = new Hono();
 
@@ -45,5 +46,11 @@ platformApp.route('/sandbox', backupRouter);
 // Full path: /v1/platform/providers, /v1/platform/init, /v1/platform/sandbox/*, etc.
 platformApp.route('/', accountRouter);
 platformApp.route('/sandbox', cloudSandboxRouter);
+
+// Teams — sandbox members + invite accept/decline.
+// Members routes are namespaced per-sandbox so they mount under /sandbox.
+// Invite endpoints are free-standing under /invites.
+platformApp.route('/sandbox', membersRouter);
+platformApp.route('/invites', invitesRouter);
 
 export { platformApp };

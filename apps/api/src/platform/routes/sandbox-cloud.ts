@@ -47,9 +47,15 @@ import {
 } from '../services/sandbox-reinitialize';
 import {
   findAccessibleSandboxForUser,
+  hasSandboxScope,
   listAccessibleSandboxesForUser,
 } from '../services/sandbox-access';
 import { defaultSandboxAutoUpdatePolicy, getSandboxAutoUpdatePolicy } from '../../update/auto-update';
+import {
+  loadSandboxForUser,
+  loadUserTeamContext,
+  registerCreator,
+} from '../../teams';
 
 // ─── Dependency Injection ────────────────────────────────────────────────────
 
@@ -71,11 +77,17 @@ const defaultDeps: SandboxCloudRouterDeps = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function serializeSandbox(row: typeof sandboxes.$inferSelect) {
-  const metadata = getSandboxMetadata(row.metadata);
+function serializeSandbox(
+  row: typeof sandboxes.$inferSelect,
+  viewer?: { ownerAccountIds: string[]; isPlatformAdmin: boolean },
+) {
+  const metadata = row.metadata as Record<string, unknown> | null;
   const cancelAtPeriodEnd = Boolean((metadata?.cancel_at_period_end as boolean) ?? false);
   const cancelAt = (metadata?.cancel_at as string) ?? null;
   const autoUpdate = getSandboxAutoUpdatePolicy(metadata, typeof metadata?.version === 'string' ? metadata.version : null);
+  const canManage = viewer
+    ? viewer.isPlatformAdmin || viewer.ownerAccountIds.includes(row.accountId)
+    : false;
   return {
     sandbox_id: row.sandboxId,
     external_id: row.externalId,
@@ -100,6 +112,7 @@ function serializeSandbox(row: typeof sandboxes.$inferSelect) {
     last_init_error: getSandboxLastInitError(metadata),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
+    can_manage: canManage,
   };
 }
 
@@ -407,6 +420,8 @@ export function createCloudSandboxRouter(
         })
         .returning();
       createdSandboxId = sandbox.sandboxId;
+
+      await registerCreator(db, sandbox.sandboxId, userId);
 
       // Create a sandbox-managed API key (kortix_sb_)
       const sandboxKey = await createApiKey({
@@ -803,7 +818,7 @@ export function createCloudSandboxRouter(
 
     try {
       const requestedSandboxId = c.req.query('sandbox_id') || undefined;
-      const { sandboxes: rows } = await listAccessibleSandboxesForUser({
+      const { access, sandboxes: rows } = await listAccessibleSandboxesForUser({
         db,
         userId,
         sandboxId: requestedSandboxId,
@@ -811,7 +826,11 @@ export function createCloudSandboxRouter(
         resolveAccountId,
       });
 
-      return c.json({ success: true, data: rows.map(serializeSandbox) });
+      const viewer = {
+        ownerAccountIds: access.ownerAccountIds,
+        isPlatformAdmin: access.isPlatformAdmin,
+      };
+      return c.json({ success: true, data: rows.map((r) => serializeSandbox(r, viewer)) });
     } catch (err) {
       console.error('[SANDBOX-CLOUD] list error:', err);
       return c.json({ success: false, error: 'Failed to list sandboxes' }, 500);
@@ -988,7 +1007,7 @@ export function createCloudSandboxRouter(
     try {
       const body = await c.req.json().catch(() => ({}));
       const sandboxId = body?.sandbox_id as string | undefined;
-      const { sandbox } = await findAccessibleSandboxForUser({
+      const { sandbox, access } = await findAccessibleSandboxForUser({
         db,
         userId,
         sandboxId,
@@ -997,6 +1016,13 @@ export function createCloudSandboxRouter(
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No sandbox found' }, 404);
+      }
+
+      if (!(await hasSandboxScope(db, access, sandbox, 'billing:manage'))) {
+        return c.json(
+          { success: false, error: 'You do not have permission to change billing on this instance' },
+          403,
+        );
       }
 
       const existingMeta = (sandbox.metadata as Record<string, unknown> | null) ?? {};
@@ -1058,7 +1084,7 @@ export function createCloudSandboxRouter(
     try {
       const body = await c.req.json().catch(() => ({}));
       const sandboxId = body?.sandbox_id as string | undefined;
-      const { sandbox } = await findAccessibleSandboxForUser({
+      const { sandbox, access } = await findAccessibleSandboxForUser({
         db,
         userId,
         sandboxId,
@@ -1067,6 +1093,13 @@ export function createCloudSandboxRouter(
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No sandbox found' }, 404);
+      }
+
+      if (!(await hasSandboxScope(db, access, sandbox, 'billing:manage'))) {
+        return c.json(
+          { success: false, error: 'You do not have permission to change billing on this instance' },
+          403,
+        );
       }
 
       const existingMeta = (sandbox.metadata as Record<string, unknown> | null) ?? {};
@@ -1207,6 +1240,59 @@ export function createCloudSandboxRouter(
     console.log(`[SANDBOX-CLOUD] Marked sandbox ${sandboxId} as error: ${errorMessage}`);
     return c.json({ success: true });
   });
+
+  router.patch('/:sandboxId', async (c) => {
+    const userId = c.get('userId');
+    const sandboxId = c.req.param('sandboxId');
+
+    try {
+      const primaryAccountId = await resolveAccountId(userId);
+      const ctx = await loadUserTeamContext(db, userId, primaryAccountId);
+      const { sandbox, decision } = await loadSandboxForUser(db, ctx, sandboxId, 'rename');
+      if (!decision.allowed) {
+        return c.json(
+          { success: false, error: 'Only the sandbox owner can rename this instance' },
+          403,
+        );
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const patch: { name?: string; updatedAt: Date } = { updatedAt: new Date() };
+
+      if (typeof body?.name === 'string') {
+        const trimmed = body.name.trim();
+        if (!trimmed || trimmed.length > 255) {
+          return c.json({ success: false, error: 'Name must be 1–255 characters' }, 400);
+        }
+        patch.name = trimmed;
+      }
+
+      if (Object.keys(patch).length === 1) {
+        return c.json({ success: false, error: 'No editable fields provided' }, 400);
+      }
+
+      const [updated] = await db
+        .update(sandboxes)
+        .set(patch)
+        .where(eq(sandboxes.sandboxId, sandbox.sandboxId))
+        .returning();
+
+      console.log(`[SANDBOX-CLOUD] Renamed sandbox ${sandbox.sandboxId} → "${patch.name}"`);
+      return c.json({
+        success: true,
+        data: serializeSandbox(updated, {
+          ownerAccountIds: ctx.ownerAccountIds,
+          isPlatformAdmin: ctx.isPlatformAdmin,
+        }),
+      });
+    } catch (err) {
+      console.error('[SANDBOX-CLOUD] patch error:', err);
+      return c.json({ success: false, error: 'Failed to update sandbox' }, 500);
+    }
+  });
+
+  // Members + invite routes live in the teams module and are mounted
+  // separately from platform/index.ts under /sandbox and /invites.
 
   return router;
 }

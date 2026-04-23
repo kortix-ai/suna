@@ -3,21 +3,21 @@ import { HTTPException } from 'hono/http-exception';
 import type { AppContext } from '../../types';
 import { proxyToOpenRouter, extractUsage, calculateCost, getModel, getAllModels } from '../services/llm';
 import { checkCredits, deductLLMCredits } from '../services/billing';
+import {
+  applyActorSpend,
+  dollarsToCents,
+  getSandboxMemberCapStatus,
+} from '../services/member-spend';
+import {
+  resolveActorFromRequest,
+  type ActorContext,
+} from '../../shared/actor-context';
 
 const llm = new Hono<{ Variables: AppContext }>();
 
-/**
- * POST /chat/completions
- *
- * OpenAI-compatible chat completions — 1:1 passthrough proxy to OpenRouter.
- *
- * Preserves ALL request fields: tools, tool_choice, response_format, etc.
- * Resolves Kortix model IDs to OpenRouter equivalents and handles billing.
- */
 llm.post('/chat/completions', async (c) => {
   const accountId = c.get('accountId');
 
-  // Parse request body
   let body: Record<string, unknown>;
   try {
     body = await c.req.json();
@@ -25,7 +25,6 @@ llm.post('/chat/completions', async (c) => {
     throw new HTTPException(400, { message: 'Invalid JSON body' });
   }
 
-  // Minimal validation — model and messages are required
   if (!body.model || typeof body.model !== 'string') {
     throw new HTTPException(400, { message: 'Validation error: model is required' });
   }
@@ -35,26 +34,30 @@ llm.post('/chat/completions', async (c) => {
 
   const modelId = body.model as string;
   const isStreaming = body.stream === true;
-  // Session identity: explicit body field → X-Session-ID header (from OpenCode) → auth context fallback
   const sessionId =
     (typeof body.session_id === 'string' ? body.session_id : undefined) ??
     c.req.header('X-Session-ID') ??
     c.get('sandboxId') ??
     c.get('keyId');
 
-  // Check credits
+  const actor = resolveActor(c);
+  if (actor) {
+    const status = await getSandboxMemberCapStatus(actor.sandboxId, actor.userId);
+    if (status && status.capCents !== null && status.currentCents >= status.capCents) {
+      throw new HTTPException(402, {
+        message: `Spending cap reached ($${(status.capCents / 100).toFixed(2)} / month). Ask the instance owner to raise or remove the cap.`,
+      });
+    }
+  }
+
   const creditCheck = await checkCredits(accountId);
   if (!creditCheck.hasCredits) {
     throw new HTTPException(402, { message: creditCheck.message || 'Insufficient credits' });
   }
 
-  // Get model config for billing
   const modelConfig = getModel(modelId);
-
-  // Proxy to OpenRouter
   const response = await proxyToOpenRouter(body, isStreaming);
 
-  // If OpenRouter returned an error, pass it through (for both streaming and non-streaming)
   if (!response.ok) {
     const errorBody = await response.text();
     console.error(`[LLM] OpenRouter error ${response.status}: ${errorBody}`);
@@ -65,19 +68,15 @@ llm.post('/chat/completions', async (c) => {
   }
 
   if (isStreaming) {
-    // Stream: pipe the response body through verbatim, extracting usage from the final chunk for billing
     const upstreamBody = response.body;
     if (!upstreamBody) {
       throw new HTTPException(502, { message: 'No response body from upstream' });
     }
 
-    // We need to tee the stream: one for the client, one for usage extraction
     const [clientStream, billingStream] = upstreamBody.tee();
 
-    // Fire-and-forget: extract usage from the billing stream and deduct credits
-    extractUsageFromStream(billingStream, modelConfig, modelId, accountId, sessionId);
+    extractUsageFromStream(billingStream, modelConfig, modelId, accountId, sessionId, actor);
 
-    // Return the client stream verbatim
     return new Response(clientStream, {
       status: response.status,
       headers: {
@@ -88,10 +87,8 @@ llm.post('/chat/completions', async (c) => {
     });
   }
 
-  // Non-streaming: read the response, extract usage for billing, then return
   const responseBody = await response.json();
 
-  // Deduct credits based on usage (with cache-aware pricing when available)
   const usage = extractUsage(responseBody);
   if (usage) {
     const cost = calculateCost(modelConfig, usage.promptTokens, usage.completionTokens, usage.cachedTokens, usage.cacheWriteTokens);
@@ -102,7 +99,15 @@ llm.post('/chat/completions', async (c) => {
       usage.completionTokens,
       cost,
       sessionId,
-    ).catch((err) => console.error(`[LLM] Failed to deduct credits for ${modelId}:`, err));
+    )
+      .then((res) => {
+        if (res.success && actor && cost > 0) {
+          applyActorSpend(actor.sandboxId, actor.userId, dollarsToCents(cost)).catch(
+            (err) => console.error('[LLM] Actor spend attribution failed:', err),
+          );
+        }
+      })
+      .catch((err) => console.error(`[LLM] Failed to deduct credits for ${modelId}:`, err));
     const cacheInfo = usage.cachedTokens || usage.cacheWriteTokens
       ? ` (cache: ${usage.cachedTokens}read/${usage.cacheWriteTokens}write)`
       : '';
@@ -112,11 +117,6 @@ llm.post('/chat/completions', async (c) => {
   return c.json(responseBody);
 });
 
-/**
- * GET /models
- *
- * List available Kortix models with pricing info.
- */
 llm.get('/models', async (c) => {
   const models = getAllModels();
 
@@ -134,11 +134,6 @@ llm.get('/models', async (c) => {
   });
 });
 
-/**
- * GET /models/:model
- *
- * Get specific model info.
- */
 llm.get('/models/:model', async (c) => {
   const modelId = c.req.param('model');
   const models = getAllModels();
@@ -159,20 +154,13 @@ llm.get('/models/:model', async (c) => {
   });
 });
 
-// =============================================================================
-// Helpers
-// =============================================================================
-
-/**
- * Read through the SSE stream to extract usage from the final data chunk,
- * then deduct credits. Runs in background (fire-and-forget).
- */
 async function extractUsageFromStream(
   stream: ReadableStream<Uint8Array>,
   modelConfig: import('../config/models').ModelConfig,
   modelId: string,
   accountId: string,
   sessionId?: string,
+  actor?: ActorContext | null,
 ) {
   try {
     const reader = stream.getReader();
@@ -186,9 +174,8 @@ async function extractUsageFromStream(
 
       buffer += decoder.decode(value, { stream: true });
 
-      // Parse SSE lines looking for usage data
       const lines = buffer.split('\n');
-      buffer = lines.pop() || ''; // Keep the last incomplete line
+      buffer = lines.pop() || '';
 
       for (const line of lines) {
         if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
@@ -204,14 +191,13 @@ async function extractUsageFromStream(
             };
           }
         } catch {
-          // Not valid JSON — skip
         }
       }
     }
 
     if (lastUsage) {
       const cost = calculateCost(modelConfig, lastUsage.promptTokens, lastUsage.completionTokens, lastUsage.cachedTokens, lastUsage.cacheWriteTokens);
-      await deductLLMCredits(
+      const deductRes = await deductLLMCredits(
         accountId,
         modelId,
         lastUsage.promptTokens,
@@ -219,6 +205,11 @@ async function extractUsageFromStream(
         cost,
         sessionId,
       );
+      if (deductRes.success && actor && cost > 0) {
+        applyActorSpend(actor.sandboxId, actor.userId, dollarsToCents(cost)).catch(
+          (err) => console.error('[LLM] Actor spend attribution failed:', err),
+        );
+      }
       const cacheInfo = lastUsage.cachedTokens || lastUsage.cacheWriteTokens
         ? ` (cache: ${lastUsage.cachedTokens}read/${lastUsage.cacheWriteTokens}write)`
         : '';
@@ -229,6 +220,10 @@ async function extractUsageFromStream(
   } catch (err) {
     console.error(`[LLM] Error extracting usage from stream for billing:`, err);
   }
+}
+
+function resolveActor(c: Parameters<typeof resolveActorFromRequest>[0]): ActorContext | null {
+  return resolveActorFromRequest(c, { logPrefix: '[LLM]' });
 }
 
 export { llm };

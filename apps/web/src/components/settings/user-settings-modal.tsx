@@ -105,8 +105,13 @@ import { AppearanceTab } from './appearance-tab';
 import {
     getPreferenceTabs,
     getAccountTabs,
+    getInstanceTabs,
     type SettingsTabId,
 } from '@/lib/menu-registry';
+import { getCurrentInstanceIdFromPathname } from '@/lib/instance-routes';
+import { listSandboxes, type SandboxInfo } from '@/lib/platform-client';
+import { InstanceMembersPanel } from '@/app/instances/_components/instance-members-panel';
+import { InstanceProjectsPanel } from '@/app/instances/_components/instance-projects-panel';
 
 type TabId = SettingsTabId;
 
@@ -133,22 +138,60 @@ export function UserSettingsModal({
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
     const billingActive = isBillingEnabled();
+    const pathname = usePathname();
+
+    // Scope Instance-level tabs (Team / Projects) to `/instances/:id/...` so
+    // the section vanishes on the `/instances` list or account-only pages.
+    const currentInstanceId = getCurrentInstanceIdFromPathname(pathname);
+    const instanceSandboxQuery = useQuery({
+        queryKey: ['platform', 'sandbox-by-id', currentInstanceId],
+        queryFn: async (): Promise<SandboxInfo | null> => {
+            if (!currentInstanceId) return null;
+            const all = await listSandboxes(currentInstanceId);
+            return all.find((s) => s.sandbox_id === currentInstanceId) ?? null;
+        },
+        enabled: open && !!currentInstanceId,
+        staleTime: 30_000,
+    });
+    const instanceSandbox = instanceSandboxQuery.data ?? null;
+    const hasInstance = !!instanceSandbox;
 
     // Tab definitions from the central menu registry (single source of truth)
     const preferenceTabs: Tab[] = getPreferenceTabs();
     const accountTabs: Tab[] = getAccountTabs(billingActive);
+    const instanceTabs: Tab[] = hasInstance ? getInstanceTabs() : [];
 
-    const tabGroups = [
+    // Skeleton window: the URL is scoped to an instance but the sandbox fetch
+    // hasn't resolved yet. Render a placeholder group so the sidebar doesn't
+    // pop a new section in a second later.
+    const instanceLoading =
+        open && !!currentInstanceId && !hasInstance && instanceSandboxQuery.isLoading;
+
+    type TabGroup = { label: string; tabs: Tab[]; skeleton?: boolean };
+    const tabGroups: TabGroup[] = [
         { label: 'Preferences', tabs: preferenceTabs },
+        ...(instanceTabs.length > 0
+            ? [{ label: instanceSandbox?.name || 'Instance', tabs: instanceTabs }]
+            : instanceLoading
+              ? [{ label: '', tabs: [], skeleton: true }]
+              : []),
         { label: 'Account', tabs: accountTabs },
     ];
 
-    // Flat list for mobile horizontal scroll
-    const allTabs = [...preferenceTabs, ...accountTabs];
-    
+    const allTabs = [...preferenceTabs, ...instanceTabs, ...accountTabs];
+
     useEffect(() => {
         setActiveTab(defaultTab);
     }, [defaultTab]);
+
+    useEffect(() => {
+        if (
+            (activeTab === 'instance-members' || activeTab === 'instance-projects') &&
+            !hasInstance
+        ) {
+            setActiveTab('general');
+        }
+    }, [activeTab, hasInstance]);
 
     const handleTabClick = (tabId: TabId) => {
         setActiveTab(tabId);
@@ -185,9 +228,14 @@ export function UserSettingsModal({
                             </div>
                         </div>
                         
-                        {/* Mobile Tabs - Horizontal Scroll */}
                         <div className="px-3 py-2.5 border-b border-border flex-shrink-0 bg-background">
                             <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                                {instanceLoading ? (
+                                    <>
+                                        <Skeleton className="h-9 w-24 rounded-md" />
+                                        <Skeleton className="h-9 w-24 rounded-md" />
+                                    </>
+                                ) : null}
                                 {allTabs.map((tab) => {
                                     const Icon = tab.icon;
                                     const isActive = activeTab === tab.id;
@@ -221,6 +269,15 @@ export function UserSettingsModal({
                                 {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
                                 {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} isActive={activeTab === 'billing'} />}
                                 {activeTab === 'transactions' && <TransactionsTab />}
+                                {activeTab === 'instance-members' && instanceSandbox && (
+                                    <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
+                                )}
+                                {activeTab === 'instance-projects' && instanceSandbox && (
+                                    <InstanceProjectsPanel
+                                        sandbox={instanceSandbox}
+                                        canManage={!!instanceSandbox.can_manage}
+                                    />
+                                )}
                                 {/* {activeTab === 'referrals' && <ReferralsTab isActive={open && activeTab === 'referrals'} />} */}
                             </div>
                         </div>
@@ -243,13 +300,23 @@ export function UserSettingsModal({
 
                             {/* Desktop Tabs - Grouped */}
                             <div className="flex flex-col gap-4">
-                                {tabGroups.map((group) => (
-                                    <div key={group.label}>
+                                {tabGroups.map((group, groupIdx) => (
+                                    <div key={group.skeleton ? `skeleton-${groupIdx}` : group.label}>
                                         <div className="px-4 pb-1.5">
-                                            <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">{group.label}</span>
+                                            {group.skeleton ? (
+                                                <Skeleton className="h-3 w-20 rounded" />
+                                            ) : (
+                                                <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">{group.label}</span>
+                                            )}
                                         </div>
                                         <div className="flex flex-col gap-0.5">
-                                            {group.tabs.map((tab) => {
+                                            {group.skeleton ? (
+                                                <>
+                                                    <Skeleton className="mx-2 h-9 rounded-md" />
+                                                    <Skeleton className="mx-2 h-9 rounded-md" />
+                                                </>
+                                            ) : (
+                                                group.tabs.map((tab) => {
                                                 const Icon = tab.icon;
                                                 const isActive = activeTab === tab.id;
 
@@ -270,7 +337,8 @@ export function UserSettingsModal({
                                                         <span>{tab.label}</span>
                                                     </Button>
                                                 );
-                                            })}
+                                                })
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -286,6 +354,15 @@ export function UserSettingsModal({
                             {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
                             {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} isActive={activeTab === 'billing'} />}
                             {activeTab === 'transactions' && <TransactionsTab />}
+                            {activeTab === 'instance-members' && instanceSandbox && (
+                                <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
+                            )}
+                            {activeTab === 'instance-projects' && instanceSandbox && (
+                                <InstanceProjectsPanel
+                                    sandbox={instanceSandbox}
+                                    canManage={!!instanceSandbox.can_manage}
+                                />
+                            )}
                             {/* {activeTab === 'referrals' && <ReferralsTab isActive={open && activeTab === 'referrals'} />} */}
                         </div>
                     </div>

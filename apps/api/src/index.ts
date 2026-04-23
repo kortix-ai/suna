@@ -42,6 +42,8 @@ import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunn
 import { startSandboxHealthMonitor, stopSandboxHealthMonitor } from './platform/services/sandbox-health';
 import { startProvisionPoller, stopProvisionPoller } from './platform/services/sandbox-provision-poller';
 import { defaultSandboxAutoUpdatePolicy, startSandboxAutoUpdateLoop, stopSandboxAutoUpdateLoop } from './update/auto-update';
+import { startInviteCleanup, stopInviteCleanup } from './teams';
+import { db as appDb } from './shared/db';
 import { startAutoReplenish, stopAutoReplenish } from './pool';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
@@ -1015,6 +1017,7 @@ ensureSchema()
     startDrainer();
     startTunnelService();
     startAutoReplenish();
+    startInviteCleanup(appDb);
 
     if (config.isLocalDockerEnabled() && config.DATABASE_URL) {
       // Non-blocking: sandbox registration + token sync runs in background.
@@ -1041,6 +1044,7 @@ ensureSchema()
     startDrainer();
     startTunnelService();
     startAutoReplenish();
+    startInviteCleanup(appDb);
 
     if (config.isLocalDockerEnabled() && config.DATABASE_URL) {
       ensureLocalSandboxRegistered().catch((e) =>
@@ -1067,6 +1071,7 @@ async function shutdown(signal: string) {
   stopSandboxAutoUpdateLoop();
   stopAutoReplenish();
   stopAccessControlCache();
+  stopInviteCleanup();
   // Flush observability data before exit
   await Promise.allSettled([appLogger.flush(), flushSentry()]);
   process.exit(0);
