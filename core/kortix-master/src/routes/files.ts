@@ -16,6 +16,25 @@ import { Hono } from 'hono'
 import { describeRoute, resolver } from 'hono-openapi'
 import path from 'path'
 import fs from 'fs/promises'
+import { mkdirSync, existsSync } from 'fs'
+import { randomBytes } from 'crypto'
+import { installUploadedFile } from '../services/project-access-client'
+import {
+  fsReaddir,
+  fsStat,
+  fsRead,
+  fsMkdir,
+  fsUnlink,
+  fsRename,
+  FsError,
+} from '../services/fs-client'
+
+const SYSTEM_UID = Number(process.env.KORTIX_SYSTEM_UID || 911)
+
+function callerUid(c: any): number {
+  const member = getMember(c)
+  return member?.linuxUid ?? SYSTEM_UID
+}
 import {
   ErrorResponse,
   FileNode,
@@ -23,16 +42,52 @@ import {
   FileContentBinaryResponse,
   UploadResult,
 } from '../schemas/common'
+import { getMember } from '../services/member-context'
+import { getDb } from '../services/db'
+import {
+  allowedWorkspacesFor,
+  isManager,
+  personalWorkspacePath,
+  projectWorkspacePath,
+  workspaceListFor,
+} from '../services/workspace'
 
 const filesRouter = new Hono()
 const root = process.env.KORTIX_WORKSPACE || '/workspace'
+
+function memberAllowedPaths(c: any): string[] | null {
+  const member = getMember(c)
+  if (!member) return null
+  return allowedWorkspacesFor(member).map((p) => path.resolve(p))
+}
+
+function pathIsUnderAny(target: string, allowed: string[]): boolean {
+  if (allowed.length === 0) return false
+  return allowed.some((prefix) => {
+    if (target === prefix) return true
+    return target.startsWith(prefix === '/' ? '/' : `${prefix}/`)
+  })
+}
+
+function allowedChildrenAtAncestor(target: string, allowed: string[]): Set<string> {
+  const names = new Set<string>()
+  for (const prefix of allowed) {
+    const boundary = target === '/' ? '/' : `${target}/`
+    if (prefix.startsWith(boundary)) {
+      const tail = prefix.slice(boundary.length)
+      const head = tail.split('/')[0]
+      if (head) names.add(head)
+    }
+  }
+  return names
+}
 
 let statusCache: { at: number; data: Array<{ path: string; added: number; removed: number; status: 'added' | 'deleted' | 'modified' }> } | null = null
 let statusPending: Promise<Array<{ path: string; added: number; removed: number; status: 'added' | 'deleted' | 'modified' }>> | null = null
 
 // ─── Security ────────────────────────────────────────────────────────────────
 
-const ALLOWED_ROOTS = ['/', '/workspace', '/opt', '/tmp', '/home']
+const ALLOWED_ROOTS = ['/', '/workspace', '/opt', '/tmp', '/home', '/srv/kortix']
 
 /**
  * Resolve and validate a file path. Returns the absolute path.
@@ -47,14 +102,39 @@ function resolvePath(raw: string): string {
   return resolved
 }
 
-/** Return the resolved path or null (+ set 403 status) if validation fails. */
 function validatePath(c: any, raw: string): string | null {
+  let resolved: string
   try {
-    return resolvePath(raw)
+    resolved = resolvePath(raw)
   } catch {
     c.status(403)
     return null
   }
+  const allowed = memberAllowedPaths(c)
+  if (allowed !== null && !pathIsUnderAny(resolved, allowed)) {
+    c.status(403)
+    return null
+  }
+  return resolved
+}
+
+function validateListPath(c: any, raw: string): { resolved: string; filter: Set<string> | null } | null {
+  let resolved: string
+  try {
+    resolved = resolvePath(raw)
+  } catch {
+    c.status(403)
+    return null
+  }
+  const allowed = memberAllowedPaths(c)
+  if (allowed === null) return { resolved, filter: null }
+  if (pathIsUnderAny(resolved, allowed)) return { resolved, filter: null }
+  const children = allowedChildrenAtAncestor(resolved, allowed)
+  if (children.size === 0) {
+    c.status(403)
+    return null
+  }
+  return { resolved, filter: children }
 }
 
 // ─── Upload naming: collision-free writes ────────────────────────────────────
@@ -210,7 +290,23 @@ function isBinary(filePath: string): boolean {
   return BINARY_EXTENSIONS.has(path.extname(filePath).toLowerCase())
 }
 
-// ─── GET / — list directory ──────────────────────────────────────────────────
+filesRouter.get('/workspaces',
+  describeRoute({
+    tags: ['Files'],
+    summary: 'List caller workspaces',
+    description: 'Returns the top-level workspaces the caller can see: personal workspace plus granted projects.',
+    responses: { 200: { description: 'Workspace list' } },
+  }),
+  async (c) => {
+    const member = getMember(c)
+    if (!member) {
+      return c.json([
+        { id: 'legacy', kind: 'project', label: 'Workspace', path: '/workspace' },
+      ])
+    }
+    return c.json(workspaceListFor(member))
+  },
+)
 
 filesRouter.get('/',
   describeRoute({
@@ -226,45 +322,41 @@ filesRouter.get('/',
   }),
   async (c) => {
     const dirPath = c.req.query('path') || '/workspace'
-    const resolved = validatePath(c, dirPath)
-    if (!resolved) return c.json({ error: 'Access denied: path outside allowed directories' })
+    const gate = validateListPath(c, dirPath)
+    if (!gate) return c.json({ error: 'Access denied: path outside allowed directories' })
+    const resolved = gate.resolved
+    const nameFilter = gate.filter
 
     try {
-      const entries = await fs.readdir(resolved, { withFileTypes: true })
-      
-      // For symlinks, we need to check the actual type they point to
-      const nodes = await Promise.all(
-        entries
-          .filter((e) => e.name !== '.git' && e.name !== '.DS_Store')
-          .map(async (e) => {
-            let type: 'file' | 'directory' = e.isDirectory() ? 'directory' : 'file'
-            
-            // If it's a symlink, check what it actually points to (use stat, not lstat)
-            if (e.isSymbolicLink()) {
-              try {
-                const stat = await fs.stat(path.join(resolved, e.name))
-                type = stat.isDirectory() ? 'directory' : 'file'
-              } catch {
-                // stat failed, keep the original type
-              }
-            }
-            
-            return {
-              name: e.name,
-              path: path.join(dirPath, e.name),
-              absolute: path.join(resolved, e.name),
-              type,
-              ignored: false,
-            }
-          })
-      )
-      
+      const entries = await fsReaddir(callerUid(c), resolved)
+
+      const nodes = entries
+        .filter((e) => e.name !== '.git' && e.name !== '.DS_Store')
+        .filter((e) => !nameFilter || nameFilter.has(e.name))
+        .map((e) => {
+          const type: 'file' | 'directory' =
+            e.type === 'directory' ? 'directory' : 'file'
+          return {
+            name: e.name,
+            path: path.join(dirPath, e.name),
+            absolute: path.join(resolved, e.name),
+            type,
+            ignored: false,
+          }
+        })
+
       nodes.sort((a, b) => {
         if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
         return a.name.localeCompare(b.name)
       })
       return c.json(nodes)
     } catch (err: any) {
+      if (err instanceof FsError) {
+        if (err.code === 'ENOENT') return c.json({ error: 'Directory not found' }, 404)
+        if (err.code === 'ENOTDIR') return c.json({ error: 'Not a directory' }, 400)
+        if (err.code === 'EACCES') return c.json({ error: 'Access denied' }, 403)
+        return c.json({ error: err.message }, (err.status as any) || 500)
+      }
       if (err.code === 'ENOENT') return c.json({ error: 'Directory not found' }, 404)
       if (err.code === 'ENOTDIR') return c.json({ error: 'Not a directory' }, 400)
       return c.json({ error: err.message }, 500)
@@ -331,22 +423,21 @@ filesRouter.get('/content',
     const resolved = validatePath(c, filePath)
     if (!resolved) return c.json({ error: 'Access denied: path outside allowed directories' })
 
-    const file = Bun.file(resolved)
-    if (!(await file.exists())) {
-      return c.json({ error: 'File not found', path: filePath }, 404)
+    try {
+      const result = await fsRead(callerUid(c), resolved)
+      if (result.type === 'binary') {
+        const mimeType = 'application/octet-stream'
+        return c.json({ type: 'binary', content: result.content, mimeType, encoding: 'base64' })
+      }
+      return c.json({ type: 'text', content: result.content.trim() })
+    } catch (err: any) {
+      if (err instanceof FsError) {
+        if (err.code === 'ENOENT') return c.json({ error: 'File not found', path: filePath }, 404)
+        if (err.code === 'EACCES') return c.json({ error: 'Access denied' }, 403)
+        return c.json({ error: err.message }, (err.status as any) || 500)
+      }
+      return c.json({ error: err?.message || 'read failed' }, 500)
     }
-
-    const mimeType = file.type || 'application/octet-stream'
-
-    if (isBinary(resolved)) {
-      const buffer = await file.arrayBuffer().catch(() => new ArrayBuffer(0))
-      const content = Buffer.from(buffer).toString('base64')
-      return c.json({ type: 'binary', content, mimeType, encoding: 'base64' })
-    }
-
-    // Text file — read as string
-    const content = await file.text().catch(() => '')
-    return c.json({ type: 'text', content: content.trim() })
   },
 )
 
@@ -371,19 +462,26 @@ filesRouter.get('/raw',
     const resolved = validatePath(c, filePath)
     if (!resolved) return c.json({ error: 'Access denied: path outside allowed directories' })
 
-    const file = Bun.file(resolved)
-    if (!(await file.exists())) {
-      return c.json({ error: 'File not found' }, 404)
+    try {
+      const result = await fsRead(callerUid(c), resolved)
+      const buffer =
+        result.type === 'binary'
+          ? Buffer.from(result.content, 'base64')
+          : Buffer.from(result.content, 'utf8')
+
+      const fileName = path.basename(resolved)
+      c.header('Content-Type', 'application/octet-stream')
+      c.header('Content-Disposition', `attachment; filename="${fileName}"`)
+      c.header('Content-Length', buffer.byteLength.toString())
+      return c.body(buffer)
+    } catch (err: any) {
+      if (err instanceof FsError) {
+        if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+        if (err.code === 'EACCES') return c.json({ error: 'Access denied' }, 403)
+        return c.json({ error: err.message }, (err.status as any) || 500)
+      }
+      return c.json({ error: err?.message || 'read failed' }, 500)
     }
-
-    const mimeType = file.type || 'application/octet-stream'
-    const fileName = path.basename(resolved)
-    const buffer = await file.arrayBuffer()
-
-    c.header('Content-Type', mimeType)
-    c.header('Content-Disposition', `attachment; filename="${fileName}"`)
-    c.header('Content-Length', buffer.byteLength.toString())
-    return c.body(buffer)
   },
 )
 
@@ -401,25 +499,28 @@ filesRouter.post('/upload',
   }),
   async (c) => {
     const body = await c.req.parseBody({ all: true })
-    const targetDir = typeof body['path'] === 'string' ? body['path'] : undefined
+    const requestedDir = typeof body['path'] === 'string' ? body['path'] : undefined
+    const sessionId = typeof body['session_id'] === 'string' ? body['session_id'] : undefined
+    const targetDir = resolveUploadDir(c, requestedDir, sessionId)
+    if (targetDir === null) {
+      return c.json({ error: 'Access denied: upload path outside allowed directories' }, 403)
+    }
+    const member = getMember(c)
     const results: { path: string; size: number }[] = []
 
     for (const [key, value] of Object.entries(body)) {
-      if (key === 'path') continue
+      if (key === 'path' || key === 'session_id') continue
       const files = Array.isArray(value) ? value : [value]
       for (const file of files) {
         if (typeof file === 'string') continue
         if (!(file instanceof globalThis.File)) continue
-        const dest = targetDir
-          ? targetDir + '/' + file.name
-          : key === 'file' || key === 'file[]'
-            ? file.name
-            : key
         const buffer = await file.arrayBuffer()
-        // Collision-free write: if `dest` already exists, the filename is
-        // automatically suffixed with a unique token and the actual path
-        // the bytes landed at is returned to the client.
-        const actualPath = await writeUploadUnique(dest, buffer)
+        let actualPath: string
+        if (member && requiresPrivilegedWrite(targetDir)) {
+          actualPath = await stageAndInstall(buffer, targetDir, file.name, member.linuxUid)
+        } else {
+          actualPath = await writeUploadUnique(targetDir + '/' + file.name, buffer)
+        }
         results.push({ path: actualPath, size: buffer.byteLength })
       }
     }
@@ -428,6 +529,97 @@ filesRouter.post('/upload',
     return c.json(results)
   },
 )
+
+function requiresPrivilegedWrite(dir: string): boolean {
+  const memberRoot = '/srv/kortix/home'
+  const projectRoot = '/srv/kortix/projects'
+  return dir.startsWith(`${memberRoot}/`) || dir.startsWith(`${projectRoot}/`)
+}
+
+async function stageAndInstall(
+  buffer: ArrayBuffer,
+  destDir: string,
+  filename: string,
+  ownerUid: number,
+): Promise<string> {
+  const stageDir = '/tmp/kortix-uploads'
+  if (!existsSync(stageDir)) mkdirSync(stageDir, { recursive: true })
+  const stagedPath = `${stageDir}/${randomBytes(8).toString('hex')}-${path.basename(filename)}`
+  await fs.writeFile(stagedPath, Buffer.from(buffer), { flag: 'wx' })
+  const installed = await installUploadedFile({
+    src: stagedPath,
+    destDir,
+    filename,
+    ownerUid,
+  })
+  return installed.path
+}
+
+function resolveUploadDir(
+  c: any,
+  requestedDir: string | undefined,
+  sessionId: string | undefined,
+): string | null {
+  const member = getMember(c)
+  if (!member) {
+    const raw = requestedDir?.trim() || '/workspace/uploads'
+    try {
+      return resolvePath(raw)
+    } catch {
+      return null
+    }
+  }
+
+  const defaultDir = defaultUploadDir(member, sessionId)
+
+  if (!requestedDir || !requestedDir.trim()) {
+    return ensureUploadSubdir(defaultDir)
+  }
+
+  let resolved: string
+  try {
+    resolved = resolvePath(requestedDir)
+  } catch {
+    return null
+  }
+
+  if (isManager(member)) {
+    return ensureUploadSubdir(resolved)
+  }
+
+  const allowed = allowedWorkspacesFor(member).map((p) => path.resolve(p))
+  if (!pathIsUnderAny(resolved, allowed)) {
+    return ensureUploadSubdir(defaultDir)
+  }
+  return ensureUploadSubdir(resolved)
+}
+
+function defaultUploadDir(member: ReturnType<typeof getMember>, sessionId: string | undefined): string {
+  if (!member) return '/workspace/uploads'
+  if (sessionId) {
+    const db = getDb()
+    const row = db
+      .prepare(
+        `SELECT p.id, p.name, p.path, p.kind
+         FROM session_projects sp
+         JOIN projects p ON p.id = sp.project_id
+         WHERE sp.session_id = ?`,
+      )
+      .get(sessionId) as { id: string; name: string; path: string; kind: 'scoped' | 'workspace' } | null
+    if (row) {
+      return `${projectWorkspacePath(row)}/uploads`
+    }
+  }
+  return `${personalWorkspacePath(member)}/uploads`
+}
+
+function ensureUploadSubdir(dir: string): string {
+  const final = dir.endsWith('/uploads') ? dir : `${dir}/uploads`
+  try {
+    mkdirSync(final, { recursive: true })
+  } catch {}
+  return final
+}
 
 // ─── DELETE / — delete file or directory ─────────────────────────────────────
 
@@ -450,11 +642,19 @@ filesRouter.delete('/',
     const resolved = validatePath(c, body.path)
     if (!resolved) return c.json({ error: 'Access denied: path outside allowed directories' })
 
-    const stat = await fs.stat(resolved).catch(() => null)
-    if (!stat) return c.json({ error: 'File not found' }, 404)
-
-    await fs.rm(resolved, { recursive: true, force: true })
-    return c.json(true)
+    try {
+      const info = await fsStat(callerUid(c), resolved)
+      if (!info.exists) return c.json({ error: 'File not found' }, 404)
+      await fsUnlink(callerUid(c), resolved)
+      return c.json(true)
+    } catch (err: any) {
+      if (err instanceof FsError) {
+        if (err.code === 'ENOENT') return c.json({ error: 'File not found' }, 404)
+        if (err.code === 'EACCES') return c.json({ error: 'Access denied' }, 403)
+        return c.json({ error: err.message }, (err.status as any) || 500)
+      }
+      return c.json({ error: err?.message || 'delete failed' }, 500)
+    }
   },
 )
 
@@ -478,8 +678,16 @@ filesRouter.post('/mkdir',
     const resolved = validatePath(c, body.path)
     if (!resolved) return c.json({ error: 'Access denied: path outside allowed directories' })
 
-    await fs.mkdir(resolved, { recursive: true })
-    return c.json(true)
+    try {
+      await fsMkdir(callerUid(c), resolved)
+      return c.json(true)
+    } catch (err: any) {
+      if (err instanceof FsError) {
+        if (err.code === 'EACCES') return c.json({ error: 'Access denied' }, 403)
+        return c.json({ error: err.message }, (err.status as any) || 500)
+      }
+      return c.json({ error: err?.message || 'mkdir failed' }, 500)
+    }
   },
 )
 
@@ -507,12 +715,20 @@ filesRouter.post('/rename',
     const toResolved = validatePath(c, body.to)
     if (!toResolved) return c.json({ error: 'Access denied: target path outside allowed directories' })
 
-    const stat = await fs.stat(fromResolved).catch(() => null)
-    if (!stat) return c.json({ error: 'Source file not found' }, 404)
-
-    await fs.mkdir(path.dirname(toResolved), { recursive: true })
-    await fs.rename(fromResolved, toResolved)
-    return c.json(true)
+    try {
+      const info = await fsStat(callerUid(c), fromResolved)
+      if (!info.exists) return c.json({ error: 'Source file not found' }, 404)
+      await fsMkdir(callerUid(c), path.dirname(toResolved))
+      await fsRename(callerUid(c), fromResolved, toResolved)
+      return c.json(true)
+    } catch (err: any) {
+      if (err instanceof FsError) {
+        if (err.code === 'ENOENT') return c.json({ error: 'Source file not found' }, 404)
+        if (err.code === 'EACCES') return c.json({ error: 'Access denied' }, 403)
+        return c.json({ error: err.message }, (err.status as any) || 500)
+      }
+      return c.json({ error: err?.message || 'rename failed' }, 500)
+    }
   },
 )
 

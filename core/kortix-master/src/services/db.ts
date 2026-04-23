@@ -75,4 +75,47 @@ function migrate(db: Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_uid_map_uid ON supabase_uid_map(linux_uid);
   `)
+
+  ensureColumn(db, 'projects', 'kind', `TEXT NOT NULL DEFAULT 'scoped'`, () => {
+    db.exec(`UPDATE projects SET kind='workspace' WHERE path='/workspace'`)
+  })
+
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_workspace_kind
+     ON projects(kind) WHERE kind='workspace'`,
+  )
+}
+
+function ensureColumn(
+  db: Database,
+  table: string,
+  column: string,
+  definition: string,
+  backfill?: () => void,
+): void {
+  const cols = db
+    .prepare(`PRAGMA table_info(${table})`)
+    .all() as Array<{ name: string }>
+  if (cols.some((c) => c.name === column)) return
+
+  const MAX_ATTEMPTS = 5
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+      backfill?.()
+      return
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (attempt === MAX_ATTEMPTS) {
+        throw new Error(
+          `migration failed: could not add ${table}.${column} after ${attempt} attempts: ${message}`,
+        )
+      }
+      console.warn(
+        `[db] ALTER TABLE ${table} ADD ${column} attempt ${attempt} failed (${message}); retrying`,
+      )
+      const deadline = Date.now() + 500 * attempt
+      while (Date.now() < deadline) {}
+    }
+  }
 }

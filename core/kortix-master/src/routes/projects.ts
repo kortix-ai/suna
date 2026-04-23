@@ -12,6 +12,39 @@ import { basename } from 'path'
 import type { KortixUserContext } from '../services/kortix-user-context'
 import { hasScope } from '../services/permissions'
 import { getDb } from '../services/db'
+import {
+  deleteProjectWorkspace,
+  ensureProjectWorkspace,
+  grantProjectAccess,
+  revokeProjectAccess,
+} from '../services/project-access-client'
+import { getUidFor } from '../services/uid-map'
+import { WORKSPACE_ROOT } from '../services/workspace'
+
+const RESERVED_PATHS = new Set([
+  '/',
+  WORKSPACE_ROOT,
+  '/tmp',
+  '/opt',
+  '/srv',
+  '/srv/kortix',
+  '/home',
+  '/etc',
+  '/var',
+])
+
+function validateScopedProjectPath(raw: string): { ok: true } | { ok: false; reason: string } {
+  const normalized = (raw || '').trim().replace(/\/+$/, '')
+  if (!normalized) return { ok: false, reason: 'path is required' }
+  if (!normalized.startsWith('/')) return { ok: false, reason: 'path must be absolute' }
+  if (RESERVED_PATHS.has(normalized)) {
+    return { ok: false, reason: `path "${normalized}" is reserved` }
+  }
+  if (normalized === WORKSPACE_ROOT || normalized.includes('..')) {
+    return { ok: false, reason: `invalid path "${normalized}"` }
+  }
+  return { ok: true }
+}
 
 // Project ACL rule:
 //   - managers (owner / admin / platform_admin) see every project
@@ -102,18 +135,24 @@ projectsRouter.post('/', async (c) => {
   try {
     const db = getDb()
     const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string }>().catch(() => ({}))
-    const projectPath = body.path?.trim() || '/workspace'
+    const rawPath = body.path?.trim() || ''
+
+    const validation = validateScopedProjectPath(rawPath)
+    if (!validation.ok) {
+      return c.json({ error: validation.reason }, 400)
+    }
+    const projectPath = rawPath.replace(/\/+$/, '')
+
     const existing = db.prepare('SELECT * FROM projects WHERE path=$path').get({ $path: projectPath }) as ProjectRow | null
     if (existing) return c.json(existing)
 
-    const fallbackName = projectPath === '/workspace' ? 'Workspace' : basename(projectPath) || 'Project'
-    const name = body.name?.trim() || fallbackName
+    const name = body.name?.trim() || basename(projectPath) || 'Project'
     const id = body.id?.trim() || `project_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
     const description = body.description ?? ''
     const createdAt = new Date().toISOString()
 
-    db.prepare(`INSERT INTO projects (id, name, path, description, created_at, opencode_id, maintainer_session_id)
-      VALUES ($id, $name, $path, $description, $createdAt, NULL, NULL)`)
+    db.prepare(`INSERT INTO projects (id, name, path, kind, description, created_at, opencode_id, maintainer_session_id)
+      VALUES ($id, $name, $path, 'scoped', $description, $createdAt, NULL, NULL)`)
       .run({
         $id: id,
         $name: name,
@@ -121,6 +160,19 @@ projectsRouter.post('/', async (c) => {
         $description: description,
         $createdAt: createdAt,
       })
+
+    try {
+      await ensureProjectWorkspace({
+        projectId: id,
+        kind: 'scoped',
+        members: [],
+        migrateFrom: projectPath,
+      })
+    } catch (err) {
+      console.warn(
+        `[projects] supervisor ensure failed for ${id}: ${err instanceof Error ? err.message : err}`,
+      )
+    }
 
     return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }))
   } catch (e) {
@@ -271,9 +323,17 @@ projectsRouter.delete('/:id', async (c) => {
     return c.json({ error: 'Missing permission: projects:delete' }, 403)
   }
 
-  // Clean up all related records
   try { db.prepare('DELETE FROM session_projects WHERE project_id=$pid').run({ $pid: p.id }) } catch {}
+  try { db.prepare('DELETE FROM project_members WHERE project_id=$pid').run({ $pid: p.id }) } catch {}
   db.prepare('DELETE FROM projects WHERE id=$id').run({ $id: p.id })
+
+  try {
+    await deleteProjectWorkspace({ projectId: p.id })
+  } catch (err) {
+    console.warn(
+      `[projects] supervisor delete failed for ${p.id}: ${err instanceof Error ? err.message : err}`,
+    )
+  }
 
   return c.json({ deleted: true, name: p.name, path: p.path })
 })
@@ -395,6 +455,17 @@ projectsRouter.post('/:id/members', async (c) => {
      ON CONFLICT(project_id, user_id) DO UPDATE SET role=$role`,
   ).run({ $pid: p.id, $uid: targetUserId, $role: role, $by: addedBy })
 
+  const uid = getUidFor(targetUserId)
+  if (uid) {
+    try {
+      await grantProjectAccess({ projectId: p.id, username: uid.username, linuxUid: uid.linuxUid })
+    } catch (err) {
+      console.warn(
+        `[projects] supervisor grant failed for ${targetUserId} on ${p.id}: ${err instanceof Error ? err.message : err}`,
+      )
+    }
+  }
+
   return c.json({ ok: true, project_id: p.id, user_id: targetUserId, role })
 })
 
@@ -410,6 +481,22 @@ projectsRouter.delete('/:id/members/:userId', async (c) => {
     $pid: p.id,
     $uid: userId,
   })
+
+  const uid = getUidFor(userId)
+  if (uid) {
+    try {
+      await revokeProjectAccess({
+        projectId: p.id,
+        username: uid.username,
+        supabaseUserId: userId,
+      })
+    } catch (err) {
+      console.warn(
+        `[projects] supervisor revoke failed for ${userId} on ${p.id}: ${err instanceof Error ? err.message : err}`,
+      )
+    }
+  }
+
   return c.json({ ok: true })
 })
 

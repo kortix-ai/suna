@@ -67,6 +67,11 @@ await secretStore.loadIntoProcessEnv()
 import { initShareStore } from './services/share-store'
 initShareStore()
 
+import { runUpgradeMigrations } from './services/upgrade'
+void runUpgradeMigrations().catch((err) => {
+  console.warn('[kortix-master] upgrade migrations failed:', err)
+})
+
 // ─── Guarantee core auth vars in s6 env dir ──────────────────────────────────
 // These are injected as Docker env vars at container creation but never written
 // to the s6 env directory. Tools use getEnv() which falls back to reading
@@ -293,6 +298,16 @@ async function checkOpenCodeReady(): Promise<boolean> {
   const now = Date.now()
   if (now - openCodeLastCheck < OPENCODE_CHECK_INTERVAL) return openCodeReady
   openCodeLastCheck = now
+
+  if (process.env.KORTIX_LINUX_ISOLATION === 'on') {
+    const healthy = await isSupervisorReady()
+    if (healthy !== openCodeReady) {
+      console.log(`[Kortix Master] supervisor ${healthy ? 'ready' : 'unreachable'}`)
+    }
+    openCodeReady = healthy
+    return healthy
+  }
+
   try {
     const res = await fetch(`http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}/session`, {
       signal: AbortSignal.timeout(3_000),
@@ -302,7 +317,6 @@ async function checkOpenCodeReady(): Promise<boolean> {
         console.log('[Kortix Master] OpenCode is ready')
       }
       openCodeReady = true
-      // Consume body to free connection
       await res.arrayBuffer()
       return true
     }
@@ -316,8 +330,21 @@ async function checkOpenCodeReady(): Promise<boolean> {
   return false
 }
 
-// Fire initial check in background
-checkOpenCodeReady()
+async function isSupervisorReady(): Promise<boolean> {
+  const socket = process.env.KORTIX_SUPERVISOR_SOCKET || '/run/kortix/supervisor.sock'
+  try {
+    const res = await fetch('http://supervisor/health', {
+      // @ts-ignore Bun supports unix
+      unix: socket,
+      signal: AbortSignal.timeout(1_500),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+await checkOpenCodeReady()
 
 // ─── API Documentation ──────────────────────────────────────────────────────
 

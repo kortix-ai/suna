@@ -7,6 +7,8 @@ DB_PATH="${KORTIX_DB_PATH:-/workspace/.kortix/kortix.db}"
 HOME_ROOT="${KORTIX_MEMBER_HOME_ROOT:-/srv/kortix/home}"
 UID_MIN="${KORTIX_MEMBER_UID_MIN:-10000}"
 UID_MAX="${KORTIX_MEMBER_UID_MAX:-19999}"
+DB_WRITER_GROUP="${KORTIX_DB_WRITER_GROUP:-kortix_db}"
+WORKSPACE_DIR="${KORTIX_WORKSPACE:-/workspace}"
 DUMP_SCRIPT="$SCRIPT_DIR/dump-uid-map.ts"
 BUN_BIN="${BUN_BIN:-/opt/bun/bin/bun}"
 [ -x "$BUN_BIN" ] || BUN_BIN="$(command -v bun || true)"
@@ -35,6 +37,27 @@ fi
 
 mkdir -p "$HOME_ROOT"
 chmod 755 "$HOME_ROOT"
+
+if ! getent group "$DB_WRITER_GROUP" >/dev/null 2>&1; then
+  groupadd "$DB_WRITER_GROUP" || log "groupadd $DB_WRITER_GROUP failed"
+fi
+
+DB_DIR="$(dirname "$DB_PATH")"
+if [ -d "$DB_DIR" ]; then
+  chgrp "$DB_WRITER_GROUP" "$DB_DIR" 2>/dev/null || true
+  chmod 2775 "$DB_DIR" 2>/dev/null || true
+fi
+if [ -f "$DB_PATH" ]; then
+  chgrp "$DB_WRITER_GROUP" "$DB_PATH" 2>/dev/null || true
+  chmod 664 "$DB_PATH" 2>/dev/null || true
+fi
+
+if [ -d "$WORKSPACE_DIR" ]; then
+  chgrp -R "$DB_WRITER_GROUP" "$WORKSPACE_DIR" 2>/dev/null || true
+  chmod -R g+rwX "$WORKSPACE_DIR" 2>/dev/null || true
+  find "$WORKSPACE_DIR" -type d -exec chmod g+s {} + 2>/dev/null || true
+  log "workspace opened for group $DB_WRITER_GROUP"
+fi
 
 ROWS="$(KORTIX_DB_PATH="$DB_PATH" "$BUN_BIN" run "$DUMP_SCRIPT" 2>/dev/null || true)"
 
@@ -65,9 +88,13 @@ while IFS=$'\t' read -r supabase_user_id linux_uid username primary_gid; do
       || { log "useradd failed for $username"; continue; }
   fi
 
-  mkdir -p "$home_dir" "$home_dir/.kortix" "$home_dir/projects" "$home_dir/.config" "$home_dir/.config/opencode"
+  if getent group "$DB_WRITER_GROUP" >/dev/null 2>&1; then
+    gpasswd -a "$username" "$DB_WRITER_GROUP" >/dev/null 2>&1 || true
+  fi
+
+  mkdir -p "$home_dir" "$home_dir/.kortix" "$home_dir/projects" "$home_dir/workspace" "$home_dir/workspace/uploads" "$home_dir/.config" "$home_dir/.config/opencode"
   chown -R "$linux_uid:$primary_gid" "$home_dir"
-  chmod 700 "$home_dir" "$home_dir/.kortix" "$home_dir/projects" "$home_dir/.config" "$home_dir/.config/opencode"
+  chmod 700 "$home_dir" "$home_dir/.kortix" "$home_dir/projects" "$home_dir/workspace" "$home_dir/workspace/uploads" "$home_dir/.config" "$home_dir/.config/opencode"
 
   count=$((count + 1))
   log "ok user=$username uid=$linux_uid supabase=$supabase_user_id"
