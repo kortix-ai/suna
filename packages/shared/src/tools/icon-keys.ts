@@ -78,6 +78,10 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'image_search':
       return 'image';
 
+    case 'exa-search':
+    case 'exa_search':
+      return 'globe';
+
     // File operations
     case 'create-file':
     case 'create_file':
