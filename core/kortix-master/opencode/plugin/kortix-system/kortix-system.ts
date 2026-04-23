@@ -15,9 +15,11 @@ import * as path from "node:path"
 import { Database } from "bun:sqlite"
 import type { Plugin } from "@opencode-ai/plugin"
 
-import { initProjectsDb, ProjectManager, projectTools, projectGateHook } from "./projects"
+import { initProjectsDb, ProjectManager, projectTools, projectGateHook, projectStatusTransform } from "./projects"
 import { agentTaskTools, handleAgentTaskSessionEvent } from "./agent-tasks"
+import { ticketTools, ticketToolGateHook } from "./ticket-tools"
 import { ensureTasksTable, reconcileAllRunningTasks } from "../../../src/services/task-service"
+import { ensureTicketTables } from "../../../src/services/ticket-service"
 import { resolveKortixWorkspaceRoot, ensureKortixDir } from "./lib/paths"
 import { markStartupAbortedSession } from "./lib/startup-aborted-sessions"
 import { getBusySessionIds } from "../../../src/services/runtime-reload"
@@ -139,6 +141,7 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	const kortixDir = ensureKortixDir(import.meta.dir)
 	const db = initProjectsDb(path.join(kortixDir, "kortix.db"))
 	ensureTasksTable(db)
+	ensureTicketTables(db)
 	const mgr = new ProjectManager(client, workspaceRoot, db)
 	let currentSessionId: string | null = null
 
@@ -169,10 +172,14 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	}, 5000)
  
 	// ── Merge all tools ──
+	const projectGate = projectGateHook(mgr)
+	const ticketGate = ticketToolGateHook(db)
+	const projectStatus = projectStatusTransform(mgr, () => currentSessionId)
 	return {
 		tool: {
 			...projectTools(mgr, db),
 			...agentTaskTools(db, mgr, client),
+			...ticketTools(db, mgr, client),
 			...(sessions?.tool || {}),
 			...(connectors?.tool || {}),
 			...(triggers?.tool || {}),
@@ -183,14 +190,26 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 		// Auth
 		...(auth?.auth ? { auth: auth.auth } : {}),
 
-		// Project gate (file writes require project)
-		"tool.execute.before": projectGateHook(mgr),
+		// Gates: project selection + ticket tool_group enforcement
+		"tool.execute.before": async (input: any, output: any) => {
+			await projectGate(input, output)
+			await ticketGate(input, output)
+		},
 
-		// System prompt transform — forwards to auth (anthropic prefix)
+		// System prompt transform — forwards to auth (anthropic prefix).
+		// Project-agent persona is injected by OpenCode itself from the
+		// agent file's body (real first-class agents under `.opencode/agent/`),
+		// not through this hook.
 		"experimental.chat.system.transform": async (input: any, output: { system: string[] }) => {
 			if (auth?.["experimental.chat.system.transform"]) {
 				await auth["experimental.chat.system.transform"](input, output)
 			}
+		},
+
+		// Inject the project status / no-project gate / v2-route-only reminder
+		// into the last user message before each LLM call.
+		"experimental.chat.messages.transform": async (input: any, output: { messages: any[] }) => {
+			await projectStatus(input, output).catch(() => {})
 		},
 
 		// BTW command
@@ -234,6 +253,44 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 				payload.event.type === "session.aborted"
 			)) {
 				handleAgentTaskSessionEvent(sid, payload.event.type, client, db, mgr).catch(() => {})
+			}
+
+			// Persistent-agent queue drain: when a persistent-mode agent's
+			// session goes idle, look for any pending_agent_triggers queued
+			// against that agent (assignments that arrived while the session
+			// was mid-turn) and fire the next one. Sequential per-agent
+			// execution — no parallel session deadlocks.
+			if (sid && payload.event.type === "session.idle") {
+				try {
+					const agent = db.prepare(
+						"SELECT * FROM project_agents WHERE session_id=$sid AND execution_mode='persistent'",
+					).get({ $sid: sid }) as { id: string; project_id: string } | undefined
+					if (agent) {
+						const { drainPendingTriggersForAgents } = await import("../../../src/services/ticket-service")
+						const { fireAgentTrigger } = await import("../../../src/services/ticket-triggers")
+						const pending = drainPendingTriggersForAgents(db, [agent.id])
+						if (pending.length) {
+							// Re-enqueue the rest (we drain all then re-enqueue tail
+							// because helper deletes them all in one shot)
+							const [next, ...rest] = pending
+							const { enqueuePendingTrigger } = await import("../../../src/services/ticket-service")
+							for (const r of rest) {
+								enqueuePendingTrigger(db, { agent_id: r.agent_id, ticket_id: r.ticket_id, reason: r.reason })
+							}
+							const fullAgent = db.prepare("SELECT * FROM project_agents WHERE id=$id").get({ $id: agent.id }) as any
+							await fireAgentTrigger({
+								db,
+								client: client as any,
+								projectId: agent.project_id,
+								ticketId: next.ticket_id,
+								agent: fullAgent,
+								reason: next.reason,
+							})
+						}
+					}
+				} catch (err) {
+					console.warn("[kortix-system] persistent-agent queue drain failed:", err)
+				}
 			}
 		},
 

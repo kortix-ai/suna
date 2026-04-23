@@ -42,6 +42,21 @@ export class TriggerManager {
     this.webhookServer = new WebhookTriggerServer(host, port, (route, payload) => this.dispatchWebhook(route, payload))
     // Pipedream handler: route events from Pipedream through the webhook server
     this.webhookServer.setPipedreamHandler((listenerId, payload) => this.dispatchPipedreamEvent(listenerId, payload))
+    // Reload handler: external CRUD paths (kortix-master's /kortix/triggers
+    // route) bypass manager.createTrigger and hit the store directly. They
+    // POST /internal/reload on this server after mutating the DB so we
+    // re-read and re-register runtime (cron + webhook routes).
+    this.webhookServer.setReloadHandler(() => this.rebuildRuntime())
+    // Run handler: kortix-master's /kortix/triggers/:id/run forwards to
+    // POST /internal/run/:id so the trigger actually fires through the
+    // action dispatcher (real cron tick path). Without this, /run only
+    // inserts a stale execution row and nothing dispatches.
+    this.webhookServer.setRunHandler((id) => this.runTrigger(id))
+    // Write-through handler: seed paths that INSERT triggers directly into
+    // the DB (v2 project seed) hit this to flush DB→YAML, preventing the
+    // reconciler from wiping DB-only rows on the next sync. No-op if YAML
+    // already matches.
+    this.webhookServer.setWriteThroughHandler(() => this.yamlSync.writeThrough())
   }
 
   private resolveDbPath(directory: string): string {

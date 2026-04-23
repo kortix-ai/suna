@@ -129,11 +129,11 @@ export function MarkdownEditor({
   const isInitializing = useRef<boolean>(true);
   // Store the "normalized" content after first render (markdown→HTML→markdown)
   const normalizedContent = useRef<string | null>(null);
-  
+
   // Store callback in ref to avoid it being a dependency
   const onUnsavedChangeRef = useRef(onUnsavedChange);
   onUnsavedChangeRef.current = onUnsavedChange;
-  
+
   // Notify parent when hasChanges state changes
   const prevHasChanges = useRef(hasChanges);
   useEffect(() => {
@@ -204,14 +204,14 @@ export function MarkdownEditor({
   // Discard changes function
   const handleDiscard = useCallback(() => {
     if (!editorInstance) return;
-    
+
     const newHtml = marked.parse(savedContent.current || '', { async: false }) as string;
     editorInstance.commands.setContent(newHtml);
     // Update normalized content after discard
     const discardedMarkdown = htmlToMarkdown(newHtml);
     normalizedContent.current = discardedMarkdown;
     setHasChanges(false);
-    
+
     if (onChange) {
       onChange(savedContent.current);
     }
@@ -292,7 +292,7 @@ export function MarkdownEditor({
         },
       }),
       HardBreak,
-      Heading.configure({ 
+      Heading.configure({
         levels: [1, 2, 3, 4, 5, 6],
       }),
       HorizontalRule.configure({
@@ -308,10 +308,10 @@ export function MarkdownEditor({
         },
       }),
       TableKit.configure({
-        table: { 
+        table: {
           resizable: true,
           HTMLAttributes: {
-            class: 'w-full text-sm my-5 rounded-xl border border-border/60 overflow-hidden',
+            class: 'w-full text-sm my-0 rounded-xl border border-border/60 overflow-hidden',
           },
         },
         tableHeader: {
@@ -389,14 +389,14 @@ export function MarkdownEditor({
         onChange(markdown);
       }
     },
-      editorProps: {
-        attributes: {
-          class: cn(
-            'focus:outline-none min-h-[200px]',
-            // Remove all prose classes - use direct styling like UnifiedMarkdown
-          ),
-          spellcheck: 'true',
-        },
+    editorProps: {
+      attributes: {
+        class: cn(
+          'focus:outline-none min-h-[200px]',
+          // Remove all prose classes - use direct styling like UnifiedMarkdown
+        ),
+        spellcheck: 'true',
+      },
       handleDrop: (view, event, slice, moved) => {
         if (!moved && event.dataTransfer && event.dataTransfer.files.length > 0) {
           const file = event.dataTransfer.files[0];
@@ -549,7 +549,8 @@ export function MarkdownEditor({
               </FloatingMenu>
             </>
           )}
-          <style dangerouslySetInnerHTML={{ __html: `
+          <style dangerouslySetInnerHTML={{
+            __html: `
             /* ═══════════════════════════════════════════════════════════════
                KORTIX TIPTAP EDITOR STYLES
                Matches UnifiedMarkdown for consistent rendering

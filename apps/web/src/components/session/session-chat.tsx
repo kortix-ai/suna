@@ -4055,7 +4055,10 @@ export function SessionChat({
     useSessionSync(sessionId);
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
-  const { data: agents } = useOpenCodeAgents();
+  // Scope agents to the session's directory so project-local agents
+  // (.opencode/agent/*.md under the project folder) are returned alongside
+  // the globals. First render has no session yet — fall back to globals.
+  const { data: agents } = useOpenCodeAgents({ directory: session?.directory });
   const { data: commands } = useOpenCodeCommands();
   const { data: providers } = useOpenCodeProviders();
   const { data: allSessions } = useOpenCodeSessions();
@@ -4081,6 +4084,31 @@ export function SessionChat({
       setSelectedProjectId(null);
     }
   }, [selectedProjectId, kortixProjects, selectedProject, setSelectedProjectId]);
+
+  // Default the agent picker to whichever agent owns the latest assistant
+  // turn in this session. Catches PM onboarding sessions (first turn was PM),
+  // "Ask PM" sessions, team-agent ticket sessions, etc. — without relying on
+  // title patterns. Falls through if there's no assistant msg yet.
+  const defaultedAgentRef = useRef(false);
+  useEffect(() => {
+    if (defaultedAgentRef.current) return;
+    if (!messages || messages.length === 0) return;
+    let lastAgent: string | null = null;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const info = messages[i]?.info as any;
+      if (info?.role === 'assistant' && info?.agent) {
+        lastAgent = info.agent as string;
+        break;
+      }
+    }
+    if (!lastAgent) return;
+    const agentEntry = local.agent.list.find((a: any) => a?.name === lastAgent);
+    if (!agentEntry) return;
+    if (local.agent.current?.name !== lastAgent) {
+      local.agent.set(lastAgent);
+    }
+    defaultedAgentRef.current = true;
+  }, [messages, local.agent]);
 
   const pendingPromptHandled = useRef(false);
 
@@ -4369,6 +4397,7 @@ export function SessionChat({
           client.session.promptAsync({
             sessionID: sessionId,
             parts,
+            ...(session?.directory ? { directory: session.directory } : {}),
             ...(sendOpts?.agent && { agent: sendOpts.agent }),
             ...(sendOpts?.model && { model: sendOpts.model }),
             ...(sendOpts?.variant && { variant: sendOpts.variant }),
@@ -5681,6 +5710,10 @@ export function SessionChat({
         res = await client.session.promptAsync({
           sessionID: sessionId,
           parts: mappedParts,
+          // Pass the session's directory so opencode resolves project-scoped
+          // agents (.opencode/agent/*.md under the project) and applies them
+          // when the user picked a project agent from the picker.
+          ...(session?.directory ? { directory: session.directory } : {}),
           ...(sendOpts?.agent ? { agent: sendOpts.agent } : {}),
           ...(sendOpts?.model ? { model: sendOpts.model } : {}),
           ...(sendOpts?.variant ? { variant: sendOpts.variant } : {}),
@@ -6036,8 +6069,24 @@ export function SessionChat({
           <KortixLoader size="small" />
         </div>
       ) : isNotFound ? (
-        <div className="flex-1 flex items-center justify-center min-h-0 text-sm text-muted-foreground">
-          Session not found
+        <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-3 text-center px-6">
+          <div className="text-sm text-muted-foreground">
+            This session no longer exists — it was deleted or never finished
+            saving.
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                const sid = session?.id || sessionId;
+                if (sid) useTabStore.getState().closeTab?.(sid);
+              } catch {}
+              if (typeof window !== 'undefined') window.location.assign('/');
+            }}
+            className="text-sm text-primary hover:underline"
+          >
+            ← Go to home
+          </button>
         </div>
       ) : (
         <div ref={chatAreaRef} className="relative flex-1 min-h-0 z-10">

@@ -68,6 +68,8 @@ import { useServerStore } from '@/stores/server-store';
 import { childMapByParent, sortSessions, allDescendantIds } from '@/ui';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
 import { useBackgroundSessionPrefetch, prefetchSession } from '@/hooks/opencode/use-session-prefetch';
+import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
+import { useTriggers } from '@/hooks/scheduled-tasks';
 import Link from 'next/link';
 
 // ============================================================================
@@ -570,6 +572,19 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     [getPendingCount, debouncedBusy, statuses],
   );
 
+  // Known trigger names for the current project — needed so sessions whose
+  // title exactly equals a trigger name (e.g. `foo-board-sweep`, no `·` so
+  // the agent-bound regex can't catch them) get classified as `trigger_fire`
+  // and hidden from the sidebar.
+  const { data: triggers } = useTriggers();
+  const triggerNames = useMemo(() => {
+    if (!triggers) return [];
+    const list = projectId
+      ? triggers.filter((t: any) => t.project_id === projectId)
+      : triggers;
+    return list.map((t: any) => t.name as string);
+  }, [triggers, projectId]);
+
   // Filter to root sessions only for the top-level list.
   const rootSessions = useMemo(() => {
     if (!sessions) return [];
@@ -577,6 +592,13 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     if (projectId !== null && projectId !== undefined) {
       list = list.filter((s) => s.projectID === projectId);
     }
+    // Hide agent-bound and trigger-fire sessions from the sidebar — those
+    // belong in the project Sessions tab, grouped by agent/trigger. Keep
+    // human chats + PM onboarding (user needs to answer there).
+    list = list.filter((s) => !isSidebarHidden(classifySession(
+      { id: s.id, title: s.title, parentID: s.parentID ?? null },
+      { triggerNames },
+    )));
     const baseSorted = [...list].sort(sortSessions(Date.now()));
     return baseSorted.sort((a, b) => {
       const aPending = getPendingCount(a.id);
@@ -589,7 +611,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
       if (bIsBusy > aIsBusy) return 1;
       return 0;
     });
-  }, [sessions, projectId, debouncedBusy, statuses, getPendingCount]);
+  }, [sessions, projectId, triggerNames, debouncedBusy, statuses, getPendingCount]);
 
   // Archived sessions
   const archivedSessions = useMemo(() => {

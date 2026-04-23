@@ -24,6 +24,16 @@ export class TriggerYaml {
   private watcher: FSWatcher | null = null
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private periodicTimer: ReturnType<typeof setInterval> | null = null
+  /**
+   * True once we've completed at least one YAML→DB reconcile in this
+   * process. Before the first reconcile, the DB is treated as
+   * authoritative (see syncFromYaml): if YAML is empty but DB has rows,
+   * we flush DB→YAML instead of deleting DB rows. This prevents a classic
+   * race where project_create seeds a trigger directly into the DB
+   * moments before the plugin finishes booting, and the plugin's first
+   * sync wipes the seed because YAML is still empty.
+   */
+  private hasBootstrapped: boolean = false
 
   constructor(
     private readonly store: TriggerStore,
@@ -97,6 +107,12 @@ export class TriggerYaml {
         method: typeof (action as any).method === "string" ? (action as any).method : undefined,
         headers: action.headers && typeof action.headers === "object" ? action.headers as Record<string, string> : undefined,
         body_template: typeof action.body_template === "string" ? action.body_template : undefined,
+        // ticket_create action fields
+        title: typeof action.title === "string" ? action.title : undefined,
+        body_md: typeof action.body_md === "string" ? action.body_md : undefined,
+        template_id: typeof action.template_id === "string" ? action.template_id : undefined,
+        column: typeof action.column === "string" ? action.column : undefined,
+        assignee_slugs: Array.isArray(action.assignee_slugs) ? action.assignee_slugs.map(String) : undefined,
       },
       context: entry.context ? {
         extract: (entry.context as any).extract,
@@ -227,6 +243,25 @@ export class TriggerYaml {
     const file = this.read()
     const yamlNames = new Set<string>()
 
+    // Bootstrap safety: on the very first reconcile of this process, if
+    // YAML is empty but the DB already has rows (typical when
+    // project_create seeded a trigger moments before the plugin finished
+    // booting), flush DB→YAML instead of deleting. The alternative —
+    // deleting — is the root cause of the "seeded trigger vanishes after
+    // boot" bug. Subsequent syncs (post-bootstrap) delete orphans as usual
+    // so user-driven YAML edits still work.
+    if (!this.hasBootstrapped && file.triggers.length === 0) {
+      const dbRows = this.store.list()
+      this.hasBootstrapped = true
+      if (dbRows.length > 0) {
+        this.logger?.("info", `[triggers] First sync: YAML empty but DB has ${dbRows.length} row(s) — flushing DB→YAML to preserve`)
+        this.flushToYaml()
+        this.lastSyncedHash = sha256(readFileSync(this.yamlPath, "utf8"))
+        return result
+      }
+    }
+    this.hasBootstrapped = true
+
     // Upsert each YAML entry
     for (const entry of file.triggers) {
       yamlNames.add(entry.name)
@@ -331,6 +366,15 @@ export class TriggerYaml {
         headers: entry.action.headers,
         body_template: entry.action.body_template,
         timeout_ms: entry.action.timeout_ms,
+      }
+    }
+    if (type === "ticket_create") {
+      return {
+        title: entry.action.title ?? "",
+        body_md: entry.action.body_md,
+        template_id: entry.action.template_id,
+        column: entry.action.column,
+        assignee_slugs: entry.action.assignee_slugs,
       }
     }
     return {}

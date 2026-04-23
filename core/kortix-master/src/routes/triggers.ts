@@ -26,6 +26,11 @@ function getWorkspaceRoot(): string {
 function getStore(): TriggerStore {
   if (!store) {
     store = new TriggerStore(join(getWorkspaceRoot(), '.kortix', 'kortix.db'))
+    // Additive columns the engine ignores but the UI + dispatch read:
+    //   project_id — scope a trigger to a project's Triggers tab
+    //   ticket_id  — bind a trigger to a ticket (persistent per-ticket session)
+    try { (store as any).db?.exec?.(`ALTER TABLE triggers ADD COLUMN project_id TEXT`) } catch {}
+    try { (store as any).db?.exec?.(`ALTER TABLE triggers ADD COLUMN ticket_id TEXT`) } catch {}
   }
   return store
 }
@@ -35,6 +40,46 @@ function getYamlSync(): TriggerYaml {
     yamlSync = new TriggerYaml(getStore(), getWorkspaceRoot())
   }
   return yamlSync
+}
+
+/**
+ * Tell the in-plugin trigger manager to re-read the DB and re-register
+ * runtime (cron jobs + webhook routes). kortix-master's HTTP CRUD path
+ * bypasses manager.createTrigger (we hit the store directly so the
+ * transaction stays in-process), so without this ping the new cron
+ * schedule + webhook route never register until an opencode restart.
+ */
+async function pokeTriggerManagerReload(): Promise<void> {
+  const port = process.env.KORTIX_TRIGGER_WEBHOOK_PORT || '8099'
+  try {
+    await fetch(`http://localhost:${port}/internal/reload`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(2_000),
+    })
+  } catch {
+    // Best-effort — if the plugin is down, triggers will pick up on next
+    // opencode boot via its own sync loop.
+  }
+}
+
+/**
+ * Forward a manual fire to the in-plugin trigger manager. Hits
+ * POST /internal/run/:id on the trigger webhook server, which routes
+ * to manager.runTrigger(id) → ActionDispatcher.dispatch → real session
+ * creation. Without this the /run endpoint only logs an execution row.
+ */
+async function pokeTriggerManagerRun(triggerId: string): Promise<{ ok: boolean; executionId?: string; error?: string }> {
+  const port = process.env.KORTIX_TRIGGER_WEBHOOK_PORT || '8099'
+  try {
+    const res = await fetch(`http://localhost:${port}/internal/run/${encodeURIComponent(triggerId)}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(10_000),
+    })
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; executionId?: string; error?: string }
+    return { ok: !!body.ok, executionId: body.executionId, error: body.error }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 // ─── Response mappers ───────────────────────────────────────────────────────
@@ -101,6 +146,8 @@ function mapTriggerToResponse(t: TriggerRecord): TriggerResponse {
     agentFilePath: null,
     maxRetries: 0,
     timeoutMs: (actionConfig.timeout_ms as number) ?? 300000,
+    project_id: (t as any).project_id ?? null,
+    ticket_id: (t as any).ticket_id ?? null,
   }
 }
 
@@ -138,7 +185,7 @@ const createSchema = z.object({
     secret: z.string().optional(),
   }),
   action: z.object({
-    type: z.enum(['prompt', 'command', 'http']).optional().default('prompt'),
+    type: z.enum(['prompt', 'command', 'http', 'ticket_create']).optional().default('prompt'),
     prompt: z.string().optional(),
     agent: z.string().optional(),
     model: z.string().optional(),
@@ -152,6 +199,12 @@ const createSchema = z.object({
     method: z.string().optional(),
     headers: z.record(z.string(), z.string()).optional(),
     body_template: z.string().optional(),
+    // ticket_create action
+    title: z.string().optional(),
+    body_md: z.string().optional(),
+    template_id: z.string().optional(),
+    column: z.string().optional(),
+    assignee_slugs: z.array(z.string()).optional(),
   }).optional().default({ type: 'prompt' }),
   context: z.object({
     extract: z.record(z.string(), z.string()).optional(),
@@ -237,6 +290,10 @@ triggersRouter.post('/',
     if (actionType === 'http' && !data.action.url) {
       return c.json({ error: 'url is required for http actions' }, 400)
     }
+    if (actionType === 'ticket_create') {
+      if (!data.action.title) return c.json({ error: 'title is required for ticket_create actions' }, 400)
+      if (!(body as any).project_id) return c.json({ error: 'project_id is required for ticket_create (the ticket\'s target project)' }, 400)
+    }
 
     // Build source config
     const sourceConfig: Record<string, unknown> = data.source.type === 'cron'
@@ -259,6 +316,14 @@ triggersRouter.post('/',
       if (data.action.headers) actionConfig.headers = data.action.headers
       if (data.action.body_template) actionConfig.body_template = data.action.body_template
       if (data.action.timeout_ms) actionConfig.timeout_ms = data.action.timeout_ms
+    } else if (actionType === 'ticket_create') {
+      actionConfig.title = data.action.title
+      if (data.action.body_md) actionConfig.body_md = data.action.body_md
+      if (data.action.template_id) actionConfig.template_id = data.action.template_id
+      if (data.action.column) actionConfig.column = data.action.column
+      if (data.action.assignee_slugs && data.action.assignee_slugs.length) {
+        actionConfig.assignee_slugs = data.action.assignee_slugs
+      }
     }
 
     const trigger = db.create({
@@ -275,8 +340,25 @@ triggersRouter.post('/',
       metadata: data.metadata,
     })
 
-    // Write through to YAML
+    // Stamp additive scoping columns the engine doesn't know about.
+    const projectId = (body as any).project_id as string | undefined
+    const ticketId = (body as any).ticket_id as string | undefined
+    if (projectId) {
+      try {
+        ;(db as any).db?.query?.('UPDATE triggers SET project_id = ? WHERE id = ?').run(projectId, trigger.id)
+        ;(trigger as any).project_id = projectId
+      } catch {}
+    }
+    if (ticketId) {
+      try {
+        ;(db as any).db?.query?.('UPDATE triggers SET ticket_id = ? WHERE id = ?').run(ticketId, trigger.id)
+        ;(trigger as any).ticket_id = ticketId
+      } catch {}
+    }
+
+    // Write through to YAML + poke the plugin to re-register runtime
     ys.writeThrough()
+    await pokeTriggerManagerReload()
 
     return c.json({ success: true, data: mapTriggerToResponse(trigger) }, 201)
   },
@@ -348,6 +430,7 @@ triggersRouter.patch('/:id',
     // Write through to YAML (skip for runtime-only changes like is_active)
     const hasConfigChange = body.source || body.action || body.name || body.description !== undefined || body.cron_expr || body.prompt || body.context
     if (hasConfigChange) ys.writeThrough()
+    await pokeTriggerManagerReload()
 
     return c.json({ success: true, data: mapTriggerToResponse(trigger) })
   },
@@ -356,12 +439,13 @@ triggersRouter.patch('/:id',
 // DELETE /triggers/:id
 triggersRouter.delete('/:id',
   describeRoute({ tags: ['Triggers'], summary: 'Delete trigger', responses: { 200: { description: 'Deleted' }, 404: { description: 'Not found' } } }),
-  (c) => {
+  async (c) => {
     const db = getStore()
     const ys = getYamlSync()
     const deleted = db.delete(c.req.param('id'))
     if (!deleted) return notFound(c, 'Trigger')
     ys.writeThrough()
+    await pokeTriggerManagerReload()
     return c.json({ success: true, message: 'Trigger deleted' })
   },
 )
@@ -369,10 +453,11 @@ triggersRouter.delete('/:id',
 // POST /triggers/:id/pause
 triggersRouter.post('/:id/pause',
   describeRoute({ tags: ['Triggers'], summary: 'Pause trigger', responses: { 200: { description: 'Paused' }, 404: { description: 'Not found' } } }),
-  (c) => {
+  async (c) => {
     const db = getStore()
     const trigger = db.update(c.req.param('id'), { is_active: false })
     if (!trigger) return notFound(c, 'Trigger')
+    await pokeTriggerManagerReload()
     return c.json({ success: true, data: mapTriggerToResponse(trigger) })
   },
 )
@@ -380,10 +465,11 @@ triggersRouter.post('/:id/pause',
 // POST /triggers/:id/resume
 triggersRouter.post('/:id/resume',
   describeRoute({ tags: ['Triggers'], summary: 'Resume trigger', responses: { 200: { description: 'Resumed' }, 404: { description: 'Not found' } } }),
-  (c) => {
+  async (c) => {
     const db = getStore()
     const trigger = db.update(c.req.param('id'), { is_active: true })
     if (!trigger) return notFound(c, 'Trigger')
+    await pokeTriggerManagerReload()
     return c.json({ success: true, data: mapTriggerToResponse(trigger) })
   },
 )
@@ -396,16 +482,18 @@ triggersRouter.post('/:id/run',
     const trigger = db.get(c.req.param('id'))
     if (!trigger) return notFound(c, 'Trigger')
 
-    // Create an execution record for the manual run
-    const execution = db.createExecution(trigger.id, {
-      status: 'running',
-      metadata: { manual: true },
-    })
+    // Forward to the in-plugin manager so the action dispatcher actually
+    // runs (creates a session via prompt/ticket_create action). The manager
+    // owns execution-row creation, status transitions, and session linkage.
+    const result = await pokeTriggerManagerRun(trigger.id)
+    if (!result.ok) {
+      return c.json({ success: false, error: result.error ?? 'dispatch_failed' }, 502)
+    }
 
     return c.json({
       success: true,
       data: {
-        execution_id: execution.id,
+        execution_id: result.executionId,
         status: 'running',
         message: 'Trigger execution started',
       },

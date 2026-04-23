@@ -8,119 +8,74 @@
  */
 
 import { Hono } from 'hono'
-import { basename } from 'path'
-import type { KortixUserContext } from '../services/kortix-user-context'
-import { hasScope } from '../services/permissions'
-import { getDb } from '../services/db'
-import {
-  deleteProjectWorkspace,
-  ensureProjectWorkspace,
-  grantProjectAccess,
-  revokeProjectAccess,
-} from '../services/project-access-client'
-import { getUidFor } from '../services/uid-map'
-import { WORKSPACE_ROOT } from '../services/workspace'
-
-const RESERVED_PATHS = new Set([
-  '/',
-  WORKSPACE_ROOT,
-  '/tmp',
-  '/opt',
-  '/srv',
-  '/srv/kortix',
-  '/home',
-  '/etc',
-  '/var',
-])
-
-function validateScopedProjectPath(raw: string): { ok: true } | { ok: false; reason: string } {
-  const normalized = (raw || '').trim().replace(/\/+$/, '')
-  if (!normalized) return { ok: false, reason: 'path is required' }
-  if (!normalized.startsWith('/')) return { ok: false, reason: 'path must be absolute' }
-  if (RESERVED_PATHS.has(normalized)) {
-    return { ok: false, reason: `path "${normalized}" is reserved` }
-  }
-  if (normalized === WORKSPACE_ROOT || normalized.includes('..')) {
-    return { ok: false, reason: `invalid path "${normalized}"` }
-  }
-  return { ok: true }
-}
-
-// Project ACL rule:
-//   - managers (owner / admin / platform_admin) see every project
-//   - plain members see only projects they have an explicit grant for
-//
-// No header at all = service-key / internal caller → bypass. Returns true
-// when the caller may see the project; callers render the deny response.
-function enforceProjectAccess(c: any, projectId: string): boolean {
-  const user = c.get('kortixUser') as KortixUserContext | undefined
-  if (!user) return true // service-key traffic
-  if (
-    user.sandboxRole === 'platform_admin' ||
-    user.sandboxRole === 'owner' ||
-    user.sandboxRole === 'admin'
-  ) {
-    return true
-  }
-  return userHasProjectGrant(projectId, user.userId)
-}
-
-function isProjectManager(c: any): boolean {
-  const user = c.get('kortixUser') as KortixUserContext | undefined
-  if (!user) return true // service-key path bypasses
-  return (
-    user.sandboxRole === 'platform_admin' ||
-    user.sandboxRole === 'owner' ||
-    user.sandboxRole === 'admin'
-  )
-}
-
-function userCan(c: any, scope: string): boolean {
-  const user = c.get('kortixUser') as KortixUserContext | undefined
-  return hasScope(user, scope)
-}
-
-/**
- * Return the subset of `projectIds` visible to a non-manager user. Only
- * projects with an explicit grant for this user pass through. Single
- * indexed query.
- */
-function filterVisibleProjectIdsForUser(projectIds: string[], user: KortixUserContext): string[] {
-  if (projectIds.length === 0) return projectIds
-  const db = getDb()
-  const placeholders = projectIds.map(() => '?').join(',')
-  const grantRows = db
-    .prepare(
-      `SELECT project_id FROM project_members WHERE user_id=? AND project_id IN (${placeholders})`,
-    )
-    .all(user.userId, ...projectIds) as Array<{ project_id: string }>
-  const allowedSet = new Set(grantRows.map((r) => r.project_id))
-  return projectIds.filter((pid) => allowedSet.has(pid))
-}
+import { Database } from 'bun:sqlite'
+import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
+import { basename, dirname, join } from 'path'
+import { ensureTicketTables, getAgentBySlug } from '../services/ticket-service'
+import { seedV2Project, syncTeamSection, DEFAULT_PM_SLUG, resolveDefaultModel } from '../services/project-v2-seed'
+import { wakeAgentForProject, type OpenCodeClientLike } from '../services/ticket-triggers'
+import { createOpencodeClient } from '@opencode-ai/sdk/client'
+import { config } from '../config'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface ProjectRow {
   id: string; name: string; path: string; description: string
   created_at: string; opencode_id: string | null
+  structure_version?: number
 }
 
-// ── ACL helpers (used by the enforcement guard below) ──────────────────────
+// ── DB singleton ─────────────────────────────────────────────────────────────
 
-/**
- * Does this user have an explicit grant on this project?
- *
- * Rule: managers (owner / admin / platform_admin) see everything unconditionally.
- * Plain members only see a project when they are explicitly listed in
- * project_members. No "open mode" fallback — if you want someone to see a
- * project, add them.
- */
-export function userHasProjectGrant(projectId: string, userId: string): boolean {
-  const db = getDb()
-  const row = db
-    .prepare('SELECT 1 as x FROM project_members WHERE project_id=$pid AND user_id=$uid')
-    .get({ $pid: projectId, $uid: userId }) as { x: number } | null
-  return !!row
+let _db: Database | null = null
+
+function getDb(): Database {
+  if (_db) return _db
+
+  const workspace = process.env.KORTIX_WORKSPACE?.trim()
+    || process.env.OPENCODE_CONFIG_DIR?.replace(/\/opencode\/?$/, '')
+    || '/workspace'
+  const dbPath = join(workspace, '.kortix', 'kortix.db')
+
+  if (!existsSync(dirname(dbPath))) {
+    mkdirSync(dirname(dbPath), { recursive: true })
+  }
+
+  try {
+    const dbExists = existsSync(dbPath)
+    const dbEmpty = dbExists && statSync(dbPath).size === 0
+    if (!dbExists || dbEmpty) {
+      for (const suffix of ['', '-wal', '-shm', '-journal']) {
+        try { unlinkSync(dbPath + suffix) } catch {}
+      }
+    }
+  } catch {}
+
+  try {
+    _db = new Database(dbPath)
+  } catch {
+    for (const suffix of ['', '-wal', '-shm', '-journal']) {
+      try { unlinkSync(dbPath + suffix) } catch {}
+    }
+    _db = new Database(dbPath)
+  }
+
+  _db.exec('PRAGMA journal_mode=DELETE; PRAGMA busy_timeout=5000')
+
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
+      opencode_id TEXT, maintainer_session_id TEXT,
+      structure_version INTEGER NOT NULL DEFAULT 1,
+      user_handle TEXT
+    );
+  `)
+  try { _db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 1`) } catch {}
+  try { _db.exec(`ALTER TABLE projects ADD COLUMN user_handle TEXT`) } catch {}
+  ensureTicketTables(_db)
+
+  return _db
 }
 
 // ── Router ───────────────────────────────────────────────────────────────────
@@ -129,70 +84,234 @@ const projectsRouter = new Hono()
 
 // POST / — create or ensure a project exists
 projectsRouter.post('/', async (c) => {
-  if (!userCan(c, 'projects:create')) {
-    return c.json({ error: 'Missing permission: projects:create' }, 403)
-  }
   try {
     const db = getDb()
-    const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string }>().catch(() => ({}))
+    const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string; structure_version?: number; user_handle?: string }>().catch(() => ({} as { id?: string; name?: string; path?: string; description?: string; structure_version?: number; user_handle?: string }))
     const rawPath = body.path?.trim() || ''
-
-    const validation = validateScopedProjectPath(rawPath)
-    if (!validation.ok) {
-      return c.json({ error: validation.reason }, 400)
+    // Refuse workspace-root paths. v2 seed writes PM agent files under
+    // <path>/.opencode/agent/ — if path is the workspace root, those files
+    // pollute the global agent picker (every session in /workspace tree
+    // would discover the PM as a global agent). Past incidents created a
+    // rogue /workspace/.opencode/agent/project-manager.md exactly this way.
+    if (!rawPath || rawPath === '/workspace' || rawPath === '/workspace/') {
+      return c.json({
+        error: `path is required and must be a subdirectory of /workspace, e.g. /workspace/${(body.name?.trim() || 'my-project').replace(/[^\w-]/g, '-').toLowerCase()}. Refusing to create a project at the workspace root.`,
+      }, 400)
     }
-    const projectPath = rawPath.replace(/\/+$/, '')
-
+    const projectPath = rawPath
     const existing = db.prepare('SELECT * FROM projects WHERE path=$path').get({ $path: projectPath }) as ProjectRow | null
-    if (existing) return c.json(existing)
+    if (existing) {
+      if (body.user_handle && body.user_handle.trim() && !(existing as any).user_handle) {
+        db.prepare('UPDATE projects SET user_handle=$h WHERE id=$id').run({ $h: body.user_handle.trim(), $id: existing.id })
+        return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: existing.id }))
+      }
+      return c.json(existing)
+    }
 
-    const name = body.name?.trim() || basename(projectPath) || 'Project'
+    const fallbackName = projectPath === '/workspace' ? 'Workspace' : basename(projectPath) || 'Project'
+    const name = body.name?.trim() || fallbackName
     const id = body.id?.trim() || `project_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
     const description = body.description ?? ''
+    const userHandle = body.user_handle?.trim() || null
     const createdAt = new Date().toISOString()
+    // New projects default to v2. Pass structure_version=1 explicitly to opt
+    // into the legacy tasks-only layout.
+    const structureVersion = body.structure_version === 1 ? 1 : 2
 
-    db.prepare(`INSERT INTO projects (id, name, path, kind, description, created_at, opencode_id, maintainer_session_id)
-      VALUES ($id, $name, $path, 'scoped', $description, $createdAt, NULL, NULL)`)
+    db.prepare(`INSERT INTO projects (id, name, path, description, created_at, opencode_id, maintainer_session_id, structure_version, user_handle)
+      VALUES ($id, $name, $path, $description, $createdAt, NULL, NULL, $sv, $uh)`)
       .run({
         $id: id,
         $name: name,
         $path: projectPath,
         $description: description,
         $createdAt: createdAt,
+        $sv: structureVersion,
+        $uh: userHandle,
       })
 
-    try {
-      await ensureProjectWorkspace({
-        projectId: id,
-        kind: 'scoped',
-        members: [],
-        migrateFrom: projectPath,
-      })
-    } catch (err) {
-      console.warn(
-        `[projects] supervisor ensure failed for ${id}: ${err instanceof Error ? err.message : err}`,
-      )
+    const created = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow
+    if (structureVersion === 2) {
+      try {
+        await seedV2Project(db, {
+          id: created.id,
+          name: created.name,
+          path: created.path,
+          description: created.description,
+          user_handle: userHandle,
+        })
+        // Kick off PM onboarding in a project-level session so the human can
+        // chat with the PM right away from the Sessions tab. Fire-and-forget
+        // — the create HTTP response should not wait on LLM turns.
+        if (userHandle) {
+          const pm = getAgentBySlug(db, created.id, DEFAULT_PM_SLUG)
+          if (pm) {
+            wakeAgentForProject({
+              db,
+              client: getOpenCodeClient(),
+              projectId: created.id,
+              agent: pm,
+              sessionTitle: `Onboarding · ${created.name}`,
+              prompt: buildOnboardingPrompt(created.name, userHandle, created.description),
+            }).then((sid) => console.log('[projects] PM onboarding session:', sid))
+              .catch((err) => console.warn('[projects] PM onboarding failed:', err))
+          }
+        }
+      } catch (err) {
+        console.warn('[projects] v2 seed failed:', err)
+      }
     }
-
     return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }))
   } catch (e) {
     return c.json({ error: String(e) }, 400)
   }
 })
 
+let _ocClient: ReturnType<typeof createOpencodeClient> | null = null
+function getOpenCodeClient(): OpenCodeClientLike {
+  if (!_ocClient) {
+    _ocClient = createOpencodeClient({
+      baseUrl: `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`,
+    })
+  }
+  return _ocClient as unknown as OpenCodeClientLike
+}
+
+// POST /:id/pm-review — periodic board check-in, typically wired to a cron
+// trigger. The trigger (action=http) hits this endpoint, we spawn a fresh PM
+// session scoped to the project's directory and fire a board-review prompt.
+// Kept here (not in triggers) so the engine stays untouched: the trigger
+// doesn't need to know about project directories — it just POSTs.
+projectsRouter.post('/:id/pm-review', async (c) => {
+  const db = getDb()
+  const pid = decodeURIComponent(c.req.param('id'))
+  const project = db.prepare('SELECT * FROM projects WHERE id=$id OR path=$id').get({ $id: pid }) as ProjectRow | null
+  if (!project) return c.json({ error: 'Project not found' }, 404)
+  if ((project as any).structure_version !== 2) {
+    return c.json({ error: 'pm-review is v2-only' }, 400)
+  }
+  const pm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)
+  if (!pm) return c.json({ error: 'PM agent not found for this project' }, 404)
+
+  const prompt = [
+    `Scheduled board check-in for "${project.name}".`,
+    '',
+    'Open `project_context_read` to load CONTEXT.md.',
+    'List tickets with `ticket_list` filtered by each status key.',
+    '',
+    'For every ticket in `in_progress` or `review`:',
+    '1. Call `ticket_events` to see last activity timestamp + assignee history.',
+    '2. If last activity is >1h old: post a tight comment on that ticket',
+    '   flagging the stall — name the assignee, note what was last done,',
+    '   suggest a next step or reassignment.',
+    '3. If the review-column ticket has no QA activity but QA is assigned,',
+    '   nudge: "@qa reminder on #N".',
+    '',
+    'After scanning everything, post ONE summary comment on the project\'s',
+    'most recent goal ticket (parent_id IS NULL, newest created_at) —',
+    'shape: "Board check · <timestamp>: N in-progress, M in review, K stalled."',
+    'No tables, no emoji verdicts, no re-listing everything. One line per',
+    'signal. Then stop.',
+    '',
+    'This is an automated cron check. Do NOT tag the human unless a',
+    'ticket is genuinely blocked and needs their input per CONTEXT.md.',
+  ].join('\n')
+
+  // Force a fresh session for each review — we don't want consecutive cron
+  // fires to stack up context in the same thread. Clearing pm.session_id
+  // makes wakeAgentForProject create+bind a new one.
+  try { db.prepare('UPDATE project_agents SET session_id=NULL WHERE id=$id').run({ $id: pm.id }) } catch {}
+  const freshPm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)!
+  try {
+    const sid = await wakeAgentForProject({
+      db,
+      client: getOpenCodeClient(),
+      projectId: project.id,
+      agent: freshPm,
+      sessionTitle: `PM review · ${project.name} · ${new Date().toISOString().slice(0, 16)}`,
+      prompt,
+    })
+    if (!sid) return c.json({ error: 'Failed to spawn PM review session' }, 500)
+    return c.json({ session_id: sid })
+  } catch (err) {
+    return c.json({ error: String(err) }, 500)
+  }
+})
+
+// POST /:id/pm-session — create a fresh chat session bound to the project's
+// PM. Each click = new session, no kickoff, no fake user-message. The user
+// types the first message themselves. The plugin's system-prompt transform
+// injects PM's persona as real system prompt so the LLM is PM without any
+// visible pollution in the chat.
+projectsRouter.post('/:id/pm-session', async (c) => {
+  const db = getDb()
+  const pid = decodeURIComponent(c.req.param('id'))
+  const project = db.prepare('SELECT * FROM projects WHERE id=$id OR path=$id').get({ $id: pid }) as ProjectRow | null
+  if (!project) return c.json({ error: 'Project not found' }, 404)
+  if ((project as any).structure_version !== 2) {
+    return c.json({ error: 'PM chat is only available on v2 projects' }, 400)
+  }
+  const pm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)
+  if (!pm) return c.json({ error: 'Project Manager agent not found — run v2 seed first' }, 404)
+
+  try {
+    const client = getOpenCodeClient()
+    const res = await client.session.create({
+      body: { title: `PM · ${project.name}` },
+      // Scope to the project directory. OpenCode will then discover the
+      // project's real agents from `<project.path>/.opencode/agent/*.md`.
+      query: { directory: project.path },
+    } as any)
+    const sessionId = (res as any)?.data?.id as string | undefined
+    if (!sessionId) return c.json({ error: 'Failed to create session' }, 500)
+    try {
+      db.prepare('INSERT OR REPLACE INTO session_projects (session_id, project_id, set_at) VALUES ($sid, $pid, $now)')
+        .run({ $sid: sessionId, $pid: project.id, $now: new Date().toISOString() })
+    } catch {}
+    // Bind session ↔ PM in the kortix DB so ticketToolGateHook resolves
+    // which tool_group applies when this session runs PM-dispatched tools.
+    try {
+      db.prepare('UPDATE project_agents SET session_id=$sid WHERE id=$id').run({ $sid: sessionId, $id: pm.id })
+    } catch {}
+    return c.json({ session_id: sessionId })
+  } catch (err) {
+    return c.json({ error: String(err) }, 500)
+  }
+})
+
+function buildOnboardingPrompt(name: string, handle: string, description: string): string {
+  // No `/autowork` wrapper — onboarding is a real back-and-forth, not a task
+  // loop. One turn, then wait for the human's reply.
+  return [
+    `Fresh project "${name}". Human: @${handle}.`,
+    description ? `User's description: ${description}` : null,
+    '',
+    'Run the onboarding interview from your persona. ONE short question at a',
+    'time — no batching, no answering for the user. STOP after each turn and',
+    'wait for their reply.',
+    '',
+    'Cover (in order): project · stack · role + reach-back · autonomy ·',
+    'starting team · columns/templates. Apply each piece only after approval,',
+    'using your `project_manage` tools. Keep CONTEXT.md tight.',
+    '',
+    `Pass \`default_model: "${resolveDefaultModel()}"\` on every agent (matches`,
+    'what this sandbox has credentials for) unless the human asked for a',
+    'different one during onboarding — in which case use their pick. Copy',
+    'the Communication discipline block from your persona into each agent',
+    'body_md verbatim — non-negotiable.',
+    '',
+    'Your messages follow the same rules as the team: short, decisive, no',
+    'tables, no verdict banners.',
+    '',
+    `First message: brief intro + question #1, addressed to @${handle}. Then STOP.`,
+  ].filter(Boolean).join('\n')
+}
+
 // GET / — list all projects with stats
 projectsRouter.get('/', async (c) => {
   const db = getDb()
   const rows = db.prepare('SELECT * FROM projects ORDER BY created_at DESC').all() as ProjectRow[]
-  // Filter out projects the caller can't see. Invisible to them by design —
-  // not 404, not 403. Managers and unauthenticated service traffic see everything.
-  const user = c.get('kortixUser') as KortixUserContext | undefined
-  let visible = rows
-  if (user && !isProjectManager(c)) {
-    const visibleIds = new Set(filterVisibleProjectIdsForUser(rows.map((r) => r.id), user))
-    visible = rows.filter((p) => visibleIds.has(p.id))
-  }
-  const enriched = visible.map((p) => {
+  const enriched = rows.map((p) => {
     const sessionCount = (db.prepare(
       'SELECT COUNT(*) as c FROM session_projects WHERE project_id=$pid'
     ).get({ $pid: p.id }) as { c: number })?.c || 0
@@ -214,11 +333,6 @@ projectsRouter.get('/:id', async (c) => {
     || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
   ) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
-  if (!enforceProjectAccess(c, p.id)) {
-    // 404 instead of 403 so we don't confirm the project's existence to
-    // someone who shouldn't know it's there.
-    return c.json({ error: 'Project not found' }, 404)
-  }
 
   return c.json(p)
 })
@@ -234,9 +348,6 @@ projectsRouter.get('/:id/sessions', async (c) => {
     || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
   ) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
-  if (!enforceProjectAccess(c, p.id)) {
-    return c.json({ error: 'Project not found' }, 404)
-  }
 
   // Get session IDs linked to this project
   const links = db.prepare(
@@ -316,24 +427,10 @@ projectsRouter.delete('/:id', async (c) => {
     || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
   ) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
-  if (!enforceProjectAccess(c, p.id)) {
-    return c.json({ error: 'Project not found' }, 404)
-  }
-  if (!userCan(c, 'projects:delete')) {
-    return c.json({ error: 'Missing permission: projects:delete' }, 403)
-  }
 
+  // Clean up all related records
   try { db.prepare('DELETE FROM session_projects WHERE project_id=$pid').run({ $pid: p.id }) } catch {}
-  try { db.prepare('DELETE FROM project_members WHERE project_id=$pid').run({ $pid: p.id }) } catch {}
   db.prepare('DELETE FROM projects WHERE id=$id').run({ $id: p.id })
-
-  try {
-    await deleteProjectWorkspace({ projectId: p.id })
-  } catch (err) {
-    console.warn(
-      `[projects] supervisor delete failed for ${p.id}: ${err instanceof Error ? err.message : err}`,
-    )
-  }
 
   return c.json({ deleted: true, name: p.name, path: p.path })
 })
@@ -342,21 +439,33 @@ projectsRouter.delete('/:id', async (c) => {
 projectsRouter.patch('/:id', async (c) => {
   const db = getDb()
   const id = decodeURIComponent(c.req.param('id'))
-  const body = await c.req.json<{ name?: string; description?: string }>()
+  const body = await c.req.json<{ name?: string; description?: string; user_handle?: string | null }>()
   const p = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
-  if (!enforceProjectAccess(c, p.id)) {
-    return c.json({ error: 'Project not found' }, 404)
-  }
-  if (!userCan(c, 'projects:rename')) {
-    return c.json({ error: 'Missing permission: projects:rename' }, 403)
-  }
 
   if (body.name !== undefined) {
     db.prepare('UPDATE projects SET name=$n WHERE id=$id').run({ $n: body.name, $id: id })
   }
   if (body.description !== undefined) {
     db.prepare('UPDATE projects SET description=$d WHERE id=$id').run({ $d: body.description, $id: id })
+  }
+  if (body.user_handle !== undefined) {
+    const handle = (typeof body.user_handle === 'string' && body.user_handle.trim()) || null
+    db.prepare('UPDATE projects SET user_handle=$h WHERE id=$id').run({ $h: handle, $id: id })
+    const refreshed = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow
+    if ((refreshed as any).structure_version === 2) {
+      try {
+        await syncTeamSection(db, {
+          id: refreshed.id,
+          name: refreshed.name,
+          path: refreshed.path,
+          description: refreshed.description,
+          user_handle: handle,
+        })
+      } catch (err) {
+        console.warn('[projects] team-section sync failed:', err)
+      }
+    }
   }
   return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }))
 })
@@ -392,112 +501,6 @@ projectsRouter.post('/:id/link-session', async (c) => {
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
-})
-
-// ─── Project members (local ACL) ─────────────────────────────────────────────
-// GET/POST/DELETE /:id/members. Manager-gated: owner / admin / platform_admin.
-// Target user ids are supabase auth user ids — we don't validate existence,
-// we just store the grant. Email hydration happens client-side by joining
-// against the already-fetched sandbox member list.
-
-function resolveProject(id: string): ProjectRow | null {
-  const db = getDb()
-  return (
-    db.prepare('SELECT * FROM projects WHERE id=$v').get({ $v: id })
-    || db.prepare('SELECT * FROM projects WHERE opencode_id=$v').get({ $v: id })
-    || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
-  ) as ProjectRow | null
-}
-
-projectsRouter.get('/:id/members', async (c) => {
-  if (!userCan(c, 'projects:access.manage')) {
-    return c.json({ error: 'Missing permission: projects:access.manage' }, 403)
-  }
-  const p = resolveProject(decodeURIComponent(c.req.param('id')))
-  if (!p) return c.json({ error: 'Project not found' }, 404)
-  const db = getDb()
-  const rows = db
-    .prepare('SELECT * FROM project_members WHERE project_id=$pid ORDER BY added_at ASC')
-    .all({ $pid: p.id }) as Array<{
-      project_id: string
-      user_id: string
-      role: string
-      added_by: string | null
-      added_at: string
-    }>
-  return c.json({
-    project_id: p.id,
-    members: rows.map((r) => ({
-      user_id: r.user_id,
-      role: r.role,
-      added_by: r.added_by,
-      added_at: r.added_at,
-    })),
-  })
-})
-
-projectsRouter.post('/:id/members', async (c) => {
-  if (!userCan(c, 'projects:access.manage')) {
-    return c.json({ error: 'Missing permission: projects:access.manage' }, 403)
-  }
-  const p = resolveProject(decodeURIComponent(c.req.param('id')))
-  if (!p) return c.json({ error: 'Project not found' }, 404)
-  const body = await c.req.json<{ user_id?: string; role?: string }>().catch(() => ({}))
-  const targetUserId = typeof body.user_id === 'string' ? body.user_id.trim() : ''
-  if (!targetUserId) return c.json({ error: 'user_id is required' }, 400)
-  const role = body.role === 'admin' ? 'admin' : 'member'
-  const addedBy = (c.get('kortixUser') as KortixUserContext | undefined)?.userId ?? null
-
-  const db = getDb()
-  db.prepare(
-    `INSERT INTO project_members (project_id, user_id, role, added_by)
-     VALUES ($pid, $uid, $role, $by)
-     ON CONFLICT(project_id, user_id) DO UPDATE SET role=$role`,
-  ).run({ $pid: p.id, $uid: targetUserId, $role: role, $by: addedBy })
-
-  const uid = getUidFor(targetUserId)
-  if (uid) {
-    try {
-      await grantProjectAccess({ projectId: p.id, username: uid.username, linuxUid: uid.linuxUid })
-    } catch (err) {
-      console.warn(
-        `[projects] supervisor grant failed for ${targetUserId} on ${p.id}: ${err instanceof Error ? err.message : err}`,
-      )
-    }
-  }
-
-  return c.json({ ok: true, project_id: p.id, user_id: targetUserId, role })
-})
-
-projectsRouter.delete('/:id/members/:userId', async (c) => {
-  if (!userCan(c, 'projects:access.manage')) {
-    return c.json({ error: 'Missing permission: projects:access.manage' }, 403)
-  }
-  const p = resolveProject(decodeURIComponent(c.req.param('id')))
-  if (!p) return c.json({ error: 'Project not found' }, 404)
-  const userId = c.req.param('userId')
-  const db = getDb()
-  db.prepare('DELETE FROM project_members WHERE project_id=$pid AND user_id=$uid').run({
-    $pid: p.id,
-    $uid: userId,
-  })
-
-  const uid = getUidFor(userId)
-  if (uid) {
-    try {
-      await revokeProjectAccess({
-        projectId: p.id,
-        username: uid.username,
-        supabaseUserId: userId,
-      })
-    } catch (err) {
-      console.warn(
-        `[projects] supervisor revoke failed for ${userId} on ${p.id}: ${err instanceof Error ? err.message : err}`,
-      )
-    }
-  }
-
-  return c.json({ ok: true })
 })
 
 export default projectsRouter

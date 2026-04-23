@@ -8,7 +8,7 @@ import { getActiveOpenCodeUrl, getServerByInstanceId, resolveServerUrl } from '@
 
 export type SessionMode = 'new' | 'reuse';
 export type TriggerType = 'cron' | 'webhook';
-export type ActionType = 'prompt' | 'command' | 'http';
+export type ActionType = 'prompt' | 'command' | 'http' | 'ticket_create';
 export type TriggerSourceType = 'manual' | 'agent';
 
 export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timeout' | 'skipped';
@@ -52,6 +52,11 @@ export interface Trigger {
   action_type?: ActionType;
   action_config?: Record<string, unknown>;
   context_config?: Record<string, unknown>;
+  /** When set, this trigger is scoped to a project (shown in that project's Triggers tab). */
+  project_id?: string | null;
+  /** When set, each fire threads onto a per-ticket session and the agent
+   *  sees the bound ticket_id in its `<trigger_event>` block. */
+  ticket_id?: string | null;
 }
 
 export interface Execution {
@@ -76,6 +81,11 @@ export interface Execution {
 
 export interface CreateTriggerData {
   sandbox_id?: string;
+  /** Scope this trigger to a project — stamped on the row, filters the project's Triggers tab. */
+  project_id?: string;
+  /** Bind this trigger to a specific ticket. Dispatcher threads every fire
+   *  onto a per-ticket session so the agent reviews the ticket in context. */
+  ticket_id?: string;
   name: string;
   description?: string;
   source: {

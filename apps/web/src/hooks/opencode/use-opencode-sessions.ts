@@ -507,18 +507,25 @@ export function useAbortOpenCodeSession() {
 // Agent Hooks
 // ============================================================================
 
-export function useOpenCodeAgents() {
+/**
+ * Load opencode agents. Pass `directory` to get the project-scoped list
+ * (globals + `<directory>/.opencode/agent/*.md`). Without it, opencode returns
+ * the global set only.
+ */
+export function useOpenCodeAgents(options?: { directory?: string }) {
+  const directory = options?.directory;
   return useQuery<Agent[]>({
-    queryKey: opencodeKeys.agents(),
+    queryKey: directory ? [...opencodeKeys.agents(), 'dir', directory] : opencodeKeys.agents(),
     queryFn: async () => {
       const client = getClient();
-      const result = await client.app.agents();
+      const result = await client.app.agents(directory ? { directory } : undefined);
       const data = unwrap(result);
       const agents: Agent[] = Array.isArray(data) ? data : Object.values(data as Record<string, Agent>);
-      setLSCache(LS_AGENTS, agents);
+      if (!directory) setLSCache(LS_AGENTS, agents);
       return agents;
     },
-    placeholderData: () => getLSCache<Agent[]>(LS_AGENTS),
+    // Per-directory results aren't cached to LS — only the global list is.
+    placeholderData: directory ? undefined : () => getLSCache<Agent[]>(LS_AGENTS),
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });

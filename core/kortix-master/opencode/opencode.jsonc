@@ -16,6 +16,20 @@
     "explore": { "disable": true }
   },
   "provider": {
+    "anthropic": {
+      "npm": "@ai-sdk/anthropic",
+      "env": ["ANTHROPIC_API_KEY"],
+      "options": {
+        "apiKey": "{env:ANTHROPIC_API_KEY}"
+      },
+      "models": {
+        "claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6",
+          "id": "claude-sonnet-4-6",
+          "family": "anthropic"
+        }
+      }
+    },
     "kortix-yolo": {
       "npm": "@ai-sdk/anthropic",
       "env": ["KORTIX_YOLO_API_KEY", "KORTIX_YOLO_URL"],
@@ -77,18 +91,7 @@
   },
   "plugin": [
     "./plugin/kortix-system/kortix-system.ts",
-    [
-      "./plugin/opencode-caveman-plugin/opencode-caveman-plugin.ts",
-      {
-        "default_mode": "full",
-        "agent_modes": {
-          "general": "full",
-          "orchestrator": "lite",
-          "worker": "ultra",
-          "project-maintainer": "lite"
-        }
-      }
-    ]
+    "./plugin/opencode-caveman-plugin/opencode-caveman-plugin.ts"
   ],
   "mcp": {
     "context7": {

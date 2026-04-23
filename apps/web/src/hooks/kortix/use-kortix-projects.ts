@@ -21,6 +21,8 @@ export interface KortixProject {
   description: string;
   created_at: string;
   opencode_id: string | null;
+  /** 1 = legacy tasks layout, 2 = new tickets/board. New projects default to 2. */
+  structure_version?: number;
   sessionCount?: number;
   // Extended properties from OpenCode Project (optional for compatibility)
   worktree?: string;
@@ -141,6 +143,23 @@ export function useDeleteProject() {
         method: 'DELETE',
       }),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: kortixKeys.projects() });
+    },
+  });
+}
+
+export function usePatchProject() {
+  const qc = useQueryClient();
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; name?: string; description?: string; user_handle?: string | null }) =>
+      kortixFetch<KortixProject>(serverUrl, `/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: kortixKeys.project(vars.id) });
       qc.invalidateQueries({ queryKey: kortixKeys.projects() });
     },
   });
