@@ -309,6 +309,10 @@ if [ -x /ephemeral/kortix-master/scripts/install-channel-clis.sh ]; then
   /ephemeral/kortix-master/scripts/install-channel-clis.sh || echo "[startup] WARNING: channel CLI install failed"
 fi
 
+if [ -x /ephemeral/kortix-master/scripts/provision-members.sh ]; then
+  /ephemeral/kortix-master/scripts/provision-members.sh || echo "[startup] WARNING: member provisioning failed (non-fatal)"
+fi
+
 echo "[startup] Starting s6-overlay directly..."
 
 # Docker-in-Docker must work by default. Running the whole sandbox inside an

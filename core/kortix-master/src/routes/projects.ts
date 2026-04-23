@@ -8,11 +8,10 @@
  */
 
 import { Hono } from 'hono'
-import { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
-import { basename, dirname, join } from 'path'
+import { basename } from 'path'
 import type { KortixUserContext } from '../services/kortix-user-context'
 import { hasScope } from '../services/permissions'
+import { getDb } from '../services/db'
 
 // Project ACL rule:
 //   - managers (owner / admin / platform_admin) see every project
@@ -71,70 +70,6 @@ function filterVisibleProjectIdsForUser(projectIds: string[], user: KortixUserCo
 interface ProjectRow {
   id: string; name: string; path: string; description: string
   created_at: string; opencode_id: string | null
-}
-
-// ── DB singleton ─────────────────────────────────────────────────────────────
-
-let _db: Database | null = null
-
-function getDb(): Database {
-  if (_db) return _db
-
-  const workspace = process.env.KORTIX_WORKSPACE?.trim()
-    || process.env.OPENCODE_CONFIG_DIR?.replace(/\/opencode\/?$/, '')
-    || '/workspace'
-  const dbPath = join(workspace, '.kortix', 'kortix.db')
-
-  if (!existsSync(dirname(dbPath))) {
-    mkdirSync(dirname(dbPath), { recursive: true })
-  }
-
-  try {
-    const dbExists = existsSync(dbPath)
-    const dbEmpty = dbExists && statSync(dbPath).size === 0
-    if (!dbExists || dbEmpty) {
-      for (const suffix of ['', '-wal', '-shm', '-journal']) {
-        try { unlinkSync(dbPath + suffix) } catch {}
-      }
-    }
-  } catch {}
-
-  try {
-    _db = new Database(dbPath)
-  } catch {
-    for (const suffix of ['', '-wal', '-shm', '-journal']) {
-      try { unlinkSync(dbPath + suffix) } catch {}
-    }
-    _db = new Database(dbPath)
-  }
-
-  _db.exec('PRAGMA journal_mode=DELETE; PRAGMA busy_timeout=5000')
-
-  _db.exec(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
-      description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
-      opencode_id TEXT, maintainer_session_id TEXT
-    );
-
-    -- Per-project ACL. Lives here (not in central Postgres) so the source
-    -- of truth for projects and their access policy is one database with
-    -- real referential integrity. A project with zero rows here is "open"
-    -- (every sandbox member sees it, matches pre-ACL behavior); any row
-    -- flips it to strict mode.
-    CREATE TABLE IF NOT EXISTS project_members (
-      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      user_id TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'member',
-      added_by TEXT,
-      added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (project_id, user_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id);
-  `)
-  _db.exec('PRAGMA foreign_keys=ON')
-
-  return _db
 }
 
 // ── ACL helpers (used by the enforcement guard below) ──────────────────────
