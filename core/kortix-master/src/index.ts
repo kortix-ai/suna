@@ -36,6 +36,7 @@ import preferencesRouter from './routes/preferences'
 import projectsRouter from './routes/projects'
 import { tasksRouter } from './routes/tasks'
 import { ticketsRouter, ticketProjectsRouter } from './routes/tickets'
+import milestonesRouter from './routes/milestones'
 import { serviceManager } from './services/service-manager'
 import { config } from './config'
 import { loadBootstrapEnv, normalizeBootstrapAuthAliases, saveBootstrapEnv } from './services/bootstrap-env'
@@ -403,6 +404,10 @@ app.route('/kortix/tickets', ticketsRouter)
 app.route('/kortix/tickets/', ticketsRouter)
 app.route('/kortix/projects', ticketProjectsRouter)
 app.route('/kortix/projects/', ticketProjectsRouter)
+
+// Milestones — outcome-level grouping under /kortix/projects/:projectId/milestones
+app.route('/kortix/projects', milestonesRouter)
+app.route('/kortix/projects/', milestonesRouter)
 
 // Public URL sharing — /kortix/share/:port returns the public URL for a sandbox port
 app.route('/kortix/share', shareRouter)

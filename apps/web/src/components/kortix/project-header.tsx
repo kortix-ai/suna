@@ -16,6 +16,7 @@ export type ProjectTab =
   | 'about'
   | 'tasks'       // v1
   | 'board'       // v2
+  | 'milestones'  // v2
   | 'team'        // v2
   | 'triggers'    // v2
   | 'settings'    // v2
@@ -47,6 +48,7 @@ const V1_TABS: Array<{ id: ProjectTab; label: string }> = [
 const V2_TABS: Array<{ id: ProjectTab; label: string }> = [
   { id: 'about', label: 'About' },
   { id: 'board', label: 'Board' },
+  { id: 'milestones', label: 'Milestones' },
   { id: 'team', label: 'Team' },
   { id: 'triggers', label: 'Triggers' },
   { id: 'settings', label: 'Settings' },

@@ -129,6 +129,8 @@ ticketsRouter.post('/', async (c) => {
       created_by_type?: ActorType
       created_by_id?: string | null
       assign_to?: Array<{ type: AssigneeType; id: string }>
+      parent_id?: string | null
+      milestone_id?: string | null
     }>()
     if (!body.project_id || !body.title) {
       return c.json({ error: 'project_id and title required' }, 400)
@@ -143,6 +145,8 @@ ticketsRouter.post('/', async (c) => {
       created_by_type: body.created_by_type,
       created_by_id: body.created_by_id,
       assign_to: body.assign_to,
+      parent_id: body.parent_id,
+      milestone_id: body.milestone_id,
     })
     if (result.triggered.length) {
       fireAgentTriggers({
@@ -169,6 +173,7 @@ ticketsRouter.patch('/:id', async (c) => {
       body_md?: string
       template_id?: string | null
       custom_fields?: Record<string, unknown>
+      milestone_id?: string | null
       actor_type?: ActorType
       actor_id?: string | null
     }>()
@@ -177,6 +182,7 @@ ticketsRouter.patch('/:id', async (c) => {
       body_md: body.body_md,
       template_id: body.template_id,
       custom_fields: body.custom_fields,
+      milestone_id: body.milestone_id,
     }, { type: body.actor_type ?? 'user', id: body.actor_id ?? null })
     if (!updated) return c.json({ error: 'Not found' }, 404)
     return c.json(updated)

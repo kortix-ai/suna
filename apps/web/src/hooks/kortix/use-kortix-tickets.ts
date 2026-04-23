@@ -54,6 +54,8 @@ export interface Ticket {
   custom_fields_json: string;
   created_by_type: ActorType;
   created_by_id: string | null;
+  parent_id: string | null;
+  milestone_id: string | null;
   created_at: string;
   updated_at: string;
   assignees: TicketAssignee[];
@@ -183,6 +185,8 @@ export function useCreateTicket() {
       template_id?: string | null;
       custom_fields?: Record<string, unknown>;
       assign_to?: Array<{ type: AssigneeType; id: string }>;
+      milestone_id?: string | null;
+      parent_id?: string | null;
     }) =>
       kfetch<{ ticket: Ticket; triggered: Array<{ agent_id: string; agent_slug: string; reason: string }> }>(serverUrl, '/kortix/tickets', {
         method: 'POST',
@@ -201,7 +205,7 @@ export function useUpdateTicket() {
   const handle = getUserHandle(user);
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: string; title?: string; body_md?: string; template_id?: string | null; custom_fields?: Record<string, unknown> }) =>
+    mutationFn: ({ id, ...body }: { id: string; title?: string; body_md?: string; template_id?: string | null; custom_fields?: Record<string, unknown>; milestone_id?: string | null }) =>
       kfetch<Ticket>(serverUrl, `/kortix/tickets/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

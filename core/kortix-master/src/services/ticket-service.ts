@@ -15,6 +15,7 @@
  */
 
 import { Database } from 'bun:sqlite'
+import { recordMilestoneEvent } from './milestone-service'
 
 export type ActorType = 'user' | 'agent' | 'system'
 export type AssigneeType = 'user' | 'agent'
@@ -41,6 +42,8 @@ export interface TicketRow {
    * being able to spawn rogue top-level tickets.
    */
   parent_id: string | null
+  /** Nullable fk to milestones.id — groups tickets by end-to-end outcome. */
+  milestone_id: string | null
 }
 
 export interface TicketAssigneeRow {
@@ -268,6 +271,43 @@ export function ensureTicketTables(db: Database): void {
       reason TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS milestones (
+      id              TEXT PRIMARY KEY,
+      project_id      TEXT NOT NULL,
+      number          INTEGER NOT NULL,
+      title           TEXT NOT NULL,
+      description_md  TEXT NOT NULL DEFAULT '',
+      acceptance_md   TEXT NOT NULL DEFAULT '',
+      status          TEXT NOT NULL DEFAULT 'open',
+      due_at          TEXT,
+      completed_at    TEXT,
+      closed_by_type  TEXT,
+      closed_by_id    TEXT,
+      created_by_type TEXT NOT NULL DEFAULT 'user',
+      created_by_id   TEXT,
+      color_hue       INTEGER,
+      icon            TEXT,
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL,
+      UNIQUE(project_id, number),
+      UNIQUE(project_id, title)
+    );
+    CREATE TABLE IF NOT EXISTS project_milestone_counter (
+      project_id   TEXT PRIMARY KEY,
+      next_number  INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS milestone_events (
+      id            TEXT PRIMARY KEY,
+      milestone_id  TEXT NOT NULL,
+      project_id    TEXT NOT NULL,
+      actor_type    TEXT NOT NULL,
+      actor_id      TEXT,
+      type          TEXT NOT NULL,
+      message       TEXT,
+      payload_json  TEXT,
+      created_at    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_milestone_events_milestone ON milestone_events(milestone_id);
   `)
   try { db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 1`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN default_model TEXT`) } catch {}
@@ -277,6 +317,8 @@ export function ensureTicketTables(db: Database): void {
   try { db.exec(`ALTER TABLE project_columns ADD COLUMN is_off_flow INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN ready_at TEXT`) } catch {}
   try { db.exec(`ALTER TABLE tickets ADD COLUMN parent_id TEXT`) } catch {}
+  try { db.exec(`ALTER TABLE tickets ADD COLUMN milestone_id TEXT`) } catch {}
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_tickets_milestone ON tickets(milestone_id)`) } catch {}
 }
 
 // ── Columns ───────────────────────────────────────────────────────────────────
@@ -586,6 +628,11 @@ export interface CreateTicketInput {
    * Parent must exist and belong to the same project.
    */
   parent_id?: string | null
+  /**
+   * Milestone id. Groups tickets that serve the same end-to-end outcome.
+   * Must exist and belong to the same project. Optional.
+   */
+  milestone_id?: string | null
 }
 
 export function listTickets(db: Database, filters: { projectId?: string; status?: string } = {}): TicketWithRelations[] {
@@ -761,11 +808,20 @@ export function createTicket(db: Database, input: CreateTicketInput): CreateTick
     parentId = parent.id
   }
 
+  // Validate milestone_id if provided — must exist, same project, status=open.
+  let milestoneId: string | null = null
+  if (input.milestone_id) {
+    const m = db.prepare('SELECT id, project_id, status FROM milestones WHERE id=$id').get({ $id: input.milestone_id }) as { id: string; project_id: string; status: string } | null
+    if (!m) throw new Error(`Milestone not found: ${input.milestone_id}`)
+    if (m.project_id !== input.project_id) throw new Error(`Milestone belongs to a different project: ${input.milestone_id}`)
+    milestoneId = m.id
+  }
+
   db.prepare(`INSERT INTO tickets
       (id, project_id, number, title, body_md, status, template_id,
-       custom_fields_json, created_by_type, created_by_id, parent_id, created_at, updated_at)
+       custom_fields_json, created_by_type, created_by_id, parent_id, milestone_id, created_at, updated_at)
     VALUES ($id, $pid, $num, $title, $body, $status, $tpl,
-       $fields, $cbt, $cbi, $parent, $now, $now)`).run({
+       $fields, $cbt, $cbi, $parent, $milestone, $now, $now)`).run({
     $id: id,
     $pid: input.project_id,
     $num: number,
@@ -777,6 +833,7 @@ export function createTicket(db: Database, input: CreateTicketInput): CreateTick
     $cbt: input.created_by_type ?? 'user',
     $cbi: input.created_by_id ?? null,
     $parent: parentId,
+    $milestone: milestoneId,
     $now: now,
   })
   recordTicketEvent(db, {
@@ -785,8 +842,23 @@ export function createTicket(db: Database, input: CreateTicketInput): CreateTick
     actor_id: input.created_by_id ?? null,
     type: 'created',
     message: input.title,
-    payload: { status, ...(parentId ? { parent_id: parentId } : {}) },
+    payload: {
+      status,
+      ...(parentId ? { parent_id: parentId } : {}),
+      ...(milestoneId ? { milestone_id: milestoneId } : {}),
+    },
   })
+  if (milestoneId) {
+    recordMilestoneEvent(db, {
+      milestoneId,
+      projectId: input.project_id,
+      actor_type: input.created_by_type ?? 'user',
+      actor_id: input.created_by_id ?? null,
+      type: 'ticket_linked',
+      message: `#${number} ${input.title}`,
+      payload: { ticket_id: id, ticket_number: number },
+    })
+  }
 
   const triggered: CreateTicketResult['triggered'] = []
   const creatorAgentId = input.created_by_type === 'agent' ? input.created_by_id : null
@@ -856,6 +928,8 @@ export interface UpdateTicketInput {
   body_md?: string
   template_id?: string | null
   custom_fields?: Record<string, unknown>
+  /** Set to null to unlink, to a milestone id to link. Undefined = no change. */
+  milestone_id?: string | null
 }
 
 export function updateTicket(db: Database, id: string, patch: UpdateTicketInput, actor: { type: ActorType; id?: string | null }): TicketWithRelations | null {
@@ -881,6 +955,40 @@ export function updateTicket(db: Database, id: string, patch: UpdateTicketInput,
     const next = { ...prev, ...patch.custom_fields }
     fieldsChanged.custom_fields = { from: prev, to: next }
     db.prepare('UPDATE tickets SET custom_fields_json=$v, updated_at=$now WHERE id=$id').run({ $v: JSON.stringify(next), $now: now, $id: id })
+  }
+  if (patch.milestone_id !== undefined && patch.milestone_id !== t.milestone_id) {
+    // Validate the target milestone if non-null — must exist + same project.
+    if (patch.milestone_id !== null) {
+      const m = db.prepare('SELECT id, project_id FROM milestones WHERE id=$id').get({ $id: patch.milestone_id }) as { id: string; project_id: string } | null
+      if (!m) throw new Error(`Milestone not found: ${patch.milestone_id}`)
+      if (m.project_id !== t.project_id) throw new Error(`Milestone belongs to a different project`)
+    }
+    fieldsChanged.milestone_id = { from: t.milestone_id, to: patch.milestone_id }
+    db.prepare('UPDATE tickets SET milestone_id=$v, updated_at=$now WHERE id=$id').run({ $v: patch.milestone_id, $now: now, $id: id })
+    // Mirror the link/unlink as milestone activity — both old and new milestone
+    // should see this in their event log.
+    if (t.milestone_id) {
+      recordMilestoneEvent(db, {
+        milestoneId: t.milestone_id,
+        projectId: t.project_id,
+        actor_type: actor.type,
+        actor_id: actor.id ?? null,
+        type: 'ticket_unlinked',
+        message: `#${t.number} ${t.title}`,
+        payload: { ticket_id: id, ticket_number: t.number },
+      })
+    }
+    if (patch.milestone_id) {
+      recordMilestoneEvent(db, {
+        milestoneId: patch.milestone_id,
+        projectId: t.project_id,
+        actor_type: actor.type,
+        actor_id: actor.id ?? null,
+        type: 'ticket_linked',
+        message: `#${t.number} ${t.title}`,
+        payload: { ticket_id: id, ticket_number: t.number },
+      })
+    }
   }
 
   if (Object.keys(fieldsChanged).length > 0) {

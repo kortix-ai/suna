@@ -62,6 +62,26 @@ async function pokeTriggerManagerReload(): Promise<void> {
   }
 }
 
+/**
+ * Forward a manual fire to the in-plugin trigger manager. Hits
+ * POST /internal/run/:id on the trigger webhook server, which routes
+ * to manager.runTrigger(id) → ActionDispatcher.dispatch → real session
+ * creation. Without this the /run endpoint only logs an execution row.
+ */
+async function pokeTriggerManagerRun(triggerId: string): Promise<{ ok: boolean; executionId?: string; error?: string }> {
+  const port = process.env.KORTIX_TRIGGER_WEBHOOK_PORT || '8099'
+  try {
+    const res = await fetch(`http://localhost:${port}/internal/run/${encodeURIComponent(triggerId)}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(10_000),
+    })
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; executionId?: string; error?: string }
+    return { ok: !!body.ok, executionId: body.executionId, error: body.error }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 // ─── Response mappers ───────────────────────────────────────────────────────
 
 function mapTriggerToResponse(t: TriggerRecord): TriggerResponse {
@@ -462,16 +482,18 @@ triggersRouter.post('/:id/run',
     const trigger = db.get(c.req.param('id'))
     if (!trigger) return notFound(c, 'Trigger')
 
-    // Create an execution record for the manual run
-    const execution = db.createExecution(trigger.id, {
-      status: 'running',
-      metadata: { manual: true },
-    })
+    // Forward to the in-plugin manager so the action dispatcher actually
+    // runs (creates a session via prompt/ticket_create action). The manager
+    // owns execution-row creation, status transitions, and session linkage.
+    const result = await pokeTriggerManagerRun(trigger.id)
+    if (!result.ok) {
+      return c.json({ success: false, error: result.error ?? 'dispatch_failed' }, 502)
+    }
 
     return c.json({
       success: true,
       data: {
-        execution_id: execution.id,
+        execution_id: result.executionId,
         status: 'running',
         message: 'Trigger execution started',
       },

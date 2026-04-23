@@ -57,6 +57,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { useMilestones, type Milestone } from '@/hooks/kortix/use-milestones';
 import {
   useCreateTicket,
   useTemplates,
@@ -91,12 +92,15 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
 
   const create = useCreateTicket();
   const replaceTemplates = useReplaceTemplates();
+  const { data: milestonesData } = useMilestones(projectId, 'open');
+  const milestones = useMemo(() => milestonesData ?? [], [milestonesData]);
 
   const [step, setStep] = useState<Step>('pick');
   const [template, setTemplate] = useState<TicketTemplate | null>(null);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [status, setStatus] = useState<string>('');
+  const [milestoneId, setMilestoneId] = useState<string>('');
   const [pending, setPending] = useState<PendingAssignee[]>([]);
 
   useEffect(() => {
@@ -105,6 +109,7 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
     setBody('');
     setTemplate(null);
     setPending([]);
+    setMilestoneId('');
     setStatus(defaultStatus || columns[0]?.key || '');
     setStep(hasTemplates ? 'pick' : 'form');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,6 +130,7 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
         body_md: body,
         status: status || undefined,
         template_id: template?.id ?? null,
+        milestone_id: milestoneId || null,
         // Passing `assign_to` at create time makes the server skip the
         // column's default-assignee rule. User-picked assignees win, backlog
         // default (PM) doesn't redundantly attach.
@@ -165,6 +171,8 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
             status={status}
             columns={columns}
             agents={agents}
+            milestones={milestones}
+            milestoneId={milestoneId}
             userHandle={userHandle}
             pending={pending}
             showBack={hasTemplates}
@@ -173,6 +181,7 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
             onTitleChange={setTitle}
             onBodyChange={setBody}
             onStatusChange={setStatus}
+            onMilestoneChange={setMilestoneId}
             onAddAssignee={(a) => setPending((p) => (p.some((x) => x.type === a.type && x.id === a.id) ? p : [...p, a]))}
             onRemoveAssignee={(a) => setPending((p) => p.filter((x) => !(x.type === a.type && x.id === a.id)))}
             onSubmit={submit}
@@ -287,6 +296,8 @@ function TicketForm({
   status,
   columns,
   agents,
+  milestones,
+  milestoneId,
   userHandle,
   pending,
   showBack,
@@ -295,6 +306,7 @@ function TicketForm({
   onTitleChange,
   onBodyChange,
   onStatusChange,
+  onMilestoneChange,
   onAddAssignee,
   onRemoveAssignee,
   onSubmit,
@@ -308,6 +320,8 @@ function TicketForm({
   status: string;
   columns: TicketColumn[];
   agents: ProjectAgent[];
+  milestones: Milestone[];
+  milestoneId: string;
   userHandle: string;
   pending: PendingAssignee[];
   showBack: boolean;
@@ -316,6 +330,7 @@ function TicketForm({
   onTitleChange: (v: string) => void;
   onBodyChange: (v: string) => void;
   onStatusChange: (v: string) => void;
+  onMilestoneChange: (v: string) => void;
   onAddAssignee: (a: PendingAssignee) => void;
   onRemoveAssignee: (a: PendingAssignee) => void;
   onSubmit: () => void;
@@ -426,6 +441,20 @@ function TicketForm({
           <MetaBlock label="Status">
             <StatusPicker columns={columns} value={status} onChange={onStatusChange} />
           </MetaBlock>
+          {milestones.length > 0 && (
+            <MetaBlock label="Milestone">
+              <select
+                value={milestoneId}
+                onChange={(e) => onMilestoneChange(e.target.value)}
+                className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-md px-2 outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="">— none —</option>
+                {milestones.map((m) => (
+                  <option key={m.id} value={m.id}>M{m.number} · {m.title}</option>
+                ))}
+              </select>
+            </MetaBlock>
+          )}
         </aside>
       </div>
 

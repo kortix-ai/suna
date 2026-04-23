@@ -42,6 +42,8 @@ import {
 
 export const TEAM_SECTION_START = '<!-- KORTIX:TEAM:START -->'
 export const TEAM_SECTION_END = '<!-- KORTIX:TEAM:END -->'
+export const MILESTONES_SECTION_START = '<!-- KORTIX:MILESTONES:START -->'
+export const MILESTONES_SECTION_END = '<!-- KORTIX:MILESTONES:END -->'
 
 export const DEFAULT_PM_SLUG = 'project-manager'
 export const DEFAULT_MODEL = 'anthropic/claude-sonnet-4-6'
@@ -269,6 +271,41 @@ Ask plainly (no "autonomy / reach-back" jargon):
 >    sign-off."
 
 Internally, Ship it = High, Check in = Medium, Review = Strict.
+
+**Q3.5 — Milestones (outcomes).**
+Before cutting work, frame the **end-to-end outcomes**. A milestone is a
+named outcome ("Delivery path e2e", "Admin + dashboard") that groups
+tickets and defines "done" in terms the human can verify — not just
+ticket-status-done, but "I can run this smoke test and it passes".
+
+Propose 1–3 milestones based on scope. Each one needs:
+- a short **title** (3–6 words)
+- an **acceptance** line — a concrete check that could be run ("POST
+  /events → subscriber receives signed hook")
+
+Ask plainly:
+
+> "I'll split this into milestones — small outcomes you can demo or
+> smoke-test. Proposing:
+> • **Delivery path** — Done when: POST /events arrives at registered
+>   subscriber with valid HMAC.
+> • **Admin UX** — Done when: subscribers CRUD works end-to-end via
+>   /subscribers.
+> • **Observability** — Done when: GET /dashboard renders stats + tests
+>   pass.
+> Your cut?"
+
+Accept 1 milestone if scope is tight ("just build this one thing").
+Accept 5 if the human pushes back. DO NOT go above 5 — milestones should
+be outcomes, not a second ticket layer.
+
+**Skip milestones entirely** only for Ops workflows (no outcome — the
+workflow IS the product) or single-purpose throwaway utilities. In
+those cases say so and move on.
+
+After approval, call \`milestone_create\` once per approved milestone.
+Then during Q4/Q5/decomposition, TL will link every sub-ticket to the
+right milestone with \`milestone\` on \`ticket_create\`.
 
 **Q4 — Team.**
 Propose a concrete roster with reasoning, based on the scope locked in
@@ -710,20 +747,30 @@ You don't implement. You turn a goal / requirement into tight tickets
 and route them.
 
 When assigned a goal ticket:
-1. Analyze the goal. Decide on 3-5 sub-tickets, each ~2h of engineer
+1. **Load milestones FIRST.** Call \`milestone_list\` to see the
+   outcomes PM defined. Every sub-ticket you create SHOULD carry a
+   \`milestone\` referencing one of these — it's how PM later checks
+   the outcome is done e2e. If a sub genuinely doesn't fit any
+   existing milestone, either (a) merge it into a neighbouring sub
+   or (b) tag \`@pm\` and pause — don't invent a milestone yourself.
+2. Analyze the goal. Decide on 3-5 sub-tickets, each ~2h of engineer
    work, independently testable where possible.
-2. For each sub, call \`ticket_create\` with:
+3. For each sub, call \`ticket_create\` with:
    - \`parent_id\` = the goal ticket id (you can pass \`#N\` or the
      tk-… id — the tool resolves).
+   - \`milestone\` = the milestone ref (M1, "Delivery path", or the
+     ms-… id) that this sub serves. Omit ONLY if no milestone
+     exists — e.g. a project that explicitly skipped Q3.5.
    - \`assign_to\` = the contributor who should do it (\`engineer\`,
      \`designer\`, \`writer\`, …). This wakes them up directly.
    - \`body_md\` = one-sentence Goal + \`- [ ]\` AC checkboxes concrete
      enough that a single test or command verifies each.
    - Inline dep notes when one sub blocks another: "after #N".
-3. After all subs are created, post ONE comment on the parent:
-   "Decomposed → #N, #N, #N. Routed to @role." You can also move
-   the parent to \`blocked\` with reason "waiting on #N..#M" if you
-   want to keep it tracked as the umbrella; otherwise leave it.
+4. After all subs are created, post ONE comment on the parent:
+   "Decomposed → #N, #N, #N. Routed to @role. Milestones: M1 × 2,
+   M2 × 2, M3 × 1." You can also move the parent to \`blocked\` with
+   reason "waiting on #N..#M" if you want to keep it tracked as the
+   umbrella; otherwise leave it.
 
 You route directly to the contributor via the sub's \`assign_to\` —
 no PM middleman, no draft-in-comment step. Your subs ARE the output.
@@ -858,12 +905,50 @@ export async function seedV2Project(
   if (dashboardTicketId) {
     try {
       seedDefaultBoardSweepTrigger(db, project, dashboardTicketId, pm.slug)
+      // Direct DB insert bypasses TriggerManager, which splits state into
+      // TWO stores: the DB + .kortix/triggers.yaml. We must:
+      //   1. reload  → plugin re-reads DB, registers the cron job in memory
+      //   2. write-through → plugin flushes DB state into triggers.yaml
+      // Without (2), the next YAML-reconcile fires (on restart or file
+      // change) will see "DB has rows YAML doesn't" and DELETE the seeded
+      // trigger. We chain both — reload first so the job is live immediately,
+      // then write-through so it survives the next sync.
+      void (async () => {
+        await pokeTriggerManagerReload()
+        await pokeTriggerManagerWriteThrough()
+      })()
     } catch (err) {
       console.warn('[project-v2-seed] failed to seed default board-sweep trigger:', err instanceof Error ? err.message : err)
     }
   }
 
   return { pmAgent: pm }
+}
+
+async function pokeTriggerManagerReload(): Promise<void> {
+  const port = process.env.KORTIX_TRIGGER_WEBHOOK_PORT || '8099'
+  try {
+    await fetch(`http://localhost:${port}/internal/reload`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(2_000),
+    })
+  } catch {
+    // Best-effort — plugin may be starting up; next sync loop picks it up.
+  }
+}
+
+async function pokeTriggerManagerWriteThrough(): Promise<void> {
+  const port = process.env.KORTIX_TRIGGER_WEBHOOK_PORT || '8099'
+  try {
+    await fetch(`http://localhost:${port}/internal/write-through`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(2_000),
+    })
+  } catch {
+    // Best-effort. If the plugin isn't up, the seeded trigger stays in DB
+    // only — it'll work this session but the next plugin-startup reconcile
+    // might wipe it. Seed log warns on failure.
+  }
 }
 
 /**
@@ -878,7 +963,7 @@ export async function seedV2Project(
  */
 function seedDefaultBoardSweepTrigger(
   db: Database,
-  project: ProjectInput,
+  project: { id: string; name: string; path: string },
   dashboardTicketId: string,
   pmSlug: string,
 ): void {
@@ -894,7 +979,10 @@ function seedDefaultBoardSweepTrigger(
   const sourceConfig = JSON.stringify({ cron_expr: '0 0 * * * *', timezone: 'UTC' })
   const actionConfig = JSON.stringify({
     prompt: [
-      'Sweep the board. Unblock what\'s stuck. Post ONE concise ticket_comment on this ticket summarizing delta since last fire — no noise if nothing changed.',
+      'Sweep the board. Two passes, in order:',
+      '(1) **Ticket pass.** Unblock what\'s stuck. If a ticket\'s scope was bundled into another ticket\'s implementation (check src/), reconcile: mark it done with a short file:line citation.',
+      '(2) **Milestone pass.** Call `milestone_list`. For each OPEN milestone with progress.total > 0, check if ALL linked tickets are `done`. If yes, evaluate the milestone\'s acceptance_md — if it names a concrete check (a shell command, a curl, a bun test), RUN IT and only close the milestone on success; post evidence via `milestone_close` summary_md. If acceptance_md is vague or absent, do not close automatically — leave a note on the dashboard ticket flagging the milestone as "tickets done, acceptance ambiguous, needs @pm".',
+      'Post ONE concise ticket_comment on this ticket summarizing delta since last fire — no noise if nothing changed.',
       'IMPORTANT: when referring to team agents in the sweep post, use their plain slug (e.g. `engineer` or `qa`), NOT an @-mention. @-mentions spawn new agent sessions even when nothing actionable is being asked — status sweeps should never wake anyone.',
     ].join(' '),
   })
@@ -1014,6 +1102,68 @@ export async function syncTeamSection(
   return ctxPath
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTEXT.md "## Milestones" section — auto-maintained on any milestone CRUD
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build the `## Milestones` block. Lists OPEN milestones only (closed ones
+ * live in activity history) with title + acceptance snippet. Agents reading
+ * CONTEXT.md see the current outcomes at a glance; TL uses this to pick the
+ * right `milestone` on `ticket_create`.
+ */
+export function buildMilestonesSection(milestones: Array<{ number: number; title: string; acceptance_md: string; status: string }>): string {
+  const open = milestones.filter((m) => m.status === 'open')
+  const lines = ['## Milestones', '']
+  if (!open.length) {
+    lines.push('_No open milestones. PM can create one via `milestone_create`._')
+  } else {
+    for (const m of open) {
+      const acc = m.acceptance_md.trim().split('\n')[0].slice(0, 140)
+      lines.push(`- **M${m.number}** ${m.title}${acc ? ` — ${acc}` : ''}`)
+    }
+  }
+  return [MILESTONES_SECTION_START, ...lines, MILESTONES_SECTION_END].join('\n')
+}
+
+export async function syncMilestonesSection(
+  db: Database,
+  project: ProjectRowLite,
+  opts: SeedOptions = {},
+): Promise<string> {
+  const ctxPath = path.join(project.path, '.kortix', 'CONTEXT.md')
+  const rows = db.prepare(
+    "SELECT number, title, acceptance_md, status FROM milestones WHERE project_id=$pid ORDER BY number ASC"
+  ).all({ $pid: project.id }) as Array<{ number: number; title: string; acceptance_md: string; status: string }>
+  const block = buildMilestonesSection(rows)
+
+  let current = ''
+  try { current = await fs.readFile(ctxPath, 'utf8') } catch {}
+  if (!current.trim()) current = `# ${project.name}\n\n${project.description || ''}\n`
+
+  let next: string
+  const start = current.indexOf(MILESTONES_SECTION_START)
+  const end = current.indexOf(MILESTONES_SECTION_END)
+  if (start !== -1 && end !== -1 && end > start) {
+    next = `${current.slice(0, start).trimEnd()}\n\n${block}\n${current.slice(end + MILESTONES_SECTION_END.length).trimStart()}`
+  } else {
+    // Insert ABOVE the Team section if one exists, otherwise append.
+    const teamStart = current.indexOf(TEAM_SECTION_START)
+    if (teamStart !== -1) {
+      next = `${current.slice(0, teamStart).trimEnd()}\n\n${block}\n\n${current.slice(teamStart)}`
+    } else {
+      next = `${current.trimEnd()}\n\n${block}\n`
+    }
+  }
+
+  const writer = opts.writeFile ?? (async (fp: string, body: string) => {
+    await fs.mkdir(path.dirname(fp), { recursive: true })
+    await fs.writeFile(fp, body, 'utf8')
+  })
+  await writer(ctxPath, next)
+  return ctxPath
+}
+
 export async function tryReadContext(projectPath: string): Promise<string> {
   const ctxPath = path.join(projectPath, '.kortix', 'CONTEXT.md')
   if (!existsSync(ctxPath)) return ''
@@ -1025,15 +1175,21 @@ export async function writeContextPreservingTeam(
   newFullBody: string,
 ): Promise<void> {
   const ctxPath = path.join(projectPath, '.kortix', 'CONTEXT.md')
-  let preserved = ''
+  let preservedTeam = ''
+  let preservedMilestones = ''
   try {
     const current = await fs.readFile(ctxPath, 'utf8')
-    const s = current.indexOf(TEAM_SECTION_START)
-    const e = current.indexOf(TEAM_SECTION_END)
-    if (s !== -1 && e !== -1 && e > s) preserved = current.slice(s, e + TEAM_SECTION_END.length)
+    const ts = current.indexOf(TEAM_SECTION_START)
+    const te = current.indexOf(TEAM_SECTION_END)
+    if (ts !== -1 && te !== -1 && te > ts) preservedTeam = current.slice(ts, te + TEAM_SECTION_END.length)
+    const ms = current.indexOf(MILESTONES_SECTION_START)
+    const me = current.indexOf(MILESTONES_SECTION_END)
+    if (ms !== -1 && me !== -1 && me > ms) preservedMilestones = current.slice(ms, me + MILESTONES_SECTION_END.length)
   } catch {}
   const base = newFullBody.trimEnd()
-  const withTeam = preserved ? `${base}\n\n${preserved}\n` : `${base}\n`
+  const parts: string[] = [base]
+  if (preservedMilestones) parts.push(preservedMilestones)
+  if (preservedTeam) parts.push(preservedTeam)
   await fs.mkdir(path.dirname(ctxPath), { recursive: true })
-  await fs.writeFile(ctxPath, withTeam, 'utf8')
+  await fs.writeFile(ctxPath, parts.join('\n\n') + '\n', 'utf8')
 }

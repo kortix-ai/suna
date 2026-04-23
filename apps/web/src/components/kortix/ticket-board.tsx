@@ -65,8 +65,9 @@ import type {
 } from '@/hooks/kortix/use-kortix-tickets';
 import { AgentAvatar, UserAvatar, useCurrentUserAvatarProps } from '@/components/kortix/agent-avatar';
 import { useTriggers, type Trigger } from '@/hooks/scheduled-tasks';
+import { useMilestones, type Milestone } from '@/hooks/kortix/use-milestones';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { Timer as TimerIcon, Webhook as WebhookIcon } from 'lucide-react';
+import { Timer as TimerIcon, Webhook as WebhookIcon, Check } from 'lucide-react';
 
 // Compact human form of a 6-field cron expression for tooltips.
 function describeCron(expr: string): string {
@@ -115,8 +116,19 @@ interface Props {
 
 export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicket, onUpdateStatus, onDeleteTicket }: Props) {
   const [search, setSearch] = useState('');
+  const [milestoneFilter, setMilestoneFilter] = useState<string>('all'); // 'all' | 'none' | <milestone_id>
   const [deleteTarget, setDeleteTarget] = useState<Ticket | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+
+  // Project context — derived from the first ticket (they're all same project)
+  // so we don't need to add a projectId prop just for this.
+  const projectIdForMilestones = tickets[0]?.project_id;
+  const { data: milestones = [] } = useMilestones(projectIdForMilestones, 'all');
+  const milestoneById = useMemo(() => {
+    const m = new Map<string, Milestone>();
+    for (const x of milestones) m.set(x.id, x);
+    return m;
+  }, [milestones]);
 
   // 8px move threshold before drag starts — otherwise click-to-open on a card
   // would immediately fire a drag and swallow the click.
@@ -150,15 +162,24 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
   }, [allTriggers]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return tickets;
-    const q = search.toLowerCase();
-    const num = q.replace(/^#/, '');
-    return tickets.filter((t) =>
-      t.title.toLowerCase().includes(q)
-      || t.body_md.toLowerCase().includes(q)
-      || String(t.number) === num,
-    );
-  }, [tickets, search]);
+    let list = tickets;
+    if (milestoneFilter !== 'all') {
+      list = list.filter((t) => {
+        if (milestoneFilter === 'none') return !t.milestone_id;
+        return t.milestone_id === milestoneFilter;
+      });
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const num = q.replace(/^#/, '');
+      list = list.filter((t) =>
+        t.title.toLowerCase().includes(q)
+        || t.body_md.toLowerCase().includes(q)
+        || String(t.number) === num,
+      );
+    }
+    return list;
+  }, [tickets, search, milestoneFilter]);
 
   const byColumn = useMemo(() => {
     const map = new Map<string, Ticket[]>();
@@ -222,6 +243,27 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
               </button>
             )}
           </div>
+          {milestones.length > 0 && (
+            <select
+              value={milestoneFilter}
+              onChange={(e) => setMilestoneFilter(e.target.value)}
+              className="h-7 text-[12px] bg-transparent border border-border/50 rounded-full outline-none focus:ring-2 focus:ring-primary/20 px-2.5"
+              title="Filter by milestone"
+            >
+              <option value="all">All milestones</option>
+              <option value="none">— no milestone —</option>
+              {milestones.filter((m) => m.status === 'open').map((m) => (
+                <option key={m.id} value={m.id}>M{m.number} · {m.title}</option>
+              ))}
+              {milestones.some((m) => m.status !== 'open') && (
+                <optgroup label="Closed / cancelled">
+                  {milestones.filter((m) => m.status !== 'open').map((m) => (
+                    <option key={m.id} value={m.id}>M{m.number} · {m.title} ({m.status})</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          )}
           <span className="text-[11px] text-muted-foreground/40 ml-2 hidden sm:inline">
             drag cards to move — or use the ⋯ menu
           </span>
@@ -265,6 +307,7 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
                         onUpdateStatus={onUpdateStatus}
                         onDelete={() => setDeleteTarget(t)}
                         triggersOn={triggersByTicket.get(t.id)}
+                        milestone={t.milestone_id ? milestoneById.get(t.milestone_id) : undefined}
                       />
                     ))
                   )}
@@ -385,7 +428,7 @@ function tintForColumn(column: TicketColumn): string {
 
 // ─── Draggable card ─────────────────────────────────────────────────────────
 
-function DraggableTicketCard({ ticket, columns, agentById, onSelect, onUpdateStatus, onDelete, triggersOn }: {
+function DraggableTicketCard({ ticket, columns, agentById, onSelect, onUpdateStatus, onDelete, triggersOn, milestone }: {
   ticket: Ticket;
   columns: TicketColumn[];
   agentById: Map<string, ProjectAgent>;
@@ -393,6 +436,7 @@ function DraggableTicketCard({ ticket, columns, agentById, onSelect, onUpdateSta
   onUpdateStatus: (id: string, status: string) => void;
   onDelete: () => void;
   triggersOn?: Trigger[];
+  milestone?: Milestone;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: ticket.id });
 
@@ -414,6 +458,7 @@ function DraggableTicketCard({ ticket, columns, agentById, onSelect, onUpdateSta
         onDelete={onDelete}
         columns={columns}
         triggersOn={triggersOn}
+        milestone={milestone}
       />
     </div>
   );
@@ -428,6 +473,7 @@ function TicketCardInner({
   columns,
   dragging,
   triggersOn,
+  milestone,
 }: {
   ticket: Ticket;
   agentById: Map<string, ProjectAgent>;
@@ -437,6 +483,7 @@ function TicketCardInner({
   columns?: TicketColumn[];
   dragging?: boolean;
   triggersOn?: Trigger[];
+  milestone?: Milestone;
 }) {
   const { handle: currentHandle, avatarUrl: currentAvatarUrl } = useCurrentUserAvatarProps();
 
@@ -455,6 +502,7 @@ function TicketCardInner({
             <div className="text-[10px] font-mono tabular-nums text-muted-foreground/40 leading-none">
               #{ticket.number}
             </div>
+            {milestone && <MilestoneBadge milestone={milestone} />}
             {triggersOn && triggersOn.length > 0 && (
               <TriggersOnBadge triggers={triggersOn} />
             )}
@@ -558,6 +606,60 @@ function TicketCardInner({
 }
 
 // ─── "Ongoing" badge — triggers pointing at this ticket ─────────────────────
+
+// ─── Milestone badge on ticket card ─────────────────────────────────────────
+
+function MilestoneBadge({ milestone }: { milestone: Milestone }) {
+  const hue = milestone.color_hue ?? 210;
+  const isClosed = milestone.status !== 'open';
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              'inline-flex items-center gap-1 h-4 px-1.5 rounded-full border',
+              'text-[9.5px] font-medium leading-none tracking-[0.04em]',
+              isClosed
+                ? 'border-border/30 bg-muted/20 text-muted-foreground/60 line-through decoration-[0.5px] decoration-muted-foreground/40'
+                : 'border-border/40 bg-muted/30',
+            )}
+            style={isClosed ? undefined : { color: `hsl(${hue} 70% 60%)` }}
+          >
+            {isClosed ? (
+              <Check className="h-[8.5px] w-[8.5px] text-muted-foreground/60" />
+            ) : (
+              <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `hsl(${hue} 70% 55%)` }} />
+            )}
+            M{milestone.number}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" align="start" className="p-2 max-w-[260px] bg-popover border border-border/60">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-medium text-foreground/95">{milestone.title}</span>
+            <span className={cn(
+              'text-[9px] uppercase tracking-[0.06em] font-semibold px-1 rounded',
+              milestone.status === 'open' && 'bg-emerald-500/10 text-emerald-500/90',
+              milestone.status === 'closed' && 'bg-muted/50 text-muted-foreground/80',
+              milestone.status === 'cancelled' && 'bg-muted/30 text-muted-foreground/60',
+            )}>
+              {milestone.status}
+            </span>
+          </div>
+          {milestone.acceptance_md && (
+            <div className="mt-1 text-[10.5px] text-muted-foreground/70 font-mono line-clamp-3 whitespace-pre-wrap">
+              {milestone.acceptance_md}
+            </div>
+          )}
+          <div className="mt-1.5 text-[10px] text-muted-foreground/60">
+            {milestone.progress.done}/{milestone.progress.total} done · {milestone.percent_complete}%
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 function TriggersOnBadge({ triggers }: { triggers: Trigger[] }) {
   const active = triggers.filter((t) => t.isActive);

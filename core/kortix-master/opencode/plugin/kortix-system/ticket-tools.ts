@@ -48,6 +48,7 @@ import {
 } from '../../../src/services/ticket-service'
 import {
   syncTeamSection,
+  syncMilestonesSection,
   tryReadContext,
   writeContextPreservingTeam,
   renderAgentFile,
@@ -59,6 +60,19 @@ import {
   fireAgentTrigger as svcFireAgentTrigger,
   fireAgentTriggers as svcFireAgentTriggers,
 } from '../../../src/services/ticket-triggers'
+import {
+  closeMilestone,
+  createMilestone,
+  getMilestoneById,
+  getMilestoneByNumber,
+  getMilestoneByTitle,
+  listMilestoneEvents,
+  listMilestones,
+  listTicketsForMilestone,
+  reopenMilestone,
+  updateMilestone,
+  computeMilestoneProgress,
+} from '../../../src/services/milestone-service'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 
@@ -104,6 +118,15 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
   project_fields_update: 'project_manage',
   project_templates_update: 'project_manage',
   project_context_write: 'project_manage',
+  // Milestones — outcome-level grouping. Anyone can read; writes are PM-only
+  // to keep the "what counts as done e2e" call in one hand.
+  milestone_list: 'project_action',
+  milestone_get: 'project_action',
+  milestone_create: 'project_manage',
+  milestone_update: 'project_manage',
+  milestone_close: 'project_manage',
+  milestone_reopen: 'project_manage',
+  ticket_set_milestone: 'project_manage',
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -183,6 +206,17 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     return { type: 'user', id: null }
   }
 
+  // Fire-and-forget CONTEXT.md sync after milestone writes — keeps the
+  // `## Milestones` section fresh without blocking the agent turn.
+  const scheduleMilestonesContextSync = (projectId: string): void => {
+    const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id')
+      .get({ $id: projectId }) as { id: string; name: string; path: string; description: string } | null
+    if (!proj) return
+    syncMilestonesSection(db, proj).catch((err) => {
+      console.warn('[kortix-tools] milestones CONTEXT.md sync failed:', err instanceof Error ? err.message : err)
+    })
+  }
+
   return {
     // ── project_action: read/write tickets ─────────────────────────────────
 
@@ -249,6 +283,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         '  (1) Top-level (no parent_id) — PM-only. Requires project_manage group.',
         '  (2) Sub-ticket (parent_id set) — any contributor assigned to the parent can use this to decompose work. Tech Lead does this for goal tickets; engineer/QA can file sub-work items against tickets they own.',
         'Always pass `assign_to` on create to route the ticket and wake the owner (omitting it leaves the ticket attached only to you).',
+        'Pass `milestone` to group this ticket under an outcome-level goal. TL SHOULD pass milestone on every sub-ticket during decomposition — call `milestone_list` first, and `milestone_create` if nothing fits.',
       ].join(' '),
       args: {
         title: tool.schema.string().describe('Short ticket title'),
@@ -257,8 +292,9 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         template_id: tool.schema.string().optional(),
         assign_to: tool.schema.string().optional().describe('Comma-separated assignees (slugs). "user" for the human. Skips the column default-assignee when set.'),
         parent_id: tool.schema.string().optional().describe('Parent ticket id (tk-… or #number) to make this a sub-ticket. Required for contributors (non-PM). PM can also use it for explicit parent-child links.'),
+        milestone: tool.schema.string().optional().describe('Milestone reference (ms-… id, M-number like "M1", plain "1", or exact title) to link this ticket under. Optional but strongly preferred for project work.'),
       },
-      async execute(args: { title: string; body_md?: string; status?: string; template_id?: string; assign_to?: string; parent_id?: string }, ctx: ToolContext): Promise<string> {
+      async execute(args: { title: string; body_md?: string; status?: string; template_id?: string; assign_to?: string; parent_id?: string; milestone?: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
         if (!pid) return 'Error: no project selected.'
         const actor = actorFromCtx(ctx)
@@ -275,6 +311,26 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           if (!resolved) return `Parent ticket not found: ${args.parent_id}`
           if (resolved.project_id !== pid) return `Parent ticket belongs to a different project.`
           parentTicketId = resolved.id
+        }
+
+        // Resolve milestone — ms-… id, M1/#1/1 number, or exact title.
+        let milestoneId: string | null = null
+        if (args.milestone) {
+          const ref = args.milestone.trim()
+          const byId = getMilestoneById(db, ref)
+          if (byId && byId.project_id === pid) milestoneId = byId.id
+          if (!milestoneId) {
+            const cleaned = ref.replace(/^[Mm]#?/, '').trim()
+            if (/^\d+$/.test(cleaned)) {
+              const byNum = getMilestoneByNumber(db, pid, Number(cleaned))
+              if (byNum) milestoneId = byNum.id
+            }
+          }
+          if (!milestoneId) {
+            const byTitle = getMilestoneByTitle(db, pid, ref)
+            if (byTitle) milestoneId = byTitle.id
+          }
+          if (!milestoneId) return `Milestone not found: ${ref}. Call milestone_list to see options.`
         }
 
         // Fine-grained permission. Agent sessions only — user/interactive bypass.
@@ -317,6 +373,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           created_by_id: actor.id,
           assign_to: parsed.length ? parsed : undefined,
           parent_id: parentTicketId,
+          milestone_id: milestoneId,
         })
         await pluginFireAgentTriggers(db, mgr, client, pid, result.ticket.id,
           result.triggered.map((t) => ({ ...t, reason: `You were assigned to ticket #${result.ticket.number} on creation.` })),
@@ -826,7 +883,207 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         return 'CONTEXT.md updated.'
       },
     }),
+
+    // ── Milestones ─────────────────────────────────────────────────────────
+
+    milestone_list: tool({
+      description: 'List milestones for the current project with per-milestone ticket progress (total/done/in_progress/blocked/review).',
+      args: {
+        status: tool.schema.string().optional().describe('Filter: "open" (default), "closed", or "all"'),
+      },
+      async execute(args: { status?: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const filter = (args.status === 'closed' || args.status === 'all' ? args.status : 'open') as 'open' | 'closed' | 'all'
+        const list = listMilestones(db, pid, filter)
+        if (!list.length) return filter === 'open' ? 'No open milestones.' : 'No milestones.'
+        return list.map((m) => {
+          const pct = m.progress.total === 0 ? 0 : Math.round((m.progress.done / m.progress.total) * 100)
+          return `M${m.number} [${m.status}] ${m.title} — ${m.progress.done}/${m.progress.total} done (${pct}%) · in_progress:${m.progress.in_progress} blocked:${m.progress.blocked} review:${m.progress.review}`
+        }).join('\n')
+      },
+    }),
+
+    milestone_get: tool({
+      description: 'Get a milestone with its linked tickets, progress, and acceptance criteria. Accepts id (ms-…), number (M1 / 1), or exact title.',
+      args: { ref: tool.schema.string() },
+      async execute(args: { ref: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const m = resolveMilestoneRefInCtx(db, pid, args.ref)
+        if (!m) return `Milestone not found: ${args.ref}`
+        const progress = computeMilestoneProgress(db, m.id)
+        const tickets = listTicketsForMilestone(db, m.id)
+        const pct = progress.total === 0 ? 0 : Math.round((progress.done / progress.total) * 100)
+        const lines = [
+          `M${m.number} [${m.status}] ${m.title}`,
+          m.description_md ? `\nDescription:\n${m.description_md}` : '',
+          m.acceptance_md ? `\nAcceptance criteria:\n${m.acceptance_md}` : '',
+          `\nProgress: ${progress.done}/${progress.total} done (${pct}%) · in_progress:${progress.in_progress} blocked:${progress.blocked} review:${progress.review}`,
+          '\nLinked tickets:',
+          tickets.length ? tickets.map((t) => `  #${t.number} [${t.status}] ${t.title}`).join('\n') : '  (none)',
+        ]
+        return lines.filter(Boolean).join('\n')
+      },
+    }),
+
+    milestone_create: tool({
+      // --- NOTE: milestone_* tools keep the CONTEXT.md `## Milestones` section
+      // fresh via scheduleMilestonesContextSync below. Fire-and-forget so the
+      // tool turn doesn't block on filesystem IO. ---
+      description: 'Create a milestone — an outcome-level goal that groups tickets by "what does shipped mean end-to-end". PM creates these during onboarding; TL links tickets to them during decomposition. Keep titles short and acceptance_md specific (a concrete check PM can run to verify).',
+      args: {
+        title: tool.schema.string().describe('Short outcome name, e.g. "Delivery path e2e"'),
+        description_md: tool.schema.string().optional().describe('Narrative description — 1–3 lines of context'),
+        acceptance_md: tool.schema.string().optional().describe('"Done when: …" — concrete, verifiable criteria PM can check (curl, bun test, visual confirmation).'),
+        due_at: tool.schema.string().optional().describe('Optional target ISO date (YYYY-MM-DD).'),
+      },
+      async execute(args: { title: string; description_md?: string; acceptance_md?: string; due_at?: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const actor = actorFromCtx(ctx)
+        try {
+          const m = createMilestone(db, {
+            project_id: pid,
+            title: args.title,
+            description_md: args.description_md,
+            acceptance_md: args.acceptance_md,
+            due_at: args.due_at ?? null,
+            created_by_type: actor.type,
+            created_by_id: actor.id,
+          })
+          scheduleMilestonesContextSync(pid)
+          return `Created milestone **M${m.number}** (${m.id}): "${m.title}".`
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`
+        }
+      },
+    }),
+
+    milestone_update: tool({
+      description: 'Update a milestone\'s title, description, acceptance criteria, or due date. Use milestone_close to mark done.',
+      args: {
+        ref: tool.schema.string().describe('Milestone id, number (M1/1), or exact title'),
+        title: tool.schema.string().optional(),
+        description_md: tool.schema.string().optional(),
+        acceptance_md: tool.schema.string().optional(),
+        due_at: tool.schema.string().optional().describe('Pass empty string to clear.'),
+      },
+      async execute(args: { ref: string; title?: string; description_md?: string; acceptance_md?: string; due_at?: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const m = resolveMilestoneRefInCtx(db, pid, args.ref)
+        if (!m) return `Milestone not found: ${args.ref}`
+        const actor = actorFromCtx(ctx)
+        try {
+          updateMilestone(db, m.id, {
+            title: args.title,
+            description_md: args.description_md,
+            acceptance_md: args.acceptance_md,
+            due_at: args.due_at === '' ? null : args.due_at,
+          }, actor)
+          scheduleMilestonesContextSync(pid)
+          return `Updated milestone **M${m.number}**.`
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`
+        }
+      },
+    }),
+
+    milestone_close: tool({
+      description: 'Close a milestone — marks it complete and records a summary. Call this ONLY after verifying the acceptance criteria pass (run the check yourself before closing). Pass cancelled=true to mark as cancelled instead of closed.',
+      args: {
+        ref: tool.schema.string().describe('Milestone id, number (M1/1), or exact title'),
+        summary_md: tool.schema.string().describe('Evidence-based summary of how the acceptance criteria were verified.'),
+        cancelled: tool.schema.boolean().optional(),
+      },
+      async execute(args: { ref: string; summary_md: string; cancelled?: boolean }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const m = resolveMilestoneRefInCtx(db, pid, args.ref)
+        if (!m) return `Milestone not found: ${args.ref}`
+        const actor = actorFromCtx(ctx)
+        const closed = closeMilestone(db, m.id, {
+          actor_type: actor.type,
+          actor_id: actor.id,
+          summary_md: args.summary_md,
+          cancelled: args.cancelled === true,
+        })
+        if (!closed) return 'Error: close failed.'
+        scheduleMilestonesContextSync(pid)
+        return `${args.cancelled ? 'Cancelled' : 'Closed'} milestone **M${closed.number}** — "${closed.title}".`
+      },
+    }),
+
+    milestone_reopen: tool({
+      description: 'Reopen a previously closed/cancelled milestone.',
+      args: { ref: tool.schema.string() },
+      async execute(args: { ref: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        const m = resolveMilestoneRefInCtx(db, pid, args.ref)
+        if (!m) return `Milestone not found: ${args.ref}`
+        const actor = actorFromCtx(ctx)
+        const reopened = reopenMilestone(db, m.id, actor)
+        if (!reopened) return 'Error: reopen failed.'
+        scheduleMilestonesContextSync(pid)
+        return `Reopened milestone **M${reopened.number}**.`
+      },
+    }),
+
+    ticket_set_milestone: tool({
+      description: 'Link or unlink a ticket\'s milestone. Pass milestone="" or milestone="none" to unlink.',
+      args: {
+        ticket_id: tool.schema.string().describe('Ticket id (tk-…) or #number'),
+        milestone: tool.schema.string().describe('Milestone ref (ms-… / M1 / title), or "" / "none" to unlink'),
+      },
+      async execute(args: { ticket_id: string; milestone: string }, ctx: ToolContext): Promise<string> {
+        const pid = getProjectIdForCtx(mgr, ctx)
+        if (!pid) return 'Error: no project selected.'
+        // Resolve ticket.
+        let ticket = getTicket(db, args.ticket_id)
+        if (!ticket && /^#?\d+$/.test(args.ticket_id)) {
+          const n = Number(args.ticket_id.replace('#', ''))
+          const row = db.prepare('SELECT id FROM tickets WHERE project_id=$pid AND number=$n').get({ $pid: pid, $n: n }) as { id: string } | null
+          if (row) ticket = getTicket(db, row.id)
+        }
+        if (!ticket) return `Ticket not found: ${args.ticket_id}`
+        if (ticket.project_id !== pid) return 'Ticket belongs to a different project.'
+
+        // Resolve milestone (or clear).
+        let milestoneId: string | null = null
+        const ref = args.milestone.trim()
+        if (ref && ref.toLowerCase() !== 'none') {
+          const m = resolveMilestoneRefInCtx(db, pid, ref)
+          if (!m) return `Milestone not found: ${ref}`
+          milestoneId = m.id
+        }
+        const actor = actorFromCtx(ctx)
+        try {
+          updateTicket(db, ticket.id, { milestone_id: milestoneId }, actor)
+          return milestoneId
+            ? `Ticket #${ticket.number} linked to milestone.`
+            : `Ticket #${ticket.number} unlinked from milestone.`
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`
+        }
+      },
+    }),
   }
+}
+
+/** Resolve a user-provided milestone reference within a project context.
+ *  Accepts: ms-… id · "M1"/"M-1"/"1" number · exact title. Returns null if not
+ *  resolvable. Kept module-local so the tools stay terse. */
+function resolveMilestoneRefInCtx(db: Database, projectId: string, ref: string) {
+  const byId = getMilestoneById(db, ref)
+  if (byId && byId.project_id === projectId) return byId
+  const cleaned = ref.replace(/^[Mm]#?/, '').trim()
+  if (/^\d+$/.test(cleaned)) {
+    const byNum = getMilestoneByNumber(db, projectId, Number(cleaned))
+    if (byNum) return byNum
+  }
+  return getMilestoneByTitle(db, projectId, ref)
 }
 
 function safeParseArray(s: string): string[] {

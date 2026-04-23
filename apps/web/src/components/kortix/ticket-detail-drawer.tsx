@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useMilestones as useMilestonesHook, useSetTicketMilestone as useSetTicketMilestoneHook } from '@/hooks/kortix/use-milestones';
 import {
   X,
   Send,
@@ -275,6 +276,14 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                     userHandle={userHandle}
                     onAssign={(type, id) => assign.mutate({ id: ticket.id, assignee_type: type, assignee_id: id })}
                     onUnassign={(type, id) => unassign.mutate({ id: ticket.id, assignee_type: type, assignee_id: id })}
+                  />
+                </PanelSection>
+
+                <PanelSection label="Milestone">
+                  <MilestonePicker
+                    ticketId={ticket.id}
+                    projectId={ticket.project_id}
+                    currentId={ticket.milestone_id}
                   />
                 </PanelSection>
 
@@ -610,3 +619,62 @@ function EventRow({ event, agentById, userHandle, agents, focused }: { event: an
 }
 
 function safeJson(s: string | null): any { try { return s ? JSON.parse(s) : null; } catch { return null; } }
+
+// ─── Milestone picker (inline dropdown) ────────────────────────────────────
+
+function MilestonePicker({
+  ticketId,
+  projectId,
+  currentId,
+}: {
+  ticketId: string;
+  projectId: string;
+  currentId: string | null;
+}) {
+  const { data: milestones = [] } = useMilestonesHook(projectId, 'all');
+  const setTicketMilestone = useSetTicketMilestoneHook();
+  const current = milestones.find((m) => m.id === currentId) ?? null;
+  return (
+    <div className="space-y-1.5">
+      <select
+        value={currentId ?? ''}
+        onChange={(e) =>
+          setTicketMilestone.mutate({ projectId, ticketId, milestoneId: e.target.value || null })
+        }
+        disabled={setTicketMilestone.isPending}
+        className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-md px-2 outline-none focus:ring-2 focus:ring-primary/20"
+      >
+        <option value="">— none —</option>
+        {milestones.filter((m) => m.status === 'open').map((m) => (
+          <option key={m.id} value={m.id}>M{m.number} · {m.title}</option>
+        ))}
+        {milestones.some((m) => m.status !== 'open') && (
+          <optgroup label="Closed / cancelled">
+            {milestones.filter((m) => m.status !== 'open').map((m) => (
+              <option key={m.id} value={m.id}>M{m.number} · {m.title} ({m.status})</option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+      {current && (
+        <div className="flex items-start gap-1.5 text-[11px] text-muted-foreground/60">
+          <span
+            className="mt-0.5 h-2 w-2 rounded-full shrink-0"
+            style={{
+              backgroundColor: `hsl(${current.color_hue ?? 210} 70% 55%)`,
+              opacity: current.status === 'open' ? 1 : 0.5,
+            }}
+          />
+          <span className="leading-relaxed">
+            {current.progress.done}/{current.progress.total} tickets done · {current.percent_complete}%
+            {current.status !== 'open' && (
+              <span className="ml-1.5 text-[10px] uppercase tracking-[0.06em] font-semibold text-muted-foreground/50">
+                · {current.status}
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
