@@ -18,6 +18,7 @@ import {
   getAccountRole,
   type UserTeamContext,
 } from '../../teams';
+import { can, type Scope } from '../../permissions';
 
 type SandboxRecord = typeof sandboxes.$inferSelect;
 type SandboxStatus = SandboxRecord['status'];
@@ -124,6 +125,27 @@ export async function resolveSandboxAccessContext(
   return toLegacyAccess(ctx, accountId, primaryRole);
 }
 
+async function applyScopeFilter(
+  db: Database,
+  ctx: UserTeamContext,
+  rows: SandboxRecord[],
+): Promise<SandboxRecord[]> {
+  if (ctx.isPlatformAdmin || rows.length === 0) return rows;
+  const checked = await Promise.all(
+    rows.map(async (row) => {
+      if (ctx.ownerAccountIds.includes(row.accountId)) return row;
+      const allowed = await can(
+        db,
+        ctx,
+        { sandboxId: row.sandboxId, accountId: row.accountId },
+        'sandbox:use',
+      );
+      return allowed ? row : null;
+    }),
+  );
+  return checked.filter((r): r is SandboxRecord => r !== null);
+}
+
 export async function findAccessibleSandbox(
   db: Database,
   access: SandboxAccessContext,
@@ -137,13 +159,14 @@ export async function findAccessibleSandbox(
     ownerAccountIds: access.ownerAccountIds,
   };
   const where = buildExtraFilters(ctx, db, options);
-  const [sandbox] = await db
+  const candidates = await db
     .select()
     .from(sandboxes)
     .where(where ?? undefined as any)
     .orderBy(desc(sandboxes.createdAt))
-    .limit(1);
-  return sandbox ?? null;
+    .limit(5);
+  const visible = await applyScopeFilter(db, ctx, candidates);
+  return visible[0] ?? null;
 }
 
 export async function listAccessibleSandboxes(
@@ -159,11 +182,12 @@ export async function listAccessibleSandboxes(
     ownerAccountIds: access.ownerAccountIds,
   };
   const where = buildExtraFilters(ctx, db, options);
-  return db
+  const rows = await db
     .select()
     .from(sandboxes)
     .where(where ?? undefined as any)
     .orderBy(desc(sandboxes.createdAt));
+  return applyScopeFilter(db, ctx, rows);
 }
 
 export async function findAccessibleSandboxForUser(options: SandboxLookupForUserOptions) {
@@ -184,6 +208,24 @@ export async function listAccessibleSandboxesForUser(options: SandboxLookupForUs
   );
   const sandboxesList = await listAccessibleSandboxes(options.db, access, options);
   return { access, sandboxes: sandboxesList };
+}
+
+export async function hasSandboxScope(
+  db: Database,
+  access: SandboxAccessContext,
+  sandbox: { sandboxId: string; accountId: string },
+  scope: Scope,
+): Promise<boolean> {
+  if (access.isPlatformAdmin) return true;
+  if (access.ownerAccountIds.includes(sandbox.accountId)) return true;
+  const ctx: UserTeamContext = {
+    userId: access.userId,
+    isPlatformAdmin: access.isPlatformAdmin,
+    allAccountIds: access.allAccountIds,
+    managerAccountIds: access.managerAccountIds,
+    ownerAccountIds: access.ownerAccountIds,
+  };
+  return can(db, ctx, sandbox, scope);
 }
 
 export { getAccountRole };

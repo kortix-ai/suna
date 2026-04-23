@@ -47,6 +47,7 @@ import {
 } from '../services/sandbox-reinitialize';
 import {
   findAccessibleSandboxForUser,
+  hasSandboxScope,
   listAccessibleSandboxesForUser,
 } from '../services/sandbox-access';
 import { defaultSandboxAutoUpdatePolicy, getSandboxAutoUpdatePolicy } from '../../update/auto-update';
@@ -1006,7 +1007,7 @@ export function createCloudSandboxRouter(
     try {
       const body = await c.req.json().catch(() => ({}));
       const sandboxId = body?.sandbox_id as string | undefined;
-      const { sandbox } = await findAccessibleSandboxForUser({
+      const { sandbox, access } = await findAccessibleSandboxForUser({
         db,
         userId,
         sandboxId,
@@ -1015,6 +1016,13 @@ export function createCloudSandboxRouter(
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No sandbox found' }, 404);
+      }
+
+      if (!(await hasSandboxScope(db, access, sandbox, 'billing:manage'))) {
+        return c.json(
+          { success: false, error: 'You do not have permission to change billing on this instance' },
+          403,
+        );
       }
 
       const existingMeta = (sandbox.metadata as Record<string, unknown> | null) ?? {};
@@ -1076,7 +1084,7 @@ export function createCloudSandboxRouter(
     try {
       const body = await c.req.json().catch(() => ({}));
       const sandboxId = body?.sandbox_id as string | undefined;
-      const { sandbox } = await findAccessibleSandboxForUser({
+      const { sandbox, access } = await findAccessibleSandboxForUser({
         db,
         userId,
         sandboxId,
@@ -1085,6 +1093,13 @@ export function createCloudSandboxRouter(
 
       if (!sandbox) {
         return c.json({ success: false, error: 'No sandbox found' }, 404);
+      }
+
+      if (!(await hasSandboxScope(db, access, sandbox, 'billing:manage'))) {
+        return c.json(
+          { success: false, error: 'You do not have permission to change billing on this instance' },
+          403,
+        );
       }
 
       const existingMeta = (sandbox.metadata as Record<string, unknown> | null) ?? {};

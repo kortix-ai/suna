@@ -12,7 +12,7 @@ import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
-export type ProjectTab = 'about' | 'tasks' | 'files' | 'sessions';
+export type ProjectTab = 'about' | 'tasks' | 'files' | 'sessions' | 'members';
 
 export interface ProjectHeaderProps {
   project: any;
@@ -26,6 +26,7 @@ const TABS: Array<{ id: ProjectTab; label: string }> = [
   { id: 'tasks', label: 'Tasks' },
   { id: 'files', label: 'Files' },
   { id: 'sessions', label: 'Sessions' },
+  { id: 'members', label: 'Members' },
 ];
 
 export function ProjectHeader({ project, tab, onTabChange, onNewTask }: ProjectHeaderProps) {

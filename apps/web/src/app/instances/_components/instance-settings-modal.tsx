@@ -40,6 +40,7 @@ import {
   type SSHSetupResult,
 } from '@/lib/platform-client';
 import { hasNewerVersion, InstanceUpdateDialog } from './instance-update-dialog';
+import { useCan } from '@/hooks/platform/use-can';
 import { InstanceMembersPanel } from './instance-members-panel';
 import { InstanceProjectsPanel } from './instance-projects-panel';
 import { VersionHistoryPanel } from '@/components/changelog/version-history-panel';
@@ -459,6 +460,7 @@ export function InstanceSettingsModal({
   const supportsBackups = !!sandbox && isJustAVPS && ['active', 'stopped'].includes(sandbox.status);
   const supportsUpdates = !!sandbox && isJustAVPS && ['active', 'stopped', 'error'].includes(sandbox.status);
   const canManageSandbox = Boolean(sandbox?.can_manage);
+  const canUpgrade = useCan(sandbox?.sandbox_id ?? null, 'sandbox:upgrade');
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -1468,12 +1470,20 @@ export function InstanceSettingsModal({
             </p>
           </div>
 
+          {!canUpgrade.loading && !canUpgrade.allowed ? (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-100">
+              You don't have permission to run updates on this instance.
+            </div>
+          ) : null}
+
           <VersionHistoryPanel
             currentVersion={effectiveVersion}
             latestVersion={latestVersion}
-            updateAvailable={updateAvailable}
+            updateAvailable={updateAvailable && canUpgrade.allowed}
             isUpdating={false}
-            onUpdateLatest={() => setUpdateDialogOpen(true)}
+            onUpdateLatest={
+              canUpgrade.allowed ? () => setUpdateDialogOpen(true) : undefined
+            }
             initialShowDev={(effectiveVersion || '').startsWith('dev-')}
             compact
             headerTitle="Versions"

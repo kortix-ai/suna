@@ -62,3 +62,13 @@ export async function updateAccountRole(
   const anyResult = result as any;
   return anyResult?.count ?? anyResult?.rowCount ?? 0;
 }
+
+export async function removeAccountMember(
+  db: Database,
+  userId: string,
+  accountId: string,
+): Promise<void> {
+  await db
+    .delete(accountMembers)
+    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)));
+}

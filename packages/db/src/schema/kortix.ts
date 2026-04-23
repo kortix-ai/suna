@@ -132,6 +132,11 @@ export const sandboxes = kortixSchema.table(
   ],
 );
 
+export const scopeEffectEnum = kortixSchema.enum('scope_effect', [
+  'grant',
+  'revoke',
+]);
+
 export const sandboxMembers = kortixSchema.table(
   'sandbox_members',
   {
@@ -149,6 +154,28 @@ export const sandboxMembers = kortixSchema.table(
     uniqueIndex('idx_sandbox_members_unique').on(table.sandboxId, table.userId),
     index('idx_sandbox_members_user').on(table.userId),
     index('idx_sandbox_members_sandbox').on(table.sandboxId),
+  ],
+);
+
+export const sandboxMemberScopes = kortixSchema.table(
+  'sandbox_member_scopes',
+  {
+    sandboxId: uuid('sandbox_id')
+      .notNull()
+      .references(() => sandboxes.sandboxId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    scope: text('scope').notNull(),
+    effect: scopeEffectEnum('effect').notNull(),
+    grantedBy: uuid('granted_by'),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_sandbox_member_scopes_unique').on(
+      table.sandboxId,
+      table.userId,
+      table.scope,
+    ),
+    index('idx_sandbox_member_scopes_lookup').on(table.sandboxId, table.userId),
   ],
 );
 

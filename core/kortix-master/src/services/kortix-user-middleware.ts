@@ -20,6 +20,7 @@ import {
   verifyKortixUserContext,
   type KortixUserContext,
 } from './kortix-user-context'
+import { rememberUserScopes } from './user-scope-cache'
 
 declare module 'hono' {
   interface ContextVariableMap {
@@ -58,6 +59,7 @@ export function kortixUserContextMiddleware() {
       `[kortix-user] verified user=${result.context.userId} sandbox=${result.context.sandboxId} role=${result.context.sandboxRole}`,
     )
     c.set('kortixUser', result.context)
+    rememberUserScopes(result.context.userId, result.context.scopes ?? [])
     await next()
   }
 }

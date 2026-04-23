@@ -11,7 +11,11 @@ import {
   getAccountRole,
   listUserMemberships,
 } from '../repositories/accounts';
-import { isSandboxMember } from '../repositories/members';
+import {
+  effectiveScopes,
+  resolveRole,
+  type Scope,
+} from '../../permissions';
 
 export interface UserTeamContext {
   userId: string;
@@ -43,36 +47,55 @@ export async function loadUserTeamContext(
   };
 }
 
+const ACTION_TO_SCOPE: Partial<Record<SandboxAction, Scope>> = {
+  view: 'sandbox:use',
+  execute: 'sandbox:use',
+  write: 'sandbox:use',
+  lifecycle: 'sandbox:use',
+  manage_members: 'members:invite',
+};
+
+const OWNER_ONLY_ACTIONS: ReadonlySet<SandboxAction> = new Set([
+  'rename',
+  'delete',
+]);
+
 export async function decideAccess(
   db: Database,
   ctx: UserTeamContext,
   sandbox: SandboxRef,
   action: SandboxAction = 'view',
 ): Promise<AccessDecision> {
-  if (ctx.isPlatformAdmin) {
-    return { allowed: true, reason: 'platform_admin' };
-  }
-
-  const isOwner = ctx.ownerAccountIds.includes(sandbox.accountId);
-  const isManager = ctx.managerAccountIds.includes(sandbox.accountId);
-
-  if (action === 'manage_members' || action === 'delete' || action === 'rename') {
-    return isOwner
-      ? { allowed: true, reason: 'account_manager' }
-      : { allowed: false, reason: 'not_member' };
-  }
-
-  if (isManager) {
-    return { allowed: true, reason: 'account_manager' };
-  }
-
-  if (!ctx.allAccountIds.includes(sandbox.accountId)) {
+  const role = await resolveRole(db, ctx, sandbox);
+  if (role === null) {
     return { allowed: false, reason: 'not_member' };
   }
 
-  const hasMembership = await isSandboxMember(db, sandbox.sandboxId, ctx.userId);
-  return hasMembership
-    ? { allowed: true, reason: 'sandbox_member' }
+  if (OWNER_ONLY_ACTIONS.has(action)) {
+    const allowed = role === 'platform_admin' || role === 'owner';
+    return allowed
+      ? {
+          allowed: true,
+          reason: role === 'platform_admin' ? 'platform_admin' : 'account_manager',
+        }
+      : { allowed: false, reason: 'not_member' };
+  }
+
+  const scope = ACTION_TO_SCOPE[action];
+  if (!scope) {
+    return { allowed: false, reason: 'not_member' };
+  }
+
+  const scopes = await effectiveScopes(db, ctx, sandbox);
+  const allowed = scopes.has(scope);
+  const reason: AccessDecision['reason'] =
+    role === 'platform_admin'
+      ? 'platform_admin'
+      : role === 'owner' || role === 'admin'
+        ? 'account_manager'
+        : 'sandbox_member';
+  return allowed
+    ? { allowed: true, reason }
     : { allowed: false, reason: 'not_member' };
 }
 
@@ -127,42 +150,15 @@ export async function canAccessPreviewTarget(
       )
     : eq(sandboxes.externalId, previewTargetId);
 
-  if (ctx.managerAccountIds.length > 0) {
-    const [hit] = await db
-      .select({ sandboxId: sandboxes.sandboxId })
-      .from(sandboxes)
-      .where(
-        and(
-          idCondition,
-          inArray(sandboxes.accountId, ctx.managerAccountIds),
-          ne(sandboxes.status, 'pooled'),
-        ),
-      )
-      .limit(1);
-    if (hit) return true;
-  }
-
-  if (ctx.allAccountIds.length === 0) return false;
-
   const [hit] = await db
-    .select({ sandboxId: sandboxes.sandboxId })
+    .select({ sandboxId: sandboxes.sandboxId, accountId: sandboxes.accountId })
     .from(sandboxes)
-    .innerJoin(
-      sandboxMembers,
-      and(
-        eq(sandboxMembers.sandboxId, sandboxes.sandboxId),
-        eq(sandboxMembers.userId, ctx.userId),
-      ),
-    )
-    .where(
-      and(
-        idCondition,
-        inArray(sandboxes.accountId, ctx.allAccountIds),
-        ne(sandboxes.status, 'pooled'),
-      ),
-    )
+    .where(and(idCondition, ne(sandboxes.status, 'pooled')))
     .limit(1);
-  return Boolean(hit);
+  if (!hit) return false;
+
+  if (ctx.ownerAccountIds.includes(hit.accountId)) return true;
+  return canAccess(db, ctx, hit, 'view');
 }
 
 export async function loadSandboxForUser(

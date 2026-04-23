@@ -457,6 +457,42 @@ app.route('/kortix/tasks/', tasksRouter)
 // Public URL sharing — /kortix/share/:port returns the public URL for a sandbox port
 app.route('/kortix/share', shareRouter)
 
+import { Database as _ScopeDb } from 'bun:sqlite'
+import { getUserScopes } from './services/user-scope-cache'
+
+app.get('/kortix/internal/session-scopes/:sessionId', async (c) => {
+  const sessionId = c.req.param('sessionId')
+  try {
+    const workspace =
+      process.env.KORTIX_WORKSPACE?.trim() ||
+      process.env.OPENCODE_CONFIG_DIR?.replace(/\/opencode\/?$/, '') ||
+      '/workspace'
+    const dbPath = `${workspace}/.kortix/kortix.db`
+    const db = new _ScopeDb(dbPath, { readonly: true })
+    try {
+      const row = db
+        .query('SELECT user_id FROM session_owners WHERE session_id = ? LIMIT 1')
+        .get(sessionId) as { user_id?: string } | null
+      const userId = row?.user_id ?? null
+      if (!userId) {
+        return c.json({ success: true, data: { user_id: null, scopes: null } })
+      }
+      const scopes = getUserScopes(userId)
+      return c.json({
+        success: true,
+        data: {
+          user_id: userId,
+          scopes: scopes ? Array.from(scopes) : null,
+        },
+      })
+    } finally {
+      db.close()
+    }
+  } catch (err) {
+    return c.json({ success: false, error: String(err) }, 500)
+  }
+})
+
 // Connectors — SQLite-backed CRUD
 app.route('/kortix/connectors', connectorsRouter)
 
@@ -567,9 +603,6 @@ app.get('/session', async (c) => {
     status: upstream.status,
     headers: upstream.headers,
   })
-  // Legacy unstamped sessions predate the per-user layer — they belonged
-  // to whoever first set up the sandbox. Show them to owner/platform_admin
-  // only; admins weren't necessarily around back then.
   const canSeeLegacy =
     user.sandboxRole === 'platform_admin' || user.sandboxRole === 'owner'
   const filtered = filterVisibleSessions(
@@ -587,19 +620,39 @@ app.post('/session', async (c) => {
   const upstream = await proxyToOpenCode(c)
   const user = c.get('kortixUser')
   if (!user || upstream.status >= 400) return upstream
-  
+
   const raw = await upstream.text()
   try {
     const json = JSON.parse(raw) as { id?: string }
     const sessionId = json?.id
     if (sessionId) stampSessionOwner(sessionId, user.userId)
   } catch {
-    // If opencode returned a non-JSON body we can't extract the id; skip
-    // stamping. Legacy-null semantics keep the session visible until next create.
+    // non-JSON body — skip stamping.
   }
   const headers = new Headers(upstream.headers)
   headers.delete('content-length')
   return new Response(raw, { status: upstream.status, headers })
+})
+
+app.delete('/session/:id', async (c) => {
+  const user = c.get('kortixUser')
+  if (user) {
+    const sessionId = c.req.param('id')
+    const canSeeLegacy =
+      user.sandboxRole === 'platform_admin' || user.sandboxRole === 'owner'
+    const owned = filterVisibleSessions(
+      [{ id: sessionId }],
+      user.userId,
+      canSeeLegacy,
+    ).length > 0
+    if (!owned) {
+      return new Response(
+        JSON.stringify({ error: 'You can only delete your own sessions' }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      )
+    }
+  }
+  return proxyToOpenCode(c)
 })
 
 // Proxy all other requests to OpenCode

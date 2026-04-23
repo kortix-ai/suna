@@ -561,6 +561,78 @@ export async function updateSandboxMemberSpendCap(
   }
 }
 
+export type ScopeEffect = 'grant' | 'revoke' | null;
+
+export interface SandboxScopeCatalogEntry {
+  scope: string;
+  label: string;
+  description: string;
+  group: string;
+}
+
+export interface SandboxMemberScopes {
+  sandbox_id: string;
+  user_id: string;
+  role: 'owner' | 'admin' | 'member' | null;
+  inherited: string[];
+  grants: string[];
+  revokes: string[];
+  effective: string[];
+  catalog: SandboxScopeCatalogEntry[];
+  groups: Record<string, string[]>;
+}
+
+export interface SandboxViewerScopes {
+  sandbox_id: string;
+  role: 'owner' | 'admin' | 'member' | null;
+  scopes: string[];
+}
+
+export async function getViewerSandboxScopes(
+  sandboxId: string,
+): Promise<SandboxViewerScopes> {
+  const result = await platformFetch<SandboxViewerScopes>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/me/scopes`,
+    { method: 'GET' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to load scopes');
+  }
+  return result.data;
+}
+
+export async function getSandboxMemberScopes(
+  sandboxId: string,
+  userId: string,
+): Promise<SandboxMemberScopes> {
+  const result = await platformFetch<SandboxMemberScopes>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}/scopes`,
+    { method: 'GET' },
+  );
+  if (!result.success || !result.data) {
+    throw new Error(result.error || 'Failed to load scopes');
+  }
+  return result.data;
+}
+
+export async function updateSandboxMemberScope(
+  sandboxId: string,
+  userId: string,
+  scope: string,
+  effect: ScopeEffect,
+): Promise<void> {
+  const result = await platformFetch<void>(
+    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}/scopes`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ scope, effect }),
+    },
+  );
+  if (!result.success) {
+    throw new Error(result.error || 'Failed to update scope');
+  }
+}
+
 export interface SandboxProjectSummary {
   id: string;
   name: string;

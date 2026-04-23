@@ -12,6 +12,7 @@ import * as path from "node:path"
 import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { ensureGlobalMemoryFiles } from "./lib/paths"
 import { ensureSchema } from "./lib/schema"
+import { canForSession, denyMessage } from "./lib/scope-check"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -276,7 +277,10 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 				description: tool.schema.string().describe('Description. "" if none.'),
 				path: tool.schema.string().describe('Absolute path. "" for default.'),
 			},
-			async execute(args: { name: string; description: string; path: string }): Promise<string> {
+			async execute(args: { name: string; description: string; path: string }, toolCtx: ToolContext): Promise<string> {
+				if (!(await canForSession(toolCtx?.sessionID, "projects:create"))) {
+					return denyMessage("projects:create")
+				}
 				try {
 					const p = await mgr.createProject(args.name, args.description, args.path)
 					return `Project **${p.name}** at \`${p.path}\` (${p.id})`
@@ -340,11 +344,37 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 				name: tool.schema.string().describe('"" to keep current'),
 				description: tool.schema.string().describe('"" to keep current'),
 			},
-			async execute(args: { project: string; name: string; description: string }): Promise<string> {
+			async execute(args: { project: string; name: string; description: string }, toolCtx: ToolContext): Promise<string> {
+				if (!(await canForSession(toolCtx?.sessionID, "projects:rename"))) {
+					return denyMessage("projects:rename")
+				}
 				const p = mgr.getProject(args.project)
 				if (!p) return "Not found."
-				const n = args.name || p.name, d = args.description || p.description
+				const n = args.name || p.name
+				const d = args.description || p.description
 				db.prepare("UPDATE projects SET name=$n,description=$d WHERE id=$id").run({ $n: n, $d: d, $id: p.id })
+
+				const ctxPath = path.join(p.path, ".kortix", "CONTEXT.md")
+				try {
+					await fs.mkdir(path.dirname(ctxPath), { recursive: true })
+					let content: string
+					try {
+						content = await fs.readFile(ctxPath, "utf8")
+					} catch {
+						content = ""
+					}
+					const trimmed = content.trimStart()
+					if (/^#\s+/.test(trimmed)) {
+						content = content.replace(/^(\s*)#\s+[^\n]*/, `$1# ${n}`)
+					} else {
+						const body = content ? `\n\n${content}` : ""
+						content = `# ${n}${d ? `\n\n${d}` : ""}${body || "\n"}`
+					}
+					await fs.writeFile(ctxPath, content, "utf8")
+				} catch (err) {
+					console.warn(`[project_update] CONTEXT.md sync failed for ${p.id}:`, err)
+				}
+
 				return `Updated: **${n}**`
 			},
 		}),
@@ -352,7 +382,10 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 		project_delete: tool({
 			description: "Delete a project from the registry. Does NOT delete files on disk.",
 			args: { project: tool.schema.string().describe("Project name or path") },
-			async execute(args: { project: string }): Promise<string> {
+			async execute(args: { project: string }, toolCtx: ToolContext): Promise<string> {
+				if (!(await canForSession(toolCtx?.sessionID, "projects:delete"))) {
+					return denyMessage("projects:delete")
+				}
 				const p = mgr.getProject(args.project)
 				if (!p) return `Project not found: "${args.project}"`
 				db.prepare("DELETE FROM session_projects WHERE project_id=$pid").run({ $pid: p.id })

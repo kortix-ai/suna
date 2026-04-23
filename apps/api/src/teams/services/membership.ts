@@ -10,6 +10,7 @@ import type { AccountRole, SandboxMember } from '../domain/types';
 import {
   getAccountRole,
   listAccountMembers,
+  removeAccountMember,
   updateAccountRole,
 } from '../repositories/accounts';
 import {
@@ -28,10 +29,14 @@ export async function registerCreator(
 
 export async function removeMember(
   db: Database,
-  sandboxId: string,
+  sandbox: { sandboxId: string; accountId: string },
   userId: string,
 ): Promise<void> {
-  await repoRemove(db, sandboxId, userId);
+  await repoRemove(db, sandbox.sandboxId, userId);
+  const role = await getAccountRole(db, userId, sandbox.accountId);
+  if (role === 'admin') {
+    await removeAccountMember(db, userId, sandbox.accountId);
+  }
   invalidatePreviewCacheForUser(userId);
 }
 

@@ -16,6 +16,7 @@ export interface KortixUserContext {
   userId: string
   sandboxId: string
   sandboxRole: 'owner' | 'admin' | 'member' | 'platform_admin'
+  scopes: string[]
   iat: number
   exp: number
 }

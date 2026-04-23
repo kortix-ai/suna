@@ -41,6 +41,7 @@ import {
 } from '@/components/ui/kortix-icons';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserRow } from '@/components/ui/user-row';
+import { useCan } from '@/hooks/platform/use-can';
 
 /**
  * Projects tab inside the sandbox settings modal. Owner-only.
@@ -56,11 +57,12 @@ import { UserRow } from '@/components/ui/user-row';
  */
 export function InstanceProjectsPanel({
   sandbox,
-  canManage,
 }: {
   sandbox: SandboxInfo;
-  canManage: boolean;
+  canManage?: boolean;
 }) {
+  const canManageAccess = useCan(sandbox.sandbox_id, 'projects:access.manage').allowed;
+
   const projectsQuery = useQuery({
     queryKey: ['sandbox', 'projects', sandbox.sandbox_id],
     queryFn: () => listSandboxProjects(sandbox),
@@ -81,12 +83,12 @@ export function InstanceProjectsPanel({
     [sandboxMembers],
   );
 
-  if (!canManage) {
+  if (!canManageAccess) {
     return (
       <EmptyState
         icon={IconProject}
-        title="Owner-only control"
-        description="Only the sandbox owner can manage per-project access. Ask them for access to specific projects."
+        title="Not allowed here"
+        description="You don't have permission to manage per-project access. Ask the instance owner to grant projects:access.manage."
       />
     );
   }

@@ -12,6 +12,7 @@ import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
 import { basename, dirname, join } from 'path'
 import type { KortixUserContext } from '../services/kortix-user-context'
+import { hasScope } from '../services/permissions'
 
 // Project ACL rule:
 //   - managers (owner / admin / platform_admin) see every project
@@ -40,6 +41,11 @@ function isProjectManager(c: any): boolean {
     user.sandboxRole === 'owner' ||
     user.sandboxRole === 'admin'
   )
+}
+
+function userCan(c: any, scope: string): boolean {
+  const user = c.get('kortixUser') as KortixUserContext | undefined
+  return hasScope(user, scope)
 }
 
 /**
@@ -155,6 +161,9 @@ const projectsRouter = new Hono()
 
 // POST / — create or ensure a project exists
 projectsRouter.post('/', async (c) => {
+  if (!userCan(c, 'projects:create')) {
+    return c.json({ error: 'Missing permission: projects:create' }, 403)
+  }
   try {
     const db = getDb()
     const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string }>().catch(() => ({}))
@@ -323,6 +332,9 @@ projectsRouter.delete('/:id', async (c) => {
   if (!enforceProjectAccess(c, p.id)) {
     return c.json({ error: 'Project not found' }, 404)
   }
+  if (!userCan(c, 'projects:delete')) {
+    return c.json({ error: 'Missing permission: projects:delete' }, 403)
+  }
 
   // Clean up all related records
   try { db.prepare('DELETE FROM session_projects WHERE project_id=$pid').run({ $pid: p.id }) } catch {}
@@ -340,6 +352,9 @@ projectsRouter.patch('/:id', async (c) => {
   if (!p) return c.json({ error: 'Project not found' }, 404)
   if (!enforceProjectAccess(c, p.id)) {
     return c.json({ error: 'Project not found' }, 404)
+  }
+  if (!userCan(c, 'projects:rename')) {
+    return c.json({ error: 'Missing permission: projects:rename' }, 403)
   }
 
   if (body.name !== undefined) {
@@ -400,7 +415,9 @@ function resolveProject(id: string): ProjectRow | null {
 }
 
 projectsRouter.get('/:id/members', async (c) => {
-  if (!isProjectManager(c)) return c.json({ error: 'Forbidden' }, 403)
+  if (!userCan(c, 'projects:access.manage')) {
+    return c.json({ error: 'Missing permission: projects:access.manage' }, 403)
+  }
   const p = resolveProject(decodeURIComponent(c.req.param('id')))
   if (!p) return c.json({ error: 'Project not found' }, 404)
   const db = getDb()
@@ -425,7 +442,9 @@ projectsRouter.get('/:id/members', async (c) => {
 })
 
 projectsRouter.post('/:id/members', async (c) => {
-  if (!isProjectManager(c)) return c.json({ error: 'Forbidden' }, 403)
+  if (!userCan(c, 'projects:access.manage')) {
+    return c.json({ error: 'Missing permission: projects:access.manage' }, 403)
+  }
   const p = resolveProject(decodeURIComponent(c.req.param('id')))
   if (!p) return c.json({ error: 'Project not found' }, 404)
   const body = await c.req.json<{ user_id?: string; role?: string }>().catch(() => ({}))
@@ -445,7 +464,9 @@ projectsRouter.post('/:id/members', async (c) => {
 })
 
 projectsRouter.delete('/:id/members/:userId', async (c) => {
-  if (!isProjectManager(c)) return c.json({ error: 'Forbidden' }, 403)
+  if (!userCan(c, 'projects:access.manage')) {
+    return c.json({ error: 'Missing permission: projects:access.manage' }, 403)
+  }
   const p = resolveProject(decodeURIComponent(c.req.param('id')))
   if (!p) return c.json({ error: 'Project not found' }, 404)
   const userId = c.req.param('userId')

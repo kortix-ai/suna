@@ -45,6 +45,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserRow } from '@/components/ui/user-row';
+import { ScopeMatrixDialog } from './scope-matrix-dialog';
+import { useCan } from '@/hooks/platform/use-can';
 import {
   IconCheck,
   IconDelete,
@@ -53,6 +55,7 @@ import {
   IconMore,
   IconUsers,
 } from '@/components/ui/kortix-icons';
+import { Lock, User } from 'lucide-react';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -61,6 +64,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<SandboxMember | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<SandboxPendingInvite | null>(null);
+  const [scopeTarget, setScopeTarget] = useState<SandboxMember | null>(null);
 
   const membersQuery = useQuery({
     queryKey: ['sandbox', 'members', sandboxId],
@@ -136,7 +140,10 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
     },
   });
 
-  const canManage = membersQuery.data?.can_manage ?? false;
+  const canInvite = useCan(sandboxId, 'members:invite').allowed;
+  const canRemove = useCan(sandboxId, 'members:remove').allowed;
+  const canChangeRole = useCan(sandboxId, 'members:change_role').allowed;
+  const canSetCap = useCan(sandboxId, 'members:set_cap').allowed;
   const viewerUserId = membersQuery.data?.viewer_user_id ?? '';
   const members = membersQuery.data?.members ?? [];
   const pending = membersQuery.data?.pending_invites ?? [];
@@ -152,7 +159,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
             send them a signup link.
           </p>
         </div>
-        {canManage ? (
+        {canInvite ? (
           <Button
             size="sm"
             onClick={() => setInviteOpen(true)}
@@ -180,7 +187,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
           title="Just you, for now"
           description="Invite a teammate to collaborate on this instance. They'll see projects you grant them access to, and their sessions stay private from yours."
           action={
-            canManage ? (
+            canInvite ? (
               <Button onClick={() => setInviteOpen(true)}>
                 <IconInvite className="mr-1.5 h-3.5 w-3.5" />
                 Invite teammate
@@ -195,17 +202,21 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
               label={`Members · ${members.length}`}
               members={members}
               viewerUserId={viewerUserId}
-              canManage={canManage}
+              canChangeRole={canChangeRole}
+              canRemove={canRemove}
+              canSetCap={canSetCap}
+              canManageScopes={canChangeRole}
               roleMutation={roleMutation}
               capMutation={capMutation}
               onRemove={(m) => setRemoveTarget(m)}
+              onManageScopes={(m) => setScopeTarget(m)}
             />
           ) : null}
 
           {pending.length > 0 ? (
             <PendingSection
               invites={pending}
-              canManage={canManage}
+              canRevoke={canInvite}
               onRevoke={(i) => setRevokeTarget(i)}
             />
           ) : null}
@@ -225,7 +236,9 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
         title="Remove from team?"
         description={
           removeTarget
-            ? `${removeTarget.email || removeTarget.user_id} will lose access to this instance and any projects they were added to.`
+            ? removeTarget.role === 'admin'
+              ? `${removeTarget.email || removeTarget.user_id} is an admin on your account. Removing them revokes their access to every instance under this account, not just this one.`
+              : `${removeTarget.email || removeTarget.user_id} will lose access to this instance and any projects they were added to.`
             : ''
         }
         confirmLabel="Remove"
@@ -245,6 +258,13 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
         confirmLabel="Revoke"
         onConfirm={() => revokeTarget && revokeMutation.mutate(revokeTarget.invite_id)}
         isPending={revokeMutation.isPending}
+      />
+
+      <ScopeMatrixDialog
+        open={!!scopeTarget}
+        onOpenChange={(open) => !open && setScopeTarget(null)}
+        sandboxId={sandboxId}
+        member={scopeTarget}
       />
     </div>
   );
@@ -266,15 +286,22 @@ function MemberSection({
   label,
   members,
   viewerUserId,
-  canManage,
+  canChangeRole,
+  canRemove,
+  canSetCap,
+  canManageScopes,
   roleMutation,
   capMutation,
   onRemove,
+  onManageScopes,
 }: {
   label: string;
   members: SandboxMember[];
   viewerUserId: string;
-  canManage: boolean;
+  canChangeRole: boolean;
+  canRemove: boolean;
+  canSetCap: boolean;
+  canManageScopes: boolean;
   roleMutation: {
     mutate: (input: { userId: string; role: SandboxMemberRole }) => void;
     isPending: boolean;
@@ -286,6 +313,7 @@ function MemberSection({
     variables?: { userId: string; capCents: number | null };
   };
   onRemove: (m: SandboxMember) => void;
+  onManageScopes: (m: SandboxMember) => void;
 }) {
   return (
     <section className="space-y-3">
@@ -294,9 +322,11 @@ function MemberSection({
         {members.map((member) => {
           const isSelf = member.user_id === viewerUserId;
           const isOwner = member.role === 'owner';
-          const roleEditable = canManage && !isOwner && !isSelf;
-          const removable = canManage && member.role !== 'owner' && !isSelf;
-          const capEditable = canManage && !isOwner;
+          const roleEditable = canChangeRole && !isOwner && !isSelf;
+          const removable = canRemove && member.role !== 'owner' && !isSelf;
+          const capEditable = canSetCap && !isOwner;
+          const scopesEditable = canManageScopes && !isOwner && !isSelf;
+          const showActions = roleEditable || removable || scopesEditable;
           const pendingRole =
             roleMutation.isPending && roleMutation.variables?.userId === member.user_id;
           const pendingCap =
@@ -323,10 +353,12 @@ function MemberSection({
                     />
                   ) : null}
                   <RoleTag role={member.role} />
-                  {roleEditable ? (
+                  {showActions ? (
                     <MemberRowActions
                       role={member.role}
+                      roleEditable={roleEditable}
                       removable={removable}
+                      scopesEditable={scopesEditable}
                       pending={pendingRole}
                       onChangeRole={(next) =>
                         roleMutation.mutate({
@@ -334,6 +366,7 @@ function MemberSection({
                           role: next,
                         })
                       }
+                      onManageScopes={() => onManageScopes(member)}
                       onRemove={() => onRemove(member)}
                     />
                   ) : null}
@@ -478,11 +511,11 @@ function CapChip({
 
 function PendingSection({
   invites,
-  canManage,
+  canRevoke,
   onRevoke,
 }: {
   invites: SandboxPendingInvite[];
-  canManage: boolean;
+  canRevoke: boolean;
   onRevoke: (i: SandboxPendingInvite) => void;
 }) {
   return (
@@ -502,7 +535,7 @@ function PendingSection({
             trailing={
               <div className="flex items-center gap-1">
                 <RoleTag role={invite.role} />
-                {canManage ? (
+                {canRevoke ? (
                   <Button
                     size="icon"
                     variant="ghost"
@@ -555,15 +588,21 @@ function RoleTag({ role }: { role: SandboxMemberRole | null | 'admin' | 'member'
 
 function MemberRowActions({
   role,
+  roleEditable,
   removable,
+  scopesEditable,
   pending,
   onChangeRole,
+  onManageScopes,
   onRemove,
 }: {
   role: SandboxMemberRole | null;
+  roleEditable: boolean;
   removable: boolean;
+  scopesEditable: boolean;
   pending: boolean;
   onChangeRole: (next: SandboxMemberRole) => void;
+  onManageScopes: () => void;
   onRemove: () => void;
 }) {
   return (
@@ -583,28 +622,39 @@ function MemberRowActions({
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52">
-        <RoleMenuItem
-          selected={role === 'admin'}
-          title="Admin"
-          subtitle="Manage projects and teammates"
-          onSelect={() => onChangeRole('admin')}
-        />
-        <RoleMenuItem
-          selected={role === 'member'}
-          title="Member"
-          subtitle="Only sees projects they're added to"
-          onSelect={() => onChangeRole('member')}
-        />
+      <DropdownMenuContent align="end" className="w-40">
+        {roleEditable ? (
+          <>
+            <RoleMenuItem
+              selected={role === 'admin'}
+              title="Admin"
+              onSelect={() => onChangeRole('admin')}
+            />
+            <RoleMenuItem
+              selected={role === 'member'}
+              title="Member"
+              onSelect={() => onChangeRole('member')}
+            />
+          </>
+        ) : null}
+        {scopesEditable ? (
+          <>
+            {roleEditable ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuItem onSelect={onManageScopes}>
+              <Lock className="h-3.5 w-3.5" />
+              Permissions
+            </DropdownMenuItem>
+          </>
+        ) : null}
         {removable ? (
           <>
-            <DropdownMenuSeparator />
+            {roleEditable || scopesEditable ? <DropdownMenuSeparator /> : null}
             <DropdownMenuItem
               onSelect={onRemove}
               className="focus:text-destructive focus:bg-destructive/10"
             >
               <IconDelete className="h-3.5 w-3.5" />
-              Remove from team
+              Remove
             </DropdownMenuItem>
           </>
         ) : null}
@@ -621,7 +671,7 @@ function RoleMenuItem({
 }: {
   selected: boolean;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   onSelect: () => void;
 }) {
   return (
@@ -629,18 +679,23 @@ function RoleMenuItem({
       onSelect={onSelect}
       className="flex items-start gap-2 py-2"
     >
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-foreground text-xs font-medium">
+          <User className="h-3.5 w-3.5" />
+          {title}
+        </div>
+        {subtitle ? (
+          <div className="text-muted-foreground text-[11px] leading-snug">
+            {subtitle}
+          </div>
+        ) : null}
+      </div>
       <IconCheck
         className={cn(
           'mt-0.5 h-3.5 w-3.5 shrink-0',
           selected ? 'text-foreground' : 'text-transparent',
         )}
       />
-      <div className="min-w-0">
-        <div className="text-foreground text-xs font-medium">{title}</div>
-        <div className="text-muted-foreground text-[11px] leading-snug">
-          {subtitle}
-        </div>
-      </div>
     </DropdownMenuItem>
   );
 }
@@ -744,14 +799,12 @@ function InviteDialog({
                   selected={role === 'member'}
                   onSelect={() => setRole('member')}
                   title="Member"
-                  description="Only sees projects they're added to."
                   disabled={pending}
                 />
                 <RoleCard
                   selected={role === 'admin'}
                   onSelect={() => setRole('admin')}
                   title="Admin"
-                  description="Can manage projects and teammates."
                   disabled={pending}
                 />
               </div>
@@ -801,7 +854,7 @@ function RoleCard({
   selected: boolean;
   onSelect: () => void;
   title: string;
-  description: string;
+  description?: string;
   disabled?: boolean;
 }) {
   return (
@@ -813,7 +866,7 @@ function RoleCard({
         'group relative flex h-full flex-col items-start gap-1 rounded-xl border p-3 text-left transition-all',
         'disabled:cursor-not-allowed disabled:opacity-50',
         selected
-          ? 'border-foreground bg-foreground/[0.04] shadow-sm'
+          ? 'bg-foreground/10 shadow-sm'
           : 'border-border/60 bg-muted/20 hover:border-border hover:bg-muted/40',
       )}
     >
@@ -837,9 +890,11 @@ function RoleCard({
           ) : null}
         </span>
       </div>
-      <p className="text-muted-foreground text-[11px] leading-snug">
-        {description}
-      </p>
+      {description ? (
+        <p className="text-muted-foreground text-[11px] leading-snug">
+          {description}
+        </p>
+      ) : null}
     </button>
   );
 }

@@ -19,15 +19,11 @@ export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context';
 export const KORTIX_USER_CONTEXT_TTL_SECONDS = 60;
 
 export interface KortixUserContext {
-  /** Supabase auth user id of the caller. */
   userId: string;
-  /** Sandbox the caller is reaching. */
   sandboxId: string;
-  /** Caller's role in the sandbox's account: 'owner' | 'admin' | 'member' | 'platform_admin'. */
   sandboxRole: 'owner' | 'admin' | 'member' | 'platform_admin';
-  /** Unix seconds. */
+  scopes: string[];
   iat: number;
-  /** Unix seconds. Token is invalid at-or-after this timestamp. */
   exp: number;
 }
 
@@ -56,6 +52,7 @@ export function encodeKortixUserContext(
     userId: ctx.userId,
     sandboxId: ctx.sandboxId,
     sandboxRole: ctx.sandboxRole,
+    scopes: ctx.scopes ?? [],
     iat,
     exp,
   };

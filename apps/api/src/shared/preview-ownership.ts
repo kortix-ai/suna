@@ -19,6 +19,7 @@ import {
   decideAccess,
   loadUserTeamContext,
 } from '../teams';
+import { effectiveScopes } from '../permissions';
 import { sandboxes } from '@kortix/db';
 import { eq, or } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
@@ -73,8 +74,6 @@ async function computeEntry(
   const primaryAccountId = await resolveAccountId(userId);
   const ctx = await loadUserTeamContext(db, userId, primaryAccountId);
 
-  // Sandbox row couldn't be resolved (rare — e.g. local-docker discovery
-  // path). Fall back to the boolean check; identity still forwards.
   if (!ref) {
     const allowed = await canAccessPreviewTarget(db, ctx, previewSandboxId);
     return {
@@ -84,6 +83,7 @@ async function computeEntry(
             userId,
             sandboxId: previewSandboxId,
             sandboxRole: 'platform_admin',
+            scopes: ['*'],
           }
         : null,
       expiresAt,
@@ -111,14 +111,19 @@ async function computeEntry(
     sandboxRole = 'member';
   }
 
-  // Project ACLs are resolved inside the sandbox (kortix-master owns the
-  // table), so the signed payload stays identity-only.
+  const scopeSet = await effectiveScopes(db, ctx, {
+    sandboxId: ref.sandboxId,
+    accountId: ref.accountId,
+  });
+  const scopes = Array.from(scopeSet);
+
   return {
     allowed: true,
     payload: {
       userId,
       sandboxId: ref.sandboxId,
       sandboxRole,
+      scopes,
     },
     expiresAt,
   };

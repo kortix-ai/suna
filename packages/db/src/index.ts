@@ -21,6 +21,8 @@ export {
   // Kortix tables
   sandboxes,
   sandboxMembers,
+  sandboxMemberScopes,
+  scopeEffectEnum,
   sandboxInvites,
   deployments,
   kortixApiKeys,
