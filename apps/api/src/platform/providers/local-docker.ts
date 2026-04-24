@@ -48,20 +48,23 @@ function shellQuote(value: string): string {
  * Set `KORTIX_DEV_BIND_SOURCE=0` to force-disable even when running from a
  * checkout (e.g. when intentionally testing the baked image).
  */
-function buildDevSourceBinds(): string[] {
-  if (process.env.KORTIX_DEV_BIND_SOURCE === '0') return [];
-
+function findRepoRoot(): string | null {
+  if (process.env.KORTIX_DEV_BIND_SOURCE === '0') return null;
   // apps/api/src → repo root = ../../.. from this file's runtime location.
   // Walk up until we find a `core/kortix-master/opencode/opencode.jsonc`.
   let dir = resolve(__dirname);
-  let repoRoot: string | null = null;
   for (let i = 0; i < 8; i++) {
     const probe = resolve(dir, 'core/kortix-master/opencode/opencode.jsonc');
-    if (existsSync(probe)) { repoRoot = dir; break; }
+    if (existsSync(probe)) return dir;
     const parent = resolve(dir, '..');
     if (parent === dir) break;
     dir = parent;
   }
+  return null;
+}
+
+function buildDevSourceBinds(): string[] {
+  const repoRoot = findRepoRoot();
   if (!repoRoot) return [];
 
   const km = resolve(repoRoot, 'core/kortix-master');
@@ -1031,18 +1034,46 @@ export class LocalDockerProvider implements SandboxProvider {
         if (config.DOCKER_HOST && !config.DOCKER_HOST.includes('://')) {
           execEnv.DOCKER_HOST = `unix://${config.DOCKER_HOST}`;
         }
+
+        // Ensure supervisor deps exist on the HOST. The bind-mount is
+        // read-only, so `bun install` inside the container fails with
+        // EROFS. Installing here writes node_modules on the host, which
+        // then shows up inside the container via the same bind-mount.
+        const repoRoot = findRepoRoot();
+        if (!repoRoot) return;
+        const supervisorHostDir = resolve(repoRoot, 'core/kortix-supervisor');
+        if (!existsSync(resolve(supervisorHostDir, 'node_modules'))) {
+          try {
+            console.log('[LOCAL-DOCKER] Installing kortix-supervisor deps on host (first boot)...');
+            execSync('bun install --production --silent', {
+              cwd: supervisorHostDir,
+              timeout: 60_000,
+              stdio: 'pipe',
+            });
+          } catch (depErr: any) {
+            console.warn('[LOCAL-DOCKER] bun install for supervisor failed, retrying with npm:', depErr.message || depErr);
+            try { execSync('npm install --omit=dev --silent', { cwd: supervisorHostDir, timeout: 120_000, stdio: 'pipe' }); }
+            catch (e: any) { console.error('[LOCAL-DOCKER] supervisor dep install failed:', e.message || e); }
+          }
+        }
+
         // Wait briefly for the container to be in a state where exec works,
         // then start the supervisor if it isn't already running.
         await new Promise((r) => setTimeout(r, 2000));
-        const cmd = [
-          'mkdir -p /run/kortix',
-          // install deps idempotently (fast when already installed)
-          '(cd /ephemeral/kortix-supervisor && [ -d node_modules ] || bun install --production --silent)',
-          // start only if not already listening on the socket
-          'if ! [ -S /run/kortix/supervisor.sock ]; then',
-          '  cd /ephemeral/kortix-supervisor && nohup env KORTIX_SUPERVISOR_SOCKET=/run/kortix/supervisor.sock OPENCODE_BIN_PATH=/usr/local/bin/opencode-kortix PATH=/opt/bun/bin:/usr/local/bin:/usr/bin:/bin /opt/bun/bin/bun run src/index.ts >/tmp/supervisor.log 2>&1 &',
-          'fi',
-        ].join(' && ');
+        // Single-line shell: `&&` between statements, `;` inside if-then-fi.
+        // Detach with setsid + nohup + </dev/null so the bun process survives
+        // after the `docker exec` command returns.
+        const cmd =
+          'mkdir -p /run/kortix && ' +
+          'if [ ! -S /run/kortix/supervisor.sock ]; then ' +
+          'cd /ephemeral/kortix-supervisor && ' +
+          'setsid nohup env KORTIX_SUPERVISOR_SOCKET=/run/kortix/supervisor.sock ' +
+          'OPENCODE_BIN_PATH=/usr/local/bin/opencode-kortix ' +
+          'PATH=/opt/bun/bin:/usr/local/bin:/usr/bin:/bin ' +
+          '/opt/bun/bin/bun run src/index.ts ' +
+          '>/tmp/supervisor.log 2>&1 </dev/null & ' +
+          'disown; ' +
+          'fi';
         execSync(
           `docker exec ${shellQuote(CONTAINER_NAME)} bash -c ${shellQuote(cmd)}`,
           { timeout: 30_000, stdio: 'pipe', env: execEnv },
