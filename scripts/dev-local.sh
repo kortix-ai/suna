@@ -48,6 +48,29 @@ print("[dev] ERROR: Timed out waiting for Supabase Postgres on 127.0.0.1:54322",
 sys.exit(1)
 PY
 
+echo "[dev] Verifying sandbox container health..."
+python3 - <<'PY'
+import urllib.request
+import sys
+import time
+
+url = "http://localhost:8000/kortix/health"
+deadline = time.time() + 60
+while time.time() < deadline:
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                print("[dev] Sandbox container is healthy")
+                sys.exit(0)
+    except Exception:
+        pass
+    time.sleep(2)
+
+print("[dev] ERROR: Timed out waiting for sandbox container to become healthy at " + url, file=sys.stderr)
+sys.exit(1)
+PY
+
 echo "[dev] Starting frontend..."
 pnpm --filter Kortix-Computer-Frontend dev &
 FRONTEND_PID=$!
