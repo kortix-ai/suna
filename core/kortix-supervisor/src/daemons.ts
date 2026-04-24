@@ -10,7 +10,7 @@ const UID_MIN = 10_000
 const UID_MAX = 19_999
 const IDLE_MS = 15 * 60 * 1000
 const REAP_INTERVAL_MS = 60 * 1000
-const SPAWN_TIMEOUT_MS = 15_000
+const SPAWN_TIMEOUT_MS = 30_000
 const STORAGE_SUBDIRS = [
   'log',
   'storage',
@@ -24,11 +24,15 @@ function resolveOpencodeBin(): string {
   if (process.env.OPENCODE_BIN && existsSync(process.env.OPENCODE_BIN)) {
     return process.env.OPENCODE_BIN
   }
-  for (const candidate of ['/usr/local/bin/opencode', '/usr/bin/opencode']) {
+  for (const candidate of [
+    '/usr/local/bin/opencode-kortix',
+    '/usr/local/bin/opencode',
+    '/usr/bin/opencode',
+  ]) {
     if (existsSync(candidate)) return candidate
   }
   try {
-    return execSync('command -v opencode', { encoding: 'utf8' }).trim()
+    return execSync('command -v opencode-kortix || command -v opencode', { encoding: 'utf8' }).trim()
   } catch {
     return 'opencode'
   }
@@ -47,7 +51,8 @@ interface Daemon {
   linux_uid: number
   port: number
   pid: number
-  process: ReturnType<typeof Bun.spawn>
+  adopted?: boolean
+  process: ReturnType<typeof Bun.spawn> | null
   startedAt: number
   lastUsed: number
 }
@@ -75,6 +80,24 @@ export class DaemonRegistry {
     }
 
     const port = this.portFor(spec.linux_uid)
+
+    if (await this.isPortHealthy(port)) {
+      const adopted: Daemon = {
+        supabase_user_id: spec.supabase_user_id,
+        username: spec.username,
+        linux_uid: spec.linux_uid,
+        port,
+        pid: 0,
+        adopted: true,
+        process: null,
+        startedAt: Date.now(),
+        lastUsed: Date.now(),
+      }
+      this.byUser.set(spec.supabase_user_id, adopted)
+      console.log(`[supervisor] adopted existing daemon on port ${port} for ${spec.username}`)
+      return port
+    }
+
     this.ensureLinuxIdentity(spec)
     this.prepareStorage(spec)
     const daemon = await this.spawnDaemon(spec, port)
@@ -414,6 +437,8 @@ export class DaemonRegistry {
   }
 
   private isAlive(d: Daemon): boolean {
+    if (d.adopted) return true
+    if (!d.pid) return false
     try {
       process.kill(d.pid, 0)
       return true
@@ -434,13 +459,18 @@ export class DaemonRegistry {
   }
 
   private killProcess(d: Daemon): void {
-    try {
-      d.process.kill('SIGTERM')
-    } catch {}
-    setTimeout(() => {
-      try {
-        d.process.kill('SIGKILL')
-      } catch {}
-    }, 3000)
+    if (d.process) {
+      try { d.process.kill('SIGTERM') } catch {}
+      setTimeout(() => {
+        try { d.process?.kill('SIGKILL') } catch {}
+      }, 3000)
+      return
+    }
+    if (d.pid) {
+      try { process.kill(d.pid, 'SIGTERM') } catch {}
+      setTimeout(() => {
+        try { process.kill(d.pid, 'SIGKILL') } catch {}
+      }, 3000)
+    }
   }
 }
