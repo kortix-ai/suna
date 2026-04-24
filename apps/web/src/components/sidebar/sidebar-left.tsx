@@ -37,7 +37,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useDeleteProject, usePatchProject } from '@/hooks/kortix/use-kortix-projects';
-import { toast } from 'sonner';
 import posthog from 'posthog-js';
 
 import { SessionList } from '@/components/sidebar/session-list';
