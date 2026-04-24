@@ -765,7 +765,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   };
 
   return (
-    <div className="flex flex-col pl-8">
+    <div className="flex flex-col">
       {/* Archived sessions toggle */}
       {archivedSessions.length > 0 && !isLoading && !error && (
         <div className="px-2 pb-1">
