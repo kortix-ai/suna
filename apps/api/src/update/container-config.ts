@@ -31,6 +31,17 @@ export function sanitizePorts(ports: string[]): string[] {
   return ports;
 }
 
+const REQUIRED_PORTS = ['3456:3456', '8000:8000'];
+
+export function ensureRequiredPorts(ports: string[]): string[] {
+  const existing = new Set(ports);
+  const merged = [...ports];
+  for (const required of REQUIRED_PORTS) {
+    if (!existing.has(required)) merged.push(required);
+  }
+  return merged;
+}
+
 export async function readContainerConfig(
   endpoint: ResolvedEndpoint,
 ): Promise<ContainerConfig | null> {
@@ -39,9 +50,10 @@ export async function readContainerConfig(
   try {
     const config = JSON.parse(result.stdout.trim()) as ContainerConfig;
     normalizeManagedVolumes(config);
-    const sanitizedPorts = sanitizePorts(config.ports || []);
-    const portsChanged = JSON.stringify(sanitizedPorts) !== JSON.stringify(config.ports || []);
-    config.ports = sanitizedPorts.length > 0 ? sanitizedPorts : DEFAULT_PORTS;
+    const originalPorts = config.ports || [];
+    const withRequired = ensureRequiredPorts(sanitizePorts(originalPorts));
+    const portsChanged = JSON.stringify(withRequired) !== JSON.stringify(originalPorts);
+    config.ports = withRequired.length > 0 ? withRequired : DEFAULT_PORTS;
 
     const inspect = await execOnHost(
       endpoint,
@@ -71,9 +83,10 @@ export async function writeContainerConfig(
   config: ContainerConfig,
 ): Promise<void> {
   normalizeManagedVolumes(config);
+  const ports = ensureRequiredPorts(sanitizePorts(config.ports || []));
   const json = JSON.stringify({
     ...config,
-    ports: sanitizePorts(config.ports || []).length > 0 ? sanitizePorts(config.ports || []) : DEFAULT_PORTS,
+    ports: ports.length > 0 ? ports : DEFAULT_PORTS,
   }, null, 2);
   const b64 = Buffer.from(json).toString('base64');
   await execOnHost(
@@ -112,11 +125,12 @@ export async function buildFromInspect(
 
       const envFile = findEnvFile(hostConfig);
 
+      const mergedPorts = ensureRequiredPorts(sanitizePorts(ports));
       return {
         image: containerConfig.Image || '',
         name,
         volumes: volumes.length > 0 ? volumes : ['kortix-data:/workspace', 'kortix-data:/config'],
-        ports: sanitizePorts(ports).length > 0 ? sanitizePorts(ports) : DEFAULT_PORTS,
+        ports: mergedPorts.length > 0 ? mergedPorts : DEFAULT_PORTS,
         privileged: Boolean(hostConfig.Privileged),
         caps: (hostConfig.CapAdd || []) as string[],
         shmSize: formatShmSize(hostConfig.ShmSize),
