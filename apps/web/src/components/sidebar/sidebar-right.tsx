@@ -355,6 +355,7 @@ export function SidebarRight() {
                       const isDisabled = isTerminal && createPty.isPending;
                       return (
                         <Button
+                          key={item.id}
                           onClick={() => handleItemAction(item)}
                           disabled={isDisabled}
                           variant="sidebar"
