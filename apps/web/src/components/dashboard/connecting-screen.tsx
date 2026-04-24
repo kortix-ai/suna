@@ -735,9 +735,9 @@ function UnreachableView({
   const isLocalDocker = provider === 'local_docker';
   const isRestartRecovering = recoveryPhase !== 'idle';
   const secondsSinceRestart = restartRequestedAt ? Math.max(1, Math.floor((Date.now() - restartRequestedAt) / 1000)) : null;
-  const adminRuntimeDegraded = adminHealth?.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy';
-  const adminWorkloadBroken = adminHealth?.layers.workload.status !== 'healthy';
-  const adminHostOffline = adminHealth?.layers.host.status === 'offline';
+  const adminRuntimeDegraded = !!adminHealth && adminHealth.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy';
+  const adminWorkloadBroken = !!adminHealth && adminHealth.layers.workload.status !== 'healthy';
+  const adminHostOffline = !!adminHealth && adminHealth.layers.host.status === 'offline';
 
   return (
     <>
