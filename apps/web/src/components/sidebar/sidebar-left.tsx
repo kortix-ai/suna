@@ -705,14 +705,15 @@ function SidebarSections() {
               </Button>
             </CollapsibleTrigger>
           </div>
-          <CollapsibleContent className="min-h-0 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <div className="flex flex-col pl-2">
+          <CollapsibleContent className="min-h-0 data-[state=open]:pt-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div className="flex flex-col px-3">
               <div className="px-2 pb-2">
                 <div className="space-y-0.5">
                   {sortedProjects.map((project) => (
                     <SidebarProjectRow
                       key={project.id}
                       project={project}
+                      active={pathname?.startsWith(`/projects/${project.id}`) ?? false}
                       onClick={() => handleProjectClick(project)}
                     />
                   ))}
@@ -734,14 +735,8 @@ function SidebarSections() {
             </Button>
           </CollapsibleTrigger>
         </div>
-        <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <div className="relative">
-            <span
-              aria-hidden
-              className="pointer-events-none absolute left-[31.5px] top-1 bottom-1 w-px bg-sidebar-foreground/20"
-            />
-            <SessionList projectId={null} />
-          </div>
+        <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <SessionList projectId={null} />
         </CollapsibleContent>
       </Collapsible>
 
@@ -881,9 +876,11 @@ function SidebarSections() {
  */
 function SidebarProjectRow({
   project,
+  active,
   onClick,
 }: {
   project: KortixProject & { sessionCount?: number };
+  active?: boolean;
   onClick: () => void;
 }) {
   const userHandle = useUserHandle();
@@ -923,17 +920,19 @@ function SidebarProjectRow({
     <div
       onClick={onClick}
       className={cn(
-        'flex items-center gap-2 py-1.5 pl-3.5 pr-2.5 rounded-lg text-[13px] cursor-pointer',
-        'transition-colors duration-150',
-        'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+        'flex items-center gap-2 rounded-lg cursor-pointer transition-colors duration-150',
+        'pr-1.5 py-1.5 pl-3',
+        active
+          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
       )}
     >
-      <span className={cn('flex-1 truncate', unread > 0 && 'text-foreground font-medium')}>
+      <span className={cn('flex-1 truncate text-[13px]', (active || unread > 0) && 'font-medium')}>
         {project.name}
       </span>
       {unread > 0 && (
         <span
-          className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none tabular-nums"
+          className="flex-shrink-0 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none tabular-nums"
           aria-label={`${unread} unread`}
           title={`${unread} unread`}
         >
@@ -941,7 +940,7 @@ function SidebarProjectRow({
         </span>
       )}
       {unread === 0 && (project.sessionCount ?? 0) > 0 && (
-        <span className="text-[10px] text-muted-foreground/40 tabular-nums">
+        <span className="flex-shrink-0 text-[10px] text-muted-foreground/40 tabular-nums">
           {project.sessionCount}
         </span>
       )}

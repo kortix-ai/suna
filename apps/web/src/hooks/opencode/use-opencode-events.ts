@@ -28,6 +28,7 @@ import { useSyncStore } from "@/stores/opencode-sync-store";
 import { useServerStore, getActiveOpenCodeUrl } from "@/stores/server-store";
 import { ptyKeys } from "./use-opencode-pty";
 import { opencodeKeys, type Session, type MessageWithParts } from "./use-opencode-sessions";
+import { kortixKeys } from "@/hooks/kortix/use-kortix-projects";
 import { saveSessionToIDB, deleteSessionFromIDB } from "@/lib/idb-sync-cache";
 import { resetPrefetchState } from "./use-session-prefetch";
 
@@ -530,6 +531,25 @@ export function useOpenCodeEventStream() {
 					// Extract diagnostics from tool output and/or metadata
 					const part = (event.properties as any).part as Part;
 					const partState = (part as any)?.state;
+
+					// --- Sidebar projects list refresh on project_* tool completion ---
+					// When an agent's `project_create` / `project_update` / `project_delete`
+					// tool finishes, the sidebar's Projects list is stale — invalidate so
+					// it refetches once instead of polling on a timer. Covers:
+					//   - user prompts general agent to create a project → sidebar picks
+					//     it up immediately without a page refresh
+					//   - agent renames/deletes → sidebar mirrors the change
+					if (partState?.status === "completed" && (part as any)?.type === "tool") {
+						const toolName = (part as any).tool as string | undefined;
+						if (
+							toolName === "project_create" ||
+							toolName === "project_update" ||
+							toolName === "project_delete" ||
+							toolName === "project_select"
+						) {
+							queryClient.invalidateQueries({ queryKey: kortixKeys.projects() });
+						}
+					}
 
 					// --- Primary path: parse diagnostics from tool output text ---
 					// The OpenCode backend embeds diagnostics as plain text inside

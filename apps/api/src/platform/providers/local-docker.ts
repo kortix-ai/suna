@@ -1,6 +1,6 @@
 import Docker from 'dockerode';
 import { execSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { config, SANDBOX_VERSION } from '../../config';
 import { generateSandboxKeyPair } from '../../shared/crypto';
@@ -36,6 +36,55 @@ const BASE_URL = `http://localhost:${PORT_MAP['8000']}`;
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `"'"'`)}'`;
+}
+
+/**
+ * Resolve bind-mounts that overlay the host's `core/kortix-master` checkout
+ * onto the baked sandbox image's `/ephemeral/kortix-master` tree.
+ *
+ * Returns [] when not running from a repo checkout (packaged install) so
+ * production / self-hosted deployments are unaffected.
+ *
+ * Set `KORTIX_DEV_BIND_SOURCE=0` to force-disable even when running from a
+ * checkout (e.g. when intentionally testing the baked image).
+ */
+function buildDevSourceBinds(): string[] {
+  if (process.env.KORTIX_DEV_BIND_SOURCE === '0') return [];
+
+  // apps/api/src → repo root = ../../.. from this file's runtime location.
+  // Walk up until we find a `core/kortix-master/opencode/opencode.jsonc`.
+  let dir = resolve(__dirname);
+  let repoRoot: string | null = null;
+  for (let i = 0; i < 8; i++) {
+    const probe = resolve(dir, 'core/kortix-master/opencode/opencode.jsonc');
+    if (existsSync(probe)) { repoRoot = dir; break; }
+    const parent = resolve(dir, '..');
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (!repoRoot) return [];
+
+  const km = resolve(repoRoot, 'core/kortix-master');
+  const services = resolve(repoRoot, 'core/services');
+  // Mirror core/docker/docker-compose.dev.yml — read-only, ephemeral target.
+  const paths: Array<[string, string]> = [
+    [resolve(km, 'src'),                       '/ephemeral/kortix-master/src'],
+    [resolve(km, 'opencode/plugin'),           '/ephemeral/kortix-master/opencode/plugin'],
+    [resolve(km, 'opencode/agents'),           '/ephemeral/kortix-master/opencode/agents'],
+    [resolve(km, 'opencode/commands'),         '/ephemeral/kortix-master/opencode/commands'],
+    [resolve(km, 'opencode/skills'),           '/ephemeral/kortix-master/opencode/skills'],
+    [resolve(km, 'opencode/tools'),            '/ephemeral/kortix-master/opencode/tools'],
+    [resolve(km, 'opencode/patches'),          '/ephemeral/kortix-master/opencode/patches'],
+    [resolve(km, 'opencode/opencode.jsonc'),   '/ephemeral/kortix-master/opencode/opencode.jsonc'],
+    [resolve(km, 'opencode/kortix-system.md'), '/ephemeral/kortix-master/opencode/kortix-system.md'],
+    [resolve(km, 'channels/src'),              '/ephemeral/kortix-master/channels/src'],
+    [resolve(km, 'triggers/src'),              '/ephemeral/kortix-master/triggers/src'],
+    [resolve(km, 'scripts'),                   '/ephemeral/kortix-master/scripts'],
+    [services,                                 '/ephemeral/services'],
+  ];
+  return paths
+    .filter(([src]) => existsSync(src))
+    .map(([src, dst]) => `${src}:${dst}:ro`);
 }
 
 function buildDockerEnvWriteCommand(payload: Record<string, string>, targetDir: string): string {
@@ -921,6 +970,17 @@ export class LocalDockerProvider implements SandboxProvider {
       ...filteredSandboxEnv,
     ];
 
+    // Dev-mode bind-mounts: when running from a repo checkout, mount the
+    // host's `core/kortix-master` source tree over the image's baked copy so
+    // plugin/agent/config edits are live without rebuilding the image. Without
+    // this, `pnpm start` auto-provisions with whatever's baked into
+    // `kortix/computer:latest` — which lags the branch. Mirrors what
+    // `core/docker/docker-compose.dev.yml` does for manual compose runs.
+    const devBinds = buildDevSourceBinds();
+    if (devBinds.length > 0) {
+      console.log(`[LOCAL-DOCKER] Dev-mode: mounting ${devBinds.length} source path(s) over baked image`);
+    }
+
     const container = await this.docker.createContainer({
       Image: image,
       name: CONTAINER_NAME,
@@ -934,6 +994,7 @@ export class LocalDockerProvider implements SandboxProvider {
         Binds: [
           `${CONTAINER_NAME}-data:/workspace`,
           `${CONTAINER_NAME}-data:/config`,
+          ...devBinds,
         ],
         ...(config.SANDBOX_NETWORK ? { NetworkMode: config.SANDBOX_NETWORK } : {}),
       },
