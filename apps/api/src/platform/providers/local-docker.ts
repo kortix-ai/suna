@@ -48,24 +48,28 @@ function shellQuote(value: string): string {
  * Set `KORTIX_DEV_BIND_SOURCE=0` to force-disable even when running from a
  * checkout (e.g. when intentionally testing the baked image).
  */
-function buildDevSourceBinds(): string[] {
-  if (process.env.KORTIX_DEV_BIND_SOURCE === '0') return [];
-
+function findRepoRoot(): string | null {
+  if (process.env.KORTIX_DEV_BIND_SOURCE === '0') return null;
   // apps/api/src → repo root = ../../.. from this file's runtime location.
   // Walk up until we find a `core/kortix-master/opencode/opencode.jsonc`.
   let dir = resolve(__dirname);
-  let repoRoot: string | null = null;
   for (let i = 0; i < 8; i++) {
     const probe = resolve(dir, 'core/kortix-master/opencode/opencode.jsonc');
-    if (existsSync(probe)) { repoRoot = dir; break; }
+    if (existsSync(probe)) return dir;
     const parent = resolve(dir, '..');
     if (parent === dir) break;
     dir = parent;
   }
+  return null;
+}
+
+function buildDevSourceBinds(): string[] {
+  const repoRoot = findRepoRoot();
   if (!repoRoot) return [];
 
   const km = resolve(repoRoot, 'core/kortix-master');
   const services = resolve(repoRoot, 'core/services');
+  const supervisor = resolve(repoRoot, 'core/kortix-supervisor');
   // Mirror core/docker/docker-compose.dev.yml — read-only, ephemeral target.
   const paths: Array<[string, string]> = [
     [resolve(km, 'src'),                       '/ephemeral/kortix-master/src'],
@@ -81,6 +85,12 @@ function buildDevSourceBinds(): string[] {
     [resolve(km, 'triggers/src'),              '/ephemeral/kortix-master/triggers/src'],
     [resolve(km, 'scripts'),                   '/ephemeral/kortix-master/scripts'],
     [services,                                 '/ephemeral/services'],
+    // kortix-supervisor — new service on feat/new-project-structure that
+    // backs /file routes via a unix socket at /run/kortix/supervisor.sock.
+    // Bake image doesn't ship it yet, so without this mount the file tree /
+    // editor 500s with "Was there a typo in the url or port?" (Bun's error
+    // when a fetch target can't be reached).
+    [supervisor,                               '/ephemeral/kortix-supervisor'],
   ];
   return paths
     .filter(([src]) => existsSync(src))
@@ -1009,6 +1019,70 @@ export class LocalDockerProvider implements SandboxProvider {
     console.log(
       `[LOCAL-DOCKER] Sandbox created and started on ports ${PORT_BASE}-${PORT_BASE + 7}`,
     );
+
+    // Dev mode: the baked image doesn't ship the kortix-supervisor service
+    // (backs /file, /file/content, /file/raw, project-scoped fs ops via a
+    // unix socket at /run/kortix/supervisor.sock). When we bind-mounted
+    // `core/kortix-supervisor` above, the SOURCE is present but no s6
+    // service is registered to spawn it. Launch it ourselves as a daemon
+    // inside the container so file routes work end-to-end under `pnpm start`.
+    // No-op when devBinds is empty (packaged install with baked image).
+    if (devBinds.length > 0) {
+      try {
+        const { execSync } = require('child_process');
+        const execEnv: Record<string, string> = { ...process.env as Record<string, string> };
+        if (config.DOCKER_HOST && !config.DOCKER_HOST.includes('://')) {
+          execEnv.DOCKER_HOST = `unix://${config.DOCKER_HOST}`;
+        }
+
+        // Ensure supervisor deps exist on the HOST. The bind-mount is
+        // read-only, so `bun install` inside the container fails with
+        // EROFS. Installing here writes node_modules on the host, which
+        // then shows up inside the container via the same bind-mount.
+        const repoRoot = findRepoRoot();
+        if (!repoRoot) return;
+        const supervisorHostDir = resolve(repoRoot, 'core/kortix-supervisor');
+        if (!existsSync(resolve(supervisorHostDir, 'node_modules'))) {
+          try {
+            console.log('[LOCAL-DOCKER] Installing kortix-supervisor deps on host (first boot)...');
+            execSync('bun install --production --silent', {
+              cwd: supervisorHostDir,
+              timeout: 60_000,
+              stdio: 'pipe',
+            });
+          } catch (depErr: any) {
+            console.warn('[LOCAL-DOCKER] bun install for supervisor failed, retrying with npm:', depErr.message || depErr);
+            try { execSync('npm install --omit=dev --silent', { cwd: supervisorHostDir, timeout: 120_000, stdio: 'pipe' }); }
+            catch (e: any) { console.error('[LOCAL-DOCKER] supervisor dep install failed:', e.message || e); }
+          }
+        }
+
+        // Wait briefly for the container to be in a state where exec works,
+        // then start the supervisor if it isn't already running.
+        await new Promise((r) => setTimeout(r, 2000));
+        // Single-line shell: `&&` between statements, `;` inside if-then-fi.
+        // Detach with setsid + nohup + </dev/null so the bun process survives
+        // after the `docker exec` command returns.
+        const cmd =
+          'mkdir -p /run/kortix && ' +
+          'if [ ! -S /run/kortix/supervisor.sock ]; then ' +
+          'cd /ephemeral/kortix-supervisor && ' +
+          'setsid nohup env KORTIX_SUPERVISOR_SOCKET=/run/kortix/supervisor.sock ' +
+          'OPENCODE_BIN_PATH=/usr/local/bin/opencode-kortix ' +
+          'PATH=/opt/bun/bin:/usr/local/bin:/usr/bin:/bin ' +
+          '/opt/bun/bin/bun run src/index.ts ' +
+          '>/tmp/supervisor.log 2>&1 </dev/null & ' +
+          'disown; ' +
+          'fi';
+        execSync(
+          `docker exec ${shellQuote(CONTAINER_NAME)} bash -c ${shellQuote(cmd)}`,
+          { timeout: 30_000, stdio: 'pipe', env: execEnv },
+        );
+        console.log('[LOCAL-DOCKER] kortix-supervisor started inside container');
+      } catch (err: any) {
+        console.warn('[LOCAL-DOCKER] kortix-supervisor launch failed (file routes may 500):', err.message || err);
+      }
+    }
   }
 
   /**

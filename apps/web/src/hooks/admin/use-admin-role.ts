@@ -7,13 +7,15 @@ interface AdminRoleResponse {
   role?: 'admin' | 'super_admin' | null;
 }
 
+export const ADMIN_ROLE_QUERY_KEY = 'admin-role';
+
 export const useAdminRole = (
   options?: Partial<UseQueryOptions<AdminRoleResponse>>
 ) => {
   const { user } = useAuth();
 
   return useQuery<AdminRoleResponse>({
-    queryKey: ['admin-role', user?.id],
+    queryKey: [ADMIN_ROLE_QUERY_KEY, user?.id],
     queryFn: async () => {
       if (!user) {
         return { isAdmin: false, role: null };
@@ -31,10 +33,17 @@ export const useAdminRole = (
       return response.data || { isAdmin: false, role: null };
     },
     enabled: !!user && (options?.enabled !== false),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
-    refetchOnWindowFocus: false,
-    refetchOnMount: false, // Don't refetch if we have cached data
+    // Previously: staleTime 5min + refetchOnMount:false + refetchOnFocus:false
+    // meant a `{isAdmin:true}` value cached once was served for 5 minutes
+    // regardless of route changes, which caused every admin-gated hook to
+    // keep firing /admin/api/* calls long after the role had been revoked
+    // (or after a DB reset in dev) — and the server correctly returned 403.
+    // Drop the stale window to 30s and let it refetch on mount / focus so
+    // role flips propagate within one navigation or tab-switch.
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
     ...options,
   });
 };
