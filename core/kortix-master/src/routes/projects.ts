@@ -428,8 +428,37 @@ projectsRouter.delete('/:id', async (c) => {
   ) as ProjectRow | null
   if (!p) return c.json({ error: 'Project not found' }, 404)
 
-  // Clean up all related records
-  try { db.prepare('DELETE FROM session_projects WHERE project_id=$pid').run({ $pid: p.id }) } catch {}
+  // Clean up all related records — cascade through every v2 table that
+  // holds a project_id FK. Previously only session_projects was nuked,
+  // which left orphans in triggers / tickets / milestones / agents /
+  // columns / credentials. The next project created under the same name
+  // then silently collided with those orphans (most visibly: the
+  // board-sweep trigger seed's idempotency check matched a dead row and
+  // skipped creation). Each DELETE is guarded because not every table
+  // exists on v1-only installs.
+  const v2Tables = [
+    'session_projects',
+    'project_credential_events',
+    'project_credentials',
+    'project_milestone_counter',
+    'milestone_events',
+    'milestones',
+    'project_ticket_counter',
+    'ticket_agent_sessions',
+    'ticket_assignees',
+    'ticket_events',
+    'tickets',
+    'ticket_templates',
+    'project_fields',
+    'project_columns',
+    'project_agents',
+    'project_members',
+    'pending_agent_triggers',
+    'triggers',
+  ] as const
+  for (const t of v2Tables) {
+    try { db.prepare(`DELETE FROM ${t} WHERE project_id=$pid`).run({ $pid: p.id }) } catch {}
+  }
   db.prepare('DELETE FROM projects WHERE id=$id').run({ $id: p.id })
 
   return c.json({ deleted: true, name: p.name, path: p.path })

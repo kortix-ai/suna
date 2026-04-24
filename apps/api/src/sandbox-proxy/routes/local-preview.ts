@@ -58,39 +58,48 @@ function isExpectedStartupPreview(path: string, status: number, bodySnippet: str
 }
 
 // ─── Service Key Sync ────────────────────────────────────────────────────────
-// Ensures the running sandbox container has the canonical auth bundle from the DB.
-// Triggered on first 401 from the sandbox (auth drift after startup/restart).
-// Retries up to MAX_SYNC_ATTEMPTS on failure before giving up.
-const MAX_SYNC_ATTEMPTS = 3;
-let _syncAttempts = 0;
-let _serviceKeySynced = false;
+// Ensures the running sandbox container has the canonical auth bundle from
+// the DB. Triggered on 401 from the sandbox (auth drift after a rotation).
+//
+// Previously this used a one-shot boolean (`_serviceKeySynced`) — once we
+// successfully synced ONE key, all future 401s were ignored. That broke
+// `bun --hot` reloads: every API restart re-provisions the sandbox with a
+// fresh kortix_sb_ token, the browser keeps hitting the proxy with a JWT,
+// the proxy resolves the NEW serviceKey, but we refuse to resync and just
+// serve 401s until the page is manually hard-refreshed.
+//
+// Fix: track the last successfully-synced key. If the current key differs
+// from the last-synced one (rotation happened), allow a fresh sync cycle.
+const MAX_SYNC_ATTEMPTS_PER_KEY = 3;
+let _lastSyncedKey: string | null = null;
+let _syncAttemptsForCurrentKey = 0;
 
 function trySyncServiceKey(serviceKey: string): boolean {
-  if (_serviceKeySynced) return false;
-  if (_syncAttempts >= MAX_SYNC_ATTEMPTS) {
-    console.error(`[LOCAL-PREVIEW] Sandbox auth sync failed after ${MAX_SYNC_ATTEMPTS} attempts, giving up`);
+  if (!serviceKey) return false;
+  // New key → reset the attempt counter so a rotation gets a fresh 3 tries.
+  if (serviceKey !== _lastSyncedKey) {
+    _syncAttemptsForCurrentKey = 0;
+  } else if (_syncAttemptsForCurrentKey >= MAX_SYNC_ATTEMPTS_PER_KEY) {
+    // Already synced this exact key successfully — nothing to do.
     return false;
   }
-  _syncAttempts++;
+  _syncAttemptsForCurrentKey++;
   try {
-    if (!serviceKey) return false;
-
     const env: Record<string, string> = { ...process.env as Record<string, string> };
     if (config.DOCKER_HOST && !config.DOCKER_HOST.includes('://')) {
       env.DOCKER_HOST = `unix://${config.DOCKER_HOST}`;
     }
 
-    console.log(`[LOCAL-PREVIEW] Syncing sandbox auth bundle to container (attempt ${_syncAttempts}/${MAX_SYNC_ATTEMPTS})...`);
+    console.log(`[LOCAL-PREVIEW] Syncing sandbox auth bundle to container (attempt ${_syncAttemptsForCurrentKey}/${MAX_SYNC_ATTEMPTS_PER_KEY})...`);
     execSync(
       `docker exec ${shellQuote(config.SANDBOX_CONTAINER_NAME)} bash -c ${shellQuote(buildCanonicalSandboxAuthCommand(serviceKey, config.KORTIX_URL.replace(/\/v1\/router\/?$/, '') || `http://host.docker.internal:${config.PORT}`))}`,
       { timeout: 15_000, stdio: 'pipe', env },
     );
-    _serviceKeySynced = true;
+    _lastSyncedKey = serviceKey;
     console.log('[LOCAL-PREVIEW] Sandbox auth bundle synced');
     return true;
   } catch (err: any) {
-    console.error(`[LOCAL-PREVIEW] Failed to sync sandbox auth bundle (attempt ${_syncAttempts}/${MAX_SYNC_ATTEMPTS}):`, err.message || err);
-    // Don't set _serviceKeySynced — allow retry on next 401
+    console.error(`[LOCAL-PREVIEW] Failed to sync sandbox auth bundle (attempt ${_syncAttemptsForCurrentKey}/${MAX_SYNC_ATTEMPTS_PER_KEY}):`, err.message || err);
     return false;
   }
 }
@@ -218,9 +227,12 @@ export async function proxyToSandbox(
     return out;
   }
 
-  // On 401 from sandbox: service key mismatch. Sync our key and retry once.
-  // Only attempt local docker exec sync for local_docker provider (no baseUrlOverride).
-  if (response.status === 401 && !_serviceKeySynced && !baseUrlOverride) {
+  // On 401 from sandbox: service key mismatch (rotation drift). Sync our
+  // key into the container and retry once. Only attempt local docker exec
+  // sync for local_docker provider (no baseUrlOverride). Unlike before, we
+  // re-attempt sync even if we've synced a DIFFERENT key before — rotations
+  // are common under `bun --hot`.
+  if (response.status === 401 && !baseUrlOverride) {
     const synced = trySyncServiceKey(serviceKey);
     if (synced) {
       // Retry the request with the same key (now the sandbox should accept it)

@@ -1039,12 +1039,19 @@ function seedDefaultBoardSweepTrigger(
   dashboardTicketId: string,
   pmSlug: string,
 ): void {
-  const safeName = `${project.name}-board-sweep`
+  // Include project_id in the unique name so a project can be created →
+  // deleted → recreated under the same name without the seed silently
+  // skipping (previously `<name>-board-sweep` was globally unique, so an
+  // orphan row from a prior incarnation blocked the new seed). The DB
+  // idempotency check now scopes to both name AND project_id.
+  const safeName = `${project.name}-${project.id}-board-sweep`
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-  const existing = db.prepare('SELECT id FROM triggers WHERE name = $n').get({ $n: safeName }) as { id?: string } | null
+  const existing = db.prepare(
+    'SELECT id FROM triggers WHERE project_id = $pid AND name LIKE $like'
+  ).get({ $pid: project.id, $like: '%-board-sweep' }) as { id?: string } | null
   if (existing) return
   const id = `trg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const now = new Date().toISOString()

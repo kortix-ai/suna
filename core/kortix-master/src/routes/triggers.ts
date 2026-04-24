@@ -236,12 +236,22 @@ triggersRouter.get('/',
     const db = getStore()
     const sourceType = c.req.query('source_type')
     const isActiveParam = c.req.query('is_active')
+    const projectId = c.req.query('project_id')
+    const ticketId = c.req.query('ticket_id')
     const filter: { source_type?: string; is_active?: boolean } = {}
     if (sourceType) filter.source_type = sourceType
     if (isActiveParam === 'true') filter.is_active = true
     if (isActiveParam === 'false') filter.is_active = false
 
-    const triggers = db.list(filter)
+    let triggers = db.list(filter)
+    // Honor project_id / ticket_id query filters. The underlying store's
+    // `filter` doesn't know about these columns so we filter in-memory —
+    // callers (sidebar, project pages) were previously forced to pull all
+    // triggers and filter client-side, which leaked other projects'
+    // triggers to the wire.
+    if (projectId) triggers = triggers.filter((t: any) => t.project_id === projectId)
+    if (ticketId) triggers = triggers.filter((t: any) => t.ticket_id === ticketId)
+
     const data = triggers.map(mapTriggerToResponse)
     return c.json({ success: true, data, total: data.length })
   },
