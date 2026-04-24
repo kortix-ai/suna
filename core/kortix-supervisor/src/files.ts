@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, statSync } from 'fs'
 import { execFileSync } from 'child_process'
+import { sysbin } from './sysbin'
 import type { FileInstallResponse, FileInstallSpec } from './schema'
 
 const ALLOWED_DEST_PREFIXES = [
@@ -20,11 +21,11 @@ export function installUpload(spec: FileInstallSpec): FileInstallResponse {
   const finalPath = pickFreePath(destDir, safeName)
 
   try {
-    execFileSync('mv', [spec.src, finalPath], { stdio: 'ignore' })
-    execFileSync('chown', [`${spec.owner_uid}:${spec.group ?? spec.owner_uid}`, finalPath], {
+    execFileSync(sysbin('mv'), [spec.src, finalPath], { stdio: 'ignore' })
+    execFileSync(sysbin('chown'), [`${spec.owner_uid}:${spec.group ?? spec.owner_uid}`, finalPath], {
       stdio: 'ignore',
     })
-    execFileSync('chmod', ['0640', finalPath], { stdio: 'ignore' })
+    execFileSync(sysbin('chmod'), ['0640', finalPath], { stdio: 'ignore' })
   } catch (err) {
     throw new Error(
       `install failed ${spec.src} -> ${finalPath}: ${err instanceof Error ? err.message : err}`,

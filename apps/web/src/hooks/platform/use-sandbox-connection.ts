@@ -35,8 +35,7 @@ const POLL_FAILING = 3_000; // 3s when any failure detected (fast retry)
 const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
 const RUNTIME_FAIL_THRESHOLD = 2;
 
-/** Timeout for each health check request */
-const CHECK_TIMEOUT = 5_000;
+const CHECK_TIMEOUT = 20_000;
 
 function isImmediateOfflineStatus(status: number): boolean {
 	return status === 502 || status === 503 || status === 504;
@@ -157,7 +156,7 @@ export function useSandboxConnection() {
 					portsFetchedRef.current = true;
 					try {
 						const portsRes = await authenticatedFetch(`${url}/kortix/ports`, {
-							signal: AbortSignal.timeout(3000),
+							signal: AbortSignal.timeout(8000),
 						}, { retryOnAuthError: false });
 						if (portsRes.ok) {
 							const data = await portsRes.json();
@@ -178,7 +177,7 @@ export function useSandboxConnection() {
 				{
 					try {
 						const coreRes = await authenticatedFetch(`${url}/session/status`, {
-							signal: AbortSignal.timeout(3000),
+							signal: AbortSignal.timeout(8000),
 						}, { retryOnAuthError: false });
 						if (!coreRes.ok) {
 							const body = await coreRes.text().catch(() => "");
@@ -196,7 +195,7 @@ export function useSandboxConnection() {
 						}
 
 						const hRes = await authenticatedFetch(`${url}/kortix/health`, {
-							signal: AbortSignal.timeout(3000),
+							signal: AbortSignal.timeout(8000),
 						}, { retryOnAuthError: false });
 						if (hRes.ok) {
 							const hData = await hRes.json();

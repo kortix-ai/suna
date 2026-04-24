@@ -21,15 +21,25 @@ export const JUSTAVPS_SERVICE_NAME = 'justavps-docker';
 export const JUSTAVPS_STARTUP_PATCH_HOST = '/usr/local/bin/kortix-startup-patch.sh';
 export const JUSTAVPS_STARTUP_PATCH_MOUNT = `${JUSTAVPS_STARTUP_PATCH_HOST}:/ephemeral/startup.sh:ro`;
 
-// Port mapping for cloud/JustAVPS sandboxes.
 export const DEFAULT_PORTS = [
-  '3000:3000', '8000:8000', '8080:8080',
+  '3000:3000', '3456:3456', '8000:8000', '8080:8080',
   '6080:6080', '6081:6081', '3210:3210',
   '3211:3211', '9223:9223', '9224:9224', '22222:22',
 ];
 
 export function sanitizePorts(ports: string[]): string[] {
-  return ports.filter((port) => port !== '3456:3456');
+  return ports;
+}
+
+const REQUIRED_PORTS = ['3456:3456', '8000:8000'];
+
+export function ensureRequiredPorts(ports: string[]): string[] {
+  const existing = new Set(ports);
+  const merged = [...ports];
+  for (const required of REQUIRED_PORTS) {
+    if (!existing.has(required)) merged.push(required);
+  }
+  return merged;
 }
 
 export async function readContainerConfig(
@@ -40,9 +50,10 @@ export async function readContainerConfig(
   try {
     const config = JSON.parse(result.stdout.trim()) as ContainerConfig;
     normalizeManagedVolumes(config);
-    const sanitizedPorts = sanitizePorts(config.ports || []);
-    const portsChanged = JSON.stringify(sanitizedPorts) !== JSON.stringify(config.ports || []);
-    config.ports = sanitizedPorts.length > 0 ? sanitizedPorts : DEFAULT_PORTS;
+    const originalPorts = config.ports || [];
+    const withRequired = ensureRequiredPorts(sanitizePorts(originalPorts));
+    const portsChanged = JSON.stringify(withRequired) !== JSON.stringify(originalPorts);
+    config.ports = withRequired.length > 0 ? withRequired : DEFAULT_PORTS;
 
     const inspect = await execOnHost(
       endpoint,
@@ -72,9 +83,10 @@ export async function writeContainerConfig(
   config: ContainerConfig,
 ): Promise<void> {
   normalizeManagedVolumes(config);
+  const ports = ensureRequiredPorts(sanitizePorts(config.ports || []));
   const json = JSON.stringify({
     ...config,
-    ports: sanitizePorts(config.ports || []).length > 0 ? sanitizePorts(config.ports || []) : DEFAULT_PORTS,
+    ports: ports.length > 0 ? ports : DEFAULT_PORTS,
   }, null, 2);
   const b64 = Buffer.from(json).toString('base64');
   await execOnHost(
@@ -113,11 +125,12 @@ export async function buildFromInspect(
 
       const envFile = findEnvFile(hostConfig);
 
+      const mergedPorts = ensureRequiredPorts(sanitizePorts(ports));
       return {
         image: containerConfig.Image || '',
         name,
         volumes: volumes.length > 0 ? volumes : ['kortix-data:/workspace', 'kortix-data:/config'],
-        ports: sanitizePorts(ports).length > 0 ? sanitizePorts(ports) : DEFAULT_PORTS,
+        ports: mergedPorts.length > 0 ? mergedPorts : DEFAULT_PORTS,
         privileged: Boolean(hostConfig.Privileged),
         caps: (hostConfig.CapAdd || []) as string[],
         shmSize: formatShmSize(hostConfig.ShmSize),
@@ -132,7 +145,6 @@ export async function buildFromInspect(
 }
 
 function findEnvFile(hostConfig: Record<string, unknown>): string | null {
-  // Docker stores env-file contents inline, but we can check common paths
   return null;
 }
 
@@ -144,7 +156,6 @@ function formatShmSize(bytes: number | undefined): string {
   return `${Math.round(mb)}m`;
 }
 
-// Shell-quote a value: wraps in single quotes, escaping any embedded single quotes.
 function sq(val: string): string {
   return `'${val.replace(/'/g, "'\\''")}'`;
 }
@@ -172,8 +183,6 @@ function buildDockerRunCommandWithMode(config: ContainerConfig, detached: boolea
   args.push(`--name ${sq(config.name)}`);
   if (config.envFile) args.push(`--env-file ${sq(config.envFile)}`);
 
-  // Inject SANDBOX_VERSION from the image tag so the sandbox health endpoint
-  // reports the correct version. This overrides any stale value in the env file.
   const imageTag = config.image.includes(':') ? config.image.split(':').pop() : 'unknown';
   args.push(`-e SANDBOX_VERSION=${sq(imageTag!)}`);
   if (isJustAVPSManagedConfig(config)) {

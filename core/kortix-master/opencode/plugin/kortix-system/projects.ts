@@ -151,6 +151,7 @@ export function initProjectsDb(dbPath: string): Database {
 		{ name: "maintainer_session_id", type: "TEXT", notNull: false, defaultValue: null, primaryKey: false },
 		{ name: "structure_version", type: "INTEGER", notNull: true, defaultValue: "2", primaryKey: false },
 		{ name: "user_handle", type: "TEXT", notNull: false, defaultValue: null, primaryKey: false },
+		{ name: "kind", type: "TEXT", notNull: true, defaultValue: "'scoped'", primaryKey: false },
 	])
 
 	ensureSchema(db, "session_projects", [

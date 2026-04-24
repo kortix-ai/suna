@@ -1,7 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import {
@@ -9,28 +8,29 @@ import {
   ArrowRight,
   ExternalLink,
   Globe,
-  Menu,
   RefreshCw,
   X,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Ionicons } from '@expo/vector-icons';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
 import { getAuthToken } from '@/api/config';
 import * as Linking from 'expo-linking';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 
 interface BrowserPageProps {
   page: PageTab;
   onBack: () => void;
   onOpenDrawer: () => void;
   onOpenRightDrawer: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: BrowserPageProps) {
-  const insets = useSafeAreaInsets();
+export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: BrowserPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
@@ -160,110 +160,122 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: B
   const barBg = isDark ? '#1E1E22' : '#F4F4F5';
   const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
 
-  return (
-    <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
-      {/* Header */}
-      <View className="flex-row items-center px-3 py-2" style={{ backgroundColor: barBg }}>
-        <Pressable onPress={onOpenDrawer} hitSlop={8} className="mr-2 p-1">
-          <Icon as={Menu} size={20} className="text-foreground" strokeWidth={2} />
-        </Pressable>
+  // URL bar + inline nav buttons, passed into PageHeader's title slot so
+  // the browser toolbar inherits the standard `bg-muted` header chrome
+  // (matching Secrets / Memory / LLM Providers pages).
+  const titleNode = (
+    <View className="flex-1 flex-row items-center" style={{ gap: 2 }}>
+      <Pressable onPress={handleGoBack} disabled={!canGoBack} hitSlop={6} className="p-1">
+        <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor }} strokeWidth={2.2} />
+      </Pressable>
+      <Pressable onPress={handleGoForward} disabled={!canGoForward} hitSlop={6} className="p-1 mr-1">
+        <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor }} strokeWidth={2.2} />
+      </Pressable>
 
-        {/* Nav buttons */}
-        <Pressable onPress={handleGoBack} disabled={!canGoBack} hitSlop={6} className="p-1">
-          <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor }} strokeWidth={2.2} />
-        </Pressable>
-        <Pressable onPress={handleGoForward} disabled={!canGoForward} hitSlop={6} className="p-1 mr-1">
-          <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor }} strokeWidth={2.2} />
-        </Pressable>
-
-        {/* URL bar */}
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: inputBg, height: 32, maxHeight: 32, borderRadius: 8, paddingHorizontal: 10, marginHorizontal: 4, overflow: 'hidden' }}>
-          {!isLoading && (
-            <Icon as={Globe} size={12} style={{ color: mutedColor }} strokeWidth={2} />
-          )}
-          {isLoading && (
-            <ActivityIndicator size={10} color={mutedColor} />
-          )}
-          <TextInput
-            value={urlInput}
-            onChangeText={setUrlInput}
-            onFocus={() => { setIsEditing(true); setUrlInput(currentUrl); }}
-            onBlur={() => setIsEditing(false)}
-            onSubmitEditing={handleUrlSubmit}
-            placeholder="Enter URL or port..."
-            placeholderTextColor={mutedColor}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            returnKeyType="go"
-            selectTextOnFocus
-            numberOfLines={1}
-            multiline={false}
-            style={{
-              flex: 1,
-              marginLeft: 6,
-              fontSize: 12,
-              fontFamily: 'Roobert',
-              color: fgColor,
-              paddingVertical: 0,
-              height: 32,
-              includeFontPadding: false,
-            }}
-          />
-        </View>
-
-        {/* Refresh / Stop */}
-        <Pressable onPress={isLoading ? handleStop : handleRefresh} hitSlop={6} className="p-1">
-          <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor }} strokeWidth={2.2} />
-        </Pressable>
-
-        {/* Open external */}
-        <Pressable onPress={handleOpenExternal} hitSlop={6} className="p-1">
-          <Icon as={ExternalLink} size={15} style={{ color: mutedColor }} strokeWidth={2.2} />
-        </Pressable>
-
-        {/* Right drawer */}
-        <Pressable onPress={onOpenRightDrawer} hitSlop={8} className="p-1 ml-1">
-          <Ionicons name="apps-outline" size={18} color={fgColor} />
-        </Pressable>
-      </View>
-
-      {/* WebView */}
-      {currentUrl && authToken ? (
-        <WebView
-          ref={webViewRef}
-          source={{
-            uri: currentUrl,
-            headers: { Authorization: `Bearer ${authToken}` },
+      <View
+        style={{
+          flex: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: inputBg,
+          height: 32,
+          maxHeight: 32,
+          borderRadius: 8,
+          paddingHorizontal: 10,
+          marginHorizontal: 4,
+          overflow: 'hidden',
+        }}
+      >
+        {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor }} strokeWidth={2} />}
+        {isLoading && <ActivityIndicator size={10} color={mutedColor} />}
+        <TextInput
+          value={urlInput}
+          onChangeText={setUrlInput}
+          onFocus={() => { setIsEditing(true); setUrlInput(currentUrl); }}
+          onBlur={() => setIsEditing(false)}
+          onSubmitEditing={handleUrlSubmit}
+          placeholder="Enter URL or port..."
+          placeholderTextColor={mutedColor}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          returnKeyType="go"
+          selectTextOnFocus
+          numberOfLines={1}
+          multiline={false}
+          style={{
+            flex: 1,
+            marginLeft: 6,
+            fontSize: 12,
+            fontFamily: 'Roobert',
+            color: fgColor,
+            paddingVertical: 0,
+            height: 32,
+            includeFontPadding: false,
           }}
-          onNavigationStateChange={handleNavigationChange}
-          onLoadStart={() => setIsLoading(true)}
-          onLoadEnd={() => setIsLoading(false)}
-          startInLoadingState
-          renderLoading={() => (
-            <View className="absolute inset-0 items-center justify-center bg-background">
-              <ActivityIndicator size="small" />
-            </View>
-          )}
-          javaScriptEnabled
-          domStorageEnabled
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
-          allowsFullscreenVideo
-          sharedCookiesEnabled
-          style={{ flex: 1 }}
         />
-      ) : (
-        <View className="flex-1 items-center justify-center px-8">
-          <Icon as={Globe} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
-          <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">Browser</Text>
-          <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
-            {!sandboxId
-              ? 'Waiting for sandbox connection...'
-              : 'Enter a URL or port number in the address bar to preview a running service.'}
-          </Text>
-        </View>
-      )}
+      </View>
+    </View>
+  );
+
+  const rightActions = (
+    <View className="flex-row items-center">
+      <Pressable onPress={isLoading ? handleStop : handleRefresh} hitSlop={6} className="p-1">
+        <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor }} strokeWidth={2.2} />
+      </Pressable>
+      <Pressable onPress={handleOpenExternal} hitSlop={6} className="p-1 ml-1">
+        <Icon as={ExternalLink} size={15} style={{ color: mutedColor }} strokeWidth={2.2} />
+      </Pressable>
+    </View>
+  );
+
+  return (
+    <View className="flex-1 bg-background">
+      <PageHeader
+        title={titleNode}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+        rightActions={rightActions}
+      />
+      <PageContent>
+        {currentUrl && authToken ? (
+          <WebView
+            ref={webViewRef}
+            source={{
+              uri: currentUrl,
+              headers: { Authorization: `Bearer ${authToken}` },
+            }}
+            onNavigationStateChange={handleNavigationChange}
+            onLoadStart={() => setIsLoading(true)}
+            onLoadEnd={() => setIsLoading(false)}
+            startInLoadingState
+            renderLoading={() => (
+              <View className="absolute inset-0 items-center justify-center bg-background">
+                <ActivityIndicator size="small" />
+              </View>
+            )}
+            javaScriptEnabled
+            domStorageEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            allowsFullscreenVideo
+            sharedCookiesEnabled
+            style={{ flex: 1 }}
+          />
+        ) : (
+          <View className="flex-1 items-center justify-center px-8">
+            <Icon as={Globe} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
+            <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">Browser</Text>
+            <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
+              {!sandboxId
+                ? 'Waiting for sandbox connection...'
+                : 'Enter a URL or port number in the address bar to preview a running service.'}
+            </Text>
+          </View>
+        )}
+      </PageContent>
     </View>
   );
 }

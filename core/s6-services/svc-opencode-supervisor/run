@@ -2,6 +2,12 @@
 
 echo "[opencode-supervisor] Starting on /run/kortix/supervisor.sock"
 
-exec env PATH="/opt/bun/bin:/usr/local/bin:/usr/bin:/bin" \
+OPENCODE_BIN_PATH_DEFAULT=/usr/local/bin/opencode-kortix
+if [ ! -x "${OPENCODE_BIN_PATH:-$OPENCODE_BIN_PATH_DEFAULT}" ]; then
+  OPENCODE_BIN_PATH_DEFAULT=""
+fi
+
+exec env PATH="/opt/bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
   KORTIX_SUPERVISOR_SOCKET=/run/kortix/supervisor.sock \
+  OPENCODE_BIN_PATH="${OPENCODE_BIN_PATH:-$OPENCODE_BIN_PATH_DEFAULT}" \
   /opt/bun/bin/bun run /ephemeral/kortix-supervisor/src/index.ts

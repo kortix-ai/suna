@@ -29,21 +29,40 @@ export function projectGroupName(projectId: string): string {
 
 function listProjectRows(): ProjectRow[] {
   const db = getDb()
-  return db
-    .prepare('SELECT id, name, path, kind FROM projects')
-    .all() as ProjectRow[]
+  try {
+    return db
+      .prepare('SELECT id, name, path, kind FROM projects')
+      .all() as ProjectRow[]
+  } catch {
+    const rows = db
+      .prepare('SELECT id, name, path FROM projects')
+      .all() as Array<{ id: string; name: string; path: string }>
+    return rows.map((r) => ({ ...r, kind: r.path === WORKSPACE_ROOT ? 'workspace' : 'scoped' }))
+  }
 }
 
 function listGrantedProjectRows(userId: string): ProjectRow[] {
   const db = getDb()
-  return db
-    .prepare(
-      `SELECT p.id, p.name, p.path, p.kind
-       FROM project_members pm
-       JOIN projects p ON p.id = pm.project_id
-       WHERE pm.user_id = ?`,
-    )
-    .all(userId) as ProjectRow[]
+  try {
+    return db
+      .prepare(
+        `SELECT p.id, p.name, p.path, p.kind
+         FROM project_members pm
+         JOIN projects p ON p.id = pm.project_id
+         WHERE pm.user_id = ?`,
+      )
+      .all(userId) as ProjectRow[]
+  } catch {
+    const rows = db
+      .prepare(
+        `SELECT p.id, p.name, p.path
+         FROM project_members pm
+         JOIN projects p ON p.id = pm.project_id
+         WHERE pm.user_id = ?`,
+      )
+      .all(userId) as Array<{ id: string; name: string; path: string }>
+    return rows.map((r) => ({ ...r, kind: r.path === WORKSPACE_ROOT ? 'workspace' : 'scoped' }))
+  }
 }
 
 export function isManager(member: MemberContext): boolean {
@@ -55,9 +74,14 @@ export function isManager(member: MemberContext): boolean {
 }
 
 export function grantedProjectsFor(member: MemberContext): ProjectRow[] {
-  return isManager(member)
-    ? listProjectRows()
-    : listGrantedProjectRows(member.supabaseUserId)
+  try {
+    return isManager(member)
+      ? listProjectRows()
+      : listGrantedProjectRows(member.supabaseUserId)
+  } catch (err) {
+    console.warn(`[workspace] grantedProjectsFor failed for ${member.username}: ${err instanceof Error ? err.message : err}`)
+    return []
+  }
 }
 
 export function workspaceFor(

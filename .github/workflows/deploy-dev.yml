@@ -233,6 +233,7 @@ jobs:
         run: |
           SHA8="${GITHUB_SHA::8}"
           docker build --file core/docker/Dockerfile \
+            --build-arg "SANDBOX_VERSION=dev-${SHA8}" \
             --tag "kortix/computer:dev-${SHA8}-amd64" \
             --tag "kortix/computer:dev-latest-amd64" .
           docker push "kortix/computer:dev-${SHA8}-amd64"
@@ -255,6 +256,7 @@ jobs:
         run: |
           SHA8="${GITHUB_SHA::8}"
           docker build --file core/docker/Dockerfile \
+            --build-arg "SANDBOX_VERSION=dev-${SHA8}" \
             --tag "kortix/computer:dev-${SHA8}-arm64" \
             --tag "kortix/computer:dev-latest-arm64" .
           docker push "kortix/computer:dev-${SHA8}-arm64"

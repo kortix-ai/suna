@@ -10,25 +10,23 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Text as RNText } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import {
-  Globe,
   RefreshCw,
   ExternalLink,
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  Menu as MenuIcon,
 } from 'lucide-react-native';
 import { Icon } from '@/components/ui/icon';
-import { Ionicons } from '@expo/vector-icons';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { getAuthToken } from '@/api/config';
 import type { PageTab } from '@/stores/tab-store';
+import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 
 const BROWSER_VIEWER_PORT = 9224;
 const BROWSER_STREAM_PORT = 9223;
@@ -38,10 +36,11 @@ interface AgentBrowserPageProps {
   onBack: () => void;
   onOpenDrawer: () => void;
   onOpenRightDrawer: () => void;
+  isDrawerOpen?: boolean;
+  isRightDrawerOpen?: boolean;
 }
 
-export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer }: AgentBrowserPageProps) {
-  const insets = useSafeAreaInsets();
+export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: AgentBrowserPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
@@ -150,62 +149,64 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
 
   const isReady = !!viewerUrl && !!authToken;
 
-  return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#0a0a0a' : '#F5F6F8', paddingTop: insets.top }}>
-      {/* Compact toolbar */}
-      <View style={{
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 12, height: 44, backgroundColor: barBg,
-      }}>
-        {/* Left: menu + nav buttons */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Pressable onPress={onOpenDrawer} hitSlop={8} style={{ padding: 4 }}>
-            <Icon as={MenuIcon} size={20} color={fg} strokeWidth={2} />
-          </Pressable>
+  // Title slot: back/forward nav + live connection status (matches the
+  // standard PageHeader chrome used across other pages).
+  const titleNode = (
+    <View className="flex-1 flex-row items-center" style={{ gap: 4 }}>
+      <Pressable
+        onPress={() => sendNavCommand('nav_back')}
+        disabled={!isConnected}
+        hitSlop={6}
+        style={{ padding: 6, opacity: isConnected ? 1 : 0.3 }}
+      >
+        <ArrowLeft size={16} color={fg} />
+      </Pressable>
+      <Pressable
+        onPress={() => sendNavCommand('nav_forward')}
+        disabled={!isConnected}
+        hitSlop={6}
+        style={{ padding: 6, opacity: isConnected ? 1 : 0.3 }}
+      >
+        <ArrowRight size={16} color={fg} />
+      </Pressable>
 
-          <Pressable
-            onPress={() => sendNavCommand('nav_back')}
-            disabled={!isConnected}
-            hitSlop={6}
-            style={{ padding: 6, opacity: isConnected ? 1 : 0.3 }}
-          >
-            <ArrowLeft size={16} color={fg} />
-          </Pressable>
-          <Pressable
-            onPress={() => sendNavCommand('nav_forward')}
-            disabled={!isConnected}
-            hitSlop={6}
-            style={{ padding: 6, opacity: isConnected ? 1 : 0.3 }}
-          >
-            <ArrowRight size={16} color={fg} />
-          </Pressable>
-        </View>
-
-        {/* Center: status */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <View style={{
-            width: 6, height: 6, borderRadius: 3,
-            backgroundColor: isConnected ? '#22C55E' : isLoading && isReady ? '#F59E0B' : muted,
-          }} />
-          <RNText style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: isConnected ? '#22C55E' : muted }}>
-            {isConnected ? 'Connected' : isLoading && isReady ? 'Connecting...' : 'Idle'}
-          </RNText>
-        </View>
-
-        {/* Right: refresh + external + drawer */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Pressable onPress={handleRefresh} hitSlop={6} style={{ padding: 6 }}>
-            <RefreshCw size={15} color={fg} />
-          </Pressable>
-          <Pressable onPress={handleOpenExternal} hitSlop={6} style={{ padding: 6 }}>
-            <ExternalLink size={15} color={muted} />
-          </Pressable>
-          <Pressable onPress={onOpenRightDrawer} hitSlop={8} style={{ padding: 4 }}>
-            <Ionicons name="apps-outline" size={20} color={fg} />
-          </Pressable>
-        </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+        <View style={{
+          width: 6, height: 6, borderRadius: 3,
+          backgroundColor: isConnected ? '#22C55E' : isLoading && isReady ? '#F59E0B' : muted,
+        }} />
+        <RNText
+          style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isConnected ? '#22C55E' : muted }}
+          numberOfLines={1}
+        >
+          {isConnected ? 'Connected' : isLoading && isReady ? 'Connecting...' : 'Idle'}
+        </RNText>
       </View>
+    </View>
+  );
 
+  const rightActions = (
+    <View className="flex-row items-center">
+      <Pressable onPress={handleRefresh} hitSlop={6} style={{ padding: 6 }}>
+        <RefreshCw size={15} color={fg} />
+      </Pressable>
+      <Pressable onPress={handleOpenExternal} hitSlop={6} style={{ padding: 6, marginLeft: 2 }}>
+        <ExternalLink size={15} color={muted} />
+      </Pressable>
+    </View>
+  );
+
+  return (
+    <View className="flex-1 bg-background">
+      <PageHeader
+        title={titleNode}
+        onOpenDrawer={onOpenDrawer}
+        onOpenRightDrawer={onOpenRightDrawer}
+        isDrawerOpen={isDrawerOpen}
+        isRightDrawerOpen={isRightDrawerOpen}
+        rightActions={rightActions}
+      />
+      <PageContent>
       {/* Content */}
       {!isReady ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -273,6 +274,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
           style={{ flex: 1, backgroundColor: isDark ? '#0a0a0a' : '#F5F6F8' }}
         />
       )}
+      </PageContent>
     </View>
   );
 }

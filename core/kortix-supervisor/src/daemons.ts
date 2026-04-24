@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, chmodSync } from 'fs'
 import { dirname } from 'path'
 import { execFileSync, execSync } from 'child_process'
+import { sysbin } from './sysbin'
 import type { DaemonSpec, DaemonInfo } from './schema'
 import { projectGroupName } from './projects'
 
@@ -9,7 +10,7 @@ const UID_MIN = 10_000
 const UID_MAX = 19_999
 const IDLE_MS = 15 * 60 * 1000
 const REAP_INTERVAL_MS = 60 * 1000
-const SPAWN_TIMEOUT_MS = 15_000
+const SPAWN_TIMEOUT_MS = 30_000
 const STORAGE_SUBDIRS = [
   'log',
   'storage',
@@ -23,11 +24,15 @@ function resolveOpencodeBin(): string {
   if (process.env.OPENCODE_BIN && existsSync(process.env.OPENCODE_BIN)) {
     return process.env.OPENCODE_BIN
   }
-  for (const candidate of ['/usr/local/bin/opencode', '/usr/bin/opencode']) {
+  for (const candidate of [
+    '/usr/local/bin/opencode-kortix',
+    '/usr/local/bin/opencode',
+    '/usr/bin/opencode',
+  ]) {
     if (existsSync(candidate)) return candidate
   }
   try {
-    return execSync('command -v opencode', { encoding: 'utf8' }).trim()
+    return execSync('command -v opencode-kortix || command -v opencode', { encoding: 'utf8' }).trim()
   } catch {
     return 'opencode'
   }
@@ -46,7 +51,8 @@ interface Daemon {
   linux_uid: number
   port: number
   pid: number
-  process: ReturnType<typeof Bun.spawn>
+  adopted?: boolean
+  process: ReturnType<typeof Bun.spawn> | null
   startedAt: number
   lastUsed: number
 }
@@ -74,6 +80,24 @@ export class DaemonRegistry {
     }
 
     const port = this.portFor(spec.linux_uid)
+
+    if (await this.isPortHealthy(port)) {
+      const adopted: Daemon = {
+        supabase_user_id: spec.supabase_user_id,
+        username: spec.username,
+        linux_uid: spec.linux_uid,
+        port,
+        pid: 0,
+        adopted: true,
+        process: null,
+        startedAt: Date.now(),
+        lastUsed: Date.now(),
+      }
+      this.byUser.set(spec.supabase_user_id, adopted)
+      console.log(`[supervisor] adopted existing daemon on port ${port} for ${spec.username}`)
+      return port
+    }
+
     this.ensureLinuxIdentity(spec)
     this.prepareStorage(spec)
     const daemon = await this.spawnDaemon(spec, port)
@@ -86,7 +110,7 @@ export class DaemonRegistry {
 
     if (!this.groupExists(spec.username)) {
       try {
-        execFileSync('groupadd', ['--gid', String(spec.linux_uid), spec.username], { stdio: 'ignore' })
+        execFileSync(sysbin('groupadd'), ['--gid', String(spec.linux_uid), spec.username], { stdio: 'ignore' })
       } catch (err) {
         if (!this.groupExists(spec.username)) {
           console.warn(`[supervisor] groupadd ${spec.username} failed: ${err instanceof Error ? err.message : err}`)
@@ -97,7 +121,7 @@ export class DaemonRegistry {
     if (!this.userExists(spec.username)) {
       try {
         execFileSync(
-          'useradd',
+          sysbin('useradd'),
           [
             '--uid', String(spec.linux_uid),
             '--gid', String(spec.linux_uid),
@@ -129,7 +153,7 @@ export class DaemonRegistry {
       if (!existsSync(p)) mkdirSync(p, { recursive: true })
     }
     try {
-      execFileSync('chown', ['-R', `${spec.linux_uid}:${spec.linux_uid}`, homeDir], { stdio: 'ignore' })
+      execFileSync(sysbin('chown'), ['-R', `${spec.linux_uid}:${spec.linux_uid}`, homeDir], { stdio: 'ignore' })
       chmodSync(homeDir, 0o700)
       for (const sub of subdirs) chmodSync(`${homeDir}/${sub}`, 0o700)
     } catch {}
@@ -137,7 +161,7 @@ export class DaemonRegistry {
     this.ensureWriterGroup()
     if (!this.userInGroup(spec.username, DB_WRITER_GROUP)) {
       try {
-        execFileSync('gpasswd', ['-a', spec.username, DB_WRITER_GROUP], { stdio: 'ignore' })
+        execFileSync(sysbin('gpasswd'), ['-a', spec.username, DB_WRITER_GROUP], { stdio: 'ignore' })
       } catch (err) {
         console.warn(
           `[supervisor] gpasswd -a ${spec.username} ${DB_WRITER_GROUP} failed: ${err instanceof Error ? err.message : err}`,
@@ -149,12 +173,12 @@ export class DaemonRegistry {
       const group = projectGroupName(projectId)
       if (!this.groupExists(group)) {
         try {
-          execFileSync('groupadd', [group], { stdio: 'ignore' })
+          execFileSync(sysbin('groupadd'), [group], { stdio: 'ignore' })
         } catch {}
       }
       if (this.groupExists(group) && !this.userInGroup(spec.username, group)) {
         try {
-          execFileSync('gpasswd', ['-a', spec.username, group], { stdio: 'ignore' })
+          execFileSync(sysbin('gpasswd'), ['-a', spec.username, group], { stdio: 'ignore' })
         } catch (err) {
           console.warn(
             `[supervisor] gpasswd -a ${spec.username} ${group} failed: ${err instanceof Error ? err.message : err}`,
@@ -167,7 +191,7 @@ export class DaemonRegistry {
   private ensureWriterGroup(): void {
     if (this.groupExists(DB_WRITER_GROUP)) return
     try {
-      execFileSync('groupadd', [DB_WRITER_GROUP], { stdio: 'ignore' })
+      execFileSync(sysbin('groupadd'), [DB_WRITER_GROUP], { stdio: 'ignore' })
     } catch (err) {
       if (!this.groupExists(DB_WRITER_GROUP)) {
         console.warn(`[supervisor] groupadd ${DB_WRITER_GROUP} failed: ${err instanceof Error ? err.message : err}`)
@@ -177,7 +201,7 @@ export class DaemonRegistry {
 
   private userExists(username: string): boolean {
     try {
-      execFileSync('getent', ['passwd', username], { stdio: 'ignore' })
+      execFileSync(sysbin('getent'), ['passwd', username], { stdio: 'ignore' })
       return true
     } catch {
       return false
@@ -186,7 +210,7 @@ export class DaemonRegistry {
 
   private groupExists(name: string): boolean {
     try {
-      execFileSync('getent', ['group', name], { stdio: 'ignore' })
+      execFileSync(sysbin('getent'), ['group', name], { stdio: 'ignore' })
       return true
     } catch {
       return false
@@ -195,7 +219,7 @@ export class DaemonRegistry {
 
   private userInGroup(username: string, group: string): boolean {
     try {
-      const out = execFileSync('id', ['-Gn', username], { encoding: 'utf8' })
+      const out = execFileSync(sysbin('id'), ['-Gn', username], { encoding: 'utf8' })
       return out.split(/\s+/).includes(group)
     } catch {
       return false
@@ -413,6 +437,8 @@ export class DaemonRegistry {
   }
 
   private isAlive(d: Daemon): boolean {
+    if (d.adopted) return true
+    if (!d.pid) return false
     try {
       process.kill(d.pid, 0)
       return true
@@ -433,13 +459,18 @@ export class DaemonRegistry {
   }
 
   private killProcess(d: Daemon): void {
-    try {
-      d.process.kill('SIGTERM')
-    } catch {}
-    setTimeout(() => {
-      try {
-        d.process.kill('SIGKILL')
-      } catch {}
-    }, 3000)
+    if (d.process) {
+      try { d.process.kill('SIGTERM') } catch {}
+      setTimeout(() => {
+        try { d.process?.kill('SIGKILL') } catch {}
+      }, 3000)
+      return
+    }
+    if (d.pid) {
+      try { process.kill(d.pid, 'SIGTERM') } catch {}
+      setTimeout(() => {
+        try { process.kill(d.pid, 'SIGKILL') } catch {}
+      }, 3000)
+    }
   }
 }
