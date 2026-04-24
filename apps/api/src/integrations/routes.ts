@@ -38,18 +38,29 @@ type SandboxEnv = {
 async function notifySandboxesConnectorSync(accountId: string, app: string, appName: string, sandboxIds: string[]) {
   const allSandboxes = await listActiveSandboxesByAccount(accountId);
   const targets = allSandboxes.filter(sb => sandboxIds.includes(sb.sandboxId) && sb.baseUrl);
+  const backoffMs = [0, 1_000, 3_000, 10_000];
   for (const sb of targets) {
-    try {
-      await fetch(`${sb.baseUrl}/api/pipedream/connector-sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ app, app_name: appName }),
-        signal: AbortSignal.timeout(5_000),
-      });
-      console.log(`[CONNECTORS] Notified sandbox ${sb.sandboxId} to scaffold connector for ${app}`);
-    } catch (err) {
-      console.warn(`[CONNECTORS] Failed to notify sandbox ${sb.sandboxId}: ${err}`);
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < backoffMs.length; attempt++) {
+      if (backoffMs[attempt]) await new Promise(r => setTimeout(r, backoffMs[attempt]));
+      try {
+        const res = await fetch(`${sb.baseUrl}/api/pipedream/connector-sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app, app_name: appName }),
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (res.ok) {
+          console.log(`[CONNECTORS] Notified sandbox ${sb.sandboxId} to scaffold connector for ${app}${attempt > 0 ? ` (attempt ${attempt + 1})` : ''}`);
+          lastErr = null;
+          break;
+        }
+        lastErr = new Error(`HTTP ${res.status}`);
+      } catch (err) {
+        lastErr = err;
+      }
     }
+    if (lastErr) console.warn(`[CONNECTORS] Failed to notify sandbox ${sb.sandboxId} for ${app} after ${backoffMs.length} attempts: ${lastErr}`);
   }
 }
 
