@@ -382,10 +382,20 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 					const handoff = [
 						"",
 						"<system-reminder>",
-						"STOP. The project scaffold is created — PM agent, default columns, dashboard ticket are all in place.",
-						"Your ONLY remaining action: in ONE short sentence, tell the user the project is created and link the PM onboarding chat (use the markdown link above verbatim if a session was spawned, otherwise tell them to open the project from the sidebar to chat with PM).",
-						"DO NOT call any other tool. DO NOT load skills. DO NOT write/edit/scaffold files. DO NOT run bash. The PM and the team execute the project's work via tickets — that is not your role.",
-						"A project is its own workhouse. You are the router; the team is the workforce.",
+						"STOP. Project scaffold is created — PM agent, default columns, dashboard ticket are in place.",
+						"Your ONLY remaining action: reply with EXACTLY the hand-off template below, replacing {pm_link} with the markdown link from the tool output. No other text, no other tools.",
+						"",
+						"Hand-off template:",
+						"```",
+						"Project **<name>** is live. I've handed you off to the **Project Manager** — a dedicated agent that owns this project's board, team, and backlog.",
+						"",
+						"👉 **{pm_link}** — open this chat to answer the PM's onboarding questions (scope, stack, team, cadence). The PM + team handle the actual build from there.",
+						"",
+						"_You can return to this default chat anytime for work outside this project._",
+						"```",
+						"",
+						"If no PM session was spawned (no markdown link in the tool output), replace the `{pm_link}` line with `Open the project from the sidebar and start a PM chat.`",
+						"DO NOT call any other tool. DO NOT load skills. DO NOT write/edit/scaffold files. DO NOT run bash.",
 						"</system-reminder>",
 					].join("\n")
 					return `Project **${p.name}** scaffolded at \`${p.path}\` (${p.id}) — PM agent + default columns + dashboard ticket ready.${sessionLine}${handoff}`
@@ -511,30 +521,23 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 
 // ── Gating Hook ──────────────────────────────────────────────────────────────
 
-export function projectGateHook(mgr: ProjectManager) {
-	// Tools that are ALWAYS allowed without a project
-	// ONLY project tools and question are allowed without a project.
-	// Everything else — including web search, read, skill — is blocked.
-	const UNGATED = new Set([
-		"project_create", "project_list", "project_get", "project_update",
-		"project_context_get", "project_context_sync",
-		"project_delete", "project_select",
-		"question",
-		"show",
-	])
-
-	return async (input: { tool: string; sessionID: string; callID: string }, _output: { args: any }) => {
-		const n = input.tool.replace(/-/g, "_")
-		if (UNGATED.has(n)) return
-		if (!input.sessionID) return
-		try {
-			if (mgr.getSessionProject(input.sessionID)) return
-		} catch { return } // DB error — fail open
-		throw new Error(
-			`No project selected for this session. You must select or create a project first.\n` +
-			`Use project_list to see existing projects, then project_select to choose one.\n` +
-			`Or use project_create to register a new project directory.`
-		)
+export function projectGateHook(_mgr: ProjectManager) {
+	// Previously this hook blocked EVERY non-project tool (bash, read, edit,
+	// skill, web_search, …) until a project was selected. That made the
+	// default chat unusable for general requests: users had to create a
+	// project before the agent could do anything at all.
+	//
+	// New policy: fail open. The default chat is for general work — trust
+	// the agent's tool descriptions (e.g. `project_create`'s "ONLY when the
+	// user explicitly mentions the word 'project'") to decide when to bind
+	// to a project. If the user just asks "write me a script", the agent
+	// can call `write` directly without a project-select dance.
+	//
+	// V2 projects still enforce role-based routing via
+	// `projectStatusTransform` (non-team agents inside a bound v2 project
+	// are told they can only route, not execute).
+	return async (_input: { tool: string; sessionID: string; callID: string }, _output: { args: any }) => {
+		return
 	}
 }
 
@@ -586,26 +589,22 @@ export function projectStatusTransform(mgr: ProjectManager, getCurrentSessionId:
 						statusXml = `<project_status selected="${project.name}" path="${project.path}" version="${sv}" />`
 					}
 				} else {
+					// No project bound. That's fine for general chat — the default
+					// agent should just do the work. Only surface a soft hint that
+					// a project exists if the user asks for project-scoped things.
 					let projectList = ""
 					try {
 						const projects = mgr.listProjects()
 						if (projects.length > 0) {
-							projectList = `\nExisting projects: ${projects.map(p => `"${p.name}" (${p.path})`).join(", ")}`
+							projectList = ` Existing projects: ${projects.map(p => `"${p.name}"`).join(", ")}.`
 						}
 					} catch {}
 					statusXml = [
-						`<system-reminder>`,
-						`STOP. DO NOT CALL ANY TOOL EXCEPT project_list, project_create, project_select, OR question.`,
-						``,
-						`No project is selected for this session. You MUST select one before doing ANY work.`,
-						`Your very next tool call must be one of: project_list, project_create, project_select, or question.`,
-						`If you call bash, read, write, edit, skill, web_search, or any other tool, you are violating your instructions.`,
-						`${projectList}`,
-						``,
-						`Step 1: Call project_list to see existing projects.`,
-						`Step 2: Either project_select an existing one, or project_create + project_select a new one.`,
-						`Step 3: ONLY THEN address the user's request.`,
-						`</system-reminder>`,
+						`<project_status selected="none" />`,
+						`<!-- No project is bound to this session. Act directly on the user's request.`,
+						`     Only call project_create when the user explicitly says "project" — e.g.`,
+						`     "create a project for X" / "spin up a project to Y".`,
+						`     Call project_select only if the user references an existing one by name.${projectList} -->`,
 					].join("\n")
 				}
 			} catch { return }

@@ -68,6 +68,19 @@ fi
 [ -s "$API_URL_FILE" ] && \
   export KORTIX_API_URL="$(cat "$API_URL_FILE")"
 
+# Also source any LLM-provider keys the API (or a human) wrote to the s6
+# env dir after container start — ANTHROPIC_API_KEY, OPENAI_API_KEY,
+# OPENROUTER_API_KEY, KORTIX_YOLO_{API_KEY,URL}. Without this, keys added
+# post-boot never reach opencode, because s6-supervise's env snapshot
+# was taken before those files existed.
+for _pv in ANTHROPIC_API_KEY OPENAI_API_KEY OPENROUTER_API_KEY KORTIX_YOLO_API_KEY KORTIX_YOLO_URL; do
+  _pf="/run/s6/container_environment/${_pv}"
+  if [ -s "$_pf" ]; then
+    export "${_pv}=$(cat "$_pf")"
+  fi
+done
+unset _pv _pf
+
 # Safety check: if KORTIX_API_URL is still unset or points to localhost, warn loudly.
 # This catches pool sandboxes where env injection failed or was delayed.
 if [ -z "$KORTIX_API_URL" ] || echo "$KORTIX_API_URL" | grep -q "localhost"; then
