@@ -26,7 +26,18 @@ import {
   AlertCircle,
   Copy,
   ShieldAlert,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useDeleteProject, usePatchProject } from '@/hooks/kortix/use-kortix-projects';
+import { toast } from 'sonner';
 import posthog from 'posthog-js';
 
 import { SessionList } from '@/components/sidebar/session-list';
@@ -890,6 +901,12 @@ function SidebarProjectRow({
     pollingEnabled: isV2,
   });
   const [lastSeen, setLastSeen] = React.useState<string | null>(null);
+  const [isHovering, setIsHovering] = React.useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
+  const [renaming, setRenaming] = React.useState(false);
+  const [renameValue, setRenameValue] = React.useState(project.name);
+  const deleteProject = useDeleteProject();
+  const patchProject = usePatchProject();
   React.useEffect(() => {
     if (!isV2 || !userHandle) return;
     setLastSeen(readLastSeen(project.id, userHandle));
@@ -916,35 +933,132 @@ function SidebarProjectRow({
     [isV2, events, userHandle, lastSeen],
   );
 
+  const handleRenameSubmit = () => {
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === project.name) {
+      setRenaming(false);
+      return;
+    }
+    patchProject.mutate(
+      { id: project.id, name: trimmed },
+      {
+        onSuccess: () => { toast.success('Project renamed'); setRenaming(false); },
+        onError: (e) => { toast.error(`Rename failed: ${e instanceof Error ? e.message : 'unknown'}`); setRenaming(false); },
+      },
+    );
+  };
+
+  const handleDelete = () => {
+    deleteProject.mutate(project.id, {
+      onSuccess: () => { toast.success(`Project "${project.name}" deleted`); setConfirmDeleteOpen(false); },
+      onError: (e) => { toast.error(`Delete failed: ${e instanceof Error ? e.message : 'unknown'}`); },
+    });
+  };
+
   return (
-    <div
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-2 rounded-lg cursor-pointer transition-colors duration-150',
-        'pr-1.5 py-1.5 pl-3',
-        active
-          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
-      )}
-    >
-      <span className={cn('flex-1 truncate text-[13px]', (active || unread > 0) && 'font-medium')}>
-        {project.name}
-      </span>
-      {unread > 0 && (
-        <span
-          className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none tabular-nums"
-          aria-label={`${unread} unread`}
-          title={`${unread} unread`}
-        >
-          {unread > 99 ? '99+' : unread}
-        </span>
-      )}
-      {unread === 0 && (project.sessionCount ?? 0) > 0 && (
-        <span className="text-[10px] text-muted-foreground/40 tabular-nums">
-          {project.sessionCount}
-        </span>
-      )}
-    </div>
+    <>
+      <div
+        onClick={renaming ? undefined : onClick}
+        onMouseEnter={() => setIsHovering(true)}
+        onMouseLeave={() => setIsHovering(false)}
+        className={cn(
+          'flex items-center gap-2 rounded-lg cursor-pointer transition-colors duration-150',
+          'pr-1.5 py-1.5 pl-3',
+          active
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+        )}
+      >
+        {renaming ? (
+          <input
+            autoFocus
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={handleRenameSubmit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); handleRenameSubmit(); }
+              if (e.key === 'Escape') { e.preventDefault(); setRenameValue(project.name); setRenaming(false); }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13px] text-sidebar-foreground"
+          />
+        ) : (
+          <span className={cn('flex-1 truncate text-[13px]', (active || unread > 0) && 'font-medium')}>
+            {project.name}
+          </span>
+        )}
+        {unread > 0 && (
+          <span
+            className="flex-shrink-0 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none tabular-nums"
+            aria-label={`${unread} unread`}
+            title={`${unread} unread`}
+          >
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
+        {unread === 0 && (project.sessionCount ?? 0) > 0 && !isHovering && (
+          <span className="flex-shrink-0 text-[10px] text-muted-foreground/40 tabular-nums">
+            {project.sessionCount}
+          </span>
+        )}
+        {/* Context menu — visible on hover */}
+        <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={cn(
+                  'p-0.5 rounded-md hover:bg-sidebar-accent transition-colors duration-150 text-muted-foreground hover:text-sidebar-foreground cursor-pointer',
+                  isHovering ? 'opacity-100' : 'opacity-0 pointer-events-none',
+                )}
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40 p-1">
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setRenameValue(project.name);
+                  setRenaming(true);
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer text-destructive focus:text-destructive"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setConfirmDeleteOpen(true);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete project "{project.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removes the project from the workspace. Files on disk at <code>{project.path}</code> are left untouched.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
