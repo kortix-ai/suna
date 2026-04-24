@@ -265,7 +265,12 @@ export class ProjectManager {
 			const ocProject = ocResult.data as any
 			if (ocProject?.id && ocProject.id !== "global") opencodeId = ocProject.id
 		} catch {}
-		this.db.prepare("INSERT INTO projects (id,name,path,description,created_at,opencode_id) VALUES ($id,$n,$p,$d,$c,$oid)")
+		// Explicit structure_version=2 — don't rely on the column's default.
+		// Two other code paths (routes/projects.ts CREATE TABLE + ALTER) have
+		// historically shipped with default=1; even though those are now also
+		// fixed to default 2, being explicit here prevents a v1 row ever
+		// being created regardless of which migrator ran first.
+		this.db.prepare("INSERT INTO projects (id,name,path,description,created_at,opencode_id,structure_version) VALUES ($id,$n,$p,$d,$c,$oid,2)")
 			.run({ $id: id, $n: name, $p: pp, $d: desc || "", $c: now, $oid: opencodeId })
 		return { id, name, path: pp, description: desc || "", created_at: now, opencode_id: opencodeId }
 	}

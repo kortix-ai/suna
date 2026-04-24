@@ -67,12 +67,23 @@ function getDb(): Database {
       id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
       description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
       opencode_id TEXT, maintainer_session_id TEXT,
-      structure_version INTEGER NOT NULL DEFAULT 1,
+      structure_version INTEGER NOT NULL DEFAULT 2,
       user_handle TEXT
     );
   `)
-  try { _db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 1`) } catch {}
+  // v2 is the new default — any legacy row that was inserted with the old
+  // default=1 gets upgraded automatically on the next boot. (The only
+  // project that SHOULD stay v1 is the virtual `proj-workspace` catch-all,
+  // which represents /workspace itself and has no PM/board/tickets.)
+  try { _db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 2`) } catch {}
   try { _db.exec(`ALTER TABLE projects ADD COLUMN user_handle TEXT`) } catch {}
+  // One-shot migration: upgrade every non-workspace v1 row to v2. Any
+  // project the user spawned against older plugin/route code that defaulted
+  // to 1 gets corrected on the next boot without manual intervention.
+  try {
+    const up = _db.prepare(`UPDATE projects SET structure_version=2 WHERE structure_version<2 AND id<>'proj-workspace'`).run()
+    if (up.changes > 0) console.log(`[projects] migrated ${up.changes} legacy project(s) from v1 → v2`)
+  } catch {}
   ensureTicketTables(_db)
 
   return _db
