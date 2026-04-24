@@ -66,9 +66,9 @@ function CommandDialog({
       </DialogHeader>
       <DialogContent
         className={cn(
-          'overflow-hidden p-0 gap-0 shadow-none',
-          // Border
-          'border-border/60 rounded-xl',
+          'overflow-hidden p-0 gap-0',
+          // Border + depth — subtle ring highlight at top-edge catches light
+          'border border-border/60 rounded-2xl shadow-2xl shadow-black/20 ring-1 ring-inset ring-white/[0.04]',
           // Solid popover background
           'bg-popover',
           // Subtle slide-in from above
@@ -191,21 +191,21 @@ function CommandInput({
     <div
       data-slot="command-input-wrapper"
       className={cn(
-        'flex items-center border-b border-border/40',
-        compact ? 'h-11 gap-2.5 px-3.5' : 'h-14 gap-3 px-4',
+        'flex items-center border-b border-border/50',
+        compact ? 'h-11 gap-2.5 px-3.5' : 'h-[58px] gap-3 px-5',
       )}
     >
       <SearchIcon
         className={cn(
-          'shrink-0 text-muted-foreground/50',
+          'shrink-0 text-muted-foreground/60',
           compact ? 'size-4' : 'size-[18px]',
         )}
       />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          'placeholder:text-muted-foreground/40 flex w-full bg-transparent outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
-          compact ? 'h-11 text-[13px]' : 'h-14 text-[15px]',
+          'placeholder:text-muted-foreground/45 text-foreground flex w-full bg-transparent outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
+          compact ? 'h-11 text-[13px]' : 'h-[58px] text-[15px] tracking-[-0.005em]',
           className,
         )}
         {...props}
@@ -223,7 +223,7 @@ function CommandList({
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
-        'max-h-[min(60vh,480px)] scroll-py-1 overflow-x-hidden overflow-y-auto scrollbar-minimal',
+        'max-h-[min(60vh,480px)] scroll-py-2 overflow-x-hidden overflow-y-auto scrollbar-minimal py-1',
         className,
       )}
       {...props}
@@ -251,8 +251,8 @@ function CommandGroup({
     <CommandPrimitive.Group
       data-slot="command-group"
       className={cn(
-        'text-foreground overflow-hidden py-1',
-        '[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-2 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground/50',
+        'text-foreground overflow-hidden py-1.5',
+        '[&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:pb-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-[0.1em] [&_[cmdk-group-heading]]:text-muted-foreground/50',
         className,
       )}
       {...props}
@@ -267,7 +267,7 @@ function CommandSeparator({
   return (
     <CommandPrimitive.Separator
       data-slot="command-separator"
-      className={cn('bg-border/30 -mx-1 h-px', className)}
+      className={cn('bg-border/40 mx-3 my-1 h-px', className)}
       {...props}
     />
   );
@@ -281,11 +281,12 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        'relative flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm outline-hidden select-none transition-colors duration-75',
-        'data-[selected=true]:bg-foreground/[0.07] data-[selected=true]:text-foreground',
-        "[&_svg:not([class*='text-'])]:text-muted-foreground/60",
+        'relative flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] text-foreground/80 outline-hidden select-none transition-colors duration-75',
+        'data-[selected=true]:bg-foreground/[0.06] data-[selected=true]:text-foreground',
+        "data-[selected=true]:[&_svg:not([class*='text-'])]:text-foreground/80",
+        "[&_svg:not([class*='text-'])]:text-muted-foreground/65",
         'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40',
-        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px]",
         className,
       )}
       {...props}
@@ -293,19 +294,68 @@ function CommandItem({
   );
 }
 
+// Pretty-print a shortcut token (e.g. "Ctrl" → "⌃", "Cmd" → "⌘", "Shift" → "⇧").
+// Leaves letter/digit keys and anything unrecognized untouched.
+const SHORTCUT_TOKEN_GLYPHS: Record<string, string> = {
+  ctrl: '⌃',
+  control: '⌃',
+  cmd: '⌘',
+  command: '⌘',
+  meta: '⌘',
+  shift: '⇧',
+  alt: '⌥',
+  option: '⌥',
+  opt: '⌥',
+  enter: '↵',
+  return: '↵',
+  esc: 'esc',
+  escape: 'esc',
+  tab: '⇥',
+  backspace: '⌫',
+  delete: '⌦',
+  space: '␣',
+  up: '↑',
+  down: '↓',
+  left: '←',
+  right: '→',
+};
+
+function formatShortcutToken(token: string): string {
+  const key = token.trim().toLowerCase();
+  return SHORTCUT_TOKEN_GLYPHS[key] ?? token.trim();
+}
+
 function CommandShortcut({
   className,
+  children,
   ...props
 }: React.ComponentProps<'span'>) {
+  // Split "Ctrl+J" → ["Ctrl", "J"] so each key renders as its own chip.
+  const tokens =
+    typeof children === 'string'
+      ? children.split('+').map((t) => t.trim()).filter(Boolean)
+      : null;
+
   return (
     <span
       data-slot="command-shortcut"
       className={cn(
-        'ml-auto inline-flex items-center gap-0.5 text-[11px] font-medium text-muted-foreground/40 tracking-wide',
+        'ml-auto inline-flex items-center gap-1',
         className,
       )}
       {...props}
-    />
+    >
+      {tokens
+        ? tokens.map((t, i) => (
+            <kbd
+              key={`${t}-${i}`}
+              className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10.5px] font-medium text-muted-foreground/60 leading-none font-sans"
+            >
+              {formatShortcutToken(t)}
+            </kbd>
+          ))
+        : children}
+    </span>
   );
 }
 
@@ -322,7 +372,7 @@ function CommandFooter({
     <div
       data-slot="command-footer"
       className={cn(
-        'flex items-center gap-4 border-t border-border/30 px-4 py-2 text-[11px] text-muted-foreground/40',
+        'flex items-center gap-4 border-t border-border/50 bg-foreground/[0.015] px-4 py-2.5 text-[11px] text-muted-foreground/55',
         className,
       )}
       {...props}
@@ -335,7 +385,7 @@ function CommandFooter({
 /** Inline keyboard hint badge — consistent across all command surfaces. */
 function CommandKbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1 rounded bg-foreground/[0.05] border border-border/30 text-[10px] font-medium text-muted-foreground/50 leading-none">
+    <kbd className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10.5px] font-medium text-muted-foreground/60 leading-none font-sans">
       {children}
     </kbd>
   );
