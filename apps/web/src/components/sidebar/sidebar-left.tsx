@@ -735,13 +735,7 @@ function SidebarSections() {
           </CollapsibleTrigger>
         </div>
         <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <div className="relative">
-            <span
-              aria-hidden
-              className="pointer-events-none absolute left-[31.5px] top-1 bottom-1 w-px bg-sidebar-foreground/20"
-            />
-            <SessionList projectId={null} />
-          </div>
+          <SessionList projectId={null} />
         </CollapsibleContent>
       </Collapsible>
 
