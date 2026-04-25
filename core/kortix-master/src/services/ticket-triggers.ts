@@ -141,6 +141,16 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
     }
   }
 
+  // Agent-cache freshness guard MUST run BEFORE session.create. Reason:
+  // ensureAgentCacheFresh may POST /instance/dispose to flush the
+  // directory's stale cache — and dispose nukes EVERY session in that
+  // directory, including one we just minted. Symptom is bad: session.create
+  // returns id X, dispose runs, promptAsync to X gets 204'd silently
+  // (opencode no longer has X), and the agent never wakes (msgs=0,
+  // ready_at=null forever). Always make the cache fresh first, then mint
+  // the session into a stable instance.
+  await ensureAgentCacheFresh(project.path, agent.slug)
+
   if (!sessionId) {
     try {
       const res = await client.session.create({
@@ -183,18 +193,6 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
     reason,
     contextBody,
   })
-
-  // Agent-cache freshness guard: opencode caches `.opencode/agent/*.md` per
-  // directory. If the agent was just created by team_create_agent in the
-  // same PM turn, cache may not have picked it up yet — promptAsync then
-  // returns 2xx but no LLM loop starts (opencode internally logs
-  // `undefined is not an object (evaluating 'agent.variant')`).
-  //
-  // Strategy: POLL opencode's /agent endpoint until our slug is listed.
-  // If it's missing after a short wait, force a dispose (blocking flush)
-  // and poll again. ONLY then dispatch the prompt. This prevents both
-  // empty-session wakes AND mid-turn aborts from later stray disposes.
-  await ensureAgentCacheFresh(project.path, agent.slug)
 
   try {
     await client.session.promptAsync({
@@ -269,6 +267,11 @@ export async function wakeAgentForProject(opts: {
   const { db, client, projectId, agent, prompt, sessionTitle, bindSessionToProject } = opts
   const project = db.prepare('SELECT id,name,path FROM projects WHERE id=$id').get({ $id: projectId }) as { id: string; name: string; path: string } | null
   if (!project) return null
+
+  // Make the agent cache hot BEFORE minting a session — see comment on the
+  // matching call in fireAgentTrigger. dispose-after-create wipes our
+  // freshly-created session and the prompt vanishes silently.
+  await ensureAgentCacheFresh(project.path, agent.slug)
 
   let sessionId = agent.session_id
   if (!sessionId) {

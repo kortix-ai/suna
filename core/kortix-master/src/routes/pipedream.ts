@@ -563,36 +563,39 @@ export async function pushPipedreamCredsToApi(): Promise<void> {
 // Called by the API when a new Pipedream OAuth connection is saved.
 // Inserts into the connectors SQLite table.
 
+async function upsertPipedreamConnector(app: string, appName?: string): Promise<string> {
+  const name = (appName || app).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-|-$/g, '')
+  const { Database } = await import('bun:sqlite')
+  const { mkdirSync } = await import('node:fs')
+  const { randomUUID } = await import('node:crypto')
+
+  const root = process.env.KORTIX_WORKSPACE || '/workspace'
+  mkdirSync(`${root}/.kortix`, { recursive: true })
+  const db = new Database(`${root}/.kortix/kortix.db`)
+  db.exec("PRAGMA journal_mode=DELETE; PRAGMA busy_timeout=5000")
+  db.exec(`CREATE TABLE IF NOT EXISTS connectors (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, source TEXT,
+    pipedream_slug TEXT, env_keys TEXT, notes TEXT, auto_generated INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  )`)
+
+  const now = new Date().toISOString()
+  db.prepare(`
+    INSERT INTO connectors (id, name, description, source, pipedream_slug, notes, auto_generated, created_at, updated_at)
+    VALUES (?, ?, ?, 'pipedream', ?, ?, 1, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      source = 'pipedream', pipedream_slug = excluded.pipedream_slug,
+      auto_generated = 1, updated_at = excluded.updated_at
+  `).run(randomUUID(), name, appName || app, app, `Connected via Pipedream OAuth`, now, now)
+  db.close()
+  return name
+}
+
 pipedreamRouter.post('/connector-sync', async (c) => {
   try {
     const { app, app_name } = await c.req.json() as { app: string; app_name?: string }
     if (!app) return c.json({ error: 'app is required' }, 400)
-
-    const name = (app_name || app).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-|-$/g, '')
-    const { Database } = await import('bun:sqlite')
-    const { mkdirSync } = await import('node:fs')
-    const { randomUUID } = await import('node:crypto')
-
-    const root = process.env.KORTIX_WORKSPACE || '/workspace'
-    mkdirSync(`${root}/.kortix`, { recursive: true })
-    const db = new Database(`${root}/.kortix/kortix.db`)
-    db.exec("PRAGMA journal_mode=DELETE; PRAGMA busy_timeout=5000")
-    db.exec(`CREATE TABLE IF NOT EXISTS connectors (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, description TEXT, source TEXT,
-      pipedream_slug TEXT, env_keys TEXT, notes TEXT, auto_generated INTEGER DEFAULT 0,
-      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-    )`)
-
-    const now = new Date().toISOString()
-    db.prepare(`
-      INSERT INTO connectors (id, name, description, source, pipedream_slug, notes, auto_generated, created_at, updated_at)
-      VALUES (?, ?, ?, 'pipedream', ?, ?, 1, ?, ?)
-      ON CONFLICT(name) DO UPDATE SET
-        source = 'pipedream', pipedream_slug = excluded.pipedream_slug,
-        auto_generated = 1, updated_at = excluded.updated_at
-    `).run(randomUUID(), name, app_name || app, app, `Connected via Pipedream OAuth`, now, now)
-    db.close()
-
+    const name = await upsertPipedreamConnector(app, app_name)
     console.log(`[Pipedream] Auto-created connector: ${name}`)
     return c.json({ success: true, name })
   } catch (err) {
@@ -600,5 +603,51 @@ pipedreamRouter.post('/connector-sync', async (c) => {
     return c.json({ error: 'Failed to create connector' }, 500)
   }
 })
+
+// ─── Boot-time connector reconciliation ──────────────────────────────────────
+// Self-heals sandboxes that missed the fire-and-forget connector-sync call from
+// the API — e.g. sandbox was booting, network blipped, or this sandbox was
+// created after the user OAuth'd the connector. Fetches the account's current
+// Pipedream integrations from kortix-api and upserts each into kortix.db.
+
+export async function syncExistingConnectorsFromApi(): Promise<void> {
+  if (!config.KORTIX_TOKEN || !config.KORTIX_API_URL) {
+    console.log('[Pipedream] Connector boot-sync: no KORTIX_TOKEN/API_URL — skipping')
+    return
+  }
+  try {
+    const apiUrl = getApiV1()
+    const res = await fetch(`${apiUrl}/pipedream/connections`, {
+      headers: {
+        Authorization: `Bearer ${config.KORTIX_TOKEN}`,
+        ...getPipedreamHeaders(),
+      },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) {
+      console.warn(`[Pipedream] Connector boot-sync: GET /connections returned ${res.status}`)
+      return
+    }
+    const data = await res.json() as { connections?: Array<{ app: string; appName?: string; app_name?: string }> }
+    const rows = data.connections || []
+    if (rows.length === 0) {
+      console.log('[Pipedream] Connector boot-sync: no connections to reconcile')
+      return
+    }
+    let synced = 0
+    for (const row of rows) {
+      try {
+        const name = await upsertPipedreamConnector(row.app, row.appName || row.app_name)
+        synced++
+        console.log(`[Pipedream] Connector boot-sync upserted: ${name}`)
+      } catch (err) {
+        console.warn(`[Pipedream] Connector boot-sync failed for ${row.app}:`, err)
+      }
+    }
+    console.log(`[Pipedream] Connector boot-sync complete: ${synced}/${rows.length} reconciled`)
+  } catch (err) {
+    console.warn('[Pipedream] Connector boot-sync error:', err)
+  }
+}
 
 export default pipedreamRouter

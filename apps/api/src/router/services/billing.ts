@@ -67,6 +67,14 @@ export async function deductToolCredits(
     throw new Error('DATABASE_URL is required for credit deductions');
   }
 
+  // Skip deduction in local mode regardless of DB. ENV_MODE=local users
+  // are running their own dev stack (no Stripe, no real subscriptions),
+  // and billing on a $0 balance just stalls everything with
+  // InsufficientCreditsError. Cloud mode (ENV_MODE=cloud) still bills.
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    return { success: true, cost: 0, newBalance: 0 };
+  }
+
   console.info(`[BILLING] Deducting $${cost.toFixed(4)} for ${toolName} (direct DB)`);
 
   const result = await deductCreditsDb(accountId, cost, deductDescription);
@@ -110,6 +118,11 @@ export async function deductLLMCredits(
       return { success: true, cost: 0, newBalance: 0 };
     }
     throw new Error('DATABASE_URL is required for credit deductions');
+  }
+
+  // Skip deduction in local mode (see deductToolCredits for full rationale).
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+    return { success: true, cost: 0, newBalance: 0 };
   }
 
   console.info(`[BILLING] Deducting $${calculatedCost.toFixed(6)} for ${model} (direct DB)`);

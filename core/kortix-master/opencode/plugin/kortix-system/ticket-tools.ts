@@ -841,13 +841,25 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         // Resolve agent slugs → real agent ids so column-default triggers
         // actually fire. A column that stores `agent:<slug>` never matches a
         // real agent row, so auto-assign and wake-up silently break.
+        //
+        // Also auto-set default_assignee_type='agent' when an unprefixed
+        // slug-form id resolves to an agent. PM agents historically pass
+        // {default_assignee_id: "qa"} without specifying default_assignee_type
+        // — leaving type=null silently skips the column-default trigger
+        // path in updateStatus (the `col.default_assignee_type && col.default_assignee_id`
+        // gate fails on null type), so QA never wakes when tickets hit review.
         for (const col of cols) {
-          if (col && col.default_assignee_type === 'agent' && typeof col.default_assignee_id === 'string') {
-            const raw = col.default_assignee_id
-            if (!raw.startsWith('ag-')) {
-              const ag = getAgentBySlug(db, pid, raw) || getAgentById(db, raw)
-              if (ag) col.default_assignee_id = ag.id
-            }
+          if (!col || typeof col.default_assignee_id !== 'string') continue
+          const raw = col.default_assignee_id
+          if (raw.startsWith('ag-')) {
+            // Already a real agent id — make sure type is set.
+            if (!col.default_assignee_type) col.default_assignee_type = 'agent'
+            continue
+          }
+          const ag = getAgentBySlug(db, pid, raw) || getAgentById(db, raw)
+          if (ag) {
+            col.default_assignee_id = ag.id
+            col.default_assignee_type = 'agent'
           }
         }
         replaceColumns(db, pid, cols)
