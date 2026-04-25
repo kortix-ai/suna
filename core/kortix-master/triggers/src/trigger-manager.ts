@@ -97,7 +97,9 @@ export class TriggerManager {
       if (isAddrInUse) {
         const port = this.options.webhookPort ?? 8099
         try {
-          const res = await fetch(`http://127.0.0.1:${port}/health`)
+          const res = await fetch(`http://127.0.0.1:${port}/health`, {
+            signal: AbortSignal.timeout(2_000),
+          })
           if (res.ok) {
             this.log("info", `[triggers] Reusing existing webhook server on port ${port}`)
           } else {
