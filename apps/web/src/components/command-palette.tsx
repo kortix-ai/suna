@@ -1003,17 +1003,17 @@ export function CommandPalette() {
       <CommandDialog open={open} onOpenChange={setOpen} className="sm:max-w-[680px]">
         {/* Submenu breadcrumb header */}
         {page !== 'root' && (
-          <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+          <div className="flex items-center gap-2 px-4 pt-3 pb-0.5">
             <button
               type="button"
               onClick={goBack}
-              className="flex items-center gap-1 text-xs text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
+              className="group flex items-center gap-1 rounded-md px-1.5 py-0.5 -ml-1.5 text-[11px] text-muted-foreground/60 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
             >
-              <ArrowLeft className="h-3 w-3" />
+              <ArrowLeft className="h-3 w-3 transition-transform group-hover:-translate-x-0.5" />
               <span>Back</span>
             </button>
-            <span className="text-xs text-muted-foreground/30">/</span>
-            <span className="text-xs font-medium text-foreground/80">{pageTitle}</span>
+            <span className="text-[11px] text-muted-foreground/25">/</span>
+            <span className="text-[11px] font-medium text-foreground/85 tracking-[-0.005em]">{pageTitle}</span>
           </div>
         )}
 
@@ -1122,8 +1122,10 @@ export function CommandPalette() {
                     >
                       <Search className="h-4 w-4" />
                       <span className="flex-1">Search Files</span>
-                      <span className="text-[10px] text-muted-foreground/40">/workspace</span>
-                      <ChevronRight className="h-3 w-3 text-muted-foreground/30" />
+                      <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10px] font-mono text-muted-foreground/55 leading-none">
+                        /workspace
+                      </span>
+                      <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
                     </CommandItem>
                   </CommandGroup>
 
@@ -1360,8 +1362,10 @@ export function CommandPalette() {
                         <span className="flex-1">
                           Search files for &ldquo;{query.trim()}&rdquo;
                         </span>
-                        <span className="text-[10px] text-muted-foreground/40">/workspace</span>
-                        <ChevronRight className="h-3 w-3 text-muted-foreground/30" />
+                        <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10px] font-mono text-muted-foreground/55 leading-none">
+                          /workspace
+                        </span>
+                        <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
                       </CommandItem>
                     </CommandGroup>
                   )}

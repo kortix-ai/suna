@@ -10,7 +10,6 @@ import {
   removeSandboxMember,
   revokeSandboxInvite,
   updateSandboxMemberRole,
-  updateSandboxMemberSpendCap,
   type SandboxMember,
   type SandboxMemberRole,
   type SandboxPendingInvite,
@@ -20,8 +19,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
@@ -31,21 +28,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { UserRow } from '@/components/ui/user-row';
-import { ScopeMatrixDialog } from './scope-matrix-dialog';
 import { useCan } from '@/hooks/platform/use-can';
 import {
   IconCheck,
@@ -55,7 +45,7 @@ import {
   IconMore,
   IconUsers,
 } from '@/components/ui/kortix-icons';
-import { Lock, User } from 'lucide-react';
+import { User } from 'lucide-react';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -64,7 +54,6 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<SandboxMember | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<SandboxPendingInvite | null>(null);
-  const [scopeTarget, setScopeTarget] = useState<SandboxMember | null>(null);
 
   const membersQuery = useQuery({
     queryKey: ['sandbox', 'members', sandboxId],
@@ -124,26 +113,9 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
     },
   });
 
-  const capMutation = useMutation({
-    mutationFn: (input: { userId: string; capCents: number | null }) =>
-      updateSandboxMemberSpendCap(sandboxId, input.userId, input.capCents),
-    onSuccess: (_data, variables) => {
-      sonnerToast.success(
-        variables.capCents === null
-          ? 'Spending cap removed'
-          : `Cap set to $${(variables.capCents / 100).toFixed(2)}`,
-      );
-      queryClient.invalidateQueries({ queryKey: ['sandbox', 'members', sandboxId] });
-    },
-    onError: (err) => {
-      sonnerToast.error(err instanceof Error ? err.message : 'Failed to update cap');
-    },
-  });
-
   const canInvite = useCan(sandboxId, 'members:invite').allowed;
   const canRemove = useCan(sandboxId, 'members:remove').allowed;
   const canChangeRole = useCan(sandboxId, 'members:change_role').allowed;
-  const canSetCap = useCan(sandboxId, 'members:set_cap').allowed;
   const viewerUserId = membersQuery.data?.viewer_user_id ?? '';
   const members = membersQuery.data?.members ?? [];
   const pending = membersQuery.data?.pending_invites ?? [];
@@ -204,12 +176,8 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
               viewerUserId={viewerUserId}
               canChangeRole={canChangeRole}
               canRemove={canRemove}
-              canSetCap={canSetCap}
-              canManageScopes={canChangeRole}
               roleMutation={roleMutation}
-              capMutation={capMutation}
               onRemove={(m) => setRemoveTarget(m)}
-              onManageScopes={(m) => setScopeTarget(m)}
             />
           ) : null}
 
@@ -259,13 +227,6 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
         onConfirm={() => revokeTarget && revokeMutation.mutate(revokeTarget.invite_id)}
         isPending={revokeMutation.isPending}
       />
-
-      <ScopeMatrixDialog
-        open={!!scopeTarget}
-        onOpenChange={(open) => !open && setScopeTarget(null)}
-        sandboxId={sandboxId}
-        member={scopeTarget}
-      />
     </div>
   );
 }
@@ -288,32 +249,20 @@ function MemberSection({
   viewerUserId,
   canChangeRole,
   canRemove,
-  canSetCap,
-  canManageScopes,
   roleMutation,
-  capMutation,
   onRemove,
-  onManageScopes,
 }: {
   label: string;
   members: SandboxMember[];
   viewerUserId: string;
   canChangeRole: boolean;
   canRemove: boolean;
-  canSetCap: boolean;
-  canManageScopes: boolean;
   roleMutation: {
     mutate: (input: { userId: string; role: SandboxMemberRole }) => void;
     isPending: boolean;
     variables?: { userId: string; role: SandboxMemberRole };
   };
-  capMutation: {
-    mutate: (input: { userId: string; capCents: number | null }) => void;
-    isPending: boolean;
-    variables?: { userId: string; capCents: number | null };
-  };
   onRemove: (m: SandboxMember) => void;
-  onManageScopes: (m: SandboxMember) => void;
 }) {
   return (
     <section className="space-y-3">
@@ -324,41 +273,22 @@ function MemberSection({
           const isOwner = member.role === 'owner';
           const roleEditable = canChangeRole && !isOwner && !isSelf;
           const removable = canRemove && member.role !== 'owner' && !isSelf;
-          const capEditable = canSetCap && !isOwner;
-          const scopesEditable = canManageScopes && !isOwner && !isSelf;
-          const showActions = roleEditable || removable || scopesEditable;
+          const showActions = roleEditable || removable;
           const pendingRole =
             roleMutation.isPending && roleMutation.variables?.userId === member.user_id;
-          const pendingCap =
-            capMutation.isPending && capMutation.variables?.userId === member.user_id;
           return (
             <UserRow
               key={member.user_id}
               email={member.email || member.user_id}
               isSelf={isSelf}
-              subtitle={
-                capEditable || (member.monthly_spend_cap_cents ?? null) !== null ? (
-                  <SpendSummary member={member} />
-                ) : undefined
-              }
               trailing={
                 <>
-                  {capEditable ? (
-                    <CapChip
-                      member={member}
-                      pending={pendingCap}
-                      onSave={(capCents) =>
-                        capMutation.mutate({ userId: member.user_id, capCents })
-                      }
-                    />
-                  ) : null}
                   <RoleTag role={member.role} />
                   {showActions ? (
                     <MemberRowActions
                       role={member.role}
                       roleEditable={roleEditable}
                       removable={removable}
-                      scopesEditable={scopesEditable}
                       pending={pendingRole}
                       onChangeRole={(next) =>
                         roleMutation.mutate({
@@ -366,7 +296,6 @@ function MemberSection({
                           role: next,
                         })
                       }
-                      onManageScopes={() => onManageScopes(member)}
                       onRemove={() => onRemove(member)}
                     />
                   ) : null}
@@ -377,135 +306,6 @@ function MemberSection({
         })}
       </div>
     </section>
-  );
-}
-
-function SpendSummary({ member }: { member: SandboxMember }) {
-  const cap = member.monthly_spend_cap_cents ?? null;
-  const mtd = member.current_period_cents ?? 0;
-  if (cap === null) return null;
-  const over = mtd >= cap;
-  return (
-    <span className={cn(over ? 'text-destructive' : 'text-muted-foreground/80')}>
-      ${(mtd / 100).toFixed(2)} of ${(cap / 100).toFixed(2)} this cycle
-    </span>
-  );
-}
-
-function CapChip({
-  member,
-  pending,
-  onSave,
-}: {
-  member: SandboxMember;
-  pending: boolean;
-  onSave: (capCents: number | null) => void;
-}) {
-  const cap = member.monthly_spend_cap_cents ?? null;
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<string>(
-    cap === null ? '' : (cap / 100).toFixed(2),
-  );
-
-  const handleOpenChange = (next: boolean) => {
-    if (next) setDraft(cap === null ? '' : (cap / 100).toFixed(2));
-    setOpen(next);
-  };
-
-  const submit = () => {
-    const trimmed = draft.trim();
-    if (trimmed === '') {
-      onSave(null);
-      setOpen(false);
-      return;
-    }
-    const dollars = Number(trimmed);
-    if (!Number.isFinite(dollars) || dollars < 0) return;
-    onSave(Math.round(dollars * 100));
-    setOpen(false);
-  };
-
-  return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <Badge
-          asChild
-          variant={cap === null ? 'muted' : 'secondary'}
-          size="sm"
-          className={cn(
-            'uppercase tracking-wide',
-            pending && 'opacity-60',
-          )}
-        >
-          <button type="button" disabled={pending}>
-            {pending ? (
-              <IconLoader className="h-3 w-3 animate-spin" />
-            ) : cap === null ? (
-              'No cap'
-            ) : (
-              `$${(cap / 100).toFixed(0)} cap`
-            )}
-          </button>
-        </Badge>
-      </PopoverTrigger>
-      <PopoverContent className="w-64 p-3" align="end">
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="cap-input"
-              className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.08em]"
-            >
-              Spending cap
-            </Label>
-            <div className="relative">
-              <span className="text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 text-sm">
-                $
-              </span>
-              <Input
-                id="cap-input"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    submit();
-                  }
-                }}
-                placeholder="50.00"
-                inputMode="decimal"
-                className="h-9 pl-6"
-                autoFocus
-              />
-            </div>
-            <p className="text-muted-foreground/80 text-[11px] leading-snug">
-              Per billing cycle. Leave empty to remove.
-            </p>
-          </div>
-          <Separator />
-          <div className="flex items-center justify-between">
-            {cap !== null ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="text-destructive hover:text-destructive"
-                onClick={() => {
-                  onSave(null);
-                  setOpen(false);
-                }}
-              >
-                Remove cap
-              </Button>
-            ) : (
-              <span />
-            )}
-            <Button type="button" size="sm" onClick={submit}>
-              Save
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
   );
 }
 
@@ -590,19 +390,15 @@ function MemberRowActions({
   role,
   roleEditable,
   removable,
-  scopesEditable,
   pending,
   onChangeRole,
-  onManageScopes,
   onRemove,
 }: {
   role: SandboxMemberRole | null;
   roleEditable: boolean;
   removable: boolean;
-  scopesEditable: boolean;
   pending: boolean;
   onChangeRole: (next: SandboxMemberRole) => void;
-  onManageScopes: () => void;
   onRemove: () => void;
 }) {
   return (
@@ -637,18 +433,9 @@ function MemberRowActions({
             />
           </>
         ) : null}
-        {scopesEditable ? (
-          <>
-            {roleEditable ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuItem onSelect={onManageScopes}>
-              <Lock className="h-3.5 w-3.5" />
-              Permissions
-            </DropdownMenuItem>
-          </>
-        ) : null}
         {removable ? (
           <>
-            {roleEditable || scopesEditable ? <DropdownMenuSeparator /> : null}
+            {roleEditable ? <DropdownMenuSeparator /> : null}
             <DropdownMenuItem
               onSelect={onRemove}
               className="focus:text-destructive focus:bg-destructive/10"
