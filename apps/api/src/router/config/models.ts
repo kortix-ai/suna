@@ -58,6 +58,44 @@ export const MODELS: Record<string, ModelConfig> = {
     tier: 'free',
     cacheReadPer1M: 0.10,
   },
+  // Opencode-side aliases (from core/kortix-master/opencode/opencode.jsonc).
+  // Opencode's openai-compatible client ships the alias as the model param
+  // — e.g. `kortix/minimax-m27`, not the resolved upstream id — so the
+  // router needs to translate them. Without these, every agent call from
+  // opencode 400s with "is not a valid model ID" and PM/team hangs at
+  // 0 tokens / ready_at=null.
+  'kortix/minimax-m27': {
+    openrouterId: 'minimax/minimax-m2.7',
+    inputPer1M: 0.30,
+    outputPer1M: 1.20,
+    contextWindow: 204800,
+    tier: 'free',
+    cacheReadPer1M: 0.06,
+  },
+  'kortix/glm-turbo': {
+    openrouterId: 'z-ai/glm-5-turbo',
+    inputPer1M: 1.20,
+    outputPer1M: 4.00,
+    contextWindow: 202752,
+    tier: 'free',
+    cacheReadPer1M: 0.24,
+  },
+  'kortix/kimi': {
+    openrouterId: 'moonshotai/kimi-k2.5',
+    inputPer1M: 0.45,
+    outputPer1M: 2.20,
+    contextWindow: 262144,
+    tier: 'free',
+    cacheReadPer1M: 0.225,
+  },
+  'kortix/minimax': {
+    openrouterId: 'minimax/minimax-m2.5',
+    inputPer1M: 0.20,
+    outputPer1M: 1.17,
+    contextWindow: 196608,
+    tier: 'free',
+    cacheReadPer1M: 0.10,
+  },
 };
 
 /**

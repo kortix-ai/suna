@@ -340,13 +340,25 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 						}
 					}
 					// Seed PM agent, default columns, CONTEXT.md team section.
+					const seededModel = args.default_model?.trim() || inheritedModel || resolveDefaultModel()
 					await seedV2Project(db, {
 						id: p.id,
 						name: p.name,
 						path: p.path,
 						description: p.description,
 						user_handle: args.user_handle || null,
-					}, { defaultModel: args.default_model?.trim() || inheritedModel || null })
+					}, { defaultModel: seededModel })
+
+					// Small/cheap models (yolo/think, low-context tiers) struggle on
+					// real engineering tickets — patchy diff edits, dropped tool
+					// calls, weak QA evidence. PM should flag this in onboarding so
+					// the human can opt up to a larger model BEFORE the team is
+					// created (changing default_model retroactively is friction).
+					const SMALL_MODELS = [
+						'kortix-yolo/think',
+						'kortix-yolo/code',
+					]
+					const isSmallSeed = SMALL_MODELS.includes(seededModel)
 					// Always spawn the PM onboarding session so the response can hand
 					// the user a clickable link. user_handle is optional — if missing,
 					// PM addresses the human generically ("hey").
@@ -364,7 +376,12 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 								"",
 								"Cover (in order): project · stack · role + reach-back · autonomy · starting team · columns/templates. Apply each piece only after approval, using your `project_manage` tools. Keep CONTEXT.md tight.",
 								"",
-								`Pass \`default_model: "${resolveDefaultModel()}"\` on every agent (matches what this sandbox has credentials for) unless the human asked for a different one during onboarding — in which case use their pick. Copy the Communication discipline block from your persona into each agent body_md verbatim.`,
+								`Pass \`default_model: "${seededModel}"\` on every \`team_create_agent\` call. This is the model the human selected for this project (their current chat model, an explicit project_create override, or the sandbox default in that order). Do NOT substitute another model unless the human explicitly asks during onboarding — in which case use their pick verbatim.`,
+								isSmallSeed
+									? `\n**MODEL ADVISORY** — the seeded model \`${seededModel}\` is a small/cheap tier and tends to misfire on real engineering work (dropped tool calls, patchy diff edits, weak QA evidence). Inside Q2 (stack), include ONE short sentence flagging this and offer a larger option (e.g. \`kortix/minimax-m27\`, \`anthropic/claude-sonnet-4-6\` if the human's API key is loaded). If they confirm the small model anyway, ship it — don't keep asking.`
+									: null,
+								"",
+								"Copy the Communication discipline block from your persona into each agent body_md verbatim.",
 								"",
 								"Your messages follow the same rules as the team: short, decisive, no tables, no verdict banners.",
 								"",
