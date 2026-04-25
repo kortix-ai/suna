@@ -1063,9 +1063,18 @@ export class LocalDockerProvider implements SandboxProvider {
         // Single-line shell: `&&` between statements, `;` inside if-then-fi.
         // Detach with setsid + nohup + </dev/null so the bun process survives
         // after the `docker exec` command returns.
+        //
+        // Why we don't just trust `[ -S sock ]`: the socket file persists on
+        // disk after the supervisor process dies (e.g. previous container
+        // boot crashed, or kortix-supervisor restarted manually). A stale
+        // socket file makes the gate skip startup, then `/file` routes 500
+        // with "Was there a typo in the url or port?" because nothing is
+        // listening. Probe-then-start: if no process named `kortix-supervisor`
+        // is running, remove any stale socket and (re)start fresh.
         const cmd =
           'mkdir -p /run/kortix && ' +
-          'if [ ! -S /run/kortix/supervisor.sock ]; then ' +
+          'if ! pgrep -f "/ephemeral/kortix-supervisor/src/index.ts" >/dev/null 2>&1; then ' +
+          'rm -f /run/kortix/supervisor.sock; ' +
           'cd /ephemeral/kortix-supervisor && ' +
           'setsid nohup env KORTIX_SUPERVISOR_SOCKET=/run/kortix/supervisor.sock ' +
           'OPENCODE_BIN_PATH=/usr/local/bin/opencode-kortix ' +

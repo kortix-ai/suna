@@ -16,6 +16,7 @@
 import { config } from '../../config';
 import { execSync } from 'child_process';
 import { buildCanonicalSandboxAuthCommand } from '../../platform/services/sandbox-auth';
+import { invalidateProviderCache } from '..';
 
 const KORTIX_MASTER_PORT = 8000;
 const FETCH_TIMEOUT_MS = 30_000;
@@ -101,6 +102,51 @@ function trySyncServiceKey(serviceKey: string): boolean {
   } catch (err: any) {
     console.error(`[LOCAL-PREVIEW] Failed to sync sandbox auth bundle (attempt ${_syncAttemptsForCurrentKey}/${MAX_SYNC_ATTEMPTS_PER_KEY}):`, err.message || err);
     return false;
+  }
+}
+
+/**
+ * Read the kortix-master process's currently-loaded KORTIX_TOKEN by
+ * cat-ing `/workspace/.secrets/.bootstrap-env.json` from inside the
+ * container. This is the source of truth for what the running process
+ * actually accepts (bootstrap-env.ts overrides process.env at startup
+ * with whatever's in this file).
+ */
+function readContainerBootstrapKey(): string | null {
+  try {
+    const env: Record<string, string> = { ...process.env as Record<string, string> };
+    if (config.DOCKER_HOST && !config.DOCKER_HOST.includes('://')) {
+      env.DOCKER_HOST = `unix://${config.DOCKER_HOST}`;
+    }
+    const out = execSync(
+      `docker exec ${shellQuote(config.SANDBOX_CONTAINER_NAME)} cat /workspace/.secrets/.bootstrap-env.json`,
+      { timeout: 5_000, stdio: ['pipe', 'pipe', 'pipe'], env },
+    ).toString('utf8');
+    const json = JSON.parse(out);
+    return typeof json.KORTIX_TOKEN === 'string' && json.KORTIX_TOKEN.length > 0 ? json.KORTIX_TOKEN : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Push a corrected serviceKey back into the sandboxes table so the
+ * provider cache can refresh and future requests use the right value
+ * without another 401 → docker exec round-trip.
+ */
+async function updateSandboxServiceKeyInDb(newKey: string): Promise<void> {
+  try {
+    const { db } = await import('../../shared/db');
+    const { sandboxes } = await import('@kortix/db');
+    const { eq, sql } = await import('drizzle-orm');
+    await db
+      .update(sandboxes)
+      .set({ config: sql`jsonb_set(config, '{serviceKey}', ${JSON.stringify(newKey)}::jsonb)` as any })
+      .where(eq(sandboxes.externalId, config.SANDBOX_CONTAINER_NAME));
+    invalidateProviderCache(config.SANDBOX_CONTAINER_NAME);
+    console.log('[LOCAL-PREVIEW] Refreshed sandbox serviceKey in DB + invalidated cache');
+  } catch (err) {
+    console.warn('[LOCAL-PREVIEW] Could not update sandbox serviceKey in DB:', (err as Error).message);
   }
 }
 
@@ -227,15 +273,58 @@ export async function proxyToSandbox(
     return out;
   }
 
-  // On 401 from sandbox: service key mismatch (rotation drift). Sync our
-  // key into the container and retry once. Only attempt local docker exec
-  // sync for local_docker provider (no baseUrlOverride). Unlike before, we
-  // re-attempt sync even if we've synced a DIFFERENT key before — rotations
-  // are common under `bun --hot`.
+  // On 401 from sandbox: service-key mismatch. Two failure modes:
+  //   (a) Container env files have key X but our cached serviceKey is Y.
+  //       Pushing Y into the s6 env via trySyncServiceKey only helps the
+  //       NEXT process spawn, not the currently-running kortix-master that
+  //       loaded X at start. So syncing+retrying with the same Y still 401s.
+  //   (b) The DB / our cache is fine but bootstrap-env.ts inside the
+  //       container loaded an older KORTIX_TOKEN from a stale persistent
+  //       /workspace/.secrets/.bootstrap-env.json.
+  //
+  // The container's bootstrap file is the source of truth for what the
+  // running kortix-master process actually accepts. On 401, read that
+  // file via `docker exec` and retry with whatever it says. If the retry
+  // succeeds we also publish the corrected key into our DB row so
+  // subsequent cache reads pick it up cleanly.
   if (response.status === 401 && !baseUrlOverride) {
+    const containerKey = readContainerBootstrapKey();
+    if (containerKey && containerKey !== serviceKey) {
+      console.log('[LOCAL-PREVIEW] 401 — retrying with container bootstrap key');
+      const retryHeaders = new Headers(headers);
+      retryHeaders.set('Authorization', `Bearer ${containerKey}`);
+      const retryController = new AbortController();
+      const retryTimer = setTimeout(() => retryController.abort(), FETCH_TIMEOUT_MS);
+      const retryResponse = await fetch(targetUrl, {
+        method,
+        headers: retryHeaders,
+        body: incomingBody,
+        signal: retryController.signal,
+        // @ts-ignore
+        decompress: false,
+        redirect: 'manual',
+      });
+      clearTimeout(retryTimer);
+      if (retryResponse.status !== 401) {
+        // Retry succeeded — push the working key back into the DB +
+        // invalidate the provider cache so subsequent requests use it.
+        void updateSandboxServiceKeyInDb(containerKey).catch(() => {});
+      }
+      const out = sanitizeResponseHeaders(retryResponse.headers);
+      if (origin) {
+        out.set('Access-Control-Allow-Origin', origin);
+        out.set('Access-Control-Allow-Credentials', 'true');
+      }
+      return new Response(retryResponse.body, {
+        status: retryResponse.status,
+        statusText: retryResponse.statusText,
+        headers: out,
+      });
+    }
+    // Fall back to the original docker-exec sync path if we couldn't read
+    // the container's bootstrap file (e.g. file missing on cloud sandboxes).
     const synced = trySyncServiceKey(serviceKey);
     if (synced) {
-      // Retry the request with the same key (now the sandbox should accept it)
       const retryController = new AbortController();
       const retryTimer = setTimeout(() => retryController.abort(), FETCH_TIMEOUT_MS);
       const retryResponse = await fetch(targetUrl, {

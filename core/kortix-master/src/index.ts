@@ -25,7 +25,7 @@ import webProxyRouter from './routes/web-proxy'
 import { updateRoutes as updateRouter } from './routes/update'
 import deployRouter from './routes/deploy'
 import servicesRouter from './routes/services'
-import pipedreamRouter, { pushPipedreamCredsToApi } from './routes/pipedream'
+import pipedreamRouter, { pushPipedreamCredsToApi, syncExistingConnectorsFromApi } from './routes/pipedream'
 import connectorsRouter from './routes/connectors'
 import suggestionsRouter from './routes/suggestions'
 import coreRouter from './routes/core'
@@ -714,6 +714,9 @@ console.log(`[Kortix Master] Starting on port ${config.PORT}`)
 
 // Push Pipedream creds to API after boot (async, non-blocking)
 setTimeout(() => pushPipedreamCredsToApi(), 5_000)
+// Reconcile Pipedream connectors from API into local kortix.db (self-heals
+// sandboxes that missed the fire-and-forget connector-sync call).
+setTimeout(() => syncExistingConnectorsFromApi(), 8_000)
 console.log(`[Kortix Master] Proxying to OpenCode at ${config.OPENCODE_HOST}:${config.OPENCODE_PORT}`)
 console.log(`[Kortix Master] API docs available at http://localhost:${config.PORT}/docs`)
 
