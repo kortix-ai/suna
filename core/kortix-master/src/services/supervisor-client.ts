@@ -74,6 +74,43 @@ export async function ensureMemberDaemon(member: MemberContext): Promise<number>
   return payload.port
 }
 
+export interface RunningDaemon {
+  supabase_user_id: string
+  username: string
+  linux_uid: number
+  port: number
+  pid: number
+  started_at: number
+  last_used: number
+}
+
+/**
+ * List every per-user opencode daemon currently spawned by the supervisor.
+ * Used by aggregation endpoints (e.g. project sessions tab) that need to
+ * read state from across the multi-tenant fleet, not just the requester's
+ * own daemon. Returns [] if isolation is off, supervisor socket is missing,
+ * or the call fails.
+ */
+export async function listMemberDaemons(): Promise<RunningDaemon[]> {
+  if (!isIsolationEnabled()) return []
+  try {
+    const res = await fetch('http://supervisor/daemon/list', {
+      // @ts-ignore Bun unix socket
+      unix: SOCKET_PATH,
+      method: 'GET',
+      signal: AbortSignal.timeout(3_000),
+    })
+    if (!res.ok) return []
+    const body = (await res.json()) as RunningDaemon[] | { daemons?: RunningDaemon[] }
+    return Array.isArray(body) ? body : (body?.daemons ?? [])
+  } catch (err) {
+    console.warn(
+      `[supervisor-client] list failed: ${err instanceof Error ? err.message : err}`,
+    )
+    return []
+  }
+}
+
 export async function stopMemberDaemon(supabaseUserId: string): Promise<void> {
   portCache.delete(supabaseUserId)
   try {

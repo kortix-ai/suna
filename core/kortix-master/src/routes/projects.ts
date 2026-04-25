@@ -16,6 +16,9 @@ import { seedV2Project, syncTeamSection, DEFAULT_PM_SLUG, resolveDefaultModel } 
 import { wakeAgentForProject, type OpenCodeClientLike } from '../services/ticket-triggers'
 import { createOpencodeClient } from '@opencode-ai/sdk/client'
 import { config } from '../config'
+import { getMember } from '../services/member-context'
+import { ensureMemberDaemon, listMemberDaemons } from '../services/supervisor-client'
+
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -386,13 +389,45 @@ projectsRouter.get('/:id/sessions', async (c) => {
 
   const sessionIds = new Set(links.map(l => l.session_id))
 
-  // Fetch all sessions from OpenCode and filter to our linked set
+  // Fan out across every opencode daemon: the legacy shared one (port 4096)
+  // PLUS every per-user daemon the supervisor has running. Sessions linked
+  // to the project are scattered — each project member's sessions live in
+  // their OWN opencode, so a single-port query (the previous bug) returned
+  // only the requester's slice. Project view needs the union, otherwise
+  // the dashboard's sessions tab looks empty even when teammates have
+  // active work threads on the project.
   try {
-    const ocPort = process.env.OPENCODE_PORT || '4096'
-    const ocRes = await fetch(`http://127.0.0.1:${ocPort}/session`, { signal: AbortSignal.timeout(5000) })
-    if (ocRes.ok) {
-      const ocData = await ocRes.json() as any
-      const allSessions = Array.isArray(ocData) ? ocData : (ocData.data ?? [])
+    const ports = new Set<number>()
+    ports.add(config.OPENCODE_PORT)
+    const member = getMember(c as any)
+    if (member) {
+      try { ports.add(await ensureMemberDaemon(member)) } catch {}
+    }
+    const daemons = await listMemberDaemons()
+    for (const d of daemons) ports.add(d.port)
+
+    const allSessions: any[] = []
+    const seen = new Set<string>()
+    await Promise.all(
+      Array.from(ports).map(async (port) => {
+        try {
+          const res = await fetch(`http://127.0.0.1:${port}/session`, {
+            signal: AbortSignal.timeout(3000),
+          })
+          if (!res.ok) return
+          const body = await res.json() as any
+          const list = Array.isArray(body) ? body : (body?.data ?? [])
+          for (const s of list) {
+            if (s?.id && !seen.has(s.id)) {
+              seen.add(s.id)
+              allSessions.push(s)
+            }
+          }
+        } catch { /* skip dead daemons */ }
+      }),
+    )
+
+    if (allSessions.length > 0) {
       // Include all project sessions (parents + children)
       const matched = allSessions
         .filter((s: any) => sessionIds.has(s.id))
