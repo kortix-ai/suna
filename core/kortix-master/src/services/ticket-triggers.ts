@@ -215,6 +215,7 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
 
 async function ensureAgentCacheFresh(directory: string, agentSlug: string): Promise<void> {
   const listUrl = `http://localhost:4096/agent?directory=${encodeURIComponent(directory)}`
+  const disposeUrl = `http://localhost:4096/instance/dispose?directory=${encodeURIComponent(directory)}`
 
   const isListed = async (): Promise<boolean> => {
     try {
@@ -230,20 +231,31 @@ async function ensureAgentCacheFresh(directory: string, agentSlug: string): Prom
   // Fast path: agent is already cached.
   if (await isListed()) return
 
-  // Wait for opencode's file watcher to pick up the new .md. Generous
-  // poll budget (~5s) since the alternative — POST /instance/dispose —
-  // is destructive: it kills EVERY session in this directory, including
-  // the PM session that's currently mid-tool-call to fire this trigger,
-  // AND any sibling agent sessions waiting in queue. Disposing during
-  // a live runtime call cascades into "session not found" 404s on the
-  // very prompt we're about to send. The file watcher in opencode is
-  // millisecond-fast in practice; if it hasn't picked up after ~5s,
-  // something else is wrong and dispose wouldn't fix it.
-  for (let i = 0; i < 20; i++) {
+  // Brief grace for opencode's file watcher to detect the new .md on its
+  // own (cheap; usually a few ms in practice).
+  for (let i = 0; i < 8; i++) {
     await new Promise((r) => setTimeout(r, 250))
     if (await isListed()) return
   }
-  console.warn(`[ticket-triggers] agent cache still missing '${agentSlug}' after 5s — proceeding anyway`)
+
+  // Escalation: force-dispose the directory's instance to reload the
+  // agent registry from disk. Trade-off: dispose nukes runtime state of
+  // sibling sessions in this directory (e.g. PM's session is the one
+  // calling team_create_agent + ticket_create that triggered this
+  // ensure path). Without it, freshly-created engineer/qa agents NEVER
+  // appear in the registry — opencode's file watcher misses them — so
+  // every wake prompt with `agent: "engineer"` 204s silently and
+  // sessions sit at msgs=0 forever. Project progress stops dead.
+  //
+  // Empirically: PM's tool call already returned to opencode by the
+  // time the assignment-trigger fires this; PM resumes from disk on
+  // its next turn. Net win.
+  try { await fetch(disposeUrl, { method: 'POST' }) } catch {}
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 250))
+    if (await isListed()) return
+  }
+  console.warn(`[ticket-triggers] agent '${agentSlug}' still missing after dispose — proceeding anyway`)
 }
 
 /**
