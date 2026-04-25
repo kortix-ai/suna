@@ -215,7 +215,6 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
 
 async function ensureAgentCacheFresh(directory: string, agentSlug: string): Promise<void> {
   const listUrl = `http://localhost:4096/agent?directory=${encodeURIComponent(directory)}`
-  const disposeUrl = `http://localhost:4096/instance/dispose?directory=${encodeURIComponent(directory)}`
 
   const isListed = async (): Promise<boolean> => {
     try {
@@ -231,23 +230,20 @@ async function ensureAgentCacheFresh(directory: string, agentSlug: string): Prom
   // Fast path: agent is already cached.
   if (await isListed()) return
 
-  // Give opencode a short grace period before escalating to dispose (the
-  // file watcher may be about to pick up the new .md on its own).
-  for (let i = 0; i < 4; i++) {
+  // Wait for opencode's file watcher to pick up the new .md. Generous
+  // poll budget (~5s) since the alternative — POST /instance/dispose —
+  // is destructive: it kills EVERY session in this directory, including
+  // the PM session that's currently mid-tool-call to fire this trigger,
+  // AND any sibling agent sessions waiting in queue. Disposing during
+  // a live runtime call cascades into "session not found" 404s on the
+  // very prompt we're about to send. The file watcher in opencode is
+  // millisecond-fast in practice; if it hasn't picked up after ~5s,
+  // something else is wrong and dispose wouldn't fix it.
+  for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 250))
     if (await isListed()) return
   }
-
-  // Escalate: force dispose to drop the stale per-directory cache, then
-  // poll until the agent reappears. Dispose kills any in-flight LLM in
-  // this directory, but at this point PM has already handed control over
-  // via its tool call, so there's nothing actively generating.
-  try { await fetch(disposeUrl, { method: 'POST' }) } catch {}
-  for (let i = 0; i < 8; i++) {
-    await new Promise((r) => setTimeout(r, 250))
-    if (await isListed()) return
-  }
-  console.warn(`[ticket-triggers] agent cache still missing '${agentSlug}' after dispose — proceeding anyway`)
+  console.warn(`[ticket-triggers] agent cache still missing '${agentSlug}' after 5s — proceeding anyway`)
 }
 
 /**
