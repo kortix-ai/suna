@@ -157,13 +157,19 @@ projectsRouter.post('/', async (c) => {
         if (userHandle) {
           const pm = getAgentBySlug(db, created.id, DEFAULT_PM_SLUG)
           if (pm) {
+            // PM was just seeded with a model — pass the SAME id into the
+            // onboarding prompt so PM tells team_create_agent calls to use
+            // it, instead of re-running resolveDefaultModel() (which can
+            // diverge from the seed if env changed between calls and
+            // makes PM seed the team on a different model than itself).
+            const seededModel = (pm.default_model && pm.default_model.trim()) || resolveDefaultModel()
             wakeAgentForProject({
               db,
               client: getOpenCodeClient(),
               projectId: created.id,
               agent: pm,
               sessionTitle: `Onboarding · ${created.name}`,
-              prompt: buildOnboardingPrompt(created.name, userHandle, created.description),
+              prompt: buildOnboardingPrompt(created.name, userHandle, created.description, seededModel),
             }).then((sid) => console.log('[projects] PM onboarding session:', sid))
               .catch((err) => console.warn('[projects] PM onboarding failed:', err))
           }
@@ -290,9 +296,15 @@ projectsRouter.post('/:id/pm-session', async (c) => {
   }
 })
 
-function buildOnboardingPrompt(name: string, handle: string, description: string): string {
+// Small/cheap tiers struggle on real engineering tickets (patchy diff edits,
+// dropped tool calls, weak QA evidence). PM should flag this in onboarding
+// so the human can opt up before the team is created.
+const SMALL_MODELS = new Set<string>(['kortix-yolo/think', 'kortix-yolo/code'])
+
+function buildOnboardingPrompt(name: string, handle: string, description: string, seededModel: string): string {
   // No `/autowork` wrapper — onboarding is a real back-and-forth, not a task
   // loop. One turn, then wait for the human's reply.
+  const isSmallSeed = SMALL_MODELS.has(seededModel)
   return [
     `Fresh project "${name}". Human: @${handle}.`,
     description ? `User's description: ${description}` : null,
@@ -305,11 +317,18 @@ function buildOnboardingPrompt(name: string, handle: string, description: string
     'starting team · columns/templates. Apply each piece only after approval,',
     'using your `project_manage` tools. Keep CONTEXT.md tight.',
     '',
-    `Pass \`default_model: "${resolveDefaultModel()}"\` on every agent (matches`,
-    'what this sandbox has credentials for) unless the human asked for a',
-    'different one during onboarding — in which case use their pick. Copy',
-    'the Communication discipline block from your persona into each agent',
-    'body_md verbatim — non-negotiable.',
+    `Pass \`default_model: "${seededModel}"\` on every \`team_create_agent\``,
+    'call. This is the model the human selected for this project (their',
+    'current chat model, an explicit project_create override, or the',
+    "sandbox default in that order). Do NOT substitute another model unless",
+    'the human explicitly asks during onboarding — in which case use their',
+    'pick verbatim.',
+    isSmallSeed
+      ? `\n**MODEL ADVISORY** — the seeded model \`${seededModel}\` is a small/cheap tier and tends to misfire on real engineering work (dropped tool calls, patchy diff edits, weak QA evidence). Inside Q2 (stack), include ONE short sentence flagging this and offer a larger option (e.g. \`kortix/minimax-m27\`, \`anthropic/claude-sonnet-4-6\` if the human's API key is loaded). If they confirm the small model anyway, ship it — don't keep asking.`
+      : null,
+    '',
+    'Copy the Communication discipline block from your persona into each',
+    'agent body_md verbatim — non-negotiable.',
     '',
     'Your messages follow the same rules as the team: short, decisive, no',
     'tables, no verdict banners.',
