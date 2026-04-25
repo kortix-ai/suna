@@ -208,6 +208,47 @@ async function pluginFireAgentTrigger(
   })
 }
 
+/**
+ * After a ticket lands in a terminal column, if every other ticket in its
+ * milestone is also in a terminal column, ping PM to verify ACs and close
+ * the milestone. PM otherwise has no signal that the milestone is ready
+ * (board-sweep cron is opt-in), and projects sit at "all tickets done,
+ * milestones still open" forever. PM still owns the close call — we just
+ * give them the wake.
+ */
+async function maybePingPmOnMilestoneCompletion(
+  db: Database,
+  mgr: ProjectManager,
+  client: any,
+  projectId: string,
+  ticketId: string,
+): Promise<void> {
+  const ticket = db.prepare('SELECT id, milestone_id, status FROM tickets WHERE id=$id').get({ $id: ticketId }) as
+    | { id: string; milestone_id: string | null; status: string }
+    | null
+  if (!ticket?.milestone_id) return
+  const movedToTerminal = db.prepare(
+    'SELECT 1 FROM project_columns WHERE project_id=$pid AND key=$k AND is_terminal=1',
+  ).get({ $pid: projectId, $k: ticket.status })
+  if (!movedToTerminal) return
+  const openInMilestone = db.prepare(`
+    SELECT COUNT(*) AS n FROM tickets t
+    LEFT JOIN project_columns c ON c.project_id = t.project_id AND c.key = t.status
+    WHERE t.milestone_id = $mid AND COALESCE(c.is_terminal, 0) = 0
+  `).get({ $mid: ticket.milestone_id }) as { n: number }
+  if (openInMilestone.n > 0) return
+  const milestone = db.prepare('SELECT id, title, status FROM milestones WHERE id=$id').get({
+    $id: ticket.milestone_id,
+  }) as { id: string; title: string; status: string } | null
+  if (!milestone || milestone.status === 'closed') return
+  const pm = getAgentBySlug(db, projectId, 'project-manager')
+  if (!pm) return
+  await pluginFireAgentTrigger(
+    db, mgr, client, projectId, ticketId, pm,
+    `Milestone "${milestone.title}" (${milestone.id}) has all linked tickets in terminal columns. Verify the milestone's acceptance criteria are met (run any AC commands cited in the milestone body, check evidence in linked-ticket comments). If yes → call milestone_close. If a gap remains → cut the missing sub-tickets and route them.`,
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tools
 // ─────────────────────────────────────────────────────────────────────────────
@@ -534,6 +575,13 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
           await pluginFireAgentTriggers(db, mgr, client, pid, args.id,
             r.triggered.map((t) => ({ ...t, reason: `Ticket moved to "${args.status}" — you are the default assignee for this column.` })),
             actor)
+          // Milestone-progress wake: if this status change put the ticket in
+          // a terminal column AND its milestone now has every linked ticket
+          // in terminal columns, ping PM to evaluate + close the milestone.
+          // PM otherwise stays idle (board sweeps may be off) and milestones
+          // sit open even when the work is verifiably done.
+          await maybePingPmOnMilestoneCompletion(db, mgr, client, pid, args.id)
+            .catch((err) => console.warn('[ticket-tools] milestone-completion PM ping failed:', err))
           return `Ticket moved to "${args.status}".`
         } catch (err) {
           return `Failed: ${err instanceof Error ? err.message : String(err)}`
