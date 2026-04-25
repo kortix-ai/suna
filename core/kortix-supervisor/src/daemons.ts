@@ -82,19 +82,24 @@ export class DaemonRegistry {
     const port = this.portFor(spec.linux_uid)
 
     if (await this.isPortHealthy(port)) {
+      // Look up the adopted child's PID from /proc so a later stop()
+      // (auth refresh, key rotation, daemon-restart admin action) can
+      // actually kill it. Without this the daemon record carries pid=0
+      // and killProcess silently no-ops.
+      const adoptedPid = this.lookupPidByPort(port) ?? 0
       const adopted: Daemon = {
         supabase_user_id: spec.supabase_user_id,
         username: spec.username,
         linux_uid: spec.linux_uid,
         port,
-        pid: 0,
+        pid: adoptedPid,
         adopted: true,
         process: null,
         startedAt: Date.now(),
         lastUsed: Date.now(),
       }
       this.byUser.set(spec.supabase_user_id, adopted)
-      console.log(`[supervisor] adopted existing daemon on port ${port} for ${spec.username}`)
+      console.log(`[supervisor] adopted existing daemon on port ${port} for ${spec.username} (pid=${adoptedPid})`)
       return port
     }
 
@@ -466,11 +471,71 @@ export class DaemonRegistry {
       }, 3000)
       return
     }
-    if (d.pid) {
-      try { process.kill(d.pid, 'SIGTERM') } catch {}
-      setTimeout(() => {
-        try { process.kill(d.pid, 'SIGKILL') } catch {}
-      }, 3000)
+    // Adopted daemon path: process handle is null and pid was 0 at adoption
+    // time. Fall back to a port → pid lookup so admin-driven restarts (auth
+    // refresh, model swap, supervisor upgrade) actually take effect on the
+    // adopted child instead of silently doing nothing.
+    let pid = d.pid
+    if (!pid) {
+      pid = this.lookupPidByPort(d.port) ?? 0
+      if (pid) d.pid = pid
     }
+    if (pid) {
+      try { process.kill(pid, 'SIGTERM') } catch {}
+      setTimeout(() => {
+        try { process.kill(pid, 'SIGKILL') } catch {}
+      }, 3000)
+    } else {
+      console.warn(
+        `[supervisor] killProcess: no pid for adopted daemon user=${d.username} port=${d.port}`,
+      )
+    }
+  }
+
+  private lookupPidByPort(port: number): number | null {
+    // /proc/net/tcp and /proc/net/tcp6 are the kernel-exposed socket tables
+    // — readable by any user. We parse the local port (4-byte hex on the
+    // 2nd column) and the inode (10th column), then map inode → pid by
+    // scanning /proc/<pid>/fd/* symlinks for "socket:[<inode>]".
+    //
+    // Cheaper than spawning lsof / ss / fuser, no extra binaries, no root
+    // requirement to read the socket table itself (only need root to find
+    // pids running as other users — supervisor IS root).
+    try {
+      const inodes = new Set<string>()
+      for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
+        let body: string
+        try { body = require('fs').readFileSync(file, 'utf8') } catch { continue }
+        const lines = body.split('\n').slice(1) // drop header
+        for (const line of lines) {
+          const cols = line.trim().split(/\s+/)
+          if (cols.length < 10) continue
+          const localAddr = cols[1] // e.g. "0100007F:1002" → 127.0.0.1:4098
+          const portHex = localAddr.split(':')[1]
+          if (!portHex) continue
+          if (parseInt(portHex, 16) !== port) continue
+          if (cols[3] !== '0A') continue // 0A = LISTEN
+          inodes.add(cols[9])
+        }
+      }
+      if (inodes.size === 0) return null
+      const fs = require('fs') as typeof import('fs')
+      for (const pidStr of fs.readdirSync('/proc')) {
+        if (!/^\d+$/.test(pidStr)) continue
+        const fdDir = `/proc/${pidStr}/fd`
+        let entries: string[]
+        try { entries = fs.readdirSync(fdDir) } catch { continue }
+        for (const fd of entries) {
+          let target: string
+          try { target = fs.readlinkSync(`${fdDir}/${fd}`) } catch { continue }
+          const m = target.match(/^socket:\[(\d+)\]$/)
+          if (!m) continue
+          if (inodes.has(m[1])) return parseInt(pidStr, 10)
+        }
+      }
+    } catch (err) {
+      console.warn(`[supervisor] lookupPidByPort(${port}) failed: ${err instanceof Error ? err.message : err}`)
+    }
+    return null
   }
 }

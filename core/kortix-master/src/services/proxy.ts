@@ -7,12 +7,48 @@ import {
   ensureMemberDaemon,
   invalidateSupervisorCache,
   isIsolationEnabled,
+  listMemberDaemons,
 } from './supervisor-client'
 
 // 30s timeout for regular requests
 const FETCH_TIMEOUT_MS = 30_000
 const OPENCODE_HEALTH_TIMEOUT_MS = 1_500
 const LOG_COOLDOWN_MS = 60_000
+
+// Session-id → daemon-port cache.
+//
+// With KORTIX_LINUX_ISOLATION=on, sessions live in per-user opencode daemons
+// (kortix-supervisor spawns one at 4097+(uid-10000) per active member).
+// The requester's own daemon often won't have the session they clicked on
+// — e.g. project owner opening a teammate's "Engineer · #2" session. Without
+// per-session routing, every cross-member click 404s.
+//
+// On a 404 from the requester's daemon, we probe the rest of the running
+// fleet (legacy + every supervisor-spawned daemon), remember which port
+// answered, and serve subsequent reads/writes from there directly.
+const SESSION_PORT_TTL_MS = 5 * 60_000
+const sessionPortCache = new Map<string, { port: number; expiresAt: number }>()
+
+function rememberSessionPort(sessionId: string, port: number): void {
+  sessionPortCache.set(sessionId, { port, expiresAt: Date.now() + SESSION_PORT_TTL_MS })
+}
+
+function getCachedSessionPort(sessionId: string): number | null {
+  const entry = sessionPortCache.get(sessionId)
+  if (!entry) return null
+  if (entry.expiresAt < Date.now()) {
+    sessionPortCache.delete(sessionId)
+    return null
+  }
+  return entry.port
+}
+
+function extractSessionId(pathname: string): string | null {
+  // Matches /session/ses_xxx/... — opencode's session-scoped routes.
+  // Returns null for /session (list) and non-session paths.
+  const m = pathname.match(/^\/session\/(ses_[^/]+)/)
+  return m?.[1] ?? null
+}
 
 const seen = new Map<string, number>()
 
@@ -52,11 +88,56 @@ async function resolveTarget(c: Context): Promise<Target> {
     port: config.OPENCODE_PORT,
     supabaseUserId: null,
   }
+
+  // Per-session cache wins: if we know which daemon owns this session
+  // from a previous request, route there directly. Avoids the requester-
+  // daemon-first-then-fanout dance for cross-member session reads.
+  const url = new URL(c.req.url)
+  const sessionId = extractSessionId(url.pathname)
+  if (sessionId) {
+    const cached = getCachedSessionPort(sessionId)
+    if (cached !== null) {
+      return { host: '127.0.0.1', port: cached, supabaseUserId: null }
+    }
+  }
+
   if (!isIsolationEnabled()) return legacy
   const member = getMember(c)
   if (!member) return legacy
   const port = await ensureMemberDaemon(member)
   return { host: '127.0.0.1', port, supabaseUserId: member.supabaseUserId }
+}
+
+/**
+ * After a session-scoped request 404s on the resolved daemon, scan the rest
+ * of the fleet (legacy + every supervisor-spawned per-user daemon) to find
+ * which one actually owns the session. Returns the port that answered with
+ * the session present, or null if no daemon has it.
+ */
+async function probeFleetForSession(
+  sessionId: string,
+  excludePort: number,
+): Promise<number | null> {
+  const candidates = new Set<number>()
+  candidates.add(config.OPENCODE_PORT)
+  try {
+    const daemons = await listMemberDaemons()
+    for (const d of daemons) candidates.add(d.port)
+  } catch {}
+  candidates.delete(excludePort)
+  if (candidates.size === 0) return null
+
+  const probes = Array.from(candidates).map(async (port) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/session/${sessionId}`, {
+        signal: AbortSignal.timeout(2000),
+      })
+      if (res.ok) return port
+    } catch {}
+    return null
+  })
+  const results = await Promise.all(probes)
+  return results.find((p) => p !== null) ?? null
 }
 
 async function triggerRecovery(c: Context, target: Target, path: string): Promise<boolean> {
@@ -135,7 +216,48 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
   }
 
   try {
-    const response = await fetchUpstream()
+    let response = await fetchUpstream()
+    let activeTarget = target
+    let activeTargetUrl = targetUrl
+
+    // Per-session fleet fanout: if the resolved daemon doesn't have the
+    // session (404 from /session/<sid>/...), probe the rest of the fleet.
+    // Required for multi-tenant project collaboration where the requester
+    // and the session-owning member are different users with different
+    // per-user daemons.
+    const sessionIdForRetry = extractSessionId(url.pathname)
+    if (response.status === 404 && sessionIdForRetry) {
+      const foundPort = await probeFleetForSession(sessionIdForRetry, target.port)
+      if (foundPort !== null) {
+        rememberSessionPort(sessionIdForRetry, foundPort)
+        activeTarget = { host: '127.0.0.1', port: foundPort, supabaseUserId: null }
+        activeTargetUrl = `http://${activeTarget.host}:${activeTarget.port}${url.pathname}${url.search}`
+        // Re-issue the original request against the correct daemon. The
+        // body buffer was sliced once already (or undefined for GET/HEAD)
+        // so we can reuse the same fetchUpstream by inlining a fresh fetch.
+        const retryController = new AbortController()
+        const retryTimer = !acceptsSSE
+          ? setTimeout(() => retryController.abort(), FETCH_TIMEOUT_MS)
+          : null
+        try {
+          response = await fetch(activeTargetUrl, {
+            method: c.req.method,
+            headers,
+            body: requestBody ? requestBody.slice(0) : undefined,
+            // @ts-ignore - Bun supports duplex
+            duplex: 'half',
+            signal: retryController.signal,
+          })
+        } finally {
+          if (retryTimer) clearTimeout(retryTimer)
+        }
+      }
+    }
+    // Sessionful 2xx: remember which daemon owns this session, so future
+    // reads bypass the resolveTarget→fanout dance.
+    if (response.ok && sessionIdForRetry) {
+      rememberSessionPort(sessionIdForRetry, activeTarget.port)
+    }
 
     // Check if this is an SSE/streaming response — pass body as stream
     const contentType = response.headers.get('content-type') || ''
