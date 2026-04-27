@@ -359,10 +359,39 @@ export class DaemonRegistry {
       'OPENCODE_BIN_PATH',
       'AUTH_JSON_PATH',
       'INTERNAL_SERVICE_KEY',
+      // LLM provider credentials. Without these the per-user daemon's
+      // @ai-sdk providers resolve `{env:<KEY>}` to empty at SDK-load time
+      // and every outbound call to api.anthropic.com / api.openai.com /
+      // openrouter / google / xai / groq returns 401 "x-api-key header
+      // is required". Auth-sync writes these to the s6 container env on
+      // any /auth/<provider> change in the legacy daemon, kortix-master
+      // fanout writes them to each daemon's auth.json, and we forward
+      // them here so the daemon process actually inherits them at spawn.
+      'ANTHROPIC_API_KEY',
+      'ANTHROPIC_BASE_URL',
+      'OPENAI_API_KEY',
+      'OPENAI_BASE_URL',
+      'OPENROUTER_API_KEY',
+      'GOOGLE_API_KEY',
+      'GEMINI_API_KEY',
+      'XAI_API_KEY',
+      'GROQ_API_KEY',
     ]
     for (const key of forwardKeys) {
       const value = process.env[key]
       if (value) env[key] = value
+    }
+    // Defensive catch-all: forward any remaining `*_API_KEY` / `*_API_URL`
+    // env vars supervisor's process picked up. Future providers (a new
+    // model gateway, a custom OpenAI-compatible base URL the user pasted
+    // into Connectors) reach the daemon without requiring a code change
+    // here every time. Skip ones already explicitly listed.
+    const explicit = new Set(forwardKeys)
+    for (const [key, value] of Object.entries(process.env)) {
+      if (!value) continue
+      if (explicit.has(key)) continue
+      if (!/_(API_KEY|API_URL|BASE_URL)$/.test(key)) continue
+      env[key] = value
     }
 
     const workspaceDir = env.KORTIX_WORKSPACE || '/workspace'
