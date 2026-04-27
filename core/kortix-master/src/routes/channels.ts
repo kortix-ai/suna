@@ -51,7 +51,14 @@ channelsRouter.get('/', async (c) => {
   try {
     const { listChannels } = await loadDb()
     const platform = c.req.query('platform')
-    const channels = listChannels(platform || undefined)
+    // ?project_id=<id> filters to that project. ?project_id=__none__ returns
+    // workspace-global channels only. Omit to return everything.
+    const projectIdQ = c.req.query('project_id')
+    const filter: { platform?: string; project_id?: string | null } = {}
+    if (platform) filter.platform = platform
+    if (projectIdQ === '__none__') filter.project_id = null
+    else if (projectIdQ) filter.project_id = projectIdQ
+    const channels = listChannels(Object.keys(filter).length ? filter : undefined)
     const publicBase = getChannelPublicBaseUrl()
     return c.json({
       ok: true,
@@ -65,6 +72,7 @@ channelsRouter.get('/', async (c) => {
         default_model: ch.default_model,
         bridge_instructions: ch.bridge_instructions || '',
         instructions: ch.instructions || '',
+        project_id: ch.project_id,
         webhook_path: ch.webhook_path,
         webhook_url: publicBase ? joinPublicBaseUrl(publicBase, ch.webhook_path) : null,
         created_by: ch.created_by,
@@ -99,7 +107,7 @@ channelsRouter.post('/verify-telegram', async (c) => {
 
 channelsRouter.post('/setup/telegram', async (c) => {
   try {
-    const { botToken, publicUrl, createdBy, defaultAgent, defaultModel } = await c.req.json()
+    const { botToken, publicUrl, createdBy, defaultAgent, defaultModel, projectId } = await c.req.json()
     if (!botToken) return c.json({ ok: false, error: 'botToken required' }, 400)
 
     // 1. Verify token via Telegram getMe
@@ -122,6 +130,7 @@ channelsRouter.post('/setup/telegram', async (c) => {
       created_by: createdBy,
       default_agent: defaultAgent || undefined,
       default_model: defaultModel || undefined,
+      project_id: typeof projectId === 'string' && projectId ? projectId : (projectId === null ? null : undefined),
     })
 
     // 3. Register default Telegram bot commands so the slash menu works immediately
@@ -250,7 +259,7 @@ function buildSlackManifest(displayName: string, webhookUrl: string) {
 
 channelsRouter.post('/slack-manifest', async (c) => {
   try {
-    const { publicUrl, botName } = await c.req.json()
+    const { publicUrl, botName, projectId } = await c.req.json()
     const resolvedUrl = publicUrl || getChannelPublicBaseUrl() || ''
     if (!resolvedUrl) return c.json({ ok: false, error: 'Could not resolve public URL. Set PUBLIC_BASE_URL or provide publicUrl.' }, 400)
 
@@ -262,6 +271,7 @@ channelsRouter.post('/slack-manifest', async (c) => {
       platform: 'slack',
       name: displayName,
       bot_token: '',
+      project_id: typeof projectId === 'string' && projectId ? projectId : null,
       enabled: false, // disabled until /setup/slack provides real credentials
     })
 
@@ -276,7 +286,7 @@ channelsRouter.post('/slack-manifest', async (c) => {
 
 channelsRouter.post('/setup/slack', async (c) => {
   try {
-    const { botToken, signingSecret, publicUrl, name, createdBy, channelId, defaultAgent, defaultModel } = await c.req.json()
+    const { botToken, signingSecret, publicUrl, name, createdBy, channelId, defaultAgent, defaultModel, projectId } = await c.req.json()
     if (!botToken) return c.json({ ok: false, error: 'botToken required' }, 400)
 
     // 1. Verify token
@@ -305,6 +315,9 @@ channelsRouter.post('/setup/slack', async (c) => {
           name: name || existing.name,
           default_agent: defaultAgent || existing.default_agent,
           default_model: defaultModel || existing.default_model,
+          project_id: typeof projectId === 'string' && projectId
+            ? projectId
+            : (projectId === null ? null : existing.project_id),
           enabled: true,
         })!
       }
@@ -317,6 +330,7 @@ channelsRouter.post('/setup/slack', async (c) => {
         signing_secret: signingSecret,
         bot_id: authData.user_id,
         bot_username: authData.user,
+        project_id: typeof projectId === 'string' && projectId ? projectId : null,
         created_by: createdBy,
       })
     }
@@ -361,6 +375,7 @@ channelsRouter.get('/:id', async (c) => {
         default_model: ch.default_model,
         bridge_instructions: ch.bridge_instructions || '',
         instructions: ch.instructions,
+        project_id: ch.project_id,
         webhook_path: ch.webhook_path,
         webhook_url: publicBase ? joinPublicBaseUrl(publicBase, ch.webhook_path) : null,
         created_by: ch.created_by,
@@ -475,15 +490,26 @@ channelsRouter.patch('/:id', async (c) => {
     if (body.instructions !== undefined) updates.instructions = body.instructions
     if (body.name !== undefined) updates.name = body.name
     if (body.enabled !== undefined) updates.enabled = body.enabled
+    // project_id may be set to a string (scope to that project), null
+    // (workspace-global), or omitted (no change). Empty-string normalises
+    // to null so the UI can clear the assignment.
+    if (body.project_id !== undefined) {
+      updates.project_id = typeof body.project_id === 'string' && body.project_id
+        ? body.project_id
+        : null
+    }
 
     const ch = updateChannel(c.req.param('id'), updates)
     if (!ch) return c.json({ ok: false, error: 'Not found' }, 404)
 
+    // Changing project_id reroutes dispatch to a different working directory
+    // (and therefore a different agent set), so old session keys must drop.
     const resetsChannelSession = (
       body.default_agent !== undefined ||
       body.default_model !== undefined ||
       body.bridge_instructions !== undefined ||
-      body.instructions !== undefined
+      body.instructions !== undefined ||
+      body.project_id !== undefined
     )
     const resetCount = resetsChannelSession ? clearChannelSessions(ch.platform, ch.id) : 0
 

@@ -105,7 +105,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   const [tab, setTabState] = useState<ProjectTab>('about');
   // Team/Credentials/Triggers live inside Settings now. If any caller passes
   // those legacy values, route to Settings and pre-select the matching section.
-  const [settingsSection, setSettingsSection] = useState<'team' | 'credentials' | 'triggers' | 'board'>('team');
+  const [settingsSection, setSettingsSection] = useState<'team' | 'credentials' | 'triggers' | 'channels' | 'board'>('team');
   const isProjectRouteActive = useIsRouteActive(`/projects/${encodeURIComponent(pid)}`);
 
   // ─── v1 state ──────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
     // Legacy values from before the tab collapse — route them into Settings
     // with the matching section pre-selected so old bookmarks / links still
     // land on the right config pane.
-    if (next === 'team' || next === 'credentials' || next === 'triggers') {
+    if (next === 'team' || next === 'credentials' || next === 'triggers' || next === 'channels') {
       setSettingsSection(next);
       setTabState('settings');
       return;

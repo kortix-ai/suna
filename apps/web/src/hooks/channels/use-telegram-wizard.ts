@@ -45,12 +45,13 @@ export function useTelegramVerifyToken() {
 export function useTelegramConnect() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ botToken, publicUrl, createdBy, defaultAgent, defaultModel }: {
+    mutationFn: async ({ botToken, publicUrl, createdBy, defaultAgent, defaultModel, projectId }: {
       botToken: string;
       publicUrl: string;
       createdBy?: string;
       defaultAgent?: string;
       defaultModel?: string;
+      projectId?: string | null;
     }) => {
       const baseUrl = getActiveOpenCodeUrl();
       if (!baseUrl) throw new Error('No active instance');
@@ -59,7 +60,7 @@ export function useTelegramConnect() {
       const res = await authenticatedFetch(`${baseUrl}/kortix/channels/setup/telegram`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken, publicUrl, createdBy, defaultAgent, defaultModel }),
+        body: JSON.stringify({ botToken, publicUrl, createdBy, defaultAgent, defaultModel, projectId }),
       });
       const text = await res.text();
       let data: any;

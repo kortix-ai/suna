@@ -59,6 +59,7 @@ export function getDb(): Database {
       default_model TEXT DEFAULT '',
       bridge_instructions TEXT,
       instructions TEXT,
+      project_id TEXT,
       created_by TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -110,6 +111,9 @@ export function getDb(): Database {
     if (!columns.some((column) => column.name === 'bridge_instructions')) {
       _db.exec(`ALTER TABLE channels ADD COLUMN bridge_instructions TEXT`)
     }
+    if (!columns.some((column) => column.name === 'project_id')) {
+      _db.exec(`ALTER TABLE channels ADD COLUMN project_id TEXT`)
+    }
   } catch {}
 
   return _db
@@ -132,6 +136,13 @@ export interface ChannelConfig {
   default_model: string
   bridge_instructions: string | null
   instructions: string | null
+  /**
+   * Optional project the channel is scoped to. When set, dispatch loads
+   * the project's `.opencode/agent/` tree (so per-project agent slugs like
+   * `engineer`, `qa`, `tech-lead` resolve), and the conversation runs
+   * inside that project's working directory. NULL = workspace-global.
+   */
+  project_id: string | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -174,6 +185,7 @@ export function createChannel(opts: {
   default_model?: string
   bridge_instructions?: string
   instructions?: string
+  project_id?: string | null
   created_by?: string
   enabled?: boolean
 }): ChannelConfig {
@@ -190,14 +202,14 @@ export function createChannel(opts: {
 
   db.prepare(`
     INSERT INTO channels (id, platform, name, enabled, bot_token, signing_secret, webhook_secret, webhook_path,
-      bot_id, bot_username, default_agent, default_model, bridge_instructions, instructions, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      bot_id, bot_username, default_agent, default_model, bridge_instructions, instructions, project_id, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, opts.platform, name, enabled, opts.bot_token, opts.signing_secret || null,
     webhookSecret, webhookPath,
     opts.bot_id || null, opts.bot_username || null,
     opts.default_agent || "kortix", opts.default_model || "", opts.bridge_instructions || null,
-    opts.instructions || null, opts.created_by || null, now, now,
+    opts.instructions || null, opts.project_id || null, opts.created_by || null, now, now,
   )
 
   return getChannel(id)!
@@ -239,6 +251,7 @@ export function upsertChannelByBot(opts: {
   default_agent?: string
   default_model?: string
   instructions?: string
+  project_id?: string | null
   created_by?: string
 }): { channel: ChannelConfig; created: boolean; deduped: number } {
   const botId = opts.bot_id || ""
@@ -259,6 +272,7 @@ export function upsertChannelByBot(opts: {
     instructions: opts.instructions ?? keeper.instructions ?? undefined,
     bot_id: opts.bot_id ?? keeper.bot_id ?? undefined,
     bot_username: opts.bot_username ?? keeper.bot_username ?? undefined,
+    project_id: opts.project_id !== undefined ? opts.project_id : keeper.project_id,
   })!
 
   let deduped = 0
@@ -269,19 +283,31 @@ export function upsertChannelByBot(opts: {
   return { channel: updated, created: false, deduped }
 }
 
-export function listChannels(platform?: string): ChannelConfig[] {
+export function listChannels(filter?: { platform?: string; project_id?: string | null }): ChannelConfig[] {
   const db = getDb()
-  let rows: any[]
-  if (platform) {
-    rows = db.query("SELECT * FROM channels WHERE platform = ? ORDER BY created_at DESC").all(platform) as any[]
-  } else {
-    rows = db.query("SELECT * FROM channels ORDER BY created_at DESC").all() as any[]
+  const where: string[] = []
+  const params: any[] = []
+  if (filter?.platform) {
+    where.push("platform = ?")
+    params.push(filter.platform)
   }
+  if (filter?.project_id !== undefined) {
+    if (filter.project_id === null) {
+      where.push("project_id IS NULL")
+    } else {
+      where.push("project_id = ?")
+      params.push(filter.project_id)
+    }
+  }
+  const sql = where.length === 0
+    ? "SELECT * FROM channels ORDER BY created_at DESC"
+    : `SELECT * FROM channels WHERE ${where.join(" AND ")} ORDER BY created_at DESC`
+  const rows = db.query(sql).all(...params) as any[]
   return rows.map(r => ({ ...r, enabled: !!r.enabled }))
 }
 
 export function updateChannel(id: string, updates: Partial<Pick<ChannelConfig,
-  "name" | "enabled" | "bot_token" | "signing_secret" | "default_agent" | "default_model" | "bridge_instructions" | "instructions" | "bot_id" | "bot_username"
+  "name" | "enabled" | "bot_token" | "signing_secret" | "default_agent" | "default_model" | "bridge_instructions" | "instructions" | "bot_id" | "bot_username" | "project_id"
 >>): ChannelConfig | null {
   const db = getDb()
   const existing = getChannel(id)

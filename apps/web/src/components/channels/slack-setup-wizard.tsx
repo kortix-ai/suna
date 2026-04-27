@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useId, useMemo, useState } from 'react';
+import React, { useId, useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,10 +22,14 @@ import { authenticatedFetch } from '@/lib/auth-token';
 import { AgentSelector, flattenModels } from '@/components/session/session-chat-input';
 import { ModelSelector } from '@/components/session/model-selector';
 import { useVisibleAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
+import { ChannelProjectPicker } from './channel-project-picker';
 
 interface SlackSetupWizardProps {
   onCreated: () => void;
   onBack: () => void;
+  /** Pre-select a project (e.g. when launched from a project-filtered view) */
+  initialProjectId?: string | null;
 }
 
 const STEP_ANIMATION = {
@@ -47,10 +51,11 @@ function defaultBotName(seed: string): string {
   return `Kortix ${BOT_NAMES[hash % BOT_NAMES.length]}`;
 }
 
-export function SlackSetupWizard({ onCreated, onBack }: SlackSetupWizardProps) {
+export function SlackSetupWizard({ onCreated, onBack, initialProjectId = null }: SlackSetupWizardProps) {
   const botNameSeed = useId();
   const [step, setStep] = useState(1);
   const [botName, setBotName] = useState(() => defaultBotName(botNameSeed));
+  const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [agentName, setAgentName] = useState<string | null>('kortix');
   const [selectedModel, setSelectedModel] = useState<{ providerID: string; modelID: string } | null>(null);
   const [manifest, setManifest] = useState<Record<string, unknown> | null>(null);
@@ -62,9 +67,22 @@ export function SlackSetupWizard({ onCreated, onBack }: SlackSetupWizardProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const slackConnect = useSlackConnect();
-  const agents = useVisibleAgents();
+  const { data: projects = [] } = useKortixProjects();
+  const projectDirectory = useMemo(
+    () => projects.find((p) => p.id === projectId)?.path,
+    [projects, projectId],
+  );
+  const agents = useVisibleAgents(projectDirectory ? { directory: projectDirectory } : undefined);
   const { data: providers, isLoading: modelsLoading } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
+
+  // Reset agent if it isn't valid in the new project's scope.
+  useEffect(() => {
+    if (!agentName) return;
+    if (agents.length === 0) return;
+    const stillValid = agents.some((a) => a.name === agentName);
+    if (!stillValid) setAgentName('kortix');
+  }, [agents, agentName]);
 
   const handleGenerateManifest = async () => {
     setIsGenerating(true);
@@ -79,7 +97,7 @@ export function SlackSetupWizard({ onCreated, onBack }: SlackSetupWizardProps) {
       const res = await authenticatedFetch(`${baseUrl}/kortix/channels/slack-manifest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ publicUrl: '', botName: botName.trim() || undefined }),
+        body: JSON.stringify({ publicUrl: '', botName: botName.trim() || undefined, projectId }),
       });
       const text = await res.text();
       let data: any;
@@ -143,6 +161,7 @@ export function SlackSetupWizard({ onCreated, onBack }: SlackSetupWizardProps) {
         channelId: manifestChannelId || undefined,
         defaultAgent: agentName || undefined,
         defaultModel: modelStr,
+        projectId,
       });
       const webhookUrl = result.channel?.webhookUrl;
       if (webhookUrl) {
@@ -217,6 +236,17 @@ export function SlackSetupWizard({ onCreated, onBack }: SlackSetupWizardProps) {
                 onChange={(e) => setBotName(e.target.value)}
               />
               <p className="text-[11px] text-muted-foreground">Display name in Slack.</p>
+            </div>
+
+            {/* Project */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Project</Label>
+              <ChannelProjectPicker value={projectId} onChange={setProjectId} className="bg-card" />
+              <p className="text-[11px] text-muted-foreground px-0.5">
+                {projectId
+                  ? 'Bot runs inside this project — agent pick is scoped to it.'
+                  : 'Workspace channel — uses the global agent set.'}
+              </p>
             </div>
 
             {/* Agent */}
