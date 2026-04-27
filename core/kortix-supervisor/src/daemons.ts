@@ -399,7 +399,14 @@ export class DaemonRegistry {
       [
         '/bin/sh',
         '-c',
-        `umask 0027; exec s6-setuidgid ${spec.username} ${OPENCODE_BIN} serve --port ${port} --hostname 127.0.0.1`,
+        // umask 0022 (not 0027) so files/dirs the daemon creates are
+        // world-readable. Per-user daemons run as separate Linux uids
+        // (k_<hash>); a project's owner-uid daemon writing with 0027
+        // produces 2750 dirs that other members' daemons can't lstat,
+        // every /agent lookup returns EACCES, dispatch silently halts.
+        // Project-level isolation is enforced by the supervisor's
+        // project_grant/revoke + group membership, not by file mode.
+        `umask 0022; exec s6-setuidgid ${spec.username} ${OPENCODE_BIN} serve --port ${port} --hostname 127.0.0.1`,
       ],
       {
         env,
