@@ -340,7 +340,15 @@ export function ensureTicketTables(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_project_credential_events_project ON project_credential_events(project_id);
     CREATE INDEX IF NOT EXISTS idx_project_credential_events_name ON project_credential_events(project_id, credential_name);
   `)
-  try { db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 1`) } catch {}
+  // v2 is the new default. This ALTER is a fallback — it only runs if no
+  // earlier path (routes/projects.ts CREATE/ALTER) has added the column yet.
+  // ensureTicketTables fires from many routes (credentials, milestones,
+  // tickets) and routes/projects.ts isn't guaranteed to have run first; if
+  // this ALTER landed first with DEFAULT 1, every subsequent ALTER (with
+  // DEFAULT 2) silently no-ops and the schema-level default stays wrong.
+  // See commit 84a222059 ("bulletproof v2-default") which fixed three other
+  // paths but missed this one.
+  try { db.exec(`ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 2`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN default_model TEXT`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN color_hue INTEGER`) } catch {}
   try { db.exec(`ALTER TABLE project_agents ADD COLUMN icon TEXT`) } catch {}
