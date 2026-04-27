@@ -3,7 +3,6 @@ import { dirname } from 'path'
 import { execFileSync, execSync } from 'child_process'
 import { sysbin } from './sysbin'
 import type { DaemonSpec, DaemonInfo } from './schema'
-import { projectGroupName } from './projects'
 
 const PORT_BASE = 4097
 const UID_MIN = 10_000
@@ -164,31 +163,26 @@ export class DaemonRegistry {
     } catch {}
 
     this.ensureWriterGroup()
-    if (!this.userInGroup(spec.username, DB_WRITER_GROUP)) {
+    // Default groups every per-user daemon needs:
+    //   - kortix_db: DB writer access
+    //   - docker:   so `supabase start`, `docker compose`, etc. work without
+    //               root (the docker socket is srw-rw---- root:docker)
+    //   - abc:      sandbox-global resources owned by `abc` (workspace,
+    //               .opencode, .kortix, .secrets, etc.) — gives the daemon
+    //               full read/traverse without per-project group dances
+    // Project-specific groups (proj_<id>) used to be added per-member; that
+    // whole "team perms" model is dead weight now. Project files are
+    // world-readable via umask 0022 + initial sandbox chmod, isolation lives
+    // in supervisor's grant/revoke logic (not kernel mode bits).
+    for (const group of [DB_WRITER_GROUP, 'docker', 'abc']) {
+      if (!this.groupExists(group)) continue
+      if (this.userInGroup(spec.username, group)) continue
       try {
-        execFileSync(sysbin('gpasswd'), ['-a', spec.username, DB_WRITER_GROUP], { stdio: 'ignore' })
+        execFileSync(sysbin('gpasswd'), ['-a', spec.username, group], { stdio: 'ignore' })
       } catch (err) {
         console.warn(
-          `[supervisor] gpasswd -a ${spec.username} ${DB_WRITER_GROUP} failed: ${err instanceof Error ? err.message : err}`,
+          `[supervisor] gpasswd -a ${spec.username} ${group} failed: ${err instanceof Error ? err.message : err}`,
         )
-      }
-    }
-
-    for (const projectId of spec.project_ids ?? []) {
-      const group = projectGroupName(projectId)
-      if (!this.groupExists(group)) {
-        try {
-          execFileSync(sysbin('groupadd'), [group], { stdio: 'ignore' })
-        } catch {}
-      }
-      if (this.groupExists(group) && !this.userInGroup(spec.username, group)) {
-        try {
-          execFileSync(sysbin('gpasswd'), ['-a', spec.username, group], { stdio: 'ignore' })
-        } catch (err) {
-          console.warn(
-            `[supervisor] gpasswd -a ${spec.username} ${group} failed: ${err instanceof Error ? err.message : err}`,
-          )
-        }
       }
     }
   }
