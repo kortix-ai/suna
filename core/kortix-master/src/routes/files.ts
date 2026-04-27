@@ -55,10 +55,14 @@ import {
 const filesRouter = new Hono()
 const root = process.env.KORTIX_WORKSPACE || '/workspace'
 
-function memberAllowedPaths(c: any): string[] | null {
-  const member = getMember(c)
-  if (!member) return null
-  return allowedWorkspacesFor(member).map((p) => path.resolve(p))
+function memberAllowedPaths(_c: any): string[] | null {
+  // Per-member workspace gating disabled — "one access for all". The
+  // ALLOWED_ROOTS check in resolvePath() still keeps requests inside
+  // sane prefixes (/, /workspace, /opt, /tmp, /home, /srv/kortix), so
+  // requests can't escape the sandbox; they just aren't filtered down
+  // to the requesting member's project list. Project-level isolation
+  // belongs in the apps/api preview-proxy layer, not here.
+  return null
 }
 
 function pathIsUnderAny(target: string, allowed: string[]): boolean {
