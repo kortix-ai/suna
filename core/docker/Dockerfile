@@ -273,7 +273,7 @@ ENV KORTIX_WORKSPACE=/workspace
 
 # ── Services (s6-rc.d longrun) ──────────────────────────────────────────────
 COPY core/s6-services/ /etc/s6-overlay/s6-rc.d/
-RUN for svc in svc-kortix-master svc-opencode-serve svc-opencode-supervisor svc-opencode-state-sync \
+RUN for svc in svc-kortix-master svc-opencode-serve svc-opencode-state-sync \
         svc-chromium-persistent svc-agent-browser-session svc-agent-browser-viewer \
         svc-static-web svc-lss-sync svc-sshd svc-docker svc-port-shim; do \
         touch "/etc/s6-overlay/s6-rc.d/user/contents.d/${svc}"; \
@@ -337,7 +337,6 @@ RUN chmod +x /ephemeral/tests/*.sh 2>/dev/null || true
 #   kortix-master/channels/   — CLIs: ktelegram, kslack, kchannel, kconnectors, kpipedream
 #   kortix-master/triggers/   — Cron + webhook triggers
 COPY core/kortix-master  /opt/build/kortix-master
-COPY core/kortix-supervisor /opt/build/kortix-supervisor
 COPY core/s6-services/svc-agent-browser-viewer/index.html /opt/build/browser-viewer/index.html
 
 # ── Build sandbox runtime ────────────────────────────────────────────────────
@@ -351,13 +350,6 @@ RUN set -eo pipefail && echo "[docker] Building sandbox runtime v${SANDBOX_VERSI
     test -d /ephemeral/kortix-master/node_modules && \
     chmod +x /ephemeral/kortix-master/scripts/*.sh 2>/dev/null || true && \
     echo "[docker] kortix-master: bun install OK (includes triggers, channel CLIs, opencode)" && \
-    \
-    # ── 1a. kortix-supervisor (root-owned per-member daemon supervisor) ── \
-    mkdir -p /ephemeral/kortix-supervisor && \
-    rsync -a --exclude=node_modules --exclude=bun.lock --exclude=.git \
-      /opt/build/kortix-supervisor/ /ephemeral/kortix-supervisor/ && \
-    cd /ephemeral/kortix-supervisor && bun install 2>&1 && \
-    echo "[docker] kortix-supervisor: bun install OK" && \
     \
     # ── 1b. Install Kortix CLI wrappers into /usr/local/bin ── \
     /ephemeral/kortix-master/scripts/install-channel-clis.sh && \

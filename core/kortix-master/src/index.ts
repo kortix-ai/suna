@@ -70,11 +70,6 @@ await secretStore.loadIntoProcessEnv()
 import { initShareStore } from './services/share-store'
 initShareStore()
 
-import { runUpgradeMigrations } from './services/upgrade'
-void runUpgradeMigrations().catch((err) => {
-  console.warn('[kortix-master] upgrade migrations failed:', err)
-})
-
 // ─── Guarantee core auth vars in s6 env dir ──────────────────────────────────
 // These are injected as Docker env vars at container creation but never written
 // to the s6 env directory. Tools use getEnv() which falls back to reading
@@ -302,15 +297,6 @@ async function checkOpenCodeReady(): Promise<boolean> {
   if (now - openCodeLastCheck < OPENCODE_CHECK_INTERVAL) return openCodeReady
   openCodeLastCheck = now
 
-  if (process.env.KORTIX_LINUX_ISOLATION === 'on') {
-    const healthy = await isSupervisorReady()
-    if (healthy !== openCodeReady) {
-      console.log(`[Kortix Master] supervisor ${healthy ? 'ready' : 'unreachable'}`)
-    }
-    openCodeReady = healthy
-    return healthy
-  }
-
   try {
     const res = await fetch(`http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}/session`, {
       signal: AbortSignal.timeout(3_000),
@@ -331,20 +317,6 @@ async function checkOpenCodeReady(): Promise<boolean> {
   openCodeReady = false
   void serviceManager.requestRecovery('opencode-serve', 'health-check')
   return false
-}
-
-async function isSupervisorReady(): Promise<boolean> {
-  const socket = process.env.KORTIX_SUPERVISOR_SOCKET || '/run/kortix/supervisor.sock'
-  try {
-    const res = await fetch('http://supervisor/health', {
-      // @ts-ignore Bun supports unix
-      unix: socket,
-      signal: AbortSignal.timeout(1_500),
-    })
-    return res.ok
-  } catch {
-    return false
-  }
 }
 
 await checkOpenCodeReady()
@@ -701,99 +673,6 @@ app.delete('/session/:id', async (c) => {
   }
   return proxyToOpenCode(c)
 })
-
-// ─── /auth/:provider — fan out across the opencode daemon fleet ─────────────
-//
-// PUT/DELETE on /auth/<provider> writes the provider auth entry into ONE
-// opencode's auth.json — which one depends on resolveTarget routing. Under
-// KORTIX_LINUX_ISOLATION=on, that means only the requester's per-user
-// daemon gets the credential. Every other per-user daemon (teammates) and
-// the legacy daemon stay empty, and any agent session running on those
-// daemons keeps 401-ing on api.anthropic.com / api.openai.com / etc.
-//
-// Auth credentials are sandbox-wide, not per-user. Replicate the write to
-// every running daemon (legacy + every supervisor-spawned per-user one) so
-// every session in the sandbox can authenticate to LLM providers.
-import { listMemberDaemons, stopMemberDaemon } from './services/supervisor-client'
-
-async function fanOutAuthWrite(c: import('hono').Context, providerID: string): Promise<Response> {
-  const method = c.req.method
-  const bodyBuf = method !== 'GET' && method !== 'HEAD'
-    ? await c.req.raw.arrayBuffer()
-    : undefined
-
-  let memberDaemons: Awaited<ReturnType<typeof listMemberDaemons>> = []
-  try { memberDaemons = await listMemberDaemons() } catch {}
-  const ports = new Set<number>()
-  ports.add(config.OPENCODE_PORT)
-  for (const d of memberDaemons) ports.add(d.port)
-
-  const targetUrl = (port: number) =>
-    `http://127.0.0.1:${port}/auth/${encodeURIComponent(providerID)}`
-
-  // Legacy daemon answers first — its response shape is what the client
-  // expects. The other daemons are best-effort replicas; their failures
-  // shouldn't surface as a top-level error.
-  const headers = new Headers()
-  for (const [k, v] of c.req.raw.headers.entries()) {
-    if (k.toLowerCase() !== 'host') headers.set(k, v)
-  }
-
-  const fetches = Array.from(ports).map(async (port) => {
-    try {
-      const res = await fetch(targetUrl(port), {
-        method,
-        headers,
-        body: bodyBuf ? bodyBuf.slice(0) : undefined,
-        signal: AbortSignal.timeout(5000),
-      })
-      return { port, ok: res.ok, status: res.status, body: await res.arrayBuffer(), respHeaders: res.headers }
-    } catch (err) {
-      console.warn(
-        `[auth-fanout] daemon ${port} ${method} /auth/${providerID} failed: ${err instanceof Error ? err.message : err}`,
-      )
-      return { port, ok: false, status: 0, body: null as ArrayBuffer | null, respHeaders: null as Headers | null }
-    }
-  })
-  const results = await Promise.all(fetches)
-
-  const okCount = results.filter((r) => r.ok).length
-  const total = results.length
-  console.log(
-    `[auth-fanout] ${method} /auth/${providerID} → ${okCount}/${total} daemons ok (ports: ${results.map((r) => `${r.port}=${r.status}`).join(', ')})`,
-  )
-
-  // Restart per-user daemons so their @ai-sdk providers re-read auth.json AND
-  // re-resolve the `{env:<PROVIDER>_API_KEY}` substitutions. Provider config
-  // is cached at SDK-load time, NOT per-request — without a process restart
-  // a daemon spawned before the key existed keeps using the empty apiKey
-  // forever. Skip the legacy daemon: it's controlled by service-manager and
-  // restarts via auth-sync watcher when the file changes.
-  for (const d of memberDaemons) {
-    void stopMemberDaemon(d.supabase_user_id).catch((err) =>
-      console.warn(
-        `[auth-fanout] stop daemon ${d.username} (${d.port}) failed: ${err instanceof Error ? err.message : err}`,
-      ),
-    )
-  }
-
-  // Pick the legacy result if available, else any 2xx, else fall back to
-  // the first response.
-  const primary =
-    results.find((r) => r.port === config.OPENCODE_PORT && r.ok) ??
-    results.find((r) => r.ok) ??
-    results[0]
-  if (!primary || !primary.respHeaders || !primary.body) {
-    return c.json({ error: 'auth fan-out: no daemon responded' }, 502)
-  }
-  return new Response(primary.body, {
-    status: primary.status || 200,
-    headers: primary.respHeaders,
-  })
-}
-
-app.put('/auth/:providerID', (c) => fanOutAuthWrite(c, c.req.param('providerID')))
-app.delete('/auth/:providerID', (c) => fanOutAuthWrite(c, c.req.param('providerID')))
 
 // Proxy all other requests to OpenCode
 app.all('*',

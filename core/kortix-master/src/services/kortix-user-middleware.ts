@@ -21,12 +21,10 @@ import {
   type KortixUserContext,
 } from './kortix-user-context'
 import { rememberUserScopes } from './user-scope-cache'
-import { buildMemberContext, type MemberContext } from './member-context'
 
 declare module 'hono' {
   interface ContextVariableMap {
     kortixUser?: KortixUserContext
-    kortixMember?: MemberContext
   }
 }
 
@@ -62,18 +60,6 @@ export function kortixUserContextMiddleware() {
     )
     c.set('kortixUser', result.context)
     rememberUserScopes(result.context.userId, result.context.scopes ?? [])
-
-    try {
-      const member = buildMemberContext(result.context)
-      c.set('kortixMember', member)
-      console.log(
-        `[kortix-user] member uid=${member.linuxUid} user=${member.username} home=${member.homeDir}`,
-      )
-    } catch (err) {
-      console.warn(
-        `[kortix-user] MemberContext build failed for user=${result.context.userId}: ${err instanceof Error ? err.message : err}`,
-      )
-    }
 
     await next()
   }
