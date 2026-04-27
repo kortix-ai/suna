@@ -65,12 +65,13 @@ function listGrantedProjectRows(userId: string): ProjectRow[] {
   }
 }
 
-export function isManager(member: MemberContext): boolean {
-  return (
-    member.role === 'owner' ||
-    member.role === 'admin' ||
-    member.role === 'platform_admin'
-  )
+export function isManager(_member: MemberContext): boolean {
+  // "One access for all" — every member is treated as a manager so
+  // role-based gating short-circuits to allow. Project membership and
+  // sandbox-level access are enforced by apps/api at the preview-proxy
+  // layer (decideAccess in src/teams/services/access.ts); inside the
+  // sandbox we don't double-check role.
+  return true
 }
 
 export function grantedProjectsFor(member: MemberContext): ProjectRow[] {
