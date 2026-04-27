@@ -20,6 +20,7 @@ export type ProjectTab =
   | 'team'        // v2 (legacy — folded into Settings)
   | 'credentials' // v2 (legacy — folded into Settings)
   | 'triggers'    // v2 (legacy — folded into Settings)
+  | 'channels'    // v2 (legacy — folded into Settings)
   | 'settings'    // v2
   | 'files'
   | 'sessions'

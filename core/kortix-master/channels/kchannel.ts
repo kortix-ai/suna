@@ -60,7 +60,7 @@ async function main(): Promise<void> {
 
   switch (command) {
     case "list": case "ls": {
-      const channels = listChannels(flags.platform)
+      const channels = listChannels(flags.platform ? { platform: flags.platform } : undefined)
       if (!channels.length) { out({ ok: true, channels: [], message: "No channels configured" }); break }
       out({ ok: true, channels: channels.map(formatChannel) })
       break

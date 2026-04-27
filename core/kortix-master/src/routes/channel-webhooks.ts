@@ -246,6 +246,34 @@ async function handleChannelCommand(
 
 // ── Dispatch to OpenCode ────────────────────────────────────────────────────
 
+/**
+ * If the channel is scoped to a project, resolve the project's working
+ * directory so opencode loads its `.opencode/agent/` tree. Without this,
+ * a `default_agent` like `engineer` / `qa` (which only exist as project
+ * agents) silently falls back to the global agent set and the wrong
+ * persona answers.
+ *
+ * Workspace-global channels (no project_id) return undefined → opencode
+ * uses the global agent registry, same as before.
+ */
+async function resolveChannelDirectory(channel: ChannelConfig): Promise<string | undefined> {
+  if (!channel.project_id) return undefined
+  try {
+    const { Database } = await import('bun:sqlite')
+    const path = await import('path')
+    const dbPath = path.join(process.env.KORTIX_WORKSPACE || '/workspace', '.kortix', 'kortix.db')
+    const db = new Database(dbPath, { readonly: true })
+    try {
+      const row = db.prepare('SELECT path FROM projects WHERE id = ?').get(channel.project_id) as { path?: string } | undefined
+      return row?.path || undefined
+    } finally {
+      try { db.close() } catch {}
+    }
+  } catch {
+    return undefined
+  }
+}
+
 async function dispatchToOpenCode(
   channel: ChannelConfig,
   event: NormalizedChannelEvent,
@@ -262,10 +290,16 @@ async function dispatchToOpenCode(
       })()
     : undefined
 
+  // Project scope — directory passed as a query param so opencode loads
+  // <directory>/.opencode/agent/* and the channel's default_agent slug
+  // resolves against it.
+  const directory = await resolveChannelDirectory(channel)
+  const dirQuery = directory ? `?directory=${encodeURIComponent(directory)}` : ''
+
   // Reuse existing session — always send to the same session for continuity
   if (existingSessionId) {
     try {
-      const res = await fetch(`${OPENCODE_URL}/session/${existingSessionId}/prompt_async`, {
+      const res = await fetch(`${OPENCODE_URL}/session/${existingSessionId}/prompt_async${dirQuery}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -286,8 +320,9 @@ async function dispatchToOpenCode(
     }
   }
 
-  // Create new session
-  const createRes = await fetch(`${OPENCODE_URL}/session`, {
+  // Create new session — pass directory as a query so the new session is
+  // bound to the project's opencode project record (not the workspace root).
+  const createRes = await fetch(`${OPENCODE_URL}/session${dirQuery}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -302,7 +337,7 @@ async function dispatchToOpenCode(
   const session = await createRes.json() as { id: string }
 
   // Send the prompt
-  const promptRes = await fetch(`${OPENCODE_URL}/session/${session.id}/prompt_async`, {
+  const promptRes = await fetch(`${OPENCODE_URL}/session/${session.id}/prompt_async${dirQuery}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

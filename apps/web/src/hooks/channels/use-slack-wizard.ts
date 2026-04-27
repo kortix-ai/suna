@@ -4,7 +4,7 @@ import { getActiveOpenCodeUrl } from '@/stores/server-store';
 
 export function useSlackConnect() {
   return useMutation({
-    mutationFn: async ({ botToken, signingSecret, publicUrl, name, createdBy, channelId, defaultAgent, defaultModel }: {
+    mutationFn: async ({ botToken, signingSecret, publicUrl, name, createdBy, channelId, defaultAgent, defaultModel, projectId }: {
       botToken: string;
       signingSecret?: string;
       publicUrl?: string;
@@ -13,13 +13,14 @@ export function useSlackConnect() {
       channelId?: string;
       defaultAgent?: string;
       defaultModel?: string;
+      projectId?: string | null;
     }) => {
       const baseUrl = getActiveOpenCodeUrl();
       if (!baseUrl) throw new Error('No active instance');
       const res = await authenticatedFetch(`${baseUrl}/kortix/channels/setup/slack`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken, signingSecret, publicUrl, name, createdBy, channelId, defaultAgent, defaultModel }),
+        body: JSON.stringify({ botToken, signingSecret, publicUrl, name, createdBy, channelId, defaultAgent, defaultModel, projectId }),
       });
       const text = await res.text();
       let data: any;
