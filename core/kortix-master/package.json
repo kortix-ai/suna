@@ -31,12 +31,12 @@
     "chat": "^4.23.0",
 
     "@openauthjs/openauth": "^0.4.3",
-    "@opencode-ai/plugin": "1.3.7",
-    "@opencode-ai/sdk": "^1.2.25",
+    "@opencode-ai/plugin": "1.14.28",
+    "@opencode-ai/sdk": "^1.14.28",
     "agent-tunnel": "npm:@kortix/agent-tunnel@*",
     "jsonc-parser": "^3.3.1",
     "bun-pty": "^0.4.8",
-    "opencode-pty": "*",
+    "opencode-pty": "^0.3.4",
     "@mendable/firecrawl-js": "*",
     "@tavily/core": "*",
     "replicate": "*"

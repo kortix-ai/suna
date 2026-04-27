@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-	FileDiff,
 	Message,
 	Part,
 	PermissionRequest,
@@ -11,6 +10,7 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import { useEffect, useRef } from "react";
 import { getClient } from "@/lib/opencode-sdk";
+import type { FileDiff } from "@/ui/types";
 import {
 	type MessageWithParts,
 	useSyncStore,

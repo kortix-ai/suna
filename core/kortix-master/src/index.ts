@@ -882,10 +882,11 @@ export default {
       }, WS_CONNECT_TIMEOUT_MS)
 
       try {
+        const WebSocketCtor = WebSocket as any
         const upstream = upstreamHeaders
           ? (ws.data.subprotocol
-              ? new WebSocket(upstreamUrl, ws.data.subprotocol, { headers: upstreamHeaders } as any)
-              : new WebSocket(upstreamUrl, { headers: upstreamHeaders } as any))
+              ? new WebSocketCtor(upstreamUrl, ws.data.subprotocol, { headers: upstreamHeaders })
+              : new WebSocketCtor(upstreamUrl, { headers: upstreamHeaders }))
           : (ws.data.subprotocol
               ? new WebSocket(upstreamUrl, ws.data.subprotocol)
               : new WebSocket(upstreamUrl))

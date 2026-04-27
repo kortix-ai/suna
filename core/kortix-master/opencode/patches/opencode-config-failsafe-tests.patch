@@ -1,6 +1,91 @@
---- /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-grep-dnlpi43f/anomalyco-opencode-bfb736e/packages/opencode/test/config/config.test.ts	2026-03-13 00:34:11
-+++ /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-clean-3hti6bsd/anomalyco-opencode-bfb736e/packages/opencode/test/config/config.test.ts	2026-04-15 21:03:43
-@@ -328,7 +328,7 @@
+--- a/packages/opencode/test/config/config.test.ts
++++ b/packages/opencode/test/config/config.test.ts
+@@ -63,6 +63,8 @@
+   Effect.runPromise(Config.Service.use((svc) => svc.directories()).pipe(Effect.scoped, Effect.provide(layer)))
+ const ready = () =>
+   Effect.runPromise(Config.Service.use((svc) => svc.waitForDependencies()).pipe(Effect.scoped, Effect.provide(layer)))
++const status = () =>
++  Effect.runPromise(Config.Service.use((svc) => svc.status()).pipe(Effect.scoped, Effect.provide(layer)))
+ 
+ // Get managed config directory from environment (set in preload.ts)
+ const managedConfigDir = process.env.OPENCODE_TEST_MANAGED_CONFIG_DIR!
+@@ -490,6 +492,75 @@
+         Effect.gen(function* () {
+           const config = yield* svc.get()
+           expect(config.provider?.["opencode"]?.options?.apiKey).toBe("st_test_token")
++        }),
++      ),
++    ).pipe(Effect.scoped, Effect.provide(layer), Effect.provide(Npm.defaultLayer), Effect.runPromise)
++  } finally {
++    if (originalControlToken !== undefined) {
++      process.env["OPENCODE_CONSOLE_TOKEN"] = originalControlToken
++    } else {
++      delete process.env["OPENCODE_CONSOLE_TOKEN"]
++    }
++  }
++})
++
++test("skips invalid remote account config and reports diagnostics", async () => {
++  const originalControlToken = process.env["OPENCODE_CONSOLE_TOKEN"]
++
++  const fakeAccount = Layer.mock(Account.Service)({
++    active: () =>
++      Effect.succeed(
++        Option.some({
++          id: AccountID.make("account-1"),
++          email: "user@example.com",
++          url: "https://control.example.com",
++          active_org_id: OrgID.make("org-1"),
++        }),
++      ),
++    activeOrg: () =>
++      Effect.succeed(
++        Option.some({
++          account: {
++            id: AccountID.make("account-1"),
++            email: "user@example.com",
++            url: "https://control.example.com",
++            active_org_id: OrgID.make("org-1"),
++          },
++          org: {
++            id: OrgID.make("org-1"),
++            name: "Example Org",
++          },
++        }),
++      ),
++    config: () => Effect.succeed(Option.some({ invalid_field: true } as any)),
++    token: () => Effect.succeed(Option.some(AccessToken.make("st_test_token"))),
++  })
++
++  const layer = Config.layer.pipe(
++    Layer.provide(testFlock),
++    Layer.provide(AppFileSystem.defaultLayer),
++    Layer.provide(Env.defaultLayer),
++    Layer.provide(emptyAuth),
++    Layer.provide(fakeAccount),
++    Layer.provideMerge(infra),
++  )
++
++  try {
++    await provideTmpdirInstance(() =>
++      Config.Service.use((svc) =>
++        Effect.gen(function* () {
++          const config = yield* svc.get()
++          const diagnostics = yield* svc.status()
++
++          expect(config.username).toBeDefined()
++          expect(diagnostics.valid).toBe(false)
++          expect(diagnostics.problems).toContainEqual(
++            expect.objectContaining({
++              source: "https://control.example.com/api/config",
++              scope: "remote",
++              kind: "schema",
++            }),
++          )
+         }),
+       ),
+     ).pipe(Effect.scoped, Effect.provide(layer), Effect.provide(Npm.defaultLayer), Effect.runPromise)
+@@ -540,7 +611,7 @@
    })
  })
  
@@ -9,19 +94,19 @@
    await using tmp = await tmpdir({
      init: async (dir) => {
        await writeConfig(dir, {
-@@ -340,13 +340,24 @@
+@@ -552,13 +623,24 @@
    await Instance.provide({
      directory: tmp.path,
      fn: async () => {
 -      // Strict schema should throw an error for invalid fields
--      await expect(Config.get()).rejects.toThrow()
-+      const config = await Config.get()
-+      const status = await Config.status()
+-      await expect(load()).rejects.toThrow()
++      const config = await load()
++      const diagnostics = await status()
 +
 +      expect(config.username).toBeDefined()
-+      expect(status.valid).toBe(false)
-+      expect(status.skippedSources).toContain(path.join(tmp.path, "opencode.json"))
-+      expect(status.problems).toContainEqual(
++      expect(diagnostics.valid).toBe(false)
++      expect(diagnostics.skippedSources).toContain(path.join(tmp.path, "opencode.json"))
++      expect(diagnostics.problems).toContainEqual(
 +        expect.objectContaining({
 +          source: path.join(tmp.path, "opencode.json"),
 +          scope: "local",
@@ -37,27 +122,27 @@
    await using tmp = await tmpdir({
      init: async (dir) => {
        await Filesystem.write(path.join(dir, "opencode.json"), "{ invalid json }")
-@@ -355,11 +366,55 @@
+@@ -567,7 +649,51 @@
    await Instance.provide({
      directory: tmp.path,
      fn: async () => {
--      await expect(Config.get()).rejects.toThrow()
-+      const config = await Config.get()
-+      const status = await Config.status()
+-      await expect(load()).rejects.toThrow()
++      const config = await load()
++      const diagnostics = await status()
 +
 +      expect(config.username).toBeDefined()
-+      expect(status.valid).toBe(false)
-+      expect(status.problems).toContainEqual(
++      expect(diagnostics.valid).toBe(false)
++      expect(diagnostics.problems).toContainEqual(
 +        expect.objectContaining({
 +          source: path.join(tmp.path, "opencode.json"),
 +          scope: "local",
 +          kind: "json",
 +        }),
 +      )
-     },
-   })
- })
- 
++    },
++  })
++})
++
 +test("migrates legacy top-level models config instead of failing", async () => {
 +  await using tmp = await tmpdir({
 +    init: async (dir) => {
@@ -78,36 +163,22 @@
 +  await Instance.provide({
 +    directory: tmp.path,
 +    fn: async () => {
-+      const config = await Config.get()
-+      const status = await Config.status()
++      const config = await load()
++      const diagnostics = await status()
 +
 +      expect(config.provider?.["qwen-local"]?.npm).toBe("@ai-sdk/openai-compatible")
 +      expect(config.provider?.["qwen-local"]?.options?.baseURL).toBe("https://engine.example.com/v1")
 +      expect(config.provider?.["qwen-local"]?.options?.apiKey).toBe("secret-key")
 +      expect(config.provider?.["qwen-local"]?.models?.default?.id).toBe("qwen-35b")
-+      expect(status.valid).toBe(true)
-+      expect(status.problems).toHaveLength(0)
-+    },
-+  })
-+})
-+
- test("handles agent configuration", async () => {
-   await using tmp = await tmpdir({
-     init: async (dir) => {
-@@ -2031,6 +2086,41 @@
-         fn: async () => {
-           const config = await Config.get()
-           expect(config.username).toBe("secret_key_from_file")
-+        },
-+      })
-+    } finally {
-+      if (originalEnv !== undefined) {
-+        process.env["OPENCODE_CONFIG_CONTENT"] = originalEnv
-+      } else {
-+        delete process.env["OPENCODE_CONFIG_CONTENT"]
-+      }
-+    }
-+  })
++      expect(diagnostics.valid).toBe(true)
++      expect(diagnostics.problems).toHaveLength(0)
+     },
+   })
+ })
+@@ -2369,6 +2495,41 @@
+       }
+     }
+   })
 +
 +  test("skips invalid OPENCODE_CONFIG_CONTENT and reports env diagnostics", async () => {
 +    const originalEnv = process.env["OPENCODE_CONFIG_CONTENT"]
@@ -121,91 +192,41 @@
 +      await Instance.provide({
 +        directory: tmp.path,
 +        fn: async () => {
-+          const config = await Config.get()
-+          const status = await Config.status()
++          const config = await load()
++          const diagnostics = await status()
 +
 +          expect(config.username).toBeDefined()
-+          expect(status.valid).toBe(false)
-+          expect(status.problems).toContainEqual(
++          expect(diagnostics.valid).toBe(false)
++          expect(diagnostics.problems).toContainEqual(
 +            expect.objectContaining({
 +              source: "OPENCODE_CONFIG_CONTENT",
 +              scope: "env",
 +              kind: "schema",
 +            }),
 +          )
-         },
-       })
-     } finally {
-@@ -2042,3 +2132,53 @@
-     }
-   })
- })
-+
-+test("skips invalid remote account config and reports diagnostics", async () => {
-+  const originalActive = Account.active
-+  const originalConfig = Account.config
-+  const originalToken = Account.token
-+  const originalControlToken = process.env["OPENCODE_CONSOLE_TOKEN"]
-+
-+  Account.active = mock(() => ({
-+    id: AccountID.make("account-1"),
-+    email: "user@example.com",
-+    url: "https://control.example.com",
-+    active_org_id: OrgID.make("org-1"),
-+  }))
-+
-+  Account.config = mock(async () => ({
-+    invalid_field: true,
-+  }))
-+
-+  Account.token = mock(async () => AccessToken.make("st_test_token"))
-+
-+  try {
-+    await using tmp = await tmpdir()
-+    await Instance.provide({
-+      directory: tmp.path,
-+      fn: async () => {
-+        const config = await Config.get()
-+        const status = await Config.status()
-+
-+        expect(config.username).toBeDefined()
-+        expect(status.valid).toBe(false)
-+        expect(status.problems).toContainEqual(
-+          expect.objectContaining({
-+            source: "https://control.example.com/api/config",
-+            scope: "remote",
-+            kind: "schema",
-+          }),
-+        )
-+      },
-+    })
-+  } finally {
-+    Account.active = originalActive
-+    Account.config = originalConfig
-+    Account.token = originalToken
-+    if (originalControlToken !== undefined) {
-+      process.env["OPENCODE_CONSOLE_TOKEN"] = originalControlToken
-+    } else {
-+      delete process.env["OPENCODE_CONSOLE_TOKEN"]
++        },
++      })
++    } finally {
++      if (originalEnv !== undefined) {
++        process.env["OPENCODE_CONFIG_CONTENT"] = originalEnv
++      } else {
++        delete process.env["OPENCODE_CONFIG_CONTENT"]
++      }
 +    }
-+  }
-+})
-
---- /dev/null	2026-04-15 21:04:39
-+++ /var/folders/4b/k94fgt8575n7lh1hsrywfm5w0000gn/T/opencode-src-clean-3hti6bsd/anomalyco-opencode-bfb736e/packages/opencode/test/server/config-routes.test.ts	2026-04-15 21:03:54
-@@ -0,0 +1,40 @@
-+import { describe, expect, test } from "bun:test"
-+import path from "path"
-+
-+import { Server } from "../../src/server/server"
-+import { tmpdir } from "../fixture/fixture"
-+import { Filesystem } from "../../src/util/filesystem"
-+
-+describe("config status route", () => {
-+  test("returns config diagnostics without failing the instance", async () => {
++  })
+ })
+ 
+ // parseManagedPlist unit tests — pure function, no OS interaction
+--- a/packages/opencode/test/server/httpapi-config.test.ts
++++ b/packages/opencode/test/server/httpapi-config.test.ts
+@@ -44,6 +44,37 @@
+ })
+ 
+ describe("config HttpApi", () => {
++  test("serves config status through Hono bridge", async () => {
 +    await using tmp = await tmpdir({
 +      init: async (dir) => {
-+        await Filesystem.write(
++        await Bun.write(
 +          path.join(dir, "opencode.json"),
 +          JSON.stringify({
 +            $schema: "https://opencode.ai/config.json",
@@ -215,16 +236,15 @@
 +      },
 +    })
 +
-+    const app = Server.createApp({})
-+    const response = await app.request(`/config/status?directory=${encodeURIComponent(tmp.path)}`)
-+    expect(response.status).toBe(200)
++    const response = await app().request("/config/status", {
++      headers: {
++        "x-opencode-directory": tmp.path,
++      },
++    })
 +
++    expect(response.status).toBe(200)
 +    const payload = await response.json()
-+    expect(payload).toEqual(
-+      expect.objectContaining({
-+        valid: false,
-+      }),
-+    )
++    expect(payload).toMatchObject({ valid: false })
 +    expect(payload.problems).toContainEqual(
 +      expect.objectContaining({
 +        source: path.join(tmp.path, "opencode.json"),
@@ -233,4 +253,7 @@
 +      }),
 +    )
 +  })
-+})
++
+   test("serves config update through Hono bridge", async () => {
+     await using tmp = await tmpdir({ config: { formatter: false, lsp: false } })
+     const disposed = waitDisposed(tmp.path)

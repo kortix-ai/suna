@@ -228,7 +228,7 @@ export async function executePromptAction(
 
   await client.session.promptAsync({
     path: { id: sessionId },
-    // Pass directory in query — opencode resolves per-project agents
+    // Pass directory so opencode resolves per-project agents
     // (in <dir>/.opencode/agent/<slug>.md) against this. Without it,
     // promptAsync returns 2xx but no LLM loop runs because the agent
     // slug isn't visible in the workspace-root agent cache.

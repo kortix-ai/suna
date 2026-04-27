@@ -42,7 +42,7 @@
     "@novu/nextjs": "^3.11.0",
     "@novu/notification-center": "^2.0.0",
     "@number-flow/react": "^0.5.7",
-    "@opencode-ai/sdk": "^1.2.17",
+    "@opencode-ai/sdk": "^1.14.28",
     "@pipedream/sdk": "^2.3.7",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.11",

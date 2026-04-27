@@ -6074,8 +6074,7 @@ export function SessionChat({
             type="button"
             onClick={() => {
               try {
-                const sid = session?.id || sessionId;
-                if (sid) useTabStore.getState().closeTab?.(sid);
+                if (sessionId) useTabStore.getState().closeTab?.(sessionId);
               } catch {}
               if (typeof window !== 'undefined') window.location.assign('/');
             }}

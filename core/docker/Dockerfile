@@ -60,7 +60,7 @@ ARG SANDBOX_VERSION=0.0.0-dev
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Global binary versions — pinned here, bumped manually
-ARG OPENCODE_VERSION=1.2.25
+ARG OPENCODE_VERSION=1.14.28
 ARG AGENT_BROWSER_VERSION=0.19.0
 ARG OCX_VERSION=2.0.0
 
@@ -92,6 +92,12 @@ COPY LICENSE /LICENSE
 # easy to audit when skills add new runtime assumptions.
 
 # ── OS packages ──────────────────────────────────────────────────────────────
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i \
+        -e 's|http://ports.ubuntu.com/ubuntu-ports|https://ports.ubuntu.com/ubuntu-ports|g' \
+        -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+        -e 's|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' \
+        {} +
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash-completion \

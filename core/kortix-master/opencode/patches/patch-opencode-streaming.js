@@ -11,7 +11,8 @@
  *   tool-input-delta: accumulates value.delta into part.state.raw, pushes update
  *   tool-input-end:   no-op (tool-call sets input from parsed args anyway)
  *
- * Supports two binary layouts:
+ * This is a fallback for binaries built without the source-level streaming
+ * patch in opencode-config-failsafe-core.patch. Supports two binary layouts:
  *   old-style (<=1.2.x): uses `break`, `await Session.updatePart`, `toolcalls[v.id]=part`
  *   new-style (>=1.3.x): uses `return`, `yield* session.updatePart`, `ctx.toolcalls[v.id]=...`
  *
@@ -202,7 +203,7 @@ for (const binaryPath of binaryPaths) {
   }
 
   if (total === 0) {
-    console.error("[patch-streaming] No matching patterns found — opencode version may need a new pattern");
+    console.log("[patch-streaming] No binary fallback patterns found — source patch may already cover this version");
     continue;
   }
 

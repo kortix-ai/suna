@@ -288,6 +288,7 @@ export interface MinimalOpenCodeClient {
     create: (parameters?: { body?: { directory?: string; title?: string } }) => Promise<{ data?: { id: string } } | { id: string }>
     promptAsync: (parameters: {
       path?: { id: string }
+      query?: { directory?: string }
       body?: {
         agent?: string
         model?: { providerID: string; modelID: string }

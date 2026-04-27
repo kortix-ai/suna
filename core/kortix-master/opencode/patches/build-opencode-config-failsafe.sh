@@ -44,8 +44,8 @@ if [ -z "$SRC_DIR" ] || [ ! -d "$SRC_DIR/packages/opencode" ]; then
 fi
 
 echo "[opencode-failsafe] Applying fail-soft patches..."
-patch --batch -d "$SRC_DIR" -p8 < "$CORE_PATCH"
-patch --batch -d "$SRC_DIR" -p8 < "$TEST_PATCH"
+patch --batch -d "$SRC_DIR" -p1 < "$CORE_PATCH"
+patch --batch -d "$SRC_DIR" -p1 < "$TEST_PATCH"
 
 echo "[opencode-failsafe] Installing dependencies..."
 bun install --cwd "$SRC_DIR"

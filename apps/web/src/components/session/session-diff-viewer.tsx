@@ -302,13 +302,14 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
   }, [diff.status]);
 
   const patch = useMemo(() => {
+    if (diff.patch) return diff.patch;
     if (!diff.before && !diff.after) return '';
     return createTwoFilesPatch(
       diff.file, diff.file,
       diff.before || '', diff.after || '',
       '', '',
     );
-  }, [diff.file, diff.before, diff.after]);
+  }, [diff.file, diff.patch, diff.before, diff.after]);
 
   const hasDiffContent = patch.length > 0;
   const filename = diff.file.split('/').pop() || diff.file;

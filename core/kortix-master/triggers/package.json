@@ -31,7 +31,7 @@
     "docker:typecheck": "docker compose -f docker-compose.test.yml run --rm typecheck"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "^1.2.21",
+    "@opencode-ai/plugin": "^1.14.28",
     "croner": "^8.1.2",
     "js-yaml": "^4.1.0"
   },

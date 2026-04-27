@@ -1,7 +1,6 @@
 "use client";
 
 import type {
-	FileDiff,
 	Message,
 	Event as OpenCodeEvent,
 	Part,
@@ -11,6 +10,7 @@ import type {
 	Todo,
 } from "@opencode-ai/sdk/v2/client";
 import { create } from "zustand";
+import type { FileDiff } from "@/ui/types";
 
 // ============================================================================
 // Binary search — ported from @opencode-ai/util/binary (20 lines)

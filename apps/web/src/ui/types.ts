@@ -46,8 +46,14 @@ export type {
   Model,
   Provider,
   Todo,
-  FileDiff,
+  SnapshotFileDiff,
 } from '@opencode-ai/sdk/v2/client';
+
+export type FileDiff = Omit<import('@opencode-ai/sdk/v2/client').SnapshotFileDiff, 'patch'> & {
+  patch?: string;
+  before?: string;
+  after?: string;
+};
 
 // ---------------------------------------------------------------------------
 // View-model types
