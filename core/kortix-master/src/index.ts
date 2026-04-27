@@ -149,7 +149,17 @@ if (process.env.KORTIX_DISABLE_CORE_SUPERVISOR !== 'true') {
 }
 
 // Cron scheduling + webhook routing handled by unified triggers plugin.
-// TriggerManager starts cron jobs from .kortix/triggers.yaml + DB on boot.
+// TriggerManager starts cron jobs from .kortix/triggers.yaml + DB on boot —
+// but the plugin is project-scoped and opencode only loads it after the
+// first request bootstraps a project directory. On a container respawn
+// with no immediate user activity, hourly fires get silently skipped
+// until something pokes opencode (saw this 2026-04-27: respawn at 18:10,
+// plugin registered at 19:31 → 18:00 and 19:00 fires dropped).
+// Force a bootstrap for every known project so triggers register at boot.
+import { warmTriggerPluginForAllProjects } from './services/trigger-warmer'
+void warmTriggerPluginForAllProjects().catch((err) =>
+  console.warn('[Kortix Master] trigger warmup failed:', err),
+)
 
 // Global middleware
 app.use('*', logger())
