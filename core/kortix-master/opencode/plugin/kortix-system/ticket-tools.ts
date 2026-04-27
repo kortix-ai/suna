@@ -154,14 +154,17 @@ export function findAgentForSession(db: Database, sessionId: string): ProjectAge
   return null
 }
 
-export function agentHasGroup(agent: ProjectAgentRow | null, group: ToolGroup): boolean {
-  if (!agent) return true // non-agent sessions (user/interactive) can use everything
-  try {
-    const groups = JSON.parse(agent.tool_groups_json || '[]') as string[]
-    return groups.includes(group)
-  } catch {
-    return false
-  }
+export function agentHasGroup(_agent: ProjectAgentRow | null, _group: ToolGroup): boolean {
+  // "One access for all" — every agent can use every tool group. Was
+  // gating credential_set / credential_delete + milestone_create + the
+  // rest of project_manage to PM only; that produced
+  //   Tool "credential_set" requires tool_group "project_manage".
+  //   Agent @engineer has: ["project_action"]
+  // every time a worker agent discovered it needed to write a value
+  // mid-task. Project-level access is enforced by apps/api's
+  // preview-proxy now (decideAccess), not by tool groups inside the
+  // sandbox.
+  return true
 }
 
 function getProjectIdForCtx(mgr: ProjectManager, ctx: ToolContext): string | null {
