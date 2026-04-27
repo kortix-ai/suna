@@ -149,7 +149,7 @@ export function SidebarRight() {
         }
         break;
     }
-  }, [router, openSandboxServiceTab, handleNewTerminal]);
+  }, [router, openSandboxServiceTab, handleNewTerminal, setSSHDialogOpen]);
 
   // Get registry items for the right sidebar
   const quickActionClusters = getNavItemsClustered('rightSidebar', 'quickActions');
@@ -245,6 +245,10 @@ export function SidebarRight() {
                                 key={item.id}
                                 onClick={() => handleItemAction(item)}
                                 variant="sidebar"
+                                className={cn(
+                                  'rounded-lg',
+                                  active && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+                                )}
                               >
                                 <Icon className="h-4 w-4 flex-shrink-0" />
                                 <span>{item.label}</span>
@@ -354,15 +358,21 @@ export function SidebarRight() {
                       const isTerminal = item.actionId === 'newTerminal';
                       const isDisabled = isTerminal && createPty.isPending;
                       return (
-                        <Button
-                          key={item.id}
-                          onClick={() => handleItemAction(item)}
-                          disabled={isDisabled}
-                          variant="sidebar"
-                          className="rounded-lg"
-                        >
-                          <Icon className="h-4 w-4 text-sidebar-foreground" />
-                        </Button>
+                        <Tooltip key={item.id}>
+                          <TooltipTrigger asChild>
+                            <Button
+                              onClick={() => handleItemAction(item)}
+                              disabled={isDisabled}
+                              variant="sidebar"
+                              className="h-8 w-full justify-center rounded-lg px-0 py-2"
+                            >
+                              <Icon className="h-4 w-4 text-sidebar-foreground" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="left" sideOffset={12} className="text-xs">
+                            {item.label}
+                          </TooltipContent>
+                        </Tooltip>
                       );
                     })}
                   </div>
@@ -384,7 +394,10 @@ export function SidebarRight() {
                             <Button
                               onClick={() => handleItemAction(item)}
                               variant="sidebar"
-                              className="rounded-lg"
+                              className={cn(
+                                'h-8 w-full justify-center rounded-lg px-0 py-2',
+                                active && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+                              )}
                             >
                               <Icon className="h-4 w-4 text-sidebar-foreground" />
                             </Button>
@@ -466,7 +479,10 @@ export function SidebarRight() {
                               key={item.id}
                               onClick={() => handleItemAction(item)}
                               variant="sidebar"
-                              className="rounded-lg"
+                              className={cn(
+                                'rounded-lg',
+                                active && 'bg-sidebar-accent text-sidebar-accent-foreground font-medium',
+                              )}
                             >
                               <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
                               <span>{item.label}</span>
