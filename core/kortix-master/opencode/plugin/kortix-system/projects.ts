@@ -514,7 +514,10 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 				if (!toolCtx?.sessionID) return "Error: no session context."
 				const p = mgr.getProject(args.project)
 				if (!p) return `Project "${args.project}" not found. Use project_list or project_create.`
-				const sv = (p as unknown as { structure_version?: number }).structure_version ?? 1
+				// Default 2 when col missing (stale image / schema). Only the
+				// virtual `proj-workspace` row is legitimate v1.
+				const sv = (p as unknown as { structure_version?: number }).structure_version
+					?? (p.id === 'proj-workspace' ? 1 : 2)
 				if (sv === 2) {
 					// v2 enforcement: only team members of this project may bind the
 					// session. Everyone else (general, orchestrator, etc.) gets refused.
@@ -581,7 +584,9 @@ export function projectStatusTransform(mgr: ProjectManager, getCurrentSessionId:
 			try {
 				const project = mgr.getSessionProject(sid)
 				if (project) {
-					const sv = (project as unknown as { structure_version?: number }).structure_version ?? 1
+					// Default 2 when col missing — same reasoning as project_select.
+					const sv = (project as unknown as { structure_version?: number }).structure_version
+						?? (project.id === 'proj-workspace' ? 1 : 2)
 					// What agent is the current session running as? Pull from the latest msg.
 					let currentAgent: string | null = null
 					for (let i = output.messages.length - 1; i >= 0; i--) {

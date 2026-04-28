@@ -302,6 +302,37 @@ if [ ! -e /ephemeral/kortix-master ]; then
   echo "[startup] WARNING: /ephemeral/kortix-master not found! Rebuild the Docker image."
 fi
 
+# ── Self-heal kortix.db schema ──────────────────────────────────────────────
+# Older images shipped a `projects` table without `structure_version` /
+# `user_handle`. Without the column, every project an old master inserts is
+# implicitly v1 (no default) and every read defaults to v1, so newly created
+# projects act like the legacy task layout. Add the columns here BEFORE s6
+# starts kortix-master, so the master always sees a v2-capable schema even
+# if its own bundled code is stale. NOT NULL DEFAULT 2 means every insert
+# the master does — even one that doesn't list the column — gets v2.
+KORTIX_DB="/workspace/.kortix/kortix.db"
+if [ -f "$KORTIX_DB" ] && command -v python3 >/dev/null 2>&1; then
+  python3 - "$KORTIX_DB" <<'PYEOF' || echo "[startup] kortix.db migration skipped (best-effort)"
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+def add(sql):
+    try: db.execute(sql); db.commit()
+    except sqlite3.OperationalError: pass  # column already exists
+add("ALTER TABLE projects ADD COLUMN structure_version INTEGER NOT NULL DEFAULT 2")
+add("ALTER TABLE projects ADD COLUMN user_handle TEXT")
+try:
+    upgraded = db.execute(
+        "UPDATE projects SET structure_version=2 WHERE structure_version<2 AND id<>'proj-workspace'"
+    ).rowcount
+    db.commit()
+    if upgraded:
+        print(f"[startup] kortix.db: upgraded {upgraded} legacy v1 project(s) to v2")
+except sqlite3.OperationalError:
+    pass
+db.close()
+PYEOF
+fi
+
 # ── Install Kortix CLI wrappers ─────────────────────────────────────────────
 # Runtime-facing commands (ktelegram/kslack/kchannel/kconnectors/kpipedream)
 # should always resolve from immutable /ephemeral code, never /workspace.
