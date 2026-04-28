@@ -445,9 +445,26 @@ export function parseSlackEvent(payload: any, configId: string, botUserId: strin
     // ── Regular message (DM or channel) ──
     const userId = event.user ?? ""
     const channel = event.channel ?? ""
-    const text = event.text ?? ""
+    const rawText = event.text ?? ""
     const isDm = event.channel_type === "im"
     const threadTs = event.thread_ts || event.event_ts || event.ts
+
+    // Channel-message subscriptions (`message.channels` / `message.groups`)
+    // fire on EVERY message, not just bot mentions — this is how Slack
+    // delivers thread replies that @-mention the bot, since `app_mention`
+    // only fires for top-level mentions. Without an @-mention filter here
+    // the bot would respond to every message in the channel. So: in
+    // non-DM channels, dispatch ONLY if the bot's user ID is @-mentioned
+    // in the text. DMs always dispatch (the user IS talking to the bot).
+    if (!isDm) {
+      if (!botUserId) return { is_challenge: false }
+      if (!rawText.includes(`<@${botUserId}>`)) return { is_challenge: false }
+    }
+
+    // Strip the @-mention so the agent gets the clean message body.
+    const text = botUserId
+      ? rawText.replace(new RegExp(`<@${botUserId}>\\s*`, "g"), "").trim()
+      : rawText
 
     const sessionKey = isDm
       ? `slack:${configId}:dm:${userId}`
