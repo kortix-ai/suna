@@ -242,17 +242,6 @@ export interface CommitmentInfo {
   commitment_end_date: string | null;
 }
 
-/** @deprecated Legacy model gating — models are now configured in-sandbox via LLM Providers. */
-export interface ModelInfo {
-  id: string;
-  name: string;
-  provider: string;
-  allowed: boolean;
-  context_window: number;
-  capabilities: string[];
-  priority: number;
-}
-
 // ─── API Request/Response Types (Billing) ───────────────────────────────────
 
 export interface CreateCheckoutRequest {
