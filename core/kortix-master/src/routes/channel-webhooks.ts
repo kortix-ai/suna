@@ -404,15 +404,17 @@ channelWebhooksRouter.post('/hooks/telegram/:channelId', async (c) => {
     return c.json({ ok: false, error: 'channel_disabled' }, 403)
   }
 
-  // Dispatch to OpenCode
-  try {
-    const result = await dispatchToOpenCode(channel, event)
-    console.log(`[Channel Webhook] Telegram ${event.event_type} from @${event.username} → session ${result.sessionId}`)
-    return c.json({ ok: true, sessionId: result.sessionId }, 202)
-  } catch (err) {
-    console.error(`[Channel Webhook] Telegram dispatch error:`, err)
-    return c.json({ ok: false, error: 'dispatch_failed' }, 500)
-  }
+  // Dispatch to OpenCode — fire-and-forget. Telegram doesn't retry as
+  // aggressively as Slack but a long-running dispatch still hogs the
+  // webhook queue. Match the Slack handler's async pattern.
+  dispatchToOpenCode(channel, event)
+    .then((result) => {
+      console.log(`[Channel Webhook] Telegram ${event.event_type} from @${event.username} → session ${result.sessionId}`)
+    })
+    .catch((err) => {
+      console.error('[Channel Webhook] Telegram dispatch error:', err)
+    })
+  return c.json({ ok: true, queued: true }, 202)
 })
 
 // ── Slack webhook handler ───────────────────────────────────────────────────
@@ -420,6 +422,18 @@ channelWebhooksRouter.post('/hooks/telegram/:channelId', async (c) => {
 channelWebhooksRouter.post('/hooks/slack/:channelId', async (c) => {
   const channelId = c.req.param('channelId')
   const webhookPath = `/hooks/slack/${channelId}`
+
+  // Slack retries any webhook that doesn't get a 2xx response within ~3s.
+  // dispatchToOpenCode does session.create + prompt_async (15–30s) — by the
+  // time it returns, Slack has already timed us out and resent the same
+  // event, which then dispatches again and the user sees TWO replies.
+  // Drop retries: Slack stamps `X-Slack-Retry-Num` (≥1) on resends. If we
+  // already accepted the first delivery, the original dispatch is in flight
+  // — silently ack the retry so Slack stops, but don't re-dispatch.
+  const retryNum = c.req.header('x-slack-retry-num')
+  if (retryNum) {
+    return c.json({ ok: true, deduped: true, retry_num: retryNum })
+  }
 
   // Look up channel
   let channel = getChannelByPath(webhookPath)
@@ -473,15 +487,17 @@ channelWebhooksRouter.post('/hooks/slack/:channelId', async (c) => {
     }
   }
 
-  // Dispatch to OpenCode
-  try {
-    const dispatch = await dispatchToOpenCode(channel, dispatchEvent)
-    console.log(`[Channel Webhook] Slack ${dispatchEvent.event_type} from ${dispatchEvent.username} → session ${dispatch.sessionId}`)
-    return c.json({ ok: true, sessionId: dispatch.sessionId }, 202)
-  } catch (err) {
-    console.error(`[Channel Webhook] Slack dispatch error:`, err)
-    return c.json({ ok: false, error: 'dispatch_failed' }, 500)
-  }
+  // Dispatch to OpenCode — fire-and-forget so the webhook returns ≪3s and
+  // Slack doesn't retry. Errors are logged; the user will see a follow-up
+  // via kslack only when the agent actually runs.
+  dispatchToOpenCode(channel, dispatchEvent)
+    .then((dispatch) => {
+      console.log(`[Channel Webhook] Slack ${dispatchEvent.event_type} from ${dispatchEvent.username} → session ${dispatch.sessionId}`)
+    })
+    .catch((err) => {
+      console.error('[Channel Webhook] Slack dispatch error:', err)
+    })
+  return c.json({ ok: true, queued: true }, 202)
 })
 
 export default channelWebhooksRouter
