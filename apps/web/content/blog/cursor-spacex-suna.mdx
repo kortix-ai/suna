@@ -1,0 +1,92 @@
+---
+title: "Cursor just became a SpaceX project. Here's what Suna is instead."
+description: "SpaceX bought an option on Cursor for $60B. Manus lost its Meta backing. The autonomous agent space is wide open. Here's where Suna fits."
+date: 2026-04-28
+slug: cursor-spacex-suna
+---
+
+Last week SpaceX announced it has the option to acquire Cursor for $60 billion. The same week, China blocked Meta's $2 billion acquisition of Manus.
+
+Two of the biggest bets in the autonomous agent space just changed shape. Worth saying plainly where Suna stands.
+
+---
+
+## What Cursor actually is
+
+Cursor is an IDE. A very good one. It's built for software engineers who spend their days in a code editor, and it makes them significantly faster at writing and reviewing code. The new Agents Window in Cursor 3 lets you run multiple coding agents in parallel across repos. Impressive engineering.
+
+The SpaceX deal signals Cursor wants to become something bigger — "the world's best coding and knowledge work AI," as the announcement put it. That's scope creep away from the IDE. It's a bet that the IDE-native workflow eventually absorbs all knowledge work.
+
+That bet might be right. But it's a long way from there to here, and the path runs through Cursor being useful primarily for developers, inside a code editor, today.
+
+Suna is built on a different assumption.
+
+---
+
+## What Suna actually is
+
+Suna is a cloud computer where AI agents do the actual work of running a company.
+
+Not a coding assistant. Not an IDE plugin. A full Linux sandbox running 24/7 — persistent filesystem, real browser, terminal, crons, webhook triggers — where agents handle whatever work needs doing: research, ops, data processing, outreach, document generation, web automation, infrastructure. Anything a human can do at a terminal.
+
+The framing in the README is: *"A Kortix is a company. One shared machine where every agent sees the same filesystem, the same databases, the same credentials, the same history."*
+
+That's not a coding product. It's an operating system for autonomous work.
+
+---
+
+## Three things Cursor doesn't have
+
+**1. Team primitives**
+
+Suna ships project-scoped channels, per-user sandboxes, and team access controls. Released in [v0.8.27](https://github.com/kortix-ai/suna/releases/tag/v0.8.27): a full orchestrator/worker architecture with project-scoped task management, Slack and Telegram integration per channel, per-channel agent/model/instructions settings.
+
+This is infrastructure for organizations running multiple agents across multiple workflows. Cursor's multi-agent mode is parallel coding sessions inside one developer's IDE — not a shared workspace across a team.
+
+**2. General-purpose execution**
+
+Cursor's agents write code. That's the product. They're good at it.
+
+Suna's agents can write code, but also: browse the web autonomously, fill out forms, scrape structured data, generate reports from documents, run scheduled jobs, respond to Slack messages, call APIs, process files, manage infrastructure. The sandbox has a real Chromium browser, full terminal access, and 60+ built-in skills covering 3,000+ integrations.
+
+The test: can your "coding agent" handle your outbound research list, your weekly expense report, and your customer onboarding checklist? Suna can. Cursor is not trying to.
+
+**3. You own the infrastructure**
+
+Suna is open source. The entire stack: [github.com/kortix-ai/suna](https://github.com/kortix-ai/suna). One-line install:
+
+```bash
+curl -fsSL https://kortix.com/install | bash
+```
+
+Run it on your laptop, a VPS, or your own server. Your data stays on your machine. Your agents run in your network.
+
+Cursor's "self-hosted cloud agents" (announced April 2026) keep code inside your network but Cursor still handles orchestration, model access, and the user experience — meaning Cursor is still in the loop. With Suna, there is no Cursor in the loop. You control the runtime.
+
+---
+
+## What the Manus situation means
+
+Manus was the most credible general-agent competitor — strong demo, working product, and (briefly) Meta's distribution and resources behind it. China blocking that acquisition removes the structural advantage.
+
+Manus is still a functioning product. But the moat was Meta. Without it, they're a well-funded startup building toward the same target as Suna, without the platform edge they were counting on.
+
+---
+
+## The honest picture
+
+Cursor is better than Suna at writing code inside an IDE. If your primary use case is developer productivity inside a code editor, Cursor is the right tool. The SpaceX deal makes it better-resourced and more ambitious.
+
+Suna is better when:
+
+- The work isn't purely coding
+- You need agents that run 24/7, not just when you open your IDE
+- Multiple people on your team need to use agents, not just developers
+- You want to own the infrastructure — the data, the runtime, the keys
+- You're building toward replacing workflows, not just accelerating them
+
+The market is large enough for both. But they're not the same product, and the SpaceX deal doesn't change that.
+
+---
+
+**Suna is open source.** If you want to run it: [github.com/kortix-ai/suna](https://github.com/kortix-ai/suna) or [kortix.com](https://kortix.com) for the managed version.
