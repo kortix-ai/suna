@@ -23,7 +23,7 @@ import { config } from '../config'
 interface ProjectRow {
   id: string; name: string; path: string; description: string
   created_at: string; opencode_id: string | null
-  structure_version?: number
+  structure_version: number
 }
 
 // ── DB singleton ─────────────────────────────────────────────────────────────
@@ -98,7 +98,7 @@ const projectsRouter = new Hono()
 projectsRouter.post('/', async (c) => {
   try {
     const db = getDb()
-    const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string; structure_version?: number; user_handle?: string }>().catch(() => ({} as { id?: string; name?: string; path?: string; description?: string; structure_version?: number; user_handle?: string }))
+    const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string; user_handle?: string }>().catch(() => ({} as { id?: string; name?: string; path?: string; description?: string; user_handle?: string }))
     const rawPath = body.path?.trim() || ''
     // Refuse workspace-root paths. v2 seed writes PM agent files under
     // <path>/.opencode/agent/ — if path is the workspace root, those files
@@ -126,9 +126,10 @@ projectsRouter.post('/', async (c) => {
     const description = body.description ?? ''
     const userHandle = body.user_handle?.trim() || null
     const createdAt = new Date().toISOString()
-    // New projects default to v2. Pass structure_version=1 explicitly to opt
-    // into the legacy tasks-only layout.
-    const structureVersion = body.structure_version === 1 ? 1 : 2
+    // All new projects are v2. There is no scenario for creating v1 — the
+    // legacy tasks-only layout is reserved for the virtual `proj-workspace`
+    // catch-all (created elsewhere). Anything a user creates is v2.
+    const structureVersion = 2
 
     db.prepare(`INSERT INTO projects (id, name, path, description, created_at, opencode_id, maintainer_session_id, structure_version, user_handle)
       VALUES ($id, $name, $path, $description, $createdAt, NULL, NULL, $sv, $uh)`)
@@ -143,7 +144,7 @@ projectsRouter.post('/', async (c) => {
       })
 
     const created = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow
-    if (structureVersion === 2) {
+    {
       try {
         await seedV2Project(db, {
           id: created.id,

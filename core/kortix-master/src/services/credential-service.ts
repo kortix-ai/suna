@@ -24,8 +24,8 @@
 
 import { Database } from 'bun:sqlite'
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
+import { existsSync, mkdirSync, openSync, writeSync, closeSync, readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { ActorType } from './ticket-service'
 
@@ -39,13 +39,66 @@ function credentialKeyPath(): string {
 
 let _cachedKey: Buffer | null = null
 
-/** Load (or generate on first use) the 32-byte AES key. Kept in-process
- *  so per-call encrypt/decrypt don't re-read the file. */
+/**
+ * Resolve the workspace DB path for the orphan-row safety check below.
+ * Mirrors the logic getCredsDb() / channel-db etc. use elsewhere.
+ */
+function workspaceDbPathForKeyCheck(): string {
+  const ws = process.env.KORTIX_WORKSPACE?.trim() || '/workspace'
+  return join(ws, '.kortix', 'kortix.db')
+}
+
+/**
+ * Has the workspace ever stored a credential? If yes and our key file is
+ * missing, regenerating the key would orphan those rows forever (decrypt
+ * fails with "Unsupported state or unable to authenticate data" because
+ * the random new key won't match the rows' auth tags). Bias toward
+ * preserving user data over starting fresh: throw with an actionable
+ * message instead of silently making the rows undecryptable.
+ *
+ * Saw this in prod 2026-04-28: 25 credentials on suna-on-call-agent
+ * went unrecoverable because the key file got rewritten between
+ * encrypt-time and the next decrypt. Tech-lead's `credential_get`
+ * returned errors, the agent silently confabulated success.
+ */
+function hasExistingCredentialRows(): boolean {
+  const dbPath = workspaceDbPathForKeyCheck()
+  if (!existsSync(dbPath)) return false
+  let probe: Database | null = null
+  try {
+    probe = new Database(dbPath, { readonly: true })
+    const row = probe.prepare(
+      `SELECT EXISTS(
+         SELECT 1 FROM sqlite_master
+         WHERE type='table' AND name='project_credentials'
+       ) as has_table`,
+    ).get() as { has_table: number }
+    if (!row.has_table) return false
+    const cnt = probe.prepare('SELECT COUNT(*) as n FROM project_credentials').get() as { n: number }
+    return cnt.n > 0
+  } catch {
+    return false
+  } finally {
+    try { probe?.close() } catch {}
+  }
+}
+
+/**
+ * Load (or generate on first use) the 32-byte AES key. Kept in-process
+ * so per-call encrypt/decrypt don't re-read the file.
+ *
+ * On generation we use O_CREAT|O_EXCL so two parallel callers can't both
+ * win the create race and end up writing different keys (one wins, the
+ * other re-reads). On absence we refuse to generate if any credential
+ * rows already exist — they were encrypted with a key we no longer have,
+ * and silently rotating to a fresh key would make them garbage.
+ */
 async function getKey(): Promise<Buffer> {
   if (_cachedKey) return _cachedKey
   const p = credentialKeyPath()
   const dir = dirname(p)
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
+
   if (existsSync(p)) {
     const hex = (await readFile(p, 'utf8')).trim()
     _cachedKey = Buffer.from(hex, 'hex')
@@ -54,9 +107,42 @@ async function getKey(): Promise<Buffer> {
     }
     return _cachedKey
   }
-  _cachedKey = randomBytes(32)
-  await writeFile(p, _cachedKey.toString('hex'), { mode: 0o600 })
-  return _cachedKey
+
+  // Key file is missing. If any credential rows exist anywhere in the
+  // workspace, we're about to silently brick them. Refuse loudly.
+  if (hasExistingCredentialRows()) {
+    throw new Error(
+      `Credential key file ${p} is missing but ${'project_credentials'} ` +
+      `rows exist — refusing to generate a new key (would make every ` +
+      `existing credential undecryptable). Restore the key file from a ` +
+      `backup of /persistent/secrets/, or wipe project_credentials and ` +
+      `re-enter every credential. Re-run after either action.`,
+    )
+  }
+
+  // Race-safe create: O_CREAT|O_EXCL. If a parallel caller created the
+  // file between our existsSync() above and this open, the open throws
+  // EEXIST and we re-read what they wrote.
+  const fresh = randomBytes(32)
+  try {
+    const fd = openSync(p, 'wx', 0o600)
+    try {
+      writeSync(fd, fresh.toString('hex'))
+    } finally {
+      closeSync(fd)
+    }
+    _cachedKey = fresh
+    return _cachedKey
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+    // Lost the race — re-read the winner's key.
+    const hex = readFileSync(p, 'utf8').trim()
+    _cachedKey = Buffer.from(hex, 'hex')
+    if (_cachedKey.length !== 32) {
+      throw new Error(`credential key at ${p} is ${_cachedKey.length} bytes; must be 32`)
+    }
+    return _cachedKey
+  }
 }
 
 /** For tests / rotation — drop the cached key so next call re-loads. */

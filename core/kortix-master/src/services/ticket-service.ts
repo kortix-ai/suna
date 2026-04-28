@@ -1202,14 +1202,23 @@ export function deleteTicketAgentSession(db: Database, ticketId: string, agentId
 // ── Project structure version ─────────────────────────────────────────────────
 
 export function getProjectStructureVersion(db: Database, projectId: string): number {
+  // Default 2 when the column doesn't exist or is NULL: stale images that
+  // predate the schema must be treated as v2 so the v2-only routes/gates
+  // engage. The only legitimate v1 row is `proj-workspace`, which is
+  // hard-coded by the workspace bootstrap and reads its sv directly.
   try {
-    const row = db.prepare('SELECT structure_version FROM projects WHERE id=$id').get({ $id: projectId }) as { structure_version: number } | null
-    return row?.structure_version ?? 1
+    const row = db.prepare('SELECT structure_version FROM projects WHERE id=$id').get({ $id: projectId }) as { structure_version: number | null } | null
+    return row?.structure_version ?? 2
   } catch {
-    return 1
+    return 2
   }
 }
 
 export function setProjectStructureVersion(db: Database, projectId: string, version: number): void {
+  // Hard-cap downgrades. Any caller asking for v < 2 on a non-workspace
+  // project is a bug — refuse to write anything other than 2.
+  if (version !== 2 && projectId !== 'proj-workspace') {
+    throw new Error(`setProjectStructureVersion: refusing to set ${projectId} to v${version}; only v2 is allowed for user projects.`)
+  }
   db.prepare('UPDATE projects SET structure_version=$v WHERE id=$id').run({ $v: version, $id: projectId })
 }
