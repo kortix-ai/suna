@@ -7,25 +7,16 @@ function parseEnvBoolean(value: string | undefined, defaultValue: boolean): bool
 }
 
 export const featureFlags = {
-  /**
-   * When true, hide any mobile app download / install advertising across the web app.
-   *
-   * Default: false (shown)
-   * Set NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING=true to hide.
-   */
   disableMobileAdvertising: parseEnvBoolean(
     process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING,
     false,
   ),
-  /** When true, show the dino game easter egg during provisioning. Default: false. */
   enableDinoGame: parseEnvBoolean(
     process.env.NEXT_PUBLIC_ENABLE_DINO_GAME,
     false,
   ),
+  newLayout: parseEnvBoolean(
+    process.env.NEXT_PUBLIC_FRONTEND_NEW_LAYOUT,
+    false,
+  ),
 } as const;
-
-// Debug: uncomment to inspect feature flags during development
-// if (process.env.NODE_ENV !== 'production') {
-//   console.log('[featureFlags]', featureFlags);
-// }
-

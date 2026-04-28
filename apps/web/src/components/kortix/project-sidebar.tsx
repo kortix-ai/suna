@@ -72,10 +72,10 @@ export function ProjectSidebar({
       : '/workspace';
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r bg-card">
-      <div className="border-b px-3 py-3.5">
-        <div className="flex items-center gap-2.5">
-          <ProjectIcon project={project} size="md" />
+    <aside className="m-3 flex w-60 shrink-0 flex-col overflow-hidden rounded-2xl border bg-muted/40">
+      <div className="px-3 pt-4">
+        <div className="flex items-center gap-3">
+          <ProjectIcon project={project} size="lg" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <h2
@@ -94,24 +94,20 @@ export function ProjectSidebar({
                 </Badge>
               )}
             </div>
-            <Badge
-              variant="secondary"
-              size="sm"
-              className="mt-1 max-w-full rounded-md font-mono normal-case tracking-normal"
+            <p
+              className="mt-0.5 truncate font-mono text-xs text-muted-foreground"
               title={cleanPath}
             >
-              <span className="truncate">~{cleanPath}</span>
-            </Badge>
+              ~{cleanPath}
+            </p>
           </div>
         </div>
-      </div>
 
-      {onNewTask && (
-        <div className="border-b px-3 py-2.5">
+        {onNewTask && (
           <Button
             size="sm"
             onClick={onNewTask}
-            className="w-full justify-start"
+            className="mt-4 w-full justify-start"
             title={`${ctaLabel} (${ctaKey})`}
           >
             <Plus />
@@ -120,10 +116,10 @@ export function ProjectSidebar({
               {ctaKey}
             </Kbd>
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 py-2">
+      <nav className="mt-5 flex-1 overflow-y-auto px-2">
         {items.map((item) => {
           const isActive = tab === item.id;
           const badge = tabBadges?.[item.id] ?? 0;
@@ -134,16 +130,16 @@ export function ProjectSidebar({
               type="button"
               onClick={() => onTabChange(item.id)}
               className={cn(
-                'group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm font-medium transition-colors',
+                'group relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm font-medium transition-colors',
                 isActive
                   ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
+                  : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
               )}
             >
               <Icon
                 className={cn(
-                  'size-4 shrink-0',
-                  isActive ? 'text-foreground' : 'text-muted-foreground/70',
+                  'size-4 shrink-0 transition-colors',
+                  isActive ? 'text-foreground' : 'text-muted-foreground/60 group-hover:text-muted-foreground',
                 )}
               />
               <span className="flex-1 truncate">{item.label}</span>
@@ -162,7 +158,7 @@ export function ProjectSidebar({
       </nav>
 
       {footerSlot && (
-        <div className="border-t px-2 py-2">{footerSlot}</div>
+        <div className="px-2 pb-2 pt-2">{footerSlot}</div>
       )}
     </aside>
   );

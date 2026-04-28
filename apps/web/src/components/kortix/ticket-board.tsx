@@ -11,7 +11,7 @@
  * column membership.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Circle,
   CircleDot,
@@ -30,6 +30,8 @@ import {
   Zap,
   ExternalLink,
   Copy,
+  Target,
+  ChevronDown,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -57,6 +59,8 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from '@/components/ui/dropdown-menu';
 import type {
   Ticket,
@@ -224,51 +228,15 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="shrink-0 bg-background border-b border-border/50">
-        <div className="container mx-auto max-w-7xl px-3 sm:px-4 h-11 flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/40 pointer-events-none" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search tickets or #number…"
-              className="h-7 w-[220px] pl-7 pr-7 text-[12px] bg-transparent border border-border/50 rounded-full outline-none focus:ring-2 focus:ring-primary/20 placeholder:text-muted-foreground/35"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch('')}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center text-muted-foreground/40 hover:text-foreground cursor-pointer rounded-full"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-          {milestones.length > 0 && (
-            <select
-              value={milestoneFilter}
-              onChange={(e) => setMilestoneFilter(e.target.value)}
-              className="h-7 text-[12px] bg-transparent border border-border/50 rounded-full outline-none focus:ring-2 focus:ring-primary/20 px-2.5"
-              title="Filter by milestone"
-            >
-              <option value="all">All milestones</option>
-              <option value="none">— no milestone —</option>
-              {milestones.filter((m) => m.status === 'open').map((m) => (
-                <option key={m.id} value={m.id}>M{m.number} · {m.title}</option>
-              ))}
-              {milestones.some((m) => m.status !== 'open') && (
-                <optgroup label="Closed / cancelled">
-                  {milestones.filter((m) => m.status !== 'open').map((m) => (
-                    <option key={m.id} value={m.id}>M{m.number} · {m.title} ({m.status})</option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          )}
-          <span className="text-[11px] text-muted-foreground/40 ml-2 hidden sm:inline">
-            drag cards to move — or use the ⋯ menu
-          </span>
-        </div>
-      </div>
+      <BoardToolbar
+        search={search}
+        onSearchChange={setSearch}
+        milestones={milestones}
+        milestoneFilter={milestoneFilter}
+        onMilestoneFilterChange={setMilestoneFilter}
+        count={filtered.length}
+        total={tickets.length}
+      />
 
       <DndContext
         sensors={sensors}
@@ -292,9 +260,10 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
                   {rows.length === 0 ? (
                     <button
                       onClick={() => onNewTicket(col.key)}
-                      className="w-full py-6 rounded-xl border border-dashed border-border/40 text-[12px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
+                      className="flex w-full items-center justify-center gap-1.5 rounded-xl py-5 text-xs text-muted-foreground/40 transition-colors hover:bg-muted/30 hover:text-foreground"
                     >
-                      + Add ticket
+                      <Plus className="size-3" />
+                      Add ticket
                     </button>
                   ) : (
                     rows.map((t) => (
@@ -342,6 +311,171 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
   );
 }
 
+// ─── Board toolbar ─────────────────────────────────────────────────────────
+
+function BoardToolbar({
+  search,
+  onSearchChange,
+  milestones,
+  milestoneFilter,
+  onMilestoneFilterChange,
+  count,
+  total,
+}: {
+  search: string;
+  onSearchChange: (v: string) => void;
+  milestones: Milestone[];
+  milestoneFilter: string;
+  onMilestoneFilterChange: (v: string) => void;
+  count: number;
+  total: number;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/') return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      e.preventDefault();
+      inputRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const openMilestones = useMemo(() => milestones.filter((m) => m.status === 'open'), [milestones]);
+  const closedMilestones = useMemo(() => milestones.filter((m) => m.status !== 'open'), [milestones]);
+
+  const activeMilestone = milestoneFilter === 'all' || milestoneFilter === 'none'
+    ? null
+    : milestones.find((m) => m.id === milestoneFilter) ?? null;
+
+  const milestoneLabel = milestoneFilter === 'all'
+    ? 'All milestones'
+    : milestoneFilter === 'none'
+      ? 'No milestone'
+      : activeMilestone
+        ? `M${activeMilestone.number} · ${activeMilestone.title}`
+        : 'Milestone';
+
+  const milestoneActive = milestoneFilter !== 'all';
+  const filterActive = milestoneActive || !!search;
+
+  return (
+    <div className="shrink-0 bg-background/80 backdrop-blur-sm">
+      <div className="container mx-auto max-w-7xl px-4 sm:px-6 h-12 flex items-center gap-2">
+        <div className="relative group/search">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/45 pointer-events-none transition-colors group-focus-within/search:text-foreground/70" />
+          <input
+            ref={inputRef}
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search tickets or #number…"
+            className={cn(
+              'h-8 w-[260px] pl-8 pr-12 text-sm rounded-full outline-none transition-colors',
+              'bg-muted/40 hover:bg-muted/60 focus:bg-muted/70',
+              'placeholder:text-muted-foreground/45',
+              'focus:ring-2 focus:ring-primary/20',
+            )}
+          />
+          {search ? (
+            <button
+              onClick={() => onSearchChange('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex size-5 items-center justify-center rounded-full text-muted-foreground/55 hover:bg-muted hover:text-foreground"
+              aria-label="Clear search"
+            >
+              <X className="size-3" />
+            </button>
+          ) : (
+            <kbd className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-md border border-border/60 bg-background/60 px-1 text-[10px] font-mono text-muted-foreground/60">
+              /
+            </kbd>
+          )}
+        </div>
+
+        {milestones.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={cn(
+                  'group inline-flex items-center gap-1.5 h-8 pl-2.5 pr-2 text-sm rounded-full transition-colors',
+                  milestoneActive
+                    ? 'bg-primary/10 text-foreground hover:bg-primary/15'
+                    : 'bg-muted/40 text-foreground hover:bg-muted/60',
+                )}
+              >
+                <Target className={cn('size-3.5', milestoneActive ? 'text-primary' : 'text-muted-foreground/70')} />
+                <span className="max-w-[180px] truncate">{milestoneLabel}</span>
+                <ChevronDown className="size-3 text-muted-foreground/55 transition-transform group-data-[state=open]:rotate-180" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64 z-[10000]">
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/60 font-semibold">
+                Filter by milestone
+              </DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={milestoneFilter} onValueChange={onMilestoneFilterChange}>
+                <DropdownMenuRadioItem value="all" className="text-sm cursor-pointer">
+                  All milestones
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="none" className="text-sm cursor-pointer text-muted-foreground">
+                  No milestone
+                </DropdownMenuRadioItem>
+                {openMilestones.length > 0 && <DropdownMenuSeparator />}
+                {openMilestones.map((m) => (
+                  <DropdownMenuRadioItem key={m.id} value={m.id} className="text-sm cursor-pointer">
+                    <span className="size-1.5 rounded-full mr-2" style={{ backgroundColor: `hsl(${m.color_hue ?? 210} 70% 55%)` }} />
+                    <span className="font-mono text-[11px] tabular-nums text-muted-foreground/70 mr-1.5">M{m.number}</span>
+                    <span className="truncate">{m.title}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+                {closedMilestones.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
+                      Closed
+                    </DropdownMenuLabel>
+                    {closedMilestones.map((m) => (
+                      <DropdownMenuRadioItem key={m.id} value={m.id} className="text-sm cursor-pointer text-muted-foreground/70">
+                        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/55 mr-1.5">M{m.number}</span>
+                        <span className="truncate line-through decoration-[0.5px]">{m.title}</span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </>
+                )}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {filterActive && (
+          <button
+            onClick={() => { onSearchChange(''); onMilestoneFilterChange('all'); }}
+            className="inline-flex items-center gap-1 h-8 px-2.5 text-xs text-muted-foreground/70 hover:text-foreground rounded-full hover:bg-muted/40 transition-colors"
+          >
+            <X className="size-3" />
+            Clear
+          </button>
+        )}
+
+        <div className="ml-auto flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground/55">
+          {filterActive && total !== count ? (
+            <>
+              <span className="text-foreground/80 font-medium">{count}</span>
+              <span className="text-muted-foreground/40">of</span>
+              <span>{total}</span>
+            </>
+          ) : (
+            <span>{count}</span>
+          )}
+          <span className="text-muted-foreground/40">{count === 1 ? 'ticket' : 'tickets'}</span>
+        </div>
+      </div>
+      <div className="h-px bg-border/40" />
+    </div>
+  );
+}
+
 // ─── Column (drop target) ──────────────────────────────────────────────────
 
 function Column({ column, count, onAdd, isActiveDrag, children }: {
@@ -356,24 +490,25 @@ function Column({ column, count, onAdd, isActiveDrag, children }: {
   const tint = tintForColumn(column);
   return (
     <div className="flex flex-col w-[300px] shrink-0 h-full">
-      <div className="flex items-center gap-2 mb-2 px-1 shrink-0">
-        <Icon className={cn('h-4 w-4', tint)} />
-        <span className="text-[13px] font-semibold text-foreground tracking-tight">{column.label}</span>
-        <span className="text-[11px] text-muted-foreground/40 tabular-nums">{count}</span>
+      <div className="group/header flex items-center gap-2 mb-2 px-1 shrink-0">
+        <Icon className={cn('size-3.5', tint)} />
+        <span className="text-sm font-semibold tracking-tight text-foreground">{column.label}</span>
+        <span className="text-xs tabular-nums text-muted-foreground/50">{count}</span>
         <Button
           variant="ghost"
-          size="sm"
-          className="ml-auto h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground"
+          size="icon-xs"
+          className="ml-auto text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover/header:opacity-100 focus-visible:opacity-100"
           onClick={onAdd}
           title="Add ticket"
+          aria-label="Add ticket"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus />
         </Button>
       </div>
       <div
         ref={setNodeRef}
         className={cn(
-          'flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 pb-4 rounded-xl transition-colors',
+          'flex-1 min-h-0 overflow-y-auto space-y-2 pb-4 rounded-xl transition-colors',
           isActiveDrag && 'bg-muted/10',
           isOver && 'bg-primary/[0.04] ring-1 ring-inset ring-primary/30',
         )}
@@ -491,7 +626,7 @@ function TicketCardInner({
     <div
       onClick={onSelect}
       className={cn(
-        'group rounded-xl border border-border/50 bg-card p-3 cursor-pointer select-none',
+        'group rounded-xl border border-border/50 bg-muted/60 p-3 cursor-pointer select-none',
         'transition-colors hover:border-border/80 hover:bg-muted/20',
         dragging && 'shadow-xl border-primary/40',
       )}

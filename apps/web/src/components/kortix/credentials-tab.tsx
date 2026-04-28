@@ -53,8 +53,8 @@ export function CredentialsTab({ projectId }: { projectId: string }) {
   const items = useMemo(() => data ?? [], [data]);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-background">
-      <div className="container mx-auto max-w-3xl px-3 sm:px-4 py-5 space-y-5">
+    <div className="h-full overflow-y-auto bg-background">
+      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-8 space-y-8">
 
         <header className="flex items-end justify-between gap-3">
           <div>

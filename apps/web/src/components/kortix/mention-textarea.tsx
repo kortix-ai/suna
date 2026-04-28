@@ -16,6 +16,7 @@ import {
   forwardRef,
   useCallback,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -222,6 +223,45 @@ function candidateSlug(c: Candidate): string {
   return c.type === 'user' ? c.handle : c.agent.slug;
 }
 
+const CARET_MIRROR_PROPS = [
+  'box-sizing', 'width',
+  'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+  'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+  'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant',
+  'letter-spacing', 'text-transform', 'word-spacing', 'text-indent',
+  'line-height', 'tab-size', 'text-align',
+] as const;
+
+function getCaretCoords(textarea: HTMLTextAreaElement, position: number): { top: number; left: number; lineHeight: number } {
+  const style = window.getComputedStyle(textarea);
+  const mirror = document.createElement('div');
+  for (const prop of CARET_MIRROR_PROPS) {
+    mirror.style.setProperty(prop, style.getPropertyValue(prop));
+  }
+  mirror.style.position = 'absolute';
+  mirror.style.visibility = 'hidden';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.wordWrap = 'break-word';
+  mirror.style.overflow = 'hidden';
+  mirror.style.top = '0';
+  mirror.style.left = '-9999px';
+  document.body.appendChild(mirror);
+
+  mirror.textContent = textarea.value.substring(0, position);
+  const marker = document.createElement('span');
+  marker.textContent = textarea.value.substring(position) || '.';
+  mirror.appendChild(marker);
+
+  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.4;
+  const coords = {
+    top: marker.offsetTop,
+    left: marker.offsetLeft,
+    lineHeight,
+  };
+  document.body.removeChild(mirror);
+  return coords;
+}
+
 export interface MentionTextareaProps
   extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange'> {
   value: string;
@@ -354,6 +394,16 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
 
     const open = query !== null && candidates.length > 0;
 
+    const [caretPos, setCaretPos] = useState<{ top: number; left: number; lineHeight: number } | null>(null);
+
+    useLayoutEffect(() => {
+      if (!open || !innerRef.current || !anchor) {
+        setCaretPos(null);
+        return;
+      }
+      setCaretPos(getCaretCoords(innerRef.current, anchor.start));
+    }, [open, anchor, value]);
+
     const handleScroll = (e: UIEvent<HTMLTextAreaElement>) => setScrollTop(e.currentTarget.scrollTop);
 
     // Shared style surface so the overlay's wrapping EXACTLY matches the
@@ -406,10 +456,14 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
           className={textareaCls}
           spellCheck={textareaProps.spellCheck ?? false}
         />
-        {open && (
+        {open && caretPos && (
           <div
             role="listbox"
-            className="absolute left-0 top-full mt-1 min-w-[220px] max-w-[280px] rounded-xl border border-border/60 bg-card shadow-xl z-[10001] overflow-hidden py-1"
+            style={{
+              top: caretPos.top + caretPos.lineHeight - scrollTop + 4,
+              left: caretPos.left,
+            }}
+            className="absolute min-w-[220px] max-w-[280px] rounded-xl border border-border/60 bg-card shadow-xl z-[10001] overflow-hidden py-1"
             onMouseDown={(e) => e.preventDefault()}
           >
             <div className="px-3 py-1.5 text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">

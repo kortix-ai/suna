@@ -106,7 +106,7 @@ export function NotificationsBell({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        align="end"
+        align="start"
         sideOffset={8}
         className="w-[400px] p-0 z-[10000] overflow-hidden border-border/60"
       >

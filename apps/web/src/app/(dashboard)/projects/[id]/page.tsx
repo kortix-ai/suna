@@ -12,7 +12,8 @@
  */
 
 import { use, useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { FolderGit2, MessageSquareText, Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { FolderGit2, MessageSquareText, Loader2, Bot, Zap, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -50,7 +51,7 @@ import {
   createFilesStore,
   FilesStoreProvider,
 } from '@/features/files/store/files-store';
-import { FileExplorerPage } from '@/features/files/components/file-explorer-page';
+import { ProjectFilesTab } from '@/components/kortix/project-files-tab';
 import { relativeTime } from '@/lib/kortix/task-meta';
 import { classifySession } from '@/lib/kortix/session-category';
 import type { ProjectAgent } from '@/hooks/kortix/use-kortix-tickets';
@@ -61,9 +62,9 @@ import { formatCost, formatTokens } from '@/ui/turns';
 import { AgentAvatar } from '@/components/kortix/agent-avatar';
 import { ChevronDown, TimerIcon, Webhook as WebhookIcon } from 'lucide-react';
 import {
+  ProjectHeader,
   type ProjectTab,
 } from '@/components/kortix/project-header';
-import { ProjectSidebar } from '@/components/kortix/project-sidebar';
 import { ProjectAbout } from '@/components/kortix/project-about';
 import { ProjectMembersTab } from '@/components/kortix/project-members-tab';
 import { TasksTab } from '@/components/kortix/tasks-tab';
@@ -124,6 +125,15 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
 
   const sessionList = useMemo(() => sessions ?? [], [sessions]);
   const taskList = useMemo<KortixTask[]>(() => tasks ?? [], [tasks]);
+
+  const isLive = useMemo(() => {
+    if (sessionList.length === 0) return false;
+    const fiveMinAgo = Date.now() - 5 * 60_000;
+    return sessionList.some((s: any) => {
+      const t = s?.time?.updated ?? Date.parse(s?.updated_at ?? '');
+      return typeof t === 'number' && t > fiveMinAgo;
+    });
+  }, [sessionList]);
 
   // ─── v2 state ──────────────────────────────────────────────────────────
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
@@ -240,6 +250,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   }, [taskList, search]);
 
   // ─── Keyboard shortcuts ────────────────────────────────────────────────
+  const newKeyLockRef = useRef(0);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!isProjectRouteActive || newTaskOpen || newTicketOpen || e.repeat) return;
@@ -250,6 +261,8 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
 
       if (e.key === '/' && tab === 'tasks' && !inField) { e.preventDefault(); searchRef.current?.focus(); }
       if ((e.key === 'c' || e.key === 'C') && !inField && !e.metaKey && !e.ctrlKey) {
+        if (Date.now() - newKeyLockRef.current < 300) return;
+        newKeyLockRef.current = Date.now();
         e.preventDefault();
         if (isV2) setNewTicketOpen(true);
         else setNewTaskOpen(true);
@@ -285,21 +298,24 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   const hasFiles = project.path && project.path !== '/';
 
   return (
-    <div className="flex-1 bg-background flex overflow-hidden">
-      <ProjectSidebar
+    <div className="flex-1 bg-background flex flex-col overflow-hidden">
+      <ProjectHeader
         project={project}
         tab={tab}
         onTabChange={setTab}
         onNewTask={isV2 ? () => openNewTicket() : () => openNewTask()}
         newActionLabel={isV2 ? 'New ticket' : 'New task'}
-        footerSlot={isV2 ? (
-          <div className="flex items-center justify-between gap-1">
+        structureVersion={isV2 ? 2 : 1}
+        isLive={isLive}
+        tabBadges={isV2 ? { board: unread.total } : undefined}
+        rightSlot={isV2 ? (
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
               onClick={openPmChat}
               disabled={ensurePmSession.isPending}
-              className="flex-1 justify-start text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground"
               title="Open a chat with the Project Manager agent"
             >
               {ensurePmSession.isPending ? (
@@ -307,7 +323,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
               ) : (
                 <MessageSquareText />
               )}
-              Ask PM
+              <span className="hidden sm:inline">Ask PM</span>
             </Button>
             <NotificationsBell
               projectId={project.id}
@@ -338,7 +354,11 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
 
       <div className="flex-1 min-h-0 relative">
         <TabPanel active={tab === 'about'}>
-          <ProjectAbout project={project} />
+          <ProjectAbout
+            project={project}
+            onNavigate={setTab}
+            onOpenTicket={(id) => setOpenTicketId(id)}
+          />
         </TabPanel>
 
         {!isV2 && (
@@ -389,7 +409,7 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
           {hasFiles ? (
             <div className="flex-1 min-h-0">
               <FilesStoreProvider store={projectFilesStore}>
-                <FileExplorerPage />
+                <ProjectFilesTab projectName={project.name} projectPath={project.path} />
               </FilesStoreProvider>
             </div>
           ) : (
@@ -613,117 +633,174 @@ function SessionsList({
   const teamAgents = agents.filter((a) => buckets.byAgent.has(a.name.toLowerCase()));
   const activeTriggers = triggers.filter((t: any) => buckets.byTrigger.has(t.name));
 
-  return (
-    <div className="flex-1 overflow-y-auto bg-background">
-      <div className="container mx-auto max-w-3xl px-3 sm:px-4 py-5 space-y-5">
+  const tokens = totalTokens(totals.tokens);
 
-        <SessionsSummaryCard
-          totalSessions={sessions.length}
-          totals={totals}
-          loading={statsLoading}
-        />
+  return (
+    <div className="h-full overflow-y-auto">
+      <motion.div
+        initial="hidden"
+        animate="show"
+        variants={{
+          hidden: {},
+          show: { transition: { staggerChildren: 0.04, delayChildren: 0.04 } },
+        }}
+        className="mx-auto w-full max-w-3xl px-6 pt-12 pb-24"
+      >
+        <SessionsSection>
+          <header>
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">Sessions</h1>
+            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+              Every conversation with your agents — grouped by who or what started it.
+            </p>
+          </header>
+        </SessionsSection>
+
+        <SessionsSection delay>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+            <SessionStatPill label={sessions.length === 1 ? 'session' : 'sessions'} value={sessions.length} dot="bg-violet-500" />
+            <SessionStatPill label="messages" value={totals.messageCount} dot="bg-blue-500" muted={statsLoading} />
+            <SessionStatPill label="tokens" value={formatTokens(tokens)} dot="bg-amber-500" muted={statsLoading} />
+            <SessionStatPill label="spent" value={formatCost(totals.cost)} dot="bg-emerald-500" muted={statsLoading} />
+          </div>
+        </SessionsSection>
 
         {teamAgents.length > 0 && (
-          <SessionsSection label="Team agents" count={totalAgentSessions}>
-            {teamAgents.map((agent) => {
-              const list = buckets.byAgent.get(agent.name.toLowerCase()) ?? [];
-              return (
-                <AgentSessionsRow
-                  key={agent.id}
-                  agent={agent}
-                  sessions={list}
-                  statsById={statsById}
-                  openSession={openSession}
-                />
-              );
-            })}
+          <SessionsSection delay>
+            <SessionsGroup icon={Bot} label="Team agents" count={totalAgentSessions}>
+              {teamAgents.map((agent, i) => {
+                const list = buckets.byAgent.get(agent.name.toLowerCase()) ?? [];
+                return (
+                  <AgentSessionsRow
+                    key={agent.id}
+                    agent={agent}
+                    sessions={list}
+                    statsById={statsById}
+                    openSession={openSession}
+                    isLast={i === teamAgents.length - 1}
+                  />
+                );
+              })}
+            </SessionsGroup>
           </SessionsSection>
         )}
 
         {activeTriggers.length > 0 && (
-          <SessionsSection label="Trigger executions" count={totalTriggerSessions}>
-            {activeTriggers.map((t: any) => {
-              const list = buckets.byTrigger.get(t.name) ?? [];
-              return (
-                <TriggerSessionsRow
-                  key={t.id}
-                  trigger={t}
-                  sessions={list}
-                  statsById={statsById}
-                  openSession={openSession}
-                />
-              );
-            })}
+          <SessionsSection delay>
+            <SessionsGroup icon={Zap} label="Trigger executions" count={totalTriggerSessions}>
+              {activeTriggers.map((t: any, i: number) => {
+                const list = buckets.byTrigger.get(t.name) ?? [];
+                return (
+                  <TriggerSessionsRow
+                    key={t.id}
+                    trigger={t}
+                    sessions={list}
+                    statsById={statsById}
+                    openSession={openSession}
+                    isLast={i === activeTriggers.length - 1}
+                  />
+                );
+              })}
+            </SessionsGroup>
           </SessionsSection>
         )}
 
         {buckets.onboarding.length > 0 && (
-          <SessionsSection label="Onboarding" count={buckets.onboarding.length}>
-            {buckets.onboarding.map((s) => (
-              <PlainSessionRow key={s.id} session={s} stats={statsById.get(s.id)} onClick={() => openSession(s)} />
-            ))}
+          <SessionsSection delay>
+            <SessionsGroup icon={Sparkles} label="Onboarding" count={buckets.onboarding.length}>
+              {buckets.onboarding.map((s, i) => (
+                <PlainSessionRow
+                  key={s.id}
+                  session={s}
+                  stats={statsById.get(s.id)}
+                  onClick={() => openSession(s)}
+                  isLast={i === buckets.onboarding.length - 1}
+                />
+              ))}
+            </SessionsGroup>
           </SessionsSection>
         )}
 
         {buckets.human.length > 0 && (
-          <SessionsSection label="Chats" count={buckets.human.length}>
-            {buckets.human.map((s) => (
-              <PlainSessionRow key={s.id} session={s} stats={statsById.get(s.id)} onClick={() => openSession(s)} />
-            ))}
+          <SessionsSection delay>
+            <SessionsGroup icon={MessageSquareText} label="Chats" count={buckets.human.length}>
+              {buckets.human.map((s, i) => (
+                <PlainSessionRow
+                  key={s.id}
+                  session={s}
+                  stats={statsById.get(s.id)}
+                  onClick={() => openSession(s)}
+                  isLast={i === buckets.human.length - 1}
+                />
+              ))}
+            </SessionsGroup>
           </SessionsSection>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }
 
-function SessionsSummaryCard({
-  totalSessions,
-  totals,
-  loading,
-}: {
-  totalSessions: number;
-  totals: SessionStats;
-  loading: boolean;
-}) {
-  const tokens = totalTokens(totals.tokens);
+function SessionsSection({ children, delay }: { children: React.ReactNode; delay?: boolean }) {
   return (
-    <section className="rounded-xl border border-border/40 bg-card px-4 py-3">
-      <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/50 font-semibold mb-2">
-        Project totals
-      </div>
-      <div className="grid grid-cols-4 gap-4">
-        <Stat label="Sessions" value={String(totalSessions)} />
-        <Stat label="Messages" value={String(totals.messageCount)} muted={loading} />
-        <Stat label="Tokens" value={formatTokens(tokens)} muted={loading} />
-        <Stat label="Cost" value={formatCost(totals.cost)} muted={loading} />
-      </div>
-    </section>
+    <motion.section
+      variants={{
+        hidden: { opacity: 0, y: 6 },
+        show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
+      }}
+      className={cn(delay && 'mt-10')}
+    >
+      {children}
+    </motion.section>
   );
 }
 
-function Stat({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+function SessionStatPill({
+  label,
+  value,
+  dot,
+  muted,
+}: {
+  label: string;
+  value: number | string;
+  dot: string;
+  muted?: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs text-muted-foreground',
+        muted && 'opacity-60',
+      )}
+    >
+      <span className={cn('size-1.5 rounded-full', dot)} />
+      <span className="font-semibold tabular-nums text-foreground">{value}</span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function SessionsGroup({
+  icon: Icon,
+  label,
+  count,
+  children,
+}: {
+  icon: typeof Bot;
+  label: string;
+  count: number;
+  children: React.ReactNode;
+}) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/50">{label}</div>
-      <div className={cn('text-[16px] font-semibold tabular-nums mt-0.5', muted && 'text-muted-foreground/50')}>
-        {value}
+      <div className="flex items-center gap-2 mb-3">
+        <Icon className="size-3.5 text-muted-foreground/60" />
+        <h2 className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</h2>
+        <span className="text-xs tabular-nums text-muted-foreground/45">{count}</span>
       </div>
-    </div>
-  );
-}
-
-function SessionsSection({ label, count, children }: { label: string; count: number; children: React.ReactNode }) {
-  return (
-    <section>
-      <div className="flex items-baseline gap-2 mb-2 px-1">
-        <h3 className="text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground/60">{label}</h3>
-        <span className="text-[11px] tabular-nums text-muted-foreground/40">{count}</span>
-      </div>
-      <div className="rounded-xl border border-border/40 bg-card divide-y divide-border/30 overflow-hidden">
+      <div className="overflow-hidden rounded-2xl bg-muted/30">
         {children}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -732,11 +809,13 @@ function AgentSessionsRow({
   sessions,
   statsById,
   openSession,
+  isLast,
 }: {
   agent: ProjectAgent;
   sessions: any[];
   statsById: Map<string, SessionStats>;
   openSession: (s: any) => void;
+  isLast: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const aggregate = useMemo(
@@ -745,42 +824,38 @@ function AgentSessionsRow({
   );
   const tokens = totalTokens(aggregate.tokens);
   return (
-    <div>
+    <div className={cn(!isLast && 'border-b border-border/40')}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer text-left group"
+        className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60"
       >
-        <AgentAvatar hue={agent.color_hue} icon={agent.icon} slug={agent.slug} name={agent.name} size="md" />
-        <div className="flex-1 min-w-0">
+        <AgentAvatar hue={agent.color_hue} icon={agent.icon} slug={agent.slug} name={agent.name} size="sm" />
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[13px] font-semibold truncate">@{agent.slug}</span>
-            <span className="text-[11.5px] text-muted-foreground/50 truncate">{agent.name}</span>
+            <span className="text-sm font-medium text-foreground truncate">@{agent.slug}</span>
+            <span className="text-xs text-muted-foreground/60 truncate">{agent.name}</span>
           </div>
-          <div className="flex items-center gap-3 mt-1 text-[11px] tabular-nums text-muted-foreground/70">
-            <span>{sessions.length} session{sessions.length === 1 ? '' : 's'}</span>
-            <span className="text-muted-foreground/25">·</span>
-            <span>{formatTokens(tokens)} tokens</span>
-            <span className="text-muted-foreground/25">·</span>
-            <span>{formatCost(aggregate.cost)}</span>
-            {aggregate.lastUpdated && (
-              <>
-                <span className="text-muted-foreground/25">·</span>
-                <span className="text-muted-foreground/55">active {relativeTime(aggregate.lastUpdated)}</span>
-              </>
-            )}
-          </div>
+          <SessionMetaLine
+            count={sessions.length}
+            unit="session"
+            tokens={tokens}
+            cost={aggregate.cost}
+            lastTimestamp={aggregate.lastUpdated}
+            lastLabel="active"
+          />
         </div>
-        <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground/40 transition-transform', open && 'rotate-180')} />
+        <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground/40 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="bg-muted/10 border-t border-border/30 divide-y divide-border/20">
-          {sessions.map((s) => (
+        <div className="border-t border-border/40 bg-muted/40">
+          {sessions.map((s, i) => (
             <PlainSessionRow
               key={s.id}
               session={s}
               stats={statsById.get(s.id)}
               onClick={() => openSession(s)}
               dense
+              isLast={i === sessions.length - 1}
             />
           ))}
         </div>
@@ -794,11 +869,13 @@ function TriggerSessionsRow({
   sessions,
   statsById,
   openSession,
+  isLast,
 }: {
   trigger: any;
   sessions: any[];
   statsById: Map<string, SessionStats>;
   openSession: (s: any) => void;
+  isLast: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const aggregate = useMemo(
@@ -808,49 +885,78 @@ function TriggerSessionsRow({
   const tokens = totalTokens(aggregate.tokens);
   const isCron = trigger.type === 'cron';
   return (
-    <div>
+    <div className={cn(!isLast && 'border-b border-border/40')}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors cursor-pointer text-left group"
+        className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60"
       >
-        <div className="h-8 w-8 rounded-full bg-muted/40 text-muted-foreground/70 flex items-center justify-center shrink-0">
-          {isCron ? <TimerIcon className="h-4 w-4" /> : <WebhookIcon className="h-4 w-4" />}
+        <div className="inline-flex size-7 items-center justify-center rounded-full bg-muted/60 text-muted-foreground/70 shrink-0">
+          {isCron ? <TimerIcon className="size-3.5" /> : <WebhookIcon className="size-3.5" />}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[13px] font-semibold truncate">{trigger.name}</span>
-            <span className="inline-flex items-center h-4 px-1.5 rounded text-[10px] font-mono bg-muted/40 text-muted-foreground/70">
+            <span className="text-sm font-medium text-foreground truncate">{trigger.name}</span>
+            <span className="inline-flex h-4 items-center rounded bg-muted/60 px-1.5 font-mono text-[10px] text-muted-foreground/70">
               {isCron ? (trigger.cronExpr || 'cron') : 'webhook'}
             </span>
           </div>
-          <div className="flex items-center gap-3 mt-1 text-[11px] tabular-nums text-muted-foreground/70">
-            <span>{sessions.length} fire{sessions.length === 1 ? '' : 's'}</span>
-            <span className="text-muted-foreground/25">·</span>
-            <span>{formatTokens(tokens)} tokens</span>
-            <span className="text-muted-foreground/25">·</span>
-            <span>{formatCost(aggregate.cost)}</span>
-            {aggregate.lastUpdated && (
-              <>
-                <span className="text-muted-foreground/25">·</span>
-                <span className="text-muted-foreground/55">last {relativeTime(aggregate.lastUpdated)}</span>
-              </>
-            )}
-          </div>
+          <SessionMetaLine
+            count={sessions.length}
+            unit="fire"
+            tokens={tokens}
+            cost={aggregate.cost}
+            lastTimestamp={aggregate.lastUpdated}
+            lastLabel="last"
+          />
         </div>
-        <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground/40 transition-transform', open && 'rotate-180')} />
+        <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground/40 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="bg-muted/10 border-t border-border/30 divide-y divide-border/20">
-          {sessions.map((s) => (
+        <div className="border-t border-border/40 bg-muted/40">
+          {sessions.map((s, i) => (
             <PlainSessionRow
               key={s.id}
               session={s}
               stats={statsById.get(s.id)}
               onClick={() => openSession(s)}
               dense
+              isLast={i === sessions.length - 1}
             />
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function SessionMetaLine({
+  count,
+  unit,
+  tokens,
+  cost,
+  lastTimestamp,
+  lastLabel,
+}: {
+  count: number;
+  unit: string;
+  tokens: number;
+  cost: number;
+  lastTimestamp: number | null;
+  lastLabel: string;
+}) {
+  const dot = <span className="text-muted-foreground/30">·</span>;
+  return (
+    <div className="mt-0.5 flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground/70">
+      <span>{count} {unit}{count === 1 ? '' : 's'}</span>
+      {dot}
+      <span>{formatTokens(tokens)}</span>
+      {dot}
+      <span>{formatCost(cost)}</span>
+      {lastTimestamp && (
+        <>
+          {dot}
+          <span className="text-muted-foreground/55">{lastLabel} {relativeTime(lastTimestamp)}</span>
+        </>
       )}
     </div>
   );
@@ -861,30 +967,36 @@ function PlainSessionRow({
   stats,
   onClick,
   dense,
+  isLast,
 }: {
   session: any;
   stats?: SessionStats;
   onClick: () => void;
   dense?: boolean;
+  isLast?: boolean;
 }) {
   const tokens = stats ? totalTokens(stats.tokens) : 0;
   return (
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-3 text-left hover:bg-muted/20 transition-colors cursor-pointer',
-        dense ? 'px-4 py-1.5' : 'px-4 py-2.5',
+        'group flex w-full items-center gap-3 text-left transition-colors hover:bg-muted/60',
+        dense ? 'px-4 py-2' : 'px-4 py-3',
+        !isLast && 'border-b border-border/40',
       )}
     >
-      <span className="flex-1 min-w-0 text-[12.5px] text-foreground/85 truncate">
+      <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+      <span className="min-w-0 flex-1 truncate text-sm text-foreground/90">
         {session.title || 'Untitled session'}
       </span>
       {stats && stats.messageCount > 0 && (
-        <span className="text-[10.5px] tabular-nums text-muted-foreground/60 shrink-0">
-          {formatTokens(tokens)} · {formatCost(stats.cost)}
+        <span className="hidden shrink-0 items-center gap-1.5 text-xs tabular-nums text-muted-foreground/60 sm:inline-flex">
+          <span>{formatTokens(tokens)}</span>
+          <span className="text-muted-foreground/30">·</span>
+          <span>{formatCost(stats.cost)}</span>
         </span>
       )}
-      <span className="text-[10.5px] tabular-nums text-muted-foreground/40 w-[70px] text-right shrink-0">
+      <span className="w-[70px] shrink-0 text-right text-xs tabular-nums text-muted-foreground/45">
         {relativeTime(session.time?.updated)}
       </span>
     </button>

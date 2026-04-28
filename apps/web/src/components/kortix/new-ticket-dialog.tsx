@@ -146,11 +146,8 @@ export function NewTicketDialog({ open, onOpenChange, projectId, columns, defaul
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          'p-0 overflow-hidden gap-0 border-border/60 bg-background',
-          // The repo's DialogContent hardcodes `sm:max-w-5xl`, so a plain
-          // `max-w-md` gets overridden once the viewport hits `sm`.
-          // The responsive variant below wins via Tailwind ordering.
-          step === 'pick' ? 'max-w-sm sm:max-w-sm' : 'max-w-xl sm:max-w-xl',
+          'gap-0 overflow-hidden p-0',
+          step === 'pick' ? 'max-w-sm sm:max-w-sm' : 'max-w-2xl sm:max-w-2xl',
         )}
         hideCloseButton
       >
@@ -382,88 +379,95 @@ function TicketForm({
   };
 
   return (
-    <div className="flex flex-col">
-      {/* Header */}
-      <div className="flex items-center px-5 pt-4 pb-3 gap-3">
-        {showBack ? (
-          <Button variant="ghost" size="sm" className="h-6 px-1.5 -ml-1.5 text-muted-foreground/60 hover:text-foreground text-[11px]" onClick={onBack}>
-            <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-            Templates
-          </Button>
-        ) : (
-          <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
-            New ticket{template ? ` · ${template.name}` : ''}
-          </div>
+    <div className="relative flex flex-col">
+      <div className="flex items-center gap-2 px-5 pt-4">
+        <Sparkles className="size-3.5 text-muted-foreground/50" />
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          New ticket
+        </span>
+        {template && (
+          <>
+            <span className="text-muted-foreground/30">·</span>
+            <span className="text-xs text-muted-foreground">
+              From <span className="font-medium text-foreground">{template.name}</span>
+            </span>
+          </>
         )}
-        <Button variant="ghost" size="sm" className="ml-auto h-7 w-7 p-0 text-muted-foreground/50 hover:text-foreground" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-
-      {/* Body — 2-column layout: seamless editor on the left, meta rail on the right */}
-      <div className="grid grid-cols-[1fr_180px] min-h-[300px]">
-        <div className="px-5 pt-5 pb-4 flex flex-col min-w-0">
-          <textarea
-            ref={titleRef}
-            value={title}
-            onChange={(e) => onTitleChange(e.target.value)}
-            onKeyDown={onTitleKey}
-            placeholder="Ticket title"
-            rows={1}
-            className="w-full text-[20px] font-semibold tracking-tight bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/25 resize-none overflow-hidden leading-tight"
-          />
-
-          <MentionTextarea
-            ref={bodyRef}
-            value={body}
-            onChange={onBodyChange}
-            onKeyDown={onBodyKey}
-            agents={agents}
-            userHandle={userHandle}
-            userAvatarUrl={myAvatarUrl}
-            placeholder={"Description, acceptance criteria, notes…\n\nMarkdown supported. Type @ to tag a team member."}
-            rows={8}
-            className="w-full mt-3 text-[13px] leading-[1.7] border-0 outline-none focus:ring-0 resize-none placeholder:text-muted-foreground/25 font-mono"
-          />
-        </div>
-
-        {/* Meta rail — no divider, same bg as body. */}
-        <aside className="px-4 pt-5 pb-4 space-y-5">
-          <MetaBlock label="Assignees">
-            <AssigneePicker
-              agents={agents}
-              userHandle={userHandle}
-              pending={pending}
-              onAdd={onAddAssignee}
-              onRemove={onRemoveAssignee}
-            />
-          </MetaBlock>
-          <MetaBlock label="Status">
-            <StatusPicker columns={columns} value={status} onChange={onStatusChange} />
-          </MetaBlock>
-          {milestones.length > 0 && (
-            <MetaBlock label="Milestone">
-              <select
-                value={milestoneId}
-                onChange={(e) => onMilestoneChange(e.target.value)}
-                className="w-full h-7 text-[12px] bg-transparent border border-border/50 rounded-md px-2 outline-none focus:ring-2 focus:ring-primary/20"
-              >
-                <option value="">— none —</option>
-                {milestones.map((m) => (
-                  <option key={m.id} value={m.id}>M{m.number} · {m.title}</option>
-                ))}
-              </select>
-            </MetaBlock>
+        <div className="ml-auto flex items-center gap-1">
+          {showBack && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onBack}
+            >
+              <ArrowLeft />
+              Templates
+            </Button>
           )}
-        </aside>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground"
+            aria-label="Close"
+          >
+            <X />
+          </Button>
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="border-t border-border/40 px-5 py-2.5 flex items-center gap-2">
-        <span className="text-[11px] text-muted-foreground/50">
-          <kbd className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded border border-border/50 bg-muted/40 text-[10px] font-mono leading-none">⌘</kbd>
-          <kbd className="inline-flex items-center justify-center min-w-[18px] h-4 px-1 ml-0.5 rounded border border-border/50 bg-muted/40 text-[10px] font-mono leading-none">↵</kbd>
-          <span className="ml-1.5">to create</span>
+      <div className="flex items-start gap-3 px-5 pt-5">
+        <StatusCircle columns={columns} value={status} onChange={onStatusChange} />
+        <textarea
+          ref={titleRef}
+          value={title}
+          onChange={(e) => onTitleChange(e.target.value)}
+          onKeyDown={onTitleKey}
+          placeholder="Ticket title"
+          rows={1}
+          className="w-full resize-none overflow-hidden border-0 bg-transparent pt-px text-lg font-semibold leading-tight tracking-tight outline-none placeholder:text-muted-foreground/30 focus:ring-0"
+        />
+      </div>
+
+      <div className="px-5 pt-2 pb-3 pl-[3.25rem]">
+        <MentionTextarea
+          ref={bodyRef}
+          value={body}
+          onChange={onBodyChange}
+          onKeyDown={onBodyKey}
+          agents={agents}
+          userHandle={userHandle}
+          userAvatarUrl={myAvatarUrl}
+          placeholder="Add a description… markdown supported, @ to mention"
+          rows={3}
+          className="w-full resize-none border-0 bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground/30 focus:ring-0"
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 px-5 pb-4">
+        <StatusPill columns={columns} value={status} onChange={onStatusChange} />
+        <AssigneePill
+          agents={agents}
+          userHandle={userHandle}
+          pending={pending}
+          onAdd={onAddAssignee}
+          onRemove={onRemoveAssignee}
+        />
+        {milestones.length > 0 && (
+          <MilestonePill
+            milestones={milestones}
+            value={milestoneId}
+            onChange={onMilestoneChange}
+          />
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 px-5 pb-4 pt-1">
+        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1 font-mono text-[10px]">⌘</kbd>
+          <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-muted px-1 font-mono text-[10px]">↵</kbd>
+          <span className="ml-1">to create</span>
         </span>
         <div className="ml-auto flex items-center gap-1.5">
           <SaveAsTemplateButton
@@ -471,17 +475,62 @@ function TicketForm({
             saving={savingTemplate}
             onSave={onSaveAsTemplate}
           />
-          <Button
-            size="sm"
-            className="h-7 px-3 text-[12px]"
-            onClick={onSubmit}
-            disabled={!title.trim() || submitting}
-          >
+          <Button size="sm" onClick={onSubmit} disabled={!title.trim() || submitting}>
             {submitting ? 'Creating…' : 'Create ticket'}
           </Button>
         </div>
       </div>
     </div>
+  );
+}
+
+function StatusCircle({
+  columns,
+  value,
+  onChange,
+}: {
+  columns: TicketColumn[];
+  value: string;
+  onChange: (k: string) => void;
+}) {
+  const selected = columns.find((c) => c.key === value) ?? columns[0];
+  if (!selected) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'inline-flex size-6 shrink-0 items-center justify-center rounded-md',
+            'transition-colors hover:bg-muted',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+          )}
+          aria-label={`Status: ${selected.label}`}
+          title={selected.label}
+        >
+          {columnIcon(selected)}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="z-[10000] w-48">
+        <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+          Status
+        </DropdownMenuLabel>
+        {columns.map((c) => {
+          const active = c.key === value;
+          return (
+            <DropdownMenuItem
+              key={c.key}
+              onClick={() => onChange(c.key)}
+              className="gap-2"
+            >
+              {columnIcon(c)}
+              <span className="flex-1 truncate">{c.label}</span>
+              {active && <Check className="size-3 text-primary" />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -566,53 +615,51 @@ function SaveAsTemplateButton({ disabled, saving, onSave }: {
   );
 }
 
-// ─── Meta block (right-rail section) ────────────────────────────────────────
+// ─── Status picker ──────────────────────────────────────────────────────────
 
-function MetaBlock({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold mb-2">{label}</div>
-      {children}
-    </div>
-  );
+const PILL_TRIGGER = cn(
+  'group inline-flex items-center gap-1.5 rounded-full bg-muted/40 px-2.5 py-1 text-xs',
+  'text-foreground transition-colors hover:bg-muted',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+);
+
+function columnIcon(c: TicketColumn) {
+  const cls = c.is_terminal
+    ? 'size-3 text-emerald-500'
+    : c.key === 'in_progress'
+      ? 'size-3 text-blue-500'
+      : c.key === 'review'
+        ? 'size-3 text-amber-500'
+        : 'size-3 text-muted-foreground/60';
+  if (c.is_terminal) return <CheckCircle2 className={cls} />;
+  if (c.key === 'in_progress') return <Loader2 className={cls} />;
+  if (c.key === 'review') return <CircleDot className={cls} />;
+  return <Circle className={cls} />;
 }
 
-// ─── Status picker: single chip → dropdown with every column ────────────────
-
-function columnIcon(c: TicketColumn, active: boolean) {
-  const className = active
-    ? 'h-3.5 w-3.5'
-    : c.is_terminal
-      ? 'h-3.5 w-3.5 text-emerald-500/70'
-      : c.key === 'in_progress'
-        ? 'h-3.5 w-3.5 text-blue-500/80'
-        : c.key === 'review'
-          ? 'h-3.5 w-3.5 text-amber-500/70'
-          : 'h-3.5 w-3.5 text-muted-foreground/55';
-  if (c.is_terminal) return <CheckCircle2 className={className} />;
-  if (c.key === 'in_progress') return <Loader2 className={className} />;
-  if (c.key === 'review') return <CircleDot className={className} />;
-  return <Circle className={className} />;
-}
-
-function StatusPicker({ columns, value, onChange }: { columns: TicketColumn[]; value: string; onChange: (k: string) => void }) {
+function StatusPill({
+  columns,
+  value,
+  onChange,
+}: {
+  columns: TicketColumn[];
+  value: string;
+  onChange: (k: string) => void;
+}) {
   const selected = columns.find((c) => c.key === value) ?? columns[0];
   if (!selected) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          className="group w-full inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-border/50 hover:border-border bg-card/60 hover:bg-muted/40 text-[12.5px] text-foreground transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-          aria-label={`Status: ${selected.label}`}
-        >
-          {columnIcon(selected, false)}
-          <span className="truncate flex-1 text-left font-medium">{selected.label}</span>
-          <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
-        </button>
+        <Button size="xs" className={cn(PILL_TRIGGER, 'bg-muted text-muted-foreground hover:bg-muted/70')} aria-label={`Status: ${selected.label}`}>
+          {columnIcon(selected)}
+          <span className="font-medium">{selected.label}</span>
+          <ChevronDown className="size-3 text-muted-foreground/50" />
+        </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[200px] z-[10000]">
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
-          Move to
+      <DropdownMenuContent align="start" className="z-[10000] w-48">
+        <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+          Status
         </DropdownMenuLabel>
         {columns.map((c) => {
           const active = c.key === value;
@@ -620,11 +667,11 @@ function StatusPicker({ columns, value, onChange }: { columns: TicketColumn[]; v
             <DropdownMenuItem
               key={c.key}
               onClick={() => onChange(c.key)}
-              className="gap-2 cursor-pointer"
+              className="gap-2"
             >
-              {columnIcon(c, false)}
+              {columnIcon(c)}
               <span className="flex-1 truncate">{c.label}</span>
-              {active && <Check className="h-3 w-3 text-primary" />}
+              {active && <Check className="size-3 text-primary" />}
             </DropdownMenuItem>
           );
         })}
@@ -633,9 +680,56 @@ function StatusPicker({ columns, value, onChange }: { columns: TicketColumn[]; v
   );
 }
 
-// ─── Assignee picker ────────────────────────────────────────────────────────
+function MilestonePill({
+  milestones,
+  value,
+  onChange,
+}: {
+  milestones: Milestone[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const selected = milestones.find((m) => m.id === value);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="xs" className={cn(PILL_TRIGGER, 'bg-muted text-muted-foreground hover:bg-muted/70')} aria-label="Milestone">
+          <CircleDot className="size-3 text-violet-500" />
+          <span className={cn('font-medium', !selected && 'text-muted-foreground')}>
+            {selected ? selected.title : 'No milestone'}
+          </span>
+          <ChevronDown className="size-3 text-muted-foreground/50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="z-[10000] w-56">
+        <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+          Milestone
+        </DropdownMenuLabel>
+        <DropdownMenuItem onClick={() => onChange('')} className="gap-2">
+          <Circle className="size-3 text-muted-foreground/40" />
+          <span className="flex-1 truncate text-muted-foreground">No milestone</span>
+          {!value && <Check className="size-3 text-primary" />}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {milestones.map((m) => (
+          <DropdownMenuItem
+            key={m.id}
+            onClick={() => onChange(m.id)}
+            className="gap-2"
+          >
+            <CircleDot className="size-3 text-violet-500" />
+            <span className="flex-1 truncate">
+              <span className="font-mono text-muted-foreground">M{m.number}</span> {m.title}
+            </span>
+            {m.id === value && <Check className="size-3 text-primary" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
-function AssigneePicker({
+function AssigneePill({
   agents,
   userHandle,
   pending,
@@ -648,63 +742,73 @@ function AssigneePicker({
   onAdd: (a: PendingAssignee) => void;
   onRemove: (a: PendingAssignee) => void;
 }) {
-  const alreadyAdded = (t: AssigneeType, id: string) => pending.some((x) => x.type === t && x.id === id);
   const { avatarUrl: myAvatarUrl } = useCurrentUserAvatarProps();
-  const agentBySlug = new Map(agents.map((a) => [a.slug, a] as const));
+  const alreadyAdded = (t: AssigneeType, id: string) =>
+    pending.some((x) => x.type === t && x.id === id);
 
   return (
-    <div className="flex flex-col gap-1.5">
-      {pending.length === 0 && (
-        <p className="text-[11.5px] text-muted-foreground/40 leading-snug">
-          Unassigned — column defaults still fire.
-        </p>
-      )}
+    <>
       {pending.map((a) => {
         const ag = a.type === 'agent' ? agents.find((x) => x.id === a.id) : null;
         return (
-          <div
+          <span
             key={`${a.type}:${a.id}`}
-            className="inline-flex items-center gap-1.5 h-7 pl-0.5 pr-1 rounded-full bg-muted/40 w-fit"
+            className="inline-flex items-center gap-1.5 rounded-full bg-muted/40 py-0.5 pl-0.5 pr-1.5 text-xs"
           >
             {ag ? (
-              <AgentAvatar hue={ag.color_hue} icon={ag.icon} slug={ag.slug} name={ag.name} size="sm" />
+              <AgentAvatar
+                hue={ag.color_hue}
+                icon={ag.icon}
+                slug={ag.slug}
+                name={ag.name}
+                size="sm"
+              />
             ) : (
-              <UserAvatar handle={a.label} avatarUrl={a.type === 'user' && a.label === userHandle ? myAvatarUrl : null} size="sm" />
+              <UserAvatar
+                handle={a.label}
+                avatarUrl={a.type === 'user' && a.label === userHandle ? myAvatarUrl : null}
+                size="sm"
+              />
             )}
-            <span className="text-[11.5px] font-mono text-foreground/85 truncate max-w-[120px]">@{a.label}</span>
+            <span className="font-mono text-foreground/90">@{a.label}</span>
             <button
+              type="button"
               onClick={() => onRemove(a)}
-              className="h-4 w-4 inline-flex items-center justify-center rounded-full text-muted-foreground/50 hover:text-foreground hover:bg-muted/60 transition-colors"
-              aria-label="Remove"
+              className="grid size-4 place-items-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Remove assignee"
             >
-              <X className="h-2.5 w-2.5" />
+              <X className="size-2.5" />
             </button>
-          </div>
+          </span>
         );
       })}
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground border border-dashed border-border/40 hover:border-border rounded-full w-fit"
+            size="xs"
+            className={cn(
+              PILL_TRIGGER,
+              'bg-muted text-muted-foreground hover:bg-muted/70',
+            )}
+            aria-label="Add assignee"
           >
-            <UserPlus className="h-2.5 w-2.5" />
-            Add
+            <UserPlus className="size-3" />
+            <span className="font-medium">{pending.length === 0 ? 'Assign' : 'Add'}</span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-60 z-[10000]">
-          <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">
+        <DropdownMenuContent align="start" className="z-[10000] w-56">
+          <DropdownMenuLabel className="text-xs uppercase tracking-wider text-muted-foreground">
             Assign to
           </DropdownMenuLabel>
           <DropdownMenuItem
             disabled={alreadyAdded('user', userHandle)}
             onClick={() => onAdd({ type: 'user', id: userHandle, label: userHandle })}
-            className="gap-2 cursor-pointer"
+            className="gap-2"
           >
             <UserAvatar handle={userHandle} avatarUrl={myAvatarUrl} size="sm" />
             <span className="flex-1 truncate">@{userHandle}</span>
-            <span className="text-[10px] text-muted-foreground/40">you</span>
+            <span className="text-xs text-muted-foreground">you</span>
           </DropdownMenuItem>
           {agents.length > 0 && <DropdownMenuSeparator />}
           {agents.map((a) => (
@@ -712,16 +816,21 @@ function AssigneePicker({
               key={a.id}
               disabled={alreadyAdded('agent', a.id)}
               onClick={() => onAdd({ type: 'agent', id: a.id, label: a.slug })}
-              className="gap-2 cursor-pointer"
+              className="gap-2"
             >
-              <AgentAvatar hue={a.color_hue} icon={a.icon} slug={a.slug} name={a.name} size="sm" />
+              <AgentAvatar
+                hue={a.color_hue}
+                icon={a.icon}
+                slug={a.slug}
+                name={a.name}
+                size="sm"
+              />
               <span className="flex-1 truncate">@{a.slug}</span>
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* Silence unused-variable linting for the reference map (kept for future @-mention UX). */}
-      {agentBySlug.size === -1 && null}
-    </div>
+    </>
   );
 }
+

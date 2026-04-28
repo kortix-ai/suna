@@ -47,6 +47,7 @@ import {
 	AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { ChevronRight } from "lucide-react";
+import { AppSidebar } from "@/components/app-sidebar";
 
 /** Monitors session status transitions and fires browser notifications. Renders nothing. */
 function WebNotificationProvider() {
@@ -549,6 +550,9 @@ export default function DashboardLayoutContent({
 	const setActiveTab = useTabStore((s) => s.setActiveTab);
 
 	useEffect(() => {
+		// In the new layout we drive everything off Next.js routes — no tab store.
+		if (featureFlags.newLayout) return;
+
 		const normalizedPath = normalizeAppPathname(pathname);
 		const descriptor = resolveTabFromPathname(normalizedPath);
 		if (!descriptor) return;
@@ -1020,6 +1024,7 @@ export default function DashboardLayoutContent({
 					// there's no persisted choice yet.
 					initialSidebarOpen ?? !ob.active
 				}
+				sidebarContent={featureFlags.newLayout ? <AppSidebar /> : undefined}
 				sidebarSiblings={
 					<Suspense fallback={null}>
 						<StatusOverlay />
@@ -1058,9 +1063,9 @@ export default function DashboardLayoutContent({
 						<CommandPalette />
 					</Suspense>
 
-					{/* Tab bar — hidden during onboarding, morphs in */}
+					{/* Tab bar — hidden during onboarding, morphs in. Suppressed when newLayout is on. */}
 					<AnimatePresence initial={false}>
-						{!hideChrome && (
+						{!hideChrome && !featureFlags.newLayout && (
 							<motion.div
 								key="tab-bar"
 								initial={{ height: 0, opacity: 0 }}
@@ -1074,8 +1079,17 @@ export default function DashboardLayoutContent({
 						)}
 					</AnimatePresence>
 
-					<div className="flex-1 min-h-0 flex flex-col md:border md:border-b-0 md:border-border/50 overflow-hidden md:rounded-t-xl relative">
-						<SessionTabsContainer>{children}</SessionTabsContainer>
+					<div className={cn(
+						'flex-1 min-h-0 flex flex-col overflow-hidden relative',
+						!featureFlags.newLayout && 'md:border md:border-b-0 md:border-border/50 md:rounded-t-xl',
+					)}>
+						{featureFlags.newLayout ? (
+							<div className="flex-1 min-h-0 flex flex-col overflow-y-auto bg-background">
+								{children}
+							</div>
+						) : (
+							<SessionTabsContainer>{children}</SessionTabsContainer>
+						)}
 
 						{/* Floating skip button during onboarding chat session */}
 						{ob.active && !ob.showBoot && !ob.showSetup && ob.sessionId && (

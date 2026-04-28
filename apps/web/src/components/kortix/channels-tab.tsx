@@ -126,26 +126,24 @@ export function ChannelsTab({ projectId }: { projectId: string }) {
   const slack = useMemo(() => channels.filter((c) => c.platform === 'slack'), [channels]);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 border-b border-border/40 px-4 py-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Radio className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Channels</span>
-          <Badge variant="secondary" className="text-[10px] tabular-nums">{channels.length}</Badge>
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-8 space-y-6">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Radio className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Channels</span>
+            <Badge variant="secondary" className="text-[10px] tabular-nums">{channels.length}</Badge>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => { setConfigPlatform(undefined); setConfigOpen(true); }}
+            disabled={!serverUrl}
+          >
+            <Plus />
+            Add
+          </Button>
         </div>
-        <Button
-          size="sm"
-          className="gap-1.5 h-7 text-[12px]"
-          onClick={() => { setConfigPlatform(undefined); setConfigOpen(true); }}
-          disabled={!serverUrl}
-        >
-          <Plus className="h-3 w-3" />
-          Add
-        </Button>
-      </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
         {loading ? (
           <div className="space-y-2">
             {[0, 1].map((i) => (

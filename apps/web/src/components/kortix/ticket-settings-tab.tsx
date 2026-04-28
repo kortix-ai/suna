@@ -1,14 +1,7 @@
 'use client';
 
-/**
- * Ticket Settings tab — Columns, Custom Fields, Templates.
- *
- * Matches Project About styling: max-w-3xl container, small uppercase section
- * labels, rounded cards on bg-card, row-based lists with dividers.
- * Each panel replaces the whole list on Save — server stays authoritative.
- */
-
 import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Plus,
   Trash2,
@@ -19,12 +12,11 @@ import {
   Columns as ColumnsIcon,
   SlidersHorizontal,
   FileStack,
-  Check,
-  ChevronDown,
   Pause,
   Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -56,61 +48,80 @@ import { COLUMN_ICONS, COLUMN_ICON_KEYS, defaultColumnIcon } from '@/components/
 
 type Panel = 'columns' | 'fields' | 'templates';
 
+const TRIGGER_CLS = cn(
+  'data-[state=active]:shadow-none',
+  'data-[state=active]:ring-0',
+  'data-[state=active]:bg-background data-[state=active]:text-foreground',
+  'data-[state=active]:border-border/60',
+);
+
+const INPUT_CLS =
+  'h-8 rounded-lg bg-muted/40 border-0 px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground/40 transition-colors focus:bg-muted/60 focus:ring-2 focus:ring-ring/20';
+
 export function TicketSettingsTab({ projectId }: { projectId: string }) {
   const [panel, setPanel] = useState<Panel>('columns');
   return (
-    <div className="h-full overflow-y-auto animate-in fade-in-0 duration-300 fill-mode-both">
-      <div className="container mx-auto max-w-3xl px-4 sm:px-6 lg:px-10 py-8 sm:py-10 space-y-8">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-8 space-y-8">
+        <Tabs value={panel} onValueChange={(v) => setPanel(v as Panel)}>
+          <TabsList>
+            <TabsTrigger value="columns" className={cn('flex-none px-3', TRIGGER_CLS)}>
+              <ColumnsIcon />
+              Columns
+            </TabsTrigger>
+            <TabsTrigger value="fields" className={cn('flex-none px-3', TRIGGER_CLS)}>
+              <SlidersHorizontal />
+              Custom fields
+            </TabsTrigger>
+            <TabsTrigger value="templates" className={cn('flex-none px-3', TRIGGER_CLS)}>
+              <FileStack />
+              Templates
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
-        <nav className="flex items-center gap-1 -ml-2">
-          <NavTab active={panel === 'columns'} onClick={() => setPanel('columns')} icon={<ColumnsIcon className="h-3.5 w-3.5" />} label="Columns" />
-          <NavTab active={panel === 'fields'} onClick={() => setPanel('fields')} icon={<SlidersHorizontal className="h-3.5 w-3.5" />} label="Custom fields" />
-          <NavTab active={panel === 'templates'} onClick={() => setPanel('templates')} icon={<FileStack className="h-3.5 w-3.5" />} label="Templates" />
-        </nav>
-
-        {panel === 'columns' && <ColumnsEditor projectId={projectId} />}
-        {panel === 'fields' && <FieldsEditor projectId={projectId} />}
-        {panel === 'templates' && <TemplatesEditor projectId={projectId} />}
+        <motion.div
+          key={panel}
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+        >
+          {panel === 'columns' && <ColumnsEditor projectId={projectId} />}
+          {panel === 'fields' && <FieldsEditor projectId={projectId} />}
+          {panel === 'templates' && <TemplatesEditor projectId={projectId} />}
+        </motion.div>
       </div>
     </div>
   );
 }
 
-function NavTab({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[12px] transition-colors cursor-pointer',
-        active
-          ? 'bg-foreground text-background'
-          : 'text-muted-foreground/70 hover:text-foreground hover:bg-muted/40',
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
-
-function SectionHead({ icon, label, description, action }: {
-  icon: React.ReactNode; label: string; description: string; action?: React.ReactNode;
+function SectionHead({
+  icon: Icon,
+  label,
+  count,
+  description,
+  action,
+}: {
+  icon: typeof ColumnsIcon;
+  label: string;
+  count?: number;
+  description: string;
+  action?: React.ReactNode;
 }) {
   return (
-    <>
-      <div className="flex items-center gap-2 mb-3">
-        {icon}
-        <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">{label}</span>
+    <div className="mb-3">
+      <div className="flex items-center gap-2">
+        <Icon className="size-3.5 text-muted-foreground/60" />
+        <h2 className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</h2>
+        {typeof count === 'number' && (
+          <span className="text-xs tabular-nums text-muted-foreground/45">{count}</span>
+        )}
         {action && <div className="ml-auto">{action}</div>}
       </div>
-      <p className="text-[12px] text-muted-foreground/55 -mt-2 mb-3">{description}</p>
-    </>
+      <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{description}</p>
+    </div>
   );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Columns
-// ═══════════════════════════════════════════════════════════════════════════
 
 interface ColumnDraft {
   key: string;
@@ -130,10 +141,11 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
   const [drafts, setDrafts] = useState<ColumnDraft[]>([]);
   useEffect(() => { if (columnsData) setDrafts(columnsData.map(toColumnDraft)); }, [columnsData]);
 
-  const dirty = useMemo(() => JSON.stringify(drafts.map(toColumnKeyShape)) !== JSON.stringify((columnsData ?? []).map(toColumnKey)), [drafts, columnsData]);
+  const dirty = useMemo(
+    () => JSON.stringify(drafts.map(toColumnKeyShape)) !== JSON.stringify((columnsData ?? []).map(toColumnKey)),
+    [drafts, columnsData],
+  );
 
-  // Derive flow vs off-flow from drafts. The draft array stays flat so index
-  // identities stay stable across renders — we filter for display.
   const flowRows = useMemo(
     () => drafts.map((d, idx) => ({ d, idx })).filter((r) => !r.d.is_off_flow),
     [drafts],
@@ -152,12 +164,12 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
     default_assignee_type: null, default_assignee_id: null, is_terminal: false, is_off_flow: true, icon: 'pause',
   }]);
   const removeAt = (i: number) => setDrafts((ds) => ds.filter((_, idx) => idx !== i));
-  const patchAt = (i: number, patch: Partial<ColumnDraft>) => setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, ...patch } : d));
-  const toggleOffFlow = (i: number) => setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, is_off_flow: !d.is_off_flow } : d));
+  const patchAt = (i: number, patch: Partial<ColumnDraft>) =>
+    setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, ...patch } : d));
+  const toggleOffFlow = (i: number) =>
+    setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, is_off_flow: !d.is_off_flow } : d));
 
-  // Reorder among flow columns only. Off-flow columns hold their draft slot.
   const moveFlowUp = (draftIdx: number) => setDrafts((ds) => {
-    // Find the previous on-flow draft index.
     let prev = -1;
     for (let k = draftIdx - 1; k >= 0; k--) if (!ds[k].is_off_flow) { prev = k; break; }
     if (prev === -1) return ds;
@@ -174,8 +186,6 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
     return next;
   });
 
-  // Save order: flow columns first (preserving their relative order), then
-  // off-flow. Off-flow relative order doesn't matter, but we keep it stable.
   const save = () => {
     const ordered = [
       ...drafts.filter((d) => !d.is_off_flow),
@@ -185,66 +195,33 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
   };
 
   return (
-    <section>
-      <SectionHead
-        icon={<ColumnsIcon className="h-3.5 w-3.5 text-muted-foreground/45" />}
-        label="Flow"
-        description="The linear sequence tickets move through. Order matters — new tickets land in the first column. Click a column's icon to change it."
-        action={
-          <Button
-            variant="ghost" size="sm" className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
-            onClick={addFlowColumn}
-          >
-            <Plus className="h-3 w-3" />
-            Add column
-          </Button>
-        }
-      />
-
-      <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
-        {flowRows.length === 0 && (
-          <div className="py-8 text-center text-[12px] text-muted-foreground/50">No flow columns yet.</div>
-        )}
-        {flowRows.map(({ d, idx }, displayI) => (
-          <ColumnRow
-            key={idx}
-            draft={d}
-            agents={agents}
-            onPatch={(patch) => patchAt(idx, patch)}
-            onDelete={() => removeAt(idx)}
-            onToggleOffFlow={() => toggleOffFlow(idx)}
-            // Flow-only controls:
-            canMoveUp={displayI > 0}
-            canMoveDown={displayI < flowRows.length - 1}
-            onMoveUp={() => moveFlowUp(idx)}
-            onMoveDown={() => moveFlowDown(idx)}
-          />
-        ))}
-      </div>
-
-      <div className="mt-8">
+    <section className="space-y-8">
+      <div>
         <SectionHead
-          icon={<Pause className="h-3.5 w-3.5 text-muted-foreground/45" />}
-          label="Off-flow"
-          description="Side-channel columns (e.g. blocked, on hold). Reachable from any flow column but don't participate in the linear sequence — skip-column and gate-column guards ignore them."
+          icon={ColumnsIcon}
+          label="Flow"
+          count={flowRows.length}
+          description="The linear sequence tickets move through. Order matters — new tickets land in the first column. Click a column's icon to change it."
           action={
             <Button
-              variant="ghost" size="sm" className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
-              onClick={addOffFlowColumn}
+              variant="ghost"
+              size="sm"
+              onClick={addFlowColumn}
+              className="h-7 text-xs text-muted-foreground hover:text-foreground"
             >
-              <Plus className="h-3 w-3" />
-              Add side-channel
+              <Plus />
+              Add column
             </Button>
           }
         />
 
-        <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
-          {offFlowRows.length === 0 && (
-            <div className="py-6 text-center text-[11.5px] text-muted-foreground/45">
-              None. Tickets that stall waiting on external input can sit in a flow column, or you can add a side-channel like <code className="font-mono text-[10.5px] px-1 py-0.5 rounded bg-muted/30">blocked</code>.
+        <div className="overflow-hidden rounded-2xl bg-muted/30">
+          {flowRows.length === 0 && (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground/60">
+              No flow columns yet.
             </div>
           )}
-          {offFlowRows.map(({ d, idx }) => (
+          {flowRows.map(({ d, idx }, displayI) => (
             <ColumnRow
               key={idx}
               draft={d}
@@ -252,7 +229,50 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
               onPatch={(patch) => patchAt(idx, patch)}
               onDelete={() => removeAt(idx)}
               onToggleOffFlow={() => toggleOffFlow(idx)}
-              // Off-flow: no arrows, order doesn't matter.
+              isLast={displayI === flowRows.length - 1}
+              canMoveUp={displayI > 0}
+              canMoveDown={displayI < flowRows.length - 1}
+              onMoveUp={() => moveFlowUp(idx)}
+              onMoveDown={() => moveFlowDown(idx)}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <SectionHead
+          icon={Pause}
+          label="Off-flow"
+          count={offFlowRows.length}
+          description="Side-channel columns (e.g. blocked, on hold). Reachable from any flow column but don't participate in the linear sequence."
+          action={
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={addOffFlowColumn}
+              className="h-7 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Plus />
+              Add side-channel
+            </Button>
+          }
+        />
+
+        <div className="overflow-hidden rounded-2xl bg-muted/30">
+          {offFlowRows.length === 0 && (
+            <div className="px-4 py-10 text-center text-sm text-muted-foreground/60">
+              No side-channels. Tickets that stall on external input can stay in a flow column, or you can add one like blocked.
+            </div>
+          )}
+          {offFlowRows.map(({ d, idx }, displayI) => (
+            <ColumnRow
+              key={idx}
+              draft={d}
+              agents={agents}
+              onPatch={(patch) => patchAt(idx, patch)}
+              onDelete={() => removeAt(idx)}
+              onToggleOffFlow={() => toggleOffFlow(idx)}
+              isLast={displayI === offFlowRows.length - 1}
             />
           ))}
         </div>
@@ -265,6 +285,7 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
 
 function ColumnRow({
   draft: d, agents, onPatch, onDelete, onToggleOffFlow,
+  isLast,
   canMoveUp, canMoveDown, onMoveUp, onMoveDown,
 }: {
   draft: ColumnDraft;
@@ -272,12 +293,16 @@ function ColumnRow({
   onPatch: (patch: Partial<ColumnDraft>) => void;
   onDelete: () => void;
   onToggleOffFlow: () => void;
+  isLast: boolean;
   canMoveUp?: boolean; canMoveDown?: boolean;
   onMoveUp?: () => void; onMoveDown?: () => void;
 }) {
   const isOffFlow = d.is_off_flow;
   return (
-    <div className="flex items-center gap-2 px-3 py-2.5">
+    <div className={cn(
+      'group flex items-center gap-2 px-3 py-2.5 transition-colors hover:bg-muted/40',
+      !isLast && 'border-b border-border/40',
+    )}>
       <ColumnIconPicker
         iconKey={d.icon ?? defaultColumnIcon(d.key)}
         onChange={(k) => onPatch({ icon: k })}
@@ -286,13 +311,13 @@ function ColumnRow({
         value={d.label}
         onChange={(e) => onPatch({ label: e.target.value })}
         placeholder="Label"
-        className="h-7 flex-1 text-[12.5px] bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/30"
+        className="h-8 flex-1 rounded-lg border-0 bg-transparent px-2 text-sm font-medium outline-none placeholder:text-muted-foreground/40 focus:bg-muted/40 focus:ring-2 focus:ring-ring/20"
       />
       <input
         value={d.key}
         onChange={(e) => onPatch({ key: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
         placeholder="key"
-        className="h-6 w-[110px] text-[10.5px] font-mono bg-muted/30 border border-border/30 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
+        className={cn(INPUT_CLS, 'w-[120px]')}
       />
       <Select
         value={d.default_assignee_id ?? '_none'}
@@ -300,45 +325,76 @@ function ColumnRow({
           ? { default_assignee_type: null, default_assignee_id: null }
           : { default_assignee_type: 'agent', default_assignee_id: v })}
       >
-        <SelectTrigger size="sm" className="h-6 text-[11px] w-[130px]"><SelectValue placeholder="Default…" /></SelectTrigger>
+        <SelectTrigger size="sm" className="h-8 w-[140px] text-sm">
+          <SelectValue placeholder="No default" />
+        </SelectTrigger>
         <SelectContent>
           <SelectItem value="_none">No default</SelectItem>
           {agents.map((a) => <SelectItem key={a.id} value={a.id}>@{a.slug}</SelectItem>)}
         </SelectContent>
       </Select>
-      <div className="flex items-center gap-0.5 ml-1">
+      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         {!isOffFlow && (
           <>
-            <Button
-              variant="ghost" size="sm"
-              className={cn('h-6 w-6 p-0 hover:text-foreground', canMoveUp ? 'text-muted-foreground/40' : 'text-muted-foreground/15 pointer-events-none')}
+            <RowIconButton
               onClick={onMoveUp}
+              disabled={!canMoveUp}
               title="Move up"
-            ><ArrowUp className="h-3 w-3" /></Button>
-            <Button
-              variant="ghost" size="sm"
-              className={cn('h-6 w-6 p-0 hover:text-foreground', canMoveDown ? 'text-muted-foreground/40' : 'text-muted-foreground/15 pointer-events-none')}
+              icon={<ArrowUp className="size-3.5" />}
+            />
+            <RowIconButton
               onClick={onMoveDown}
+              disabled={!canMoveDown}
               title="Move down"
-            ><ArrowDown className="h-3 w-3" /></Button>
+              icon={<ArrowDown className="size-3.5" />}
+            />
           </>
         )}
-        <Button
-          variant="ghost" size="sm"
-          className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-foreground"
+        <RowIconButton
           onClick={onToggleOffFlow}
-          title={isOffFlow ? 'Move back to flow' : 'Move to off-flow (side-channel)'}
-        >
-          {isOffFlow ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
-        </Button>
-        <Button
-          variant="ghost" size="sm"
-          className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive"
+          title={isOffFlow ? 'Move back to flow' : 'Move to off-flow'}
+          icon={isOffFlow ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+        />
+        <RowIconButton
           onClick={onDelete}
           title="Delete column"
-        ><Trash2 className="h-3 w-3" /></Button>
+          icon={<Trash2 className="size-3.5" />}
+          destructive
+        />
       </div>
     </div>
+  );
+}
+
+function RowIconButton({
+  onClick,
+  disabled,
+  title,
+  icon,
+  destructive,
+}: {
+  onClick?: () => void;
+  disabled?: boolean;
+  title: string;
+  icon: React.ReactNode;
+  destructive?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className={cn(
+        'inline-flex size-7 items-center justify-center rounded-md transition-colors',
+        'text-muted-foreground/60 hover:bg-muted hover:text-foreground',
+        'disabled:pointer-events-none disabled:opacity-30',
+        destructive && 'hover:text-destructive',
+      )}
+    >
+      {icon}
+    </button>
   );
 }
 
@@ -353,10 +409,7 @@ function toColumnDraft(c: TicketColumn): ColumnDraft {
     icon: c.icon ?? null,
   };
 }
-function toColumnKeyShape(d: ColumnDraft) {
-  // For dirty comparison — include is_off_flow so toggling it flags dirty.
-  return { ...d };
-}
+function toColumnKeyShape(d: ColumnDraft) { return { ...d }; }
 function toColumnKey(c: TicketColumn) {
   return {
     key: c.key, label: c.label,
@@ -376,15 +429,17 @@ function ColumnIconPicker({ iconKey, onChange }: { iconKey: string; onChange: (k
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 hover:bg-muted/40 transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
           title="Change icon"
           aria-label="Change column icon"
         >
-          <Ic className={cn('h-4 w-4', entry.tint)} />
+          <Ic className={cn('size-4', entry.tint)} />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[220px] z-[10000]">
-        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Column icon</DropdownMenuLabel>
+      <DropdownMenuContent align="start" className="w-56 z-[10000]">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/60 font-semibold">
+          Column icon
+        </DropdownMenuLabel>
         <div className="grid grid-cols-4 gap-1 p-1.5">
           {COLUMN_ICON_KEYS.map((k) => {
             const c = COLUMN_ICONS[k];
@@ -395,13 +450,13 @@ function ColumnIconPicker({ iconKey, onChange }: { iconKey: string; onChange: (k
                 key={k}
                 onClick={() => onChange(k)}
                 className={cn(
-                  'flex flex-col items-center justify-center gap-0.5 h-12 cursor-pointer p-1',
-                  active && 'bg-muted/40',
+                  'flex h-12 cursor-pointer flex-col items-center justify-center gap-0.5 p-1',
+                  active && 'bg-muted/60',
                 )}
                 title={c.label}
               >
-                <I className={cn('h-3.5 w-3.5', c.tint)} />
-                <span className="text-[9.5px] text-muted-foreground/70 truncate max-w-full">{c.label}</span>
+                <I className={cn('size-4', c.tint)} />
+                <span className="max-w-full truncate text-[10px] text-muted-foreground/70">{c.label}</span>
               </DropdownMenuItem>
             );
           })}
@@ -410,10 +465,6 @@ function ColumnIconPicker({ iconKey, onChange }: { iconKey: string; onChange: (k
     </DropdownMenu>
   );
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Fields
-// ═══════════════════════════════════════════════════════════════════════════
 
 interface FieldDraft {
   key: string;
@@ -428,71 +479,101 @@ function FieldsEditor({ projectId }: { projectId: string }) {
   const [drafts, setDrafts] = useState<FieldDraft[]>([]);
   useEffect(() => { if (fieldsData) setDrafts(fieldsData.map(toFieldDraft)); }, [fieldsData]);
 
-  const dirty = useMemo(() => JSON.stringify(drafts) !== JSON.stringify((fieldsData ?? []).map(toFieldDraft)), [drafts, fieldsData]);
+  const dirty = useMemo(
+    () => JSON.stringify(drafts) !== JSON.stringify((fieldsData ?? []).map(toFieldDraft)),
+    [drafts, fieldsData],
+  );
 
-  const add = () => setDrafts((ds) => [...ds, { key: `field_${Date.now().toString(36)}`, label: 'New field', type: 'text', options: [] }]);
+  const add = () => setDrafts((ds) => [...ds, {
+    key: `field_${Date.now().toString(36)}`, label: 'New field', type: 'text', options: [],
+  }]);
   const removeAt = (i: number) => setDrafts((ds) => ds.filter((_, idx) => idx !== i));
-  const patchAt = (i: number, patch: Partial<FieldDraft>) => setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, ...patch } : d));
+  const patchAt = (i: number, patch: Partial<FieldDraft>) =>
+    setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, ...patch } : d));
 
   const save = () => replace.mutate({
     projectId,
-    fields: drafts.map((d) => ({ key: d.key, label: d.label, type: d.type, options: d.type === 'select' ? d.options : null })),
+    fields: drafts.map((d) => ({
+      key: d.key, label: d.label, type: d.type,
+      options: d.type === 'select' ? d.options : null,
+    })),
   });
 
   return (
     <section>
       <SectionHead
-        icon={<SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground/45" />}
+        icon={SlidersHorizontal}
         label="Custom fields"
+        count={drafts.length}
         description="Per-project fields shown on every ticket. Type controls the editor — text, number, date, or a select with predefined options."
         action={
           <Button
-            variant="ghost" size="sm"
-            className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
+            variant="ghost"
+            size="sm"
             onClick={add}
+            className="h-7 text-xs text-muted-foreground hover:text-foreground"
           >
-            <Plus className="h-3 w-3" />
+            <Plus />
             Add field
           </Button>
         }
       />
 
-      <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+      <div className="overflow-hidden rounded-2xl bg-muted/30">
         {drafts.length === 0 && (
-          <div className="py-8 text-center text-[12px] text-muted-foreground/50">No custom fields yet.</div>
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground/60">
+            No custom fields yet.
+          </div>
         )}
         {drafts.map((d, i) => (
-          <div key={i} className="px-3 py-3">
+          <div
+            key={i}
+            className={cn(
+              'group px-3 py-3 transition-colors hover:bg-muted/40',
+              i !== drafts.length - 1 && 'border-b border-border/40',
+            )}
+          >
             <div className="flex items-center gap-2">
               <input
                 value={d.label}
                 onChange={(e) => patchAt(i, { label: e.target.value })}
                 placeholder="Label"
-                className="h-7 flex-1 text-[12.5px] bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/30"
+                className="h-8 flex-1 rounded-lg border-0 bg-transparent px-2 text-sm font-medium outline-none placeholder:text-muted-foreground/40 focus:bg-muted/40 focus:ring-2 focus:ring-ring/20"
               />
               <input
                 value={d.key}
                 onChange={(e) => patchAt(i, { key: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
                 placeholder="key"
-                className="h-6 w-[110px] text-[10.5px] font-mono bg-muted/30 border border-border/30 rounded px-2 outline-none focus:ring-2 focus:ring-primary/20"
+                className={cn(INPUT_CLS, 'w-[120px]')}
               />
               <Select value={d.type} onValueChange={(v) => patchAt(i, { type: v as FieldDraft['type'] })}>
-                <SelectTrigger size="sm" className="h-6 text-[11px] w-[100px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger size="sm" className="h-8 w-[110px] text-sm">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="text">text</SelectItem>
-                  <SelectItem value="number">number</SelectItem>
-                  <SelectItem value="date">date</SelectItem>
-                  <SelectItem value="select">select</SelectItem>
+                  <SelectItem value="text">Text</SelectItem>
+                  <SelectItem value="number">Number</SelectItem>
+                  <SelectItem value="date">Date</SelectItem>
+                  <SelectItem value="select">Select</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive" onClick={() => removeAt(i)}><Trash2 className="h-3 w-3" /></Button>
+              <div className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <RowIconButton
+                  onClick={() => removeAt(i)}
+                  title="Delete field"
+                  icon={<Trash2 className="size-3.5" />}
+                  destructive
+                />
+              </div>
             </div>
             {d.type === 'select' && (
               <input
                 value={d.options.join(', ')}
-                onChange={(e) => patchAt(i, { options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
+                onChange={(e) => patchAt(i, {
+                  options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+                })}
                 placeholder="Options, comma-separated — e.g. P0, P1, P2, P3"
-                className="mt-2 h-7 w-full text-[11.5px] bg-muted/20 border border-border/30 rounded-lg px-2.5 outline-none focus:ring-2 focus:ring-primary/20"
+                className={cn(INPUT_CLS, 'mt-2 w-full h-8')}
               />
             )}
           </div>
@@ -510,10 +591,6 @@ function toFieldDraft(f: ProjectField): FieldDraft {
   return { key: f.key, label: f.label, type: f.type, options };
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Templates
-// ═══════════════════════════════════════════════════════════════════════════
-
 interface TemplateDraft { name: string; body_md: string }
 
 function TemplatesEditor({ projectId }: { projectId: string }) {
@@ -525,7 +602,10 @@ function TemplatesEditor({ projectId }: { projectId: string }) {
     if (templatesData) setDrafts(templatesData.map((t) => ({ name: t.name, body_md: t.body_md })));
   }, [templatesData]);
 
-  const dirty = useMemo(() => JSON.stringify(drafts) !== JSON.stringify((templatesData ?? []).map((t) => ({ name: t.name, body_md: t.body_md }))), [drafts, templatesData]);
+  const dirty = useMemo(
+    () => JSON.stringify(drafts) !== JSON.stringify((templatesData ?? []).map((t) => ({ name: t.name, body_md: t.body_md }))),
+    [drafts, templatesData],
+  );
 
   const add = () => {
     const next = drafts.length;
@@ -539,77 +619,86 @@ function TemplatesEditor({ projectId }: { projectId: string }) {
     setDrafts((ds) => ds.filter((_, idx) => idx !== i));
     setActive((a) => (a === null ? null : a === i ? null : a > i ? a - 1 : a));
   };
-  const patchAt = (i: number, patch: Partial<TemplateDraft>) => setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, ...patch } : d));
+  const patchAt = (i: number, patch: Partial<TemplateDraft>) =>
+    setDrafts((ds) => ds.map((d, idx) => idx === i ? { ...d, ...patch } : d));
 
   const save = () => replace.mutate({ projectId, templates: drafts });
 
   return (
     <section>
       <SectionHead
-        icon={<FileStack className="h-3.5 w-3.5 text-muted-foreground/45" />}
+        icon={FileStack}
         label="Ticket templates"
+        count={drafts.length}
         description="Markdown templates shown in the New-ticket picker. Acceptance criteria lives in the body — no hardcoded verification field."
         action={
           <Button
-            variant="ghost" size="sm"
-            className="h-6 px-2 text-[11px] gap-1 text-muted-foreground/60 hover:text-foreground"
+            variant="ghost"
+            size="sm"
             onClick={add}
+            className="h-7 text-xs text-muted-foreground hover:text-foreground"
           >
-            <Plus className="h-3 w-3" />
+            <Plus />
             Add template
           </Button>
         }
       />
 
-      <div className="rounded-xl border border-border/40 overflow-hidden bg-card">
+      <div className="overflow-hidden rounded-2xl bg-muted/30">
         {drafts.length === 0 ? (
-          <div className="py-8 text-center text-[12px] text-muted-foreground/50">No templates yet.</div>
+          <div className="px-4 py-10 text-center text-sm text-muted-foreground/60">
+            No templates yet.
+          </div>
         ) : (
-          <div className="flex min-h-[320px]">
-            <div className="w-48 border-r border-border/30 divide-y divide-border/30 shrink-0">
+          <div className="flex min-h-[360px]">
+            <div className="w-52 shrink-0 border-r border-border/40">
               {drafts.map((d, i) => (
                 <button
                   key={i}
                   onClick={() => setActive(i)}
                   className={cn(
-                    'w-full text-left px-3 py-2.5 hover:bg-muted/25 transition-colors cursor-pointer',
-                    active === i && 'bg-muted/40',
+                    'group block w-full cursor-pointer px-3 py-2.5 text-left transition-colors hover:bg-muted/60',
+                    i !== drafts.length - 1 && 'border-b border-border/40',
+                    active === i && 'bg-muted/60',
                   )}
                 >
-                  <div className="text-[12.5px] font-medium truncate">{d.name || 'Untitled'}</div>
-                  <div className="text-[10.5px] text-muted-foreground/45 truncate mt-0.5">
+                  <div className="truncate text-sm font-medium text-foreground">
+                    {d.name || 'Untitled'}
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground/55">
                     {summarise(d.body_md)}
                   </div>
                 </button>
               ))}
             </div>
-            <div className="flex-1 min-w-0 flex flex-col">
+            <div className="flex min-w-0 flex-1 flex-col bg-background">
               {active === null ? (
-                <div className="flex-1 flex items-center justify-center text-[12px] text-muted-foreground/45">
+                <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground/60">
                   Select a template to edit, or add a new one.
                 </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30">
+                  <div className="group flex items-center gap-2 border-b border-border/40 px-3 py-2">
                     <input
                       value={drafts[active].name}
                       onChange={(e) => patchAt(active, { name: e.target.value })}
                       placeholder="Name (e.g. Bug)"
-                      className="h-7 flex-1 text-[12.5px] bg-transparent border-0 outline-none focus:ring-0 placeholder:text-muted-foreground/30 font-medium"
+                      className="h-8 flex-1 rounded-lg border-0 bg-transparent px-2 text-sm font-semibold outline-none placeholder:text-muted-foreground/40 focus:bg-muted/40 focus:ring-2 focus:ring-ring/20"
                     />
-                    <Button
-                      variant="ghost" size="sm"
-                      className="h-6 w-6 p-0 text-muted-foreground/40 hover:text-destructive"
-                      onClick={() => removeAt(active)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
+                    <div className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      <RowIconButton
+                        onClick={() => removeAt(active)}
+                        title="Delete template"
+                        icon={<Trash2 className="size-3.5" />}
+                        destructive
+                      />
+                    </div>
                   </div>
                   <textarea
                     value={drafts[active].body_md}
                     onChange={(e) => patchAt(active, { body_md: e.target.value })}
                     rows={14}
-                    className="flex-1 text-[12px] font-mono bg-transparent border-0 outline-none focus:ring-0 resize-none px-3 py-2.5 leading-[1.7] placeholder:text-muted-foreground/30"
+                    className="flex-1 resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/40 focus:ring-0"
                     placeholder="Markdown body…"
                   />
                 </>
@@ -630,20 +719,16 @@ function summarise(body: string): string {
   return clean.length > 40 ? `${clean.slice(0, 40)}…` : clean;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Save row
-// ═══════════════════════════════════════════════════════════════════════════
-
 function SaveRow({ disabled, submitting, onSave }: { disabled: boolean; submitting: boolean; onSave: () => void }) {
   return (
-    <div className="mt-3 flex items-center justify-end gap-2">
+    <div className="mt-4 flex items-center justify-end">
       <Button
         size="sm"
-        className="h-7 px-3 text-[12px] gap-1"
         disabled={disabled || submitting}
         onClick={onSave}
+        className="gap-1.5"
       >
-        {submitting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+        {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
         {disabled ? 'Saved' : 'Save changes'}
       </Button>
     </div>

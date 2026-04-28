@@ -1,21 +1,8 @@
 'use client';
 
-/**
- * Project Settings hub — a single tab that absorbs Team, Triggers,
- * Credentials, and the existing Board config (columns/fields/templates).
- *
- * Why: the top-level tab bar was getting crowded (9 tabs). Top-level is
- * reserved for work surfaces (Board, Milestones, Sessions, Files, About);
- * set-once / rarely-touched configuration lives here.
- *
- * UX: sub-pills mirror the existing style used inside TicketSettingsTab
- * (rounded-full, filled when active). Section state is purely client-side
- * — URL sync is opt-in via the `initialSection` prop (wire up later if
- * needed for deep-links).
- */
-
-import { type ComponentType } from 'react';
 import { Users, KeyRound, Zap, LayoutGrid, Radio } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { TeamTab } from './team-tab';
 import { CredentialsTab } from './credentials-tab';
@@ -25,11 +12,21 @@ import { TicketSettingsTab } from './ticket-settings-tab';
 
 export type SettingsSection = 'team' | 'credentials' | 'triggers' | 'channels' | 'board';
 
-/**
- * Controlled component: parent owns the section state so it survives
- * tab-away / tab-back on the outer project tab bar. Parent also uses
- * `section` to land legacy `setTab('team')` etc. on the right pill.
- */
+const SECTIONS: Array<{ value: SettingsSection; label: string; icon: typeof Users; hint: string }> = [
+  { value: 'team', label: 'Team', icon: Users, hint: 'Agents, humans, and roles' },
+  { value: 'credentials', label: 'Credentials', icon: KeyRound, hint: 'API keys and secrets' },
+  { value: 'triggers', label: 'Triggers', icon: Zap, hint: 'Cron jobs and webhooks' },
+  { value: 'channels', label: 'Channels', icon: Radio, hint: 'Slack, email, and inbound routes' },
+  { value: 'board', label: 'Board', icon: LayoutGrid, hint: 'Columns, fields, and templates' },
+];
+
+const TRIGGER_CLS = cn(
+  'data-[state=active]:shadow-none',
+  'data-[state=active]:ring-0',
+  'data-[state=active]:bg-background data-[state=active]:text-foreground',
+  'data-[state=active]:border-border/60',
+);
+
 export function ProjectSettingsTab({
   projectId,
   projectPath,
@@ -41,58 +38,66 @@ export function ProjectSettingsTab({
   section: SettingsSection;
   onSectionChange: (s: SettingsSection) => void;
 }) {
-  const setSection = onSectionChange;
+  const current = SECTIONS.find((s) => s.value === section) ?? SECTIONS[0];
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-background">
-      {/* Sub-nav — sticks at the top of the settings pane, same visual
-          language as the pill nav inside TicketSettingsTab. */}
-      <div className="shrink-0 border-b border-border/40 bg-background/95 backdrop-blur">
-        <div className="container mx-auto max-w-3xl px-3 sm:px-4 py-2.5 flex items-center gap-1">
-          <SectionPill active={section === 'team'} onClick={() => setSection('team')} icon={Users} label="Team" />
-          <SectionPill active={section === 'credentials'} onClick={() => setSection('credentials')} icon={KeyRound} label="Credentials" />
-          <SectionPill active={section === 'triggers'} onClick={() => setSection('triggers')} icon={Zap} label="Triggers" />
-          <SectionPill active={section === 'channels'} onClick={() => setSection('channels')} icon={Radio} label="Channels" />
-          <SectionPill active={section === 'board'} onClick={() => setSection('board')} icon={LayoutGrid} label="Board" />
+    <div className="flex h-full flex-col overflow-hidden bg-background">
+      <Tabs
+        value={section}
+        onValueChange={(v) => onSectionChange(v as SettingsSection)}
+        className="flex h-full min-h-0 flex-col gap-0"
+      >
+        <div className="shrink-0">
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="mx-auto w-full max-w-3xl px-4 pt-12 sm:px-6"
+          >
+            <header>
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">
+                Settings
+              </h1>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                {current.hint}.
+              </p>
+            </header>
+
+            <div className="mt-6">
+              <TabsList>
+                {SECTIONS.map((s) => (
+                  <TabsTrigger
+                    key={s.value}
+                    value={s.value}
+                    className={cn('flex-none px-3', TRIGGER_CLS)}
+                  >
+                    <s.icon />
+                    {s.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
+          </motion.div>
         </div>
-      </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {section === 'team' && <TeamTab projectId={projectId} />}
-        {section === 'credentials' && <CredentialsTab projectId={projectId} />}
-        {section === 'triggers' && (
-          <TriggersTab projectId={projectId} projectPath={projectPath ?? ''} />
-        )}
-        {section === 'channels' && <ChannelsTab projectId={projectId} />}
-        {section === 'board' && <TicketSettingsTab projectId={projectId} />}
-      </div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <motion.div
+            key={section}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="h-full"
+          >
+            {section === 'team' && <TeamTab projectId={projectId} />}
+            {section === 'credentials' && <CredentialsTab projectId={projectId} />}
+            {section === 'triggers' && (
+              <TriggersTab projectId={projectId} projectPath={projectPath ?? ''} />
+            )}
+            {section === 'channels' && <ChannelsTab projectId={projectId} />}
+            {section === 'board' && <TicketSettingsTab projectId={projectId} />}
+          </motion.div>
+        </div>
+      </Tabs>
     </div>
-  );
-}
-
-function SectionPill({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-[12px] transition-colors cursor-pointer',
-        active
-          ? 'bg-foreground text-background'
-          : 'text-muted-foreground/70 hover:text-foreground hover:bg-muted/40',
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </button>
   );
 }

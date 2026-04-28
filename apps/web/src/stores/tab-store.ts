@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useServerStore } from '@/stores/server-store';
 import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@/lib/instance-routes';
+import { featureFlags } from '@/lib/feature-flags';
 
 // ============================================================================
 // Types
@@ -522,9 +523,22 @@ export function openTabAndNavigate(
   tabInput: Omit<Tab, 'openedAt'>,
   router?: { push: (url: string) => void },
 ) {
-  useTabStore.getState().openTab(tabInput);
   if (typeof window === 'undefined') return;
   const href = toInstanceAwarePath(tabInput.href, getCurrentInstanceIdFromWindow());
+
+  // New layout: no tab store, navigate via the App Router so Next.js
+  // re-renders the route tree. Falls back to a full assign if no router was
+  // provided by the caller.
+  if (featureFlags.newLayout) {
+    if (router) {
+      router.push(href);
+    } else {
+      window.location.assign(href);
+    }
+    return;
+  }
+
+  useTabStore.getState().openTab(tabInput);
   if (PRE_MOUNTED_TAB_TYPES.has(tabInput.type)) {
     window.history.pushState(null, '', href);
   } else if (router) {

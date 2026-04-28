@@ -108,7 +108,7 @@ export function TeamTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="h-full overflow-y-auto animate-in fade-in-0 duration-300 fill-mode-both">
-      <div className="container mx-auto max-w-3xl px-4 sm:px-6 lg:px-10 py-8 sm:py-10 space-y-8">
+      <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-8 space-y-8">
 
         {/* ─── Roster ─── */}
         <section>
