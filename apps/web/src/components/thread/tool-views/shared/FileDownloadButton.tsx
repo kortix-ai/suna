@@ -35,7 +35,7 @@ interface FileDownloadButtonProps {
  * - For markdown files: Shows a dropdown with PDF, Word, HTML, Markdown export options
  * - For other files: Shows a simple download button
  * 
- * This component is used in FileOperationToolView and file viewer components
+ * This component is used in file viewer components
  * to ensure consistent download/export behavior.
  */
 export function FileDownloadButton({

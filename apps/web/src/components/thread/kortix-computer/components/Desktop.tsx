@@ -391,7 +391,7 @@ export const SandboxDesktop = memo(function SandboxDesktop({
     }
   }, [latestIndex, toolCalls.length, openToolWindow]);
 
-  // When activeView changes externally (e.g., clicking Edit in FileOperationToolView), open the corresponding window
+  // When activeView changes externally, open the corresponding window
   const previousViewRef = useRef(currentView);
   useEffect(() => {
     // Only act if view actually changed
