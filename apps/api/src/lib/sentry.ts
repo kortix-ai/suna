@@ -38,6 +38,10 @@ if (SENTRY_DSN) {
       'ECONNRESET',
       'ETIMEDOUT',
       'UND_ERR_CONNECT_TIMEOUT',
+      // Bun-specific phrasing of ECONNREFUSED — surfaces when a sandbox port proxy
+      // hits a dead port (nothing listening on localhost:N). Expected, not actionable.
+      'Unable to connect',
+      'Is the computer able to access the url',
       // Client-side abort
       'AbortError',
       'The operation was aborted',
