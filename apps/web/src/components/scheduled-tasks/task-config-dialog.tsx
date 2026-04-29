@@ -93,6 +93,9 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
   const [newTicketColumn, setNewTicketColumn] = useState<string>('');
   const [newTicketAssignees, setNewTicketAssignees] = useState<string>(''); // comma-separated slugs
 
+  // State carry — inject previous run result into next scheduled run's prompt context
+  const [carryState, setCarryState] = useState(false);
+
   // Optional ticket binding (only surfaces when scoped to a project)
   const [ticketId, setTicketId] = useState<string>(defaultTicketId ?? '');
   const { data: projectTickets = [] } = useTickets(projectId, { enabled: !!projectId });
@@ -138,6 +141,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
     setNewTicketBody('');
     setNewTicketColumn('');
     setNewTicketAssignees('');
+    setCarryState(false);
     setTicketId(defaultTicketId ?? '');
     onOpenChange(false);
   };
@@ -185,6 +189,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
         action,
         ...(projectId ? { project_id: projectId } : {}),
         ...(ticketId ? { ticket_id: ticketId } : {}),
+        ...(carryState ? { carry_state: true } : {}),
       });
       toast.success('Trigger created');
       handleClose();
@@ -430,6 +435,20 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                         <SelectItem value="reuse" className="cursor-pointer">Reuse Session</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  {/* Carry state — inject previous run result into next run's prompt */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="carry-state"
+                      checked={carryState}
+                      onChange={(e) => setCarryState(e.target.checked)}
+                      className="h-4 w-4 cursor-pointer"
+                    />
+                    <Label htmlFor="carry-state" className="cursor-pointer font-normal">
+                      Carry previous run result into next run
+                    </Label>
                   </div>
 
                   {/* Agent — shared CommandPopover component from ChatInput */}

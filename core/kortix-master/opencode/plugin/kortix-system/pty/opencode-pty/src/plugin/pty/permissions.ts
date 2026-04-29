@@ -110,6 +110,6 @@ export async function checkWorkdirPermission(workdir: string): Promise<void> {
   }
 
   if (extDirPerm === 'ask') {
-    // TODO: Implement user prompt for external directory access
+    await handleAskPermission(workdir)
   }
 }
