@@ -341,7 +341,33 @@ export async function middleware(request: NextRequest) {
       url.pathname = '/auth';
       const redirectTarget = `${pathname}${request.nextUrl.search || ''}`;
       url.searchParams.set('redirect', redirectTarget);
-      return NextResponse.redirect(url);
+      const redirectResponse = NextResponse.redirect(url);
+
+      // ── Stale refresh-token cleanup (fixes Mac "Workspace Unreachable" after reinstall) ──
+      // When the Supabase DB is wiped (reinstall / kortix update), the browser
+      // still holds the old refresh token in cookies. The next request gets
+      // AuthApiError: refresh_token_not_found, causing a permanent 401 loop.
+      // Clear the auth cookies here so the user lands on /auth with a clean state
+      // and can sign in normally — no manual "clear site data" step required.
+      const isStaleToken =
+        authError &&
+        (authError as unknown as { code?: string }).code === 'refresh_token_not_found';
+
+      if (isStaleToken) {
+        // Clear all cookies whose name starts with the auth cookie prefix
+        const authCookiePrefix = KORTIX_SUPABASE_AUTH_COOKIE;
+        request.cookies.getAll().forEach(({ name }) => {
+          if (name.startsWith(authCookiePrefix) || name.startsWith('sb-')) {
+            redirectResponse.cookies.set(name, '', {
+              path: '/',
+              maxAge: 0,
+              sameSite: 'lax',
+            });
+          }
+        });
+      }
+
+      return redirectResponse;
     }
 
     // ── Instance-scoped routes (/instances/:id/dashboard, etc.) ──────────
