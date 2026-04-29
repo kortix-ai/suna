@@ -9,6 +9,44 @@ export type { AuthProvider, ConnectedAccount, AuthToken, ConnectTokenResult, App
 let _default: AuthProvider | null = null;
 let _defaultChecked = false;
 
+// ─── Per-credential provider cache (tiers 1 & 2) ─────────────────────────────
+// PipedreamProvider caches the OAuth access token in instance state.
+// Creating a new instance per request discards that cache, forcing a fresh
+// token exchange on every Pipedream API call (~100ms RTT each).
+//
+// This cache amortizes token exchanges by reusing the same provider instance
+// for a given clientId:projectId:environment fingerprint across requests.
+// Max 100 entries — prevents unbounded growth in multi-tenant deployments.
+//
+// Security: the cache key does NOT include client_secret (avoids leaking it
+// as a JS string in Map keys). This is process-scoped, same security boundary
+// as the existing tier-3 singleton.
+
+const MAX_PROVIDER_CACHE = 100;
+const _providerCache = new Map<string, AuthProvider>();
+
+function getOrCreateProvider(cfg: {
+  clientId: string;
+  clientSecret: string;
+  projectId: string;
+  environment?: string | null;
+}): AuthProvider {
+  const environment = cfg.environment ?? 'production';
+  const key = `${cfg.clientId}:${cfg.projectId}:${environment}`;
+  const cached = _providerCache.get(key);
+  if (cached) return cached;
+
+  const provider = new PipedreamProvider({ ...cfg, environment });
+
+  // Simple FIFO eviction: drop the oldest entry when at capacity
+  if (_providerCache.size >= MAX_PROVIDER_CACHE) {
+    const oldest = _providerCache.keys().next().value;
+    if (oldest) _providerCache.delete(oldest);
+  }
+  _providerCache.set(key, provider);
+  return provider;
+}
+
 /**
  * Get or create the global (env-based) provider singleton.
  * This is tier 3 — the fallback when no request headers or account creds exist.
@@ -43,7 +81,7 @@ function fromHeaders(c: Context): AuthProvider | null {
 
   if (clientId && clientSecret && projectId) {
     const environment = c.req.header('x-pipedream-environment') || 'production';
-    return new PipedreamProvider({ clientId, clientSecret, projectId, environment });
+    return getOrCreateProvider({ clientId, clientSecret, projectId, environment });
   }
   return null;
 }
@@ -65,7 +103,7 @@ export async function getProviderFromRequest(c: Context, accountId?: string): Pr
   if (accountId) {
     const creds = await getAccountCreds(accountId);
     if (creds) {
-      return new PipedreamProvider({
+      return getOrCreateProvider({
         clientId: creds.client_id,
         clientSecret: creds.client_secret,
         projectId: creds.project_id,
