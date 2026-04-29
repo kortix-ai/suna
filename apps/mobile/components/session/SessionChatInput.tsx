@@ -20,6 +20,7 @@ import {
   ActionSheetIOS,
   Alert,
   Image,
+  Keyboard,
   useWindowDimensions,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
@@ -605,6 +606,10 @@ export function SessionChatInput({
 
     const trimmed = text.trim();
     if (!trimmed || disabled) return;
+
+    // Dismiss the keyboard on send so the user sees the new message land
+    // (matches WhatsApp / iMessage behavior on phones).
+    Keyboard.dismiss();
 
     if (autocontinueMode && onCommand) {
       const alg = AUTOCONTINUE_ALGORITHMS.find((a) => a.id === autocontinueMode);

@@ -862,8 +862,9 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             <View className="flex-row gap-3">
               <Pressable
                 onPress={handleUploadDocument}
-                className="flex-row items-center px-5 py-3 rounded-2xl active:opacity-70"
+                className="flex-row items-center px-5 py-3 active:opacity-70"
                 style={{
+                  borderRadius: 9999,
                   backgroundColor: themeColors.primary,
                 }}
               >
@@ -883,8 +884,9 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               </Pressable>
               <Pressable
                 onPress={openCreateFolder}
-                className="flex-row items-center px-5 py-3 rounded-2xl active:opacity-70"
+                className="flex-row items-center px-5 py-3 active:opacity-70"
                 style={{
+                  borderRadius: 9999,
                   backgroundColor: isDark
                     ? 'rgba(248, 248, 248, 0.1)'
                     : 'rgba(18, 18, 21, 0.06)',

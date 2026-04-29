@@ -3,10 +3,10 @@
  * Shows icon, status, linked sandboxes, rename (via sub-sheet), and disconnect.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Pressable, Alert, ActivityIndicator, StyleSheet, Keyboard } from 'react-native';
 import { Text } from '@/components/ui/text';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pencil, Trash2, Calendar, Link2, Unlink, Monitor } from 'lucide-react-native';
@@ -33,9 +33,8 @@ interface ManageConnectionSheetProps {
 }
 
 export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: ManageConnectionSheetProps) {
-  const sheetRef = useRef<BottomSheet>(null);
+  const sheetRef = useRef<BottomSheetModal>(null);
   const renameSheetRef = useRef<BottomSheetModal>(null);
-  const snapPoints = useMemo(() => ['60%', '85%'], []);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -65,18 +64,11 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
     if (connection) {
       setRenameDraft(connection.label || connection.appName || connection.app);
       setLocalLabel(null);
-      sheetRef.current?.snapToIndex(0);
+      sheetRef.current?.present();
     } else {
-      sheetRef.current?.close();
+      sheetRef.current?.dismiss();
     }
   }, [connection]);
-
-  const handleSheetChange = useCallback(
-    (index: number) => {
-      if (index === -1) onDismiss();
-    },
-    [onDismiss],
-  );
 
   const renderBackdrop = useCallback(
     (props: any) => (
@@ -173,18 +165,17 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
 
   return (
     <>
-      <BottomSheet
+      <BottomSheetModal
         ref={sheetRef}
-        index={-1}
-        snapPoints={snapPoints}
+        enableDynamicSizing
         enablePanDownToClose
-        onChange={handleSheetChange}
+        onDismiss={onDismiss}
         backdropComponent={renderBackdrop}
         backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
         handleIndicatorStyle={{ backgroundColor: isDark ? '#555' : '#ccc' }}
       >
-        <BottomSheetScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 20 }}
+        <BottomSheetView
+          style={{ padding: 20, paddingBottom: insets.bottom + 20 }}
         >
           {connection && (
             <>
@@ -317,8 +308,8 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
               </Pressable>
             </>
           )}
-        </BottomSheetScrollView>
-      </BottomSheet>
+        </BottomSheetView>
+      </BottomSheetModal>
 
       {/* Rename Sub-Sheet */}
       <BottomSheetModal

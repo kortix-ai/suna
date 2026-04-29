@@ -887,13 +887,18 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           ref={flatListRef}
           data={turns}
           renderItem={renderTurn}
-          keyExtractor={(item) => item.userMessage.info.id}
+          keyExtractor={(item, index) => `${item.userMessage.info.id}:${index}`}
           contentContainerStyle={{ paddingTop: 16 }}
           showsVerticalScrollIndicator={false}
           scrollEventThrottle={16}
           onScroll={handleListScroll}
           onContentSizeChange={handleContentSizeChange}
           onLayout={handleListLayout}
+          // WhatsApp-style: drag the message list down to dismiss the keyboard.
+          // 'interactive' makes the keyboard track the finger on iOS; Android
+          // falls back to 'on-drag' (closes once the user starts scrolling).
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
             forkParentId ? (
               <ForkBanner
