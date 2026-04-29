@@ -50,6 +50,7 @@ import * as Haptics from 'expo-haptics';
 import { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
 import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { SearchListHeader } from '@/components/ui/search-list-header';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
@@ -234,59 +235,14 @@ function ScheduledTasksContent() {
     [],
   );
 
-  // ── Search Bar + Add Button ──
-  const SearchBar = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8, gap: 10 }}>
-      <View
-        style={{
-          flex: 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: inputBg,
-          borderRadius: 9999,
-          paddingHorizontal: 16,
-          height: 42,
-        }}
-      >
-        <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search tasks..."
-          placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
-          style={{
-            flex: 1,
-            marginLeft: 8,
-            fontSize: 15,
-            fontFamily: 'Roobert',
-            color: fg,
-          }}
-          returnKeyType="search"
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-        {searchQuery.length > 0 && (
-          <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-            <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
-          </Pressable>
-        )}
-      </View>
-      <Pressable
-        onPress={handleOpenCreate}
-        style={{
-          width: 42, height: 42, borderRadius: 9999,
-          backgroundColor: theme.primary,
-          alignItems: 'center', justifyContent: 'center',
-        }}
-      >
-        <Plus size={20} color={theme.primaryForeground} />
-      </Pressable>
-    </View>
-  );
-
   return (
     <View style={{ flex: 1 }}>
-      {SearchBar}
+      <SearchListHeader
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder="Search tasks..."
+        onAdd={handleOpenCreate}
+      />
 
       <FlatList
         data={filteredTriggers}
