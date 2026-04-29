@@ -10,6 +10,8 @@ export const TOOL_COMPLETED_NAMES: ReadonlyMap<string, string> = new Map([
   ['image_search', 'Searched Images'],
   ['scrape-webpage', 'Scraped Website'],
   ['scrape_webpage', 'Scraped Website'],
+  ['exa-search', 'Searched Web (Exa)'],
+  ['exa_search', 'Searched Web (Exa)'],
   ['crawl-webpage', 'Crawled Website'],
   ['crawl_webpage', 'Crawled Website'],
   ['execute-command', 'Executed Command'],
@@ -108,6 +110,8 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   ['web_search', 'Searching Web'],
   ['image-search', 'Searching Images'],
   ['image_search', 'Searching Images'],
+  ['exa-search', 'Searching Web (Exa)'],
+  ['exa_search', 'Searching Web (Exa)'],
   
   // Port operations
   ['expose-port', 'Exposing Port'],
