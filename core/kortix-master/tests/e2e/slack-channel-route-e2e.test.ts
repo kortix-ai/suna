@@ -100,9 +100,13 @@ describe('Slack channel webhook route', () => {
     })
 
     expect(res.status).toBe(202)
-    const json = await res.json() as { ok: boolean; sessionId: string }
+    // v2 route response shape: { ok: true, queued: true } — sessionId removed in PR #3128
+    const json = await res.json() as { ok: boolean; queued: boolean }
     expect(json.ok).toBe(true)
-    expect(json.sessionId).toBe('sess-slack-route')
+    expect(json.queued).toBe(true)
+
+    // Dispatch is fire-and-forget — allow async fetch calls to settle
+    await new Promise((r) => setTimeout(r, 100))
 
     const createCall = fetchCalls.find((call) => call.url === 'http://localhost:4096/session')
     expect(createCall?.body?.agent).toBe('kortix')
