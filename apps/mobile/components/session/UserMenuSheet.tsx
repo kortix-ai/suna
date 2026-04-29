@@ -20,7 +20,7 @@ import {
   Sun,
   X,
 } from 'lucide-react-native';
-import { getSheetBg } from '@/lib/theme-colors';
+import { getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 
 type ThemeOption = 'light' | 'dark' | 'system';
 
@@ -64,9 +64,10 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
   // Subtle hairline divider — explicit rgba because NativeWind v4 doesn't
   // support `/X` alpha on legacy hsl(var(--border)) tokens.
   const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  // Theme-toggle pill colors mirror web (bg-muted/50 container + bg-background active).
-  const toggleTrackBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const toggleActiveBg = isDark ? 'rgba(255,255,255,0.14)' : '#FFFFFF';
+  // Theme-toggle pill colors via the shared helper so this matches the
+  // appearance settings page and any other toggle in the app.
+  const toggleTrackBg = getToggleTrackBg(isDark);
+  const toggleActiveBg = getToggleActiveBg(isDark);
   const creatingProgress = useInstanceProgress();
   const { updateAvailable, latestVersion, changelog: latestChangelog, isUpdating, phase: updatePhase, phaseProgress, updateResult, updateError } = useGlobalSandboxUpdate();
 

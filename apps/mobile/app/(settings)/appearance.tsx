@@ -16,6 +16,7 @@ import {
   type AppearanceThemeId,
   type WallpaperId,
 } from '@/stores/appearance-store';
+import { getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 
@@ -153,20 +154,19 @@ export default function AppearanceScreen() {
 
         <View className="mt-5 px-1">
           <Text className="text-[13px] font-roobert-medium text-foreground/85">Color Mode</Text>
-          <View className="mt-2 flex-row rounded-xl bg-muted/55 p-1">
+          <View
+            className="mt-2 flex-row rounded-full p-1"
+            style={{ backgroundColor: getToggleTrackBg(isDark) }}
+          >
             {COLOR_MODES.map((mode) => {
               const active = modePreference === mode.value;
               return (
                 <Pressable
                   key={mode.value}
                   onPress={() => handleModeSelect(mode.value)}
-                  className="flex-1 rounded-lg active:opacity-85"
+                  className="flex-1 rounded-full active:opacity-85"
                   style={{
-                    backgroundColor: active
-                      ? isDark
-                        ? '#1E1E22'
-                        : '#FFFFFF'
-                      : 'transparent',
+                    backgroundColor: active ? getToggleActiveBg(isDark) : 'transparent',
                   }}
                 >
                   <View className="flex-row items-center justify-center px-2 py-2">
@@ -196,6 +196,7 @@ export default function AppearanceScreen() {
             <Text className="ml-2 text-[13px] font-roobert-medium text-foreground/85">Wallpaper</Text>
           </View>
 
+          <View style={{ gap: 12 }}>
           {WALLPAPERS.map((wallpaper) => (
             <WallpaperCard
               key={wallpaper.id}
@@ -206,6 +207,7 @@ export default function AppearanceScreen() {
               onPress={() => handleWallpaperSelect(wallpaper.id)}
             />
           ))}
+          </View>
         </View>
 
         <View className="mt-5 h-px bg-border/40" />
