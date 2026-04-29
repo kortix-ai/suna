@@ -988,9 +988,27 @@ export const accessRequests = kortixSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
+   (table) => [
     index('idx_access_requests_email').on(table.email),
     index('idx_access_requests_status').on(table.status),
+  ],
+);
+
+// ─── Personal MCP Servers ────────────────────────────────────────────────────
+
+export const personalMcpServers = kortixSchema.table(
+  'personal_mcp_servers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').notNull(),
+    name: text('name').notNull(),
+    url: text('url').notNull(),
+    headers: jsonb('headers').default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_personal_mcp_servers_user').on(table.userId),
   ],
 );
 
