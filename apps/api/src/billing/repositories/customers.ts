@@ -97,14 +97,20 @@ async function syncLegacyCustomerToKortix(legacy: {
 }
 
 export async function getCustomerByAccountId(accountId: string) {
+  // Fast path: most accounts already migrated — check kortix table first.
+  // Only fall back to basejump if no kortix record exists to avoid write
+  // amplification (syncLegacyCustomerToKortix does 2-3 DB writes per call).
+  const rows = await listKortixCustomersByAccountId(accountId);
+  const kortixCandidate = pickCanonicalCustomer(rows);
+  if (kortixCandidate) return kortixCandidate;
+
+  // Legacy fallback: only hits basejump when no kortix record found.
   const legacy = await getLegacyCustomerByAccountId(accountId);
   if (legacy) {
     return syncLegacyCustomerToKortix(legacy);
   }
 
-  const rows = await listKortixCustomersByAccountId(accountId);
-
-  return pickCanonicalCustomer(rows);
+  return null;
 }
 
 export async function getCustomerByStripeId(stripeCustomerId: string) {

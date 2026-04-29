@@ -1,0 +1,26 @@
+{
+  "token": "Jhj5dZrVaK7ZwHHjRyZWjbDl",
+  "team_id": "T061EG9R6",
+  "api_app_id": "A0PNCHHK2",
+  "event": {
+    "type": "message",
+    "user": "U061F7AUR",
+    "text": "continuing the thread without @-mentioning the bot",
+    "ts": "1712160001.000200",
+    "thread_ts": "1712160000.000100",
+    "channel": "C0AG3PJLCHH",
+    "channel_type": "channel",
+    "event_ts": "1712160001.000200"
+  },
+  "type": "event_callback",
+  "event_id": "Ev0MDYGN3B",
+  "event_time": 1712160001,
+  "authorizations": [
+    {
+      "enterprise_id": null,
+      "team_id": "T061EG9R6",
+      "user_id": "U0LAN0Z89",
+      "is_bot": true
+    }
+  ]
+}

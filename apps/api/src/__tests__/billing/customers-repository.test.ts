@@ -135,7 +135,10 @@ describe('billing customer repository', () => {
     ]);
   });
 
-  test('prefers legacy customer over wrong kortix duplicate and deactivates duplicate', async () => {
+  test('returns kortix record without calling sync when kortix row already exists (kortix-first path)', async () => {
+    // After the kortix-first fix, if a kortix record already exists it is
+    // returned directly — syncLegacyCustomerToKortix is NOT called.
+    // Legacy record in basejump is not synced; the kortix row is canonical.
     basejumpRows.push({
       accountId: 'acc_2',
       id: 'cus_old',
@@ -153,9 +156,10 @@ describe('billing customer repository', () => {
 
     const customer = await getCustomerByAccountId('acc_2');
 
-    expect(customer?.id).toBe('cus_old');
-    expect(kortixRows.find((row) => row.id === 'cus_old')?.active).toBe(true);
-    expect(kortixRows.find((row) => row.id === 'cus_new')?.active).toBe(false);
+    // Kortix record returned — no sync/write triggered
+    expect(customer?.id).toBe('cus_new');
+    // cus_new remains active (no deactivation — syncLegacy was not called)
+    expect(kortixRows.find((row) => row.id === 'cus_new')?.active).toBe(true);
   });
 
   test('upsertCustomer does not replace canonical customer mapping with new duplicate', async () => {
