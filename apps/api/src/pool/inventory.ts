@@ -1,4 +1,4 @@
-import { eq, and, or, asc, lt, sql } from 'drizzle-orm';
+import { eq, and, or, asc, lt, sql, count } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { poolSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
@@ -28,11 +28,11 @@ export async function countByStatus(): Promise<{ ready: number; provisioning: nu
 }
 
 export async function countForResource(resourceId: string): Promise<number> {
-  const rows = await db
-    .select({ id: poolSandboxes.id })
+  const [row] = await db
+    .select({ count: count() })
     .from(poolSandboxes)
     .where(and(eq(poolSandboxes.resourceId, resourceId), sql`${poolSandboxes.status} IN ('ready', 'provisioning')`));
-  return rows.length;
+  return Number(row?.count ?? 0);
 }
 
 async function findCandidate(opts?: ClaimOpts) {
