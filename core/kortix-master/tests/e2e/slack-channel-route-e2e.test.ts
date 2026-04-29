@@ -112,4 +112,70 @@ describe('Slack channel webhook route', () => {
     expect(promptCall?.body?.model).toEqual({ providerID: 'openai', modelID: 'gpt-4.1-mini' })
     expect(promptCall?.body?.parts?.[0]?.text).toContain('Always answer with a brief confirmation first.')
   })
+
+  it('thread reply without @-mention dispatches (not dropped)', async () => {
+    const cacheBust = `?t=${Date.now()}${Math.random()}`
+    const { default: channelWebhooksRouter } = await import(`../../src/routes/channel-webhooks.ts${cacheBust}`)
+    const channelId = crypto.randomUUID()
+    const webhookPath = `/hooks/slack/${channelId}`
+    mkdirSync(join(workspace, '.kortix'), { recursive: true })
+    const db = new Database(join(workspace, '.kortix', 'kortix.db'))
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS channels (
+        id TEXT PRIMARY KEY,
+        platform TEXT NOT NULL,
+        name TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        bot_token TEXT NOT NULL DEFAULT '',
+        signing_secret TEXT,
+        webhook_secret TEXT NOT NULL,
+        webhook_path TEXT NOT NULL UNIQUE,
+        bot_id TEXT,
+        bot_username TEXT,
+        default_agent TEXT DEFAULT 'kortix',
+        default_model TEXT DEFAULT '',
+        bridge_instructions TEXT,
+        instructions TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `)
+    const now = new Date().toISOString()
+    db.prepare(`
+      INSERT INTO channels (id, platform, name, enabled, bot_token, signing_secret, webhook_secret, webhook_path, bot_id, bot_username, default_agent, default_model, bridge_instructions, instructions, created_by, created_at, updated_at)
+      VALUES (?, 'slack', 'Slack Thread Test', 1, 'xoxb-test', 'signing-secret', 'webhook-secret', ?, 'U0LAN0Z89', 'kortix-bot', 'kortix', 'openai/gpt-4.1-mini', NULL, NULL, NULL, ?, ?)
+    `).run(channelId, webhookPath, now, now)
+
+    // thread reply: thread_ts set and differs from ts, no @-mention in text
+    const payload = fixture('slack-event-thread-reply-no-mention.json') as Record<string, unknown>
+    const body = JSON.stringify(payload)
+    const { signature, timestamp } = signSlackRequest(body, 'signing-secret')
+
+    const res = await channelWebhooksRouter.request(`http://localhost${webhookPath}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-slack-signature': signature,
+        'x-slack-request-timestamp': timestamp,
+      },
+      body,
+    })
+
+    // Should dispatch (202), not drop (is_challenge: false early return)
+    expect(res.status).toBe(202)
+    const json = await res.json() as { ok: boolean; queued: boolean }
+    expect(json.ok).toBe(true)
+    expect(json.queued).toBe(true)
+
+    // Allow the async dispatch to complete
+    await new Promise((r) => setTimeout(r, 100))
+
+    const createCall = fetchCalls.find((call) => call.url === 'http://localhost:4096/session')
+    expect(createCall).toBeDefined()
+    const promptCall = fetchCalls.find((call) => call.url === 'http://localhost:4096/session/sess-slack-route/prompt_async')
+    expect(promptCall).toBeDefined()
+    // Verify message text was passed through (no @-mention in text)
+    expect(promptCall?.body?.parts?.[0]?.text).toContain('continuing the thread without @-mentioning the bot')
+  })
 })
