@@ -75,7 +75,7 @@ import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useOpenCodeProviders, flattenModels, filterToLatestModels, type FlatModel } from '@/lib/opencode/hooks/use-opencode-data';
 import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { getAuthToken } from '@/api/config';
 import { useTabStore } from '@/stores/tab-store';
 import { log } from '@/lib/logger';
@@ -501,7 +501,7 @@ function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onConti
     onContinue();
   }, [onContinue, refetch]);
 
-  const sheetBg = isDark ? '#1a1a1d' : '#FFFFFF';
+  const sheetBg = getSheetBg(isDark);
 
   if (isLoading) {
     return (

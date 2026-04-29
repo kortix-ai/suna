@@ -21,6 +21,7 @@ import { InstructionsScreen } from './screens/InstructionsScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 import { IntegrationsScreen } from './screens/IntegrationsScreen';
 import { TriggersScreen } from './screens/TriggersScreen';
+import { getSheetBg } from '@/lib/theme-colors';
 
 interface WorkerConfigDrawerProps {
   visible: boolean;
@@ -101,7 +102,7 @@ export function WorkerConfigDrawer({
       enablePanDownToClose
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#18181B' : '#FFFFFF',
+        backgroundColor: getSheetBg(colorScheme === 'dark'),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}

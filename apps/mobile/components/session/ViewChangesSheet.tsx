@@ -42,6 +42,7 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import { opencodeFetch } from '@/lib/opencode/hooks/use-opencode-data';
 import { extractDiffsFromMessages, type FileDiffData } from '@/lib/opencode/extract-diffs';
 import { generateLineDiff, type DiffLine } from '@/lib/opencode/diff-utils';
+import { getSheetBg } from '@/lib/theme-colors';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -839,7 +840,7 @@ export const ViewChangesSheet = forwardRef<BottomSheetModal, ViewChangesSheetPro
           borderRadius: 3,
         }}
         backgroundStyle={{
-          backgroundColor: colors.bg(isDark),
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

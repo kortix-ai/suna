@@ -40,7 +40,7 @@ import {
   TouchableOpacity as BottomSheetTouchable,
 } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import {
   FolderGit2,
   MessageSquare,
@@ -89,6 +89,11 @@ import {
 import { useTabStore } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
+import { formatCost, formatTokens } from '@/lib/opencode/turns';
+import {
+  useProjectSessionStats,
+  totalTokens as sumTokens,
+} from '@/lib/opencode/hooks/use-project-session-stats';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -391,6 +396,12 @@ export function ProjectDetailPage({
       (a.time?.updated ? +new Date(a.time.updated) : 0)
     ));
   }, [sessions]);
+  const sessionIds = useMemo(() => sessionList.map((s: any) => s.id), [sessionList]);
+  const { totals: sessionTotals, loading: statsLoading } = useProjectSessionStats(
+    sandboxUrl,
+    sessionIds,
+    tab === 'sessions',
+  );
   const taskList = tasks ?? [];
   const filteredTaskList = useMemo(() => {
     if (!taskSearch.trim()) return taskList;
@@ -694,14 +705,14 @@ export function ProjectDetailPage({
                 paddingHorizontal: 12,
                 paddingVertical: 10,
                 borderBottomWidth: 2,
-                borderBottomColor: active ? (isDark ? '#e4e4e7' : '#18181b') : 'transparent',
+                borderBottomColor: active ? themeColors.primary : 'transparent',
               }}>
-              <Icon size={14} color={active ? fg : mutedStrong} />
+              <Icon size={14} color={active ? themeColors.primary : mutedStrong} />
               <RNText
                 style={{
                   fontSize: 13,
                   fontFamily: active ? 'Roobert-Medium' : 'Roobert',
-                  color: active ? fg : mutedStrong,
+                  color: active ? themeColors.primary : mutedStrong,
                 }}>
                 {t.label}
               </RNText>
@@ -812,14 +823,27 @@ export function ProjectDetailPage({
               isDark={isDark}
             />
           ) : (
-            <View
-              style={{
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: border,
-                backgroundColor: cardBg,
-                overflow: 'hidden',
-              }}>
+            <View style={{ gap: 14 }}>
+              <ProjectTotalsCard
+                totalSessions={sessionList.length}
+                messageCount={sessionTotals.messageCount}
+                tokens={sumTokens(sessionTotals.tokens)}
+                cost={sessionTotals.cost}
+                loading={statsLoading}
+                isDark={isDark}
+                fg={fg}
+                muted={muted}
+                cardBg={cardBg}
+                border={border}
+              />
+              <View
+                style={{
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: border,
+                  backgroundColor: cardBg,
+                  overflow: 'hidden',
+                }}>
               {sessionList.map((s: any, i: number) => (
                 <TouchableOpacity
                   key={s.id}
@@ -850,6 +874,7 @@ export function ProjectDetailPage({
                   </RNText>
                 </TouchableOpacity>
               ))}
+              </View>
             </View>
           ))}
 
@@ -1387,7 +1412,7 @@ export function ProjectDetailPage({
         backdropComponent={renderBackdrop}
         onDismiss={() => setSelectedTask(null)}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
@@ -1844,7 +1869,7 @@ export function ProjectDetailPage({
           setEditValue('');
         }}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
@@ -1931,7 +1956,7 @@ export function ProjectDetailPage({
                     : isDark
                       ? 'rgba(248, 248, 248, 0.08)'
                       : 'rgba(18, 18, 21, 0.06)',
-                  borderRadius: 14,
+                  borderRadius: 9999,
                   paddingVertical: 15,
                   alignItems: 'center',
                   opacity: canSave ? 1 : 0.5,
@@ -1963,7 +1988,7 @@ export function ProjectDetailPage({
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
@@ -2386,6 +2411,87 @@ export function ProjectDetailPage({
 }
 
 // ── Empty state ──────────────────────────────────────────────────────────────
+
+function ProjectTotalsCard({
+  totalSessions,
+  messageCount,
+  tokens,
+  cost,
+  loading,
+  isDark,
+  fg,
+  muted,
+  cardBg,
+  border,
+}: {
+  totalSessions: number;
+  messageCount: number;
+  tokens: number;
+  cost: number;
+  loading: boolean;
+  isDark: boolean;
+  fg: string;
+  muted: string;
+  cardBg: string;
+  border: string;
+}) {
+  const labelColor = isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)';
+  const dimValue = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const items = [
+    { label: 'Sessions', value: String(totalSessions), dim: false },
+    { label: 'Messages', value: String(messageCount), dim: loading },
+    { label: 'Tokens', value: formatTokens(tokens), dim: loading },
+    { label: 'Cost', value: formatCost(cost), dim: loading },
+  ];
+  return (
+    <View
+      style={{
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: border,
+        backgroundColor: cardBg,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+      }}>
+      <RNText
+        style={{
+          fontSize: 10,
+          fontFamily: 'Roobert-Medium',
+          letterSpacing: 0.8,
+          color: labelColor,
+          marginBottom: 10,
+        }}>
+        PROJECT TOTALS
+      </RNText>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        {items.map((it) => (
+          <View key={it.label} style={{ flex: 1, minWidth: 0 }}>
+            <RNText
+              style={{
+                fontSize: 10,
+                fontFamily: 'Roobert-Medium',
+                letterSpacing: 0.8,
+                color: labelColor,
+              }}>
+              {it.label.toUpperCase()}
+            </RNText>
+            <RNText
+              numberOfLines={1}
+              style={{
+                fontSize: 16,
+                fontFamily: 'Roobert-Medium',
+                fontVariant: ['tabular-nums'],
+                color: it.dim ? dimValue : fg,
+                marginTop: 2,
+              }}>
+              {it.value}
+            </RNText>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 function EmptyState({
   icon: Icon,

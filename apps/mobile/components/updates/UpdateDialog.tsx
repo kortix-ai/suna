@@ -33,7 +33,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { KortixLogo } from '@/components/ui/KortixLogo';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import type { ChangelogEntry } from '@/lib/platform/client';
 
 type DialogStep = 'confirm' | 'updating' | 'done' | 'failed';
@@ -225,7 +225,7 @@ export function UpdateDialog({
           borderRadius: 3,
         }}
         backgroundStyle={{
-          backgroundColor: bgColor,
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

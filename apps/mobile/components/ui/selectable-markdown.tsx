@@ -44,6 +44,7 @@ import { useColorScheme } from 'nativewind';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { log } from '@/lib/logger';
+import { getSheetBg } from '@/lib/theme-colors';
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
@@ -52,8 +53,8 @@ LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into 
  * LINE HEIGHT CONFIGURATION
  * Increased for better readability - text was too crowded
  */
-const MARKDOWN_LINE_HEIGHT = 28; // Bumped from 26 for more breathing room
-const MARKDOWN_FONT_SIZE = 16;
+const MARKDOWN_LINE_HEIGHT = 23; // matches user bubble (text-sm leading-relaxed)
+const MARKDOWN_FONT_SIZE = 14;
 
 // Debug mode to see height calculations
 let DEBUG_HEIGHTS = false;
@@ -638,7 +639,7 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
       onDismiss={onDismiss}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: colors.bg,
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}

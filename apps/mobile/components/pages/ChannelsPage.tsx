@@ -47,7 +47,8 @@ import BottomSheet, {
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
 
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { SearchListHeader } from '@/components/ui/search-list-header';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { PageTab } from '@/stores/tab-store';
@@ -241,45 +242,12 @@ function ChannelsContent() {
 
   return (
     <View style={{ flex: 1 }}>
-      {/* Search Bar */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 8, gap: 10 }}>
-        <View
-          style={{
-            flex: 1,
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: inputBg,
-            borderRadius: 9999,
-            paddingHorizontal: 16,
-            height: 42,
-          }}
-        >
-          <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search channels..."
-            placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
-            style={{ flex: 1, marginLeft: 8, fontSize: 15, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
-          />
-          {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery('')} hitSlop={10}>
-              <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
-            </Pressable>
-          )}
-        </View>
-        <TouchableOpacity
-          onPress={handleOpenAdd}
-          activeOpacity={0.8}
-          style={{
-            width: 42, height: 42, borderRadius: 9999,
-            backgroundColor: theme.primary,
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Plus size={20} color={theme.primaryForeground} />
-        </TouchableOpacity>
-      </View>
+      <SearchListHeader
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder="Search channels..."
+        onAdd={handleOpenAdd}
+      />
 
       {/* Channel List */}
       {isLoading ? (
@@ -376,47 +344,52 @@ function ChannelsContent() {
 function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDark: boolean; onPress: () => void }) {
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
   const platform = channel.platform || channel.channelType!;
   const modelShort = channel.default_model ? channel.default_model.split('/').pop() : null;
   const isTelegram = platform === 'telegram';
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      style={{
-        flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 14,
-        marginBottom: 8, borderRadius: 16,
-        borderWidth: 1,
-        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-        backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF',
-      }}
-    >
-      <View style={{
-        width: 42, height: 42, borderRadius: 13,
-        backgroundColor: isTelegram ? 'rgba(41,182,246,0.08)' : 'rgba(233,30,99,0.06)',
-        alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Ionicons name={getChannelIcon(platform) as any} size={20} color={isTelegram ? '#29B6F6' : '#E91E63'} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{channel.name}</Text>
-          <View style={{
-            paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6,
-            backgroundColor: channel.enabled ? 'rgba(52,211,153,0.12)' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
-          }}>
-            <Text style={{ fontSize: 10, fontFamily: 'Roobert-SemiBold', color: channel.enabled ? '#34d399' : muted }}>{channel.enabled ? 'Live' : 'Off'}</Text>
-          </View>
+    <View style={{ borderBottomWidth: 1, borderBottomColor: borderColor }}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.7}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 12,
+          paddingVertical: 12, paddingHorizontal: 16,
+        }}
+      >
+        {/* Brand icon — transparent, matches ProviderLogo treatment */}
+        <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name={getChannelIcon(platform) as any} size={24} color={isTelegram ? '#29B6F6' : '#E91E63'} />
         </View>
-        <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 3 }} numberOfLines={1}>
-          @{channel.bot_username || '?'}
-          {modelShort ? ` · ${modelShort}` : ''}
-          {channel.default_agent && channel.default_agent !== 'kortix' ? ` · ${channel.default_agent}` : ''}
-        </Text>
-      </View>
-      <ChevronRight size={18} color={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'} />
-    </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{channel.name}</Text>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center',
+              paddingHorizontal: 7, paddingVertical: 2, borderRadius: 9999,
+              backgroundColor: channel.enabled
+                ? (isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)')
+                : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+            }}>
+              {channel.enabled && (
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#10b981', marginRight: 4 }} />
+              )}
+              <Text style={{ fontSize: 9, fontFamily: 'Roobert-Medium', color: channel.enabled ? '#10b981' : muted }}>
+                {channel.enabled ? 'Live' : 'Off'}
+              </Text>
+            </View>
+          </View>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginTop: 2 }} numberOfLines={1}>
+            @{channel.bot_username || '?'}
+            {modelShort ? ` · ${modelShort}` : ''}
+            {channel.default_agent && channel.default_agent !== 'kortix' ? ` · ${channel.default_agent}` : ''}
+          </Text>
+        </View>
+        <ChevronRight size={16} color={muted} />
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -530,7 +503,7 @@ function ChannelDetailSheet({
       enablePanDownToClose
       onDismiss={onClose}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: isDark ? '#161618' : '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
       handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
     >
       {channel ? (
@@ -577,7 +550,7 @@ function ChannelDetailSheet({
             {agents.filter((a) => a.mode !== 'subagent').map((agent) => {
               const active = agentName === agent.name;
               return (
-                <Pressable key={agent.name} onPress={() => { setAgentName(agent.name); markDirty(); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
+                <Pressable key={agent.name} onPress={() => { setAgentName(agent.name); markDirty(); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
                   <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }}>{agent.name}</Text>
                 </Pressable>
               );
@@ -592,7 +565,7 @@ function ChannelDetailSheet({
             {filteredModels.map((m, i) => {
               const active = selectedModelIdx === i;
               return (
-                <Pressable key={`${m.providerID}:${m.modelID}`} onPress={() => { setSelectedModelIdx(i); markDirty(); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
+                <Pressable key={`${m.providerID}:${m.modelID}`} onPress={() => { setSelectedModelIdx(i); markDirty(); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
                   <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }} numberOfLines={1}>{m.modelName}</Text>
                 </Pressable>
               );
@@ -772,7 +745,7 @@ function AddChannelSheet({
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
-      backgroundStyle={{ backgroundColor: isDark ? '#161618' : '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
       handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
     >
       <BottomSheetScrollView

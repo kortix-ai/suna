@@ -52,6 +52,7 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
+import { getSheetBg } from '@/lib/theme-colors';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -377,7 +378,7 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
   const mutedColor = isDark ? '#71717a' : '#a1a1aa';
   const bgColor = isDark ? '#121215' : '#F8F8F8';
   const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const sheetBg = isDark ? '#161618' : '#FFFFFF';
+  const sheetBg = getSheetBg(isDark);
 
   const { entries, stats, isLoading, error, fetchEntries, fetchStats, deleteEntry } = useMemory(sandboxUrl);
 

@@ -85,7 +85,7 @@ export function PageHeader({
   return (
     <View
       style={{ paddingTop: insets.top, paddingBottom }}
-      className={`px-4 bg-muted ${className ?? ''}`}
+      className={`px-4 bg-chrome-background ${className ?? ''}`}
     >
       <View className="flex-row items-center">
         {/* Left — hamburger (flips to X when drawer is open) */}

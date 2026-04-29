@@ -37,6 +37,7 @@ import {
   type KortixProject,
 } from '@/lib/kortix/use-kortix-projects';
 import { useSelectedProjectStore } from '@/stores/selected-project-store';
+import { getSheetBg } from '@/lib/theme-colors';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 
 // ─── Helpers (mirror of web) ─────────────────────────────────────────────────
@@ -216,7 +217,7 @@ export function ProjectPicker() {
           borderRadius: 3,
         }}
         backgroundStyle={{
-          backgroundColor: bg,
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

@@ -46,7 +46,7 @@ import {
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
 
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
@@ -211,7 +211,7 @@ function TunnelContent() {
             onPress={handleOpenCreate}
             style={{
               flexDirection: 'row', alignItems: 'center', gap: 6,
-              paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+              paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999,
               backgroundColor: theme.primary,
             }}
           >
@@ -255,7 +255,7 @@ function TunnelContent() {
                 gap: 8,
                 paddingHorizontal: 20,
                 paddingVertical: 12,
-                borderRadius: 12,
+                borderRadius: 9999,
                 backgroundColor: theme.primary,
               }}
             >
@@ -372,7 +372,7 @@ const CreateTunnelSheet = React.forwardRef<
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
   const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const sheetBg = isDark ? '#161618' : '#FFFFFF';
+  const sheetBg = getSheetBg(isDark);
 
   const [copied, setCopied] = useState(false);
 
@@ -450,7 +450,7 @@ const CreateTunnelSheet = React.forwardRef<
             justifyContent: 'center',
             flexDirection: 'row',
             paddingVertical: 14,
-            borderRadius: 14,
+            borderRadius: 9999,
             backgroundColor: theme.primary,
             gap: 8,
           }}
@@ -493,7 +493,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
     const fg = isDark ? '#f8f8f8' : '#121215';
     const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
     const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-    const sheetBg = isDark ? '#161618' : '#FFFFFF';
+    const sheetBg = getSheetBg(isDark);
     const accent = theme.primary;
     const accentBg = theme.primaryLight;
     const dangerBg = isDark ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.05)';
@@ -597,7 +597,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
             {/* Online badge */}
             <View style={{
               flexDirection: 'row', alignItems: 'center', gap: 5,
-              paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+              paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9999,
               borderWidth: 1,
               backgroundColor: isOnline ? accentBg : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)'),
               borderColor: isOnline ? accent + '40' : borderColor,
@@ -609,10 +609,10 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
             </View>
           </View>
 
-          {/* Tab bar */}
+          {/* Tab bar — shared segmented toggle */}
           <View style={{
-            flexDirection: 'row', backgroundColor: tabBg,
-            borderRadius: 10, padding: 3, marginBottom: 16,
+            flexDirection: 'row', backgroundColor: getToggleTrackBg(isDark),
+            borderRadius: 9999, padding: 3, marginBottom: 16,
           }}>
             {TABS.map(({ key, label, icon: TabIcon }) => {
               const active = activeTab === key;
@@ -622,8 +622,8 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                   onPress={() => { setActiveTab(key); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                   style={{
                     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
-                    paddingVertical: 8, borderRadius: 8,
-                    backgroundColor: active ? tabActiveBg : 'transparent',
+                    paddingVertical: 8, borderRadius: 9999,
+                    backgroundColor: active ? getToggleActiveBg(isDark) : 'transparent',
                   }}
                 >
                   <TabIcon size={13} color={active ? fg : muted} />
@@ -696,7 +696,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                   onPress={() => onDelete(conn)}
                   style={{
                     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-                    paddingVertical: 10, borderRadius: 10,
+                    paddingVertical: 12, borderRadius: 9999,
                     backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
                   }}
                 >

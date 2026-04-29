@@ -11,6 +11,7 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { log } from '@/lib/logger';
+import { getSheetBg } from '@/lib/theme-colors';
 
 interface UsageDrawerProps {
   visible: boolean;
@@ -96,7 +97,7 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF'
+        backgroundColor: getSheetBg(colorScheme === 'dark')
       }}
       handleIndicatorStyle={{
         backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',

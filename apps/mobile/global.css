@@ -11,27 +11,27 @@
    * Aligned with web b77b685: pure white center content,
    * off-white chrome for visual separation. */
   :root {
-    --background: 0 0% 100%;           /* #FFFFFF - Pure white (center content) */
-    --foreground: 218 12% 7%;          /* #121215 - Kortix Black */
-    --card: 0 0% 100%;                 /* #FFFFFF - Pure white cards */
-    --card-foreground: 218 12% 7%;     /* #121215 - Card text */
-    --popover: 0 0% 100%;              /* #FFFFFF - Popover background */
-    --popover-foreground: 218 12% 7%;  /* #121215 - Popover text */
-    --primary: 218 12% 7%;             /* #121215 - Primary (black) */
+    --background: 0 0% 100%; /* #FFFFFF - Pure white (center content) */
+    --foreground: 218 12% 7%; /* #121215 - Kortix Black */
+    --card: 0 0% 100%; /* #FFFFFF - Pure white cards */
+    --card-foreground: 218 12% 7%; /* #121215 - Card text */
+    --popover: 0 0% 100%; /* #FFFFFF - Popover background */
+    --popover-foreground: 218 12% 7%; /* #121215 - Popover text */
+    --primary: 218 12% 7%; /* #121215 - Primary (black) */
     --primary-foreground: 240 11% 97%; /* #F8F8F8 - Text on primary */
-    --secondary: 220 13% 91%;          /* #E5E7EB - Secondary surfaces */
-    --secondary-foreground: 218 12% 7%;/* #121215 - Text on secondary */
-    --muted: 0 0% 91%;                 /* #E8E8E8 - Muted (darker for visibility against white) */
-    --muted-foreground: 220 9% 46%;    /* Muted text */
-    --accent: 220 13% 91%;             /* #E5E7EB - Accent */
-    --accent-foreground: 218 12% 7%;   /* #121215 - Text on accent */
+    --secondary: 220 13% 91%; /* #E5E7EB - Secondary surfaces */
+    --secondary-foreground: 218 12% 7%; /* #121215 - Text on secondary */
+    --muted: 0 0% 90%; /* #E5E5E5 - matches web --sidebar-accent oklch(0.91) */
+    --muted-foreground: 220 9% 46%; /* Muted text */
+    --accent: 220 13% 91%; /* #E5E7EB - Accent */
+    --accent-foreground: 218 12% 7%; /* #121215 - Text on accent */
     --destructive: 0 84.2% 60.2%;
-    --border: 210 3% 87%;             /* #DCDDDE - Borders */
-    --input: 0 0% 100%;                /* #FFFFFF - Inputs */
-    --ring: 218 12% 7%;                /* #121215 - Focus rings */
+    --border: 210 3% 87%; /* #DCDDDE - Borders */
+    --input: 0 0% 100%; /* #FFFFFF - Inputs */
+    --ring: 218 12% 7%; /* #121215 - Focus rings */
     --radius: 0.625rem;
     /* Chrome colors — off-white for headers/drawers/outer areas to separate from white content */
-    --chrome-background: 0 0% 96%;     /* #F6F6F6 - Off-white (Kortix White) for chrome */
+    --chrome-background: 0 0% 96%; /* #F6F6F6 - Off-white (Kortix White) for chrome */
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
@@ -45,26 +45,26 @@
    * HSL lightness values are the sRGB equivalents of web's OKLCH L values
    * (OKLCH is perceptual, so L=0.16 renders as ~5% sRGB lightness, not 16%). */
   .dark:root {
-    --background: 0 0% 5%;             /* oklch(0.16) ≈ #0D0D0D */
-    --foreground: 0 0% 89%;            /* oklch(0.92) ≈ #E3E3E3 */
-    --card: 0 0% 8%;                   /* oklch(0.195) ≈ #151515 */
-    --card-foreground: 0 0% 92%;       /* oklch(0.94) ≈ #EAEAEA */
-    --popover: 0 0% 12%;               /* oklch(0.24) ≈ #1F1F1F */
-    --popover-foreground: 0 0% 92%;    /* oklch(0.94) */
-    --primary: 0 0% 92%;               /* oklch(0.94) */
-    --primary-foreground: 0 0% 7%;     /* oklch(0.18) ≈ #121212 */
-    --secondary: 0 0% 9%;              /* Neutral dark surface */
-    --secondary-foreground: 0 0% 92%;  /* oklch(0.94) */
-    --muted: 0 0% 15%;                 /* oklch(0.27) ≈ #272727 */
-    --muted-foreground: 0 0% 50%;      /* oklch(0.60) ≈ #808080 */
-    --accent: 0 0% 13%;                /* oklch(0.25) ≈ #212121 */
-    --accent-foreground: 0 0% 92%;     /* oklch(0.94) */
+    --background: 0 0% 5%; /* oklch(0.16) ≈ #0D0D0D */
+    --foreground: 0 0% 89%; /* oklch(0.92) ≈ #E3E3E3 */
+    --card: 0 0% 11%; /* #1C1C1C - matches web --card oklch(0.195) */
+    --card-foreground: 0 0% 92%; /* oklch(0.94) ≈ #EAEAEA */
+    --popover: 0 0% 12%; /* oklch(0.24) ≈ #1F1F1F */
+    --popover-foreground: 0 0% 92%; /* oklch(0.94) */
+    --primary: 0 0% 92%; /* oklch(0.94) */
+    --primary-foreground: 0 0% 7%; /* oklch(0.18) ≈ #121212 */
+    --secondary: 0 0% 9%; /* Neutral dark surface */
+    --secondary-foreground: 0 0% 92%; /* oklch(0.94) */
+    --muted: 0 0% 18%; /* #2D2D2D - matches web --sidebar-accent oklch(0.23) */
+    --muted-foreground: 0 0% 50%; /* oklch(0.60) ≈ #808080 */
+    --accent: 0 0% 13%; /* oklch(0.25) ≈ #212121 */
+    --accent-foreground: 0 0% 92%; /* oklch(0.94) */
     --destructive: 0 70.9% 59.4%;
-    --border: 0 0% 23%;                /* oklch(0.35) ≈ #3A3A3A */
-    --input: 0 0% 15%;                 /* oklch(0.27) */
-    --ring: 0 0% 39%;                  /* oklch(0.50) ≈ #636363 */
+    --border: 0 0% 23%; /* oklch(0.35) ≈ #3A3A3A */
+    --input: 0 0% 15%; /* oklch(0.27) */
+    --ring: 0 0% 39%; /* oklch(0.50) ≈ #636363 */
     /* Chrome colors — sidebar-equivalent, darker than background */
-    --chrome-background: 0 0% 4%;      /* oklch(0.14) ≈ #0A0A0A - matches web --sidebar */
+    --chrome-background: 0 0% 3.5%; /* #090909 - drawer/header bg (matches web) */
     --chart-1: 0 0% 75%;
     --chart-2: 0 0% 60%;
     --chart-3: 0 0% 45%;

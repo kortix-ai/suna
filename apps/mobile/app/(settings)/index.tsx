@@ -120,29 +120,9 @@ export default function SettingsScreen() {
     },
   ];
 
-  const accountRows: SettingsRow[] = [
-    {
-      key: 'plan',
-      icon: CreditCard,
-      label: t('settings.plan', 'Plan'),
-      description: 'Upgrade or manage your plan',
-      onPress: handlePlan,
-    },
-    {
-      key: 'billing',
-      icon: Wallet,
-      label: t('settings.billing', 'Billing'),
-      description: 'Subscription and payment details',
-      onPress: () => go('/(settings)/billing'),
-    },
-    {
-      key: 'transactions',
-      icon: Receipt,
-      label: 'Transactions',
-      description: 'Billing and credit transaction history',
-      onPress: () => go('/(settings)/transactions'),
-    },
-  ];
+  // Billing-related rows (Plan / Billing / Transactions) hidden on mobile —
+  // billing lives on the web.
+  const accountRows: SettingsRow[] = [];
 
   // Account deletion is hidden when the backend endpoint is unsupported
   // (matches web's `isBillingEnabled() && accountDeletionSupported` guard).
@@ -186,7 +166,7 @@ export default function SettingsScreen() {
     >
       <View className="px-5 pt-1 pb-2" style={{ gap: 18 }}>
         <SettingsGroup title="Preferences" rows={preferenceRows} />
-        <SettingsGroup title="Account" rows={accountRows} />
+        {accountRows.length > 0 && <SettingsGroup title="Account" rows={accountRows} />}
         <SettingsGroup title="Advanced" rows={advancedRows} />
 
         {!isGuest && (

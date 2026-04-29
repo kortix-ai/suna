@@ -23,7 +23,7 @@ import {
 } from '@/hooks/useIntegrations';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { log } from '@/lib/logger';
 
 interface ManageConnectionSheetProps {
@@ -180,7 +180,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
         enablePanDownToClose
         onChange={handleSheetChange}
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: isDark ? '#161618' : '#FFFFFF' }}
+        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
         handleIndicatorStyle={{ backgroundColor: isDark ? '#555' : '#ccc' }}
       >
         <BottomSheetScrollView
@@ -267,9 +267,9 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
                         flexDirection: 'row',
                         alignItems: 'center',
                         gap: 6,
-                        paddingHorizontal: 12,
+                        paddingHorizontal: 14,
                         paddingVertical: 6,
-                        borderRadius: 8,
+                        borderRadius: 9999,
                         backgroundColor: isLinked
                           ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)')
                           : theme.primary,
@@ -302,7 +302,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
                   justifyContent: 'center',
                   gap: 8,
                   paddingVertical: 14,
-                  borderRadius: 14,
+                  borderRadius: 9999,
                   backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.06)',
                 }}
               >
@@ -331,7 +331,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
         android_keyboardInputMode="adjustResize"
         onDismiss={() => setRenameDraft('')}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

@@ -28,6 +28,7 @@ import { API_URL, getAuthHeaders } from '@/api/config';
 import { Loading } from '../loading/loading';
 import type { AgentCreateRequest } from '@/api/types';
 import { log } from '@/lib/logger';
+import { getSheetBg } from '@/lib/theme-colors';
 
 interface WorkerCreationDrawerProps {
   visible: boolean;
@@ -256,7 +257,7 @@ export function WorkerCreationDrawer({
       enablePanDownToClose
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#18181B' : '#FFFFFF',
+        backgroundColor: getSheetBg(colorScheme === 'dark'),
       }}
       handleIndicatorStyle={{
         backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7',

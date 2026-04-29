@@ -20,6 +20,7 @@ import {
   Sun,
   X,
 } from 'lucide-react-native';
+import { getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 
 type ThemeOption = 'light' | 'dark' | 'system';
 
@@ -60,6 +61,13 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
   const { colorScheme } = useColorScheme();
   const { height: screenHeight } = useWindowDimensions();
   const isDark = colorScheme === 'dark';
+  // Subtle hairline divider — explicit rgba because NativeWind v4 doesn't
+  // support `/X` alpha on legacy hsl(var(--border)) tokens.
+  const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  // Theme-toggle pill colors via the shared helper so this matches the
+  // appearance settings page and any other toggle in the app.
+  const toggleTrackBg = getToggleTrackBg(isDark);
+  const toggleActiveBg = getToggleActiveBg(isDark);
   const creatingProgress = useInstanceProgress();
   const { updateAvailable, latestVersion, changelog: latestChangelog, isUpdating, phase: updatePhase, phaseProgress, updateResult, updateError } = useGlobalSandboxUpdate();
 
@@ -84,7 +92,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
         borderRadius: 3,
       }}
       backgroundStyle={{
-        backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
@@ -117,7 +125,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               </View>
             </View>
           </View>
-          <View className="h-px bg-border/35" />
 
           {/* Creating progress */}
           {creatingProgress && (
@@ -150,7 +157,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                   />
                 </View>
               </View>
-              <View className="h-px bg-border/35" />
             </>
           )}
 
@@ -175,7 +181,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
         {/* Update — available / in progress / complete / error */}
         {(updateAvailable || isUpdating || updateResult || updateError) && latestVersion && (
           <>
-            <View className="my-3 h-px bg-border/40" />
+            <View style={{ height: 1, backgroundColor: dividerColor, marginVertical: 12 }} />
             {isUpdating ? (
               /* Updating — show progress */
               <Pressable onPress={onOpenChangelog} className="rounded-2xl border px-4 py-3.5 active:opacity-90" style={{ borderColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)' }}>
@@ -264,7 +270,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
           </>
         )}
 
-        <View className="my-3 h-px bg-border/40" />
+        <View style={{ height: 1, backgroundColor: dividerColor, marginVertical: 12 }} />
 
         {/* General */}
         <View className="px-1">
@@ -282,10 +288,12 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               </View>
             </View>
           </Pressable>
-          <View className="h-px bg-border/35" />
 
           {/* Theme toggle */}
-          <View className="mt-3 flex-row rounded-full bg-muted/55 p-1">
+          <View
+            className="mt-3 flex-row rounded-full p-1"
+            style={{ backgroundColor: toggleTrackBg }}
+          >
             {THEME_OPTIONS.map((option) => {
               const active = option.value === activeTheme;
               return (
@@ -294,9 +302,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                   onPress={() => onSelectTheme(option.value)}
                   className="flex-1 rounded-full active:opacity-85"
                   style={{
-                    backgroundColor: active
-                      ? isDark ? '#1F1F1F' : '#FFFFFF'
-                      : 'transparent',
+                    backgroundColor: active ? toggleActiveBg : 'transparent',
                   }}
                 >
                   <View className="flex-row items-center justify-center px-2 py-2">
@@ -320,7 +326,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
           </View>
         </View>
 
-        <View className="my-3 h-px bg-border/40" />
+        <View style={{ height: 1, backgroundColor: dividerColor, marginVertical: 12 }} />
 
         {/* Sign Out */}
         <View className="px-1">
