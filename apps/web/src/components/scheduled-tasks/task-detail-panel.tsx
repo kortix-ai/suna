@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
@@ -562,6 +563,35 @@ function ExecutionItem({
         <div className="mt-2 p-2 rounded bg-red-50 dark:bg-red-950/30 text-xs text-red-700 dark:text-red-300 whitespace-pre-wrap">
           {execution.errorMessage}
         </div>
+      )}
+      {execution.result_text && (
+        <ResultTextPreview text={execution.result_text} />
+      )}
+    </div>
+  );
+}
+
+// ─── Result Text Preview ─────────────────────────────────────────────────────
+
+function ResultTextPreview({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const PREVIEW_LEN = 300;
+  const isLong = text.length > PREVIEW_LEN;
+  const displayed = expanded ? text : text.slice(0, PREVIEW_LEN);
+
+  return (
+    <div className="mt-2 border-t border-zinc-100 dark:border-zinc-800 pt-2">
+      <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Last result</div>
+      <div className="prose prose-xs dark:prose-invert max-w-none text-xs">
+        <ReactMarkdown>{displayed}</ReactMarkdown>
+      </div>
+      {isLong && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+          className="mt-1 text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400"
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
       )}
     </div>
   );

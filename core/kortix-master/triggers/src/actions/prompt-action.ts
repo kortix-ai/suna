@@ -79,7 +79,7 @@ export async function executePromptAction(
   client: MinimalOpenCodeClient,
   trigger: TriggerRecord,
   event: { type: string; data?: unknown; manual?: boolean; timestamp: string },
-  options: { directory?: string; reusedSessions: Map<string, string> },
+  options: { directory?: string; reusedSessions: Map<string, string>; previousResultText?: string | null },
 ): Promise<PromptActionResult> {
   const actionConfig = JSON.parse(trigger.action_config) as PromptActionConfig
   const contextConfig = JSON.parse(trigger.context_config || "{}") as ContextConfig
@@ -103,7 +103,20 @@ export async function executePromptAction(
 
   // Build prompt text
   const renderedPrompt = renderPrompt(prompt, { ...flatData, ...extracted })
-  const sections = [renderedPrompt]
+  const sections: string[] = []
+
+  // State carry: prepend previous run result when enabled
+  if (options.previousResultText) {
+    const lastRunAt = (trigger as any).last_run_at as string | null | undefined
+    const dateStr = lastRunAt ? new Date(lastRunAt).toLocaleString() : "previous run"
+    sections.push(
+      `[Previous run result — ${dateStr}]`,
+      options.previousResultText,
+      "---",
+    )
+  }
+
+  sections.push(renderedPrompt)
 
   if (Object.keys(extracted).length > 0) {
     sections.push("", "<trigger_context_values>", JSON.stringify(extracted, null, 2), "</trigger_context_values>")
