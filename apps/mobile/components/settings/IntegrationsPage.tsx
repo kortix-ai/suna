@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { SearchListHeader } from '@/components/ui/search-list-header';
 import {
   ArrowLeft,
   Search,
@@ -296,65 +297,34 @@ function IntegrationsContent({
 
   // ── Sticky search bar (rendered outside FlatList) ──
   const SearchBar = (
-    <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8, flexDirection: 'row', alignItems: 'center' }}>
-      <View
-        style={{
-          flex: 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: inputBg,
-          borderRadius: 12,
-          paddingHorizontal: 12,
-          height: 42,
-        }}
-      >
-        <Search size={16} color={muted} />
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search 1000+ apps..."
-          placeholderTextColor={muted}
-          style={{
-            flex: 1,
-            marginLeft: 8,
-            fontSize: 15,
-            fontFamily: 'Roobert',
-            color: fg,
+    <SearchListHeader
+      value={searchQuery}
+      onChangeText={setSearchQuery}
+      placeholder="Search 1000+ apps..."
+      rightAction={(
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            credSheetRef.current?.present();
           }}
-          returnKeyType="search"
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-        {searchQuery.length > 0 && (
-          <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-            <X size={16} color={muted} />
-          </Pressable>
-        )}
-      </View>
-      {/* Pipedream settings gear */}
-      <Pressable
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          credSheetRef.current?.present();
-        }}
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: 12,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
-          marginLeft: 8,
-        }}
-      >
-        <Icon as={Settings} size={16} color={muted} />
-        {isCustomCreds && (
-          <View style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: 5, backgroundColor: '#10b981', borderWidth: 2, borderColor: isDark ? '#121215' : '#F8F8F8' }} />
-        )}
-      </Pressable>
-    </View>
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 9999,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+            borderWidth: 1,
+            borderColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
+          }}
+        >
+          <Icon as={Settings} size={16} color={muted} />
+          {isCustomCreds && (
+            <View style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: 5, backgroundColor: '#10b981', borderWidth: 2, borderColor: isDark ? '#121215' : '#F8F8F8' }} />
+          )}
+        </Pressable>
+      )}
+    />
   );
 
   // ── List header (connected accounts + section label) ──
@@ -583,7 +553,7 @@ function IntegrationsContent({
               disabled={!canSaveCreds || saveCreds.isPending}
               style={{
                 backgroundColor: canSaveCreds ? themeColors.primary : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
-                borderRadius: 12,
+                borderRadius: 9999,
                 paddingVertical: 12,
                 paddingHorizontal: 20,
                 opacity: canSaveCreds ? 1 : 0.5,
@@ -597,7 +567,7 @@ function IntegrationsContent({
             <Pressable
               onPress={() => setShowSecrets(!showSecrets)}
               style={{
-                width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+                width: 40, height: 40, borderRadius: 9999, alignItems: 'center', justifyContent: 'center',
                 backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
               }}
             >
@@ -610,7 +580,7 @@ function IntegrationsContent({
                 disabled={deleteCreds.isPending}
                 style={{
                   flexDirection: 'row', alignItems: 'center', marginLeft: 'auto',
-                  paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10,
+                  paddingVertical: 8, paddingHorizontal: 14, borderRadius: 9999,
                 }}
               >
                 <Icon as={Trash2} size={14} color="#ef4444" strokeWidth={1.8} />

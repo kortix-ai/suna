@@ -15,7 +15,10 @@ export interface SearchListHeaderProps {
   value: string;
   onChangeText: (next: string) => void;
   placeholder?: string;
+  /** Show the standard "+" pill button. Mutually exclusive with `rightAction`. */
   onAdd?: () => void;
+  /** Custom right-side button — overrides `onAdd`. Sized 42×42 with pill radius. */
+  rightAction?: React.ReactNode;
   /** Optional text-input props (returnKeyType, autoFocus, etc.). */
   inputProps?: Omit<TextInputProps, 'value' | 'onChangeText' | 'placeholder' | 'placeholderTextColor' | 'style'>;
 }
@@ -25,6 +28,7 @@ export function SearchListHeader({
   onChangeText,
   placeholder = 'Search…',
   onAdd,
+  rightAction,
   inputProps,
 }: SearchListHeaderProps) {
   const { colorScheme } = useColorScheme();
@@ -82,7 +86,7 @@ export function SearchListHeader({
           </Pressable>
         )}
       </View>
-      {onAdd && (
+      {rightAction ?? (onAdd && (
         <Pressable
           onPress={onAdd}
           style={{
@@ -96,7 +100,7 @@ export function SearchListHeader({
         >
           <Plus size={20} color={theme.primaryForeground} />
         </Pressable>
-      )}
+      ))}
     </View>
   );
 }
