@@ -2,6 +2,10 @@
 
 **The Open-Source Operating System for Running Autonomous Companies**
 
+[![Try Kortix](https://img.shields.io/badge/Try%20Kortix-kortix.com-blue?style=for-the-badge)](https://kortix.com?utm_source=github&utm_medium=readme&utm_campaign=star-cta)
+
+**[→ Try Kortix on kortix.com](https://kortix.com?utm_source=github&utm_medium=readme&utm_campaign=star-cta)** — $20/mo · Cloud computer for autonomous AI agents · Works 24/7
+
 The best results come from maximum entropy and openness. Give a language model full context — every file, every secret, every integration, every piece of institutional knowledge — and let it run free. For that to work, it needs a proper machine: a real computer running 24/7 where all the context is stored, all the secrets live, all the work accumulates, and all the other agents operate alongside it.
 
 A Kortix *is* a company. One shared machine where every agent sees the same filesystem, the same databases, the same credentials, the same history. Context isn't siloed per tool or per session — it's shared across the entire system, compounding over time. When your support agent resolves a ticket, your product agent already knows. When your finance agent reconciles an invoice, the context is there for everyone.
