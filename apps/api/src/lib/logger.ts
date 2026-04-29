@@ -105,6 +105,7 @@ function log(level: LogLevel, message: string, context?: Record<string, unknown>
 
 const originalConsoleError = console.error.bind(console);
 const originalConsoleWarn = console.warn.bind(console);
+const originalConsoleLog = console.log.bind(console);
 
 if (logtail) {
   console.error = (...args: unknown[]) => {
@@ -124,6 +125,17 @@ if (logtail) {
       typeof a === 'string' ? a : JSON.stringify(a)
     ).join(' ');
     shipToBetterStack('warn', message);
+  };
+
+  // Patch console.log so all existing info-level calls across the codebase
+  // (billing/webhooks, pool/, tunnel/, etc.) ship to Better Stack with
+  // request context attached — no call-site changes required.
+  console.log = (...args: unknown[]) => {
+    originalConsoleLog(...args);
+    const message = args.map(a =>
+      typeof a === 'string' ? a : JSON.stringify(a)
+    ).join(' ');
+    shipToBetterStack('info', message);
   };
 }
 
