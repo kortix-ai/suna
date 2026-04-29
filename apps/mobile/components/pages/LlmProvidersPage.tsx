@@ -29,6 +29,7 @@ import {
   Check,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
+import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -61,7 +62,7 @@ import { SearchBar } from '@/components/ui/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 
 // ─── Provider branding ───────────────────────────────────────────────────────
 
@@ -162,14 +163,8 @@ function ProviderRow({
     <View style={{ borderBottomWidth: 1, borderBottomColor: borderColor }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 }}>
         {/* Icon */}
-        <View style={{
-          width: 32, height: 32, borderRadius: 8,
-          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-          alignItems: 'center', justifyContent: 'center', marginRight: 12,
-        }}>
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
-            {label.slice(0, 2).toUpperCase()}
-          </Text>
+        <View style={{ marginRight: 12 }}>
+          <ProviderLogo providerID={provider.id} name={provider.name} size={32} />
         </View>
 
         {/* Name + info */}
@@ -207,8 +202,8 @@ function ProviderRow({
             onPress={() => onConnect(provider)}
             style={{
               flexDirection: 'row', alignItems: 'center',
-              backgroundColor: themeColors.primary, borderRadius: 8,
-              paddingHorizontal: 10, paddingVertical: 5,
+              backgroundColor: themeColors.primary, borderRadius: 9999,
+              paddingHorizontal: 12, paddingVertical: 6,
             }}
           >
             <Plus size={12} color={themeColors.primaryForeground} style={{ marginRight: 3 }} />
@@ -471,10 +466,10 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
       />
 
       <PageContent>
-      {/* Tabs */}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: borderColor }}>
+      {/* Tabs — pull up so they sit tight against the page card top */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 12, marginTop: -8, borderBottomWidth: 1, borderBottomColor: borderColor }}>
         {/* Tabs */}
-        <View style={{ flexDirection: 'row', gap: 0, marginTop: 12, borderRadius: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', padding: 3 }}>
+        <View style={{ flexDirection: 'row', gap: 0, borderRadius: 9999, backgroundColor: getToggleTrackBg(isDark), padding: 3 }}>
           {([
             { id: 'providers' as Tab, label: 'Providers' },
             { id: 'connected' as Tab, label: `Connected (${connectedSet.size})` },
@@ -486,15 +481,8 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
                 key={tab.id}
                 onPress={() => { setActiveTab(tab.id); setSearchQuery(''); }}
                 style={{
-                  flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center',
-                  backgroundColor: active ? (isDark ? 'rgba(255,255,255,0.1)' : '#FFFFFF') : 'transparent',
-                  ...(active ? {
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: isDark ? 0.3 : 0.08,
-                    shadowRadius: 3,
-                    elevation: 2,
-                  } : {}),
+                  flex: 1, paddingVertical: 7, borderRadius: 9999, alignItems: 'center',
+                  backgroundColor: active ? getToggleActiveBg(isDark) : 'transparent',
                 }}
               >
                 <Text style={{ fontSize: 12, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? fgColor : mutedColor }}>
@@ -643,16 +631,16 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
                         <Text numberOfLines={1} style={{ fontSize: 10, fontFamily: monoFont, color: mutedColor, marginTop: 1 }}>{m.modelID}</Text>
                       </View>
                       <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                        {m.reasoning && (
+                        {m.reasoning ? (
                           <View style={{ backgroundColor: isDark ? 'rgba(139,92,246,0.12)' : 'rgba(139,92,246,0.08)', borderRadius: 6, paddingHorizontal: 5, paddingVertical: 1 }}>
                             <Text style={{ fontSize: 8, fontFamily: 'Roobert-Medium', color: '#8b5cf6' }}>reasoning</Text>
                           </View>
-                        )}
-                        {m.contextWindow && (
+                        ) : null}
+                        {m.contextWindow ? (
                           <Text style={{ fontSize: 10, fontFamily: monoFont, color: mutedColor }}>
                             {m.contextWindow >= 1000000 ? `${(m.contextWindow / 1000000).toFixed(0)}M` : m.contextWindow >= 1000 ? `${Math.round(m.contextWindow / 1000)}k` : m.contextWindow}
                           </Text>
-                        )}
+                        ) : null}
                       </View>
                     </View>
                   ))}
@@ -689,11 +677,11 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
       >
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
-                {connectTarget ? getProviderLabel(connectTarget.id, connectTarget.name).slice(0, 2).toUpperCase() : ''}
-              </Text>
-            </View>
+            {connectTarget && (
+              <View style={{ marginRight: 12 }}>
+                <ProviderLogo providerID={connectTarget.id} name={connectTarget.name} size={40} />
+              </View>
+            )}
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>
                 Connect {connectTarget ? getProviderLabel(connectTarget.id, connectTarget.name) : ''}

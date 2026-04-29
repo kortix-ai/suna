@@ -640,7 +640,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
                   alignItems: 'center',
                   paddingHorizontal: 14,
                   paddingVertical: 7,
-                  borderRadius: 10,
+                  borderRadius: 9999,
                   backgroundColor: isActive ? chipActiveBg : chipBg,
                 }}
               >

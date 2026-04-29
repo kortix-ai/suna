@@ -23,7 +23,6 @@ import { captureScreen } from 'react-native-view-shot';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text } from '@/components/ui/text';
 import { Stack, useRouter } from 'expo-router';
-import { StatusBar as RNStatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { Drawer } from 'react-native-drawer-layout';
@@ -1447,7 +1446,6 @@ export default function HomeScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <ProvisioningProgress
           progress={poller.progress}
           stages={poller.stages}
@@ -1473,7 +1471,6 @@ export default function HomeScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <ConnectingToWorkspace isDark={isDark} phase={phase} />
       </>
     );
@@ -1484,7 +1481,6 @@ export default function HomeScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <SetupWizard onComplete={handleSetupComplete} />
       </>
     );
@@ -1495,7 +1491,6 @@ export default function HomeScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <InstanceOnboarding onComplete={handleOnboardingComplete} />
       </>
     );
@@ -1504,7 +1499,6 @@ export default function HomeScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <Drawer
         open={drawerOpen}
@@ -1551,31 +1545,38 @@ export default function HomeScreen() {
             ? { ref: viewShotRef, style: { flex: 1, backgroundColor: isDark ? '#09090B' : '#FFFFFF' } }
             : { className: 'flex-1 bg-background' },
           <>
-          {/* Side hairlines — span session/dashboard + BottomBar all the way to screen bottom */}
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: insets.top + 68,
-              bottom: 0,
-              width: 2,
-              backgroundColor: isDark ? '#222222' : '#e6e6e5',
-              zIndex: 10,
-            }}
-          />
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              right: 0,
-              top: insets.top + 68,
-              bottom: 0,
-              width: 2,
-              backgroundColor: isDark ? '#222222' : '#e6e6e5',
-              zIndex: 10,
-            }}
-          />
+          {/* Side hairlines — only needed for SessionPage / Dashboard, where the
+              chat input pushes the page card up so its own borders don't reach
+              the bottom of the screen. Other pages use PageContent which spans
+              full height and renders its own side borders. */}
+          {!activePageId && !showTabsOverview && (
+            <>
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: insets.top + 68,
+                  bottom: 0,
+                  width: 2,
+                  backgroundColor: isDark ? '#222222' : '#e6e6e5',
+                  zIndex: 10,
+                }}
+              />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: insets.top + 68,
+                  bottom: 0,
+                  width: 2,
+                  backgroundColor: isDark ? '#222222' : '#e6e6e5',
+                  zIndex: 10,
+                }}
+              />
+            </>
+          )}
           {/* Loading sandbox */}
           {sandboxLoading ? (
             <View className="flex-1 items-center justify-center">
