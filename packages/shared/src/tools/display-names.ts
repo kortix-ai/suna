@@ -4,6 +4,7 @@
  */
 
 export const TOOL_COMPLETED_NAMES: ReadonlyMap<string, string> = new Map([
+  ['search_knowledge_base', 'Searched Knowledge Base'],
   ['web-search', 'Searched Web'],
   ['web_search', 'Searched Web'],
   ['image-search', 'Searched Images'],

@@ -69,6 +69,11 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'scrape_webpage':
       return 'globe';
 
+    // Knowledge base
+    case 'search_knowledge_base':
+    case 'search-knowledge-base':
+      return 'book-open';
+
     // Web search
     case 'web-search':
     case 'web_search':

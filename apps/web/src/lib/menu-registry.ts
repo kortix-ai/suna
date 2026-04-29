@@ -22,6 +22,7 @@ import {
   // Navigation
   LayoutDashboard,
   Blocks,
+  BookOpen,
   FolderOpen,
   FolderKanban,
   Plug,
@@ -402,6 +403,17 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette', 'rightSidebar'],
     kind: 'navigate',
     href: '/scheduled-tasks',
+  },
+  {
+    id: 'knowledge',
+    label: 'Knowledge',
+    icon: BookOpen,
+    group: 'navigation',
+    subGroup: 'services',
+    showIn: ['commandPalette', 'rightSidebar'],
+    kind: 'navigate',
+    href: '/knowledge',
+    keywords: 'notes knowledge base search folders markdown',
   },
   {
     id: 'channels',
