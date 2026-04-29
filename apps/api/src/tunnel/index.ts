@@ -76,7 +76,9 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
         const supabase = getSupabase();
         const { data: { user }, error } = await supabase.auth.getUser(token);
         if (!error && user) accountId = user.id;
-      } catch {}
+      } catch (err) {
+        console.warn('[tunnel:auth] supabase.auth.getUser failed:', err);
+      }
     }
 
     if (!accountId) return null;
@@ -182,7 +184,9 @@ function startTunnelService(): void {
         .set({ status: 'offline', updatedAt: new Date() })
         .where(eq(tunnelConnections.tunnelId, tunnelId))
         .catch((err: any) => console.warn(`[tunnel] DB update failed:`, err));
-    } catch {}
+    } catch (err) {
+      console.error(`[tunnel:disconnect] DB import/update error for ${tunnelId}:`, err);
+    }
   });
 
   tunnelRelay.on('connection:replaced', ({ tunnelId }) => {
@@ -209,9 +213,11 @@ function startTunnelService(): void {
         db.update(tunnelConnections)
           .set({ machineInfo: mi, updatedAt: new Date() })
           .where(eq(tunnelConnections.tunnelId, tunnelId))
-          .catch(() => {});
+          .catch((err) => console.warn(`[tunnel-heartbeat] machineInfo update failed for ${tunnelId}:`, err));
       }
-    } catch {}
+    } catch (err) {
+      console.error(`[tunnel:pong] DB import/update error for ${tunnelId}:`, err);
+    }
   });
 
   tunnelRelay.on('agent:timeout', async ({ tunnelId }) => {
