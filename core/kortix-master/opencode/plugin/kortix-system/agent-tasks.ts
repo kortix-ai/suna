@@ -18,6 +18,7 @@
 import { Database } from "bun:sqlite"
 import { tool, type ToolContext } from "@opencode-ai/plugin"
 import { PROJECT_MAINTAINER_AGENT, type ProjectManager } from "./projects"
+import { runGitPrHook } from "./git-pr-hook"
 import {
 	addTaskEvidence,
 	blockTask,
@@ -432,6 +433,18 @@ export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 					args.result,
 					"</task_delivered>",
 				].filter(Boolean) as string[])
+
+				// ── Git commit + PR creation (non-blocking) ───────────────────
+				// Fire-and-forget: commit changes, push, open PR if git remote exists.
+				// Errors are logged at warn level and do NOT affect the task result.
+				runGitPrHook({
+					sessionId: ctx.sessionID,
+					taskTitle: delivered.title,
+					directory: ctx.directory,
+				}).catch((err) => {
+					console.warn("[task_deliver] git-pr-hook error:", err instanceof Error ? err.message : String(err))
+				})
+
 				return `Task **${delivered.id}** delivered for review.`
 			},
 		}),
