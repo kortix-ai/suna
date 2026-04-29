@@ -33,6 +33,7 @@ import {
   useInstances,
   useProviders,
   useCreateLocalInstance,
+  useSandbox,
 } from '@/lib/platform/hooks';
 import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
 import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-progress';
@@ -77,7 +78,19 @@ export default function InstancesScreen() {
   const isDark = colorScheme === 'dark';
   const { sandboxId, switchSandbox } = useSandboxContext();
 
-  const { data: instances, isLoading, refetch, isRefetching } = useInstances();
+  const { data: rawInstances, isLoading, refetch, isRefetching } = useInstances();
+  // Fallback: if `/sandbox/list` returns empty (e.g. local-bridge discovery
+  // failed) but the user actually has an active sandbox known via
+  // `/sandbox`, surface it so the page never shows "No Instances" while the
+  // app's active sandbox is connected. Mirrors what useSandbox already does
+  // internally for the dashboard.
+  const { data: activeData } = useSandbox();
+  const instances = React.useMemo<SandboxInfo[] | undefined>(() => {
+    if (rawInstances === undefined) return undefined;
+    if (rawInstances.length > 0) return rawInstances;
+    const fallback = activeData?.sandbox;
+    return fallback ? [fallback] : rawInstances;
+  }, [rawInstances, activeData?.sandbox]);
   const themeColors = useThemeColors();
 
   // Live version from /kortix/health for the active instance. The DB's
@@ -292,6 +305,7 @@ const RenameSheet = React.forwardRef<
   const insets = useSafeAreaInsets();
   const [name, setName] = React.useState('');
   const fgColor = isDark ? '#f8f8f8' : '#121215';
+  const themeColors = useThemeColors();
 
   React.useEffect(() => {
     if (instance) setName(instance.name);
@@ -357,10 +371,10 @@ const RenameSheet = React.forwardRef<
         <Pressable
           onPress={handleSave}
           disabled={!canSave}
-          className="items-center rounded-2xl py-3.5 active:opacity-90"
+          className="items-center rounded-full py-3.5 active:opacity-90"
           style={{
             backgroundColor: canSave
-              ? isDark ? '#f8f8f8' : '#121215'
+              ? themeColors.primary
               : isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
             opacity: canSave ? 1 : 0.5,
           }}
@@ -369,7 +383,7 @@ const RenameSheet = React.forwardRef<
             className="font-roobert-semibold text-[15px]"
             style={{
               color: canSave
-                ? isDark ? '#121215' : '#f8f8f8'
+                ? themeColors.primaryForeground
                 : isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)',
             }}
           >
@@ -610,7 +624,7 @@ const AddInstanceSheet = React.forwardRef<
             <Pressable
               onPress={handleCustomConnect}
               disabled={!customUrl.trim() || isCreating}
-              className="items-center rounded-2xl py-3.5 active:opacity-90"
+              className="items-center rounded-full py-3.5 active:opacity-90"
               style={{
                 backgroundColor: customUrl.trim()
                   ? isDark ? '#f8f8f8' : '#121215'
