@@ -64,7 +64,7 @@ export function NavProjects({
 
         {projects.map((item) => (
           <SidebarMenuItem key={item.id}>
-            <SidebarMenuButton asChild isActive={item.isActive}>
+            <SidebarMenuButton asChild isActive={item.isActive} className="font-medium text-primary">
               <Link href={item.url}>
                 {item.leading ?? <Folder />}
                 <span className="truncate">{item.name}</span>

@@ -33,12 +33,6 @@ export type NavMainItem = {
     isActive?: boolean
     leading?: React.ReactNode
   }[]
-  /**
-   * Optional escape hatch for items whose collapsible body isn't a static
-   * list — e.g. Sessions, which renders its own data-driven component.
-   * If provided, the item is rendered as a collapsible and `renderContent`
-   * is shown inside <CollapsibleContent> instead of the `items` list.
-   */
   renderContent?: () => React.ReactNode
 }
 
@@ -66,10 +60,11 @@ export function NavMain({
                   isActive={item.isActive}
                   asChild={!!item.url}
                   onClick={item.onAction}
+                  className="font-medium text-primary"
                 >
                   {item.url ? (
                     <Link href={item.url}>
-                      {item.icon && <item.icon />}
+                      {item.icon && <item.icon className="text-muted-foreground/50" />}
                       <span>{item.title}</span>
                       {item.shortcut && (
                         <Kbd className="ml-auto bg-transparent text-muted-foreground/55 group-data-[collapsible=icon]:hidden">
@@ -79,7 +74,7 @@ export function NavMain({
                     </Link>
                   ) : (
                     <>
-                      {item.icon && <item.icon />}
+                      {item.icon && <item.icon className="text-muted-foreground/50" />}
                       <span>{item.title}</span>
                       {item.shortcut && (
                         <Kbd className="ml-auto bg-transparent text-muted-foreground/55 group-data-[collapsible=icon]:hidden">
@@ -103,8 +98,8 @@ export function NavMain({
               <SidebarMenuItem>
                 <CollapsibleTrigger asChild>
                   <SidebarMenuButton tooltip={item.title}>
-                    {item.icon && <item.icon />}
-                    <span>{item.title}</span>
+                    {item.icon && <item.icon className="text-muted-foreground/50" />}
+                    <span className="font-medium text-primary">{item.title}</span>
                     <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                   </SidebarMenuButton>
                 </CollapsibleTrigger>
