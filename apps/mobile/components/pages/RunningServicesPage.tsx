@@ -230,15 +230,15 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
               key={key}
               onPress={() => { setFilter(key); Haptics.selectionAsync(); }}
               style={{
-                backgroundColor: active ? fgColor : isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
-                borderRadius: 20,
+                backgroundColor: active ? themeColors.primary : isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                borderRadius: 9999,
                 paddingHorizontal: 14,
                 paddingVertical: 6,
               }}
             >
               <Text
                 className="text-[12px] font-roobert-medium"
-                style={{ color: active ? (isDark ? '#121215' : '#f8f8f8') : mutedColor }}
+                style={{ color: active ? themeColors.primaryForeground : mutedColor }}
               >
                 {FILTER_LABELS[key]}
               </Text>
@@ -257,7 +257,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
         onContentSizeChange={handleContentSizeChange}
         refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={handleManualRefresh} />}
       >
-        <View className="px-4 pt-2">
+        <View className="pt-2">
           {/* Loading */}
           {isLoading && (
             <View className="py-12 items-center">
@@ -267,7 +267,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
 
           {/* Items list */}
           {!isLoading && filteredServices.length > 0 && (
-            <View style={{ gap: 10 }}>
+            <View>
               {filteredServices.map((service) => (
                 <ServiceCard
                   key={service.id}
@@ -363,15 +363,9 @@ function ServiceCard({
           ? 'Backoff'
           : 'Stopped';
 
-  const cardBorderColor = isRunning
-    ? isDark ? 'rgba(52,211,153,0.15)' : 'rgba(52,211,153,0.12)'
-    : isFailed
-      ? isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)'
-      : borderColor;
-
   return (
-    <View className="rounded-2xl border overflow-hidden" style={{ borderColor: cardBorderColor }}>
-      <View className="px-4 py-3.5">
+    <View style={{ borderBottomWidth: 1, borderBottomColor: borderColor }}>
+      <View className="px-4 py-3">
         {/* Top row: icon + name + status */}
         <View className="flex-row items-center">
           <View className="relative">
@@ -584,10 +578,10 @@ function ActionButton({
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      className="flex-row items-center rounded-lg active:opacity-70"
+      className="flex-row items-center rounded-full active:opacity-70"
       style={{
         backgroundColor: bgColor,
-        paddingHorizontal: label ? 10 : 8,
+        paddingHorizontal: label ? 12 : 8,
         paddingVertical: 6,
         opacity: disabled ? 0.5 : 1,
         gap: label ? 4 : 0,
