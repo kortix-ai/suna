@@ -279,9 +279,13 @@ export function createMockStripeCheckoutSession(overrides: Record<string, any> =
   };
 }
 
+let _eventCounter = 0;
 export function createMockStripeEvent(type: string, object: any, overrides: Record<string, any> = {}) {
+  // Use a monotonic counter so rapid consecutive calls don't produce duplicate
+  // event IDs (Date.now() can repeat when tests run in the same millisecond),
+  // which would cause the webhook dedup Set to skip events incorrectly.
   return {
-    id: `evt_test_${Date.now()}`,
+    id: `evt_test_${Date.now()}_${++_eventCounter}`,
     type,
     data: { object },
     created: Math.floor(Date.now() / 1000),
