@@ -47,9 +47,9 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
@@ -133,7 +133,7 @@ function ScheduledTasksContent() {
   const [selectedTrigger, setSelectedTrigger] = useState<Trigger | null>(null);
   const [showCreateSheet, setShowCreateSheet] = useState(false);
 
-  const detailSheetRef = useRef<BottomSheet>(null);
+  const detailSheetRef = useRef<BottomSheetModal>(null);
   const createSheetRef = useRef<BottomSheetModal>(null);
 
   // Colors
@@ -169,7 +169,7 @@ function ScheduledTasksContent() {
   const handleSelectTrigger = useCallback((trigger: Trigger) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedTrigger(trigger);
-    detailSheetRef.current?.snapToIndex(0);
+    detailSheetRef.current?.present();
   }, []);
 
   const handleToggle = useCallback(
@@ -197,7 +197,7 @@ function ScheduledTasksContent() {
               await deleteTask.mutateAsync(trigger.id);
               if (selectedTrigger?.id === trigger.id) {
                 setSelectedTrigger(null);
-                detailSheetRef.current?.close();
+                detailSheetRef.current?.dismiss();
               }
             } catch {
               Alert.alert('Error', 'Failed to delete task');
@@ -351,7 +351,7 @@ function ScheduledTasksContent() {
         onDelete={() => selectedTrigger && handleDelete(selectedTrigger)}
         onRunNow={async () => { if (selectedTrigger) await handleRunNow(selectedTrigger); }}
         onOpenSession={(sessionId) => {
-          detailSheetRef.current?.close();
+          detailSheetRef.current?.dismiss();
           setSelectedTrigger(null);
           navigateToSession(sessionId);
         }}
@@ -498,7 +498,7 @@ function TaskDetailSheet({
   onRunNow,
   onOpenSession,
 }: {
-  sheetRef: React.RefObject<BottomSheet>;
+  sheetRef: React.RefObject<BottomSheetModal>;
   trigger: Trigger | null;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
@@ -605,9 +605,8 @@ function TaskDetailSheet({
   }, [trigger?.id]);
 
   return (
-    <BottomSheet
+    <BottomSheetModal
       ref={sheetRef}
-      index={-1}
       snapPoints={snapPoints}
       enablePanDownToClose
       onChange={handleSheetChange}
@@ -663,25 +662,6 @@ function TaskDetailSheet({
                   {trigger.type === 'webhook' ? 'Webhook' : describeCron(trigger.cronExpr)}
                 </Text>
               </View>
-              {trigger.editable && !isEditing && (
-                <Pressable
-                  onPress={() => {
-                    setIsEditing(true);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
-                  hitSlop={10}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Pencil size={15} color={fg} />
-                </Pressable>
-              )}
               <Switch
                 value={effectiveIsActive}
                 onValueChange={handleToggle}
@@ -690,8 +670,8 @@ function TaskDetailSheet({
               />
             </View>
 
-            {/* Tabs */}
-            <View style={{ flexDirection: 'row', marginBottom: 16, gap: 0, borderRadius: 10, overflow: 'hidden', backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}>
+            {/* Tabs — same segmented toggle as the rest of the app */}
+            <View style={{ flexDirection: 'row', marginBottom: 16, padding: 3, borderRadius: 9999, backgroundColor: getToggleTrackBg(isDark) }}>
               {(['settings', 'executions'] as const).map((t) => (
                 <Pressable
                   key={t}
@@ -700,8 +680,8 @@ function TaskDetailSheet({
                     flex: 1,
                     paddingVertical: 8,
                     alignItems: 'center',
-                    backgroundColor: tab === t ? (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)') : 'transparent',
-                    borderRadius: 10,
+                    backgroundColor: tab === t ? getToggleActiveBg(isDark) : 'transparent',
+                    borderRadius: 9999,
                   }}
                 >
                   <Text style={{ fontSize: 13, fontFamily: tab === t ? 'Roobert-Medium' : 'Roobert', color: tab === t ? fg : muted, textTransform: 'capitalize' }}>
@@ -831,7 +811,7 @@ function TaskDetailSheet({
                         justifyContent: 'center',
                         gap: 8,
                         paddingVertical: 13,
-                        borderRadius: 12,
+                        borderRadius: 9999,
                         backgroundColor: theme.primary,
                         opacity: isRunning ? 0.7 : 1,
                       }}
@@ -857,7 +837,7 @@ function TaskDetailSheet({
                         justifyContent: 'center',
                         gap: 8,
                         paddingVertical: 13,
-                        borderRadius: 12,
+                        borderRadius: 9999,
                         backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
                       }}
                     >
@@ -874,6 +854,29 @@ function TaskDetailSheet({
 
                   {!isEditing && trigger.editable && (
                     <Pressable
+                      onPress={() => {
+                        setIsEditing(true);
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        paddingVertical: 13,
+                        borderRadius: 9999,
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      }}
+                    >
+                      <Pencil size={16} color={fg} />
+                      <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>
+                        Edit
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {!isEditing && trigger.editable && (
+                    <Pressable
                       onPress={onDelete}
                       style={{
                         flexDirection: 'row',
@@ -881,7 +884,7 @@ function TaskDetailSheet({
                         justifyContent: 'center',
                         gap: 8,
                         paddingVertical: 13,
-                        borderRadius: 12,
+                        borderRadius: 9999,
                         backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.06)',
                       }}
                     >
@@ -899,7 +902,7 @@ function TaskDetailSheet({
           </>
         )}
       </BottomSheetScrollView>
-    </BottomSheet>
+    </BottomSheetModal>
   );
 }
 
