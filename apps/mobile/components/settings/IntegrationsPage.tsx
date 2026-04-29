@@ -46,7 +46,7 @@ import { CustomMcpDialog } from './integrations/CustomMcpDialog';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { log } from '@/lib/logger';
 import {
   usePipedreamCredentialStatus,
@@ -493,7 +493,7 @@ function IntegrationsContent({
         android_keyboardInputMode="adjustResize"
         onDismiss={() => { setCredValues({ client_id: '', client_secret: '', project_id: '' }); setShowSecrets(false); }}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

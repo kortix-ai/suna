@@ -57,7 +57,7 @@ import { MentionSuggestions } from './MentionSuggestions';
 import { AudioWaveform } from '@/components/attachments/AudioWaveform';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
 import { Text as RNText } from 'react-native';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -717,7 +717,7 @@ export function SessionChatInput({
 
         {/* Text input area */}
         <View className="px-3 pt-1 pb-2">
-          <View className="rounded-2xl px-3 pt-2 pb-1 bg-background border border-border">
+          <View className="rounded-2xl px-3 pt-2 pb-1 bg-card border border-border">
             {/* Queue / question slot — rendered above textarea */}
             {inputSlot}
 
@@ -1330,7 +1330,7 @@ function ActionsSheet({
         borderRadius: 3,
       }}
       backgroundStyle={{
-        backgroundColor: bg,
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
@@ -1521,7 +1521,7 @@ function AutoContinueSheet({
         borderRadius: 3,
       }}
       backgroundStyle={{
-        backgroundColor: bg,
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
@@ -1914,7 +1914,7 @@ function ConfigSheet({
         borderRadius: 3,
       }}
       backgroundStyle={{
-        backgroundColor: bg,
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}

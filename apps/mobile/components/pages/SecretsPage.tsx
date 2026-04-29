@@ -50,7 +50,7 @@ import { log } from '@/lib/logger';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 
@@ -190,7 +190,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const mutedColor = isDark ? '#71717a' : '#a1a1aa';
   const bgColor = isDark ? '#121215' : '#F8F8F8';
   const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const sheetBg = isDark ? '#161618' : '#FFFFFF';
+  const sheetBg = getSheetBg(isDark);
   const inputBorder = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
   const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
   const themeColors = useThemeColors();

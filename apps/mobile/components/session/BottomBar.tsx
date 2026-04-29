@@ -22,6 +22,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import { getSheetBg } from '@/lib/theme-colors';
 
 export type BottomBarMenuItem =
   | {
@@ -584,7 +585,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
         backdropComponent={renderBackdrop}
         onDismiss={onMenuDismiss}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
         }}

@@ -58,6 +58,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { ToolkitIcon } from '@/components/settings/integrations/ToolkitIcon';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { getSheetBg } from '@/lib/theme-colors';
 
 // Drawer view states
 type DrawerView = 'apps' | 'connector' | 'tools';
@@ -806,7 +807,7 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
         onDismiss={handleCloseBrowseApps}
         backdropComponent={renderBackdrop}
         backgroundStyle={{
-          backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(colorScheme === 'dark'),
         }}
         handleIndicatorStyle={{
           backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
@@ -999,7 +1000,7 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
         onDismiss={handleCloseCustomMcp}
         backdropComponent={renderBackdrop}
         backgroundStyle={{
-          backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(colorScheme === 'dark'),
         }}
         handleIndicatorStyle={{
           backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
@@ -1096,7 +1097,7 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
         onDismiss={handleCloseToolsSheet}
         backdropComponent={renderBackdrop}
         backgroundStyle={{
-          backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(colorScheme === 'dark'),
         }}
         handleIndicatorStyle={{
           backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',

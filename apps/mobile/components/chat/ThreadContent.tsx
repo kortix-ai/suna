@@ -1306,10 +1306,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 {cleanContent && (
                   <View className="flex-row justify-end">
                     <View
-                      className="max-w-[85%] border border-border"
+                      className="max-w-[90%] bg-card border border-border"
                       style={{
                         borderRadius: 24,
                         borderBottomRightRadius: 8,
+                        overflow: 'hidden',
                       }}>
                       {ContextMenu ? (
                         <ContextMenu
@@ -1324,18 +1325,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           borderTopRightRadius={24}
                           borderBottomLeftRadius={24}
                           borderBottomRightRadius={8}>
-                          <View
-                            className="bg-card px-4 py-3"
-                            style={{
-                              borderRadius: 24,
-                              borderBottomRightRadius: 8,
-                              overflow: 'hidden',
-                            }}>
+                          <View className="px-4 py-3">
                             <RNText
                               selectable
                               style={{
-                                fontSize: 16,
-                                lineHeight: 24,
+                                fontSize: 14,
+                                lineHeight: 23,
                                 fontFamily: 'Roobert-Regular',
                                 color: isDark ? '#fafafa' : '#18181b',
                               }}>
@@ -1349,18 +1344,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                             await Clipboard.setStringAsync(cleanContent);
                           }}
                           delayLongPress={500}>
-                          <View
-                            className="bg-card px-4 py-3"
-                            style={{
-                              borderRadius: 24,
-                              borderBottomRightRadius: 8,
-                              overflow: 'hidden',
-                            }}>
+                          <View className="px-4 py-3">
                             <RNText
                               selectable
                               style={{
-                                fontSize: 16,
-                                lineHeight: 24,
+                                fontSize: 14,
+                                lineHeight: 23,
                                 fontFamily: 'Roobert-Regular',
                                 color: isDark ? '#fafafa' : '#18181b',
                               }}>

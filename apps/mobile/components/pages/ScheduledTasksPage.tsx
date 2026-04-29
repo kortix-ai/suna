@@ -49,7 +49,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
@@ -616,7 +616,7 @@ function TaskDetailSheet({
       enablePanDownToClose
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: isDark ? '#161618' : '#FFFFFF' }}
+      backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
       handleIndicatorStyle={{ backgroundColor: isDark ? '#555' : '#ccc' }}
     >
       <BottomSheetScrollView
@@ -1344,7 +1344,7 @@ function CreateTaskSheet({
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
       backgroundStyle={{
-        backgroundColor: isDark ? '#161618' : '#FFFFFF',
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}

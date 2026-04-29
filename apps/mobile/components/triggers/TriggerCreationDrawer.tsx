@@ -53,6 +53,7 @@ import type { TriggerApp, ComposioTriggerType } from '@/api/types';
 import { SvgUri } from 'react-native-svg';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { log } from '@/lib/logger';
+import { getSheetBg } from '@/lib/theme-colors';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -762,7 +763,7 @@ export function TriggerCreationDrawer({
       onDismiss={handleDismiss}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+        backgroundColor: getSheetBg(colorScheme === 'dark'),
       }}
       handleIndicatorStyle={{
         backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',

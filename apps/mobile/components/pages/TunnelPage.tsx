@@ -46,7 +46,7 @@ import {
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
 
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
@@ -372,7 +372,7 @@ const CreateTunnelSheet = React.forwardRef<
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
   const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const sheetBg = isDark ? '#161618' : '#FFFFFF';
+  const sheetBg = getSheetBg(isDark);
 
   const [copied, setCopied] = useState(false);
 
@@ -493,7 +493,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
     const fg = isDark ? '#f8f8f8' : '#121215';
     const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
     const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-    const sheetBg = isDark ? '#161618' : '#FFFFFF';
+    const sheetBg = getSheetBg(isDark);
     const accent = theme.primary;
     const accentBg = theme.primaryLight;
     const dangerBg = isDark ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.05)';

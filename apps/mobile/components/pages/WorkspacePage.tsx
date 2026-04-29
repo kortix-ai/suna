@@ -51,7 +51,7 @@ import {
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
 
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
@@ -730,7 +730,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
         enablePanDownToClose
         maxDynamicContentSize={600}
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: bg, borderRadius: 24 }}
+        backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderRadius: 24 }}
         handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)', width: 36 }}
         onDismiss={() => setSelectedItem(null)}
       >

@@ -17,6 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
+import { getSheetBg } from '@/lib/theme-colors';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSession } from '@/lib/platform/hooks';
@@ -134,7 +135,7 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           borderRadius: 3,
         }}
         backgroundStyle={{
-          backgroundColor: bg,
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

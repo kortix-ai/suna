@@ -23,7 +23,7 @@ import {
 } from '@/hooks/useIntegrations';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { log } from '@/lib/logger';
 
 interface ManageConnectionSheetProps {
@@ -180,7 +180,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
         enablePanDownToClose
         onChange={handleSheetChange}
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: isDark ? '#161618' : '#FFFFFF' }}
+        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
         handleIndicatorStyle={{ backgroundColor: isDark ? '#555' : '#ccc' }}
       >
         <BottomSheetScrollView
@@ -331,7 +331,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
         android_keyboardInputMode="adjustResize"
         onDismiss={() => setRenameDraft('')}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

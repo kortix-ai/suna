@@ -65,10 +65,11 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
   const insets = useSafeAreaInsets();
   const { updateAvailable } = useGlobalSandboxUpdate();
 
+  // Colors aligned with the left drawer (home.tsx renderDrawerContent + global.css tokens).
   const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#777';
+  const mutedColor = isDark ? '#999999' : '#6e6e6e';
   const sectionColor = isDark ? '#666' : '#999';
-  const bgColor = isDark ? '#232324' : '#E8E8E8';
+  const bgColor = isDark ? '#090909' : '#F5F5F5'; // matches --chrome-background
 
   const handleItemPress = (pageId: string) => {
     useTabStore.getState().navigateToPage(pageId);

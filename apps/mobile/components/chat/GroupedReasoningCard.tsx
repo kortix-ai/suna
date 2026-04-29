@@ -174,7 +174,7 @@ export function GroupedReasoningCard({ parts, isStreaming = false }: GroupedReas
   };
 
   return (
-    <Animated.View entering={FadeIn.duration(150)} className="w-full">
+    <Animated.View entering={FadeIn.duration(150)} className="w-full" style={{ marginBottom: 6 }}>
       {/* Minimal trigger row — matches web's design */}
       <Pressable
         onPress={handleToggle}

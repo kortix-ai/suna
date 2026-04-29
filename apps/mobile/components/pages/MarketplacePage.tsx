@@ -18,7 +18,7 @@ import { getAuthToken } from '@/api/config';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BottomSheetBackdrop,
@@ -458,7 +458,7 @@ export function MarketplacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer,
   const mutedColor = isDark ? '#71717a' : '#6b7280';
   const bgColor = isDark ? '#121215' : '#F8F8F8';
   const borderColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.08)';
-  const sheetBg = isDark ? '#161618' : '#FFFFFF';
+  const sheetBg = getSheetBg(isDark);
   const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
   const [search, setSearch] = useState('');

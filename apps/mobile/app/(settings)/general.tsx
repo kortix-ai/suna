@@ -19,6 +19,7 @@ import {
   BottomSheetView,
   type BottomSheetBackdropProps,
 } from '@gorhom/bottom-sheet';
+import { getSheetBg } from '@/lib/theme-colors';
 
 export default function GeneralSettingsScreen() {
   const router = useRouter();
@@ -262,7 +263,7 @@ export default function GeneralSettingsScreen() {
           borderRadius: 3,
         }}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

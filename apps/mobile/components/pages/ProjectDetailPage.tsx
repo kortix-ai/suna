@@ -40,7 +40,7 @@ import {
   TouchableOpacity as BottomSheetTouchable,
 } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import {
   FolderGit2,
   MessageSquare,
@@ -1387,7 +1387,7 @@ export function ProjectDetailPage({
         backdropComponent={renderBackdrop}
         onDismiss={() => setSelectedTask(null)}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
@@ -1844,7 +1844,7 @@ export function ProjectDetailPage({
           setEditValue('');
         }}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
@@ -1963,7 +1963,7 @@ export function ProjectDetailPage({
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

@@ -55,6 +55,7 @@ import { ComposioToolsContent } from '@/components/settings/integrations/Composi
 import { CustomMcpContent } from '@/components/settings/integrations/CustomMcpDialog';
 import { CustomMcpToolsContent } from '@/components/settings/integrations/CustomMcpToolsSelector';
 import { log } from '@/lib/logger';
+import { getSheetBg } from '@/lib/theme-colors';
 
 interface AgentDrawerProps {
   visible: boolean;
@@ -525,7 +526,7 @@ export function AgentDrawer({
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: colors.bg,
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}

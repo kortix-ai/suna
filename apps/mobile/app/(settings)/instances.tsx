@@ -36,7 +36,7 @@ import {
 } from '@/lib/platform/hooks';
 import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
 import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-progress';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -321,7 +321,7 @@ const RenameSheet = React.forwardRef<
         width: 36, height: 5, borderRadius: 3,
       }}
       backgroundStyle={{
-        backgroundColor: isDark ? '#161618' : '#FFFFFF',
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24, borderTopRightRadius: 24,
       }}
     >
@@ -486,7 +486,7 @@ const AddInstanceSheet = React.forwardRef<
         width: 36, height: 5, borderRadius: 3,
       }}
       backgroundStyle={{
-        backgroundColor: isDark ? '#161618' : '#FFFFFF',
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24, borderTopRightRadius: 24,
       }}
     >
