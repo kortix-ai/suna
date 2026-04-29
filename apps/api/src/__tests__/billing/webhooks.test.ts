@@ -271,7 +271,7 @@ describe('subscription changes', () => {
     const sub = createMockStripeSubscription({
       metadata: { account_id: 'acc_test_123' },
       items: {
-        data: [{ id: 'si_123', price: { id: 'price_1RIGvuG6l1KZGqIrvjlz5p5V' } }],
+        data: [{ id: 'si_123', price: { id: 'price_1RILb4G6l1KZGqIr5q0sybWn' } }],
       },
     });
     const event = createMockStripeEvent('customer.subscription.updated', sub);

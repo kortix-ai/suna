@@ -214,6 +214,41 @@ export async function grantCredits(
   return data;
 }
 
+// ─── Free tier daily credit refresh ─────────────────────────────────────────
+
+const FREE_DAILY_GRANT = 3;
+const FREE_DAILY_MAX_ACCUMULATION = 21;
+const DAILY_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+export async function refreshDailyCredits(
+  accountId: string,
+  tierName: string,
+): Promise<{ granted: number; newDaily: number; newBalance: number } | null> {
+  if (tierName !== 'free') return null;
+
+  const account = await getCreditAccount(accountId);
+  if (!account) return null;
+
+  const now = Date.now();
+  const lastRefresh = account.lastDailyRefresh ? new Date(account.lastDailyRefresh).getTime() : 0;
+  if (lastRefresh > 0 && now - lastRefresh < DAILY_REFRESH_INTERVAL_MS) return null;
+
+  const currentDaily = Number(account.dailyCreditsBalance) || 0;
+  if (currentDaily >= FREE_DAILY_MAX_ACCUMULATION) return null;
+
+  const toGrant = Math.min(FREE_DAILY_GRANT, FREE_DAILY_MAX_ACCUMULATION - currentDaily);
+  const newDaily = currentDaily + toGrant;
+  const newBalance = Number(account.balance) + toGrant;
+
+  await updateCreditAccount(accountId, {
+    dailyCreditsBalance: String(newDaily),
+    balance: String(newBalance),
+    lastDailyRefresh: new Date().toISOString(),
+  } as any);
+
+  return { granted: toGrant, newDaily, newBalance };
+}
+
 export async function resetExpiringCredits(
   accountId: string,
   newCredits: number,

@@ -24,6 +24,10 @@ export interface QueuedMessagePersisted {
    *  is open, but after a reload they are gone (files would need to be
    *  re-uploaded). For now we only persist text payloads. */
   timestamp: number;
+  /** Number of failed send attempts. Messages reaching MAX_RETRIES are dead-lettered. */
+  retryCount?: number;
+  /** Earliest epoch-ms at which the message may be retried (exponential backoff). */
+  nextRetryAt?: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -224,7 +224,9 @@ describe('grantCredits', () => {
       p_type: 'tier_grant',
       p_description: 'Monthly grant',
       p_is_expiring: true,
+      p_expires_at: null,
       p_stripe_event_id: 'evt_123',
+      p_idempotency_key: 'grant:acc_test_123:evt_123',
     });
   });
 
