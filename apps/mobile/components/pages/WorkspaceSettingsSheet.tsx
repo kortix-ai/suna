@@ -43,7 +43,7 @@ import {
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
 
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useOpenCodeConfig,
@@ -293,7 +293,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
       <Pressable
         onPress={onPress}
         style={{
-          paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8,
+          paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999,
           backgroundColor: active ? color : chipBg,
           opacity: active ? 1 : 0.6,
         }}
@@ -323,7 +323,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
       snapPoints={['92%']}
       enablePanDownToClose
       backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: bg, borderRadius: 24 }}
+      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderRadius: 24 }}
       handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)', width: 36 }}
     >
       <View style={{ flex: 1 }}>
@@ -344,7 +344,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                   onPress={() => { setActiveTab(tab.id); if (tab.id === 'mcp') setMcpView('list'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
                   style={{
                     flexDirection: 'row', alignItems: 'center', gap: 6,
-                    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+                    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999,
                     backgroundColor: isActive ? theme.primaryLight : 'transparent',
                     borderWidth: isActive ? 1 : 0,
                     borderColor: isActive ? theme.primary + '30' : 'transparent',
@@ -494,7 +494,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     markDirty();
                   }}
                   style={{
-                    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8,
+                    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999,
                     backgroundColor: isPerTool ? '#3B82F6' : chipBg,
                     opacity: isPerTool ? 1 : 0.6,
                   }}
@@ -593,7 +593,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                 </RNText>
                 <Pressable
                   onPress={() => setMcpView('add')}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.primary, borderRadius: 9999, paddingHorizontal: 14, paddingVertical: 6 }}
                 >
                   <Plus size={14} color={theme.primaryForeground} />
                   <RNText style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add</RNText>
@@ -714,7 +714,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     key={t}
                     onPress={() => setMcpTransport(t)}
                     style={{
-                      flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center',
+                      flex: 1, paddingVertical: 10, borderRadius: 9999, alignItems: 'center',
                       backgroundColor: mcpTransport === t ? theme.primaryLight : chipBg,
                       borderWidth: 1, borderColor: mcpTransport === t ? theme.primary + '40' : borderColor,
                     }}

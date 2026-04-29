@@ -74,7 +74,7 @@ import type { SandboxFile } from '@/api/types';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 
 interface FilesTabState {
   viewMode?: 'list' | 'grid';
@@ -1058,7 +1058,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         android_keyboardInputMode="adjustResize"
         onDismiss={() => setNewFolderName('')}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
@@ -1195,7 +1195,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         android_keyboardInputMode="adjustResize"
         onDismiss={() => { setRenameName(''); setRenameFile(null); }}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}

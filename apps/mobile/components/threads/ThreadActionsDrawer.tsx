@@ -13,6 +13,7 @@ import {
   BottomSheetView,
 } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { getSheetBg } from '@/lib/theme-colors';
 
 interface ThreadActionsDrawerProps {
   isOpen: boolean;
@@ -166,7 +167,7 @@ export function ThreadActionsDrawer({
       onDismiss={handleDismiss}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: isDark ? '#161618' : '#FFFFFF',
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}

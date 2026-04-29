@@ -215,23 +215,8 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
           <View className="px-6">
             <SettingsItem icon={User} label={t('settings.name')} onPress={handleName} />
 
-            <SettingsItem
-              icon={CreditCard}
-              label={t('settings.plan', 'Plan')}
-              onPress={handlePlan}
-            />
-
-            <SettingsItem
-              icon={Wallet}
-              label={t('settings.billing', 'Billing')}
-              onPress={handleBilling}
-            />
-
-            <SettingsItem
-              icon={BarChart3}
-              label={t('settings.usage', 'Usage')}
-              onPress={handleUsage}
-            />
+            {/* Billing-related menus (Plan / Billing / Usage) hidden on mobile —
+                billing lives on the web. */}
 
             <SettingsItem
               icon={Plug}

@@ -216,7 +216,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
             <View style={{ gap: 12 }} className="mt-5">
               <Pressable
                 onPress={handleGenerate}
-                className="flex-row items-center justify-center self-start rounded-xl px-5 py-2.5 active:opacity-90"
+                className="flex-row items-center justify-center self-start rounded-full px-5 py-2.5 active:opacity-90"
                 style={{ backgroundColor: themeColors.primary }}
               >
                 <Icon as={Key} size={15} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
@@ -288,7 +288,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                   <Text className="font-roobert-semibold text-sm text-foreground flex-1">Let your AI agent do it</Text>
                   <Pressable
                     onPress={() => copyToClipboard(agentPrompt, 'agent')}
-                    className="flex-row items-center rounded-lg px-2 py-1 active:opacity-70"
+                    className="flex-row items-center rounded-full px-2 py-1 active:opacity-70"
                     hitSlop={4}
                   >
                     <Icon as={copiedField === 'agent' ? Check : Copy} size={12} className={copiedField === 'agent' ? 'text-emerald-500' : 'text-muted-foreground'} strokeWidth={2.2} />
@@ -377,7 +377,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
               <View className="flex-row" style={{ gap: 10 }}>
                 <Pressable
                   onPress={handleDownloadKey}
-                  className="flex-row items-center rounded-lg bg-muted/60 px-3 py-2 active:opacity-80"
+                  className="flex-row items-center rounded-full bg-muted/60 px-4 py-2 active:opacity-80"
                 >
                   <Icon as={Download} size={12} className="text-foreground mr-1.5" strokeWidth={2.2} />
                   <Text className="font-roobert-medium text-xs text-foreground">Download Key</Text>
@@ -385,7 +385,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
                 <Pressable
                   onPress={handleRegenerate}
                   disabled={isGenerating}
-                  className="flex-row items-center rounded-lg bg-muted/60 px-3 py-2 active:opacity-80"
+                  className="flex-row items-center rounded-full bg-muted/60 px-4 py-2 active:opacity-80"
                 >
                   <Icon as={RefreshCw} size={12} className="text-foreground mr-1.5" strokeWidth={2.2} />
                   <Text className="font-roobert-medium text-xs text-foreground">Regenerate</Text>
@@ -437,7 +437,7 @@ function CodeSection({
         )}
         <Pressable
           onPress={() => onCopy(code, copyField)}
-          className="flex-row items-center rounded-lg px-2 py-1 active:opacity-70"
+          className="flex-row items-center rounded-full px-2 py-1 active:opacity-70"
           hitSlop={4}
         >
           <Icon as={isCopied ? Check : Copy} size={12} className={isCopied ? 'text-emerald-500' : 'text-muted-foreground'} strokeWidth={2.2} />

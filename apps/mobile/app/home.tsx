@@ -23,7 +23,6 @@ import { captureScreen } from 'react-native-view-shot';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { Text } from '@/components/ui/text';
 import { Stack, useRouter } from 'expo-router';
-import { StatusBar as RNStatusBar } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { Drawer } from 'react-native-drawer-layout';
@@ -58,6 +57,7 @@ import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptShee
 import { ProjectsPage } from '@/components/pages/ProjectsPage';
 import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
+import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { PlaceholderPage } from '@/components/session/PlaceholderPage';
 import { UpdatesPage } from '@/components/pages/UpdatesPage';
@@ -86,6 +86,7 @@ import {
   Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, LayoutGrid, List,
   FileText, Copy, Pencil, Trash2,
   Bot, Sparkles, Terminal, FolderOpen, Plug, Settings,
+  ChevronsUpDown,
 } from 'lucide-react-native';
 import type { BottomBarMenuItem } from '@/components/session/BottomBar';
 import { log } from '@/lib/logger';
@@ -352,7 +353,7 @@ function SessionListItem({
           { text: 'Cancel', style: 'cancel' },
         ]);
       }}
-      className={`rounded-2xl px-3 py-2.5 mb-1 ${isActive ? 'bg-background' : ''}`}
+      className={`rounded-2xl px-3 py-2.5 mb-1 ${isActive ? 'bg-muted' : ''}`}
       activeOpacity={0.6}
     >
       <View className="flex-row items-center">
@@ -783,6 +784,7 @@ export default function HomeScreen() {
   const showTabsOverview = useTabStore((s) => s.showTabsOverview);
   const openTabIds = useTabStore((s) => s.openTabIds);
   const openPageIds = useTabStore((s) => s.openPageIds);
+  const tabStateById = useTabStore((s) => s.tabStateById);
   const sessionHistory = useTabStore((s) => s.sessionHistory);
   const historyIndex = useTabStore((s) => s.historyIndex);
   const navigateToSession = useTabStore((s) => s.navigateToSession);
@@ -838,6 +840,11 @@ export default function HomeScreen() {
     });
     const pagePills = openPageIds.map((id) => {
       const p = PAGE_TABS[id];
+      // Dynamic project tabs (page:project:<id>): use projectName from tab state
+      if (!p && id.startsWith('page:project:')) {
+        const projectName = (tabStateById[id]?.projectName as string) || 'Project';
+        return { id, label: projectName, icon: 'folder-outline' as const };
+      }
       return {
         id,
         label: p?.label || id,
@@ -845,7 +852,7 @@ export default function HomeScreen() {
       };
     });
     return [...sessionPills, ...pagePills];
-  }, [openTabIds, openPageIds, sessions]);
+  }, [openTabIds, openPageIds, sessions, tabStateById]);
 
   // Collapsible state
   const [sessionsExpanded, setSessionsExpanded] = useState(true);
@@ -1176,7 +1183,7 @@ export default function HomeScreen() {
 
     return (
       <View
-        className="flex-1 bg-muted"
+        className="flex-1 bg-chrome-background"
         style={{ paddingTop: insets.top }}
       >
         {/* Kortix wordmark */}
@@ -1201,17 +1208,6 @@ export default function HomeScreen() {
           >
             <Ionicons name="search-outline" size={18} color={iconColor} />
             <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Search</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => {
-              setDrawerOpen(false);
-              useTabStore.getState().navigateToPage('page:files');
-            }}
-            className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}
-          >
-            <Ionicons name="folder-outline" size={18} color={iconColor} />
-            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Files</Text>
           </TouchableOpacity>
         </View>
 
@@ -1360,6 +1356,9 @@ export default function HomeScreen() {
           </ScrollView>
         )}
 
+        {/* Previous Chats — pre-OpenCode threads with bulk-convert (matches web sidebar) */}
+        <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
+
         {/* Bottom: user info — card style matching desktop */}
         <View
           className="px-3 pt-2"
@@ -1368,11 +1367,17 @@ export default function HomeScreen() {
           <TouchableOpacity
             onPress={handleUserMenuOpen}
             activeOpacity={0.8}
-            className="flex-row items-center rounded-xl border border-border bg-card px-2.5 py-2"
+            className="flex-row items-center rounded-2xl border border-border"
+            style={{
+              height: 48,
+              paddingHorizontal: 8,
+              gap: 8,
+              backgroundColor: isDark ? 'rgba(45, 45, 45, 0.4)' : 'rgba(229, 229, 229, 0.4)',
+            }}
           >
-            <View className="relative mr-3">
-              <View className="h-9 w-9 rounded-full bg-muted items-center justify-center">
-                <Text className="text-sm font-semibold text-muted-foreground uppercase">
+            <View className="relative">
+              <View className="h-8 w-8 rounded-full bg-muted items-center justify-center">
+                <Text className="text-xs font-semibold text-muted-foreground uppercase">
                   {userDisplayName.charAt(0)}
                 </Text>
               </View>
@@ -1380,15 +1385,23 @@ export default function HomeScreen() {
                 <View className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-background" />
               )}
             </View>
-            <View className="flex-1">
-              <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
+            <View className="flex-1" style={{ gap: 2 }}>
+              <Text
+                className="font-medium text-foreground"
+                style={{ fontSize: 13, lineHeight: 16 }}
+                numberOfLines={1}
+              >
                 {userDisplayName}
               </Text>
-              <Text className="text-xs text-muted-foreground" numberOfLines={1}>
+              <Text
+                className="text-muted-foreground"
+                style={{ fontSize: 11, lineHeight: 14 }}
+                numberOfLines={1}
+              >
                 {userEmail || planLabel}
               </Text>
             </View>
-            <Ionicons name="chevron-expand-outline" size={16} color={mutedColor} />
+            <ChevronsUpDown size={14} color={mutedColor} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1433,7 +1446,6 @@ export default function HomeScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <ProvisioningProgress
           progress={poller.progress}
           stages={poller.stages}
@@ -1459,7 +1471,6 @@ export default function HomeScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <ConnectingToWorkspace isDark={isDark} phase={phase} />
       </>
     );
@@ -1470,7 +1481,6 @@ export default function HomeScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <SetupWizard onComplete={handleSetupComplete} />
       </>
     );
@@ -1481,7 +1491,6 @@ export default function HomeScreen() {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
-        <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
         <InstanceOnboarding onComplete={handleOnboardingComplete} />
       </>
     );
@@ -1490,7 +1499,6 @@ export default function HomeScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <RNStatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <Drawer
         open={drawerOpen}
@@ -1537,6 +1545,38 @@ export default function HomeScreen() {
             ? { ref: viewShotRef, style: { flex: 1, backgroundColor: isDark ? '#09090B' : '#FFFFFF' } }
             : { className: 'flex-1 bg-background' },
           <>
+          {/* Side hairlines — only needed for SessionPage / Dashboard, where the
+              chat input pushes the page card up so its own borders don't reach
+              the bottom of the screen. Other pages use PageContent which spans
+              full height and renders its own side borders. */}
+          {!activePageId && !showTabsOverview && (
+            <>
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: insets.top + 68,
+                  bottom: 0,
+                  width: 2,
+                  backgroundColor: isDark ? '#222222' : '#e6e6e5',
+                  zIndex: 10,
+                }}
+              />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: insets.top + 68,
+                  bottom: 0,
+                  width: 2,
+                  backgroundColor: isDark ? '#222222' : '#e6e6e5',
+                  zIndex: 10,
+                }}
+              />
+            </>
+          )}
           {/* Loading sandbox */}
           {sandboxLoading ? (
             <View className="flex-1 items-center justify-center">

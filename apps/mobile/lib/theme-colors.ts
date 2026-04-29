@@ -44,3 +44,28 @@ export function useThemeColors(): ThemeColors {
 export function getThemeColors(themeId: AppearanceThemeId, isDark: boolean): ThemeColors {
   return isDark ? DARK_THEMES[themeId] : LIGHT_THEMES[themeId];
 }
+
+/**
+ * Bottom-sheet background colors. Single source of truth for every sheet/drawer
+ * across the app — pass `isDark` and use the result as the BottomSheetModal
+ * `backgroundStyle.backgroundColor`.
+ */
+export const SHEET_BG_DARK = '#151515';
+export const SHEET_BG_LIGHT = '#FFFFFF';
+
+export function getSheetBg(isDark: boolean): string {
+  return isDark ? SHEET_BG_DARK : SHEET_BG_LIGHT;
+}
+
+/**
+ * Segmented-toggle (Light/Dark/System pill) colors. Single source of truth so
+ * the appearance settings, the user-menu sheet, and any other toggle look
+ * identical.
+ */
+export function getToggleTrackBg(isDark: boolean): string {
+  return isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+}
+
+export function getToggleActiveBg(isDark: boolean): string {
+  return isDark ? 'rgba(255,255,255,0.14)' : '#FFFFFF';
+}

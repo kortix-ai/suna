@@ -17,6 +17,7 @@ import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import { useToast } from '@/components/ui/toast-provider';
 import { log } from '@/lib/logger';
+import { getSheetBg } from '@/lib/theme-colors';
 
 export interface EmailAuthDrawerRef {
   open: () => void;
@@ -138,7 +139,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       backgroundStyle={{
-        backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+        backgroundColor: getSheetBg(isDark),
       }}
       handleIndicatorStyle={{
         backgroundColor: isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)',

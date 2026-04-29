@@ -780,7 +780,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       {/* Header — matches dashboard layout exactly */}
       <View
         style={{ paddingTop: insets.top, paddingBottom: 36 }}
-        className="px-4 bg-muted"
+        className="px-4 bg-chrome-background"
       >
         <View className="flex-row items-center">
           {!onboardingMode && (
@@ -876,10 +876,10 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
           overflow: 'hidden',
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderLeftWidth: StyleSheet.hairlineWidth,
-          borderRightWidth: StyleSheet.hairlineWidth,
-          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+          borderTopWidth: 2,
+          borderLeftWidth: 2,
+          borderRightWidth: 2,
+          borderColor: isDark ? '#222222' : '#e6e6e5',
         }}
         className="bg-background"
       >
@@ -971,7 +971,7 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
       {/* Fade gradient above input — only when textarea is shown */}
       {!hasQuestion && (
         <LinearGradient
-          colors={isDark ? ['rgba(18,18,21,0)', 'rgba(18,18,21,1)'] : ['rgba(255,255,255,0)', 'rgba(255,255,255,1)']}
+          colors={isDark ? ['rgba(13,13,13,0)', 'rgba(13,13,13,1)'] : ['rgba(255,255,255,0)', 'rgba(255,255,255,1)']}
           style={{ height: 24, marginTop: -24, zIndex: 1 }}
           pointerEvents="none"
         />

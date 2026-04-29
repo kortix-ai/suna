@@ -27,6 +27,7 @@ import type { Session } from '@/lib/opencode/types';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
 import { useSyncStore } from '@/lib/opencode/sync-store';
+import { getSheetBg } from '@/lib/theme-colors';
 
 interface TabsOverviewProps {
   sessions: Session[];
@@ -466,7 +467,7 @@ export function TabsOverview({
         enablePanDownToClose
         backdropComponent={renderBackdrop}
         backgroundStyle={{
-          backgroundColor: isDark ? '#161618' : '#FFFFFF',
+          backgroundColor: getSheetBg(isDark),
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
         }}

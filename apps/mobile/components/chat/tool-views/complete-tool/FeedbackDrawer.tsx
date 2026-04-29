@@ -14,6 +14,7 @@ import { API_URL, getAuthHeaders } from '@/api/config';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeedbackDrawerStore } from '@/stores/feedback-drawer-store';
 import { log } from '@/lib/logger';
+import { getSheetBg } from '@/lib/theme-colors';
 
 /**
  * Half-star rating component that supports clicking left/right halves
@@ -254,7 +255,7 @@ export function FeedbackDrawer() {
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       backgroundStyle={{
-        backgroundColor: isDark ? '#161618' : '#FFFFFF',
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}

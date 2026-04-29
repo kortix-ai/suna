@@ -15,6 +15,7 @@ import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/chat/SandboxPreviewCard';
 import { ReasoningSection, GroupedReasoningCard } from '@/components/chat';
 import { SessionErrorBanner } from './SessionErrorBanner';
+import { getSheetBg } from '@/lib/theme-colors';
 import ReAnimated, {
   useSharedValue,
   useAnimatedStyle,
@@ -2750,14 +2751,14 @@ function HighlightMentions({
 
   if (segments.length === 1 && !segments[0].type) {
     return (
-      <Text className="text-[15px] leading-[22px] text-foreground">
+      <Text className="text-sm leading-relaxed text-foreground">
         {segments[0].text}
       </Text>
     );
   }
 
   return (
-    <Text className="text-[15px] leading-[22px] text-foreground">
+    <Text className="text-sm leading-relaxed text-foreground">
       {segments.map((seg, i) => {
         if (!seg.type) {
           return <Text key={i}>{seg.text}</Text>;
@@ -3116,7 +3117,7 @@ export function SessionTurn({
             )}
           </View>
         ) : (
-          <View className="rounded-2xl rounded-br-md max-w-[85%] bg-card border border-border overflow-hidden">
+          <View className="rounded-3xl rounded-br-lg max-w-[90%] bg-card border border-border overflow-hidden">
             {/* File attachments */}
             {userFiles.length > 0 && (
               <View style={{ padding: 10, paddingBottom: userText ? 0 : 10 }}>
@@ -3517,7 +3518,7 @@ const EditPromptSheet = React.forwardRef<BottomSheetModal, {
         borderRadius: 3,
       }}
       backgroundStyle={{
-        backgroundColor: bg,
+        backgroundColor: getSheetBg(isDark),
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
