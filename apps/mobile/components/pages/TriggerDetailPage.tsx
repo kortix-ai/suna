@@ -15,6 +15,7 @@ import { useColorScheme } from 'nativewind';
 import { useRouter } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import * as Clipboard from 'expo-clipboard';
 import {
   ChevronLeft,
   Edit,
@@ -217,7 +218,7 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
   const handleCopyWebhookUrl = async () => {
     if (!trigger?.webhook_url) return;
 
-    // TODO: Implement clipboard functionality with Expo Clipboard
+    await Clipboard.setStringAsync(trigger.webhook_url);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert('Copied!', 'Webhook URL copied to clipboard');
   };
