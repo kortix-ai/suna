@@ -114,6 +114,7 @@ write_env "apps/api/.env" \
   "$(kv CRON_TICK_SECRET)" \
   "" \
   "# LLM Providers (optional — cloud routing)" \
+  "$(kv ANTHROPIC_API_KEY)" \
   "$(kv OPENROUTER_API_KEY)" \
   "$(kv OPENAI_API_KEY)" \
   "$(kv XAI_API_KEY)" \
@@ -121,6 +122,8 @@ write_env "apps/api/.env" \
   "$(kv GROQ_API_KEY)" \
   "" \
   "# Search & Proxy Providers (optional)" \
+  "$(kv CRW_API_URL "$(e CRW_API_URL "https://fastcrw.com/api")")" \
+  "$(kv CRW_API_KEY)" \
   "$(kv TAVILY_API_KEY)" \
   "$(kv SERPER_API_KEY)" \
   "$(kv FIRECRAWL_API_KEY)" \

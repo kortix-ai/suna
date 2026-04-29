@@ -93,9 +93,11 @@ export function getEnv(key: string): string | undefined {
   // 1. s6 env dir — authoritative in containers, always fresh from disk.
   //    kortix-master writes here on every /env POST, so values update without restart.
   //    tmpfs read is ~1μs — negligible cost for always-correct values.
+  //    If the file exists, its value is authoritative — even if empty (meaning
+  //    the key was explicitly cleared). Never fall through to stale process.env.
   try {
     const val = readFileSync(`${S6_ENV_DIR}/${key}`, "utf-8").trim();
-    if (val) return val;
+    return val || undefined;
   } catch {
     // File doesn't exist — not in a container, or key not set via s6.
   }

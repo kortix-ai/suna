@@ -50,6 +50,27 @@ export interface ProxyServiceConfig {
 
 export function getProxyServices(): Record<string, ProxyServiceConfig> {
   return {
+    // ─── CRW (unified: search, scrape, crawl, map — replaces Tavily, Serper, Firecrawl) ─
+    crw: {
+      name: 'crw',
+      targetBaseUrl: config.CRW_API_URL,
+      getKortixApiKey: () => config.CRW_API_KEY,
+      keyInjection: { type: 'header', headerName: 'Authorization', prefix: 'Bearer ' },
+      allowedRoutes: [
+        { path: '/v1/scrape', methods: ['POST'] },
+        { path: '/v1/crawl', methods: ['POST', 'GET', 'DELETE'], prefixMatch: true },
+        { path: '/v1/map', methods: ['POST'] },
+        { path: '/v1/search', methods: ['POST'] },
+        { path: '/v2/scrape', methods: ['POST'] },
+        { path: '/v2/crawl', methods: ['POST', 'GET', 'DELETE'], prefixMatch: true },
+        { path: '/v2/map', methods: ['POST'] },
+        { path: '/v2/search', methods: ['POST'] },
+      ],
+      billingToolName: 'proxy_crw',
+    },
+
+    // ─── Legacy providers (kept for backward compat / gradual migration) ────
+
     tavily: {
       name: 'tavily',
       targetBaseUrl: config.TAVILY_API_URL,
@@ -86,7 +107,6 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
         { path: '/v1/crawl', methods: ['POST', 'GET'], prefixMatch: true },
         { path: '/v1/map', methods: ['POST'] },
         { path: '/v1/search', methods: ['POST'] },
-        // Firecrawl JS SDK v2+ uses /v2 endpoints
         { path: '/v2/scrape', methods: ['POST'] },
         { path: '/v2/crawl', methods: ['POST', 'GET'], prefixMatch: true },
         { path: '/v2/map', methods: ['POST'] },
@@ -101,7 +121,6 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
       getKortixApiKey: () => config.REPLICATE_API_TOKEN,
       keyInjection: { type: 'header', headerName: 'Authorization', prefix: 'Token ' },
       allowedRoutes: [
-        // Allowed models — locked to specific models, each with own billing
         {
           path: '/v1/models/google/nano-banana/predictions',
           methods: ['POST'],
