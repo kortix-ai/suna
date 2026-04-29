@@ -456,7 +456,10 @@ export function parseSlackEvent(payload: any, configId: string, botUserId: strin
     // the bot would respond to every message in the channel. So: in
     // non-DM channels, dispatch ONLY if the bot's user ID is @-mentioned
     // in the text. DMs always dispatch (the user IS talking to the bot).
-    if (!isDm) {
+    // Thread replies don't re-mention the bot — bypass the @-mention gate for
+    // in-thread continuations so users can reply naturally without @-tagging.
+    const isThreadReply = Boolean(event.thread_ts && event.thread_ts !== event.ts)
+    if (!isDm && !isThreadReply) {
       if (!botUserId) return { is_challenge: false }
       if (!rawText.includes(`<@${botUserId}>`)) return { is_challenge: false }
     }
