@@ -14,7 +14,7 @@ import { PortalHost } from '@rn-primitives/portal';
 import { ToastProvider } from '@/components/ui/toast-provider';
 import { useFonts } from 'expo-font';
 import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -240,6 +240,18 @@ export default function RootLayout() {
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription.remove();
   }, [checkAndApplyUpdates]);
+
+  // Re-apply status bar style on foreground — iOS resets the bar appearance
+  // when the app suspends/resumes and the declarative <StatusBar/> doesn't
+  // re-render unless the React tree updates.
+  useEffect(() => {
+    const desired: 'light' | 'dark' = (colorScheme ?? 'light') === 'dark' ? 'light' : 'dark';
+    setStatusBarStyle(desired, true);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setStatusBarStyle(desired, true);
+    });
+    return () => sub.remove();
+  }, [colorScheme]);
   // ==========================================
   // END OTA UPDATE SYSTEM
   // ==========================================

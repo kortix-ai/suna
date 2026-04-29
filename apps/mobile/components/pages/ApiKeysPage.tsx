@@ -475,7 +475,7 @@ function ApiKeysContent() {
               <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted, marginTop: 12, textAlign: 'center' }}>
                 Failed to load API keys
               </Text>
-              <Pressable onPress={() => refetch()} style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
+              <Pressable onPress={() => refetch()} style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 9999, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Try Again</Text>
               </Pressable>
             </View>
@@ -552,7 +552,7 @@ function SandboxTokenCard({
             <StatusDot status={apiKey.status} isDark={isDark} />
           </View>
         </View>
-        <Pressable onPress={onRegenerate} disabled={isRegenerating} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}>
+        <Pressable onPress={onRegenerate} disabled={isRegenerating} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}>
           {isRegenerating ? (
             <ActivityIndicator size="small" color={muted} />
           ) : (

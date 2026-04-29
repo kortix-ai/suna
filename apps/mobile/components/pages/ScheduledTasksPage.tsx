@@ -400,23 +400,19 @@ function TaskListItem({
         gap: 12,
       }}
     >
-      {/* Icon */}
+      {/* Icon — no background plate, matches ProviderLogo treatment */}
       <View
         style={{
-          width: 40,
-          height: 40,
-          borderRadius: 12,
-          backgroundColor: trigger.isActive
-            ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)')
-            : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+          width: 32,
+          height: 32,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
         {isWebhook ? (
-          <Webhook size={18} color={trigger.isActive ? fg : muted} />
+          <Webhook size={24} color={trigger.isActive ? fg : muted} />
         ) : (
-          <Timer size={18} color={trigger.isActive ? fg : muted} />
+          <Timer size={24} color={trigger.isActive ? fg : muted} />
         )}
       </View>
 
