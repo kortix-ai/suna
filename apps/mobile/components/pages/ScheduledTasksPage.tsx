@@ -1411,17 +1411,17 @@ function CreateTaskSheet({
           {/* Cron: Schedule config */}
           {sourceType === 'cron' && (<>
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 8 }}>Schedule</Text>
-            <View style={{ flexDirection: 'row', borderRadius: 10, backgroundColor: chipBg, padding: 3, marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', borderRadius: 9999, backgroundColor: getToggleTrackBg(isDark), padding: 3, marginBottom: 12 }}>
               {FREQUENCY_TABS.map((tab) => (
                 <Pressable
                   key={tab.value}
                   onPress={() => { setFrequency(tab.value); Haptics.selectionAsync(); }}
                   style={{
-                    flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: 8,
-                    backgroundColor: frequency === tab.value ? (isDark ? '#f8f8f8' : '#121215') : 'transparent',
+                    flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: 9999,
+                    backgroundColor: frequency === tab.value ? getToggleActiveBg(isDark) : 'transparent',
                   }}
                 >
-                  <Text style={{ fontSize: 12, fontFamily: frequency === tab.value ? 'Roobert-Medium' : 'Roobert', color: frequency === tab.value ? (isDark ? '#121215' : '#f8f8f8') : muted }}>
+                  <Text style={{ fontSize: 12, fontFamily: frequency === tab.value ? 'Roobert-Medium' : 'Roobert', color: frequency === tab.value ? fg : muted }}>
                     {tab.label}
                   </Text>
                 </Pressable>
@@ -1434,7 +1434,7 @@ function CreateTaskSheet({
                   <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginBottom: 8 }}>Every</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                     {MINUTE_INTERVALS.map((v) => (
-                      <Pressable key={v} onPress={() => setInterval(v)} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, backgroundColor: interval === v ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: interval === v ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)') : 'transparent' }}>
+                      <Pressable key={v} onPress={() => setInterval(v)} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: interval === v ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: interval === v ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)') : 'transparent' }}>
                         <Text style={{ fontSize: 13, fontFamily: interval === v ? 'Roobert-Medium' : 'Roobert', color: interval === v ? fg : muted }}>{v} min</Text>
                       </Pressable>
                     ))}
@@ -1446,7 +1446,7 @@ function CreateTaskSheet({
                   <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginBottom: 8 }}>Every</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
                     {HOUR_INTERVALS.map((v) => (
-                      <Pressable key={v} onPress={() => setInterval(v)} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, backgroundColor: interval === v ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: interval === v ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)') : 'transparent' }}>
+                      <Pressable key={v} onPress={() => setInterval(v)} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: interval === v ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: interval === v ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)') : 'transparent' }}>
                         <Text style={{ fontSize: 13, fontFamily: interval === v ? 'Roobert-Medium' : 'Roobert', color: interval === v ? fg : muted }}>{v}h</Text>
                       </Pressable>
                     ))}
@@ -1454,7 +1454,7 @@ function CreateTaskSheet({
                   <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginBottom: 6 }}>At minute</Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                     {[0, 15, 30, 45].map((m) => (
-                      <Pressable key={m} onPress={() => setMinute(m)} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, backgroundColor: minute === m ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: minute === m ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)') : 'transparent' }}>
+                      <Pressable key={m} onPress={() => setMinute(m)} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: minute === m ? chipActiveBg : 'transparent', borderWidth: 1, borderColor: minute === m ? (isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)') : 'transparent' }}>
                         <Text style={{ fontSize: 13, fontFamily: minute === m ? 'Roobert-Medium' : 'Roobert', color: minute === m ? fg : muted }}>:{String(m).padStart(2, '0')}</Text>
                       </Pressable>
                     ))}
@@ -1465,11 +1465,11 @@ function CreateTaskSheet({
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Clock size={16} color={muted} />
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>at</Text>
-                  <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setHour((h) => (h + 1) % 24)}>
+                  <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setHour((h) => (h + 1) % 24)}>
                     <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{String(hour).padStart(2, '0')}</Text>
                   </Pressable>
                   <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: muted }}>:</Text>
-                  <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setMinute((m) => { const idx = MINUTES.indexOf(m); return MINUTES[(idx + 1) % MINUTES.length]; })}>
+                  <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setMinute((m) => { const idx = MINUTES.indexOf(m); return MINUTES[(idx + 1) % MINUTES.length]; })}>
                     <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{String(minute).padStart(2, '0')}</Text>
                   </Pressable>
                 </View>
@@ -1480,8 +1480,8 @@ function CreateTaskSheet({
                     {WEEKDAY_BUTTONS.map((day) => {
                       const active = weekdays.includes(day.value);
                       return (
-                        <Pressable key={day.value} onPress={() => toggleWeekday(day.value)} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: active ? (isDark ? '#f8f8f8' : '#121215') : 'transparent', borderWidth: 1, borderColor: active ? 'transparent' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') }}>
-                          <Text style={{ fontSize: 12, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? (isDark ? '#121215' : '#f8f8f8') : muted }}>{day.label}</Text>
+                        <Pressable key={day.value} onPress={() => toggleWeekday(day.value)} style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 9999, backgroundColor: active ? getToggleActiveBg(isDark) : 'transparent', borderWidth: 1, borderColor: active ? 'transparent' : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') }}>
+                          <Text style={{ fontSize: 12, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? fg : muted }}>{day.label}</Text>
                         </Pressable>
                       );
                     })}
@@ -1489,11 +1489,11 @@ function CreateTaskSheet({
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Clock size={16} color={muted} />
                     <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>at</Text>
-                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setHour((h) => (h + 1) % 24)}>
+                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setHour((h) => (h + 1) % 24)}>
                       <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{String(hour).padStart(2, '0')}</Text>
                     </Pressable>
                     <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: muted }}>:</Text>
-                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setMinute((m) => { const idx = MINUTES.indexOf(m); return MINUTES[(idx + 1) % MINUTES.length]; })}>
+                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setMinute((m) => { const idx = MINUTES.indexOf(m); return MINUTES[(idx + 1) % MINUTES.length]; })}>
                       <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{String(minute).padStart(2, '0')}</Text>
                     </Pressable>
                   </View>
@@ -1503,18 +1503,18 @@ function CreateTaskSheet({
                 <View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                     <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>On day</Text>
-                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setMonthDay((d) => (d % 31) + 1)}>
+                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setMonthDay((d) => (d % 31) + 1)}>
                       <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{monthDay}</Text>
                     </Pressable>
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <Clock size={16} color={muted} />
                     <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>at</Text>
-                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setHour((h) => (h + 1) % 24)}>
+                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setHour((h) => (h + 1) % 24)}>
                       <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{String(hour).padStart(2, '0')}</Text>
                     </Pressable>
                     <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: muted }}>:</Text>
-                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setMinute((m) => { const idx = MINUTES.indexOf(m); return MINUTES[(idx + 1) % MINUTES.length]; })}>
+                    <Pressable style={{ backgroundColor: chipActiveBg, borderRadius: 9999, paddingHorizontal: 12, paddingVertical: 7 }} onPress={() => setMinute((m) => { const idx = MINUTES.indexOf(m); return MINUTES[(idx + 1) % MINUTES.length]; })}>
                       <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>{String(minute).padStart(2, '0')}</Text>
                     </Pressable>
                   </View>
@@ -1527,7 +1527,7 @@ function CreateTaskSheet({
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Timezone</Text>
             <Pressable
               onPress={() => setShowTimezones(!showTimezones)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: chipBg, alignSelf: 'flex-start', marginBottom: showTimezones ? 8 : 0 }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999, backgroundColor: chipBg, alignSelf: 'flex-start', marginBottom: showTimezones ? 8 : 0 }}
             >
               <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>{tzLabel}</Text>
               <ChevronRight size={14} color={muted} style={{ transform: [{ rotate: showTimezones ? '90deg' : '0deg' }] }} />
@@ -1538,8 +1538,8 @@ function CreateTaskSheet({
                   const active = timezone === tz;
                   const label = tz === 'UTC' ? 'UTC' : tz.split('/').pop()!.replace(/_/g, ' ');
                   return (
-                    <Pressable key={tz} onPress={() => { setTimezone(tz); setShowTimezones(false); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: active ? (isDark ? '#f8f8f8' : '#121215') : chipBg }}>
-                      <Text style={{ fontSize: 12, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? (isDark ? '#121215' : '#f8f8f8') : muted }}>{label}</Text>
+                    <Pressable key={tz} onPress={() => { setTimezone(tz); setShowTimezones(false); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999, backgroundColor: active ? getToggleActiveBg(isDark) : chipBg }}>
+                      <Text style={{ fontSize: 12, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? fg : muted }}>{label}</Text>
                     </Pressable>
                   );
                 })}
@@ -1584,7 +1584,7 @@ function CreateTaskSheet({
               disabled={!canProceedToConfig}
               style={{
                 flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-                paddingVertical: 14, borderRadius: 14,
+                paddingVertical: 14, borderRadius: 9999,
                 backgroundColor: canProceedToConfig ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'),
               }}
             >
@@ -1637,7 +1637,7 @@ function CreateTaskSheet({
             <Pressable
               onPress={() => setStep('source')}
               style={{
-                flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14,
+                flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999,
                 backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
               }}
             >
@@ -1647,7 +1647,7 @@ function CreateTaskSheet({
               onPress={handleCreate}
               disabled={!isValid || createTask.isPending}
               style={{
-                flex: 2, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14,
+                flex: 2, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999,
                 backgroundColor: isValid ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'),
               }}
             >
