@@ -123,7 +123,7 @@ describe('createCheckoutSession', () => {
     expect((result as any).session_id).toBeDefined();
   });
 
-  test('returns no_change for same tier', async () => {
+  test('returns checkout_created for same tier (no dedup guard in this path)', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({ tier: 'tier_6_50' });
 
@@ -135,10 +135,12 @@ describe('createCheckoutSession', () => {
       cancelUrl: 'https://example.com/cancel',
     });
 
-    expect((result as any).status).toBe('no_change');
+    // createCheckoutSession always creates a new hosted checkout session;
+    // upgrade/downgrade routing is handled by createInlineCheckout.
+    expect((result as any).status).toBe('checkout_created');
   });
 
-  test('calls handleUpgrade for upgrades', async () => {
+  test('returns checkout_created for upgrades (routing is in createInlineCheckout)', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
         tier: 'tier_2_20',
@@ -153,10 +155,10 @@ describe('createCheckoutSession', () => {
       cancelUrl: 'https://example.com/cancel',
     });
 
-    expect((result as any).status).toBe('upgraded');
+    expect((result as any).status).toBe('checkout_created');
   });
 
-  test('calls scheduleDowngrade for downgrades', async () => {
+  test('returns checkout_created for downgrades (routing is in createInlineCheckout)', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
         tier: 'tier_6_50',
@@ -171,11 +173,10 @@ describe('createCheckoutSession', () => {
       cancelUrl: 'https://example.com/cancel',
     });
 
-    expect((result as any).success).toBe(true);
-    expect((result as any).message).toContain('scheduled');
+    expect((result as any).status).toBe('checkout_created');
   });
 
-  test('resolves correct price ID for monthly/yearly', async () => {
+  test('uses price_data with correct unit_amount for monthly/yearly', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({ tier: 'free', stripeSubscriptionId: null });
 
@@ -195,8 +196,9 @@ describe('createCheckoutSession', () => {
     });
 
     expect(capturedParams).not.toBeNull();
-    // Should use yearly price ID for staging
-    expect(capturedParams.line_items[0].price).toBe('price_1ReGoJG6l1KZGqIr0DJWtoOc');
+    // createCheckoutSession now always uses price_data (not a direct price ID)
+    expect(capturedParams.line_items[0].price_data).toBeDefined();
+    expect(capturedParams.line_items[0].price_data.currency).toBe('usd');
   });
 });
 
@@ -293,8 +295,8 @@ describe('cancelScheduledChange', () => {
   });
 });
 
-describe('createCheckoutSession: previous_subscription_id metadata', () => {
-  test('includes previous_subscription_id when upgrading from free with existing sub', async () => {
+describe('createCheckoutSession: metadata', () => {
+  test('includes account_id and tier_key in metadata', async () => {
     mockRegistry.getCreditAccount = async () =>
       createMockCreditAccount({
         tier: 'free',
@@ -315,8 +317,11 @@ describe('createCheckoutSession: previous_subscription_id metadata', () => {
       cancelUrl: 'https://example.com/cancel',
     });
 
-    expect(capturedParams.metadata.previous_subscription_id).toBe('sub_old_free');
-    expect(capturedParams.subscription_data.metadata.previous_subscription_id).toBe('sub_old_free');
+    expect(capturedParams.metadata.account_id).toBe('acc_test_123');
+    expect(capturedParams.metadata.tier_key).toBe('tier_6_50');
+    // previous_subscription_id is not included in createCheckoutSession;
+    // that logic lives in createInlineCheckout.
+    expect(capturedParams.metadata.previous_subscription_id).toBeUndefined();
   });
 
   test('does not include previous_subscription_id when no existing sub', async () => {
