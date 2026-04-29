@@ -457,6 +457,27 @@ export async function findFiles(
 }
 
 /**
+ * Enumerate files under a directory using the server's /find/file endpoint.
+ * Server-side scan — single round trip, fast even for large repos.
+ */
+export async function findFilesInDirectory(
+  directory: string,
+  query: string = '.',
+): Promise<string[]> {
+  try {
+    const client = getClient();
+    const result = await client.find.files({
+      query,
+      directory,
+      dirs: 'false',
+    } as any);
+    return (unwrap(result) ?? []) as string[];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Search for text patterns across project files (ripgrep).
  */
 export async function findText(pattern: string): Promise<FindMatch[]> {

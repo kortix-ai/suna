@@ -12,6 +12,7 @@ import {
   Settings as SettingsIcon,
   ListChecks,
   Users as UsersIcon,
+  Activity as ActivityIcon,
   Check,
   Copy,
   type LucideIcon,
@@ -28,6 +29,7 @@ export type ProjectTab =
   | 'tasks'
   | 'board'
   | 'milestones'
+  | 'activity'
   | 'team'
   | 'credentials'
   | 'triggers'
@@ -64,6 +66,7 @@ const V2_TABS: TabDef[] = [
   { id: 'about', label: 'Overview', icon: Sparkles },
   { id: 'board', label: 'Board', icon: Boxes },
   { id: 'milestones', label: 'Milestones', icon: Flag },
+  { id: 'activity', label: 'Activity', icon: ActivityIcon },
   { id: 'files', label: 'Files', icon: FolderOpen },
   { id: 'sessions', label: 'Sessions', icon: MessageSquareText },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
@@ -94,9 +97,8 @@ export function ProjectHeader({
   return (
     <header className="shrink-0 bg-background">
       <div className="mx-auto w-full max-w-7xl px-4 pt-6 pb-3 sm:px-6">
-        <div className="flex items-start gap-4">
+        <div className="flex items-center gap-4">
           <ProjectIcon project={project} size="md" />
-
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h1
@@ -117,7 +119,7 @@ export function ProjectHeader({
               )}
             </div>
 
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/85">
+            {/* <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/85">
               <PathButton path={cleanPath} fullPath={project.path} />
               {project?.created_at && (
                 <>
@@ -125,7 +127,7 @@ export function ProjectHeader({
                   <span>Created {relativeShort(project.created_at)}</span>
                 </>
               )}
-            </div>
+            </div> */}
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">

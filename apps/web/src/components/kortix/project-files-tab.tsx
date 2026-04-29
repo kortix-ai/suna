@@ -18,6 +18,9 @@ import {
   RefreshCw,
   FileText,
   Search,
+  GitBranch,
+  Languages,
+  Users as UsersIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -34,6 +37,11 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from '@/components/ui/context-menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFilesStore } from '@/features/files/store/files-store';
@@ -44,6 +52,7 @@ import {
   useGitStatus,
   buildGitStatusMap,
 } from '@/features/files/hooks';
+import { useProjectFileIndex } from '@/features/files/hooks/use-workspace-file-index';
 import {
   useFileUpload,
   useFileDelete,
@@ -59,13 +68,24 @@ import { getFileIcon } from '@/features/files/components/file-icon';
 import type { FileNode } from '@/features/files/types';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
+import {
+  useProjectAgents,
+  type ProjectAgent,
+} from '@/hooks/kortix/use-kortix-tickets';
+import { AgentAvatar } from '@/components/kortix/agent-avatar';
+import {
+  bucketLanguages,
+  type LanguageBucket,
+} from '@/lib/kortix/file-language';
 
 const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
 
 export function ProjectFilesTab({
+  projectId,
   projectName,
   projectPath,
 }: {
+  projectId: string;
   projectName: string;
   projectPath: string;
 }) {
@@ -86,6 +106,16 @@ export function ProjectFilesTab({
 
   const { data: gitStatuses } = useGitStatus({ enabled: health?.healthy === true });
   const gitStatusMap = useMemo(() => buildGitStatusMap(gitStatuses), [gitStatuses]);
+  const dirtyCount = useMemo(
+    () => (gitStatuses ?? []).length,
+    [gitStatuses],
+  );
+
+  const { data: projectIndex, isLoading: isIndexLoading } = useProjectFileIndex(projectPath, {
+    enabled: health?.healthy === true,
+  });
+
+  const { data: agents = [] } = useProjectAgents(projectId);
 
   const uploadMutation = useFileUpload();
   const deleteMutation = useFileDelete();
@@ -149,6 +179,13 @@ export function ProjectFilesTab({
       fileItems: files.filter((f) => f.type === 'file').sort(cmpName),
     };
   }, [files]);
+
+  const languages = useMemo(
+    () => bucketLanguages((projectIndex ?? []).map((p) => p.split('/').pop() ?? p)),
+    [projectIndex],
+  );
+
+  const totalProjectFiles = projectIndex?.length ?? 0;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -290,11 +327,9 @@ export function ProjectFilesTab({
           hidden: {},
           show: { transition: { staggerChildren: 0.04, delayChildren: 0.04 } },
         }}
-        className="mx-auto w-full max-w-3xl px-6 pt-8 pb-24"
+        className="mx-auto w-full max-w-3xl px-6 pt-10 pb-24"
       >
-        <motion.div
-          variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } } }}
-        >
+        <Section>
           <Breadcrumb
             projectName={projectName}
             isAtRoot={isAtRoot}
@@ -302,8 +337,21 @@ export function ProjectFilesTab({
             onJumpToRoot={() => navigateToPath(projectPath)}
             onNavigate={navigateToPath}
           />
+        </Section>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Section delay>
+          <RepoStatsCard
+            agents={agents}
+            languages={languages}
+            dirtyCount={dirtyCount}
+            totalFiles={totalProjectFiles}
+            totalDirs={dirs.length}
+            languagesLoading={isIndexLoading && !projectIndex}
+          />
+        </Section>
+
+        <Section delay>
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[220px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/45" />
               <input
@@ -331,12 +379,9 @@ export function ProjectFilesTab({
               New file
             </Button>
           </div>
-        </motion.div>
+        </Section>
 
-        <motion.div
-          variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } } }}
-          className="mt-6"
-        >
+        <Section delay>
           <div className="overflow-hidden rounded-2xl bg-muted/30">
             {isLoading && showSkeleton ? (
               <div className="divide-y divide-border/40">
@@ -442,7 +487,7 @@ export function ProjectFilesTab({
               )}
             </p>
           )}
-        </motion.div>
+        </Section>
       </motion.div>
 
       <input
@@ -468,6 +513,201 @@ export function ProjectFilesTab({
         onConfirm={handleConfirmDelete}
         isPending={deleteMutation.isPending}
       />
+    </div>
+  );
+}
+
+function Section({
+  children,
+  delay,
+}: {
+  children: React.ReactNode;
+  delay?: boolean;
+}) {
+  return (
+    <motion.section
+      variants={{
+        hidden: { opacity: 0, y: 6 },
+        show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
+      }}
+      className={cn(delay && 'mt-6')}
+    >
+      {children}
+    </motion.section>
+  );
+}
+
+function RepoStatsCard({
+  agents,
+  languages,
+  dirtyCount,
+  totalFiles,
+  totalDirs,
+  languagesLoading,
+}: {
+  agents: ProjectAgent[];
+  languages: LanguageBucket[];
+  dirtyCount: number;
+  totalFiles: number;
+  totalDirs: number;
+  languagesLoading: boolean;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl bg-muted/30">
+      <div className="grid gap-px bg-border/40 sm:grid-cols-2">
+        <ContributorsPanel agents={agents} />
+        <LanguagesPanel languages={languages} loading={languagesLoading} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border/40 px-4 py-2.5 text-xs text-muted-foreground/75">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-muted-foreground/40" />
+          <span className="tabular-nums text-foreground/85">{totalDirs}</span>
+          <span>{totalDirs === 1 ? 'folder here' : 'folders here'}</span>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-muted-foreground/40" />
+          <span className="tabular-nums text-foreground/85">
+            {languagesLoading ? '—' : totalFiles}
+          </span>
+          <span>{totalFiles === 1 ? 'file in project' : 'files in project'}</span>
+        </span>
+        <span className="ml-auto inline-flex items-center gap-1.5">
+          <GitBranch className="size-3" />
+          <span className="text-foreground/85">main</span>
+          {dirtyCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/12 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+              {dirtyCount} {dirtyCount === 1 ? 'change' : 'changes'}
+            </span>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ContributorsPanel({ agents }: { agents: ProjectAgent[] }) {
+  return (
+    <div className="bg-muted/30 px-4 py-3.5">
+      <div className="flex items-center gap-2">
+        <UsersIcon className="size-3.5 text-muted-foreground/55" />
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
+          Contributors
+        </h3>
+        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/55">
+          {agents.length}
+        </span>
+      </div>
+
+      {agents.length === 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground/55">No agents yet</p>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {agents.slice(0, 12).map((agent) => (
+            <Tooltip key={agent.id}>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <AgentAvatar
+                    hue={agent.color_hue}
+                    icon={agent.icon}
+                    slug={agent.slug}
+                    name={agent.name}
+                    size="md"
+                  />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                @{agent.slug} · {agent.name}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+          {agents.length > 12 && (
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-muted/60 px-1.5 text-[10px] tabular-nums text-muted-foreground/70">
+              +{agents.length - 12}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LanguagesPanel({
+  languages,
+  loading,
+}: {
+  languages: LanguageBucket[];
+  loading: boolean;
+}) {
+  const top = languages.slice(0, 6);
+  const otherPct = languages.slice(6).reduce((n, l) => n + l.pct, 0);
+
+  return (
+    <div className="bg-muted/30 px-4 py-3.5">
+      <div className="flex items-center gap-2">
+        <Languages className="size-3.5 text-muted-foreground/55" />
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/75">
+          Languages
+        </h3>
+        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/55">
+          {loading ? '…' : languages.length}
+        </span>
+      </div>
+
+      {loading && top.length === 0 ? (
+        <div className="mt-3 space-y-2">
+          <Skeleton className="h-2 w-full rounded-full" />
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-3 w-14" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+        </div>
+      ) : top.length === 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground/55">No files in this project</p>
+      ) : (
+        <>
+          <div className="mt-3 flex h-2 w-full overflow-hidden rounded-full bg-muted-foreground/10">
+            {top.map((l) => (
+              <span
+                key={l.name}
+                className="h-full"
+                style={{ width: `${l.pct}%`, backgroundColor: l.color }}
+                title={`${l.name} ${l.pct.toFixed(1)}%`}
+              />
+            ))}
+            {otherPct > 0 && (
+              <span
+                className="h-full bg-muted-foreground/30"
+                style={{ width: `${otherPct}%` }}
+                title={`Other ${otherPct.toFixed(1)}%`}
+              />
+            )}
+          </div>
+
+          <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+            {top.map((l) => (
+              <span key={l.name} className="inline-flex items-center gap-1.5 text-muted-foreground/85">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: l.color }}
+                />
+                <span className="text-foreground/90">{l.name}</span>
+                <span className="tabular-nums text-muted-foreground/55">
+                  {l.pct.toFixed(l.pct >= 10 ? 0 : 1)}%
+                </span>
+              </span>
+            ))}
+            {otherPct > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground/55">
+                <span className="size-2 rounded-full bg-muted-foreground/30" />
+                <span>Other</span>
+                <span className="tabular-nums">{otherPct.toFixed(0)}%</span>
+              </span>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -717,7 +957,7 @@ function GitBadge({ status }: { status: string }) {
   const entry = cfg[status] ?? { label: status, cls: 'bg-muted/60 text-muted-foreground/80' };
   return (
     <span className={cn(
-      'ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded px-1 text-[10px] font-mono font-medium',
+      'ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded px-1 text-[10px] font-medium tabular-nums',
       entry.cls,
     )}>
       {entry.label}

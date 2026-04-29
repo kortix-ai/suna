@@ -66,6 +66,7 @@ import {
   type ProjectTab,
 } from '@/components/kortix/project-header';
 import { ProjectAbout } from '@/components/kortix/project-about';
+import { ProjectActivityTab } from '@/components/kortix/project-activity-tab';
 import { ProjectMembersTab } from '@/components/kortix/project-members-tab';
 import { TasksTab } from '@/components/kortix/tasks-tab';
 import { TaskDetailView } from '@/components/kortix/task-detail-view';
@@ -394,6 +395,12 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
             <TabPanel active={tab === 'milestones'}>
               <MilestonesTab projectId={project.id} />
             </TabPanel>
+            <TabPanel active={tab === 'activity'}>
+              <ProjectActivityTab
+                projectId={project.id}
+                onOpenTicket={(id) => setOpenTicketId(id)}
+              />
+            </TabPanel>
             <TabPanel active={tab === 'settings'}>
               <ProjectSettingsTab
                 projectId={project.id}
@@ -409,7 +416,11 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
           {hasFiles ? (
             <div className="flex-1 min-h-0">
               <FilesStoreProvider store={projectFilesStore}>
-                <ProjectFilesTab projectName={project.name} projectPath={project.path} />
+                <ProjectFilesTab
+                  projectId={project.id}
+                  projectName={project.name}
+                  projectPath={project.path}
+                />
               </FilesStoreProvider>
             </div>
           ) : (

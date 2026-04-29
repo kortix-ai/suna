@@ -37,6 +37,8 @@ import { useUpdateDialogStore } from '@/stores/update-dialog-store';
 
 import { UserMenu } from '@/components/sidebar/user-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { ProjectIcon } from '@/components/kortix/project-icon';
+import { KbdShortcut } from '@/components/ui/kbd';
 import { ThreadIcon } from '@/components/sidebar/thread-icon';
 import {
   CurrentWorkspaceAvatar,
@@ -50,6 +52,12 @@ import {
   SidebarHeader,
   SidebarFooter,
   SidebarRail,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarMenuAction,
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
@@ -698,53 +706,24 @@ function SidebarSections() {
   };
 
   return (
-    <div className="flex flex-col min-h-0 flex-1 pt-0.5 space-y-0.5">
-      {/* Projects — primary, default open, takes remaining space */}
+    <div className="flex flex-col min-h-0 flex-1">
+      {/* Projects — NavProjects look (SidebarGroup + SidebarGroupLabel),
+          flex-1 so it absorbs the remaining height */}
       {sortedProjects.length > 0 && (
-        <Collapsible defaultOpen className="group/projects flex flex-col min-h-0 data-[state=open]:flex-1">
-          <div className="px-3 flex-shrink-0">
-            <CollapsibleTrigger asChild>
-              <Button variant="sidebar" className="rounded-lg">
-                <FolderKanban className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-                <span className="flex-1 text-left">Projects</span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/projects:-rotate-90" />
-              </Button>
-            </CollapsibleTrigger>
-          </div>
-          <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <div className="flex flex-col px-3">
-              <div className="px-2 pb-2">
-                <div className="space-y-0.5">
-                  {sortedProjects.map((project) => (
-                    <SidebarProjectRow
-                      key={project.id}
-                      project={project}
-                      active={pathname?.startsWith(`/projects/${project.id}`) ?? false}
-                      onClick={() => handleProjectClick(project)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
+        <SidebarGroup className="flex flex-col min-h-0 data-[slot=sidebar-group]:flex-1">
+          <SidebarGroupLabel>Projects</SidebarGroupLabel>
+          <SidebarMenu className="min-h-0 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            {sortedProjects.map((project) => (
+              <SidebarProjectRow
+                key={project.id}
+                project={project}
+                active={pathname?.startsWith(`/projects/${project.id}`) ?? false}
+                onClick={() => handleProjectClick(project)}
+              />
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
       )}
-
-      {/* Sessions — subdued, collapsed by default. Live inside projects now. */}
-      <Collapsible defaultOpen={false} className="group/sessions flex flex-col min-h-0">
-        <div className="px-3 flex-shrink-0">
-          <CollapsibleTrigger asChild>
-            <Button variant="sidebar" className="rounded-lg">
-              <ListTree className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-              <span className="flex-1 text-left">Sessions</span>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/70 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
-            </Button>
-          </CollapsibleTrigger>
-        </div>
-        <CollapsibleContent className="min-h-0 data-[state=open]:max-h-[40vh] data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <SessionList projectId={null} />
-        </CollapsibleContent>
-      </Collapsible>
 
       {hasLegacy && (
         // mt-auto pins this block to the bottom of the SidebarSections column.
@@ -929,34 +908,30 @@ function SidebarProjectRow({
   );
 
   return (
-    <div
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-2 rounded-lg cursor-pointer transition-colors duration-150',
-        'pr-1.5 py-1.5 pl-3',
-        active
-          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
-      )}
-    >
-      <span className={cn('flex-1 truncate text-[13px]', (active || unread > 0) && 'font-medium')}>
-        {project.name}
-      </span>
-      {unread > 0 && (
-        <span
-          className="flex-shrink-0 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none tabular-nums"
-          aria-label={`${unread} unread`}
-          title={`${unread} unread`}
-        >
-          {unread > 99 ? '99+' : unread}
-        </span>
-      )}
-      {unread === 0 && (project.sessionCount ?? 0) > 0 && (
-        <span className="flex-shrink-0 text-[10px] text-muted-foreground/40 tabular-nums">
-          {project.sessionCount}
-        </span>
-      )}
-    </div>
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={active}
+        onClick={onClick}
+        tooltip={project.name}
+        className={cn(active || unread > 0 ? 'font-medium text-primary' : 'text-muted-foreground')}
+      >
+        <ProjectIcon project={project} size="xs" />
+        <span className="truncate">{project.name}</span>
+        {unread > 0 ? (
+          <span
+            className="ml-auto inline-flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none tabular-nums text-destructive-foreground group-data-[collapsible=icon]:hidden"
+            aria-label={`${unread} unread`}
+            title={`${unread} unread`}
+          >
+            {unread > 99 ? '99+' : unread}
+          </span>
+        ) : (project.sessionCount ?? 0) > 0 ? (
+          <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/45 group-data-[collapsible=icon]:hidden">
+            {project.sessionCount}
+          </span>
+        ) : null}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
 }
 
@@ -1566,86 +1541,113 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
           'flex flex-col h-full min-h-0',
           effectiveState === 'collapsed' ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'
         )}>
-          {/* Navigation */}
-          <nav className="flex-shrink-0 px-3 pt-2 space-y-0.5">
-            {/* Projects \u2014 primary entry point */}
-            <Button
-              onClick={() => {
-                openTabAndNavigate({
-                  id: 'page:/dashboard',
-                  title: 'Projects',
-                  type: 'dashboard',
-                  href: '/dashboard',
-                }, router);
-              }}
-              variant="sidebar"
-              className="rounded-lg"
-            >
-              <SquarePen className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-              <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
-              <kbd className="text-[10px] text-muted-foreground">
-                {isMac ? '\u2318J' : 'Ctrl J'}
-              </kbd>
-              <FolderKanban className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
-              <span className="flex-1 text-left">Projects</span>
-            </Button>
+          {/* Navigation \u2014 Workspace group, NavMain look */}
+          <SidebarGroup>
+            <SidebarGroupLabel>Workspace</SidebarGroupLabel>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Projects"
+                  isActive={pathname === '/dashboard' || pathname?.startsWith('/projects') === true}
+                  onClick={() => {
+                    openTabAndNavigate({
+                      id: 'page:/dashboard',
+                      title: 'Projects',
+                      type: 'dashboard',
+                      href: '/dashboard',
+                    }, router);
+                  }}
+                  className="font-medium text-primary"
+                >
+                  <FolderKanban className="text-muted-foreground/50" />
+                  <span>Projects</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
-            {/* Search */}
-            <Button
-              onClick={() => {
-                document.dispatchEvent(
-                  new KeyboardEvent('keydown', {
-                    key: 'k',
-                    code: 'KeyK',
-                    metaKey: isMac,
-                    ctrlKey: !isMac,
-                    bubbles: true,
-                    cancelable: true,
-                  }),
-                );
-              }}
-              variant="sidebar"
-              className="rounded-lg"
-            >
-              <Search className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-              <span className="flex-1 text-left">Search</span>
-              <kbd className="text-[10px] text-muted-foreground">
-                {isMac ? '\u2318K' : 'Ctrl K'}
-              </kbd>
-            </Button>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip={`Search ${isMac ? '\u2318K' : 'Ctrl K'}`}
+                  onClick={() => {
+                    document.dispatchEvent(
+                      new KeyboardEvent('keydown', {
+                        key: 'k',
+                        code: 'KeyK',
+                        metaKey: isMac,
+                        ctrlKey: !isMac,
+                        bubbles: true,
+                        cancelable: true,
+                      }),
+                    );
+                  }}
+                  className="font-medium text-primary"
+                >
+                  <Search className="text-muted-foreground/50" />
+                  <span>Search</span>
+                  <KbdShortcut
+                    shortcut={isMac ? '\u2318K' : 'Ctrl K'}
+                    className="ml-auto group-data-[collapsible=icon]:hidden"
+                  />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
-            {/* Files */}
-            <Button
-              onClick={() => {
-                openTabAndNavigate({
-                  id: 'page:/files',
-                  title: 'Files',
-                  type: 'page',
-                  href: '/files',
-                });
-              }}
-              variant="sidebar"
-              className="rounded-lg"
-            >
-              <FolderOpen className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-              <span className="flex-1 text-left">Files</span>
-            </Button>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="Files"
+                  isActive={pathname === '/files'}
+                  onClick={() => {
+                    openTabAndNavigate({
+                      id: 'page:/files',
+                      title: 'Files',
+                      type: 'page',
+                      href: '/files',
+                    });
+                  }}
+                  className="font-medium text-primary"
+                >
+                  <FolderOpen className="text-muted-foreground/50" />
+                  <span>Files</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
-            {/* New session — sessions live inside projects now, so this sits
-                below the primary nav with muted styling. */}
-            <Button
-              onClick={handleNewSession}
-              disabled={createSession.isPending}
-              variant="sidebar"
-              className="rounded-lg text-muted-foreground hover:text-foreground"
-            >
-              <SquarePen className="h-4 w-4 flex-shrink-0 text-muted-foreground/40" />
-              <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
-              <kbd className="text-[10px] text-muted-foreground/70">
-                {isMac ? '⌘J' : 'Ctrl J'}
-              </kbd>
-            </Button>
-            </nav>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip={`New session ${isMac ? '⌘J' : 'Ctrl J'}`}
+                  onClick={handleNewSession}
+                  disabled={createSession.isPending}
+                  className="font-medium text-primary"
+                >
+                  <SquarePen className="text-muted-foreground/50" />
+                  <span>{createSession.isPending ? 'Creating…' : 'New session'}</span>
+                  <KbdShortcut
+                    shortcut={isMac ? '⌘J' : 'Ctrl J'}
+                    className="ml-auto group-data-[collapsible=icon]:hidden"
+                  />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <Collapsible
+                asChild
+                defaultOpen={false}
+                className="group/sessions"
+              >
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      tooltip="Sessions"
+                      className="font-medium text-primary"
+                    >
+                      <ListTree className="text-muted-foreground/50" />
+                      <span>Sessions</span>
+                      <ChevronRight className="ml-auto size-3.5 text-muted-foreground/55 transition-transform duration-200 group-data-[state=open]/sessions:rotate-90 group-data-[collapsible=icon]:hidden" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="overflow-hidden data-[state=open]:max-h-[40vh] data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden">
+                    <SessionList projectId={null} />
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
+            </SidebarMenu>
+          </SidebarGroup>
 
           <SidebarSections />
         </div>

@@ -8,7 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { Kbd } from "@/components/ui/kbd"
+import { KbdShortcut } from "@/components/ui/kbd"
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -67,9 +67,10 @@ export function NavMain({
                       {item.icon && <item.icon className="text-muted-foreground/50" />}
                       <span>{item.title}</span>
                       {item.shortcut && (
-                        <Kbd className="ml-auto bg-transparent text-muted-foreground/55 group-data-[collapsible=icon]:hidden">
-                          {item.shortcut}
-                        </Kbd>
+                        <KbdShortcut
+                          shortcut={item.shortcut}
+                          className="ml-auto group-data-[collapsible=icon]:hidden"
+                        />
                       )}
                     </Link>
                   ) : (
@@ -77,9 +78,10 @@ export function NavMain({
                       {item.icon && <item.icon className="text-muted-foreground/50" />}
                       <span>{item.title}</span>
                       {item.shortcut && (
-                        <Kbd className="ml-auto bg-transparent text-muted-foreground/55 group-data-[collapsible=icon]:hidden">
-                          {item.shortcut}
-                        </Kbd>
+                        <KbdShortcut
+                          shortcut={item.shortcut}
+                          className="ml-auto group-data-[collapsible=icon]:hidden"
+                        />
                       )}
                     </>
                   )}

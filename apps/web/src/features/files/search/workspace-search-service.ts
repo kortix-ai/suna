@@ -322,3 +322,7 @@ export async function searchWorkspaceFilePaths(
   const entries = await searchWorkspaceFileEntries(query, options);
   return entries.map(toResultPath);
 }
+
+export async function getWorkspaceFileIndex(): Promise<WorkspaceSearchEntry[]> {
+  return getWorkspaceIndexEntries();
+}
