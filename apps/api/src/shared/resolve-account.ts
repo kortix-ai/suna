@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { accounts, accountMembers, accountUser } from '@kortix/db';
 import { db } from './db';
 import { claimPendingInvitesOnSignup } from '../teams';
+import { logger } from '../lib/logger';
 
 async function syncLegacySubscription(accountId: string): Promise<void> {
   const { syncLegacyStripeSubscription } = await import('../billing/services/legacy-stripe-sync');
@@ -34,7 +35,9 @@ export async function resolveAccountId(userId: string): Promise<string> {
       await syncLegacySubscription(membership.accountId);
       return membership.accountId;
     }
-  } catch { }
+  } catch (err) {
+    logger.warn('[resolve-account] accountMembers lookup failed', { userId, error: err instanceof Error ? err.message : String(err) });
+  }
 
   try {
     const [legacy] = await db
@@ -66,7 +69,9 @@ export async function resolveAccountId(userId: string): Promise<string> {
 
       return legacy.accountId;
     }
-  } catch { }
+  } catch (err) {
+    logger.warn('[resolve-account] accountUser legacy lookup failed', { userId, error: err instanceof Error ? err.message : String(err) });
+  }
 
   // First-time signup. Before creating a personal account, check for pending
   // sandbox invites — if any, join the inviter's account directly so the user
@@ -92,7 +97,9 @@ export async function resolveAccountId(userId: string): Promise<string> {
       accountId: userId,
       accountRole: 'owner',
     }).onConflictDoNothing();
-  } catch { }
+  } catch (err) {
+    logger.warn('[resolve-account] personal account creation failed', { userId, error: err instanceof Error ? err.message : String(err) });
+  }
 
   return userId;
 }

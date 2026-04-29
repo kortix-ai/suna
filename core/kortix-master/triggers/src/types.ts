@@ -43,6 +43,14 @@ export interface TriggerRecord {
   event_count: number
 
   metadata: string // JSON
+  carry_state: number // SQLite boolean (0|1) — prepend previous result_text to prompt
+  /** Optional project this trigger is scoped to. Stamped on the DB row
+   * via ALTER TABLE (plugin.ts) — outside the engine's core type but
+   * accessed by prompt-action.ts and ticket-create-action.ts. */
+  project_id: string | null
+  /** Optional ticket this trigger is bound to. Each fire reuses a per-ticket
+   * session so the agent has continuity. */
+  ticket_id: string | null
   created_at: string
   updated_at: string
 }

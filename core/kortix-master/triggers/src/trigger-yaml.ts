@@ -79,7 +79,16 @@ export class TriggerYaml {
     if (sourceType !== "cron" && sourceType !== "webhook") return null
 
     const action = (entry.action as Record<string, unknown>) ?? {}
-    const actionType = typeof action.type === "string" ? action.type : "prompt"
+    // Validate action type against the ActionType discriminated union; fall back to "prompt"
+    const rawActionType = typeof action.type === "string" ? action.type : "prompt"
+    const actionType: import("./types.js").ActionType =
+      (rawActionType === "prompt" || rawActionType === "command" || rawActionType === "http" || rawActionType === "ticket_create")
+        ? rawActionType
+        : "prompt"
+
+    // context and pipedream are raw YAML objects — extract with typeof guards
+    const ctxRaw = entry.context && typeof entry.context === "object" ? entry.context as Record<string, unknown> : null
+    const pdRaw = entry.pipedream && typeof entry.pipedream === "object" ? entry.pipedream as Record<string, unknown> : null
 
     return {
       name,
@@ -93,7 +102,7 @@ export class TriggerYaml {
         secret: typeof source.secret === "string" ? source.secret : undefined,
       },
       action: {
-        type: actionType as any,
+        type: actionType,
         prompt: typeof action.prompt === "string" ? action.prompt : undefined,
         agent: typeof action.agent === "string" ? action.agent : undefined,
         model: typeof action.model === "string" ? action.model : undefined,
@@ -104,7 +113,7 @@ export class TriggerYaml {
         env: action.env && typeof action.env === "object" ? action.env as Record<string, string> : undefined,
         timeout_ms: typeof action.timeout_ms === "number" ? action.timeout_ms : undefined,
         url: typeof action.url === "string" ? action.url : undefined,
-        method: typeof (action as any).method === "string" ? (action as any).method : undefined,
+        method: typeof action.method === "string" ? action.method : undefined,
         headers: action.headers && typeof action.headers === "object" ? action.headers as Record<string, string> : undefined,
         body_template: typeof action.body_template === "string" ? action.body_template : undefined,
         // ticket_create action fields
@@ -114,15 +123,17 @@ export class TriggerYaml {
         column: typeof action.column === "string" ? action.column : undefined,
         assignee_slugs: Array.isArray(action.assignee_slugs) ? action.assignee_slugs.map(String) : undefined,
       },
-      context: entry.context ? {
-        extract: (entry.context as any).extract,
-        include_raw: (entry.context as any).include_raw,
-        session_key: typeof (entry.context as any).session_key === "string" ? (entry.context as any).session_key : undefined,
+      context: ctxRaw ? {
+        extract: ctxRaw.extract && typeof ctxRaw.extract === "object" ? ctxRaw.extract as Record<string, string> : undefined,
+        include_raw: typeof ctxRaw.include_raw === "boolean" ? ctxRaw.include_raw : undefined,
+        session_key: typeof ctxRaw.session_key === "string" ? ctxRaw.session_key : undefined,
       } : undefined,
-      pipedream: entry.pipedream ? {
-        app: String((entry.pipedream as any).app ?? ""),
-        component_key: String((entry.pipedream as any).component_key ?? ""),
-        configured_props: (entry.pipedream as any).configured_props,
+      pipedream: pdRaw ? {
+        app: typeof pdRaw.app === "string" ? pdRaw.app : String(pdRaw.app ?? ""),
+        component_key: typeof pdRaw.component_key === "string" ? pdRaw.component_key : String(pdRaw.component_key ?? ""),
+        configured_props: pdRaw.configured_props && typeof pdRaw.configured_props === "object"
+          ? pdRaw.configured_props as Record<string, unknown>
+          : undefined,
       } : undefined,
     }
   }
@@ -162,7 +173,7 @@ export class TriggerYaml {
         }),
       },
       action: {
-        type: t.action_type as any,
+        type: t.action_type, // ActionType is already the correct type from TriggerRecord
         ...actionConfig,
         // For prompt actions, also include agent/model from denormalized fields
         ...(t.action_type === "prompt" && t.agent_name ? { agent: t.agent_name } : {}),
@@ -171,9 +182,15 @@ export class TriggerYaml {
       },
     }
 
-    // Context
+    // Context — contextConfig is Record<string,unknown> from JSON.parse; narrow to ContextConfig shape
     if (contextConfig.extract || contextConfig.include_raw !== undefined) {
-      entry.context = contextConfig as any
+      entry.context = {
+        extract: contextConfig.extract && typeof contextConfig.extract === "object"
+          ? contextConfig.extract as Record<string, string>
+          : undefined,
+        include_raw: typeof contextConfig.include_raw === "boolean" ? contextConfig.include_raw : undefined,
+        session_key: typeof contextConfig.session_key === "string" ? contextConfig.session_key : undefined,
+      }
     }
 
     // Pipedream
