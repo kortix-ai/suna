@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
@@ -21,14 +22,17 @@ import {
   Check,
   Cloud,
   Globe,
+  LogOut,
   Monitor,
   Pencil,
   Plus,
   Server,
+  Settings,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
+import { useAuthContext } from '@/contexts';
 import {
   useInstances,
   useProviders,
@@ -77,6 +81,8 @@ export default function InstancesScreen() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { sandboxId, switchSandbox } = useSandboxContext();
+  const { user, signOut, isSigningOut } = useAuthContext();
+  const router = useRouter();
 
   const { data: rawInstances, isLoading, refetch, isRefetching } = useInstances();
   // Fallback: if `/sandbox/list` returns empty (e.g. local-bridge discovery
@@ -122,6 +128,36 @@ export default function InstancesScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     switchSandbox(instance);
   }, [sandboxId, switchSandbox]);
+
+  const handleSettings = React.useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push('/(settings)/' as any);
+  }, [router]);
+
+  const handleSignOut = React.useCallback(() => {
+    if (isSigningOut) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await signOut();
+            if (result.success) {
+              router.replace('/');
+            } else {
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  }, [isSigningOut, signOut, router]);
 
   const handleRename = React.useCallback((instance: SandboxInfo) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -273,6 +309,56 @@ export default function InstancesScreen() {
               </Text>
             </View>
           )}
+
+          {/* Account footer — settings + logout */}
+          <View className="px-1 mt-6">
+            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+              Account
+            </Text>
+            <View>
+              {/* Settings row */}
+              <Pressable
+                onPress={handleSettings}
+                className="py-3.5 active:opacity-80"
+              >
+                <View className="flex-row items-center">
+                  <Icon as={Settings} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                  <View className="ml-4 flex-1">
+                    <Text className="font-roobert-medium text-[15px] text-foreground">Settings</Text>
+                    <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
+                      {user?.email ?? 'Profile, preferences and more'}
+                    </Text>
+                  </View>
+                  <Icon as={Cloud} size={14} className="text-muted-foreground/40" strokeWidth={2} />
+                </View>
+              </Pressable>
+
+              <View className="h-px bg-border/35" />
+
+              {/* Sign out row */}
+              <Pressable
+                onPress={handleSignOut}
+                disabled={isSigningOut}
+                className="py-3.5 active:opacity-80"
+              >
+                <View className="flex-row items-center">
+                  {isSigningOut ? (
+                    <ActivityIndicator size="small" style={{ width: 18, height: 18 }} />
+                  ) : (
+                    <Icon as={LogOut} size={18} className="text-destructive" strokeWidth={2.2} />
+                  )}
+                  <View className="ml-4 flex-1">
+                    <Text className="font-roobert-medium text-[15px] text-destructive">
+                      {isSigningOut ? 'Signing out…' : 'Sign Out'}
+                    </Text>
+                    <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
+                      Sign out from this device
+                    </Text>
+                  </View>
+                </View>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </ScrollView>
 
