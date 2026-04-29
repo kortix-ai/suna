@@ -1,7 +1,9 @@
 import Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
+import { getSupabase } from '../../shared/supabase';
 import { config } from '../../config';
 import { WebhookError } from '../../errors';
+import { logger } from '../../lib/logger';
 import {
   getCreditAccount,
   updateCreditAccount,
@@ -27,10 +29,38 @@ import { resolveAccountId } from '../../shared/resolve-account';
 
 // ─── Stripe Webhook Processing ──────────────────────────────────────────────
 
-// Simple in-memory dedup for Stripe webhook events.
-// Stripe CLI + configured endpoints can deliver the same event twice.
-const processedEvents = new Set<string>();
-const DEDUP_MAX = 500;
+// Supabase-backed idempotency for Stripe webhook events.
+// Persisted so replay events are detected across restarts/deploys.
+// Falls back to in-memory if the DB table isn't available yet.
+const _inMemoryFallback = new Set<string>();
+
+async function markEventProcessed(eventId: string, eventType: string): Promise<boolean> {
+  const supabase = getSupabase();
+  try {
+    const { error } = await supabase
+      .from('stripe_webhook_events')
+      .insert({ event_id: eventId, event_type: eventType });
+
+    if (error) {
+      // Unique-constraint violation = duplicate event
+      if (error.code === '23505') return false;
+      // Table not yet migrated — fall back to in-memory
+      logger.warn(`[Webhook] stripe_webhook_events table unavailable (${error.code}), using in-memory fallback`);
+      if (_inMemoryFallback.has(eventId)) return false;
+      _inMemoryFallback.add(eventId);
+      if (_inMemoryFallback.size > 1000) {
+        const first = _inMemoryFallback.values().next().value;
+        if (first) _inMemoryFallback.delete(first);
+      }
+    }
+    return true;
+  } catch (err) {
+    // Network error — fall back to in-memory
+    if (_inMemoryFallback.has(eventId)) return false;
+    _inMemoryFallback.add(eventId);
+    return true;
+  }
+}
 
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
@@ -43,17 +73,13 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
   }
 
   // Deduplicate: skip if we already processed this exact event
-  if (processedEvents.has(event.id)) {
-    console.log(`[Webhook] Skipping duplicate ${event.type} (${event.id})`);
-    return;
-  }
-  processedEvents.add(event.id);
-  if (processedEvents.size > DEDUP_MAX) {
-    const first = processedEvents.values().next().value;
-    if (first) processedEvents.delete(first);
+  const isNew = await markEventProcessed(event.id, event.type);
+  if (!isNew) {
+    logger.warn(`[Webhook] Skipping duplicate ${event.type} (${event.id})`, { eventId: event.id, eventType: event.type });
+    return { received: true, event_type: event.type, duplicate: true };
   }
 
-  console.log(`[Webhook] Processing ${event.type} (${event.id})`);
+  logger.info(`[Webhook] Processing ${event.type} (${event.id})`);
 
   switch (event.type) {
     case 'checkout.session.completed':
@@ -82,11 +108,11 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
       break;
 
     case 'subscription_schedule.released':
-      console.log(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
+      logger.info(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
       break;
 
     default:
-      console.log(`[Webhook] Unhandled event type: ${event.type}`);
+      logger.info(`[Webhook] Unhandled event type: ${event.type}`);
   }
 
   return { received: true, event_type: event.type };
@@ -97,7 +123,7 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const accountId = session.metadata?.account_id;
   if (!accountId) {
-    console.warn('[Webhook] checkout.session.completed missing account_id');
+    logger.warn('[Webhook] checkout.session.completed missing account_id');
     return;
   }
 
@@ -135,7 +161,7 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
     }
   }
 
-  console.log(`[Webhook] Credit purchase: $${amountTotal} for ${accountId}`);
+  logger.info(`[Webhook] Credit purchase: $${amountTotal} for ${accountId}`);
 }
 
 async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, accountId: string) {
@@ -202,9 +228,9 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
         accountId,
         idempotencyKey: getStripeMachineBonusKey(subscriptionId),
       });
-      console.log(`[Webhook] Granted machine bonus for ${accountId} (sub=${subscriptionId})`);
+      logger.info(`[Webhook] Granted machine bonus for ${accountId} (sub=${subscriptionId})`);
     } catch (err) {
-      console.error(`[Webhook] Failed to grant machine bonus for ${accountId} (sub=${subscriptionId}):`, err);
+      logger.error(`[Webhook] Failed to grant machine bonus for ${accountId} (sub=${subscriptionId}):`, { error: err instanceof Error ? err.message : String(err) });
     }
 
     try {
@@ -216,20 +242,47 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
         location: location || undefined,
         tierKey,
       });
-      console.log(`[Webhook] Instance provisioning started for ${accountId} (type=${serverType}, loc=${location})`);
+      logger.info(`[Webhook] Instance provisioning started for ${accountId} (type=${serverType}, loc=${location})`);
     } catch (err) {
-      console.error(`[Webhook] Failed to provision instance for ${accountId}:`, err);
+      logger.error(`[Webhook] Failed to provision instance for ${accountId}:`, { error: err instanceof Error ? err.message : String(err) });
       // Don't throw — the subscription is valid, provisioning can be retried.
     }
   }
 
-  console.log(`[Webhook] Subscription checkout: ${tierKey} for ${accountId} (sub=${subscriptionId})`);
+  // ── Cancel old free subscription on upgrade ─────────────────────────────
+  // If the checkout metadata carries previous_subscription_id, cancel it directly.
+  // Otherwise fall back to the DB: if the account was on free with an existing sub,
+  // cancel it so we don't leave orphaned free subs after an upgrade.
+  const previousSubIdFromMeta = session.metadata?.previous_subscription_id;
+  if (previousSubIdFromMeta && previousSubIdFromMeta !== subscriptionId) {
+    try {
+      await cancelFreeSubscriptionForUpgrade(previousSubIdFromMeta, accountId);
+    } catch (err) {
+      logger.error(`[Webhook] Failed to cancel old free sub ${previousSubIdFromMeta}:`, { error: err instanceof Error ? err.message : String(err) });
+    }
+  } else if (!previousSubIdFromMeta) {
+    const existingAccount = await getCreditAccount(accountId);
+    const oldSubId = existingAccount?.stripeSubscriptionId;
+    if (
+      oldSubId &&
+      oldSubId !== subscriptionId &&
+      (existingAccount?.tier === 'free' || existingAccount?.tier === 'none')
+    ) {
+      try {
+        await cancelFreeSubscriptionForUpgrade(oldSubId, accountId);
+      } catch (err) {
+        logger.error(`[Webhook] Failed to cancel old free sub ${oldSubId} (DB fallback):`, { error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+  }
+
+  logger.info(`[Webhook] Subscription checkout: ${tierKey} for ${accountId} (sub=${subscriptionId})`);
 }
 
 async function handleSubscriptionChange(subscription: Stripe.Subscription) {
   const accountId = await resolveCanonicalStripeAccountId(subscription.metadata?.account_id, subscription.customer);
   if (!accountId) {
-    console.warn('[Webhook] subscription change: no canonical account_id');
+    logger.warn('[Webhook] subscription change: no canonical account_id');
     return;
   }
 
@@ -251,12 +304,12 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       previousSubId === account.stripeSubscriptionId;
 
     if (isFreeUpgrade) {
-      console.log(
+      logger.info(
         `[Webhook] syncSubscriptionState: detected free→${incomingTier} upgrade for ${accountId}, cancelling old free sub ${account.stripeSubscriptionId}`,
       );
       await cancelFreeSubscriptionForUpgrade(account.stripeSubscriptionId, accountId);
     } else {
-      console.log(`[Webhook] syncSubscriptionState: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`);
+      logger.info(`[Webhook] syncSubscriptionState: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`);
       return;
     }
   }
@@ -269,7 +322,7 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     !!resolvedTier &&
     (!account || (!account.stripeSubscriptionId && (!account.tier || account.tier === 'free' || account.tier === 'none')));
 
-  console.log(`[Webhook] syncSubscriptionState: account=${accountId} tier_meta=${tierKey} price=${priceId} resolved=${resolvedTier} status=${subscription.status}`);
+  logger.info(`[Webhook] syncSubscriptionState: account=${accountId} tier_meta=${tierKey} price=${priceId} resolved=${resolvedTier} status=${subscription.status}`);
 
   const updates: Record<string, any> = {
     stripeSubscriptionId: subscription.id,
@@ -316,6 +369,17 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   const accountId = await resolveCanonicalStripeAccountId(subscription.metadata?.account_id, subscription.customer);
   if (!accountId) return;
 
+  // Guard: only revert to free if the deleted subscription is still the account's
+  // current subscription. If the account has already switched to a newer subscription
+  // (e.g. upgrade or RevenueCat), ignore this event to avoid clobbering the new state.
+  const account = await getCreditAccount(accountId);
+  if (account?.stripeSubscriptionId && account.stripeSubscriptionId !== subscription.id) {
+    logger.info(
+      `[Webhook] Skipping revert for deleted sub ${subscription.id} — account current sub is ${account.stripeSubscriptionId}`,
+    );
+    return;
+  }
+
   await revertToFree(accountId, subscription.id);
 }
 
@@ -325,9 +389,9 @@ async function revertToFree(accountId: string, subscriptionId?: string) {
     try {
       const { archiveSandboxBySubscription } = await import('../../platform/services/sandbox-provisioner');
       await archiveSandboxBySubscription(accountId, subscriptionId);
-      console.log(`[Webhook] Archived sandbox for subscription ${subscriptionId}`);
+      logger.info(`[Webhook] Archived sandbox for subscription ${subscriptionId}`);
     } catch (err) {
-      console.error(`[Webhook] Failed to archive sandbox for sub ${subscriptionId}:`, err);
+      logger.error(`[Webhook] Failed to archive sandbox for sub ${subscriptionId}:`, { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -360,9 +424,9 @@ async function revertToFree(accountId: string, subscriptionId?: string) {
       commitmentEndDate: null,
       paymentStatus: 'active',
     });
-    console.log(`[Webhook] No active instances left, reverted to free: ${accountId}`);
+    logger.info(`[Webhook] No active instances left, reverted to free: ${accountId}`);
   } else {
-    console.log(`[Webhook] Subscription deleted but ${activeSandboxes.length} active instance(s) remain for ${accountId}`);
+    logger.info(`[Webhook] Subscription deleted but ${activeSandboxes.length} active instance(s) remain for ${accountId}`);
   }
 }
 
@@ -387,7 +451,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 
   const periodStart = invoice.period_start;
   if (account.lastRenewalPeriodStart && account.lastRenewalPeriodStart >= periodStart) {
-    console.log(`[Webhook] Renewal already processed for period ${periodStart}`);
+    logger.info(`[Webhook] Renewal already processed for period ${periodStart}`);
     return;
   }
 
@@ -414,7 +478,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     nextCreditGrant,
   });
 
-  console.log(`[Webhook] Renewal processed: ${credits} credits for ${accountId}`);
+  logger.info(`[Webhook] Renewal processed: ${credits} credits for ${accountId}`);
 }
 
 async function applyScheduledDowngrade(accountId: string, targetTier: string, account: any) {
@@ -429,17 +493,17 @@ async function applyScheduledDowngrade(accountId: string, targetTier: string, ac
         await stripe.subscriptions.update(account.stripeSubscriptionId, {
           metadata: { ...subscription.metadata, tier_key: targetTier, downgrade: '', target_tier: '' },
         });
-        console.log(`[Webhook] Price already correct (schedule applied), updated metadata for ${accountId}`);
+        logger.info(`[Webhook] Price already correct (schedule applied), updated metadata for ${accountId}`);
       } else {
         await stripe.subscriptions.update(account.stripeSubscriptionId, {
           items: [{ id: subscription.items.data[0].id, price: account.scheduledPriceId }],
           proration_behavior: 'none',
           metadata: { ...subscription.metadata, tier_key: targetTier, downgrade: '', target_tier: '' },
         });
-        console.log(`[Webhook] Stripe price updated to ${account.scheduledPriceId} for ${accountId}`);
+        logger.info(`[Webhook] Stripe price updated to ${account.scheduledPriceId} for ${accountId}`);
       }
     } catch (err) {
-      console.error(`[Webhook] Failed to update Stripe subscription for ${accountId}:`, err);
+      logger.error(`[Webhook] Failed to update Stripe subscription for ${accountId}:`, { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -450,13 +514,13 @@ async function applyScheduledDowngrade(accountId: string, targetTier: string, ac
     scheduledPriceId: null,
   });
 
-  console.log(`[Webhook] Applied scheduled downgrade to ${tier.displayName} for ${accountId}`);
+  logger.info(`[Webhook] Applied scheduled downgrade to ${tier.displayName} for ${accountId}`);
 }
 
 async function handleScheduleCompleted(schedule: any) {
   const accountId = schedule.metadata?.account_id;
   if (!accountId) {
-    console.log(`[Webhook] subscription_schedule.completed: no account_id in metadata`);
+    logger.info(`[Webhook] subscription_schedule.completed: no account_id in metadata`);
     return;
   }
 
@@ -464,7 +528,7 @@ async function handleScheduleCompleted(schedule: any) {
   const isDowngrade = schedule.metadata?.downgrade === 'true';
 
   if (targetTier && isDowngrade) {
-    console.log(`[Webhook] Schedule completed: downgrade to ${targetTier} for ${accountId}`);
+    logger.info(`[Webhook] Schedule completed: downgrade to ${targetTier} for ${accountId}`);
 
     await updateCreditAccount(accountId, {
       tier: targetTier,
@@ -484,7 +548,7 @@ async function handleScheduleCompleted(schedule: any) {
           metadata: { tier_key: targetTier, downgrade: '', target_tier: '', scheduled_change: '' },
         });
       } catch (err) {
-        console.error(`[Webhook] Failed to update subscription metadata after schedule completion:`, err);
+        logger.error(`[Webhook] Failed to update subscription metadata after schedule completion:`, { error: err instanceof Error ? err.message : String(err) });
       }
     }
   }
@@ -508,7 +572,7 @@ async function handleInvoiceFailed(invoice: Stripe.Invoice) {
     lastPaymentFailure: new Date().toISOString(),
   });
 
-  console.log(`[Webhook] Payment failed for ${accountId}`);
+  logger.info(`[Webhook] Payment failed for ${accountId}`);
 }
 
 async function resolveCanonicalStripeAccountId(
@@ -542,9 +606,9 @@ async function repairStripeSubscriptionAccountMetadata(subscription: Stripe.Subs
         legacy_account_id: rawAccountId,
       },
     });
-    console.log(`[Webhook] Repaired subscription ${subscription.id} account_id ${rawAccountId} -> ${canonicalAccountId}`);
+    logger.info(`[Webhook] Repaired subscription ${subscription.id} account_id ${rawAccountId} -> ${canonicalAccountId}`);
   } catch (err) {
-    console.error(`[Webhook] Failed to repair subscription ${subscription.id} account metadata:`, err);
+    logger.error(`[Webhook] Failed to repair subscription ${subscription.id} account metadata:`, { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -557,13 +621,13 @@ export async function processRevenueCatWebhook(body: any) {
   if (!appUserId) throw new WebhookError('Missing app_user_id');
 
   if (isRevenueCatAnonymous(appUserId)) {
-    console.log(`[RevenueCat] Skipping anonymous user: ${appUserId}`);
+    logger.info(`[RevenueCat] Skipping anonymous user: ${appUserId}`);
     return { received: true, event_type: eventType, skipped: true };
   }
 
   const accountId = await resolveAccountId(appUserId);
 
-  console.log(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
+  logger.info(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
 
   switch (eventType) {
     case 'INITIAL_PURCHASE':
@@ -597,7 +661,7 @@ export async function processRevenueCatWebhook(body: any) {
       break;
 
     default:
-      console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
+      logger.info(`[RevenueCat] Unhandled event type: ${eventType}`);
   }
 
   return { received: true, event_type: eventType, account_id: accountId };
@@ -607,7 +671,7 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
   const productId = event.product_id;
   const tierKey = mapRevenueCatProductToTier(productId);
   if (!tierKey) {
-    console.warn(`[RevenueCat] Unknown product ID: ${productId}`);
+    logger.warn(`[RevenueCat] Unknown product ID: ${productId}`);
     return;
   }
 
@@ -655,9 +719,9 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
         false,
         `machine_bonus:revenuecat:${accountId}:${productId}`,
       );
-      console.log(`[RevenueCat] Granted $${MACHINE_CREDIT_BONUS} machine bonus for ${accountId}`);
+      logger.info(`[RevenueCat] Granted $${MACHINE_CREDIT_BONUS} machine bonus for ${accountId}`);
     } catch (err) {
-      console.error(`[RevenueCat] Failed to grant machine bonus for ${accountId}:`, err);
+      logger.error(`[RevenueCat] Failed to grant machine bonus for ${accountId}:`, { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -665,7 +729,7 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
     await cancelFreeSubscriptionForUpgrade(oldStripeSubscriptionId, accountId);
   }
 
-  console.log(`[RevenueCat] Initial purchase: ${tierKey} for ${accountId}`);
+  logger.info(`[RevenueCat] Initial purchase: ${tierKey} for ${accountId}`);
 }
 
 async function handleRevenueCatRenewal(accountId: string, event: any) {
@@ -685,7 +749,7 @@ async function handleRevenueCatRenewal(accountId: string, event: any) {
     lastGrantDate: new Date().toISOString(),
   });
 
-  console.log(`[RevenueCat] Renewal: ${credits} credits for ${accountId}`);
+  logger.info(`[RevenueCat] Renewal: ${credits} credits for ${accountId}`);
 }
 
 async function handleRevenueCatCancellation(accountId: string, event: any) {
@@ -706,7 +770,7 @@ async function handleRevenueCatCancellation(accountId: string, event: any) {
     });
   }
 
-  console.log(`[RevenueCat] ${event.type}: ${accountId}`);
+  logger.info(`[RevenueCat] ${event.type}: ${accountId}`);
 }
 
 async function handleRevenueCatUncancellation(accountId: string, _event: any) {
@@ -717,7 +781,7 @@ async function handleRevenueCatUncancellation(accountId: string, _event: any) {
     paymentStatus: 'active',
   });
 
-  console.log(`[RevenueCat] Uncancellation: ${accountId}`);
+  logger.info(`[RevenueCat] Uncancellation: ${accountId}`);
 }
 
 async function handleRevenueCatProductChange(accountId: string, event: any) {
@@ -746,7 +810,7 @@ async function handleRevenueCatProductChange(accountId: string, event: any) {
     }
   }
 
-  console.log(`[RevenueCat] Product change: ${accountId}`);
+  logger.info(`[RevenueCat] Product change: ${accountId}`);
 }
 
 async function handleRevenueCatTopup(accountId: string, event: any) {
@@ -761,7 +825,7 @@ async function handleRevenueCatTopup(accountId: string, event: any) {
     false,
   );
 
-  console.log(`[RevenueCat] Top-up: $${price} for ${accountId}`);
+  logger.info(`[RevenueCat] Top-up: $${price} for ${accountId}`);
 }
 
 async function handleRevenueCatBillingIssue(accountId: string, event: any) {
@@ -771,7 +835,7 @@ async function handleRevenueCatBillingIssue(accountId: string, event: any) {
     lastPaymentFailure: new Date().toISOString(),
   });
 
-  console.log(`[RevenueCat] Billing issue: ${accountId}`);
+  logger.info(`[RevenueCat] Billing issue: ${accountId}`);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
