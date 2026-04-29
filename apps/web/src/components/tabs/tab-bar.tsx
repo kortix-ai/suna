@@ -103,11 +103,7 @@ function resolveRouteTab(pathname: string): Omit<Tab, 'openedAt'> | null {
     '/settings/api-keys': { title: 'API Keys', type: 'settings' },
     '/credits-explained': { title: 'Credits', type: 'page' },
     '/support': { title: 'Support', type: 'page' },
-    '/admin/analytics': { title: 'Analytics', type: 'page' },
-    '/admin/feedback': { title: 'Feedback', type: 'page' },
-    '/admin/notifications': { title: 'Notifications', type: 'page' },
-    '/admin/sandbox-pool': { title: 'Sandbox Pool', type: 'page' },
-    '/admin/stress-test': { title: 'Stress Test', type: 'page' },
+     '/admin/sandbox-pool': { title: 'Sandbox Pool', type: 'page' },
     '/changelog': { title: 'Changelog', type: 'page' },
   };
 

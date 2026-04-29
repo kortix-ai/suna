@@ -17,7 +17,7 @@ export { OcImageSearchToolView } from './OcImageSearchToolView';
 export { OcImageGenToolView } from './OcImageGenToolView';
 export { OcShowUserToolView } from './OcShowUserToolView';
 export { OcApplyPatchToolView } from './OcApplyPatchToolView';
-export { OcTaskToolView } from './OcTaskToolView';
+
 export { OcKortixTaskToolView } from './OcKortixTaskToolView';
 export { OcTodoToolView } from './OcTodoToolView';
 export { OcGenericToolView } from './OcGenericToolView';

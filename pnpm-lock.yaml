@@ -1316,15 +1316,6 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
 
-  core/kortix-supervisor:
-    devDependencies:
-      bun-types:
-        specifier: ^1.0.0
-        version: 1.3.12
-      typescript:
-        specifier: ^5.0.0
-        version: 5.9.3
-
   packages/agent-tunnel:
     dependencies:
       hono:

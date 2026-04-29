@@ -83,20 +83,8 @@ const DeploymentsPage = lazy(() =>
 );
 
 // Admin pages (currently live under the dashboard route group)
-const AdminAnalyticsPage = lazy(() =>
-	import('@/app/(dashboard)/admin/analytics/page'),
-);
-const AdminFeedbackPage = lazy(() =>
-	import('@/app/(dashboard)/admin/feedback/page'),
-);
-const AdminNotificationsPage = lazy(() =>
-	import('@/app/(dashboard)/admin/notifications/page'),
-);
 const AdminSandboxPoolPage = lazy(() =>
 	import('@/app/(dashboard)/admin/sandbox-pool/page'),
-);
-const AdminStressTestPage = lazy(() =>
-	import('@/app/(dashboard)/admin/stress-test/page'),
 );
 const LegacyThreadPage = lazy(() =>
 	import('@/app/(dashboard)/legacy/[threadId]/page'),
@@ -138,11 +126,7 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/tunnel': TunnelOverviewPage,
 	...(DEPLOYMENTS_ENABLED ? { '/deployments': DeploymentsPage } : {}),
 	// Admin
-	'/admin/analytics': AdminAnalyticsPage,
-	'/admin/feedback': AdminFeedbackPage,
-	'/admin/notifications': AdminNotificationsPage,
 	'/admin/sandbox-pool': AdminSandboxPoolPage,
-	'/admin/stress-test': AdminStressTestPage,
 };
 
 function resolveComponent(routeKey: string): { Component: ComponentType<any>; params?: Record<string, string> } | null {

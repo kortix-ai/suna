@@ -32,7 +32,7 @@ import { setupApp } from './setup';
 import { providersApp } from './providers/routes';
 import { secretsApp } from './secrets/routes';
 import { integrationsApp } from './integrations';
-import { queueApp, startDrainer, stopDrainer } from './queue';
+import { startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
 // WoA is now mounted under the router at /v1/router/woa (see router/index.ts)
 import { supabaseAuth, combinedAuth } from './middleware/auth';
@@ -49,7 +49,6 @@ import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { legacyApp } from './legacy';
 // [channels v2] Old channel routes removed — channels now managed via sandbox CLI (kchannel, ktelegram, kslack)
-import { adminApp } from './admin';
 import { sandboxPoolAdminApp } from './platform/routes/sandbox-pool-admin';
 import { oauthApp } from './oauth';
 
@@ -382,7 +381,6 @@ app.route('/v1/legacy', legacyApp); // /v1/legacy/threads, /v1/legacy/threads/:i
 if (config.isLocal()) {
   app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
 }
-app.route('/v1/admin', adminApp);          // /v1/admin/api/sandboxes, /v1/admin/api/env, /v1/admin/api/health, etc.
 app.route('/v1/admin/sandbox-pool', sandboxPoolAdminApp); // /v1/admin/sandbox-pool/health, /v1/admin/sandbox-pool/list, etc.
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
@@ -397,9 +395,6 @@ app.route('/v1/secrets', secretsApp);       // /v1/secrets, /v1/secrets/:key (PU
 
 app.use('/v1/servers/*', combinedAuth);
 app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
-
-app.use('/v1/queue/*', combinedAuth);
-app.route('/v1/queue', queueApp);            // /v1/queue/sessions/:id, /v1/queue/messages/:id, /v1/queue/all, /v1/queue/status
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
@@ -984,9 +979,8 @@ console.log(`
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (sandbox lifecycle)                      ║
 ${config.KORTIX_DEPLOYMENTS_ENABLED ? '║    /v1/deployments (deploy lifecycle)                      ║\n' : ''}║    /v1/pipedream   (Pipedream OAuth integrations)           ║
-║    /v1/setup      (setup & env management)                 ║
-║    /v1/queue      (persistent message queue)               ║
-║    /v1/tunnel     (reverse-tunnel to local machines)         ║
+ ║    /v1/setup      (setup & env management)                 ║
+ ║    /v1/tunnel     (reverse-tunnel to local machines)         ║
 ║    /v1/p         (sandbox proxy — local + cloud)            ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Database:   ${config.DATABASE_URL ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
