@@ -53,17 +53,6 @@ export { useBillingModal } from './use-billing-modal';
 export { useDownloadRestriction } from './use-download-restriction';
 
 // =============================================================================
-// TIER CONFIGURATIONS - Static data, separate endpoint
-// =============================================================================
-
-export {
-  useTierConfigurations,
-  getTierByKey,
-  type TierConfiguration,
-  type TierConfigurationsResponse,
-} from './use-tier-configurations';
-
-// =============================================================================
 // ADMIN HOOKS - For admin dashboard
 // =============================================================================
 
