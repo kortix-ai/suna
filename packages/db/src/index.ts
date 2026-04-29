@@ -78,6 +78,8 @@ export {
   // Pool
   poolResources,
   poolSandboxes,
+  // Personal MCP
+  personalMcpServers,
 } from './schema/kortix';
 
 export type {
