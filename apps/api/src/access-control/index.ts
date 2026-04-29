@@ -7,9 +7,23 @@ import { config } from '../config';
 
 export const accessControlApp = new Hono();
 
+// Module-level singleton for auth schema queries.
+// auth.users lives in the Supabase auth schema — not exposed through the drizzle
+// schema — so we need a raw postgres client. Using a singleton avoids opening
+// a new TCP connection per check-email call (which exhausts pg connection slots
+// under any signup spike).
+let _authSql: ReturnType<typeof postgres> | null = null;
+function getAuthSql(): ReturnType<typeof postgres> | null {
+  if (!config.DATABASE_URL) return null;
+  if (!_authSql) {
+    _authSql = postgres(config.DATABASE_URL, { max: 2, idle_timeout: 30 });
+  }
+  return _authSql;
+}
+
 async function userExistsInAuth(email: string): Promise<boolean> {
-  if (!config.DATABASE_URL) return false;
-  const sql = postgres(config.DATABASE_URL, { max: 1 });
+  const sql = getAuthSql();
+  if (!sql) return false;
   try {
     const [row] = await sql`
       SELECT 1 FROM auth.users WHERE email = ${email.trim().toLowerCase()} LIMIT 1
@@ -17,8 +31,6 @@ async function userExistsInAuth(email: string): Promise<boolean> {
     return !!row;
   } catch {
     return false;
-  } finally {
-    await sql.end();
   }
 }
 
@@ -51,11 +63,13 @@ accessControlApp.post('/request-access', async (c) => {
 
   const normalizedEmail = body.email.trim().toLowerCase();
 
+  // ON CONFLICT DO NOTHING makes duplicate submissions idempotent.
+  // The unique constraint on email is added in migration 33.
   await db.insert(accessRequests).values({
     email: normalizedEmail,
     company: body.company || null,
     useCase: body.useCase || null,
-  });
+  }).onConflictDoNothing();
 
   return c.json({ success: true, message: 'Access request submitted' });
 });
