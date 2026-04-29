@@ -43,6 +43,7 @@ export interface TriggerRecord {
   event_count: number
 
   metadata: string // JSON
+  carry_state: number // SQLite boolean — 0 or 1
   created_at: string
   updated_at: string
 }
@@ -62,6 +63,7 @@ export interface ExecutionRecord {
   http_body: string | null
   retry_count: number
   metadata: string // JSON
+  result_text: string | null  // last assistant message from agent run, truncated to 10k chars
   started_at: string
   completed_at: string | null
   duration_ms: number | null
@@ -261,6 +263,7 @@ export interface ExecutionResponse {
   httpStatus: number | null
   retryCount: number
   metadata: Record<string, unknown>
+  result_text: string | null
   startedAt: string
   completedAt: string | null
   durationMs: number | null

@@ -57,6 +57,8 @@ export interface Trigger {
   /** When set, each fire threads onto a per-ticket session and the agent
    *  sees the bound ticket_id in its `<trigger_event>` block. */
   ticket_id?: string | null;
+  /** When true, the previous run's result_text is prepended to the prompt. */
+  carry_state?: boolean;
 }
 
 export interface Execution {
@@ -75,6 +77,7 @@ export interface Execution {
   httpStatus?: number | null;
   retryCount: number;
   metadata: Record<string, unknown>;
+  result_text: string | null;
   createdAt: string;
   trigger_name?: string;
 }

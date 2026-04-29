@@ -94,6 +94,7 @@ export class TriggerStore {
         last_event_at   TEXT,
         event_count     INTEGER DEFAULT 0,
         metadata        TEXT DEFAULT '{}',
+        carry_state     INTEGER DEFAULT 0,
         created_at      TEXT NOT NULL,
         updated_at      TEXT NOT NULL
       );
@@ -117,12 +118,20 @@ export class TriggerStore {
         started_at      TEXT NOT NULL,
         completed_at    TEXT,
         duration_ms     INTEGER,
+        result_text     TEXT,
         created_at      TEXT NOT NULL
       );
 
       CREATE INDEX IF NOT EXISTS idx_texec_trigger ON trigger_executions(trigger_id);
       CREATE INDEX IF NOT EXISTS idx_texec_created ON trigger_executions(created_at DESC);
     `)
+
+    // ── Additive column migrations (ALTER TABLE for existing DBs) ─────────────
+    const addIfMissing = (table: string, column: string, definition: string) => {
+      try { this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`) } catch { /* already exists */ }
+    }
+    addIfMissing("trigger_executions", "result_text", "TEXT")
+    addIfMissing("triggers", "carry_state", "INTEGER DEFAULT 0")
   }
 
   // ─── Trigger CRUD ───────────────────────────────────────────────────────────
@@ -379,6 +388,7 @@ export class TriggerStore {
     if (patch.metadata) addField("metadata", JSON.stringify(patch.metadata))
     addField("completed_at", patch.completed_at)
     addField("duration_ms", patch.duration_ms)
+    addField("result_text", patch.result_text)
 
     if (sets.length === 0) return current
     params.push(executionId)

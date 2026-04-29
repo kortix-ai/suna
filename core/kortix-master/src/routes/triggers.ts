@@ -164,6 +164,7 @@ function mapExecution(e: any): ExecutionResponse {
     httpStatus: e.http_status ?? null,
     retryCount: e.retry_count ?? 0,
     metadata: e.metadata ? (typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata) : {},
+    result_text: e.result_text ?? null,
     startedAt: e.started_at,
     completedAt: e.completed_at ?? null,
     durationMs: e.duration_ms ?? null,
@@ -219,6 +220,7 @@ const createSchema = z.object({
   model_provider_id: z.string().optional(),
   model_id: z.string().optional(),
   session_mode: z.enum(['new', 'reuse']).optional(),
+  carry_state: z.boolean().optional(),
 }).passthrough()
 
 function notFound(c: any, resource: string) {
@@ -349,6 +351,14 @@ triggersRouter.post('/',
       session_mode: data.action.session_mode ?? data.session_mode ?? 'new',
       metadata: data.metadata,
     })
+
+    // carry_state: stamp on the DB row
+    if (data.carry_state) {
+      try {
+        ;(db as any).db?.query?.('UPDATE triggers SET carry_state = 1 WHERE id = ?').run(trigger.id)
+        ;(trigger as any).carry_state = 1
+      } catch {}
+    }
 
     // Stamp additive scoping columns the engine doesn't know about.
     const projectId = (body as any).project_id as string | undefined
