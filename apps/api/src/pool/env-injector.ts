@@ -1,5 +1,6 @@
 import { config, SANDBOX_VERSION } from '../config';
 import type { PoolSandbox } from './types';
+import { logger } from '../lib/logger';
 
 function buildKortixMasterUrl(baseUrl: string): string {
   const parsed = new URL(baseUrl);
@@ -81,7 +82,7 @@ export async function inject(poolSandbox: Pick<PoolSandbox, 'baseUrl' | 'metadat
     throw new Error(`Env injection failed (${res.status}) for ${poolSandbox.externalId}: ${text.slice(0, 300)}`);
   }
 
-  console.log(`[POOL] Env injected into container ${poolSandbox.externalId}`);
+  logger.info(`[POOL] Env injected into container ${poolSandbox.externalId}`);
 
   // Step 2: Persist to host env file so restarts preserve the real token.
   // The host env file (/etc/justavps/env) is read by docker run --env-file.
@@ -115,13 +116,13 @@ export async function inject(poolSandbox: Pick<PoolSandbox, 'baseUrl' | 'metadat
     });
 
     if (toolboxRes.ok) {
-      console.log(`[POOL] Host env file updated for ${poolSandbox.externalId}`);
+      logger.info(`[POOL] Host env file updated for ${poolSandbox.externalId}`);
     } else {
       const text = await toolboxRes.text().catch(() => '');
-      console.warn(`[POOL] Host env file update failed (${toolboxRes.status}) for ${poolSandbox.externalId}: ${text.slice(0, 200)}`);
+      logger.warn(`[POOL] Host env file update failed (${toolboxRes.status}) for ${poolSandbox.externalId}: ${text.slice(0, 200)}`);
     }
   } catch (err) {
     // Non-fatal: container already has the right env, just won't survive a restart
-    console.warn(`[POOL] Host env file update failed for ${poolSandbox.externalId}:`, err);
+    logger.warn(`[POOL] Host env file update failed for ${poolSandbox.externalId}:`, { error: err instanceof Error ? err.message : String(err) });
   }
 }

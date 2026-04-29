@@ -58,6 +58,13 @@ export function registerGlobalMocks() {
         if (mockRegistry.supabaseRpc) return mockRegistry.supabaseRpc.rpc(name, params);
         return Promise.resolve({ data: null, error: null });
       },
+      from: (table: string) => ({
+        insert: async (data: any) => ({ data: null, error: null }),
+        select: () => ({
+          eq: () => Promise.resolve({ data: [], error: null }),
+        }),
+        upsert: async (data: any) => ({ data: null, error: null }),
+      }),
     }),
   }));
 
@@ -69,7 +76,7 @@ export function registerGlobalMocks() {
     config: {
       STRIPE_WEBHOOK_SECRET: 'whsec_test',
       ENV_MODE: 'cloud',
-      INTERNAL_KORTIX_ENV: 'staging',
+      INTERNAL_KORTIX_ENV: 'prod',
     },
   }));
 
@@ -129,7 +136,24 @@ export function registerGlobalMocks() {
   mock.module('../../platform/services/sandbox-provisioner', () => ({
     provisionSandboxFromCheckout: async (...args: any[]) =>
       mockRegistry.provisionSandboxFromCheckout ? mockRegistry.provisionSandboxFromCheckout(...args) : undefined,
+    archiveSandboxBySubscription: async () => undefined,
   }));
+
+  // db mock — revertToFree queries active sandboxes; return empty array by default
+  mock.module('../../shared/db', () => ({
+    hasDatabase: true,
+    db: {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => [],
+          }),
+        }),
+      }),
+    },
+  }));
+
+
 
   mock.module('../../billing/repositories/account-deletion', () => ({
     getActiveDeletionRequest: async (id: string) =>
@@ -279,9 +303,10 @@ export function createMockStripeCheckoutSession(overrides: Record<string, any> =
   };
 }
 
+let _evtCounter = 0;
 export function createMockStripeEvent(type: string, object: any, overrides: Record<string, any> = {}) {
   return {
-    id: `evt_test_${Date.now()}`,
+    id: `evt_test_${++_evtCounter}`,
     type,
     data: { object },
     created: Math.floor(Date.now() / 1000),
@@ -325,6 +350,22 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
         email: params.email,
         metadata: params.metadata,
       })),
+      retrieve: overrides.customersRetrieve ?? (async (id: string) => ({
+        id,
+        invoice_settings: { default_payment_method: null },
+        default_source: null,
+      })),
+    },
+    prices: {
+      retrieve: overrides.pricesRetrieve ?? (async (id: string) => ({
+        id,
+        unit_amount: 5000,
+        currency: 'usd',
+        recurring: { interval: 'month' as const },
+      })),
+    },
+    paymentMethods: {
+      list: overrides.paymentMethodsList ?? (async () => ({ data: [] })),
     },
     checkout: {
       sessions: {

@@ -130,14 +130,36 @@ async function drainOnce(): Promise<void> {
       const msg = storage.dequeue(sessionId);
       if (!msg) continue;
 
+      // Respect exponential backoff: skip if not yet eligible for retry
+      if (msg.nextRetryAt && Date.now() < msg.nextRetryAt) {
+        // Put it back (at front — it was already dequeued) and skip this cycle
+        const current = storage.getSessionQueue(sessionId);
+        storage.setSessionQueue(sessionId, [msg, ...current]);
+        continue;
+      }
+
       console.log(`[queue-drainer] Sending queued message "${msg.text.slice(0, 60)}..." to session ${sessionId}`);
 
       const success = await sendPrompt(sessionId, msg.text);
       if (!success) {
-        // Put it back at the front if send failed
-        console.warn(`[queue-drainer] Failed to send, re-queuing message ${msg.id}`);
-        const current = storage.getSessionQueue(sessionId);
-        storage.setSessionQueue(sessionId, [msg, ...current]);
+        const retryCount = (msg.retryCount ?? 0) + 1;
+        const MAX_RETRIES = 5;
+        if (retryCount >= MAX_RETRIES) {
+          // Dead-letter: drop the message after MAX_RETRIES failures so the
+          // drainer doesn't loop forever on an undeliverable message.
+          console.error(
+            `[queue-drainer] Message ${msg.id} dead-lettered after ${MAX_RETRIES} retries, dropping`
+          );
+        } else {
+          // Exponential backoff: 2^retryCount * POLL_INTERVAL_MS
+          const nextRetryAt = Date.now() + Math.pow(2, retryCount) * POLL_INTERVAL_MS;
+          const retried = { ...msg, retryCount, nextRetryAt };
+          console.warn(
+            `[queue-drainer] Failed to send (attempt ${retryCount}/${MAX_RETRIES}), re-queuing ${msg.id} (next retry in ${Math.pow(2, retryCount) * POLL_INTERVAL_MS}ms)`
+          );
+          const current = storage.getSessionQueue(sessionId);
+          storage.setSessionQueue(sessionId, [retried, ...current]);
+        }
       }
     } catch (err) {
       console.error(`[queue-drainer] Error processing session ${sessionId}:`, err);

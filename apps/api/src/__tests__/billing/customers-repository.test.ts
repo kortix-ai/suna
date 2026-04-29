@@ -55,9 +55,14 @@ mock.module('drizzle-orm', () => ({
 mock.module('@kortix/db', () => ({
   billingCustomers,
   billingCustomersInBasejump,
+  // Provide enough exports that other mocked modules don't crash
+  sandboxes: {},
 }));
 
+// Override the shared/db mock so this test can control the in-memory rows.
+// This must be declared before importing the customers repository to take effect.
 mock.module('../../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select() {
       return {
