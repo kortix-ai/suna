@@ -31,10 +31,9 @@ import suggestionsRouter from './routes/suggestions'
 import coreRouter from './routes/core'
 import reloadRouter from './routes/reload'
 import triggersRouter from './routes/triggers'
-import shareRouter from './routes/share'
-import shareProxyRouter from './routes/share-proxy'
-import marketplaceRouter from './routes/marketplace'
-import preferencesRouter from './routes/preferences'
+ import shareRouter from './routes/share'
+ import shareProxyRouter from './routes/share-proxy'
+ import preferencesRouter from './routes/preferences'
 import projectsRouter from './routes/projects'
 import { tasksRouter } from './routes/tasks'
 import { ticketsRouter, ticketProjectsRouter } from './routes/tickets'
@@ -453,10 +452,7 @@ app.route('/kortix/core', coreRouter)
 // Full reload — restarts OpenCode instance and optionally all services
 app.route('/kortix/reload', reloadRouter)
 
-// Marketplace — skill/component install from registry
-app.route('/kortix/marketplace', marketplaceRouter)
-
-// Preferences — default model management
+ // Preferences — default model management
 app.route('/kortix/preferences', preferencesRouter)
 
 // Projects + Tasks — Kortix project management (frontend source of truth)
