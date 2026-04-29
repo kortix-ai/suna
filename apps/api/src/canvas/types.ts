@@ -37,12 +37,20 @@ export interface CanvasSecurityPatchMessage {
   data: CanvasSecurityPatchData;
 }
 
+export interface CanvasPrSummaryMessage {
+  type: 'canvas';
+  kind: 'pr_summary';
+  id: string;
+  data: CanvasPrSummaryData;
+}
+
 /** Discriminated union — callers must narrow to `kind` before reading `data`. */
 export type CanvasMessage =
   | CanvasTableMessage
   | CanvasDocMessage
   | CanvasChartMessage
-  | CanvasSecurityPatchMessage;
+  | CanvasSecurityPatchMessage
+  | CanvasPrSummaryMessage;
 
 // ─── Data payloads ───────────────────────────────────────────────────────────
 
@@ -62,6 +70,15 @@ export interface CanvasChartData {
   labels: string[];
   datasets: Array<{ label: string; values: number[] }>;
   title?: string;
+}
+
+export interface CanvasPrSummaryData {
+  pr_url: string;
+  pr_number: number;
+  branch: string;
+  diff_additions: number;
+  diff_deletions: number;
+  ci_status: 'pending' | 'pass' | 'fail' | null;
 }
 
 export interface CanvasSecurityPatchData {
