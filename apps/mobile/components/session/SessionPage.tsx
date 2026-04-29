@@ -876,9 +876,9 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
           overflow: 'hidden',
-          borderTopWidth: 1,
-          borderLeftWidth: 1,
-          borderRightWidth: 1,
+          borderTopWidth: 2,
+          borderLeftWidth: 2,
+          borderRightWidth: 2,
           borderColor: isDark ? '#222222' : '#e6e6e5',
         }}
         className="bg-background"

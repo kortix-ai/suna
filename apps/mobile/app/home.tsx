@@ -1559,7 +1559,7 @@ export default function HomeScreen() {
               left: 0,
               top: insets.top + 68,
               bottom: 0,
-              width: 1,
+              width: 2,
               backgroundColor: isDark ? '#222222' : '#e6e6e5',
               zIndex: 10,
             }}
@@ -1571,7 +1571,7 @@ export default function HomeScreen() {
               right: 0,
               top: insets.top + 68,
               bottom: 0,
-              width: 1,
+              width: 2,
               backgroundColor: isDark ? '#222222' : '#e6e6e5',
               zIndex: 10,
             }}
