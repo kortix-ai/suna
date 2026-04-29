@@ -124,7 +124,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               </View>
             </View>
           </View>
-          <View style={{ height: 1, backgroundColor: dividerColor }} />
 
           {/* Creating progress */}
           {creatingProgress && (
@@ -157,7 +156,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                   />
                 </View>
               </View>
-              <View style={{ height: 1, backgroundColor: dividerColor }} />
             </>
           )}
 
@@ -289,7 +287,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               </View>
             </View>
           </Pressable>
-          <View style={{ height: 1, backgroundColor: dividerColor }} />
 
           {/* Theme toggle */}
           <View

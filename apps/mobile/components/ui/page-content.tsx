@@ -31,7 +31,7 @@ export function PageContent({
 }: PageContentProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const borderColor = isDark ? '#222222' : '#e6e6e5';
 
   return (
     <View
@@ -43,9 +43,9 @@ export function PageContent({
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
           overflow: 'hidden',
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderLeftWidth: StyleSheet.hairlineWidth,
-          borderRightWidth: StyleSheet.hairlineWidth,
+          borderTopWidth: 1,
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
           borderColor,
           backgroundColor: backgroundColor ?? (isDark ? '#0D0D0D' : '#FFFFFF'),
         },

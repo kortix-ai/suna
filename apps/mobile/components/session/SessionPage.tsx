@@ -876,10 +876,10 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           borderTopLeftRadius: 28,
           borderTopRightRadius: 28,
           overflow: 'hidden',
-          borderTopWidth: StyleSheet.hairlineWidth,
-          borderLeftWidth: StyleSheet.hairlineWidth,
-          borderRightWidth: StyleSheet.hairlineWidth,
-          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+          borderTopWidth: 1,
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
+          borderColor: isDark ? '#222222' : '#e6e6e5',
         }}
         className="bg-background"
       >

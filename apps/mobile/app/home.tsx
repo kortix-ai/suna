@@ -1551,6 +1551,31 @@ export default function HomeScreen() {
             ? { ref: viewShotRef, style: { flex: 1, backgroundColor: isDark ? '#09090B' : '#FFFFFF' } }
             : { className: 'flex-1 bg-background' },
           <>
+          {/* Side hairlines — span session/dashboard + BottomBar all the way to screen bottom */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: insets.top + 68,
+              bottom: 0,
+              width: 1,
+              backgroundColor: isDark ? '#222222' : '#e6e6e5',
+              zIndex: 10,
+            }}
+          />
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              right: 0,
+              top: insets.top + 68,
+              bottom: 0,
+              width: 1,
+              backgroundColor: isDark ? '#222222' : '#e6e6e5',
+              zIndex: 10,
+            }}
+          />
           {/* Loading sandbox */}
           {sandboxLoading ? (
             <View className="flex-1 items-center justify-center">
