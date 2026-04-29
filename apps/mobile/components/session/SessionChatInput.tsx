@@ -57,7 +57,7 @@ import { MentionSuggestions } from './MentionSuggestions';
 import { AudioWaveform } from '@/components/attachments/AudioWaveform';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
 import { Text as RNText } from 'react-native';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1854,9 +1854,11 @@ function ConfigSheet({
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#a1a1aa' : '#71717a';
   const selectedBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
-  const tabBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const tabActiveBg = isDark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.08)';
-  const bg = isDark ? '#121215' : '#FFFFFF';
+  const tabBg = getToggleTrackBg(isDark);
+  const tabActiveBg = getToggleActiveBg(isDark);
+  // Sticky header bg must match the sheet bg so the area above the tabs
+  // (around the drag handle) doesn't look like a different shade.
+  const bg = getSheetBg(isDark);
 
   // Imperative BottomSheetModal ↔ visible prop bridge (same pattern as
   // ActionsSheet/UserMenuSheet elsewhere in the app).
@@ -1943,7 +1945,7 @@ function ConfigSheet({
             flexDirection: 'row',
             marginHorizontal: 20,
             marginBottom: 16,
-            borderRadius: 12,
+            borderRadius: 9999,
             backgroundColor: tabBg,
             padding: 3,
           }}
@@ -1961,7 +1963,7 @@ function ConfigSheet({
                   alignItems: 'center',
                   justifyContent: 'center',
                   paddingVertical: 8,
-                  borderRadius: 10,
+                  borderRadius: 9999,
                   backgroundColor: isActive ? tabActiveBg : 'transparent',
                   gap: 5,
                 }}
