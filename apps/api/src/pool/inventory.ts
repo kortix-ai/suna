@@ -17,14 +17,20 @@ export async function listActive(limit = 50): Promise<PoolSandbox[]> {
 
 export async function countByStatus(): Promise<{ ready: number; provisioning: number }> {
   const rows = await db
-    .select({ status: poolSandboxes.status })
+    .select({
+      status: poolSandboxes.status,
+      count: sql<number>`cast(count(*) as int)`,
+    })
     .from(poolSandboxes)
-    .where(sql`${poolSandboxes.status} IN ('ready', 'provisioning')`);
+    .where(sql`${poolSandboxes.status} IN ('ready', 'provisioning')`)
+    .groupBy(poolSandboxes.status);
 
-  return {
-    ready: rows.filter((r) => r.status === 'ready').length,
-    provisioning: rows.filter((r) => r.status === 'provisioning').length,
-  };
+  const result = { ready: 0, provisioning: 0 };
+  for (const row of rows) {
+    if (row.status === 'ready') result.ready = row.count;
+    else if (row.status === 'provisioning') result.provisioning = row.count;
+  }
+  return result;
 }
 
 export async function countForResource(resourceId: string): Promise<number> {
@@ -54,7 +60,7 @@ async function findCandidate(opts?: ClaimOpts) {
       .orderBy(asc(poolSandboxes.createdAt))
       .limit(1);
     if (sameSize) {
-      console.log(`[POOL] No exact match for ${opts.serverType}/${opts.location}, falling back to ${sameSize.serverType}/${sameSize.location}`);
+      logger.info(`[POOL] No exact match for ${opts.serverType}/${opts.location}, falling back to ${sameSize.serverType}/${sameSize.location}`);
       return sameSize;
     }
 
@@ -86,7 +92,7 @@ export async function grab(opts?: ClaimOpts): Promise<ClaimedSandbox | null> {
 
   if (!claimed) return null;
 
-  console.log(`[POOL] Grabbed ${claimed.id} (${claimed.serverType}/${claimed.location})`);
+  logger.info(`[POOL] Grabbed ${claimed.id} (${claimed.serverType}/${claimed.location})`);
 
   // Strip poolPlaceholderToken from metadata — it was used for env injection auth
   // and must not leak into the user sandbox record.
@@ -132,7 +138,7 @@ export async function provision(resource: PoolResource): Promise<void> {
     metadata: { ...result.metadata, poolPlaceholderToken: placeholderToken },
   });
 
-  console.log(`[POOL] Provisioned ${result.externalId} (${resource.serverType}/${resource.location})`);
+  logger.info(`[POOL] Provisioned ${result.externalId} (${resource.serverType}/${resource.location})`);
 }
 
 export async function markReady(id: string): Promise<void> {
@@ -154,7 +160,7 @@ export async function destroyOne(ps: PoolSandbox): Promise<void> {
     try {
       await provider.remove(ps.externalId);
     } catch (err) {
-      console.error(`[POOL] provider.remove() failed for ${ps.externalId}, keeping record for retry:`, err);
+      logger.error(`[POOL] provider.remove() failed for ${ps.externalId}, keeping record for retry:`, err);
       await db.update(poolSandboxes).set({ status: 'error' }).where(eq(poolSandboxes.id, ps.id));
       return;
     }

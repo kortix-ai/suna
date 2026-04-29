@@ -4,6 +4,7 @@ import * as envInjector from './env-injector';
 import * as stats from './stats';
 import { start as startAutoReplenish, stop as stopAutoReplenish } from './auto-replenish';
 import type { CreateResult, PoolStatus, ClaimedSandbox, ClaimOpts, ResourceInput, PoolResource } from './types';
+import { logger } from '../lib/logger';
 
 export type { PoolResource, PoolSandbox, ClaimedSandbox, ClaimOpts, ResourceInput, PoolStatus, CreateResult } from './types';
 export { resources, inventory, envInjector, stats };
@@ -44,14 +45,14 @@ export async function replenish(): Promise<{ created: number }> {
         await inventory.provision(resource);
         totalCreated++;
       } catch (err) {
-        console.error(`[POOL] Provision failed (${resource.serverType}/${resource.location}):`, err);
+        logger.error(`[POOL] Provision failed (${resource.serverType}/${resource.location}):`, err);
       }
     }
   }
 
   if (totalCreated > 0) {
     stats.recordCreated(totalCreated);
-    console.log(`[POOL] Replenished: ${totalCreated} created`);
+    logger.info(`[POOL] Replenished: ${totalCreated} created`);
   }
   stats.recordReplenish();
   return { created: totalCreated };
@@ -83,7 +84,7 @@ export async function forceCreate(count: number, resourceId?: string): Promise<C
         failed++;
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`${resource.serverType}/${resource.location}: ${msg}`);
-        console.error(`[POOL] Force-create error:`, msg);
+        logger.error(`[POOL] Force-create error:`, msg);
       }
     }
   }
@@ -100,13 +101,13 @@ export async function cleanup(): Promise<{ cleaned: number }> {
       await inventory.destroyOne(ps);
       cleaned++;
     } catch (err) {
-      console.error(`[POOL] Cleanup failed for ${ps.id}:`, err);
+      logger.error(`[POOL] Cleanup failed for ${ps.id}:`, err);
     }
   }
 
   if (cleaned > 0) {
     stats.recordExpired(cleaned);
-    console.log(`[POOL] Cleaned ${cleaned} stale sandboxes`);
+    logger.info(`[POOL] Cleaned ${cleaned} stale sandboxes`);
   }
   stats.recordCleanup();
   return { cleaned };
@@ -121,7 +122,7 @@ export async function drain(): Promise<{ drained: number }> {
       await inventory.destroyOne(ps);
       drained++;
     } catch (err) {
-      console.error(`[POOL] Drain failed for ${ps.id}:`, err);
+      logger.error(`[POOL] Drain failed for ${ps.id}:`, err);
     }
   }
 
@@ -134,10 +135,10 @@ export async function handleWebhook(externalId: string, stage?: string, webhookS
 
   if (webhookStatus === 'ready') {
     await inventory.markReady(ps.id);
-    console.log(`[POOL] ${ps.id} → ready`);
+    logger.info(`[POOL] ${ps.id} → ready`);
   } else if (webhookStatus === 'error') {
     await inventory.markError(ps.id);
-    console.log(`[POOL] ${ps.id} → error`);
+    logger.info(`[POOL] ${ps.id} → error`);
   }
 
   return true;
