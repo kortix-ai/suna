@@ -171,8 +171,17 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
         enablePanDownToClose
         onDismiss={onDismiss}
         backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? '#555' : '#ccc' }}
+        backgroundStyle={{
+          backgroundColor: getSheetBg(isDark),
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+          width: 36,
+          height: 5,
+          borderRadius: 3,
+        }}
       >
         <BottomSheetView
           style={{ padding: 20, paddingBottom: insets.bottom + 20 }}
@@ -395,14 +404,16 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
               justifyContent: 'center',
               paddingVertical: 14,
               borderRadius: 9999,
-              backgroundColor: !renameDraft.trim() ? (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)') : fg,
+              backgroundColor: !renameDraft.trim()
+                ? (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)')
+                : theme.primary,
               opacity: !renameDraft.trim() ? 0.5 : 1,
             }}
           >
             {rename.isPending ? (
-              <ActivityIndicator size="small" color={isDark ? '#121215' : '#F8F8F8'} />
+              <ActivityIndicator size="small" color={theme.primaryForeground} />
             ) : (
-              <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: isDark ? '#121215' : '#F8F8F8' }}>
+              <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
                 Save
               </Text>
             )}
