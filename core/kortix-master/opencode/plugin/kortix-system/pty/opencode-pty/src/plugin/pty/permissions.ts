@@ -110,6 +110,11 @@ export async function checkWorkdirPermission(workdir: string): Promise<void> {
   }
 
   if (extDirPerm === 'ask') {
-    // TODO: Implement user prompt for external directory access
+    // "ask" mode is not yet interactive — default to deny until prompting is implemented.
+    // Users who need external directory access should set external_directory to "allow".
+    await denyWithToast(
+      `PTY spawn denied: Working directory "${workdir}" is outside the project. Set external_directory to "allow" to permit this.`,
+      `PTY external-directory "ask" mode is not yet interactive — defaulting to deny. Change permission.external_directory to "allow" to permit external directories.`
+    )
   }
 }
