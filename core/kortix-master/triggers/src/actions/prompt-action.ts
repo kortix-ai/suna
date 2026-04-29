@@ -27,8 +27,8 @@ function registerTriggerSession(
   trigger: TriggerRecord,
   agentSlug: string | null | undefined,
 ): void {
-  const projectId = (trigger as any).project_id as string | null | undefined
-  const ticketId = (trigger as any).ticket_id as string | null | undefined
+  const projectId = trigger.project_id
+  const ticketId = trigger.ticket_id
   if (!projectId) return
   let db: Database | null = null
   try {
@@ -113,8 +113,8 @@ export async function executePromptAction(
   // event payload. The columns live outside the engine's type but the
   // dispatcher sees the raw record, so the agent gets the linkage for free
   // and can call ticket_get / ticket_comment against the bound ticket.
-  const ticketId = (trigger as any).ticket_id as string | null | undefined
-  const projectId = (trigger as any).project_id as string | null | undefined
+  const ticketId = trigger.ticket_id
+  const projectId = trigger.project_id
   const normalizedEvent = {
     type: event.type,
     trigger: trigger.name,

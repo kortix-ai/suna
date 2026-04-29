@@ -54,7 +54,7 @@ export async function executeTicketCreateAction(
 
   // The trigger must be scoped to a project — we refuse to create tickets
   // at workspace level since it has no tickets table semantics.
-  const projectId = (trigger as any).project_id as string | null | undefined
+  const projectId = trigger.project_id
   if (!projectId) {
     throw new Error("ticket_create: trigger must be bound to a project (project_id unset)")
   }
