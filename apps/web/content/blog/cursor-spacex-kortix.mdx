@@ -1,0 +1,104 @@
+---
+title: "Cursor just became a SpaceX project. Here's what Kortix is instead."
+description: "SpaceX bought an option on Cursor for $60B. Manus lost its Meta backing. Kortix is $20/mo — same as Cursor Pro — and does more. Here's the case."
+date: 2026-04-28
+slug: cursor-spacex-kortix
+---
+
+Last week SpaceX announced it has the option to acquire Cursor for $60 billion. The same week, China blocked Meta's $2 billion acquisition of Manus.
+
+Two of the biggest bets in the autonomous agent space just changed shape. Here's where Kortix sits — and why the pricing story matters now more than ever.
+
+---
+
+## Same price. Different scope.
+
+Kortix Pro is **$20/month**. So is Cursor Pro. So is Devin Core.
+
+That's the whole pricing comparison. You're choosing between products at the same price point. The question is what you get.
+
+Cursor is an IDE for software engineers. Devin is an autonomous coding agent, also for software engineers. Kortix is a cloud computer where AI agents handle the actual work of running a company — not just coding, but research, ops, data processing, outreach, document generation, web automation, infrastructure, and anything else a human can do at a terminal.
+
+At $20/month, you're not choosing based on price. You're choosing based on what problem you're solving.
+
+---
+
+## What Cursor actually is
+
+Cursor is an IDE. A very good one. It's built for software engineers who spend their days in a code editor, and it makes them significantly faster at writing and reviewing code. The new Agents Window in Cursor 3 lets you run multiple coding agents in parallel across repos. Impressive engineering.
+
+The SpaceX deal signals Cursor wants to become something bigger — "the world's best coding and knowledge work AI," as the announcement put it. That's scope creep away from the IDE. It's a bet that the IDE-native workflow eventually absorbs all knowledge work.
+
+That bet might be right. But it's a long way from there to here, and right now Cursor is useful primarily for developers, inside a code editor.
+
+Kortix is built on a different assumption.
+
+---
+
+## What Kortix actually is
+
+Kortix is a cloud computer where AI agents do the actual work of running a company.
+
+Not a coding assistant. Not an IDE plugin. A full Linux sandbox running 24/7 — persistent filesystem, real browser, terminal, cron triggers, webhook triggers — where agents handle whatever work needs doing.
+
+The one-sentence version from the README: *"A Kortix is a company. One shared machine where every agent sees the same filesystem, the same databases, the same credentials, the same history."*
+
+That's not a coding product. It's an operating system for autonomous work.
+
+---
+
+## Three things Cursor doesn't have
+
+**1. Team primitives**
+
+Kortix ships project-scoped channels, per-user sandboxes, and team access controls. Released in [v0.8.27](https://github.com/kortix-ai/suna/releases/tag/v0.8.27): a full orchestrator/worker architecture with project-scoped task management, Slack and Telegram integration per channel, per-channel agent/model/instructions settings.
+
+This is infrastructure for organizations running multiple agents across multiple workflows. Cursor's multi-agent mode is parallel coding sessions inside one developer's IDE — not a shared workspace across a team.
+
+**2. General-purpose execution**
+
+Cursor's agents write code. That's the product. They're good at it.
+
+Kortix agents can write code, but also: browse the web autonomously, fill out forms, scrape structured data, generate reports from documents, run scheduled jobs, respond to Slack messages, call APIs, process files, manage infrastructure. The sandbox has a real Chromium browser, full terminal access, and 60+ built-in skills covering 3,000+ integrations.
+
+The test: can your "coding agent" handle your outbound research list, your weekly expense report, and your customer onboarding checklist? Kortix can. Cursor is not trying to.
+
+**3. You own the infrastructure**
+
+Kortix is open source. The entire stack: [github.com/kortix-ai/suna](https://github.com/kortix-ai/suna). One-line install:
+
+```bash
+curl -fsSL https://kortix.com/install | bash
+```
+
+Run it on your laptop, a VPS, or your own server. Your data stays on your machine. Your agents run in your network.
+
+Cursor's "self-hosted cloud agents" (announced April 2026) keep code inside your network but Cursor still handles orchestration, model access, and the user experience — Cursor is still in the loop. With Kortix, there is no third party in the loop. You control the runtime.
+
+---
+
+## What the Manus situation means
+
+Manus was the most direct general-agent competitor — strong product, and (briefly) $2B from Meta behind it. China blocking that acquisition removes the structural advantage. They're now a well-funded startup without the platform edge they were counting on.
+
+That's one less well-resourced player in the general-agent space.
+
+---
+
+## The honest picture
+
+Cursor is better than Kortix at writing code inside an IDE. If your primary use case is developer productivity inside a code editor, Cursor is the right tool. The SpaceX deal makes it better-resourced and more ambitious.
+
+Kortix is better when:
+
+- The work isn't purely coding
+- You need agents that run 24/7, not just when you open your IDE
+- Multiple people on your team need to use agents, not just developers
+- You want to own the infrastructure — the data, the runtime, the keys
+- You're building toward replacing workflows, not just accelerating them
+
+Both cost $20/month. The question is which problem you're solving.
+
+---
+
+**Kortix is open source.** Self-host: [github.com/kortix-ai/suna](https://github.com/kortix-ai/suna) · Managed: [kortix.com](https://kortix.com) · Pro plan: **$20/mo**
