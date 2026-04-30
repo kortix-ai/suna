@@ -33,6 +33,7 @@ import {
   useInstances,
   useProviders,
   useCreateLocalInstance,
+  useRenameSandbox,
   useSandbox,
 } from '@/lib/platform/hooks';
 import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
@@ -306,6 +307,7 @@ const RenameSheet = React.forwardRef<
   const [name, setName] = React.useState('');
   const fgColor = isDark ? '#f8f8f8' : '#121215';
   const themeColors = useThemeColors();
+  const renameMutation = useRenameSandbox();
 
   React.useEffect(() => {
     if (instance) setName(instance.name);
@@ -314,12 +316,19 @@ const RenameSheet = React.forwardRef<
   const canSave = name.trim().length > 0 && name.trim() !== instance?.name;
 
   const handleSave = React.useCallback(() => {
-    if (!canSave) return;
+    if (!canSave || !instance?.sandbox_id) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // TODO: wire to rename API when available
-    Alert.alert('Renamed', `Instance renamed to "${name.trim()}".`);
-    onRenamed();
-  }, [canSave, name, onRenamed]);
+    renameMutation.mutate(
+      { sandboxId: instance.sandbox_id, name: name.trim() },
+      {
+        onSuccess: () => { onRenamed(); },
+        onError: (err: unknown) => {
+          const msg = err instanceof Error ? err.message : 'Failed to rename instance';
+          Alert.alert('Error', msg);
+        },
+      },
+    );
+  }, [canSave, instance, name, onRenamed, renameMutation]);
 
   return (
     <BottomSheetModal
@@ -370,7 +379,7 @@ const RenameSheet = React.forwardRef<
 
         <Pressable
           onPress={handleSave}
-          disabled={!canSave}
+          disabled={!canSave || renameMutation.isPending}
           className="items-center rounded-full py-3.5 active:opacity-90"
           style={{
             backgroundColor: canSave
