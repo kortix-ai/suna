@@ -1186,25 +1186,31 @@ export default function HomeScreen() {
         className="flex-1 bg-chrome-background"
         style={{ paddingTop: insets.top }}
       >
-        {/* Kortix wordmark */}
-        <View className="flex-row items-center justify-between px-5 pt-3 pb-4">
+        {/* Kortix wordmark — with bottom separator consistent with chrome treatment */}
+        <View
+          className="flex-row items-center justify-between px-5 pt-3 pb-4"
+          style={{
+            borderBottomWidth: 0.5,
+            borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)',
+          }}
+        >
           <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
         </View>
 
-        {/* Top-level actions: New session / Search / Files */}
-        <View className="px-2 mb-2">
+        {/* Top-level actions: New session / Search */}
+        <View className="px-2 mb-2 pt-1">
           <TouchableOpacity
             onPress={handleNewSession}
-            className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}
+            className="flex-row items-center rounded-lg px-3 py-2.5 active:bg-muted"
+            activeOpacity={0.7}
           >
             <Ionicons name="create-outline" size={18} color={iconColor} />
             <Text className="flex-1 text-sm font-medium ml-3 text-foreground">New session</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => { setDrawerOpen(false); setCommandPaletteOpen(true); }}
-            className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}
+            className="flex-row items-center rounded-lg px-3 py-2.5 active:bg-muted"
+            activeOpacity={0.7}
           >
             <Ionicons name="search-outline" size={18} color={iconColor} />
             <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Search</Text>
