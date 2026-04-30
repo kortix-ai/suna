@@ -249,6 +249,18 @@ export async function deleteSandbox(sandboxId: string): Promise<void> {
 }
 
 /**
+ * Rename a sandbox.
+ * PATCH /platform/sandbox/:sandboxId  { name }
+ */
+export async function renameSandbox(sandboxId: string, name: string): Promise<SandboxInfo> {
+  const result = await platformFetch<SandboxInfo>(`/platform/sandbox/${sandboxId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+  return result.data!;
+}
+
+/**
  * Get available sandbox providers.
  * GET /platform/providers
  */

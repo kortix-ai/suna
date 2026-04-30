@@ -18,6 +18,7 @@ import {
   restartSandbox,
   stopSandbox,
   deleteSandbox,
+  renameSandbox,
   getProviders,
   initLocalSandbox,
   type SandboxInfo,
@@ -540,6 +541,18 @@ export function useCreateCloudInstance() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (provider: 'daytona' | 'justavps') => ensureSandbox({ provider }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
+      queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
+    },
+  });
+}
+
+export function useRenameSandbox() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sandboxId, name }: { sandboxId: string; name: string }) =>
+      renameSandbox(sandboxId, name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
       queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });

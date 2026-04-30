@@ -28,7 +28,7 @@ import { useColorScheme } from 'nativewind';
 import { Drawer } from 'react-native-drawer-layout';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BottomSheetModal } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetScrollView, BottomSheetBackdrop, type BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 
 import { useAuthContext } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -732,6 +732,7 @@ export default function HomeScreen() {
   const userMenuSheetRef = useRef<BottomSheetModal>(null);
   const viewChangesSheetRef = useRef<BottomSheetModal>(null);
   const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
+  const diagnosticsSheetRef = useRef<BottomSheetModal>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
   const { updateAvailable: hasUpdate } = useGlobalSandboxUpdate();
 
@@ -1536,7 +1537,9 @@ export default function HomeScreen() {
             elevation: 0,
           }}
           overlayStyle={{ backgroundColor: 'transparent' }}
-          swipeEnabled={rightDrawerOpen}
+          swipeEnabled={true}
+          swipeEdgeWidth={80}
+          swipeMinDistance={30}
           renderDrawerContent={renderRightDrawerContent}
         >
         {React.createElement(
@@ -1973,7 +1976,7 @@ export default function HomeScreen() {
                     viewChangesSheetRef.current?.present();
                   }
                 }}
-                onDiagnostics={() => log.log('TODO: diagnostics')}
+                onDiagnostics={() => diagnosticsSheetRef.current?.present()}
                 onArchiveSession={() => { if (activeSessionId) handleArchive(activeSessionId); }}
                 customMenuItems={
                   activePageId === 'page:workspace'
@@ -2119,6 +2122,16 @@ export default function HomeScreen() {
         sessionId={activeSessionId}
       />
 
+      {/* Diagnostics Sheet */}
+      <DiagnosticsSheet
+        ref={diagnosticsSheetRef}
+        sandboxId={sandboxId}
+        sandboxUrl={sandboxUrl}
+        activeSessionId={activeSessionId}
+        sessionCount={activeSessions.length}
+        isDark={isDark}
+      />
+
       {/* Command Palette */}
       <CommandPalette
         visible={commandPaletteOpen}
@@ -2164,3 +2177,92 @@ export default function HomeScreen() {
     </>
   );
 }
+
+// ─── Diagnostics Sheet ──────────────────────────────────────────────────────
+
+const DiagnosticsSheet = React.forwardRef<
+  BottomSheetModal,
+  {
+    sandboxId: string | null | undefined;
+    sandboxUrl: string | null | undefined;
+    activeSessionId: string | null;
+    sessionCount: number;
+    isDark: boolean;
+  }
+>(function DiagnosticsSheet({ sandboxId, sandboxUrl, activeSessionId, sessionCount, isDark }, ref) {
+  const insets = useSafeAreaInsets();
+  const fgColor = isDark ? '#f8f8f8' : '#121215';
+  const mutedColor = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const borderColor = isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)';
+  const bgColor = isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.02)';
+
+  const rows: { label: string; value: string }[] = [
+    { label: 'Sandbox ID', value: sandboxId ?? '—' },
+    { label: 'Sandbox URL', value: sandboxUrl ?? '—' },
+    { label: 'Active Session', value: activeSessionId ?? '—' },
+    { label: 'Open Sessions', value: String(sessionCount) },
+    { label: 'App', value: 'Kortix Mobile' },
+  ];
+
+  return (
+    <BottomSheetModal
+      ref={ref}
+      index={0}
+      snapPoints={[360]}
+      enablePanDownToClose
+      backdropComponent={(props: BottomSheetBackdropProps) => (
+        <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
+      )}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36, height: 5, borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+        borderTopLeftRadius: 24, borderTopRightRadius: 24,
+      }}
+    >
+      <BottomSheetScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 24,
+          paddingTop: 4,
+          paddingBottom: Math.max(insets.bottom, 20) + 16,
+        }}
+      >
+        <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor, marginBottom: 4 }}>
+          Diagnostics
+        </Text>
+        <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedColor, marginBottom: 20 }}>
+          Sandbox + session debug info
+        </Text>
+
+        {rows.map((row, i) => (
+          <React.Fragment key={row.label}>
+            <View
+              style={{
+                backgroundColor: bgColor,
+                borderRadius: 12,
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                marginBottom: 8,
+                borderWidth: 1,
+                borderColor,
+              }}
+            >
+              <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: mutedColor, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>
+                {row.label}
+              </Text>
+              <Text
+                style={{ fontSize: 13, fontFamily: 'Roobert', color: fgColor, fontVariant: ['tabular-nums'] }}
+                numberOfLines={2}
+                selectable
+              >
+                {row.value}
+              </Text>
+            </View>
+          </React.Fragment>
+        ))}
+      </BottomSheetScrollView>
+    </BottomSheetModal>
+  );
+});
