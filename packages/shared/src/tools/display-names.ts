@@ -4,6 +4,8 @@
  */
 
 export const TOOL_COMPLETED_NAMES: ReadonlyMap<string, string> = new Map([
+  ['emit_file_artifact', 'Created File'],
+  ['emit-file-artifact', 'Created File'],
   ['web-search', 'Searched Web'],
   ['web_search', 'Searched Web'],
   ['image-search', 'Searched Images'],

@@ -69,6 +69,11 @@ export function getToolIconKey(toolName: string | undefined): ToolIconKey {
     case 'scrape_webpage':
       return 'globe';
 
+    // File artifact
+    case 'emit_file_artifact':
+    case 'emit-file-artifact':
+      return 'file-text';
+
     // Web search
     case 'web-search':
     case 'web_search':
