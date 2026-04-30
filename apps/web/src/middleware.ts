@@ -48,6 +48,7 @@ const PUBLIC_ROUTES = [
   '/partnerships', // Partnerships page should be public
   '/brand', // Brand guidelines should be public
   '/pricing', // Pricing page should be public
+  '/blog', // Blog posts should be public and indexable
   '/tutorials', // Tutorials page should be public
   '/enterprise', // Enterprise page should be public
   '/exploration', // Exploration page should be public
