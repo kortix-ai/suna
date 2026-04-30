@@ -18,5 +18,7 @@ export type Project = {
   };
   is_public?: boolean;
   icon_name?: string | null;
+  /** Backfilled by the frontend on first v2 project load — not set by the agent tool. */
+  user_handle?: string | null;
   [key: string]: any;
 };

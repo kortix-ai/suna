@@ -34,6 +34,8 @@ import { secretsApp } from './secrets/routes';
 import { integrationsApp } from './integrations';
 import { queueApp, startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
+import { githubCloneApp } from './routes/github-clone';
+import { knowledgeApp } from './routes/knowledge';
 // WoA is now mounted under the router at /v1/router/woa (see router/index.ts)
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { ensureSchema } from './ensure-schema';
@@ -400,6 +402,12 @@ app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v
 
 app.use('/v1/queue/*', combinedAuth);
 app.route('/v1/queue', queueApp);            // /v1/queue/sessions/:id, /v1/queue/messages/:id, /v1/queue/all, /v1/queue/status
+
+app.use('/v1/github/clone', combinedAuth);
+app.route('/v1/github/clone', githubCloneApp); // POST /v1/github/clone — clone repo to sandbox
+
+app.use('/v1/knowledge/*', combinedAuth);
+app.route('/v1/knowledge', knowledgeApp);      // knowledge CRUD + search + team-context
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';

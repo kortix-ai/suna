@@ -57,6 +57,7 @@ import type { ProjectAgent } from '@/hooks/kortix/use-kortix-tickets';
 import { useTriggers } from '@/hooks/scheduled-tasks';
 import { useQueries } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
+import type { MessageWithParts } from '@/hooks/opencode/use-opencode-sessions';
 import { formatCost, formatTokens } from '@/ui/turns';
 import { AgentAvatar } from '@/components/kortix/agent-avatar';
 import { ChevronDown, TimerIcon, Webhook as WebhookIcon } from 'lucide-react';
@@ -94,13 +95,13 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   const syncedHandleRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!project || !isV2) return;
-    if ((project as any).user_handle === userHandle) return;
+    if (project.user_handle === userHandle) return;
     if (syncedHandleRef.current.has(project.id)) return;
     syncedHandleRef.current.add(project.id);
     patchProject.mutate({ id: project.id, user_handle: userHandle });
     // patchProject is a stable mutation object; excluding from deps avoids a re-sync loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project?.id, isV2, userHandle, (project as any)?.user_handle]);
+  }, [project?.id, isV2, userHandle, project?.user_handle]);
 
   const [tab, setTabState] = useState<ProjectTab>('about');
   // Team/Credentials/Triggers live inside Settings now. If any caller passes
@@ -490,13 +491,15 @@ const COST_MARKUP = 1.2;
 
 async function fetchSessionStats(sessionId: string): Promise<SessionStats> {
   const res = await getClient().session.messages({ sessionID: sessionId });
-  const data = (res.data ?? []) as any[];
+  // session.messages() returns MessageWithParts[] — no cast needed.
+  // Message.time has { created, completed? } — no 'updated' field (same fix as #142/#146).
+  const data = (res.data ?? []) as MessageWithParts[];
   let cost = 0, input = 0, output = 0, reasoning = 0, cacheRead = 0, cacheWrite = 0;
   let lastUpdated: number | null = null;
   for (const item of data) {
-    const ts = item?.info?.time?.updated ?? item?.info?.time?.completed ?? item?.info?.time?.created;
+    const ts = item.info.time.completed ?? item.info.time.created;
     if (typeof ts === 'number' && (!lastUpdated || ts > lastUpdated)) lastUpdated = ts;
-    for (const p of item.parts ?? []) {
+    for (const p of item.parts) {
       if (p.type === 'step-finish') {
         cost += p.cost || 0;
         input += p.tokens?.input || 0;
