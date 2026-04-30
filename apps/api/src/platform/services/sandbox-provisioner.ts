@@ -5,24 +5,32 @@
  * 1 subscription = 1 instance. Deduped by subscription ID.
  */
 
-import { eq } from 'drizzle-orm';
+import { eq, and, ne, sql } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import * as pool from '../../pool';
 import { createSandbox, generateSandboxName } from './ensure-sandbox';
 import { createApiKey } from '../../repositories/api-keys';
+
+// In-process dedup guard — prevents double-provisioning within the same process lifecycle.
+// Cross-restart dedup is handled by findBySubscription's DB query below.
 const provisioningSubscriptions = new Set<string>();
 
-/** Find sandbox by subscription ID — checks both column and metadata */
+/** Find sandbox by subscription ID via JSONB metadata — SQL query, no full-table scan */
 async function findBySubscription(accountId: string, subscriptionId: string) {
-  const all = await db.select().from(sandboxes).where(eq(sandboxes.accountId, accountId));
-  return all.find((s) => {
-    if (s.status === 'archived') return false;
-    if ((s as any).stripeSubscriptionId === subscriptionId) return true;
-    const meta = (s.metadata as Record<string, unknown>) ?? {};
-    return meta.stripe_subscription_id === subscriptionId;
-  });
+  const [row] = await db
+    .select()
+    .from(sandboxes)
+    .where(
+      and(
+        eq(sandboxes.accountId, accountId),
+        ne(sandboxes.status, 'archived'),
+        sql`${sandboxes.metadata}->>'stripe_subscription_id' = ${subscriptionId}`,
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { eq, and, or, asc, lt, sql } from 'drizzle-orm';
+import { eq, and, or, asc, lt, sql, count } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { poolSandboxes } from '@kortix/db';
 import { db } from '../shared/db';
@@ -17,14 +17,13 @@ export async function listActive(limit = 50): Promise<PoolSandbox[]> {
 
 export async function countByStatus(): Promise<{ ready: number; provisioning: number }> {
   const rows = await db
-    .select({ status: poolSandboxes.status })
+    .select({ status: poolSandboxes.status, count: count() })
     .from(poolSandboxes)
-    .where(sql`${poolSandboxes.status} IN ('ready', 'provisioning')`);
+    .where(sql`${poolSandboxes.status} IN ('ready', 'provisioning')`)
+    .groupBy(poolSandboxes.status);
 
-  return {
-    ready: rows.filter((r) => r.status === 'ready').length,
-    provisioning: rows.filter((r) => r.status === 'provisioning').length,
-  };
+  const byStatus = Object.fromEntries(rows.map((r) => [r.status, Number(r.count)]));
+  return { ready: byStatus['ready'] ?? 0, provisioning: byStatus['provisioning'] ?? 0 };
 }
 
 export async function countForResource(resourceId: string): Promise<number> {

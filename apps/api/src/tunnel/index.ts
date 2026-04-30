@@ -182,7 +182,7 @@ function startTunnelService(): void {
         .set({ status: 'offline', updatedAt: new Date() })
         .where(eq(tunnelConnections.tunnelId, tunnelId))
         .catch((err: any) => console.warn(`[tunnel] DB update failed:`, err));
-    } catch {}
+    } catch (err) { console.error('[tunnel] DB import/update error:', err); }
   });
 
   tunnelRelay.on('connection:replaced', ({ tunnelId }) => {
@@ -209,9 +209,9 @@ function startTunnelService(): void {
         db.update(tunnelConnections)
           .set({ machineInfo: mi, updatedAt: new Date() })
           .where(eq(tunnelConnections.tunnelId, tunnelId))
-          .catch(() => {});
+          .catch((err) => console.warn(`[tunnel-heartbeat] machineInfo update failed:`, err));
       }
-    } catch {}
+    } catch (err) { console.error('[tunnel-heartbeat] DB import error:', err); }
   });
 
   tunnelRelay.on('agent:timeout', async ({ tunnelId }) => {

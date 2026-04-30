@@ -98,6 +98,17 @@ const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-3-5-haiku': { inputPricePerMillion: 0.25, outputPricePerMillion: 1.25 },
   'claude-sonnet-4-5': { inputPricePerMillion: 3, outputPricePerMillion: 15 },
   'claude-haiku-4-5': { inputPricePerMillion: 0.25, outputPricePerMillion: 1.25 },
+  'claude-sonnet-4-6': { inputPricePerMillion: 3, outputPricePerMillion: 15 },
+  'claude-haiku-4-6': { inputPricePerMillion: 0.25, outputPricePerMillion: 1.25 },
+  // Kortix-routed models (OpenRouter IDs + kortix/ aliases used by opencode)
+  'minimax/minimax-m2.7': { inputPricePerMillion: 0.30, outputPricePerMillion: 1.20 },
+  'minimax/minimax-m2.5': { inputPricePerMillion: 0.20, outputPricePerMillion: 1.17 },
+  'z-ai/glm-5-turbo': { inputPricePerMillion: 1.20, outputPricePerMillion: 4.00 },
+  'moonshotai/kimi-k2.5': { inputPricePerMillion: 0.45, outputPricePerMillion: 2.20 },
+  'kortix/minimax-m27': { inputPricePerMillion: 0.30, outputPricePerMillion: 1.20 },
+  'kortix/minimax': { inputPricePerMillion: 0.20, outputPricePerMillion: 1.17 },
+  'kortix/glm-turbo': { inputPricePerMillion: 1.20, outputPricePerMillion: 4.00 },
+  'kortix/kimi': { inputPricePerMillion: 0.45, outputPricePerMillion: 2.20 },
   'gpt-4o': { inputPricePerMillion: 2.5, outputPricePerMillion: 10 },
   'gpt-4o-mini': { inputPricePerMillion: 0.15, outputPricePerMillion: 0.6 },
   'o1': { inputPricePerMillion: 15, outputPricePerMillion: 60 },
@@ -117,6 +128,7 @@ function getModelPricing(model: string): ModelPricing {
     if (model.startsWith(key) || model.includes(key)) return pricing;
   }
 
+  console.warn(`[Credits] Unknown model "${model}" — falling back to default pricing $2/$10. Add to MODEL_PRICING.`);
   return { inputPricePerMillion: 2, outputPricePerMillion: 10 };
 }
 
