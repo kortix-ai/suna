@@ -47,10 +47,12 @@ async function fetchSessionStats(sandboxUrl: string, sessionId: string): Promise
   let lastUpdated: number | null = null;
 
   for (const item of data ?? []) {
-    const info = (item as any)?.info ?? {};
-    const ts = info?.time?.updated ?? info?.time?.completed ?? info?.time?.created;
+    // MessageWithParts has { info: Message, parts: Part[] } — no casts needed.
+    // Message.time has { created, completed? } — no `updated` field; use completed
+    // as the best proxy for last-activity, falling back to created.
+    const ts = item.info.time.completed ?? item.info.time.created;
     if (typeof ts === 'number' && (!lastUpdated || ts > lastUpdated)) lastUpdated = ts;
-    for (const p of (item as any).parts ?? []) {
+    for (const p of item.parts) {
       if (p?.type === 'step-finish') {
         cost += p.cost || 0;
         input += p.tokens?.input || 0;
@@ -96,6 +98,12 @@ export function useProjectSessionStats(
   sessionIds: string[],
   enabled: boolean = true,
 ) {
+  // N separate queries (one per session) are unavoidable here: the OpenCode
+  // sandbox API exposes only per-session message endpoints
+  // (`GET /session/:id/message`) — there is no bulk endpoint that returns
+  // messages for multiple sessions in one call. The `staleTime: 30s` and
+  // `refetchInterval: 60s` settings limit the impact so stats are fetched
+  // at most once per minute per session while this hook is mounted.
   const queries = useQueries({
     queries: sessionIds.map((id) => ({
       queryKey: ['kortix-session-stats', sandboxUrl, id],
