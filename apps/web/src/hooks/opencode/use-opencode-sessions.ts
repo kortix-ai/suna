@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
+import { accountStateKeys } from '@/hooks/billing/use-account-state';
+import type { AccountState } from '@/lib/api/billing';
 import type {
   Session,
   Message,
@@ -192,11 +194,35 @@ export function useOpenCodeSession(sessionId: string) {
   });
 }
 
+// Structured error type for daily credit cap
+export class DailyLimitError extends Error {
+  code = 'daily_limit_exceeded' as const;
+  secondsUntilRefresh: number;
+  upgradeUrl: string;
+  constructor(secondsUntilRefresh: number, upgradeUrl: string) {
+    super("You've used your $5 daily credits. Upgrade to Pro for unlimited runs.");
+    this.name = 'DailyLimitError';
+    this.secondsUntilRefresh = secondsUntilRefresh;
+    this.upgradeUrl = upgradeUrl;
+  }
+}
+
 export function useCreateOpenCodeSession() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (options: { directory?: string; title?: string } | void) => {
+      // Pre-flight: check starter-tier daily credit cap from account state cache
+      const accountState = queryClient.getQueryData<AccountState>(accountStateKeys.all());
+      if (
+        accountState?.subscription?.tier_key === 'starter' &&
+        accountState?.credits?.can_run === false &&
+        accountState?.credits?.daily === 0
+      ) {
+        const seconds = accountState?.credits?.daily_refresh?.seconds_until_refresh ?? 0;
+        throw new DailyLimitError(seconds, '/pricing#pro');
+      }
+
       const client = getClient();
       const opts = options || {};
       const result = await client.session.create({
