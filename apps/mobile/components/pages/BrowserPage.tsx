@@ -8,6 +8,7 @@ import {
   ArrowRight,
   ExternalLink,
   Globe,
+  LayoutGrid,
   RefreshCw,
   X,
 } from 'lucide-react-native';
@@ -39,6 +40,12 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
 
   // Restore persisted state from tab store
   const savedState = useTabStore((s) => s.tabStateById[page.id]) as { savedUrl?: string; savedDisplay?: string } | undefined;
+  const setShowTabsOverview = useTabStore((s) => s.setShowTabsOverview);
+
+  const handleOpenTabsOverview = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowTabsOverview(true);
+  }, [setShowTabsOverview]);
 
   const [urlInput, setUrlInput] = useState(savedState?.savedDisplay || '');
   const [currentUrl, setCurrentUrl] = useState(savedState?.savedUrl || '');
@@ -165,10 +172,10 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   // (matching Secrets / Memory / LLM Providers pages).
   const titleNode = (
     <View className="flex-1 flex-row items-center" style={{ gap: 2 }}>
-      <Pressable onPress={handleGoBack} disabled={!canGoBack} hitSlop={6} className="p-1">
+      <Pressable onPress={handleGoBack} disabled={!canGoBack} hitSlop={14} className="p-1">
         <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor }} strokeWidth={2.2} />
       </Pressable>
-      <Pressable onPress={handleGoForward} disabled={!canGoForward} hitSlop={6} className="p-1 mr-1">
+      <Pressable onPress={handleGoForward} disabled={!canGoForward} hitSlop={14} className="p-1 mr-1">
         <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor }} strokeWidth={2.2} />
       </Pressable>
 
@@ -225,6 +232,9 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
       </Pressable>
       <Pressable onPress={handleOpenExternal} hitSlop={6} className="p-1 ml-1">
         <Icon as={ExternalLink} size={15} style={{ color: mutedColor }} strokeWidth={2.2} />
+      </Pressable>
+      <Pressable onPress={handleOpenTabsOverview} hitSlop={6} className="p-1 ml-1">
+        <Icon as={LayoutGrid} size={15} style={{ color: fgColor }} strokeWidth={2.2} />
       </Pressable>
     </View>
   );
