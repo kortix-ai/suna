@@ -255,6 +255,40 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     [beginHold, handleDragUpdate, handleDragEnd, lastTx],
   );
 
+  // Snap-swipe: a quick horizontal swipe (no long-press required) advances
+  // one tab at a time with haptic feedback. Threshold: ≥40px horizontal
+  // movement in <300ms. Direction: swipe-left = next tab, swipe-right = prev.
+  // Does not conflict with dragGesture (which requires 180ms long-press first).
+  const handleSnapSwipe = useCallback((direction: 'next' | 'prev') => {
+    if (tabs.length <= 1) return;
+    const currentIndex = tabs.findIndex((t) => t.id === activeTabId);
+    const targetIndex = direction === 'next'
+      ? Math.min(tabs.length - 1, currentIndex + 1)
+      : Math.max(0, currentIndex - 1);
+    if (targetIndex === currentIndex) return;
+    const targetTab = tabs[targetIndex];
+    if (!targetTab) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    onSelectTab(targetTab.id);
+  }, [tabs, activeTabId, onSelectTab]);
+
+  const SNAP_SWIPE_THRESHOLD = 40;
+  const snapSwipeGesture = useMemo(
+    () => Gesture.Pan()
+      .activeOffsetX([-SNAP_SWIPE_THRESHOLD, SNAP_SWIPE_THRESHOLD])
+      .failOffsetY([-10, 10])
+      .onEnd((e: { translationX: number; velocityX: number }, success: boolean) => {
+        'worklet';
+        // Only snap on fast flick (velocity > 200px/s) or sufficient displacement
+        if (!success) return;
+        const isFastFlick = Math.abs(e.velocityX) > 200;
+        if (!isFastFlick && Math.abs(e.translationX) < SNAP_SWIPE_THRESHOLD) return;
+        const dir = e.translationX < 0 ? 'next' : 'prev';
+        runOnJS(handleSnapSwipe)(dir);
+      }),
+    [handleSnapSwipe],
+  );
+
   // Swipe-up from the bar → a peek panel rises from the bottom, growing with
   // the user's finger. Release past the threshold commits to the full tabs
   // overview; under the threshold, the peek slides back down. The bar itself
@@ -328,13 +362,13 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
         pointerEvents="none"
         style={[
           {
-            backgroundColor: isDark ? '#161618' : '#FFFFFF',
+            backgroundColor: isDark ? '#161618' : '#FAFAFA',
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
-            borderTopWidth: 1,
-            borderLeftWidth: 1,
-            borderRightWidth: 1,
-            borderColor: isDark ? '#2a2a2c' : '#E5E7EB',
+            borderTopWidth: 0.5,
+            borderLeftWidth: 0.5,
+            borderRightWidth: 0.5,
+            borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
             overflow: 'hidden',
           },
           peekStyle,
@@ -393,15 +427,19 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
       </Reanimated.View>
 
       <View
-        className="flex-row items-center bg-card border-t border-border px-2 pt-1.5"
-        style={{ paddingBottom: insets.bottom + 2 }}
+        className="flex-row items-center bg-background px-3 pt-2"
+        style={{
+          paddingBottom: insets.bottom + 4,
+          borderTopWidth: 0.5,
+          borderTopColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)',
+        }}
       >
         {/* New Session (+) — collapses when the pill strip is held */}
         <Reanimated.View style={[sideButtonStyle, { overflow: 'hidden' }]}>
           <TouchableOpacity
             onPress={onNewSession}
-            className="items-center justify-center h-9 w-9 rounded-full bg-muted"
-            activeOpacity={0.6}
+            className="items-center justify-center h-9 w-9 rounded-full"
+            activeOpacity={0.5}
           >
             <Ionicons name="add" size={22} color={iconColor} />
           </TouchableOpacity>
@@ -425,8 +463,13 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
                   <TouchableOpacity
                     onPress={() => onSelectTab(tab.id)}
                     activeOpacity={0.7}
-                    className={`items-center justify-center rounded-full px-3 py-1 ${isActive ? 'bg-muted' : ''}`}
-                    style={{ maxWidth: 220 }}
+                    className="items-center justify-center rounded-full px-3 py-1"
+                    style={{
+                      maxWidth: 220,
+                      backgroundColor: isActive
+                        ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)')
+                        : 'transparent',
+                    }}
                   >
                     <RNText
                       numberOfLines={1}
@@ -444,10 +487,14 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
             )}
           </View>
         ) : (
-        <GestureDetector gesture={dragGesture}>
+        <GestureDetector gesture={Gesture.Race(snapSwipeGesture, dragGesture)}>
         <View
-          className="border border-border rounded-full mx-1 overflow-hidden"
-          style={{ flex: 1, height: 36 }}
+          className="rounded-full mx-2 overflow-hidden"
+          style={{
+            flex: 1,
+            height: 36,
+            backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+          }}
         >
           <ScrollView
             ref={scrollRef}
@@ -491,10 +538,13 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
                           width: e.nativeEvent.layout.width,
                         };
                       }}
-                      className={`items-center justify-center rounded-full px-3 py-1 mx-0.5 ${
-                        highlighted ? 'bg-muted' : ''
-                      }`}
-                      style={{ maxWidth: 180 }}
+                      className="items-center justify-center rounded-full px-3 py-1 mx-0.5"
+                      style={{
+                        maxWidth: 180,
+                        backgroundColor: highlighted
+                          ? (isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.07)')
+                          : 'transparent',
+                      }}
                     >
                       <RNText
                         numberOfLines={1}
@@ -564,7 +614,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
             onPress={handleMore}
             disabled={!moreEnabled}
             className="items-center justify-center h-9 w-9"
-            activeOpacity={0.6}
+            activeOpacity={0.5}
           >
             <Ionicons
               name="ellipsis-horizontal"
