@@ -4,6 +4,7 @@ import * as envInjector from './env-injector';
 import * as stats from './stats';
 import { start as startAutoReplenish, stop as stopAutoReplenish } from './auto-replenish';
 import type { CreateResult, PoolStatus, ClaimedSandbox, ClaimOpts, ResourceInput, PoolResource } from './types';
+import { logger } from '../lib/logger';
 
 export type { PoolResource, PoolSandbox, ClaimedSandbox, ClaimOpts, ResourceInput, PoolStatus, CreateResult } from './types';
 export { resources, inventory, envInjector, stats };
@@ -28,6 +29,21 @@ export async function injectEnv(claimed: ClaimedSandbox, serviceKey: string): Pr
   return envInjector.inject(claimed.poolSandbox, serviceKey);
 }
 
+// Maximum number of concurrent provision calls per resource per replenish tick.
+// Prevents overwhelming the provider API while still being faster than sequential.
+const PROVISION_CONCURRENCY = 3;
+
+/** Run up to `concurrency` async tasks from `tasks` at a time. */
+async function runConcurrent<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<PromiseSettledResult<T>[]> {
+  const results: PromiseSettledResult<T>[] = [];
+  for (let i = 0; i < tasks.length; i += concurrency) {
+    const batch = tasks.slice(i, i + concurrency).map((t) => t());
+    const batchResults = await Promise.allSettled(batch);
+    results.push(...batchResults);
+  }
+  return results;
+}
+
 export async function replenish(): Promise<{ created: number }> {
   const enabled = await resources.listEnabled();
   if (enabled.length === 0) return { created: 0 };
@@ -39,19 +55,23 @@ export async function replenish(): Promise<{ created: number }> {
     const deficit = resource.desiredCount - current;
     if (deficit <= 0) continue;
 
-    for (let i = 0; i < deficit; i++) {
-      try {
-        await inventory.provision(resource);
+    const jobs = Array.from({ length: deficit }, () => () => inventory.provision(resource));
+    const results = await runConcurrent(jobs, PROVISION_CONCURRENCY);
+
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
         totalCreated++;
-      } catch (err) {
-        console.error(`[POOL] Provision failed (${resource.serverType}/${resource.location}):`, err);
+      } else {
+        logger.error(`[POOL] Provision failed (${resource.serverType}/${resource.location})`, {
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
       }
     }
   }
 
   if (totalCreated > 0) {
     stats.recordCreated(totalCreated);
-    console.log(`[POOL] Replenished: ${totalCreated} created`);
+    logger.info(`[POOL] Replenished: ${totalCreated} created`);
   }
   stats.recordReplenish();
   return { created: totalCreated };
