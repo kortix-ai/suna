@@ -66,10 +66,12 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
   const { updateAvailable } = useGlobalSandboxUpdate();
 
   // Colors aligned with the left drawer (home.tsx renderDrawerContent + global.css tokens).
+  // Use the same pattern: derive from isDark rather than raw hex.
   const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#999999' : '#6e6e6e';
-  const sectionColor = isDark ? '#666' : '#999';
-  const bgColor = isDark ? '#090909' : '#F5F5F5'; // matches --chrome-background
+  const iconColor = isDark ? '#F8F8F8' : '#121215'; // primary items — same as left drawer
+  const mutedColor = isDark ? '#999999' : '#6e6e6e'; // secondary items only
+  // Section label — lighter than muted, wider tracking, matches web sidebar section headers
+  const sectionColor = isDark ? '#555555' : '#AAAAAA';
 
   const handleItemPress = (pageId: string) => {
     useTabStore.getState().navigateToPage(pageId);
@@ -82,31 +84,31 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
   };
 
   return (
+    // bg-chrome-background via NativeWind — no raw hex
     <View
-      style={{
-        flex: 1,
-        backgroundColor: bgColor,
-        paddingTop: insets.top,
-      }}
+      className="flex-1 bg-chrome-background"
+      style={{ paddingTop: insets.top }}
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
       >
         {sections.map((section) => (
-          <View key={section.title} style={{ marginBottom: 8 }}>
+          <View key={section.title} style={{ marginBottom: 4 }}>
+            {/* Section header — lowercase, lighter weight, wider tracking; matches web sidebar labels */}
             <RNText
               style={{
                 fontSize: 11,
-                fontFamily: 'Roobert-Medium',
+                fontFamily: 'Roobert',
                 color: sectionColor,
-                letterSpacing: 1,
-                paddingHorizontal: 16,
-                paddingTop: 16,
-                paddingBottom: 8,
+                letterSpacing: 1.2,
+                textTransform: 'uppercase',
+                paddingHorizontal: 20,
+                paddingTop: 20,
+                paddingBottom: 6,
               }}
             >
-              {section.title}
+              {section.title.toLowerCase()}
             </RNText>
 
             {section.items.map((item) => (
@@ -119,10 +121,13 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
                   alignItems: 'center',
                   paddingHorizontal: 16,
                   paddingVertical: 11,
-                  gap: 12,
+                  gap: 13,
+                  marginHorizontal: 4,
+                  borderRadius: 10,
                 }}
               >
-                <Ionicons name={item.icon as any} size={18} color={mutedColor} />
+                {/* Primary items use iconColor (full opacity), not mutedColor */}
+                <Ionicons name={item.icon as any} size={18} color={iconColor} />
                 <RNText
                   style={{
                     fontSize: 15,
@@ -137,20 +142,21 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
           </View>
         ))}
 
-        {/* Updates */}
-        <View style={{ marginBottom: 8 }}>
+        {/* Updates / System section */}
+        <View style={{ marginBottom: 4 }}>
           <RNText
             style={{
               fontSize: 11,
-              fontFamily: 'Roobert-Medium',
+              fontFamily: 'Roobert',
               color: sectionColor,
-              letterSpacing: 1,
-              paddingHorizontal: 16,
-              paddingTop: 16,
-              paddingBottom: 8,
+              letterSpacing: 1.2,
+              textTransform: 'uppercase',
+              paddingHorizontal: 20,
+              paddingTop: 20,
+              paddingBottom: 6,
             }}
           >
-            SYSTEM
+            system
           </RNText>
 
           <TouchableOpacity
@@ -161,11 +167,13 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
               alignItems: 'center',
               paddingHorizontal: 16,
               paddingVertical: 11,
-              gap: 12,
+              gap: 13,
+              marginHorizontal: 4,
+              borderRadius: 10,
             }}
           >
             <View style={{ position: 'relative' }}>
-              <Ionicons name="arrow-down-circle-outline" size={18} color={mutedColor} />
+              <Ionicons name="arrow-down-circle-outline" size={18} color={iconColor} />
               {updateAvailable && (
                 <View
                   style={{
@@ -176,8 +184,9 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
                     height: 8,
                     borderRadius: 4,
                     backgroundColor: '#EF4444',
+                    // Border matches the new bg-chrome-background — use semi-transparent
                     borderWidth: 1.5,
-                    borderColor: bgColor,
+                    borderColor: isDark ? '#0A0A0A' : '#F3F3F3',
                   }}
                 />
               )}
