@@ -1405,6 +1405,7 @@ function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: bool
     
     const getFrontendTierName = (tierKey: string) => {
         if (tierKey === 'free') return 'Free';
+        if (tierKey === 'starter') return 'Starter';
         if (tierKey === 'pro') return 'Pro';
         return tierKey || 'Free';
     };
