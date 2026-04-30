@@ -588,7 +588,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   // Filter to root sessions only for the top-level list.
   const rootSessions = useMemo(() => {
     if (!sessions) return [];
-    let list = sessions.filter((s) => !s.parentID && !(s.time as any).archived);
+    let list = sessions.filter((s) => !s.parentID && !s.time.archived);
     if (projectId !== null && projectId !== undefined) {
       list = list.filter((s) => s.projectID === projectId);
     }
@@ -617,8 +617,8 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const archivedSessions = useMemo(() => {
     if (!sessions) return [];
     return sessions
-      .filter((s) => !!(s.time as any).archived)
-      .sort((a, b) => ((b.time as any).archived || 0) - ((a.time as any).archived || 0));
+      .filter((s) => !!s.time.archived)
+      .sort((a, b) => ((b.time.archived || 0) - (a.time.archived || 0)));
   }, [sessions]);
 
   const handleSessionClick = (e: React.MouseEvent, sessionId: string) => {
