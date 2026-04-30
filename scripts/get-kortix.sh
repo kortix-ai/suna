@@ -71,7 +71,7 @@ INSTALL_DIR="${KORTIX_HOME:-$HOME/.kortix}"
 # Falls back to the 'latest' Docker tag if the API is unreachable.
 resolve_latest_version() {
   local gh_version
-  gh_version=$(curl -sf --connect-timeout 5 \
+  gh_version=$(curl_with_retry -sf --connect-timeout 5 \
     "https://api.github.com/repos/kortix-ai/suna/releases/latest" 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))' 2>/dev/null) || true
   if [ -n "$gh_version" ]; then
@@ -90,6 +90,33 @@ KORTIX_LOCAL_IMAGES="${KORTIX_LOCAL_IMAGES:-0}"
 KORTIX_LOCAL_TAG="${KORTIX_LOCAL_TAG:-latest}"
 KORTIX_BUILD_LOCAL_IMAGES="${KORTIX_BUILD_LOCAL_IMAGES:-0}"
 KORTIX_PULL_PARALLELISM="${KORTIX_PULL_PARALLELISM:-4}"
+KORTIX_NETWORK_RETRIES="${KORTIX_NETWORK_RETRIES:-3}"
+KORTIX_NETWORK_RETRY_DELAY="${KORTIX_NETWORK_RETRY_DELAY:-2}"
+KORTIX_REGISTRY_PREFLIGHT_IMAGE="${KORTIX_REGISTRY_PREFLIGHT_IMAGE:-kortix/computer:latest}"
+
+run_with_retry() {
+  local attempts="$1" delay="$2"
+  shift 2
+
+  local attempt=1
+  local status=0
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+    status=$?
+    if [ "$attempt" -ge "$attempts" ]; then
+      return "$status"
+    fi
+    attempt=$((attempt + 1))
+    sleep "$delay"
+  done
+}
+
+curl_with_retry() {
+  run_with_retry "$KORTIX_NETWORK_RETRIES" "$KORTIX_NETWORK_RETRY_DELAY" curl "$@"
+}
+
 # Always prefer /dev/tty for interactive reads — critical for
 # `curl URL | bash` where stdin is the pipe, not the terminal.
 TTY_AVAILABLE="0"
@@ -204,6 +231,14 @@ Options:
   --query "v=<tag>"   Query-style version override
   --query "version=<tag>"
 
+Environment:
+  KORTIX_VERSION=<tag>           Install a specific release tag
+  KORTIX_PULL_PARALLELISM=<n>    Concurrent docker pulls (default: 4)
+  KORTIX_NETWORK_RETRIES=<n>     External curl/docker pull retries (default: 3)
+  KORTIX_NETWORK_RETRY_DELAY=<s> Seconds between retries (default: 2)
+  KORTIX_REGISTRY_PREFLIGHT_IMAGE
+                                 Image used for registry reachability probe
+
 Examples:
   bash get-kortix.sh
   bash get-kortix.sh --local
@@ -212,6 +247,7 @@ Examples:
   bash get-kortix.sh --version 0.7.14
   bash get-kortix.sh --query "v=0.7.14"
   KORTIX_VERSION=0.7.15 bash get-kortix.sh
+  KORTIX_PULL_PARALLELISM=1 bash get-kortix.sh
 EOF
         exit 0
         ;;
@@ -308,6 +344,32 @@ prompt_read() {
   fi
 }
 
+docker_pull_with_retry() {
+  local image="$1"
+  run_with_retry "$KORTIX_NETWORK_RETRIES" "$KORTIX_NETWORK_RETRY_DELAY" docker pull "$image"
+}
+
+wait_for_http_ready() {
+  local url="$1"
+  local label="$2"
+  local max_attempts="${3:-30}"
+  local attempts=0
+
+  printf "    ${CYAN}▸${NC}  Waiting for %s " "$label"
+  while [ "$attempts" -lt "$max_attempts" ]; do
+    if curl -sf "$url" >/dev/null 2>&1; then
+      printf " ${GREEN}✓${NC}\n"
+      return 0
+    fi
+    printf "${FADED}.${NC}"
+    sleep 2
+    attempts=$((attempts + 1))
+  done
+
+  printf " ${YELLOW}timeout${NC}\n"
+  return 1
+}
+
 warm_local_sandbox() {
   [ "$DEPLOY_MODE" = "local" ] || return 0
 
@@ -390,9 +452,9 @@ generate_token() {
 }
 
 get_server_ip() {
-  curl -4 -sf --connect-timeout 5 https://ifconfig.me 2>/dev/null \
-    || curl -4 -sf --connect-timeout 5 https://api.ipify.org 2>/dev/null \
-    || curl -4 -sf --connect-timeout 5 https://icanhazip.com 2>/dev/null \
+  curl_with_retry -4 -sf --connect-timeout 5 https://ifconfig.me 2>/dev/null \
+    || curl_with_retry -4 -sf --connect-timeout 5 https://api.ipify.org 2>/dev/null \
+    || curl_with_retry -4 -sf --connect-timeout 5 https://icanhazip.com 2>/dev/null \
     || echo ""
 }
 
@@ -404,7 +466,12 @@ docker_manifest_exists() {
   local image="$1"
   # Check locally first, then Docker Hub registry
   docker image inspect "$image" >/dev/null 2>&1 && return 0
-  docker manifest inspect "$image" >/dev/null 2>&1
+  run_with_retry "$KORTIX_NETWORK_RETRIES" "$KORTIX_NETWORK_RETRY_DELAY" docker manifest inspect "$image" >/dev/null 2>&1
+}
+
+docker_registry_probe() {
+  local image="$1"
+  run_with_retry "$KORTIX_NETWORK_RETRIES" "$KORTIX_NETWORK_RETRY_DELAY" docker manifest inspect "$image" >/dev/null 2>&1
 }
 
 resolve_release_images() {
@@ -458,8 +525,10 @@ pull_images_parallel() {
   local -a images=("$@")
   [ ${#images[@]} -gt 0 ] || return 0
 
+  export -f run_with_retry docker_pull_with_retry
+  export KORTIX_NETWORK_RETRIES KORTIX_NETWORK_RETRY_DELAY
   printf '%s\n' "${images[@]}" | python3 -c 'import sys; print("\n".join(sorted(set(line.strip() for line in sys.stdin if line.strip()))))' \
-    | xargs -r -n1 -P "$KORTIX_PULL_PARALLELISM" docker pull
+    | xargs -r -I{} -P "$KORTIX_PULL_PARALLELISM" bash -c 'docker_pull_with_retry "$1"' _ "{}"
 }
 
 # Free ports used by Kortix (local mode)
@@ -558,6 +627,16 @@ preflight() {
 
   command -v openssl &>/dev/null || fatal "openssl is required (for JWT generation)."
   success "openssl available"
+
+  if [ "$KORTIX_LOCAL_IMAGES" != "1" ]; then
+    dots "Checking Docker registry reachability"
+    if docker_registry_probe "$KORTIX_REGISTRY_PREFLIGHT_IMAGE"; then
+      dots_ok
+    else
+      printf "${RED}failed${NC}\n"
+      fatal "Cannot reach Docker Hub for ${KORTIX_REGISTRY_PREFLIGHT_IMAGE}. Check DNS/network connectivity and retry."
+    fi
+  fi
   echo ""
 }
 
@@ -1112,6 +1191,7 @@ COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
 KORTIX_LOCAL_IMAGES=${KORTIX_LOCAL_IMAGES}
 KORTIX_LOCAL_TAG=${KORTIX_LOCAL_TAG}
 KORTIX_LOCAL_REPO_ROOT=${KORTIX_LOCAL_REPO_ROOT}
+KORTIX_PULL_PARALLELISM=${KORTIX_PULL_PARALLELISM}
 
 # ─── URLs ────────────────────────────────────────────────────────────────────
 PUBLIC_URL=${PUBLIC_URL}
@@ -1248,10 +1328,73 @@ SANDBOX_NAME=$(grep -m1 '^SANDBOX_CONTAINER_NAME=' "$DIR/.env" 2>/dev/null | cut
 LOCAL_IMAGES=$(grep -m1 '^KORTIX_LOCAL_IMAGES=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "0")
 LOCAL_TAG=$(grep -m1 '^KORTIX_LOCAL_TAG=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "latest")
 LOCAL_REPO_ROOT=$(grep -m1 '^KORTIX_LOCAL_REPO_ROOT=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "")
+DEFAULT_PULL_PARALLELISM=$(grep -m1 '^KORTIX_PULL_PARALLELISM=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || true)
+DEFAULT_PULL_PARALLELISM="${DEFAULT_PULL_PARALLELISM:-4}"
+KORTIX_PULL_PARALLELISM="${KORTIX_PULL_PARALLELISM:-$DEFAULT_PULL_PARALLELISM}"
+KORTIX_NETWORK_RETRIES="${KORTIX_NETWORK_RETRIES:-3}"
+KORTIX_NETWORK_RETRY_DELAY="${KORTIX_NETWORK_RETRY_DELAY:-2}"
+
+_run_with_retry() {
+  local attempts="$1" delay="$2"
+  shift 2
+
+  local attempt=1
+  local status=0
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+    status=$?
+    if [ "$attempt" -ge "$attempts" ]; then
+      return "$status"
+    fi
+    attempt=$((attempt + 1))
+    sleep "$delay"
+  done
+}
+
+_curl_with_retry() {
+  _run_with_retry "$KORTIX_NETWORK_RETRIES" "$KORTIX_NETWORK_RETRY_DELAY" curl "$@"
+}
+
+_docker_pull_with_retry() {
+  local image="$1"
+  _run_with_retry "$KORTIX_NETWORK_RETRIES" "$KORTIX_NETWORK_RETRY_DELAY" docker pull "$image"
+}
+
+_pull_images_parallel() {
+  local -a images=("$@")
+  [ ${#images[@]} -gt 0 ] || return 0
+
+  export -f _run_with_retry _docker_pull_with_retry
+  export KORTIX_NETWORK_RETRIES KORTIX_NETWORK_RETRY_DELAY
+  printf '%s\n' "${images[@]}" \
+    | python3 -c 'import sys; print("\n".join(sorted(set(line.strip() for line in sys.stdin if line.strip()))))' \
+    | xargs -r -I{} -P "$KORTIX_PULL_PARALLELISM" bash -c '_docker_pull_with_retry "$1"' _ "{}"
+}
+
+_compose_up_or_exit() {
+  if docker compose up -d; then
+    return 0
+  fi
+  _err "Failed to start services."
+  printf "  ${F}Inspect with: cd %s && docker compose ps && docker compose logs --tail=200${N}\n" "$DIR"
+  exit 1
+}
+
+_compose_down_best_effort() {
+  local context="$1"
+  shift
+
+  if docker compose down "$@" 2>/dev/null; then
+    return 0
+  fi
+  _warn "Could not stop ${context} cleanly; continuing."
+}
 
 _resolve_latest_version() {
   local gh_version
-  gh_version=$(curl -sf --connect-timeout 5 \
+  gh_version=$(_curl_with_retry -sf --connect-timeout 5 \
     "https://api.github.com/repos/kortix-ai/suna/releases/latest" 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"].lstrip("v"))' 2>/dev/null) || true
   if [ -n "$gh_version" ]; then
@@ -1323,7 +1466,7 @@ PY
 
 _refresh_installer_and_cli() {
   local tmp_script="$DIR/get-kortix.sh.tmp"
-  curl -fsSL "https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/get-kortix.sh" -o "$tmp_script" || return 0
+  _curl_with_retry -fsSL "https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/get-kortix.sh" -o "$tmp_script" || return 0
   chmod +x "$tmp_script"
   mv "$tmp_script" "$DIR/get-kortix.sh"
   awk '
@@ -1457,13 +1600,16 @@ _reset_stack() {
   fi
 
   _info "Stopping and removing stack..."
-  docker compose down -v --remove-orphans 2>/dev/null || true
+  _compose_down_best_effort "existing services" -v --remove-orphans
   docker rm -f "$SANDBOX_NAME" 2>/dev/null || true
   docker volume rm "${SANDBOX_NAME}-data" 2>/dev/null || true
   [ "$(_mode)" = "local" ] && _free_kortix_ports
 
   _info "Starting fresh stack..."
-  docker compose up -d || true
+  _compose_up_or_exit
+  if ! _wait_for_api_health; then
+    _fail_stack_not_ready
+  fi
   _ok "Reset complete."
 }
 
@@ -1479,6 +1625,12 @@ _wait_for_api_health() {
     attempts=$((attempts + 1))
   done
   return 1
+}
+
+_fail_stack_not_ready() {
+  _err "Services did not become healthy in time."
+  printf "  ${F}Inspect with: cd %s && docker compose ps && docker compose logs --tail=200${N}\n" "$DIR"
+  exit 1
 }
 
 _refresh_sandbox_container() {
@@ -1540,7 +1692,7 @@ case "${1:-help}" in
     _banner
     [ "$(_mode)" = "local" ] && _free_kortix_ports
     _sync_supabase_passwords
-    docker compose up -d || true
+    _compose_up_or_exit
     # Also restart the sandbox container if it exists but is stopped
     if docker ps -a --format '{{.Names}}' | grep -q "^${SANDBOX_NAME}$"; then
       if ! docker ps --format '{{.Names}}' | grep -q "^${SANDBOX_NAME}$"; then
@@ -1548,23 +1700,29 @@ case "${1:-help}" in
         docker start "$SANDBOX_NAME" 2>/dev/null || true
       fi
     fi
+    if ! _wait_for_api_health; then
+      _fail_stack_not_ready
+    fi
     echo ""
     _ok "Kortix is running!"
     printf "  ${W}Dashboard${N}:  ${C}$(_url)${N}\n\n"
     ;;
   stop)
     _banner
-    docker compose down
+    _compose_down_best_effort "services"
     docker stop "$SANDBOX_NAME" 2>/dev/null || true
     _ok "All services stopped."
     echo ""
     ;;
   restart)
     _banner
-    docker compose down 2>/dev/null || true
+    _compose_down_best_effort "existing services"
     [ "$(_mode)" = "local" ] && _free_kortix_ports
     _sync_supabase_passwords
-    docker compose up -d || true
+    _compose_up_or_exit
+    if ! _wait_for_api_health; then
+      _fail_stack_not_ready
+    fi
     _ok "Restarted."
     printf "  ${W}Dashboard${N}:  ${C}$(_url)${N}\n\n"
     ;;
@@ -1609,21 +1767,22 @@ case "${1:-help}" in
         _info "Already on latest stable release (v${VERSION}) — refreshing images..."
       fi
       _info "Pulling latest release images..."
-      {
+      release_images_output=$({
         docker compose config --images
         printf '%s\n' "$SANDBOX_IMAGE"
-      } | python3 -c 'import sys; print("\n".join(sorted(set(line.strip() for line in sys.stdin if line.strip()))))' | xargs -r -n1 -P 4 docker pull
+      } | python3 -c 'import sys; print("\n".join(sorted(set(line.strip() for line in sys.stdin if line.strip()))))')
+      mapfile -t release_images < <(printf '%s\n' "$release_images_output")
+      _pull_images_parallel "${release_images[@]}"
     fi
     _info "Restarting services..."
     [ "$(_mode)" = "local" ] && _free_kortix_ports
     _sync_supabase_passwords
-    docker compose down 2>/dev/null || true
-    docker compose up -d || true
-    if _wait_for_api_health; then
-      _refresh_sandbox_container
-    else
-      _warn "API did not become healthy in time; skipping sandbox refresh for now."
+    _compose_down_best_effort "existing services"
+    _compose_up_or_exit
+    if ! _wait_for_api_health; then
+      _fail_stack_not_ready
     fi
+    _refresh_sandbox_container
     _refresh_installer_and_cli
     _ok "Updated and running."
     printf "  ${W}Dashboard${N}:  ${C}$(_url)${N}\n\n"
@@ -1641,13 +1800,13 @@ case "${1:-help}" in
     printf "\n  ${Y}!${N}  Delete all data (Docker volumes)? [y/N]: "
     prompt_read del_volumes
     if echo "$del_volumes" | grep -qi '^y'; then
-      docker compose down -v --remove-orphans 2>/dev/null || true
+      _compose_down_best_effort "existing services" -v --remove-orphans
       docker volume rm "${SANDBOX_NAME}-data" 2>/dev/null || true
       docker volume rm kortix_supabase-db-data 2>/dev/null || true
       docker volume rm supabase_db_kortix-local 2>/dev/null || true
       _ok "Volumes removed."
     else
-      docker compose down 2>/dev/null || true
+      _compose_down_best_effort "existing services"
     fi
     [ -L "/usr/local/bin/kortix" ] && rm -f /usr/local/bin/kortix 2>/dev/null || true
     rm -rf "$DIR"
@@ -1740,21 +1899,13 @@ pull_and_start() {
   # Free ports in local mode to avoid conflicts
   free_kortix_ports
 
-  docker compose up -d || true
+  if ! docker compose up -d; then
+    fatal "Docker Compose failed to start the stack. Inspect with: cd $INSTALL_DIR && docker compose ps && docker compose logs --tail=200"
+  fi
 
-  # Wait for frontend with progress feedback
-  local attempts=0 max_wait=30
-  printf "    ${CYAN}▸${NC}  Waiting for services "
-  while [ $attempts -lt $max_wait ]; do
-    if curl -sf "${PUBLIC_URL}" >/dev/null 2>&1; then
-      printf " ${GREEN}✓${NC}\n"
-      break
-    fi
-    printf "${FADED}.${NC}"
-    sleep 2
-    attempts=$((attempts + 1))
-  done
-  [ $attempts -ge $max_wait ] && printf " ${YELLOW}timeout${NC}\n"
+  if ! wait_for_http_ready "${PUBLIC_URL}" "services"; then
+    fatal "Kortix services did not become ready in time. Inspect with: cd $INSTALL_DIR && docker compose ps && docker compose logs --tail=200"
+  fi
 
   if [ "$DEPLOY_MODE" = "local" ]; then
     warm_local_sandbox
@@ -1825,9 +1976,14 @@ main() {
     if [ -z "$answer" ] || ! echo "$answer" | grep -qi '^y'; then
       info "Starting existing installation..."
       cd "$INSTALL_DIR"
-      docker compose up -d
+      if ! docker compose up -d; then
+        fatal "Docker Compose failed to start the existing installation. Inspect with: cd $INSTALL_DIR && docker compose ps && docker compose logs --tail=200"
+      fi
       local existing_url
       existing_url=$(grep -m1 '^PUBLIC_URL=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || echo "http://localhost:13737")
+      if ! wait_for_http_ready "$existing_url" "existing installation"; then
+        fatal "Existing installation did not become ready in time. Inspect with: cd $INSTALL_DIR && docker compose ps && docker compose logs --tail=200"
+      fi
       echo ""
       success "Kortix is running!"
       printf "    ${WHITE}Dashboard${NC}:  ${CYAN}${existing_url}${NC}\n\n"
@@ -1839,7 +1995,9 @@ main() {
     # Without this, old Postgres data retains old passwords while the
     # installer generates new ones, causing supabase-auth to fail with
     # "password authentication failed for user supabase_auth_admin".
-    docker compose down -v 2>/dev/null || true
+    if ! docker compose down -v 2>/dev/null; then
+      warn "Could not stop existing compose services cleanly; continuing with reinstall."
+    fi
     docker rm -f "${SANDBOX_CONTAINER_NAME}" 2>/dev/null || true
     # Also remove any leftover named volumes from previous installs
     docker volume rm kortix_supabase-db-data 2>/dev/null || true
