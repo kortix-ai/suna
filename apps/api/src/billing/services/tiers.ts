@@ -74,6 +74,26 @@ const TIERS: Record<string, TierConfig> = {
     hidden: false,
   },
 
+  // ── Starter tier — managed sandbox + daily credits, no CC required ────────
+  // Replaces the signup friction of BYOC. User gets a managed sandbox and
+  // enough daily credits for 2-3 Sonnet agent runs/day. Upgrades to Pro for
+  // unlimited runs + compute add-ons. Introduced Apr 2026.
+  starter: {
+    name: 'starter',
+    displayName: 'Starter',
+    monthlyPrice: 0,
+    yearlyPrice: 0,
+    monthlyCredits: 0,
+    canPurchaseCredits: false,
+    models: ['haiku', 'sonnet'],   // Sonnet access but daily-capped
+    dailyCreditConfig: {
+      dailyAmount: 5,              // $5 credits/day = ~2-3 claude-sonnet-4-6 runs
+      refreshIntervalHours: 24,
+      maxAccumulation: 10,         // Max 2-day rollover — prevents stockpiling
+    },
+    hidden: false,
+  },
+
   pro: {
     name: 'pro',
     displayName: 'Pro',
@@ -116,8 +136,11 @@ interface StripePriceConfig {
 
 const STRIPE_PRICES_PROD: StripePriceConfig = {
   subscriptions: {
-    free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
-    pro:  { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO' }, // TODO: create prod Pro price and replace
+    free:    { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
+    // starter: shares the $0 free Stripe price — no CC, no checkout friction.
+    // TODO: create a dedicated starter price_id in prod Stripe and replace this.
+    starter: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
+    pro:     { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO' }, // TODO: create prod Pro price and replace
     // Legacy price → tier mappings (for webhook resolution of existing subs)
     tier_2_20:     { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO', yearly: 'price_1ReHB5G6l1KZGqIrD70I1xqM', yearlyCommitment: 'price_1RqtqiG6l1KZGqIrhjVPtE1s' },
     tier_6_50:     { monthly: 'price_1RILb4G6l1KZGqIr5q0sybWn', yearly: 'price_1ReHAsG6l1KZGqIrlAog487C', yearlyCommitment: 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi' },
@@ -141,8 +164,9 @@ const STRIPE_PRICES_PROD: StripePriceConfig = {
 
 const STRIPE_PRICES_STAGING: StripePriceConfig = {
   subscriptions: {
-    free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
-    pro:  { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
+    free:    { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
+    starter: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' }, // same $0 price as free for staging
+    pro:     { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
   },
   credits: {
     10:  'price_1T56YGG6CaZppiKcSwnwZSoE',
@@ -249,8 +273,9 @@ export function canPurchaseCredits(tierName: string): boolean {
   return getTier(tierName).canPurchaseCredits;
 }
 
-/** Returns true if the tier is a paid tier (not free/none). */
+/** Returns true if the tier gets a managed sandbox provisioned (not BYOC-only free/none). */
 export function isPaidTier(tierName: string): boolean {
+  // 'starter' is $0 but gets a managed sandbox — treat as "paid" for provisioning purposes.
   return tierName !== 'free' && tierName !== 'none';
 }
 
@@ -269,6 +294,7 @@ export function getTierOrder(tierName: string): number {
   const order = [
     'none',
     'free',
+    'starter',   // $0 managed sandbox tier — between free (BYOC) and pro
     'pro',
     // Legacy tiers ordered above pro for backward compat
     'tier_2_20',

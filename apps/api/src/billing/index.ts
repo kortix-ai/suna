@@ -52,6 +52,9 @@ billingApp.post('/setup/initialize', async (c: any) => {
   const body = await c.req.json().catch(() => ({}));
   const requestedServerType = (body?.server_type as string | undefined) || undefined;
   const requestedLocation = (body?.location as string | undefined) || undefined;
+  // Accept optional tier_key — defaults to 'starter' for new signups.
+  // Falls back to 'free' if the requested tier has no Stripe price configured.
+  const requestedTierKey = (body?.tier_key as string | undefined) || 'starter';
   const { upsertCreditAccount, getCreditAccount } = await import('./repositories/credit-accounts');
   const { resolvePriceId, isPaidTier } = await import('./services/tiers');
   const { getOrCreateStripeCustomer } = await import('./services/subscriptions');
@@ -59,10 +62,11 @@ billingApp.post('/setup/initialize', async (c: any) => {
 
   const accountId = await resolveAccountId(userId);
 
-  // ── Step 1: Create free Stripe subscription ──────────────────────────
+  // ── Step 1: Create Stripe subscription at the requested tier ──────────
   const existing = await getCreditAccount(accountId);
   let subscriptionStatus: 'already_initialized' | 'initialized' = 'initialized';
-  const currentTier = existing?.tier ?? 'free';
+  // Track the effective tier after initialization (existing or newly created)
+  let effectiveTier = existing?.tier ?? 'free';
 
   if (existing?.stripeSubscriptionId) {
     subscriptionStatus = 'already_initialized';
@@ -71,21 +75,28 @@ billingApp.post('/setup/initialize', async (c: any) => {
     const { getStripe } = await import('../shared/stripe');
     const stripe = getStripe();
 
-    const freePriceId = resolvePriceId('free', 'monthly');
-    if (!freePriceId) {
+    // Resolve price for the requested tier; fall back to free if not configured
+    let tierKey = requestedTierKey;
+    let priceId = resolvePriceId(tierKey, 'monthly');
+    if (!priceId) {
+      console.warn(`[setup/initialize] No price for tier '${tierKey}', falling back to free`);
+      tierKey = 'free';
+      priceId = resolvePriceId('free', 'monthly');
+    }
+    if (!priceId) {
       return c.json({ error: 'Free tier price not configured' }, 500);
     }
 
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
-      items: [{ price: freePriceId }],
+      items: [{ price: priceId }],
       payment_behavior: 'allow_incomplete',
       payment_settings: { save_default_payment_method: 'on_subscription' },
-      metadata: { account_id: accountId, tier_key: 'free' },
+      metadata: { account_id: accountId, tier_key: tierKey },
     });
 
     await upsertCreditAccount(accountId, {
-      tier: 'free',
+      tier: tierKey,
       provider: 'stripe',
       stripeSubscriptionId: subscription.id,
       stripeSubscriptionStatus: 'active',
@@ -96,22 +107,46 @@ billingApp.post('/setup/initialize', async (c: any) => {
       autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
       autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
     });
+
+    effectiveTier = tierKey;
   }
 
-  // ── Step 2: Sandbox provisioning (only for paid plans) ────────────────
-  // Free users: no sandbox — they connect their own (BYOC).
-  // Paid users: machine creation is handled explicitly via the checkout / create-machine flow.
+  // ── Step 2: Sandbox provisioning ─────────────────────────────────────
+  // Free tier: no sandbox — user connects their own (BYOC).
+  // Starter + paid tiers: provision managed sandbox.
   let sandboxStatus: 'created' | 'exists' | 'provisioning' | 'skipped' | 'failed' = 'skipped';
 
-  if (!isPaidTier(currentTier)) {
+  if (!isPaidTier(effectiveTier)) {
     console.log(`[setup/initialize] Free tier — no sandbox provisioning for account ${accountId}`);
   } else {
-    console.log(`[setup/initialize] Paid tier ready for explicit machine checkout for account ${accountId}`);
+    // Starter tier gets a managed sandbox automatically on signup.
+    // Pro tier: machine creation is explicit via checkout, but trigger provisioning
+    // if server_type was provided (e.g. from the new-machine flow).
+    if (requestedServerType) {
+      try {
+        const { provisionSandboxFromCheckout } = await import('../platform/services/sandbox-provisioner');
+        const subId = existing?.stripeSubscriptionId ?? 'starter-init';
+        await provisionSandboxFromCheckout({
+          accountId,
+          subscriptionId: subId,
+          serverType: requestedServerType,
+          location: requestedLocation,
+          tierKey: effectiveTier,
+        });
+        sandboxStatus = 'provisioning';
+        console.log(`[setup/initialize] Sandbox provisioning started for ${accountId} (tier: ${effectiveTier})`);
+      } catch (err) {
+        sandboxStatus = 'failed';
+        console.warn(`[setup/initialize] Sandbox provisioning failed for ${accountId}:`, err instanceof Error ? err.message : String(err));
+      }
+    } else {
+      console.log(`[setup/initialize] ${effectiveTier} tier — sandbox provisioning available via machine checkout for account ${accountId}`);
+    }
   }
 
   return c.json({
     status: subscriptionStatus,
-    tier: currentTier,
+    tier: effectiveTier,
     sandbox: sandboxStatus,
   });
 });

@@ -35,7 +35,8 @@ export function useAccountInitialization() {
       
       const response = await fetch(`${API_URL}/setup/initialize`, {
         method: 'POST',
-        headers,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier_key: 'starter' }),
       });
 
       if (!response.ok) {
