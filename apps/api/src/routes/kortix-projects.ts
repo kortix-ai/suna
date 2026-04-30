@@ -38,7 +38,61 @@ async function resolveActiveSandbox(userId: string): Promise<{ externalId: strin
   };
 }
 
+// ─── Daily credit gate ────────────────────────────────────────────────────────
+// Check starter-tier users' daily credit balance before allowing session creation.
+// Returns null if the request should proceed, or a 402 Response if capped.
+async function checkDailyLimitForSessionCreate(c: Context): Promise<Response | null> {
+  // Only gate POST /kortix/session (session creation)
+  if (c.req.method !== 'POST') return null;
+  const path = c.req.path.replace(/^\/v1/, '').replace(/\/+$/, '');
+  if (path !== '/kortix/session') return null;
+
+  const userId = c.get('userId') as string | undefined;
+  if (!userId) return null;
+
+  try {
+    const { getCreditSummary } = await import('../billing/services/credits');
+    const { resolveAccountId } = await import('../shared/resolve-account');
+    const { getCreditAccount } = await import('../billing/repositories/credit-accounts');
+    const accountId = await resolveAccountId(userId);
+    const account = await getCreditAccount(accountId);
+
+    // Only enforce for starter tier
+    if (account?.tier !== 'starter') return null;
+
+    const credits = await getCreditSummary(accountId);
+    if (credits.canRun) return null;
+
+    // Daily credits exhausted — return 402
+    const secondsUntilRefresh = account?.lastDailyRefresh
+      ? Math.max(0, 24 * 3600 - Math.floor((Date.now() - new Date(account.lastDailyRefresh).getTime()) / 1000))
+      : 24 * 3600;
+
+    return new Response(
+      JSON.stringify({
+        error: 'daily_limit_exceeded',
+        code: 'daily_limit_exceeded',
+        message: "You've used your $5 daily credits. Upgrade to Pro for unlimited runs.",
+        seconds_until_refresh: secondsUntilRefresh,
+        upgrade_url: '/pricing#pro',
+        tier: 'starter',
+      }),
+      {
+        status: 402,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
+  } catch {
+    // Non-fatal — allow the request through on error
+    return null;
+  }
+}
+
 export async function kortixProxyHandler(c: Context): Promise<Response> {
+  // ── Starter tier daily limit gate ────────────────────────────────────────
+  const limitResponse = await checkDailyLimitForSessionCreate(c);
+  if (limitResponse) return limitResponse;
+
   // /v1/kortix/projects/xxx → /kortix/projects/xxx
   const sandboxPath = c.req.path.replace(/^\/v1/, '').replace(/\/+$/, '') || '/kortix';
 
