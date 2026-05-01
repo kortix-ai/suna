@@ -253,15 +253,44 @@ export async function proxyToSandbox(
   const controller = new AbortController();
   const connectTimer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  const response = await fetch(targetUrl, {
-    method,
-    headers,
-    body: incomingBody,
-    signal: controller.signal,
-    // @ts-ignore — Bun extension: no decompression, raw byte passthrough
-    decompress: false,
-    redirect: 'manual',
-  });
+  let response: Response;
+  try {
+    response = await fetch(targetUrl, {
+      method,
+      headers,
+      body: incomingBody,
+      signal: controller.signal,
+      // @ts-ignore — Bun extension: no decompression, raw byte passthrough
+      decompress: false,
+      redirect: 'manual',
+    });
+  } catch (err: any) {
+    clearTimeout(connectTimer);
+    // Bun throws "Unable to connect. Is the computer able to access the url?"
+    // when the target port isn't listening (ECONNREFUSED). This is expected
+    // during sandbox startup — return a proper 503 instead of letting it
+    // propagate as an unhandled 500 + Sentry spike.
+    const msg = err?.message || String(err);
+    const isConnectionError =
+      msg.includes('Unable to connect') ||
+      msg.includes('ECONNREFUSED') ||
+      msg.includes('ECONNRESET') ||
+      msg.includes('Is the computer able to access the url');
+    if (isConnectionError) {
+      console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} not reachable on ${method} ${path}: ${msg}`);
+      const errHeaders = new Headers();
+      if (origin) {
+        errHeaders.set('Access-Control-Allow-Origin', origin);
+        errHeaders.set('Access-Control-Allow-Credentials', 'true');
+      }
+      return new Response(
+        JSON.stringify({ error: true, message: 'Sandbox is starting up. Please retry in a few seconds.', status: 503 }),
+        { status: 503, headers: errHeaders },
+      );
+    }
+    // Non-connection errors (abort, DNS, etc.) — re-throw to Hono error handler
+    throw err;
+  }
 
   // Headers received — clear the connection timeout.
   // The response body (potentially an SSE stream) continues flowing untouched.
