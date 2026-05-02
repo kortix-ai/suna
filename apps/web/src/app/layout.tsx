@@ -14,6 +14,8 @@ import { getServerPublicEnv } from '@/lib/public-env-server';
 import { featureFlags } from '@/lib/feature-flags';
 import { connection } from 'next/server';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
+import { DesktopChrome } from '@/components/desktop/desktop-chrome';
+import { DESKTOP_INIT_SCRIPT } from '@/lib/desktop';
 
 // Lazy load non-critical analytics and global components
 const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
@@ -119,6 +121,9 @@ export default async function RootLayout({
             __html: `window.__KORTIX_RUNTIME_CONFIG=${JSON.stringify(runtimeEnv)};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`,
           }}
         />
+
+        {/* Desktop runtime detection — runs before hydration so CSS reacts on first paint. */}
+        <script dangerouslySetInnerHTML={{ __html: DESKTOP_INIT_SCRIPT }} />
 
         {/* Font preloading is handled automatically by next/font/local in fonts/roobert.ts */}
 
@@ -269,6 +274,7 @@ export default async function RootLayout({
           disableTransitionOnChange
         >
           <BrowserNoiseGuard />
+          <DesktopChrome />
           <AuthProvider>
             <I18nProvider>
               <ReactQueryProvider>

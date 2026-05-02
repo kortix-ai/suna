@@ -1700,3 +1700,113 @@
 .animate-canvas-shimmer {
   animation: canvas-shimmer 1.8s ease-in-out infinite;
 }
+
+/* ─── Desktop shell chrome (Tauri) ───────────────────────────────────────
+   No visible chrome — the web app's UI extends to the window edge, with
+   the OS traffic lights floating over the sidebar's top-left on macOS.
+   This layer just provides a 28px invisible drag strip + Win/Linux
+   controls. `[data-desktop]` is set on <html> pre-hydration. */
+.kx-desktop-chrome {
+  display: none;
+}
+html[data-desktop="true"] .kx-desktop-chrome {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  z-index: 100;
+  display: flex;
+  align-items: stretch;
+  background: transparent;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+html[data-desktop="true"] .kx-desktop-chrome > * {
+  pointer-events: auto;
+}
+html[data-desktop="true"] .kx-desktop-drag {
+  flex: 1;
+  -webkit-app-region: drag;
+}
+/* macOS: skip the traffic-light gutter so the OS's own click handling owns
+   that area. */
+html[data-desktop-platform="macos"] .kx-desktop-drag {
+  margin-left: 80px;
+}
+html[data-desktop="true"] .kx-desktop-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+}
+html[data-desktop-platform="macos"] .kx-desktop-controls {
+  display: none;
+}
+html[data-desktop="true"] .kx-desktop-ctrl {
+  width: 36px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: var(--foreground, #111);
+  opacity: 0.7;
+  cursor: default;
+  border-radius: 4px;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+html[data-desktop="true"] .kx-desktop-ctrl:hover {
+  background: color-mix(in oklab, currentColor 12%, transparent);
+  opacity: 1;
+}
+html[data-desktop="true"] .kx-desktop-ctrl-close:hover {
+  background: #e81123;
+  color: #fff;
+  opacity: 1;
+}
+
+/* ─── Native macOS feel ─────────────────────────────────────────────────
+   Body becomes transparent so the NSVisualEffectView (Sidebar material)
+   applied in Rust shows through. The dashboard's main content area still
+   has its own opaque `bg-background` so only the sidebar+top reveal the
+   vibrancy — exactly the Linear/Cursor look. */
+html[data-desktop="true"] body {
+  background: transparent !important;
+}
+/* Sidebar: translucent so vibrancy shows through. Light + dark both pick
+   up `--sidebar` from the theme; we just thin it out. */
+html[data-desktop="true"] [data-sidebar="sidebar"] {
+  background: color-mix(in oklab, var(--sidebar) 55%, transparent) !important;
+  backdrop-filter: saturate(140%) blur(12px);
+  -webkit-backdrop-filter: saturate(140%) blur(12px);
+}
+/* macOS: drop a 32px title-bar zone at the top of every column. Traffic
+   lights float on the sidebar's vibrancy in that zone; sidebar header
+   logo + main-column content both align below it. The logo's left x stays
+   unchanged from the web — no horizontal shift, no off-axis weight when
+   the sidebar collapses to icon-only. */
+html[data-desktop-platform="macos"] [data-sidebar="header"] {
+  padding-top: calc(0.5rem + 24px);
+  transition: padding 240ms ease;
+}
+html[data-desktop-platform="macos"] [data-slot="sidebar-inset"] {
+  padding-top: 32px;
+}
+/* Desktop already brands itself via the dock icon and window title — no need
+   to repeat the K mark inside the sidebar header. Hide both placements
+   (collapsed symbol + open logomark). The collapse-button still lives in the
+   header below it, so the padding-top stays. */
+html[data-desktop="true"] [data-sidebar="header"] img[alt="Kortix"] {
+  display: none;
+}
+/* In the collapsed sidebar, the K used to be the always-visible affordance
+   (replaced by a chevron on hover). With it hidden, surface the chevron
+   permanently so users still see the "click to expand" cue. */
+html[data-desktop="true"] [data-sidebar="header"] .group\/collapsed > svg {
+  display: block !important;
+}
+/* Drag region: the chrome strip covers the title-bar zone. On macOS the
+   first 80px is the OS traffic-light area; rest is freely draggable. */

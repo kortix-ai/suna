@@ -301,7 +301,8 @@ export function useOpenCodeSessionTodo(sessionId: string) {
     queryFn: async () => {
       const client = getClient();
       const result = await client.session.todo({ sessionID: sessionId });
-      return unwrap(result);
+      const data = unwrap(result);
+      return Array.isArray(data) ? data : [];
     },
     enabled: !!sessionId,
     staleTime: Infinity,

@@ -303,10 +303,14 @@ export function SidebarRight() {
           opacity: obHide ? 0 : 1,
         }}
       >
-        <div className="bg-sidebar text-sidebar-foreground flex h-full w-full flex-col">
+        <div
+          data-sidebar="sidebar"
+          data-side="right"
+          className="bg-sidebar text-sidebar-foreground flex h-full w-full flex-col"
+        >
 
           {/* ====== HEADER ====== */}
-          <div className="flex flex-col pt-3 pb-0 overflow-visible">
+          <div data-sidebar="header" className="flex flex-col pt-3 pb-0 overflow-visible">
             <div className="relative flex h-[32px] items-center px-3 justify-between">
               {state === 'collapsed' && (
                 <div className="absolute inset-0 flex items-center justify-center">

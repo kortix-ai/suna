@@ -1,0 +1,12 @@
+# Rust build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Tauri-generated icons (regenerate via `pnpm icons`)
+# Keep the source icon checked in; ignore everything else.
+src-tauri/icons/*
+!src-tauri/icons/.gitkeep
+!src-tauri/icons/source.png
+
+# Bundled output
+dist/

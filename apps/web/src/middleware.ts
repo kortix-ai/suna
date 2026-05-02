@@ -54,6 +54,7 @@ const PUBLIC_ROUTES = [
   '/countryerror', // Country restriction error page should be public
   '/landing', // Three.js landing page should be public
   '/variant-2', // Landing page variant should be public
+  '/home-wip', // WIP landing page draft should be public
   '/maintenance', // Maintenance page must be accessible without auth
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
@@ -279,6 +280,14 @@ export async function middleware(request: NextRequest) {
   if (pathname === '/' && user) {
     const target = activeInstanceId ? buildInstancePath(activeInstanceId, '/dashboard') : '/instances';
     return NextResponse.redirect(new URL(target, request.url));
+  }
+
+  // Desktop shell never shows the marketing homepage. The Tauri window already
+  // boots at /dashboard, but any internal nav back to / (logo click, history
+  // back, etc.) gets bounced too. Unauthenticated users hit the existing auth
+  // gate on /dashboard and land on /auth — no special-casing needed.
+  if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
   // Auto-redirect based on geo-detection for marketing pages

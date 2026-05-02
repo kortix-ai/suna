@@ -1216,7 +1216,7 @@ function TodoChip({ sessionId }: { sessionId: string }) {
   const { data: todos } = useOpenCodeSessionTodo(sessionId);
   const [expanded, setExpanded] = useState(false);
 
-  if (!todos || todos.length === 0) return null;
+  if (!Array.isArray(todos) || todos.length === 0) return null;
 
   const completed = todos.filter((t: any) => t.status === 'completed').length;
   const total = todos.length;
