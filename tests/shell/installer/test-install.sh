@@ -258,6 +258,128 @@ else
   fail "uses pre-built Docker images"
 fi
 
+# ── Installer resilience (issue #3086) ──
+
+if grep -q 'KORTIX_PULL_RETRIES' "$SCRIPT"; then
+  pass "pull retry count is configurable (KORTIX_PULL_RETRIES)"
+else
+  fail "pull retry count is configurable (KORTIX_PULL_RETRIES)"
+fi
+
+if grep -q 'KORTIX_PULL_RETRY_DELAY' "$SCRIPT"; then
+  pass "initial pull retry delay is configurable (KORTIX_PULL_RETRY_DELAY)"
+else
+  fail "initial pull retry delay is configurable (KORTIX_PULL_RETRY_DELAY)"
+fi
+
+if grep -q 'manifest unknown\|repository does not exist\|pull access denied' "$SCRIPT"; then
+  pass "pull retry skips terminal registry errors"
+else
+  fail "pull retry skips terminal registry errors"
+fi
+
+if grep -qE 'docker compose up -d[[:space:]]*>"\$compose_log"' "$SCRIPT"; then
+  pass "installer captures compose up output for diagnostics"
+else
+  fail "installer captures compose up output for diagnostics"
+fi
+
+# Behavioral test: stub a fake `docker` binary on PATH and exercise the
+# retry helper extracted from the installer.
+TMP_TEST_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_TEST_DIR"' EXIT
+
+mkdir -p "$TMP_TEST_DIR/bin"
+cat > "$TMP_TEST_DIR/bin/docker" << 'FAKEDOCKER'
+#!/usr/bin/env bash
+# Fake docker binary used to exercise pull retry semantics in tests.
+# Behavior is driven by env vars set by the test harness.
+set -u
+mode="${FAKE_DOCKER_MODE:-fail-then-succeed}"
+state_file="${FAKE_DOCKER_STATE:-/tmp/_kortix_fake_docker_state}"
+[ "${1:-}" = "pull" ] || { echo "fake docker only supports pull" >&2; exit 64; }
+
+attempts=0
+[ -f "$state_file" ] && attempts=$(cat "$state_file")
+attempts=$((attempts + 1))
+echo "$attempts" > "$state_file"
+
+case "$mode" in
+  always-succeed) echo "ok"; exit 0 ;;
+  fail-then-succeed)
+    if [ "$attempts" -ge 3 ]; then echo "ok"; exit 0; fi
+    echo "dial tcp: lookup auth.docker.io on 127.0.0.53:53: i/o timeout" >&2
+    exit 1
+    ;;
+  always-transient)
+    echo "dial tcp: lookup registry.docker.io: i/o timeout" >&2
+    exit 1
+    ;;
+  manifest-unknown)
+    echo "Error response from daemon: manifest unknown" >&2
+    exit 1
+    ;;
+  *)
+    echo "fake docker: unknown mode $mode" >&2
+    exit 99
+    ;;
+esac
+FAKEDOCKER
+chmod +x "$TMP_TEST_DIR/bin/docker"
+
+# Extract just the `pull_images_parallel` function from the installer
+# so we can exercise it without running the rest of the script.
+cat > "$TMP_TEST_DIR/runner.sh" << 'RUNNER'
+#!/usr/bin/env bash
+set -euo pipefail
+KORTIX_PULL_PARALLELISM="${KORTIX_PULL_PARALLELISM:-2}"
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+error() { printf "    %s%s%s\n" "$RED" "$*" "$NC" >&2; }
+warn()  { printf "    %s%s%s\n" "$YELLOW" "$*" "$NC"; }
+SCRIPT="$1"; shift
+awk '/^pull_images_parallel\(\) \{/{flag=1} flag{print} flag && /^\}$/{flag=0; exit}' "$SCRIPT" > /tmp/_pip.sh
+# shellcheck disable=SC1091
+source /tmp/_pip.sh
+pull_images_parallel "$@"
+RUNNER
+chmod +x "$TMP_TEST_DIR/runner.sh"
+
+run_pull_test() {
+  local label="$1" mode="$2" expected_exit="$3" extra_env="$4"
+  shift 4
+  rm -f "$TMP_TEST_DIR/state"
+  local actual_exit=0
+  env -i PATH="$TMP_TEST_DIR/bin:/usr/bin:/bin" \
+    HOME="$HOME" \
+    FAKE_DOCKER_MODE="$mode" \
+    FAKE_DOCKER_STATE="$TMP_TEST_DIR/state" \
+    $extra_env \
+    bash "$TMP_TEST_DIR/runner.sh" "$SCRIPT" "$@" >/dev/null 2>&1 \
+    || actual_exit=$?
+  if [ "$actual_exit" = "$expected_exit" ]; then
+    pass "$label"
+  else
+    fail "$label (expected exit $expected_exit, got $actual_exit)"
+  fi
+}
+
+run_pull_test "pull_images_parallel succeeds when docker pull works first try" \
+  always-succeed 0 "" kortix/api:test
+run_pull_test "pull_images_parallel retries transient errors and eventually succeeds" \
+  fail-then-succeed 0 "KORTIX_PULL_RETRIES=4 KORTIX_PULL_RETRY_DELAY=1" kortix/api:test
+run_pull_test "pull_images_parallel exits non-zero after exhausting retries on transient errors" \
+  always-transient 1 "KORTIX_PULL_RETRIES=2 KORTIX_PULL_RETRY_DELAY=1" kortix/api:test
+run_pull_test "pull_images_parallel fails fast on manifest-unknown without retrying" \
+  manifest-unknown 1 "KORTIX_PULL_RETRIES=5 KORTIX_PULL_RETRY_DELAY=1" kortix/api:test
+
+# manifest-unknown should make exactly 1 attempt (no wasted retry budget).
+attempts=$(cat "$TMP_TEST_DIR/state" 2>/dev/null || echo 0)
+if [ "$attempts" = "1" ]; then
+  pass "manifest-unknown short-circuits at exactly 1 attempt"
+else
+  fail "manifest-unknown short-circuits at exactly 1 attempt (got $attempts)"
+fi
+
 # ── Old scripts deleted ──
 
 if [ ! -f "$ROOT_DIR/scripts/install.sh" ]; then
