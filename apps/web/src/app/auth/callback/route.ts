@@ -23,7 +23,50 @@ export async function GET(request: NextRequest) {
   const next = sanitizeAuthReturnUrl(searchParams.get('returnUrl') || searchParams.get('redirect'))
   const termsAccepted = searchParams.get('terms_accepted') === 'true'
   const email = searchParams.get('email') || '' // Email passed from magic link redirect URL
+  const desktop = searchParams.get('desktop') === 'true'
   const runtimeEnv = getServerPublicEnv()
+
+  // Desktop OAuth bounce: Supabase 302'd the user's BROWSER here. Don't
+  // exchange the code on the web side — bounce to `kortix://auth/callback`
+  // with the same params so the OS hands the code to the desktop app, and
+  // leave the browser tab on a real page so it doesn't spin forever waiting
+  // for a navigation that the kortix:// scheme never produces.
+  if (desktop) {
+    const forwardParams = new URLSearchParams()
+    for (const [k, v] of searchParams) {
+      if (k !== 'desktop') forwardParams.set(k, v)
+    }
+    const deepLink = `kortix://auth/callback${forwardParams.toString() ? `?${forwardParams.toString()}` : ''}`
+    const escaped = deepLink.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    const html = `<!doctype html><html><head><meta charset="utf-8"/>
+<title>Opening Kortix…</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+  html,body{margin:0;height:100%;background:#0a0a0a;color:#f4f4f5;
+    font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;}
+  .wrap{display:grid;place-items:center;height:100%;text-align:center;padding:24px;}
+  h1{font-size:22px;font-weight:500;margin:0 0 10px;letter-spacing:-0.01em;}
+  p{margin:0;color:#a1a1aa;font-size:13px;line-height:1.6;max-width:340px;}
+  a{color:#f4f4f5;text-decoration:underline;text-underline-offset:3px;}
+  .dot{width:6px;height:6px;border-radius:50%;background:currentColor;
+    display:inline-block;margin:0 2px;opacity:.4;animation:pulse 1.2s infinite both;}
+  .dot:nth-child(2){animation-delay:.2s;}.dot:nth-child(3){animation-delay:.4s;}
+  @keyframes pulse{0%,80%,100%{opacity:.2}40%{opacity:1}}
+  .dots{margin-bottom:18px;color:#52525b;}
+</style></head><body>
+<div class="wrap"><div>
+  <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+  <h1>You're signed in</h1>
+  <p>Opening Kortix… you can close this tab.<br/>
+    If nothing happens, <a href="${escaped}">click here</a> to open the app.</p>
+</div></div>
+<script>window.location.replace(${JSON.stringify(deepLink)});</script>
+</body></html>`
+    return new NextResponse(html, {
+      status: 200,
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
+  }
 
   // Use request origin for redirects (most reliable for local dev)
   // This ensures localhost:3000 redirects stay on localhost, not staging

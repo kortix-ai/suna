@@ -1462,10 +1462,10 @@ export function ServerSelector() {
         <button
           type="button"
           className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
-          onClick={() => router.push('/instances')}
+          onClick={() => router.push('/dashboard')}
         >
           <Settings2 className="size-3" />
-          Manage instances
+          Open dashboard
         </button>
       </div>
     </div>

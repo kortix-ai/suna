@@ -56,22 +56,26 @@ export const DESKTOP_URL_SCHEME = 'kortix';
 
 /**
  * Returns the right OAuth redirect target for the current runtime:
- * - Desktop: `kortix://auth/callback?...` so Supabase bounces the auth code
- *   back into the app via the deep-link handler.
+ * - Desktop: HTTPS `/auth/callback?desktop=true&...` so the user's browser
+ *   lands on a real page after Supabase's 302. That page renders a "you're
+ *   signed in" UI and JS-bounces to `kortix://auth/callback?...`. Going
+ *   straight to `kortix://` leaves the browser tab spinning forever — the
+ *   OS opens the app but the tab itself has nowhere to navigate.
  * - Web: the standard origin-based callback URL.
  *
- * Pass this to `supabase.auth.signInWithOAuth({ options: { redirectTo: ... } })`
- * and add the desktop URL to Supabase's allowed redirect list.
+ * The desktop bounce uses the desktop's loaded origin (typically
+ * `http://localhost:3000` in dev, `https://kortix.com` in prod) so the
+ * Supabase redirect URL allowlist only needs the standard callbacks.
  */
 export function authRedirectUrl(path: string = '/auth/callback'): string {
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (typeof window === 'undefined') return cleanPath;
+  const origin = window.location.origin;
   if (isDesktop()) {
-    return `${DESKTOP_URL_SCHEME}:/${cleanPath}`;
+    const sep = cleanPath.includes('?') ? '&' : '?';
+    return `${origin}${cleanPath}${sep}desktop=true`;
   }
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}${cleanPath}`;
-  }
-  return cleanPath;
+  return `${origin}${cleanPath}`;
 }
 
 /* ─── Zoom (browser-style Cmd+/Cmd-/Cmd0) ─────────────────────────────── */

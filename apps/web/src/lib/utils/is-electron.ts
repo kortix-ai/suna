@@ -1,24 +1,26 @@
-// Custom protocol scheme for Electron deep linking
-const ELECTRON_PROTOCOL = 'kortix';
+import { DESKTOP_URL_SCHEME, isDesktop } from '@/lib/desktop';
+
+// Kept for backwards-compat with the legacy Electron shell. The current
+// desktop app is Tauri-based; both shells share the same `kortix://` scheme.
+const ELECTRON_PROTOCOL = DESKTOP_URL_SCHEME;
 
 /**
- * Detects if the app is running in Electron (desktop app) vs web browser
+ * True when running inside a desktop shell (Tauri or legacy Electron).
+ * Browser usage returns false. The function name is preserved for legacy
+ * call sites — semantically this means "is desktop app".
  */
 export function isElectron(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
+  if (typeof window === 'undefined') return false;
 
-  // Check user agent for Electron (we append "Electron/Kortix-Desktop" in main.js)
+  // New Tauri shell uses the unified `KortixDesktop` UA token.
+  if (isDesktop()) return true;
+
+  // Legacy Electron detection (kept so an old build still authenticates).
   if (typeof navigator !== 'undefined' && navigator.userAgent) {
-    return navigator.userAgent.toLowerCase().includes('electron');
+    if (navigator.userAgent.toLowerCase().includes('electron')) return true;
   }
-
-  // Check for Electron-specific globals
-  if (typeof window !== 'undefined') {
-    // @ts-expect-error - Electron may inject these
-    return !!(window.process && window.process.type === 'renderer');
-  }
+  // @ts-expect-error - Electron renderer process global
+  if (window.process && window.process.type === 'renderer') return true;
 
   return false;
 }

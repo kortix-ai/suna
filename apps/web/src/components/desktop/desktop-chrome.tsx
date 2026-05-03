@@ -32,10 +32,10 @@ export function DesktopChrome() {
     // so we always have to push the saved value back in.
     void setDesktopZoom(getDesktopZoom());
 
-    // Browser-style zoom shortcuts. Cmd on macOS, Ctrl elsewhere.
+    // Browser-style shortcuts. Cmd on macOS, Ctrl elsewhere.
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-      // `=` and `+` both produce the in-zoom shortcut on US layouts; `Shift+=` is `+`.
+      // Zoom: `=`/`+` zoom in, `-`/`_` zoom out, `0` reset.
       if (e.key === '=' || e.key === '+') {
         e.preventDefault();
         void zoomIn();
@@ -45,10 +45,20 @@ export function DesktopChrome() {
       } else if (e.key === '0') {
         e.preventDefault();
         void zoomReset();
+      } else if (e.key === 'r' || e.key === 'R') {
+        // Reload the webview. WKWebView swallows Cmd+R by default; this
+        // makes it work like every other app on macOS. (Cmd+B sidebar
+        // toggle is already wired by the shadcn SidebarProvider —
+        // don't intercept it here.)
+        e.preventDefault();
+        window.location.reload();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Capture phase so we see the keystroke before any inner element (or
+    // WKWebView default) consumes it — otherwise Cmd+R can be silently
+    // swallowed before our window-level bubble handler ever runs.
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true } as EventListenerOptions);
   }, []);
 
   return (

@@ -3,6 +3,15 @@
   "identifier": "default",
   "description": "Default capabilities for the main window",
   "windows": ["main"],
+  "local": true,
+  "remote": {
+    "urls": [
+      "http://localhost:*",
+      "http://127.0.0.1:*",
+      "https://kortix.com",
+      "https://*.kortix.com"
+    ]
+  },
   "permissions": [
     "core:default",
     "core:window:default",

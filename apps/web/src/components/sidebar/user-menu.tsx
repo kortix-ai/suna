@@ -36,9 +36,6 @@ import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { useTranslations } from 'next-intl';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
-import { InstanceSwitcherList } from '@/components/sidebar/instance-switcher';
-import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
-import type { SandboxInfo } from '@/lib/platform-client';
 import {
   themeOptions,
   type SettingsTabId,
@@ -71,7 +68,6 @@ export function UserMenu({ user }: UserMenuProps) {
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>('general');
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const [instanceSettingsTarget, setInstanceSettingsTarget] = React.useState<SandboxInfo | null>(null);
   const { isOpen: isReferralDialogOpen, openDialog: openReferralDialog, closeDialog: closeReferralDialog } = useReferralDialog();
   const { theme, setTheme } = useTheme();
 
@@ -125,15 +121,9 @@ export function UserMenu({ user }: UserMenuProps) {
               align="start"
               sideOffset={4}
             >
-              {/* Slack-style instance switcher — Kortix-neutral styling */}
-              <InstanceSwitcherList
-                onAfterSelect={() => setMenuOpen(false)}
-                onOpenSettings={setInstanceSettingsTarget}
-              />
-
-              <DropdownMenuSeparator className="my-1" />
-
-              {/* Account */}
+              {/* Account-only menu. Workspace switching lives exclusively in
+                  the sidebar-header switcher (Slack/Linear style) so there's
+                  one obvious place for "what workspace am I in / switch". */}
               <DropdownMenuGroup>
                 <DropdownMenuItem onClick={() => openSettings('billing')} className="gap-2 p-2 cursor-pointer">
                   <CreditCard className="size-4" />
@@ -190,15 +180,6 @@ export function UserMenu({ user }: UserMenuProps) {
       <ReferralDialog
         open={isReferralDialogOpen}
         onOpenChange={closeReferralDialog}
-      />
-
-      {/* Hoisted out of the dropdown so it stays mounted after the menu closes. */}
-      <InstanceSettingsModal
-        sandbox={instanceSettingsTarget}
-        open={!!instanceSettingsTarget}
-        onOpenChange={(open) => {
-          if (!open) setInstanceSettingsTarget(null);
-        }}
       />
     </>
   );

@@ -1768,45 +1768,86 @@ html[data-desktop="true"] .kx-desktop-ctrl-close:hover {
   opacity: 1;
 }
 
-/* ─── Native macOS feel ─────────────────────────────────────────────────
-   Body becomes transparent so the NSVisualEffectView (Sidebar material)
-   applied in Rust shows through. The dashboard's main content area still
-   has its own opaque `bg-background` so only the sidebar+top reveal the
-   vibrancy — exactly the Linear/Cursor look. */
-html[data-desktop="true"] body {
-  background: transparent !important;
-}
-/* Sidebar: translucent so vibrancy shows through. Light + dark both pick
-   up `--sidebar` from the theme; we just thin it out. */
-html[data-desktop="true"] [data-sidebar="sidebar"] {
-  background: color-mix(in oklab, var(--sidebar) 55%, transparent) !important;
-  backdrop-filter: saturate(140%) blur(12px);
-  -webkit-backdrop-filter: saturate(140%) blur(12px);
-}
-/* macOS: drop a 32px title-bar zone at the top of every column. Traffic
-   lights float on the sidebar's vibrancy in that zone; sidebar header
-   logo + main-column content both align below it. The logo's left x stays
-   unchanged from the web — no horizontal shift, no off-axis weight when
-   the sidebar collapses to icon-only. */
-html[data-desktop-platform="macos"] [data-sidebar="header"] {
-  padding-top: calc(0.5rem + 24px);
+/* ─── Native macOS feel — Linear-style title-bar zone ───────────────────
+   Both columns reserve the same 32px title-bar zone at top so their
+   first content rows align (sidebar workspace selector ↔ inset page
+   header), exactly like Linear. The OS traffic lights live in that zone
+   on the sidebar side; the inset side stays clean. The collapse chevron
+   sits underneath the lights in the sidebar's chevron-row, then the
+   workspace selector below — full width, untouched. */
+html[data-desktop-platform="macos"]
+  [data-side="left"] [data-sidebar="header"] {
+  padding-top: 28px;
+  -webkit-app-region: drag;
+  app-region: drag;
   transition: padding 240ms ease;
 }
-html[data-desktop-platform="macos"] [data-slot="sidebar-inset"] {
-  padding-top: 32px;
+/* Collapsed sidebar's icon-mode rail: bumped from 3.25rem (52px) to
+   4.5rem (72px) on desktop only, so it's wide enough to fully contain
+   the macOS traffic lights (~70px wide) without them spilling onto the
+   inset. Expanded sidebar width is unchanged (web parity). */
+html[data-desktop="true"] [data-slot="sidebar-wrapper"] {
+  --sidebar-width-icon: 4.5rem;
 }
-/* Desktop already brands itself via the dock icon and window title — no need
-   to repeat the K mark inside the sidebar header. Hide both placements
-   (collapsed symbol + open logomark). The collapse-button still lives in the
-   header below it, so the padding-top stays. */
-html[data-desktop="true"] [data-sidebar="header"] img[alt="Kortix"] {
+/* The inset's title-bar row is the tab bar (`role="tablist"`). Make its
+   empty space draggable so users can grab the window from anywhere
+   along the top — interactive children below opt out so tabs/buttons
+   keep working. Also compact it on desktop so it lines up with the
+   macOS traffic lights' 28px row, with one-notch-smaller tab text. */
+html[data-desktop-platform="macos"] [role="tablist"] {
+  -webkit-app-region: drag;
+  app-region: drag;
+  height: 28px !important;
+}
+html[data-desktop="true"] [role="tablist"] [role="tab"] {
+  font-size: 12px;
+}
+html[data-desktop-platform="macos"]
+  [data-side="left"] [data-sidebar="header"] button,
+html[data-desktop-platform="macos"]
+  [data-side="left"] [data-sidebar="header"] a,
+html[data-desktop-platform="macos"]
+  [data-side="left"] [data-sidebar="header"] input,
+html[data-desktop-platform="macos"]
+  [data-side="left"] [data-sidebar="header"] [role="button"],
+html[data-desktop-platform="macos"] [role="tablist"] button,
+html[data-desktop-platform="macos"] [role="tablist"] a,
+html[data-desktop-platform="macos"] [role="tablist"] input,
+html[data-desktop-platform="macos"] [role="tablist"] [role="tab"],
+html[data-desktop-platform="macos"] [role="tablist"] [role="button"] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+/* Inset's first row (the 32px tab bar) sits at y=0 so it occupies the
+   same horizontal band as the traffic lights — tabs align cleanly with
+   the lights instead of being pushed below them. */
+/* macOS top-edge drag strip: a 6px sliver at the very top of the window
+   sits ABOVE all content with `-webkit-app-region: drag`, so the user
+   can grab the window from any horizontal position along its top edge —
+   even areas not covered by the sidebar header or tab bar. The strip is
+   thin enough not to occlude any visible UI. */
+html[data-desktop-platform="macos"] .kx-desktop-chrome {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  z-index: 9999;
+  display: block;
+  pointer-events: auto;
+  background: transparent;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+html[data-desktop-platform="macos"] .kx-desktop-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+  flex: none;
+  height: 100%;
+  width: 100%;
+}
+html[data-desktop-platform="macos"] .kx-desktop-controls {
   display: none;
-}
-/* In the collapsed sidebar, the K used to be the always-visible affordance
-   (replaced by a chevron on hover). With it hidden, surface the chevron
-   permanently so users still see the "click to expand" cue. */
-html[data-desktop="true"] [data-sidebar="header"] .group\/collapsed > svg {
-  display: block !important;
 }
 /* Drag region: the chrome strip covers the title-bar zone. On macOS the
    first 80px is the OS traffic-light area; rest is freely draggable. */

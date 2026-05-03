@@ -24,6 +24,7 @@ import {
   FolderOpen,
   FolderKanban,
   AlertCircle,
+  AlertTriangle,
   Copy,
   ShieldAlert,
 } from 'lucide-react';
@@ -37,6 +38,11 @@ import { useUpdateDialogStore } from '@/stores/update-dialog-store';
 import { UserMenu } from '@/components/sidebar/user-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ThreadIcon } from '@/components/sidebar/thread-icon';
+import {
+  CurrentWorkspaceAvatar,
+  InstanceSwitcherPopover,
+  WorkspacesFlyoutContent,
+} from '@/components/sidebar/instance-switcher-popover';
 
 import {
   Sidebar,
@@ -699,7 +705,7 @@ function SidebarSections() {
           <div className="px-3 flex-shrink-0">
             <CollapsibleTrigger asChild>
               <Button variant="sidebar" className="rounded-lg">
-                <FolderKanban className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
+                <FolderKanban className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
                 <span className="flex-1 text-left">Projects</span>
                 <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/projects:-rotate-90" />
               </Button>
@@ -729,7 +735,7 @@ function SidebarSections() {
         <div className="px-3 flex-shrink-0">
           <CollapsibleTrigger asChild>
             <Button variant="sidebar" className="rounded-lg">
-              <ListTree className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
+              <ListTree className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">Sessions</span>
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
             </Button>
@@ -741,7 +747,13 @@ function SidebarSections() {
       </Collapsible>
 
       {hasLegacy && (
-        <div className="flex-shrink-0">
+        // mt-auto pins this block to the bottom of the SidebarSections column.
+        // Sessions above is `data-[state=open]:flex-1` (eats remaining space
+        // when expanded) so mt-auto becomes 0 in that state — Previous Chats
+        // ends up directly under Sessions either way. When Sessions is
+        // COLLAPSED, mt-auto kicks in and pushes Previous Chats to the very
+        // bottom of the scroll area, just above the footer card stack.
+        <div className="flex-shrink-0 mt-auto">
           <div className="px-3 flex items-center">
             <button
               onClick={() => setLegacyOpen((o) => !o)}
@@ -948,7 +960,7 @@ function SidebarProjectRow({
   );
 }
 
-function ScheduledDeletionCard() {
+function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; onExpand: () => void }) {
   const { sandbox, refetch } = useSandbox();
   const [reactivating, setReactivating] = useState(false);
   const activeServerId = useServerStore((s) => s.activeServerId);
@@ -997,6 +1009,37 @@ function ScheduledDeletionCard() {
   };
 
   const daysLeft = cancelAt ? Math.max(0, Math.ceil((cancelAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
+  const detail = `Deletion ${daysLeft !== null ? `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `on ${dateStr}`}. All data will be removed.`;
+
+  // Collapsed: same DNA as SidebarConfigDegradationNotice — small icon
+  // button + pulsing dot + tooltip. Click expands the sidebar so the user
+  // can see the full card and hit Reactivate.
+  if (collapsed) {
+    return (
+      <div className="w-full px-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onExpand}
+              aria-label="Subscription cancelled — click to reactivate"
+              className="relative flex items-center justify-center w-full py-2 rounded-lg cursor-pointer text-red-500 hover:bg-red-500/10 transition-colors duration-150"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              <span className="absolute top-1.5 right-2 flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+              </span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={12} className="max-w-64 text-xs">
+            <div className="font-medium text-red-500">Subscription cancelled</div>
+            <div className="mt-1 text-muted-foreground">{detail}</div>
+          </TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-3.5 py-3">
@@ -1427,6 +1470,16 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
         </div>
+
+        {/* Workspace-style instance switcher — single click to swap, no full-page nav. */}
+        <div
+          className={cn(
+            'px-2 pt-2',
+            effectiveState === 'collapsed' && 'hidden',
+          )}
+        >
+          <InstanceSwitcherPopover />
+        </div>
       </SidebarHeader>
 
       {/* ====== CONTENT ====== */}
@@ -1436,6 +1489,15 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
           'absolute inset-0 px-2 pt-2 space-y-0.5 flex flex-col items-center',
           effectiveState === 'collapsed' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         )}>
+          {/* Workspace preview — current workspace avatar with hover flyout
+              for switching, matching the Sessions/Projects pattern. Sits at
+              the top of the rail so users always see "this is the workspace
+              I'm in" even when collapsed. */}
+          <CollapsedIconButton
+            icon={<CurrentWorkspaceAvatar />}
+            label="Workspace"
+            flyoutContent={<WorkspacesFlyoutContent />}
+          />
           <CollapsedIconButton
             icon={<SquarePen className="h-4 w-4" />}
             label="New session"
@@ -1497,7 +1559,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               variant="sidebar"
               className="rounded-lg"
             >
-              <SquarePen className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
+              <SquarePen className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
               <kbd className="text-[10px] text-muted-foreground">
                 {isMac ? '\u2318J' : 'Ctrl J'}
@@ -1521,7 +1583,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               variant="sidebar"
               className="rounded-lg"
             >
-              <Search className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
+              <Search className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">Search</span>
               <kbd className="text-[10px] text-muted-foreground">
                 {isMac ? '\u2318K' : 'Ctrl K'}
@@ -1541,7 +1603,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               variant="sidebar"
               className="rounded-lg"
             >
-              <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
+              <FolderOpen className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">Files</span>
             </Button>
 
@@ -1561,7 +1623,13 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
             window.dispatchEvent(new CustomEvent('sidebar-left-toggled', { detail: { expanded: true } }));
           }}
         />
-        <ScheduledDeletionCard />
+        <ScheduledDeletionCard
+          collapsed={effectiveState === 'collapsed'}
+          onExpand={() => {
+            setOpen(true);
+            window.dispatchEvent(new CustomEvent('sidebar-left-toggled', { detail: { expanded: true } }));
+          }}
+        />
         <SidebarUpdateIndicator collapsed={effectiveState === 'collapsed'} />
         <UserProfileSection user={user} />
       </SidebarFooter>
