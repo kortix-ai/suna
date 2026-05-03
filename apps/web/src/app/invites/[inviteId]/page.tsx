@@ -48,7 +48,7 @@ export default function InvitePage() {
   const declineMutation = useMutation({
     mutationFn: () => declineInvite(inviteId!),
     onSuccess: () => {
-      router.replace('/instances');
+      router.replace('/dashboard');
     },
   });
 
@@ -82,8 +82,8 @@ export default function InvitePage() {
               ? inviteQuery.error.message
               : 'This invite link is invalid or has been revoked.'}
           </StateBody>
-          <GhostAction onClick={() => router.replace('/instances')}>
-            Back to instances
+          <GhostAction onClick={() => router.replace('/dashboard')}>
+            Back to dashboard
           </GhostAction>
         </InviteCard>
       </BrandSurface>
@@ -108,8 +108,8 @@ export default function InvitePage() {
           <p className="text-[12px] text-foreground/30 mt-4">
             Sign out and sign back in with the address that received the invite.
           </p>
-          <GhostAction onClick={() => router.replace('/instances')}>
-            Back to instances
+          <GhostAction onClick={() => router.replace('/dashboard')}>
+            Back to dashboard
           </GhostAction>
         </InviteCard>
       </BrandSurface>
@@ -124,8 +124,8 @@ export default function InvitePage() {
           <StateBody>
             Expired <span className="text-foreground/60">{formatWhen(invite.expires_at)}</span>. Ask the person who invited you to send a new one.
           </StateBody>
-          <GhostAction onClick={() => router.replace('/instances')}>
-            Back to instances
+          <GhostAction onClick={() => router.replace('/dashboard')}>
+            Back to dashboard
           </GhostAction>
         </InviteCard>
       </BrandSurface>

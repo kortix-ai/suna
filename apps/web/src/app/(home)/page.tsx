@@ -77,7 +77,7 @@ export default function Home() {
       window.location.href = '/auth';
       return;
     }
-    window.location.href = '/instances';
+    window.location.href = '/dashboard';
   }, [user]);
 
   return (

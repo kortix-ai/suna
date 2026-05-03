@@ -41,6 +41,12 @@ const WINDOW_OPEN_SHIM: &str = r#"
   window.__kortixWindowShim = true;
 
   /* ─── window.open / target=_blank → open_external ─────────────────── */
+  /* These ALWAYS route to the system browser — even for internal hosts.
+     The webview itself can navigate to internal URLs freely (handled by
+     `is_internal` in the Rust on_navigation callback so iframes load), but
+     "open in a new tab/window" intent should always pop out to the user's
+     real browser. Tauri can't open a real second browser tab, so the only
+     sensible target is the OS default. */
   var openExternal = function(url) {
     try {
       var t = window.__TAURI__;
@@ -130,15 +136,27 @@ fn app_url() -> String {
 }
 
 /// True if a URL belongs to the app itself — internal navigation that should
-/// stay inside the webview (Supabase callbacks, page nav, etc.).
+/// stay inside the webview (Supabase callbacks, page nav, sandbox previews,
+/// etc.).
+///
+/// `*.localhost` is critical: sandbox preview URLs use the pattern
+/// `http://p{port}-{sandboxId}.localhost:{backendPort}/...`. Without the
+/// suffix match these would be treated as external and the iframe inside the
+/// in-app Browser tab would be punted to the user's system browser instead
+/// of loading.
 fn is_internal(url: &url::Url) -> bool {
     if url.scheme() == "kortix" {
         return true;
     }
     let host = url.host_str().unwrap_or("");
     matches!(host, "localhost" | "127.0.0.1")
+        || host.ends_with(".localhost")
         || host == "kortix.com"
         || host.ends_with(".kortix.com")
+        || host == "kortix.cloud"
+        || host.ends_with(".kortix.cloud")
+        || host == "justavps.com"
+        || host.ends_with(".justavps.com")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -158,15 +176,18 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_shell::init())
-        // Persist window POSITION + MAXIMIZED state between launches, but
-        // NOT the size — we always force a sensible launch size in setup
-        // so the app can't be opened into a stale tiny window.
+        // Persist ONLY the maximized flag between launches. We deliberately
+        // do NOT persist position or size — both have caused real problems:
+        //   - Stale size restored a tiny ~548×344 window.
+        //   - Stale position restored a Y of -990 (window off-screen on a
+        //     disconnected monitor → "white screen" because there was no
+        //     visible window at all).
+        // Every launch re-centers at the forced launch size below; any
+        // post-launch resize/move the user does is ephemeral, which is
+        // a perfectly fine trade for never starting in a broken state.
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_state_flags(
-                    tauri_plugin_window_state::StateFlags::POSITION
-                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
-                )
+                .with_state_flags(tauri_plugin_window_state::StateFlags::MAXIMIZED)
                 .build(),
         )
         .plugin(tauri_plugin_deep_link::init())
@@ -187,7 +208,21 @@ pub fn run() {
             .resizable(true)
             .decorations(true)
             .visible(false)
-            .user_agent("KortixDesktop/0.1.0")
+            // Browser-like user agent so server-side and 3rd-party libs that
+            // sniff for `Mozilla/Safari` don't treat the desktop webview as a
+            // bot/non-browser. We keep the `KortixDesktop/0.1.0` token
+            // appended so middleware/`isDesktop()` checks still match.
+            .user_agent(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+                 AppleWebKit/605.1.15 (KHTML, like Gecko) \
+                 Version/17.0 Safari/605.1.15 KortixDesktop/0.1.0",
+            )
+            // Disable Tauri's native OS drag-drop interceptor so HTML5
+            // dragenter/dragover/drop events reach the webview. Without this
+            // the chat input (and any other dropzone) never sees a file drop
+            // — the OS hands the drop to Tauri's handler and the page is
+            // none the wiser.
+            .disable_drag_drop_handler()
             // Opaque window. We previously used transparent(true) + vibrancy,
             // but in the bundled .app (where this MUST run on macOS so the
             // OS dispatches `kortix://` to it) the layering renders the

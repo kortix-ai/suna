@@ -7,8 +7,8 @@ test('keeps safe relative auth return paths', () => {
   assert.equal(sanitizeAuthReturnUrl('/agents?tab=recent'), '/agents?tab=recent')
 })
 
-test('normalizes instance-specific paths back to /instances', () => {
-  assert.equal(sanitizeAuthReturnUrl('/instances/abc123?foo=bar'), '/instances')
+test('keeps instance-specific deep links', () => {
+  assert.equal(sanitizeAuthReturnUrl('/instances/abc123?foo=bar'), '/instances/abc123?foo=bar')
 })
 
 test('rejects javascript scheme payloads', () => {

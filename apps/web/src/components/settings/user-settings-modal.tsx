@@ -1520,7 +1520,7 @@ function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: bool
         try {
             const response = await billingApi.purchaseCredits({
                 amount: selectedPackage.price,
-                success_url: `${window.location.origin}/instances?credit_purchase=success`,
+                success_url: `${window.location.origin}/dashboard?credit_purchase=success`,
                 cancel_url: window.location.href,
             });
             if (response.checkout_url) {

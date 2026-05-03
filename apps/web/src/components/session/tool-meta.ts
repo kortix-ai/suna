@@ -140,10 +140,16 @@ export function contextToolTrigger(part: ToolPart): {
     case 'write':
       return { title: 'Write', subtitle: sub };
     case 'webfetch':
+    case 'web_fetch':
       return { title: 'Fetch', subtitle: sub };
     case 'websearch':
     case 'web_search':
       return { title: 'Web Search', subtitle: sub };
+    case 'scrape':
+    case 'scrape_webpage':
+      return { title: 'Scrape', subtitle: sub };
+    case 'apply_patch':
+      return { title: 'Apply Patch', subtitle: sub };
     case 'task':
       return { title: 'Task', subtitle: sub };
     case 'session_spawn':

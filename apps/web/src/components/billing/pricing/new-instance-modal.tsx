@@ -36,7 +36,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
   const dialogRef = useRef<HTMLDivElement>(null);
   const defaultApplied = useRef(false);
 
-  const defaultReturnUrl = typeof window !== 'undefined' ? `${window.location.origin}/instances?subscription=success` : '/instances';
+  const defaultReturnUrl = typeof window !== 'undefined' ? `${window.location.origin}/dashboard?subscription=success` : '/dashboard';
   const resolvedReturnUrl = returnUrl || defaultReturnUrl;
 
   const location = INSTANCE_CONFIG.fallbackRegion; // EU-only
@@ -98,7 +98,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
       if (response.status === 'subscription_created' || response.status === 'no_change') {
         toast.success(response.message || 'Your Kortix is on its way');
         onOpenChange(false);
-        window.location.href = '/instances?subscription=success';
+        window.location.href = '/dashboard?subscription=success';
         return;
       }
       if (response.message) toast.success(response.message);

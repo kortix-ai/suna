@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    App Transport Security exceptions.
+
+    macOS WKWebView blocks plain-HTTP loads by default and the automatic
+    "localhost" exemption only covers the literal hostname `localhost` —
+    not `*.localhost` subdomains (sandbox previews like
+    `p3211-kortix-sandbox.localhost:8008`) and not arbitrary kortix-side
+    endpoints that may briefly redirect through HTTP during development
+    or in self-hosted deployments.
+
+    Trade-off: NSAllowsArbitraryLoads disables ATS globally for this app.
+    That's the right call for a desktop client whose entire job is to
+    embed user-controlled web content (sandbox previews, kortix backends,
+    any arbitrary preview iframe). The webview is otherwise sandboxed by
+    Tauri's capabilities allowlist (see capabilities/default.json) which
+    still gates which hosts may be loaded at all.
+
+    NSAllowsArbitraryLoadsInWebContent is the WebKit-specific opt-in that
+    keeps HTTP working inside WKWebView even on stricter macOS versions.
+  -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <true/>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+</dict>
+</plist>

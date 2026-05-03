@@ -10,6 +10,7 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronRight,
+  Globe,
   Search,
   ChevronUp,
   Copy,
@@ -2613,21 +2614,44 @@ function SameToolGroup({
       : '';
 
   const isContext = toolName === '__context__';
+  const isResearch = toolName === '__research__';
 
   const headerLabel = useMemo(() => {
-    if (!isContext) {
-      const t = contextToolTrigger(entries[0].part);
-      return `${t.title} · ${entries.length}x`;
+    if (isContext) {
+      const s = contextToolSummary(entries.map((e) => e.part));
+      const items: string[] = [];
+      if (s.read > 0) items.push(`${s.read} read${s.read > 1 ? 's' : ''}`);
+      if (s.search > 0)
+        items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
+      if (s.list > 0) items.push(`${s.list} list${s.list > 1 ? 's' : ''}`);
+      const summary = items.join(', ');
+      const prefix = anyRunning ? 'Gathering context' : 'Gathered context';
+      return summary ? `${prefix} · ${summary}` : prefix;
     }
-    const s = contextToolSummary(entries.map((e) => e.part));
-    const items: string[] = [];
-    if (s.read > 0) items.push(`${s.read} read${s.read > 1 ? 's' : ''}`);
-    if (s.search > 0) items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
-    if (s.list > 0) items.push(`${s.list} list${s.list > 1 ? 's' : ''}`);
-    const summary = items.join(', ');
-    const prefix = anyRunning ? 'Gathering context' : 'Gathered context';
-    return summary ? `${prefix} · ${summary}` : prefix;
-  }, [isContext, entries, anyRunning]);
+
+    if (isResearch) {
+      let searches = 0;
+      let fetches = 0;
+      let scrapes = 0;
+      for (const { part } of entries) {
+        const n = part.tool.replace(/^oc-/, '').replace(/-/g, '_');
+        if (n === 'web_search' || n === 'websearch') searches++;
+        else if (n === 'webfetch' || n === 'web_fetch') fetches++;
+        else if (n === 'scrape' || n === 'scrape_webpage') scrapes++;
+      }
+      const items: string[] = [];
+      if (searches > 0)
+        items.push(`${searches} search${searches > 1 ? 'es' : ''}`);
+      if (fetches > 0) items.push(`${fetches} fetch${fetches > 1 ? 'es' : ''}`);
+      if (scrapes > 0) items.push(`${scrapes} scrape${scrapes > 1 ? 's' : ''}`);
+      const summary = items.join(', ');
+      const prefix = anyRunning ? 'Researching' : 'Researched';
+      return summary ? `${prefix} · ${summary}` : `${prefix} · ${entries.length}x`;
+    }
+
+    const t = contextToolTrigger(entries[0].part);
+    return `${t.title} · ${entries.length}x`;
+  }, [isContext, isResearch, entries, anyRunning]);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -2640,12 +2664,21 @@ function SameToolGroup({
             'transition-colors max-w-full group/grp',
           )}
         >
-          <Search
-            className={cn(
-              'size-3.5 flex-shrink-0 text-muted-foreground/50',
-              anyRunning && 'animate-pulse-heartbeat',
-            )}
-          />
+          {isResearch ? (
+            <Globe
+              className={cn(
+                'size-3.5 flex-shrink-0 text-muted-foreground/50',
+                anyRunning && 'animate-pulse-heartbeat',
+              )}
+            />
+          ) : (
+            <Search
+              className={cn(
+                'size-3.5 flex-shrink-0 text-muted-foreground/50',
+                anyRunning && 'animate-pulse-heartbeat',
+              )}
+            />
+          )}
           <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
           {durationLabel && (
             <span className="text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
@@ -2667,39 +2700,55 @@ function SameToolGroup({
 
       <CollapsibleContent>
         <div className="ml-[18px] mt-0.5 mb-1.5 pl-3 border-l border-border/30 space-y-0.5">
-          {entries.map(({ part }) => {
-            const t = contextToolTrigger(part);
-            const running =
-              (part.state as any)?.status === 'pending' ||
-              (part.state as any)?.status === 'running';
-            const s = (part.state as any)?.time?.start;
-            const e = (part.state as any)?.time?.end;
-            const dur =
-              typeof s === 'number' && typeof e === 'number' && e > s
-                ? e - s
-                : 0;
-            return (
-              <div
-                key={part.id}
-                className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/60"
-              >
-                <span className="flex-shrink-0">{t.title}</span>
-                {!running && t.subtitle && (
-                  <span className="font-mono truncate min-w-0 opacity-70">
-                    {t.subtitle}
-                  </span>
-                )}
-                {!running && dur >= 1000 && (
-                  <span className="ml-auto text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
-                    {Math.round(dur / 1000)}s
-                  </span>
-                )}
-                {running && (
-                  <Loader2 className="size-2.5 animate-spin flex-shrink-0 text-muted-foreground/40" />
-                )}
-              </div>
-            );
-          })}
+          {isContext
+            ? entries.map(({ part }) => {
+                const t = contextToolTrigger(part);
+                const running =
+                  (part.state as any)?.status === 'pending' ||
+                  (part.state as any)?.status === 'running';
+                const s = (part.state as any)?.time?.start;
+                const e = (part.state as any)?.time?.end;
+                const dur =
+                  typeof s === 'number' && typeof e === 'number' && e > s
+                    ? e - s
+                    : 0;
+                return (
+                  <div
+                    key={part.id}
+                    className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/60 min-w-0"
+                  >
+                    <span className="flex-shrink-0">{t.title}</span>
+                    {!running && t.subtitle && (
+                      <span
+                        className="font-mono truncate min-w-0 flex-1 opacity-70"
+                        title={t.subtitle}
+                      >
+                        {t.subtitle}
+                      </span>
+                    )}
+                    {!running && dur >= 1000 && (
+                      <span className="ml-auto text-[10px] font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+                        {Math.round(dur / 1000)}s
+                      </span>
+                    )}
+                    {running && (
+                      <Loader2 className="size-2.5 animate-spin flex-shrink-0 text-muted-foreground/40" />
+                    )}
+                  </div>
+                );
+              })
+            : entries.map(({ part }) => (
+                // Same-tool, non-context groups (e.g. 3x web_search) render
+                // each call with its full ToolPartRenderer so users see real
+                // results — answers, sources, images — not just the input arg.
+                <div key={part.id} className="-mx-3">
+                  <ToolPartRenderer
+                    part={part}
+                    sessionId={sessionId}
+                    disableNavigation={disableNavigation}
+                  />
+                </div>
+              ))}
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -3541,13 +3590,27 @@ function SessionTurn({
                 pendingToolName = null;
               };
 
-              // Normalize tool name for grouping. Context tools
-              // (read/glob/grep/list) all share one key so they merge
-              // into a single "Gathered context" group.
+              // Normalize tool name for grouping.
+              //   __context__ — read/glob/grep/list collapse into one
+              //                "Gathered context" pile (compact one-liners).
+              //   __research__ — web_search / webfetch / scrape collapse into
+              //                  one "Research" pile (full results expanded).
+              // Same-tool runs (e.g. 3× apply_patch, 3× edit) group naturally
+              // by their normalized tool name and render full per-call results.
               const CONTEXT_SET = new Set(['read', 'glob', 'grep', 'list']);
+              const RESEARCH_SET = new Set([
+                'web_search',
+                'websearch',
+                'webfetch',
+                'web_fetch',
+                'scrape',
+                'scrape_webpage',
+              ]);
               const norm = (t: string) => {
                 const n = t.replace(/^oc-/, '').replace(/-/g, '_');
-                return CONTEXT_SET.has(n) ? '__context__' : n;
+                if (CONTEXT_SET.has(n)) return '__context__';
+                if (RESEARCH_SET.has(n)) return '__research__';
+                return n;
               };
 
               for (const { part, message } of allParts) {

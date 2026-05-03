@@ -309,7 +309,7 @@ function LoginContent() {
         return {};
       }
       if ('success' in result && result.success) {
-        const redirectTo = (result as { redirectTo?: string }).redirectTo || '/instances';
+        const redirectTo = (result as { redirectTo?: string }).redirectTo || '/dashboard';
         window.location.href = redirectTo;
         return result;
       }
@@ -330,7 +330,7 @@ function LoginContent() {
         return {};
       }
       if ('success' in result && result.success) {
-        const redirectTo = (result as { redirectTo?: string }).redirectTo || '/instances';
+        const redirectTo = (result as { redirectTo?: string }).redirectTo || '/dashboard';
         const authEvent = (result as { authEvent?: string }).authEvent || 'login';
         const authMethod = (result as { authMethod?: string }).authMethod || 'email_otp';
         window.location.href = `${redirectTo}?auth_event=${authEvent}&auth_method=${authMethod}`;
@@ -850,10 +850,8 @@ function SelfHostedLoginContent() {
   const returnUrl = sanitizeAuthReturnUrl(rawReturnUrl);
   const [phase, setPhase] = useState<'lock' | 'form'>('lock');
 
-  // After auth, redirect to /instances — the workspace picker — so the
-  // user explicitly chooses which workspace to enter instead of getting
-  // silently dropped into whichever was last active. The picker also
-  // handles the empty/claim state for users with no workspaces yet.
+  // After auth, enter the app directly. Middleware/client sandbox resolution
+  // will use the active workspace when known, or resolve the primary one.
   useEffect(() => {
     if (isLoading || !user) return;
     if (installed === false) return; // installer flow handles its own redirect

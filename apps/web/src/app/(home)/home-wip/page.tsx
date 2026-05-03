@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { useState, useCallback, useEffect } from 'react';
+import Link from 'next/link';
 import { BackgroundAALChecker } from '@/components/auth/background-aal-checker';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import {
@@ -248,7 +249,7 @@ export default function HomeWip() {
       window.location.href = '/auth';
       return;
     }
-    window.location.href = '/instances';
+    window.location.href = '/dashboard';
   }, [user]);
 
   return (
@@ -395,9 +396,9 @@ export default function HomeWip() {
                   <p className="text-[13px] text-muted-foreground leading-relaxed">
                     Suna runs in a full Linux environment with internet, browser, and your tools — so the deliverable is whatever the work needs.
                   </p>
-                  <a href="/templates" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:gap-2 transition-all">
+                  <Link href="/templates" className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:gap-2 transition-all">
                     Explore templates <ArrowRight className="size-3" />
-                  </a>
+                  </Link>
                 </div>
               </div>
             </Reveal>
@@ -642,7 +643,7 @@ export default function HomeWip() {
                       Start a team workspace<ArrowRight className="ml-1.5 size-3.5" />
                     </Button>
                     <Button size="lg" variant="outline" className="h-11 px-6 rounded-full" asChild>
-                      <a href="/enterprise">Talk to sales</a>
+                      <Link href="/enterprise">Talk to sales</Link>
                     </Button>
                   </div>
                 </div>

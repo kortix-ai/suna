@@ -12,7 +12,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getActiveInstanceId } from '@/stores/server-store';
 import { getActiveInstanceIdFromCookie } from '@/lib/instance-routes';
-import { Loader2 } from 'lucide-react';
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 
 export default function OnboardingRedirect() {
   const router = useRouter();
@@ -22,15 +22,9 @@ export default function OnboardingRedirect() {
     if (instanceId) {
       router.replace(`/instances/${instanceId}/onboarding${window.location.search}`);
     } else {
-      // No instance context — punt to the workspace picker so the user
-      // chooses one explicitly instead of getting auto-routed.
-      router.replace('/instances');
+      router.replace('/dashboard');
     }
   }, [router]);
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-    </div>
-  );
+  return <ConnectingScreen forceConnecting minimal />;
 }

@@ -1,8 +1,7 @@
-// Post-auth landing → /instances (workspace picker). Lets the user
-// explicitly choose which workspace to enter instead of getting silently
-// dropped into whichever one happened to be active. Instance-scoped deep
-// links (/instances/[id]/...) still resolve directly.
-const DEFAULT_AUTH_RETURN_URL = '/instances';
+// Post-auth landing goes straight to the app. Middleware/client sandbox
+// resolution will use the active instance cookie when present, or register the
+// primary workspace without forcing the full workspace picker first.
+const DEFAULT_AUTH_RETURN_URL = '/dashboard';
 
 export function sanitizeAuthReturnUrl(
   value?: string | null,

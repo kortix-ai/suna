@@ -1382,12 +1382,20 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
     }
   }, [state]);
 
-  // Cmd+J shortcut for new session (works globally, even when typing)
+  // Cmd+J / Cmd+N shortcut for new session (works globally, even when typing).
+  // Cmd+N is hijacked by the browser in the web build (opens a new window),
+  // but reaches the webview in the Tauri desktop shell where it acts as the
+  // standard "new chat" accelerator.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isDocumentModalOpen) return;
 
-      if ((event.metaKey || event.ctrlKey) && event.key === 'j') {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.shiftKey &&
+        !event.altKey &&
+        (event.key === 'j' || event.key === 'n' || event.key === 'N')
+      ) {
         event.preventDefault();
         handleNewSession();
       }

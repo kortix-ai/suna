@@ -986,51 +986,60 @@ export function BasicTool({
       <span className="flex-shrink-0">{icon}</span>
 
       {/* Trigger content */}
-      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+      <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
         {isTriggerTitle(trigger) ? (
           <>
-            <span className="text-xs whitespace-nowrap">
+            <span className="text-xs whitespace-nowrap flex-shrink-0">
               {trigger.title}
             </span>
-            {trigger.subtitle &&
-              (running ? (
-                <TextShimmer
-                  duration={1}
-                  spread={2}
-                  className="text-xs truncate font-mono"
-                >
-                  {trigger.subtitle}
-                </TextShimmer>
-              ) : (
-                <span
-                  className={cn(
-                    'text-muted-foreground text-xs truncate font-mono',
-                    onSubtitleClick &&
-                      'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
-                  )}
-                  onClick={
-                    onSubtitleClick
-                      ? (e) => {
-                          e.stopPropagation();
-                          onSubtitleClick();
-                        }
-                      : undefined
-                  }
-                >
-                  {trigger.subtitle}
-                </span>
-              ))}
-            {!running &&
-              trigger.args &&
-              trigger.args.length > 0 &&
-              trigger.args.map((arg, i) => (
-                <span
-                  key={i}
-                  className="text-xs text-muted-foreground/60 font-mono whitespace-nowrap"
-                >
-                  {arg}
-                </span>
-              ))}
+            {/* Subtitle + args share an overflow-hidden track so long file
+                paths, queries, or arg lists never push past the row. */}
+            {(trigger.subtitle ||
+              (trigger.args && trigger.args.length > 0)) && (
+              <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+                {trigger.subtitle &&
+                  (running ? (
+                    <TextShimmer
+                      duration={1}
+                      spread={2}
+                      className="text-xs truncate font-mono min-w-0"
+                    >
+                      {trigger.subtitle}
+                    </TextShimmer>
+                  ) : (
+                    <span
+                      className={cn(
+                        'text-muted-foreground text-xs truncate font-mono min-w-0',
+                        onSubtitleClick &&
+                          'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
+                      )}
+                      title={trigger.subtitle}
+                      onClick={
+                        onSubtitleClick
+                          ? (e) => {
+                              e.stopPropagation();
+                              onSubtitleClick();
+                            }
+                          : undefined
+                      }
+                    >
+                      {trigger.subtitle}
+                    </span>
+                  ))}
+                {!running &&
+                  trigger.args &&
+                  trigger.args.length > 0 &&
+                  trigger.args.map((arg, i) => (
+                    <span
+                      key={i}
+                      title={arg}
+                      className="text-xs text-muted-foreground/60 font-mono truncate min-w-0"
+                    >
+                      {arg}
+                    </span>
+                  ))}
+              </div>
+            )}
           </>
         ) : (
           trigger
@@ -1038,8 +1047,8 @@ export function BasicTool({
         {/* Skeleton placeholders when running but trigger has no content yet */}
         {running && triggerIsEmpty && (
           <>
-            <span className="h-3 w-16 rounded bg-muted-foreground/10 animate-pulse" />
-            <span className="h-3 w-28 rounded bg-muted-foreground/10 animate-pulse" />
+            <span className="h-3 w-16 rounded bg-muted-foreground/10 animate-pulse flex-shrink-0" />
+            <span className="h-3 w-28 rounded bg-muted-foreground/10 animate-pulse min-w-0" />
           </>
         )}
       </div>
@@ -2692,6 +2701,272 @@ function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   );
 }
 ToolRegistry.register('write', WriteTool);
+
+// --- Apply Patch ---
+//
+// Renders the structured `metadata.files[]` payload that the apply_patch tool
+// returns: one row per file with an Add/Update/Delete/Move badge, +/- counts,
+// and an expandable per-file diff. Falls back to a raw patch dump if the
+// metadata isn't there yet (still streaming, or older payload shape).
+
+interface PatchFileLite {
+  filePath?: string;
+  relativePath?: string;
+  type?: 'add' | 'update' | 'delete' | 'move';
+  patch?: string;
+  diff?: string;
+  before?: string;
+  after?: string;
+  additions?: number;
+  deletions?: number;
+  movePath?: string;
+}
+
+const PATCH_TYPE_STYLE: Record<string, { label: string; cls: string }> = {
+  add: { label: 'Add', cls: 'text-emerald-600 bg-emerald-500/10 dark:text-emerald-400' },
+  update: { label: 'Edit', cls: 'text-amber-600 bg-amber-500/10 dark:text-amber-400' },
+  delete: { label: 'Delete', cls: 'text-red-600 bg-red-500/10 dark:text-red-400' },
+  move: { label: 'Move', cls: 'text-blue-600 bg-blue-500/10 dark:text-blue-400' },
+};
+
+function RawPatchDiffView({ patch, filename }: { patch: string; filename: string }) {
+  // Drop the "Index:" / "===" / "--- a" / "+++ b" header lines (4 lines)
+  // when present, then color each remaining line.
+  const diffLines = useMemo(() => {
+    const lines = patch.split('\n');
+    let start = 0;
+    if (lines[0]?.startsWith('Index:')) start = 4;
+    return lines.slice(start);
+  }, [patch]);
+
+  const codeLines = useMemo(
+    () =>
+      diffLines.map((line) => {
+        if (line.startsWith('@@') || line === '') return '';
+        return line.length > 0 ? line.substring(1) : '';
+      }),
+    [diffLines],
+  );
+
+  const highlighted = useDiffHighlight(codeLines, filename);
+
+  return (
+    <pre className="p-2 font-mono text-[11px] leading-relaxed overflow-x-auto">
+      {diffLines.map((line, i) => {
+        const isAdd = line.startsWith('+');
+        const isDel = line.startsWith('-');
+        const isHunk = line.startsWith('@@');
+
+        let cls = 'text-muted-foreground/80';
+        if (isAdd) cls = 'bg-emerald-500/5';
+        else if (isDel) cls = 'bg-red-500/5';
+        else if (isHunk) cls = 'text-blue-500/70';
+
+        if (isHunk || line === '') {
+          return (
+            <div key={i} className={cls}>
+              {line}
+            </div>
+          );
+        }
+
+        const prefix = line[0] || ' ';
+        const tokens = highlighted?.[i];
+        if (tokens) {
+          const html = renderHighlightedLine(tokens, codeLines[i]);
+          return (
+            <div key={i} className={cls}>
+              <span
+                className={cn(
+                  isAdd && 'text-emerald-500',
+                  isDel && 'text-red-500',
+                )}
+              >
+                {prefix}
+              </span>
+              <span dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          );
+        }
+
+        return (
+          <div
+            key={i}
+            className={cn(
+              cls,
+              isAdd && 'text-emerald-500',
+              isDel && 'text-red-500',
+            )}
+          >
+            {line}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
+function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const metadata = partMetadata(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const { openPreview } = useFilePreviewStore();
+
+  const files = useMemo(() => {
+    const raw = metadata.files;
+    return Array.isArray(raw) ? (raw as PatchFileLite[]) : [];
+  }, [metadata.files]);
+
+  const totalAdds = files.reduce((s, f) => s + (f.additions ?? 0), 0);
+  const totalDels = files.reduce((s, f) => s + (f.deletions ?? 0), 0);
+
+  // Initially expand the first file when there's only one — matches edit/write UX.
+  const [expanded, setExpanded] = useState<number | null>(
+    files.length === 1 ? 0 : null,
+  );
+
+  const isStreaming =
+    (status === 'pending' || status === 'running') && running;
+
+  // Header label: filename for single-file, count for multi.
+  const triggerSubtitle = useMemo(() => {
+    if (files.length === 0) {
+      return isStreaming ? 'preparing patch…' : undefined;
+    }
+    if (files.length === 1) {
+      const f = files[0];
+      return getFilename(f.relativePath || f.filePath || '') || undefined;
+    }
+    return `${files.length} files`;
+  }, [files, isStreaming]);
+
+  const triggerArgs = useMemo(() => {
+    const parts: string[] = [];
+    if (totalAdds > 0) parts.push(`+${totalAdds}`);
+    if (totalDels > 0) parts.push(`−${totalDels}`);
+    if (files.length === 1) {
+      const dir = getDirectory(files[0].relativePath || files[0].filePath || '');
+      if (dir) parts.unshift(dir);
+    }
+    return parts.length > 0 ? parts : undefined;
+  }, [files, totalAdds, totalDels]);
+
+  return (
+    <BasicTool
+      icon={<FileCode2 className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Apply Patch',
+        subtitle: triggerSubtitle,
+        args: triggerArgs,
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {files.length > 0 ? (
+        <div data-scrollable className="max-h-[480px] overflow-auto">
+          {files.map((file, i) => {
+            const relPath = file.relativePath || file.filePath || '';
+            const name = getFilename(relPath) || relPath;
+            const dir = getDirectory(relPath);
+            const typeKey = (file.type || 'update') as keyof typeof PATCH_TYPE_STYLE;
+            const typeMeta = PATCH_TYPE_STYLE[typeKey] ?? PATCH_TYPE_STYLE.update;
+            const isOpen = expanded === i;
+            const hasDiff =
+              (file.before != null || file.after != null) ||
+              !!file.patch ||
+              !!file.diff;
+
+            return (
+              <div
+                key={i}
+                className={cn(i > 0 && 'border-t border-border/30')}
+              >
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-muted/40 transition-colors text-left min-w-0"
+                  onClick={() =>
+                    hasDiff ? setExpanded(isOpen ? null : i) : undefined
+                  }
+                >
+                  {hasDiff ? (
+                    <ChevronRight
+                      className={cn(
+                        'size-3 flex-shrink-0 text-muted-foreground/50 transition-transform',
+                        isOpen && 'rotate-90',
+                      )}
+                    />
+                  ) : (
+                    <span className="w-3" />
+                  )}
+                  <span
+                    className={cn(
+                      'text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded flex-shrink-0',
+                      typeMeta.cls,
+                    )}
+                  >
+                    {typeMeta.label}
+                  </span>
+                  <span
+                    className="text-xs font-mono text-foreground hover:text-primary truncate flex-shrink-0 cursor-pointer"
+                    title={relPath}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (relPath) openPreview(relPath);
+                    }}
+                  >
+                    {name}
+                  </span>
+                  {dir && (
+                    <span
+                      className="text-[10px] text-muted-foreground/50 font-mono truncate min-w-0"
+                      title={dir}
+                    >
+                      {dir}
+                    </span>
+                  )}
+                  <span className="ml-auto flex items-center gap-1.5 text-[10px] font-mono flex-shrink-0">
+                    {(file.additions ?? 0) > 0 && (
+                      <span className="text-emerald-500">
+                        +{file.additions}
+                      </span>
+                    )}
+                    {(file.deletions ?? 0) > 0 && (
+                      <span className="text-red-500">−{file.deletions}</span>
+                    )}
+                  </span>
+                </button>
+
+                {isOpen && hasDiff && (
+                  <div className="bg-muted/20">
+                    {file.before != null && file.after != null ? (
+                      <InlineDiffView
+                        oldValue={file.before}
+                        newValue={file.after}
+                        filename={name}
+                      />
+                    ) : file.patch || file.diff ? (
+                      <RawPatchDiffView
+                        patch={(file.patch || file.diff) as string}
+                        filename={name}
+                      />
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : isStreaming ? (
+        <div className="px-3 py-2 text-muted-foreground/60 text-[11px] italic">
+          Applying patch…
+        </div>
+      ) : null}
+    </BasicTool>
+  );
+}
+ToolRegistry.register('apply_patch', ApplyPatchTool);
+ToolRegistry.register('apply-patch', ApplyPatchTool);
 
 // --- Read ---
 function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {

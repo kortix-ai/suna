@@ -181,10 +181,7 @@ export function useDeleteOperationEffects() {
       const timer = setTimeout(() => {
         try {
           // Use window.location for reliable navigation
-          // After deleting an instance, send the user back to the picker so
-          // they can choose another workspace explicitly — never silently
-          // jump them into whatever instance happens to be next.
-          window.location.pathname = '/instances';
+          window.location.pathname = '/dashboard';
         } catch (error) {
           console.error('Navigation error:', error);
         }
@@ -221,4 +218,3 @@ export function useDeleteOperationEffects() {
     }
   }, [operation, isActive, reset]);
 }
-

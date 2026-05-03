@@ -42,10 +42,7 @@ export default function DashboardCatchAllPage({ params }: CatchAllPageProps) {
     const descriptor = resolveTabFromPathname(pathname);
 
     if (!descriptor) {
-      // Unknown route — punt to the workspace picker rather than silently
-      // auto-picking from the cookie. Keeps the "always pick a workspace"
-      // contract consistent.
-      router.replace('/instances');
+      router.replace('/dashboard');
       return;
     }
 

@@ -42,7 +42,7 @@ const VARIANTS: { id: Variant; label: string; group: string }[] = [
   { group: 'Connecting', id: 'connecting', label: 'Default (instance name)' },
   { group: 'Connecting', id: 'connecting-with-title', label: 'With title override' },
   { group: 'Connecting', id: 'connecting-stage-auth', label: 'Stage: Authenticating' },
-  { group: 'Connecting', id: 'connecting-stage-routing', label: 'Stage: Locating instance' },
+  { group: 'Connecting', id: 'connecting-stage-routing', label: 'Stage: Connecting' },
   { group: 'Connecting', id: 'connecting-stage-reaching', label: 'Stage: Reaching workspace' },
   { group: 'Connecting', id: 'connecting-stage-restoring', label: 'Stage: Restoring session' },
 

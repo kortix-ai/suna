@@ -8,8 +8,13 @@
     "urls": [
       "http://localhost:*",
       "http://127.0.0.1:*",
+      "http://*.localhost:*",
       "https://kortix.com",
-      "https://*.kortix.com"
+      "https://*.kortix.com",
+      "https://kortix.cloud",
+      "https://*.kortix.cloud",
+      "https://justavps.com",
+      "https://*.justavps.com"
     ]
   },
   "permissions": [

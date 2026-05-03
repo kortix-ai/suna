@@ -152,21 +152,25 @@ export function groupMessagesIntoTurns(messages: MessageWithParts[]): Turn[] {
       }
     }
 
-    // Fall back to sequential ordering
+    // Fall back to sequential ordering — attach to the most recently seen
+    // user turn in iteration order. This keeps streaming parts that arrive
+    // before their parent metadata in the right turn.
     if (lastTurn) {
       lastTurn.assistantMessages.push(msg);
       continue;
     }
 
-    // If ordering is temporarily out of sync (e.g. part events arrive before
-    // full assistant metadata), attach to the latest known user turn so
-    // in-progress streaming text appears in the active turn immediately.
+    // Orphan assistant message that precedes every user message in the
+    // session (e.g. a session-init failure with no parentID). Attaching to
+    // the LAST turn would surface its error under an unrelated, much later
+    // user prompt. Attach to the FIRST turn instead so it renders at its
+    // real chronological position — or create a synthetic turn if no user
+    // messages exist at all.
     if (turns.length > 0) {
-      turns[turns.length - 1].assistantMessages.push(msg);
+      turns[0].assistantMessages.unshift(msg);
       continue;
     }
 
-    // No user messages at all — create a synthetic turn.
     const syntheticTurn: Turn = { userMessage: msg, assistantMessages: [] };
     turns.push(syntheticTurn);
   }

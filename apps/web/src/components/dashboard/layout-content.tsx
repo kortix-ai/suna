@@ -907,7 +907,7 @@ export default function DashboardLayoutContent({
 						}
 
 						setActiveInstanceCookie(null);
-						router.replace('/instances');
+						router.replace('/dashboard');
 						return;
 					}
 					setRouteSyncing(false);
@@ -916,7 +916,7 @@ export default function DashboardLayoutContent({
 				.catch(() => {
 					if (cancelled) return;
 					setActiveInstanceCookie(null);
-					router.replace('/instances');
+					router.replace('/dashboard');
 				});
 		}, 1500);
 
@@ -925,7 +925,7 @@ export default function DashboardLayoutContent({
 			clearTimeout(fallbackTimer);
 			unsubscribe();
 		};
-	}, [routeInstanceId, user, router]);
+	}, [routeInstanceId, user, router, pathname]);
 
 	// Maintenance blocking: the middleware redirects to /maintenance for
 	// "blocking" level, but as a client-side fallback we also check here.
