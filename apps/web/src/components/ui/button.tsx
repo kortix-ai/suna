@@ -36,18 +36,14 @@ const buttonVariants = cva(
           "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400",
       },
       size: {
-        default: "h-9 px-4 py-2 text-sm rounded-full [&_svg:not([class*='size-'])]:size-4 has-[>svg]:px-3",
-        sm: "h-8 gap-1.5 px-3 text-sm rounded-full [&_svg:not([class*='size-'])]:size-4 has-[>svg]:px-2.5",
-        lg: "h-11 px-6 text-sm rounded-full [&_svg:not([class*='size-'])]:size-4 has-[>svg]:px-4",
-        icon: "size-9 rounded-full [&_svg:not([class*='size-'])]:size-4",
-        // Compact toolbar actions
-        toolbar: "h-7 gap-1.5 px-2.5 text-[0.6875rem] rounded-full [&_svg:not([class*='size-'])]:size-3.5",
-        // Micro buttons for inline/compact contexts
-        xs: "h-6 gap-1 px-2 text-[0.625rem] rounded-full [&_svg:not([class*='size-'])]:size-3",
-        // Small icon button (toolbar density)
-        "icon-sm": "size-7 rounded-full [&_svg:not([class*='size-'])]:size-3.5",
-        // Tiny icon button (inline density)
-        "icon-xs": "size-6 rounded-full [&_svg:not([class*='size-'])]:size-3",
+        default: "h-9 px-4 py-2 text-sm rounded-lg [&_svg:not([class*='size-'])]:size-4 has-[>svg]:px-3",
+        sm: "h-8 gap-1.5 px-3 text-sm rounded-lg [&_svg:not([class*='size-'])]:size-4 has-[>svg]:px-2.5",
+        lg: "h-11 px-6 text-sm rounded-lg [&_svg:not([class*='size-'])]:size-4 has-[>svg]:px-4",
+        icon: "size-9 rounded-lg [&_svg:not([class*='size-'])]:size-4",
+        toolbar: "h-7 gap-1.5 px-2.5 text-[0.6875rem] rounded-lg [&_svg:not([class*='size-'])]:size-3.5",
+        xs: "h-6 gap-1 px-2 text-[0.625rem] rounded-lg [&_svg:not([class*='size-'])]:size-3",
+        "icon-sm": "size-7 rounded-lg [&_svg:not([class*='size-'])]:size-3.5",
+        "icon-xs": "size-6 rounded-lg [&_svg:not([class*='size-'])]:size-3",
       },
     },
     defaultVariants: {

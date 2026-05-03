@@ -286,62 +286,64 @@ export function UserSettingsModal({
                     /* Desktop Layout - Side by Side */
                     <div className="flex flex-row h-[700px]">
                         {/* Desktop Sidebar */}
-                        <div className="bg-background flex-shrink-0 w-56 p-4 border-r border-border">
-                            <div className="flex justify-start mb-3">
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => onOpenChange(false)}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            </div>
+                        <div className="flex flex-col h-full p-2">
+                            <div className="bg-muted  rounded-xl flex-shrink-0 w-56 h-full p-2 border">
+                                <div className="flex justify-start mb-3">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={() => onOpenChange(false)}
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </Button>
+                                </div>
 
-                            {/* Desktop Tabs - Grouped */}
-                            <div className="flex flex-col gap-4">
-                                {tabGroups.map((group, groupIdx) => (
-                                    <div key={group.skeleton ? `skeleton-${groupIdx}` : group.label}>
-                                        <div className="px-4 pb-1.5">
-                                            {group.skeleton ? (
-                                                <Skeleton className="h-3 w-20 rounded" />
-                                            ) : (
-                                                <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">{group.label}</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col gap-0.5">
-                                            {group.skeleton ? (
-                                                <>
-                                                    <Skeleton className="mx-2 h-9 rounded-md" />
-                                                    <Skeleton className="mx-2 h-9 rounded-md" />
-                                                </>
-                                            ) : (
-                                                group.tabs.map((tab) => {
-                                                const Icon = tab.icon;
-                                                const isActive = activeTab === tab.id;
+                                {/* Desktop Tabs - Grouped */}
+                                <div className="flex flex-col gap-4">
+                                    {tabGroups.map((group, groupIdx) => (
+                                        <div key={group.skeleton ? `skeleton-${groupIdx}` : group.label}>
+                                            <div className="px-4 pb-1.5">
+                                                {group.skeleton ? (
+                                                    <Skeleton className="h-3 w-20 rounded" />
+                                                ) : (
+                                                    <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">{group.label}</span>
+                                                )}
+                                            </div>
+                                            <div className="flex flex-col gap-0.5">
+                                                {group.skeleton ? (
+                                                    <>
+                                                        <Skeleton className="mx-2 h-9 rounded-md" />
+                                                        <Skeleton className="mx-2 h-9 rounded-md" />
+                                                    </>
+                                                ) : (
+                                                    group.tabs.map((tab) => {
+                                                    const Icon = tab.icon;
+                                                    const isActive = activeTab === tab.id;
 
-                                                return (
-                                                    <Button
-                                                        key={tab.id}
-                                                        onClick={() => handleTabClick(tab.id)}
-                                                        disabled={tab.disabled}
-                                                        variant="ghost"
-                                                        className={cn(
-                                                            "w-full flex items-center gap-3 justify-start",
-                                                            isActive
-                                                                ? "bg-accent text-foreground hover:bg-accent"
-                                                                : "text-muted-foreground hover:text-foreground"
-                                                        )}
-                                                    >
-                                                        <Icon className="h-4 w-4 flex-shrink-0" />
-                                                        <span>{tab.label}</span>
-                                                    </Button>
-                                                );
-                                                })
-                                            )}
+                                                    return (
+                                                        <Button
+                                                            key={tab.id}
+                                                            onClick={() => handleTabClick(tab.id)}
+                                                            disabled={tab.disabled}
+                                                            variant="ghost"
+                                                            className={cn(
+                                                                "w-full flex items-center gap-3 justify-start",
+                                                                isActive
+                                                                    ? "bg-accent text-foreground hover:bg-accent"
+                                                                    : "text-muted-foreground hover:text-foreground"
+                                                            )}
+                                                        >
+                                                            <Icon className="h-4 w-4 flex-shrink-0" />
+                                                            <span>{tab.label}</span>
+                                                        </Button>
+                                                    );
+                                                    })
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
                         </div>
 

@@ -1,16 +1,12 @@
 'use client';
 
-/**
- * Project header — single compact row, underline tabs.
- *
- * v1 projects see the legacy layout: About · Tasks · Files · Sessions.
- * v2 projects see: About · Board · Team · Settings · Files · Sessions.
- */
-
 import * as TabsPrimitive from '@radix-ui/react-tabs';
 import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Kbd } from '@/components/ui/kbd';
+import { ProjectIcon } from '@/components/kortix/project-icon';
 
 export type ProjectTab =
   | 'about'
@@ -77,28 +73,33 @@ export function ProjectHeader({
   const label = newActionLabel ?? (isV2 ? 'New ticket' : 'New task');
   const hotkey = newActionHotkey ?? 'C';
   return (
-    <header className="shrink-0 border-b border-border/60 bg-background">
-      <div className="container mx-auto max-w-7xl h-11 px-3 sm:px-4">
+    <header className="shrink-0 border-b bg-background">
+      <div className="container mx-auto flex h-12 max-w-7xl items-center gap-4 px-3 sm:px-4">
         <TabsPrimitive.Root
           value={tab}
           onValueChange={(v) => onTabChange(v as ProjectTab)}
-          className="h-full flex items-center gap-4"
+          className="flex h-full flex-1 items-center gap-4"
         >
-          <div className="flex-1 min-w-0 flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <ProjectIcon project={project} size="xs" />
             <h1
-              className="text-[14px] font-semibold tracking-tight text-foreground truncate"
+              className="truncate text-sm font-semibold tracking-tight text-foreground"
               title={project.name}
             >
               {project.name}
             </h1>
             {isV2 && (
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50 font-mono">
+              <Badge
+                variant="muted"
+                size="sm"
+                className="font-mono uppercase tracking-wider"
+              >
                 v2
-              </span>
+              </Badge>
             )}
           </div>
 
-          <TabsPrimitive.List className="flex items-center h-full gap-5 shrink-0">
+          <TabsPrimitive.List className="flex h-full shrink-0 items-center gap-5">
             {tabs.map((t) => {
               const badge = tabBadges?.[t.id] ?? 0;
               return (
@@ -106,41 +107,38 @@ export function ProjectHeader({
                   key={t.id}
                   value={t.id}
                   className={cn(
-                    'relative h-full inline-flex items-center gap-1.5 text-[13px] font-medium tracking-tight cursor-pointer transition-colors outline-none',
-                    'text-muted-foreground/60 hover:text-foreground',
+                    'relative inline-flex h-full cursor-pointer items-center gap-1.5 text-sm font-medium tracking-tight outline-none transition-colors',
+                    'text-muted-foreground/70 hover:text-foreground',
                     'data-[state=active]:text-foreground',
-                    'after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-foreground after:rounded-full',
-                    'after:opacity-0 data-[state=active]:after:opacity-100 after:transition-opacity',
+                    'after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground',
+                    'after:opacity-0 after:transition-opacity data-[state=active]:after:opacity-100',
                   )}
                 >
                   {t.label}
                   {badge > 0 && (
-                    <span
-                      className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none tabular-nums"
+                    <Badge
+                      variant="destructive"
+                      size="sm"
+                      className="rounded-full tabular-nums"
                       aria-label={`${badge} unread`}
                     >
                       {badge > 99 ? '99+' : badge}
-                    </span>
+                    </Badge>
                   )}
                 </TabsPrimitive.Trigger>
               );
             })}
           </TabsPrimitive.List>
 
-          <div className="flex-1 flex items-center justify-end gap-1.5">
+          <div className="flex flex-1 items-center justify-end gap-1.5">
             {rightSlot}
             {onNewTask && (
-              <Button
-                size="sm"
-                onClick={onNewTask}
-                title={`${label} (${hotkey})`}
-                className="h-7 px-2.5 text-[12px] gap-1.5"
-              >
-                <Plus className="h-3.5 w-3.5" />
+              <Button size="sm" onClick={onNewTask} title={`${label} (${hotkey})`}>
+                <Plus />
                 <span className="hidden sm:inline">{label}</span>
-                <kbd className="hidden sm:inline-flex items-center justify-center min-w-[18px] h-4 px-1 rounded border border-primary-foreground/20 bg-primary-foreground/10 text-[10px] font-mono font-medium leading-none text-primary-foreground/90">
+                <Kbd className="hidden border border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground/90 sm:inline-flex">
                   {hotkey}
-                </kbd>
+                </Kbd>
               </Button>
             )}
           </div>

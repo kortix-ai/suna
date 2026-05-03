@@ -699,9 +699,9 @@ function SidebarSections() {
 
   return (
     <div className="flex flex-col min-h-0 flex-1 pt-0.5 space-y-0.5">
-      {/* Projects — collapsible list above Sessions, same UX as Sessions */}
+      {/* Projects — primary, default open, takes remaining space */}
       {sortedProjects.length > 0 && (
-        <Collapsible defaultOpen={false} className="group/projects flex flex-col min-h-0">
+        <Collapsible defaultOpen className="group/projects flex flex-col min-h-0 data-[state=open]:flex-1">
           <div className="px-3 flex-shrink-0">
             <CollapsibleTrigger asChild>
               <Button variant="sidebar" className="rounded-lg">
@@ -711,7 +711,7 @@ function SidebarSections() {
               </Button>
             </CollapsibleTrigger>
           </div>
-          <CollapsibleContent className="min-h-0 data-[state=open]:pt-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <div className="flex flex-col px-3">
               <div className="px-2 pb-2">
                 <div className="space-y-0.5">
@@ -730,18 +730,18 @@ function SidebarSections() {
         </Collapsible>
       )}
 
-      {/* Sessions — always visible, takes remaining space */}
-      <Collapsible defaultOpen className="group/sessions flex flex-col min-h-0 data-[state=open]:flex-1">
+      {/* Sessions — subdued, collapsed by default. Live inside projects now. */}
+      <Collapsible defaultOpen={false} className="group/sessions flex flex-col min-h-0">
         <div className="px-3 flex-shrink-0">
           <CollapsibleTrigger asChild>
             <Button variant="sidebar" className="rounded-lg">
               <ListTree className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">Sessions</span>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/70 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
             </Button>
           </CollapsibleTrigger>
         </div>
-        <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <CollapsibleContent className="min-h-0 data-[state=open]:max-h-[40vh] data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <SessionList projectId={null} />
         </CollapsibleContent>
       </Collapsible>
@@ -1507,10 +1507,17 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
             flyoutContent={<WorkspacesFlyoutContent />}
           />
           <CollapsedIconButton
-            icon={<SquarePen className="h-4 w-4" />}
-            label="New session"
-            onClick={handleNewSession}
-            disabled={createSession.isPending}
+            icon={<FolderKanban className="h-4 w-4" />}
+            label="Projects"
+            isActive={pathname === '/dashboard' || pathname?.startsWith('/projects') === true}
+            onClick={() => {
+              openTabAndNavigate({
+                id: 'page:/dashboard',
+                title: 'Projects',
+                type: 'dashboard',
+                href: '/dashboard',
+              }, router);
+            }}
           />
           <CollapsedIconButton
             icon={<Search className="h-4 w-4" />}
@@ -1542,9 +1549,10 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
             }}
           />
           <CollapsedIconButton
-            icon={<FolderKanban className="h-4 w-4" />}
-            label="Projects"
-            flyoutContent={<ProjectsFlyout />}
+            icon={<SquarePen className="h-4 w-4" />}
+            label="New session"
+            onClick={handleNewSession}
+            disabled={createSession.isPending}
           />
           <CollapsedIconButton
             icon={<ListTree className="h-4 w-4" />}
@@ -1560,10 +1568,16 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
         )}>
           {/* Navigation */}
           <nav className="flex-shrink-0 px-3 pt-2 space-y-0.5">
-            {/* New session */}
+            {/* Projects \u2014 primary entry point */}
             <Button
-              onClick={handleNewSession}
-              disabled={createSession.isPending}
+              onClick={() => {
+                openTabAndNavigate({
+                  id: 'page:/dashboard',
+                  title: 'Projects',
+                  type: 'dashboard',
+                  href: '/dashboard',
+                }, router);
+              }}
               variant="sidebar"
               className="rounded-lg"
             >
@@ -1572,6 +1586,8 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               <kbd className="text-[10px] text-muted-foreground">
                 {isMac ? '\u2318J' : 'Ctrl J'}
               </kbd>
+              <FolderKanban className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
+              <span className="flex-1 text-left">Projects</span>
             </Button>
 
             {/* Search */}
@@ -1615,7 +1631,20 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               <span className="flex-1 text-left">Files</span>
             </Button>
 
-            {/* Sessions — expandable, default open */}
+            {/* New session — sessions live inside projects now, so this sits
+                below the primary nav with muted styling. */}
+            <Button
+              onClick={handleNewSession}
+              disabled={createSession.isPending}
+              variant="sidebar"
+              className="rounded-lg text-muted-foreground hover:text-foreground"
+            >
+              <SquarePen className="h-4 w-4 flex-shrink-0 text-muted-foreground/40" />
+              <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
+              <kbd className="text-[10px] text-muted-foreground/70">
+                {isMac ? '⌘J' : 'Ctrl J'}
+              </kbd>
+            </Button>
             </nav>
 
           <SidebarSections />

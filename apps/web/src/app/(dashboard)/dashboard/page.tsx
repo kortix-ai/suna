@@ -1,32 +1,41 @@
-import { cn } from "@/lib/utils";
-import { DashboardContent } from "../../../components/dashboard/dashboard-content";
-import { BackgroundAALChecker } from "@/components/auth/background-aal-checker";
 import { Suspense } from "react";
+import { BackgroundAALChecker } from "@/components/auth/background-aal-checker";
+import { ProjectsDashboard } from "@/components/dashboard/projects-dashboard";
 import { Skeleton } from "@/components/ui/skeleton";
+
+function DashboardSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-7xl px-4 pt-8 sm:px-6">
+      <div className="flex items-end justify-between gap-4">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-32" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        <div className="flex gap-2">
+          <Skeleton className="h-9 w-24" />
+          <Skeleton className="h-9 w-28" />
+        </div>
+      </div>
+      <div className="mt-6 flex gap-2">
+        <Skeleton className="h-9 w-72" />
+        <div className="ml-auto">
+          <Skeleton className="h-9 w-56" />
+        </div>
+      </div>
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <Skeleton key={i} className="h-[160px] rounded-2xl" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default async function DashboardPage() {
   return (
     <BackgroundAALChecker>
-      <Suspense
-        fallback={
-          <div className="flex flex-col h-full w-full">
-            <div className="flex-1 flex flex-col items-center justify-center px-4">
-              <div className={cn(
-                "flex flex-col items-center text-center w-full space-y-8",
-                "max-w-[850px] sm:max-w-full sm:px-4"
-              )}>
-                <Skeleton className="h-10 w-40 sm:h-8 sm:w-32" />
-                <Skeleton className="h-7 w-56 sm:h-6 sm:w-48" />
-                <Skeleton className="w-full h-[100px] rounded-xl sm:h-[80px]" />
-                <div className="block sm:hidden lg:block w-full">
-                  <Skeleton className="h-20 w-full" />
-                </div>
-              </div>
-            </div>
-          </div>
-        }
-      >
-        <DashboardContent />
+      <Suspense fallback={<DashboardSkeleton />}>
+        <ProjectsDashboard />
       </Suspense>
     </BackgroundAALChecker>
   );

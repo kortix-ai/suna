@@ -16,6 +16,12 @@ const DashboardContent = lazy(() =>
 	})),
 );
 
+const ProjectsDashboard = lazy(() =>
+	import('@/components/dashboard/projects-dashboard').then((m) => ({
+		default: m.ProjectsDashboard,
+	})),
+);
+
 const SecretsPage = lazy(() =>
 	import('@/app/(dashboard)/settings/credentials/page'),
 );
@@ -115,7 +121,8 @@ const TaskDetailPage = lazy(() =>
 // ---------------------------------------------------------------------------
 
 const PAGE_COMPONENTS: Record<string, ComponentType> = {
-	'/dashboard': DashboardContent,
+	'/dashboard': ProjectsDashboard,
+	'/chat': DashboardContent,
 	'/configuration': WorkspacePage,
 	'/settings/credentials': SecretsPage,
 	'/settings/api-keys': ApiKeysPage,
@@ -123,7 +130,7 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/credits-explained': CreditsPage,
 	'/changelog': ChangelogPage,
 	'/workspace': WorkspacePage,
-	'/projects': WorkspacePage,
+	'/projects': ProjectsDashboard,
 	// Marketplace - browse and install all components from registry
 	'/marketplace': MarketplacePage,
 	'/skills': MarketplacePage, // backwards compat

@@ -61,9 +61,9 @@ import { formatCost, formatTokens } from '@/ui/turns';
 import { AgentAvatar } from '@/components/kortix/agent-avatar';
 import { ChevronDown, TimerIcon, Webhook as WebhookIcon } from 'lucide-react';
 import {
-  ProjectHeader,
   type ProjectTab,
 } from '@/components/kortix/project-header';
+import { ProjectSidebar } from '@/components/kortix/project-sidebar';
 import { ProjectAbout } from '@/components/kortix/project-about';
 import { ProjectMembersTab } from '@/components/kortix/project-members-tab';
 import { TasksTab } from '@/components/kortix/tasks-tab';
@@ -285,58 +285,54 @@ export default function ProjectPage({ params }: { params?: Promise<{ id: string 
   const hasFiles = project.path && project.path !== '/';
 
   return (
-    <div className="flex-1 bg-background flex flex-col overflow-hidden">
-      <ProjectHeader
+    <div className="flex-1 bg-background flex overflow-hidden">
+      <ProjectSidebar
         project={project}
         tab={tab}
         onTabChange={setTab}
-        structureVersion={project.structure_version}
         onNewTask={isV2 ? () => openNewTicket() : () => openNewTask()}
         newActionLabel={isV2 ? 'New ticket' : 'New task'}
-        rightSlot={isV2 ? (
-          <>
+        footerSlot={isV2 ? (
+          <div className="flex items-center justify-between gap-1">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={openPmChat}
               disabled={ensurePmSession.isPending}
-              className="h-7 px-2.5 text-[12px] gap-1.5 border-border/40 hover:border-border/60 hover:bg-muted/30"
+              className="flex-1 justify-start text-muted-foreground hover:text-foreground"
               title="Open a chat with the Project Manager agent"
             >
               {ensurePmSession.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="animate-spin" />
               ) : (
-                <MessageSquareText className="h-3.5 w-3.5" />
+                <MessageSquareText />
               )}
-              <span className="hidden sm:inline">Ask PM</span>
+              Ask PM
             </Button>
-          <NotificationsBell
-            projectId={project.id}
-            userHandle={userHandle}
-            events={activity}
-            tickets={tickets}
-            agents={agents}
-            lastSeenAt={lastSeenAt}
-            onMarkAllRead={(iso) => {
-              writeLastSeen(project.id, userHandle, iso);
-              setLastSeenAt(iso);
-            }}
-            onOpenTicket={(id, focusId) => {
-              setOpenTicketId(id);
-              setFocusEventId(focusId ?? null);
-              // Clicking a notification is the "read" signal. Advance lastSeen
-              // to that event's timestamp so it (and anything older) drops
-              // from the unread count. Newer events stay unread.
-              if (focusId && activity) {
-                const ev = activity.find((e) => e.id === focusId);
-                if (ev && (!lastSeenAt || ev.created_at > lastSeenAt)) {
-                  writeLastSeen(project.id, userHandle, ev.created_at);
-                  setLastSeenAt(ev.created_at);
+            <NotificationsBell
+              projectId={project.id}
+              userHandle={userHandle}
+              events={activity}
+              tickets={tickets}
+              agents={agents}
+              lastSeenAt={lastSeenAt}
+              onMarkAllRead={(iso) => {
+                writeLastSeen(project.id, userHandle, iso);
+                setLastSeenAt(iso);
+              }}
+              onOpenTicket={(id, focusId) => {
+                setOpenTicketId(id);
+                setFocusEventId(focusId ?? null);
+                if (focusId && activity) {
+                  const ev = activity.find((e) => e.id === focusId);
+                  if (ev && (!lastSeenAt || ev.created_at > lastSeenAt)) {
+                    writeLastSeen(project.id, userHandle, ev.created_at);
+                    setLastSeenAt(ev.created_at);
+                  }
                 }
-              }
-            }}
-          />
-          </>
+              }}
+            />
+          </div>
         ) : undefined}
       />
 
