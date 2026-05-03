@@ -8,7 +8,6 @@ import os
 import shutil
 import sqlite3
 import tempfile
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -93,15 +92,35 @@ def inspect_state(root: Path) -> dict:
     return info
 
 
+def state_int(info: dict, key: str) -> int:
+    value = info.get(key)
+    return int(value) if isinstance(value, int) else 0
+
+
 def is_richer(candidate: dict, current: dict) -> bool:
-    if candidate["score"] != current["score"]:
-        return candidate["score"] > current["score"]
+    candidate_ok = bool(candidate.get("ok"))
+    current_ok = bool(current.get("ok"))
+    if candidate_ok != current_ok:
+        return candidate_ok and not current_ok
+
+    candidate_score = state_int(candidate, "score")
+    current_score = state_int(current, "score")
+    if candidate_score == 0 or current_score == 0:
+        return candidate_score > current_score
+
+    # Newer live work must win over an older but larger shadow. Counts are only
+    # tie breakers; otherwise a stale backup can erase recently-created sessions.
+    candidate_update = state_int(candidate, "latest_session_update")
+    current_update = state_int(current, "latest_session_update")
+    if candidate_update != current_update:
+        return candidate_update > current_update
+
+    if candidate_score != current_score:
+        return candidate_score > current_score
     if candidate["messages"] != current["messages"]:
         return candidate["messages"] > current["messages"]
     if candidate["sessions"] != current["sessions"]:
         return candidate["sessions"] > current["sessions"]
-    if candidate["latest_session_update"] != current["latest_session_update"]:
-        return candidate["latest_session_update"] > current["latest_session_update"]
     return candidate["db_size"] > current["db_size"]
 
 
@@ -111,10 +130,17 @@ def stage_copy(src: Path, dst: Path) -> None:
     src_db = src / DB_NAME
     if src_db.exists():
         dst_db = dst / DB_NAME
-        source = sqlite3.connect(f"file:{src_db}?mode=ro", uri=True)
+        source = sqlite3.connect(src_db, timeout=5)
+        source.execute("PRAGMA busy_timeout=5000")
+        try:
+            source.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except sqlite3.DatabaseError:
+            pass
         target = sqlite3.connect(dst_db)
         try:
             source.backup(target)
+            target.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            target.execute("PRAGMA journal_mode=DELETE")
         finally:
             target.close()
             source.close()

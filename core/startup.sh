@@ -270,11 +270,12 @@ PY
   su -s /bin/sh abc -c 'ocx registry add https://registry.kdco.dev --name kdco --cwd /workspace -q' 2>/dev/null || true
 fi
 
-# ── Clean stale sqlite WAL/SHM files ────────────────────────────────────────
-# After container recreate, sqlite WAL/SHM files from the old container can
-# cause "readonly database" errors. Remove them so sqlite recreates cleanly.
-find "$OPENCODE_STORAGE_BASE" -name "*.db-wal" -o -name "*.db-shm" 2>/dev/null | while read f; do
-  echo "[startup] Removing stale sqlite file: $f"
+# ── Clean stale sqlite SHM files ─────────────────────────────────────────────
+# Never remove *.db-wal here: SQLite WAL files can contain committed OpenCode
+# sessions/messages that have not been checkpointed into opencode.db yet.
+# The shared-memory index is rebuildable, so it is safe to drop before guard.
+find "$OPENCODE_STORAGE_BASE" -name "*.db-shm" 2>/dev/null | while read f; do
+  echo "[startup] Removing stale sqlite shared-memory index: $f"
   rm -f "$f"
 done
 
