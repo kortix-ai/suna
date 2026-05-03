@@ -1,143 +1,22 @@
 'use client';
 
 /**
- * Shared chrome used across /instances and its children:
- * - InstancesTopBar: a consistent top bar (logo + account menu) used by
- *   both the listing and nested routes like /instances/[id]/backups.
- * - UserMenu: avatar-triggered account dropdown (settings + log out).
- * - ComputerHeroCard: the empty-state / claim card showing the Kortix
- *   computer image, title, description, CTA and a feature strip.
+ * Shared chrome used across /instances and its children.
+ *
+ * The top bar / user menu lives in `@/components/layout/app-header` so it
+ * can be reused outside this route group (e.g. by the connecting screen).
+ * What remains here is page-local: the empty-state hero card.
  */
 
-import { Fragment, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import type { User } from '@supabase/supabase-js';
-import { ChevronDown, Loader2, LogOut, Settings } from 'lucide-react';
+import { Fragment } from 'react';
+import { Loader2 } from 'lucide-react';
 
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { UserSettingsModal } from '@/components/settings/user-settings-modal';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { createClient } from '@/lib/supabase/client';
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 
-// ─── User menu ─────────────────────────────────────────────────────────────
-
-export function UserMenu({
-  user,
-  onOpenSettings,
-  onLogout,
-}: {
-  user: User;
-  onOpenSettings: () => void;
-  onLogout: () => void;
-}) {
-  const avatarUrl = user.user_metadata?.avatar_url as string | undefined;
-  const displayName =
-    (user.user_metadata?.name as string | undefined) || user.email || 'Account';
-  const initial = displayName.charAt(0).toUpperCase();
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1.5 h-9 pl-1 pr-2 text-muted-foreground hover:text-foreground"
-          aria-label="Account menu"
-        >
-          <Avatar className="h-7 w-7">
-            {avatarUrl && <AvatarImage src={avatarUrl} alt={displayName} />}
-            <AvatarFallback className="text-[11px] bg-muted">{initial}</AvatarFallback>
-          </Avatar>
-          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            {user.user_metadata?.name && (
-              <span className="text-sm font-medium text-foreground truncate">
-                {user.user_metadata.name as string}
-              </span>
-            )}
-            {user.email && (
-              <span className="text-xs text-muted-foreground truncate">{user.email}</span>
-            )}
-          </div>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onOpenSettings}>
-          <Settings className="h-4 w-4" />
-          Settings
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onLogout} variant="destructive">
-          <LogOut className="h-4 w-4" />
-          Log out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-// ─── Top bar ───────────────────────────────────────────────────────────────
-// Self-contained: owns its settings modal state and log-out flow, so any
-// page under /instances just drops it in with a `user` prop.
-
-export function InstancesTopBar({
-  user,
-  leading,
-}: {
-  user: User;
-  /** Optional slot rendered to the left, next to the Kortix logo (e.g. a back button). */
-  leading?: React.ReactNode;
-}) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  // Deep-linking: `?settings=...` opens the modal and then cleans the URL
-  // so the back button doesn't re-open it. Works from any /instances route.
-  useEffect(() => {
-    if (!searchParams.get('settings')) return;
-    setSettingsOpen(true);
-    const clean = new URL(window.location.href);
-    clean.searchParams.delete('settings');
-    window.history.replaceState({}, '', `${clean.pathname}${clean.search}`);
-  }, [searchParams]);
-
-  const handleLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    clearUserLocalStorage();
-    router.push('/auth');
-  };
-
-  return (
-    <>
-      <header className="flex items-center justify-between px-6 py-4 shrink-0 gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <KortixLogo size={20} />
-          {leading}
-        </div>
-        <UserMenu
-          user={user}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onLogout={handleLogout}
-        />
-      </header>
-      <UserSettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
-    </>
-  );
-}
+// Re-export so existing imports of `InstancesTopBar` from this module keep
+// working. New code should import `AppHeader` directly from
+// `@/components/layout/app-header`.
+export { AppHeader as InstancesTopBar } from '@/components/layout/app-header';
 
 // ─── Computer hero card ────────────────────────────────────────────────────
 // The empty-state / claim card used by the main listing. Rendered in two

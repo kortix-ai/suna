@@ -31,7 +31,7 @@ import {
   Archive,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { InstancesTopBar } from '../../_components/shared';
+import { AppHeader } from '@/components/layout/app-header';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -212,7 +212,7 @@ export default function BackupsPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <InstancesTopBar
+      <AppHeader
         user={user}
         leading={
           <Button

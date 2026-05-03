@@ -8,7 +8,7 @@
  *
  * This page is REACHABLE FROM:
  * - The sidebar workspace switcher's "All workspaces" link
- * - The connecting screen's persistent "Choose workspace" link (top-right)
+ * - Explicit workspace-management navigation
  * - Direct navigation to /instances
  *
  * Post-auth still lands users on /dashboard (their last-used instance) for
@@ -41,10 +41,8 @@ import { NewInstanceModal } from '@/components/billing/pricing/new-instance-moda
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import {
-  ComputerHeroCard,
-  InstancesTopBar,
-} from './_components/shared';
+import { AppHeader } from '@/components/layout/app-header';
+import { ComputerHeroCard } from './_components/shared';
 import {
   FallbackInstanceCard,
   InstanceCard,
@@ -174,7 +172,7 @@ export default function InstancesPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <InstancesTopBar user={user} />
+      <AppHeader user={user} />
 
       <main className="flex-1 flex items-start justify-center px-4 pt-12 pb-20">
         <div className={cn('w-full max-w-lg')}>
@@ -182,7 +180,7 @@ export default function InstancesPage() {
           <div className="flex items-end justify-between mb-6">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                Choose a workspace
+                Workspaces
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
                 {visible.length === 0

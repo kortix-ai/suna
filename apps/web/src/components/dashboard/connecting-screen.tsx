@@ -19,20 +19,7 @@ import {
 } from 'lucide-react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { LogOut } from 'lucide-react';
-import { useAuth } from '@/components/AuthProvider';
-import { createClient } from '@/lib/supabase/client';
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { restartSandbox, type SandboxInfo } from '@/lib/platform-client';
@@ -178,9 +165,8 @@ export function ConnectingScreen({
   }, [adminRepairMutation, isAdmin, primaryRepairAction, restarting, resolvedSandboxId, stopped, supportsLayeredHealth]);
 
   const handleSwitch = useCallback(() => {
-    // Always go to the workspace picker. The picker is a real page (not a
-    // sidebar popover) so it works even when the dashboard tree isn't
-    // mounted (initial loader, unreachable instance, etc.).
+    // Error/offline escape hatch: open the workspace list as a real page so it
+    // works even when the dashboard tree is not mounted.
     router.push(backHref || '/instances');
   }, [router, backHref]);
   const handleOpenHealth = useCallback(() => {
@@ -313,17 +299,11 @@ export function ConnectingScreen({
   }
 
   return (
-    <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
-      <ConnectingView
-        label={labelOverride || serverLabel}
-        title={title}
-        overrideStage={overrideStage}
-        onSwitch={handleSwitch}
-        onRestart={isCloudProvider ? handleRestart : undefined}
-        restarting={restarting}
-        minimal={minimal}
-      />
-    </FullScreenShell>
+    <CompactConnectingSignal
+      title={title}
+      overrideStage={overrideStage}
+      minimal={minimal}
+    />
   );
 }
 
@@ -365,14 +345,12 @@ export interface ConnectingScreenProps {
   /**
    * Minimal mode — hides the "Connecting to <instance>" label entirely.
    * Used for auth / OAuth consent gates where no instance context exists.
-   * The component renders only: logo, optional `title`, and the progress
-   * line. No stage text, no escape hatch.
+   * Normal connecting waits render only the top progress line.
    */
   minimal?: boolean;
   /**
-   * Suppress the persistent top-right "Choose workspace" link. Use on
-   * pages that ARE the workspace picker (so the link wouldn't go anywhere
-   * useful) — e.g. /instances during its initial load shimmer.
+   * Legacy compatibility flag for pages that previously hid loader chrome.
+   * Normal connecting waits no longer render full-screen chrome.
    */
   hideWorkspacePicker?: boolean;
 }
@@ -396,202 +374,50 @@ export type Stage = 'auth' | 'routing' | 'reaching' | 'restoring';
 
 const STAGE_COPY: Record<Stage, string> = {
   auth: 'Authenticating',
-  routing: 'Locating instance',
+  routing: 'Connecting',
   reaching: 'Reaching workspace',
   restoring: 'Restoring session',
 };
 
 function FullScreenShell({
   children,
-  showWorkspacePicker = true,
 }: {
   children: React.ReactNode;
-  /** Hide the top-right "Choose workspace" link (e.g. on the picker itself). */
+  /** Kept for call-site compatibility; loader chrome no longer renders it. */
   showWorkspacePicker?: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background">
-      <LoaderUserMenu />
-      {showWorkspacePicker && <LoaderWorkspaceLink />}
       <div className="relative z-10 flex w-full max-w-[420px] flex-col items-center gap-8 px-8">
         {children}
       </div>
-      <SupportFooter />
     </div>
   );
 }
 
-/**
- * Top-right "Choose workspace" link — always visible on every loader state.
- * One-click escape to the workspace picker so users never have to wait for
- * an unreachable timeout to switch instances. Hidden if there's no auth
- * user (auth-loader / sign-in flows have nothing to switch to).
- */
-function LoaderWorkspaceLink() {
-  const { user } = useAuth();
-  const router = useRouter();
-  if (!user) return null;
-  return (
-    <button
-      type="button"
-      onClick={() => router.push('/instances')}
-      className="absolute top-4 right-4 z-20 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
-    >
-      <ArrowLeftRight className="h-3.5 w-3.5" />
-      Choose workspace
-    </button>
-  );
-}
-
-/**
- * Compact user-menu pinned to the top-left of any full-screen loader.
- * Lets the user open settings or sign out even when the dashboard tree
- * hasn't mounted yet (or has been blocked by an unreachable instance).
- *
- * Renders nothing if no auth user — keeps the auth/sign-in loader clean.
- */
-function LoaderUserMenu() {
-  const { user } = useAuth();
-  const router = useRouter();
-
-  if (!user) return null;
-
-  const name = (user.user_metadata?.name as string | undefined) ||
-    user.email?.split('@')[0] ||
-    'Account';
-  const email = user.email ?? '';
-  const avatar =
-    (user.user_metadata?.avatar_url as string | undefined) ||
-    (user.user_metadata?.picture as string | undefined) ||
-    '';
-  const initials = name.split(' ').map((p) => p[0]).join('').toUpperCase().slice(0, 2);
-
-  const handleLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    clearUserLocalStorage();
-    router.push('/auth');
-  };
-
-  // Settings is intentionally absent: the UserSettingsModal lives inside
-  // AppProviders, which is unmounted while the connecting gate is active —
-  // showing a Settings item that does nothing would feel broken. Log-out is
-  // the critical escape hatch for an unreachable workspace, so that's all
-  // we surface here.
-  return (
-    <div className="absolute top-3 left-3 z-20 pointer-events-auto">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="Account menu"
-            className="flex items-center justify-center h-9 w-9 rounded-full hover:bg-muted/70 transition-colors cursor-pointer"
-          >
-            <Avatar className="h-7 w-7">
-              {avatar && <AvatarImage src={avatar} alt={name} />}
-              <AvatarFallback className="text-[11px] bg-muted">{initials || '?'}</AvatarFallback>
-            </Avatar>
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuLabel className="font-normal">
-            <div className="flex flex-col gap-0.5 min-w-0">
-              <span className="text-sm font-medium text-foreground truncate">{name}</span>
-              {email && (
-                <span className="text-xs text-muted-foreground truncate">{email}</span>
-              )}
-            </div>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={handleLogout} variant="destructive">
-            <LogOut className="h-4 w-4" />
-            Log out
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
-}
-
-/**
- * Support footer pinned to the bottom of the viewport. Lives outside the
- * centered flex column so it never affects the vertical rhythm of the main
- * content, yet stays visible on every variant.
- */
-function SupportFooter() {
-  return (
-    <p className="pointer-events-auto absolute bottom-7 left-0 right-0 text-center text-[12px] text-muted-foreground/60">
-      Having trouble? Contact{' '}
-      <a
-        href="mailto:support@kortix.com"
-        className="font-medium text-foreground/80 underline-offset-4 transition-colors hover:text-foreground hover:underline"
-      >
-        support@kortix.com
-      </a>
-    </p>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Connecting view — initial load, in-app switch, first-time connect
+// Connecting signal — initial load, in-app switch, first-time connect
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ConnectingView({
-  label,
+function CompactConnectingSignal({
   title,
   overrideStage,
-  onRestart,
-  restarting = false,
   minimal = false,
 }: {
-  label: string;
   title?: string;
   overrideStage?: Stage;
-  onSwitch: () => void;
-  onRestart?: () => void;
-  restarting?: boolean;
   minimal?: boolean;
 }) {
-  // Resolve the single line shown beneath the logo.
-  // - If `title` is given (e.g. "Signing in", "Provisioning workspace"), use it.
-  // - Else if we know the stage, use its copy.
-  // - Else fall back to the instance label.
-  // In minimal mode we always prefer the title.
-  let line: string | null = null;
-  if (minimal) line = title ?? null;
-  else if (title) line = title;
-  else if (overrideStage) line = STAGE_COPY[overrideStage];
-  else line = label;
+  const status = title || (!minimal && overrideStage ? STAGE_COPY[overrideStage] : 'Connecting');
 
   return (
-    <>
-      <KortixLogo size={40} />
-
-      {line && (
-        <p className="text-[13px] font-normal text-foreground/55 max-w-[320px] truncate">
-          {line}
-        </p>
-      )}
-
+    <div
+      className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex justify-center pt-2.5"
+      role="status"
+      aria-label={status}
+    >
       <ProgressLine />
-
-      {/* Restart is the contextual action when reaching a known instance.
-          Workspace switching is handled by the persistent top-right link
-          mounted in FullScreenShell — no delayed slow-hint needed. */}
-      {!minimal && onRestart && (
-        <Button
-          type="button"
-          onClick={onRestart}
-          disabled={restarting}
-          variant="muted"
-          size="sm"
-          className="rounded-full"
-        >
-          <RotateCw className={cn('h-3.5 w-3.5', restarting && 'animate-spin')} />
-          {restarting ? 'Restarting workload…' : 'Restart workload'}
-        </Button>
-      )}
-    </>
+    </div>
   );
 }
 

@@ -108,19 +108,30 @@ export async function middleware(request: NextRequest) {
   const effectivePathname = isInstanceScopedRoute ? instanceRoute.innerPath : pathname;
   const activeInstanceId = request.cookies.get(ACTIVE_INSTANCE_COOKIE)?.value || null;
 
-  // Block access to WIP /thread/new — punt to the workspace picker so the
-  // user explicitly chooses where to go (no silent jump into whatever
-  // instance happened to be the last active one).
+  // Block access to WIP /thread/new. Prefer the active workspace; otherwise
+  // fall through to the dashboard so the client can resolve/register primary.
   if (pathname.includes('/thread/new')) {
-    return NextResponse.redirect(new URL('/instances', request.url));
+    return NextResponse.redirect(
+      new URL(
+        activeInstanceId ? buildInstancePath(activeInstanceId, '/dashboard') : '/dashboard',
+        request.url,
+      ),
+    );
   }
   
-  // Skip middleware for static files, API routes, and telemetry endpoints
+  // Skip middleware for static files, API routes, and telemetry endpoints.
+  // The `pathname.includes('.')` check is a defensive catch-all for static
+  // assets served from /public — but we must NOT apply it to /instances/
+  // paths, because the file viewer URL legitimately contains dots in the
+  // encoded file path (e.g. `.../files/<encoded-path>/index.html`). Skipping
+  // middleware there would bypass the /instances/[id]/files/... → /files/...
+  // rewrite, dropping the request into the dashboard catch-all which then
+  // bounces the user back to /instances.
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/v1/') ||
-    pathname.includes('.') ||
+    (pathname.includes('.') && !pathname.startsWith('/instances/')) ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/monitoring') ||    // Sentry error tracking tunnel (Better Stack)
     pathname.startsWith('/_betterstack')     // Better Stack browser telemetry proxy
@@ -275,15 +286,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // FAST PATH: Authenticated users hitting the homepage get an instant 302
-  // to /dashboard. This avoids the old client-side redirect chain that caused
-  // a white flash (render null → useAuth resolves → router.replace → skeleton).
-  // Authenticated user hitting the marketing homepage → workspace picker.
-  // We deliberately IGNORE the active-instance cookie here: the user must
-  // always pick a workspace explicitly, never get auto-dropped into the
-  // last one they used.
+  // FAST PATH: authenticated users hitting the homepage go straight to their
+  // active workspace when known. If no active cookie exists, send them to the
+  // dashboard and let useSandbox() register the primary workspace client-side.
   if (pathname === '/' && user) {
-    return NextResponse.redirect(new URL('/instances', request.url));
+    return NextResponse.redirect(
+      new URL(
+        activeInstanceId ? buildInstancePath(activeInstanceId, '/dashboard') : '/dashboard',
+        request.url,
+      ),
+    );
   }
 
   // Desktop shell never shows the marketing homepage. The Tauri window already
@@ -291,7 +303,7 @@ export async function middleware(request: NextRequest) {
   // back, etc.) gets bounced too. Unauthenticated users hit the existing auth
   // gate on /dashboard and land on /auth — no special-casing needed.
   if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return NextResponse.redirect(new URL('/instances', request.url));
+    return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
   // Auto-redirect based on geo-detection for marketing pages
@@ -378,14 +390,16 @@ export async function middleware(request: NextRequest) {
     }
 
     // ── Bare app routes (/dashboard, /files, ...) ────────────────────────
-    // ALWAYS punt to the workspace picker — never silently auto-pick an
-    // instance from the cookie. The user must explicitly choose which
-    // workspace to enter, then in-app navigation runs against the
-    // /instances/[id]/... scoped routes from there.
+    // If we already know the active instance, jump straight into the scoped
+    // route. Without a cookie, allow the dashboard to mount; useSandbox()
+    // resolves the primary workspace without showing the picker first.
     if (isInstanceScopedAppPath(pathname)) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/instances';
-      return NextResponse.redirect(url);
+      if (activeInstanceId) {
+        return NextResponse.redirect(
+          new URL(buildInstancePath(activeInstanceId, pathname), request.url),
+        );
+      }
+      return supabaseResponse;
     }
 
     // ── Billing-related routes (subscription, activate-trial, etc.) ──────

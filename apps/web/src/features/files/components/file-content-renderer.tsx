@@ -249,7 +249,9 @@ export function FileContentRenderer({
   const isMarkdownFile = language === 'markdown';
   const isJsonFile = language === 'json';
   const isHtmlFile = fileCategory === 'html';
-  const [isMarkdownPreview, setIsMarkdownPreview] = useState(false);
+  // Markdown defaults to rendered preview (UnifiedMarkdown). Users can flip to
+  // source/edit via the eye/code toggle in the header.
+  const [isMarkdownPreview, setIsMarkdownPreview] = useState(true);
   const [isJsonTreeView, setIsJsonTreeView] = useState(false);
   // HTML files default to rendered preview mode
   const [isHtmlPreview, setIsHtmlPreview] = useState(true);
@@ -347,9 +349,9 @@ export function FileContentRenderer({
     }
   }, [fileContent?.content]);
 
-  // Reset state when file changes — default to edit mode for markdown
+  // Reset state when file changes — markdown defaults to rendered preview.
   useEffect(() => {
-    setIsMarkdownPreview(false);
+    setIsMarkdownPreview(true);
     setIsJsonTreeView(false);
     setHasUnsavedChanges(false);
     setSaveFlash(false);

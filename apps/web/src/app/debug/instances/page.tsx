@@ -20,10 +20,8 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import type { SandboxInfo } from '@/lib/platform-client';
 import type { ServerEntry } from '@/stores/server-store';
 
-import {
-  ComputerHeroCard,
-  InstancesTopBar,
-} from '@/app/instances/_components/shared';
+import { AppHeader } from '@/components/layout/app-header';
+import { ComputerHeroCard } from '@/app/instances/_components/shared';
 import {
   FallbackInstanceCard,
   InstanceCard,
@@ -203,7 +201,7 @@ export default function DebugInstancesPage() {
 function InstancesPageShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <InstancesTopBar user={MOCK_USER} />
+      <AppHeader user={MOCK_USER} />
       <main className="flex-1 flex items-start justify-center px-4 pt-12 pb-20">
         <div className="w-full max-w-lg">{children}</div>
       </main>
