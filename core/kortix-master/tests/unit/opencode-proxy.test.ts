@@ -18,6 +18,55 @@ describe('proxyToOpenCode', () => {
     serviceManager.requestRecovery = originalRecovery
   })
 
+  it('does not forward Accept-Encoding to OpenCode', async () => {
+    let forwardedHeaders = new Headers()
+
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      forwardedHeaders = new Headers(init?.headers)
+      return new Response('{"healthy":true}', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as typeof fetch
+
+    const res = await app.request('http://localhost/global/health', {
+      headers: {
+        'Accept-Encoding': 'gzip, deflate, br',
+        'X-Custom-Header': 'keep-me',
+      },
+    })
+
+    expect(res.status).toBe(200)
+    expect(forwardedHeaders.get('accept-encoding')).toBeNull()
+    expect(forwardedHeaders.get('x-custom-header')).toBe('keep-me')
+  })
+
+  it('strips encoded and hop-by-hop headers when rebuilding OpenCode responses', async () => {
+    globalThis.fetch = (async () => {
+      return new Response('{"healthy":true}', {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'content-encoding': 'gzip',
+          'content-length': '999',
+          'transfer-encoding': 'chunked',
+          'connection': 'keep-alive',
+          'x-opencode-header': 'preserved',
+        },
+      })
+    }) as typeof fetch
+
+    const res = await app.request('http://localhost/global/health')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-encoding')).toBeNull()
+    expect(res.headers.get('content-length')).toBeNull()
+    expect(res.headers.get('transfer-encoding')).toBeNull()
+    expect(res.headers.get('connection')).toBeNull()
+    expect(res.headers.get('x-opencode-header')).toBe('preserved')
+    expect(await res.text()).toBe('{"healthy":true}')
+  })
+
   it('does not trigger recovery when a request times out but OpenCode health is still OK', async () => {
     let recoveryCalls = 0
 

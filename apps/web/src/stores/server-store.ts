@@ -211,7 +211,17 @@ const MANAGED_IDS = new Set([DEFAULT_SERVER_ID, CLOUD_SANDBOX_SERVER_ID]);
 function isManagedEntry(s: ServerEntry | string): boolean {
   const id = typeof s === 'string' ? s : s.id;
   // Also matches per-sandbox stable IDs (e.g. "sandbox-<sandboxId>")
-  return MANAGED_IDS.has(id) || id.startsWith('sandbox-');
+  if (MANAGED_IDS.has(id) || id.startsWith('sandbox-')) return true;
+  if (typeof s !== 'string') {
+    // Older builds leaked managed sandbox proxy URLs into custom-server
+    // persistence without provider metadata. If left in localStorage/API sync,
+    // the app keeps reconnecting to stale /v1/p/<old-id>/8000 URLs and the
+    // backend correctly returns 403. Treat any backend preview-proxy URL as
+    // managed/ephemeral so it is stripped and rebuilt from fresh sandbox rows.
+    if (s.provider) return true;
+    if (s.url && PATH_PROXY_URL_REGEX.test(s.url)) return true;
+  }
+  return false;
 }
 
 function toApiPayload(s: ServerEntry) {
@@ -277,7 +287,7 @@ async function loadFromApi(localServers: ServerEntry[]): Promise<ServerEntry[] |
       provider: r.provider ?? undefined,
       sandboxId: r.sandboxId ?? undefined,
       mappedPorts: r.mappedPorts ?? undefined,
-    }));
+    })).filter((entry) => !isManagedEntry(entry));
   } catch {
     return null;
   }
@@ -580,7 +590,7 @@ export const useServerStore = create<ServerStore>()(
     {
       name: 'opencode-servers-v6', // v6: sandbox URLs derived at runtime, never persisted
       partialize: (state) => ({
-        servers: state.servers,
+        servers: state.servers.filter((s) => !isManagedEntry(s)),
         activeServerId: state.activeServerId,
         userSelected: state.userSelected,
       }),

@@ -1,3 +1,7 @@
+// Post-auth landing → /instances (workspace picker). Lets the user
+// explicitly choose which workspace to enter instead of getting silently
+// dropped into whichever one happened to be active. Instance-scoped deep
+// links (/instances/[id]/...) still resolve directly.
 const DEFAULT_AUTH_RETURN_URL = '/instances';
 
 export function sanitizeAuthReturnUrl(
@@ -9,10 +13,6 @@ export function sanitizeAuthReturnUrl(
   const trimmedValue = value.trim();
   if (!trimmedValue.startsWith('/') || trimmedValue.startsWith('//')) {
     return fallback;
-  }
-
-  if (/^\/instances\/[^/?#]+(?:[/?#]|$)/.test(trimmedValue)) {
-    return '/instances';
   }
 
   return trimmedValue;

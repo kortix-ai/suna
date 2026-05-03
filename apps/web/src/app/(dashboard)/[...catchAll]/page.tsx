@@ -4,7 +4,6 @@ import { use, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTabStore } from '@/stores/tab-store';
 import { resolveTabFromPathname } from '@/lib/tab-route-resolver';
-import { getActiveInstanceIdFromCookie, buildInstancePath } from '@/lib/instance-routes';
 
 interface CatchAllPageProps {
   params: Promise<{ catchAll: string[] }>;
@@ -43,9 +42,10 @@ export default function DashboardCatchAllPage({ params }: CatchAllPageProps) {
     const descriptor = resolveTabFromPathname(pathname);
 
     if (!descriptor) {
-      // Unknown route — redirect to dashboard rather than showing 404
-      const iid = getActiveInstanceIdFromCookie();
-      router.replace(iid ? buildInstancePath(iid, '/dashboard') : '/dashboard');
+      // Unknown route — punt to the workspace picker rather than silently
+      // auto-picking from the cookie. Keeps the "always pick a workspace"
+      // contract consistent.
+      router.replace('/instances');
       return;
     }
 

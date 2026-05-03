@@ -336,9 +336,10 @@ export function SelfHostedForm({ returnUrl, installed }: SelfHostedFormProps) {
 
         <InstallerForm
           onSuccess={() => {
-            // After creating owner account, redirect to /instances
-            // which will auto-create sandbox and redirect to /instances/[id]
-            window.location.href = '/instances';
+            // After creating owner account, land on the dashboard. The
+            // dashboard layout's useSandbox() auto-creates the local
+            // sandbox; the no-instance state covers the brief gap.
+            window.location.href = '/dashboard';
           }}
           onError={setErrorMessage}
         />

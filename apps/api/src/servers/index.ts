@@ -22,6 +22,22 @@ import { resolveAccountId } from '../shared/resolve-account';
 
 export const serversApp = new Hono<AppEnv>();
 
+const MANAGED_SERVER_IDS = new Set(['default', 'cloud-sandbox']);
+const PATH_PROXY_URL_REGEX = /^https?:\/\/[^/]+\/v1\/p\/([^/]+)\/(\d+)(\/.*)?$/;
+
+function isManagedOrProxyServer(input: {
+  id?: string | null;
+  url?: string | null;
+  provider?: string | null;
+  sandboxId?: string | null;
+}): boolean {
+  if (input.id && (MANAGED_SERVER_IDS.has(input.id) || input.id.startsWith('sandbox-'))) return true;
+  if (input.provider) return true;
+  if (input.sandboxId) return true;
+  if (input.url && PATH_PROXY_URL_REGEX.test(input.url)) return true;
+  return false;
+}
+
 // ─── Auth middleware ────────────────────────────────────────────────────────
 // In cloud mode: require Supabase JWT. In local mode: inject static userId.
 
@@ -53,6 +69,7 @@ serversApp.put('/sync', async (c) => {
   const results = [];
   for (const s of body.servers) {
     if (!s.id || !s.label || !s.url) continue;
+    if (isManagedOrProxyServer(s)) continue;
     const [row] = await db
       .insert(serverEntries)
       .values({
@@ -96,7 +113,7 @@ serversApp.get('/', async (c) => {
     .from(serverEntries)
     .where(eq(serverEntries.accountId, accountId))
     .orderBy(serverEntries.createdAt);
-  return c.json(rows);
+  return c.json(rows.filter((row) => !isManagedOrProxyServer(row)));
 });
 
 // GET /v1/servers/:id — get a single server entry (scoped to account)
@@ -130,6 +147,10 @@ serversApp.post('/', async (c) => {
 
   if (!body.id || !body.label || !body.url) {
     return c.json({ error: 'id, label, and url are required' }, 400);
+  }
+
+  if (isManagedOrProxyServer(body)) {
+    return c.json({ error: 'Managed sandbox proxy entries are derived at runtime and are not persisted' }, 400);
   }
 
   const [row] = await db

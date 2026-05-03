@@ -139,7 +139,7 @@ export function AdminSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="Leave admin console"
-              onClick={() => router.push('/instances')}
+              onClick={() => router.push('/dashboard')}
             >
               <ArrowLeft />
               <span>Back to app</span>

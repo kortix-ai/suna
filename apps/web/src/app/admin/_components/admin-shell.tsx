@@ -59,10 +59,10 @@ export function AdminShell({
             </p>
           </div>
           <Link
-            href="/instances"
+            href="/dashboard"
             className="inline-flex text-sm font-medium text-foreground underline-offset-4 hover:underline"
           >
-            Back to instances
+            Back to dashboard
           </Link>
         </div>
       </div>

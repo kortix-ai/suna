@@ -51,7 +51,7 @@ export default function Variant2Home() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.replace('/dashboard');
+      router.replace('/instances');
     }
   }, [user, isLoading, router]);
 

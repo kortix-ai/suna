@@ -24,7 +24,7 @@ import { getClient } from "@/lib/opencode-sdk";
 import { Button } from "@/components/ui/button";
 import { KortixLoader } from "@/components/ui/kortix-loader";
 import { featureFlags } from "@/lib/feature-flags";
-import { buildInstancePath, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname, normalizeAppPathname } from "@/lib/instance-routes";
+import { buildInstancePath, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname, normalizeAppPathname, setActiveInstanceCookie } from "@/lib/instance-routes";
 import { cn } from "@/lib/utils";
 import { resolveTabFromPathname } from "@/lib/tab-route-resolver";
 import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
@@ -476,7 +476,13 @@ export default function DashboardLayoutContent({
 
 	// Register the primary sandbox in the server store so the OpenCode SDK can
 	// connect. Must run before the onboarding check.
-	useSandbox();
+	const { sandbox: primarySandbox, isLoading: primarySandboxLoading } = useSandbox();
+
+	// True when we've confirmed the user has zero instances (cloud or local).
+	// In that state we MUST release the connect gate so the dashboard can
+	// render its inline empty/onboarding hero — otherwise the connect screen
+	// blocks forever waiting for a sandbox that doesn't exist.
+	const hasNoSandbox = !primarySandboxLoading && !primarySandbox;
 
 	// Sandbox health poller + connect/disconnect toasts. Mounted at the top of
 	// the layout (not inside the post-guard JSX) so the first health check
@@ -884,10 +890,24 @@ export default function DashboardLayoutContent({
 		const fallbackTimer = setTimeout(() => {
 			if (cancelled) return;
 			switchToInstanceAsync(routeInstanceId, { validate: false })
-				.then((result) => {
+				.then(async (result) => {
 					if (cancelled) return;
 					if (!result) {
-						router.replace(`/instances/${routeInstanceId}`);
+						// The URL/cookie can point at a stale instance id from an older
+						// persisted proxy URL. If the local bridge is healthy, recover by
+						// switching to it instead of looping on 403s for the dead id.
+						const { discoverLocalSandbox } = await import("@/lib/platform-client");
+						const local = await discoverLocalSandbox().catch(() => null);
+						if (!cancelled && local?.sandbox_id && local.sandbox_id !== routeInstanceId) {
+							const switched = await switchToInstanceAsync(local.sandbox_id, { validate: false });
+							if (!cancelled && switched) {
+								router.replace(buildInstancePath(local.sandbox_id, normalizeAppPathname(pathname)));
+								return;
+							}
+						}
+
+						setActiveInstanceCookie(null);
+						router.replace('/instances');
 						return;
 					}
 					setRouteSyncing(false);
@@ -895,7 +915,8 @@ export default function DashboardLayoutContent({
 				})
 				.catch(() => {
 					if (cancelled) return;
-					router.replace(`/instances/${routeInstanceId}`);
+					setActiveInstanceCookie(null);
+					router.replace('/instances');
 				});
 		}, 1500);
 
@@ -928,15 +949,12 @@ export default function DashboardLayoutContent({
 	const [hasEverRendered, setHasEverRendered] = useState(false);
 	useEffect(() => {
 		if (hasEverRendered) return;
-		if (
-			!isLoading &&
-			!!user &&
-			onboardingChecked &&
-			connectionStatus !== "connecting"
-		) {
+		const connectionSettled =
+			connectionStatus !== "connecting" || hasNoSandbox;
+		if (!isLoading && !!user && onboardingChecked && connectionSettled) {
 			setHasEverRendered(true);
 		}
-	}, [hasEverRendered, isLoading, user, onboardingChecked, connectionStatus]);
+	}, [hasEverRendered, isLoading, user, onboardingChecked, connectionStatus, hasNoSandbox]);
 
 	// Pin the stage copy to whatever is actually pending so the connect
 	// screen reflects real progress instead of cycling blindly.
@@ -951,7 +969,7 @@ export default function DashboardLayoutContent({
 		(isLoading ||
 			!user ||
 			!onboardingChecked ||
-			connectionStatus === "connecting");
+			(connectionStatus === "connecting" && !hasNoSandbox));
 
 	const maintenanceBlock =
 		isMaintenanceActive &&

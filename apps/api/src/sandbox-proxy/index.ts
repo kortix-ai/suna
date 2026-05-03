@@ -116,6 +116,29 @@ export function invalidateProviderCache(externalId: string): void {
 }
 
 export async function resolveProvider(externalId: string): Promise<{ provider: CachedProviderName; baseUrl: string; serviceKey: string; proxyToken: string; slug: string } | null> {
+  // The local Docker bridge id is deliberately not globally unique. In dev it is
+  // usually just "kortix-sandbox", and shared/remote databases can contain stale
+  // rows with that same external_id from other accounts. Never use a global DB
+  // lookup to resolve the local bridge — route it directly to the local proxy.
+  if (isLocalBridgeSandboxId(externalId)) {
+    const fallbackServiceKey = config.INTERNAL_SERVICE_KEY;
+    providerCache.set(externalId, {
+      provider: 'local_docker',
+      baseUrl: '',
+      serviceKey: fallbackServiceKey,
+      proxyToken: '',
+      slug: '',
+      expiresAt: Date.now() + PROVIDER_CACHE_TTL_MS,
+    });
+    return {
+      provider: 'local_docker',
+      baseUrl: '',
+      serviceKey: fallbackServiceKey,
+      proxyToken: '',
+      slug: '',
+    };
+  }
+
   const cached = providerCache.get(externalId);
   if (cached && Date.now() < cached.expiresAt) {
     return { provider: cached.provider, baseUrl: cached.baseUrl, serviceKey: cached.serviceKey, proxyToken: cached.proxyToken, slug: cached.slug };
@@ -135,24 +158,6 @@ export async function resolveProvider(externalId: string): Promise<{ provider: C
       .limit(1);
 
     if (!sandbox) {
-      if (isLocalBridgeSandboxId(externalId)) {
-        const fallbackServiceKey = config.INTERNAL_SERVICE_KEY;
-        providerCache.set(externalId, {
-          provider: 'local_docker',
-          baseUrl: '',
-          serviceKey: fallbackServiceKey,
-          proxyToken: '',
-          slug: '',
-          expiresAt: Date.now() + PROVIDER_CACHE_TTL_MS,
-        });
-        return {
-          provider: 'local_docker',
-          baseUrl: '',
-          serviceKey: fallbackServiceKey,
-          proxyToken: '',
-          slug: '',
-        };
-      }
       return null;
     }
 

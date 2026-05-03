@@ -218,11 +218,11 @@ export default function BackupsPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push('/instances')}
+            onClick={() => router.push(`/instances/${id}/dashboard`)}
             className="h-8 gap-1.5 px-2 text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Instances
+            Dashboard
           </Button>
         }
       />

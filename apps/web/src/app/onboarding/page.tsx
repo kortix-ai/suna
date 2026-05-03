@@ -22,9 +22,9 @@ export default function OnboardingRedirect() {
     if (instanceId) {
       router.replace(`/instances/${instanceId}/onboarding${window.location.search}`);
     } else {
-      // No instance context (self-hosted, first boot) — go to dashboard
-      // which will handle onboarding checks itself.
-      router.replace('/dashboard');
+      // No instance context — punt to the workspace picker so the user
+      // chooses one explicitly instead of getting auto-routed.
+      router.replace('/instances');
     }
   }, [router]);
 

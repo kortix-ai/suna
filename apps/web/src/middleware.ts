@@ -108,10 +108,11 @@ export async function middleware(request: NextRequest) {
   const effectivePathname = isInstanceScopedRoute ? instanceRoute.innerPath : pathname;
   const activeInstanceId = request.cookies.get(ACTIVE_INSTANCE_COOKIE)?.value || null;
 
-  // Block access to WIP /thread/new route - redirect to dashboard
+  // Block access to WIP /thread/new — punt to the workspace picker so the
+  // user explicitly chooses where to go (no silent jump into whatever
+  // instance happened to be the last active one).
   if (pathname.includes('/thread/new')) {
-    const target = activeInstanceId ? buildInstancePath(activeInstanceId, '/dashboard') : '/instances';
-    return NextResponse.redirect(new URL(target, request.url));
+    return NextResponse.redirect(new URL('/instances', request.url));
   }
   
   // Skip middleware for static files, API routes, and telemetry endpoints
@@ -277,9 +278,12 @@ export async function middleware(request: NextRequest) {
   // FAST PATH: Authenticated users hitting the homepage get an instant 302
   // to /dashboard. This avoids the old client-side redirect chain that caused
   // a white flash (render null → useAuth resolves → router.replace → skeleton).
+  // Authenticated user hitting the marketing homepage → workspace picker.
+  // We deliberately IGNORE the active-instance cookie here: the user must
+  // always pick a workspace explicitly, never get auto-dropped into the
+  // last one they used.
   if (pathname === '/' && user) {
-    const target = activeInstanceId ? buildInstancePath(activeInstanceId, '/dashboard') : '/instances';
-    return NextResponse.redirect(new URL(target, request.url));
+    return NextResponse.redirect(new URL('/instances', request.url));
   }
 
   // Desktop shell never shows the marketing homepage. The Tauri window already
@@ -287,7 +291,7 @@ export async function middleware(request: NextRequest) {
   // back, etc.) gets bounced too. Unauthenticated users hit the existing auth
   // gate on /dashboard and land on /auth — no special-casing needed.
   if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
+    return NextResponse.redirect(new URL('/instances', request.url));
   }
 
   // Auto-redirect based on geo-detection for marketing pages
@@ -374,11 +378,13 @@ export async function middleware(request: NextRequest) {
     }
 
     // ── Bare app routes (/dashboard, /files, ...) ────────────────────────
-    // Redirect to the instance-scoped version if we know which instance,
-    // otherwise send to /instances to pick one.
+    // ALWAYS punt to the workspace picker — never silently auto-pick an
+    // instance from the cookie. The user must explicitly choose which
+    // workspace to enter, then in-app navigation runs against the
+    // /instances/[id]/... scoped routes from there.
     if (isInstanceScopedAppPath(pathname)) {
       const url = request.nextUrl.clone();
-      url.pathname = activeInstanceId ? buildInstancePath(activeInstanceId, pathname) : '/instances';
+      url.pathname = '/instances';
       return NextResponse.redirect(url);
     }
 

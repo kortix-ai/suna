@@ -34,7 +34,7 @@ export default function PreviewPage({
     } else {
       // No tab for this port - redirect to dashboard
       // The preview tab can only be created with proper sandbox URL context
-      router.replace('/dashboard');
+      router.replace('/instances');
     }
   }, [port, tabs, setActiveTab, router]);
 

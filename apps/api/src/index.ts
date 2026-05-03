@@ -833,6 +833,14 @@ async function injectSandboxToken(sandboxId: string, accountId: string): Promise
 }
 
 async function ensureLocalSandboxRegistered() {
+  if (!isLocalDatabaseUrlForLocalRegistration()) {
+    if (!skippedRemoteLocalRegistrationWarningShown) {
+      skippedRemoteLocalRegistrationWarningShown = true;
+      console.warn('[startup] Skipping generic local sandbox DB registration because DATABASE_URL is not local. Use /v1/platform/local-bridge/status for local discovery or POST /v1/platform/init/local for a user-owned row.');
+    }
+    return;
+  }
+
   const { db } = await import('./shared/db');
   const { sandboxes } = await import('@kortix/db');
   const { eq, and } = await import('drizzle-orm');
@@ -944,11 +952,23 @@ async function ensureLocalSandboxRegistered() {
   console.log(`[startup] Local sandbox auto-provisioned (${sandbox.sandboxId}), token injected`);
 }
 
+let skippedRemoteLocalRegistrationWarningShown = false;
+
+function isLocalDatabaseUrlForLocalRegistration(): boolean {
+  try {
+    const host = new URL(config.DATABASE_URL).hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === 'host.docker.internal' || host.startsWith('supabase_db_');
+  } catch {
+    return false;
+  }
+}
+
 let localSandboxHealTimer: ReturnType<typeof setInterval> | null = null;
 let localSandboxHealRunning = false;
 
 function startLocalSandboxSelfHeal(): void {
   if (localSandboxHealTimer || !config.isLocalDockerEnabled() || !config.DATABASE_URL) return;
+  if (!isLocalDatabaseUrlForLocalRegistration()) return;
 
   const run = async () => {
     if (localSandboxHealRunning) return;

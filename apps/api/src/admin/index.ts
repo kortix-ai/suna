@@ -1051,6 +1051,8 @@ adminApp.get('/api/sandboxes/:id/health', async (c) => {
 /** POST /v1/admin/api/sandboxes/health-batch — layered health for current page */
 adminApp.post('/api/sandboxes/health-batch', async (c) => {
   try {
+    const host = c.req.header('host') || '';
+    const isLocalRequest = host.startsWith('localhost:') || host.startsWith('127.0.0.1:') || host.endsWith('.localhost');
     const body = await c.req.json().catch(() => ({})) as { sandboxIds?: unknown };
     const sandboxIds = Array.isArray(body.sandboxIds)
       ? body.sandboxIds.filter((value): value is string => typeof value === 'string' && value.length > 0).slice(0, 50)
@@ -1072,6 +1074,15 @@ adminApp.post('/api/sandboxes/health-batch', async (c) => {
     const healthById = new Map<string, Awaited<ReturnType<typeof getJustAvpsInstanceHealth>> | ReturnType<typeof createUnsupportedInstanceHealth>>();
 
     await Promise.all(rows.map(async (row) => {
+      if (isLocalRequest && row.provider === 'justavps') {
+        const fallback = createUnsupportedInstanceHealth(row.sandboxId, row.provider);
+        fallback.layers.host.summary = 'Skipped remote JustAVPS health probe from localhost dev API';
+        fallback.layers.workload.summary = 'Remote cloud health checks are disabled from localhost dev API';
+        fallback.layers.runtime.summary = 'Remote cloud health checks are disabled from localhost dev API';
+        healthById.set(row.sandboxId, fallback);
+        return;
+      }
+
       if (row.provider !== 'justavps' || !row.externalId) {
         healthById.set(row.sandboxId, createUnsupportedInstanceHealth(row.sandboxId, row.provider));
         return;

@@ -62,6 +62,15 @@ export function nextRecoveredStatus(currentStatus: 'provisioning' | 'error', rea
 export function startProvisionPoller(): void {
   if (_intervalId) return;
 
+  // Local dev can point at a shared Supabase database for convenience. In that
+  // setup this background reconciler would sweep every stale remote JustAVPS
+  // row in the shared DB, spam "machine 404", and mutate records unrelated to
+  // the local sandbox. Only cloud API runtimes should run the cloud provisioner.
+  if (config.isLocal() || process.env.KORTIX_LOCAL_DEV === '1') {
+    console.log('[provision-poller] Local dev runtime, skipping cloud provision polling');
+    return;
+  }
+
   // Don't start if JustAVPS isn't configured
   if (!config.JUSTAVPS_API_KEY || !config.JUSTAVPS_API_URL) {
     console.log('[provision-poller] JustAVPS not configured, skipping');

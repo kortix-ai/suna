@@ -10,7 +10,7 @@
  * New callers should import from '@kortix/api/teams' directly.
  */
 
-import { and, desc, eq, inArray, ne, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, or, type SQL } from 'drizzle-orm';
 import { sandboxes, type Database } from '@kortix/db';
 import {
   loadUserTeamContext,
@@ -23,6 +23,8 @@ import { can, type Scope } from '../../permissions';
 type SandboxRecord = typeof sandboxes.$inferSelect;
 type SandboxStatus = SandboxRecord['status'];
 type AccountRole = 'owner' | 'admin' | 'member';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface SandboxAccessContext {
   userId: string;
@@ -59,7 +61,13 @@ function buildExtraFilters(
   const clauses: any[] = [];
 
   if (options.sandboxId) {
-    clauses.push(eq(sandboxes.sandboxId, options.sandboxId));
+    // Callers historically pass the DB sandbox_id here, but instance-scoped
+    // local routes can also pass the proxy/external id (e.g. "kortix-sandbox").
+    // Do not bind a non-UUID to the uuid column — Postgres throws 22P02 and
+    // turns harmless lookup misses into /platform/sandbox/list 500s.
+    clauses.push(UUID_RE.test(options.sandboxId)
+      ? or(eq(sandboxes.sandboxId, options.sandboxId), eq(sandboxes.externalId, options.sandboxId))
+      : eq(sandboxes.externalId, options.sandboxId));
   }
 
   const visibility = visibleSandboxFilter(db, ctx);

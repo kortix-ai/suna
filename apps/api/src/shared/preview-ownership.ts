@@ -148,7 +148,11 @@ export async function canAccessPreviewSandbox(input: {
   userId?: string;
   accountId?: string;
 }): Promise<boolean> {
-  if (!input.userId) return false;
+  if (!input.userId) {
+    if (!input.accountId) return false;
+    const ref = await resolveSandboxRef(input.previewSandboxId);
+    return !!ref && ref.accountId === input.accountId;
+  }
   const entry = await getOrCompute(input.previewSandboxId, input.userId);
   return entry.allowed;
 }
@@ -183,5 +187,4 @@ export function invalidatePreviewCacheForUser(userId: string): void {
     }
   }
 }
-
 

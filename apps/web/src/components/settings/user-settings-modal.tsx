@@ -1277,7 +1277,7 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs"
-                        onClick={() => window.location.href = '/instances'}
+                        onClick={() => useNewInstanceModalStore.getState().openNewInstanceModal()}
                     >
                         <Plus className="size-3 mr-1" />
                         New Kortix

@@ -3,6 +3,29 @@ import { accounts, sandboxes, type Database } from '@kortix/db';
 import { config } from '../../config';
 
 type SandboxRow = typeof sandboxes.$inferSelect;
+type LocalSandboxRecord = Pick<
+  SandboxRow,
+  | 'sandboxId'
+  | 'externalId'
+  | 'name'
+  | 'provider'
+  | 'baseUrl'
+  | 'status'
+  | 'metadata'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'isIncluded'
+  | 'stripeSubscriptionItemId'
+>;
+
+function isLocalDatabaseUrl(): boolean {
+  try {
+    const host = new URL(config.DATABASE_URL).hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === 'host.docker.internal' || host.startsWith('supabase_db_');
+  } catch {
+    return false;
+  }
+}
 
 function getMappedPorts(): Record<string, string> {
   const base = config.SANDBOX_PORT_BASE || 14000;
@@ -25,11 +48,10 @@ function getHealthUrl(): string {
 }
 
 function getBaseUrl(): string {
-  const routerBase = (config.KORTIX_URL || `http://localhost:${config.PORT || 8008}/v1/router`).replace(/\/router$/, '');
-  return `${routerBase}/p/${config.SANDBOX_CONTAINER_NAME}/8000`;
+  return `http://localhost:${config.PORT || 8008}/v1/p/${config.SANDBOX_CONTAINER_NAME}/8000`;
 }
 
-export function serializeLocalSandbox(row: SandboxRow) {
+export function serializeLocalSandbox(row: LocalSandboxRecord) {
   const metadata = row.metadata as Record<string, unknown> | null;
   return {
     sandbox_id: row.sandboxId,
@@ -47,6 +69,29 @@ export function serializeLocalSandbox(row: SandboxRow) {
     cancel_at: null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+function syntheticLocalSandbox(snapshot: {
+  baseUrl: string;
+  externalId: string;
+  metadata: Record<string, unknown>;
+}): LocalSandboxRecord {
+  const now = new Date();
+  return {
+    // This bridge route is unauthenticated and only describes the local runtime.
+    // Do not leak or reuse an arbitrary DB uuid from a shared/remote database.
+    sandboxId: config.SANDBOX_CONTAINER_NAME,
+    externalId: snapshot.externalId,
+    name: 'Local Sandbox',
+    provider: 'local_docker',
+    status: 'active',
+    baseUrl: snapshot.baseUrl,
+    metadata: snapshot.metadata,
+    createdAt: now,
+    updatedAt: now,
+    isIncluded: false,
+    stripeSubscriptionItemId: null,
   };
 }
 
@@ -93,9 +138,17 @@ async function findExistingLocalSandboxRow(db: Database): Promise<SandboxRow | n
   return row ?? null;
 }
 
-export async function ensureGenericLocalSandboxRecord(db: Database): Promise<SandboxRow | null> {
+export async function ensureGenericLocalSandboxRecord(db: Database): Promise<LocalSandboxRecord | null> {
   const snapshot = await getLocalSandboxSnapshot();
   if (!snapshot) return null;
+
+  // If a local API is pointed at a shared/remote Supabase database, the generic
+  // local bridge must not mutate or reuse global `external_id = kortix-sandbox`
+  // rows from other accounts. Return a synthetic local record; authenticated
+  // routes can still create a user-owned local row via POST /platform/init/local.
+  if (!isLocalDatabaseUrl()) {
+    return syntheticLocalSandbox(snapshot);
+  }
 
   const existing = await findExistingLocalSandboxRow(db);
 

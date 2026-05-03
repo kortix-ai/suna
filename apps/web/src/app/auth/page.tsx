@@ -309,7 +309,7 @@ function LoginContent() {
         return {};
       }
       if ('success' in result && result.success) {
-        const redirectTo = (result as { redirectTo?: string }).redirectTo || '/dashboard';
+        const redirectTo = (result as { redirectTo?: string }).redirectTo || '/instances';
         window.location.href = redirectTo;
         return result;
       }
@@ -330,7 +330,7 @@ function LoginContent() {
         return {};
       }
       if ('success' in result && result.success) {
-        const redirectTo = (result as { redirectTo?: string }).redirectTo || '/dashboard';
+        const redirectTo = (result as { redirectTo?: string }).redirectTo || '/instances';
         const authEvent = (result as { authEvent?: string }).authEvent || 'login';
         const authMethod = (result as { authMethod?: string }).authMethod || 'email_otp';
         window.location.href = `${redirectTo}?auth_event=${authEvent}&auth_method=${authMethod}`;
@@ -850,8 +850,10 @@ function SelfHostedLoginContent() {
   const returnUrl = sanitizeAuthReturnUrl(rawReturnUrl);
   const [phase, setPhase] = useState<'lock' | 'form'>('lock');
 
-  // After auth, redirect to /instances. The /instances page handles
-  // sandbox creation, and /instances/[id] handles setup (provider, keys).
+  // After auth, redirect to /instances — the workspace picker — so the
+  // user explicitly chooses which workspace to enter instead of getting
+  // silently dropped into whichever was last active. The picker also
+  // handles the empty/claim state for users with no workspaces yet.
   useEffect(() => {
     if (isLoading || !user) return;
     if (installed === false) return; // installer flow handles its own redirect

@@ -1,28 +1,44 @@
 'use client';
 
+/**
+ * Workspace picker — the dedicated "choose your workspace" page.
+ *
+ * Modeled after Slack's workspace switcher: a clean grid of all the user's
+ * instances, an account menu for log-out, and a "Create workspace" CTA.
+ *
+ * This page is REACHABLE FROM:
+ * - The sidebar workspace switcher's "All workspaces" link
+ * - The connecting screen's persistent "Choose workspace" link (top-right)
+ * - Direct navigation to /instances
+ *
+ * Post-auth still lands users on /dashboard (their last-used instance) for
+ * speed; this page is for explicit picking, not the default landing.
+ */
+
 import { useEffect, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, Loader2, Plus } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Loader2, Plus } from 'lucide-react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import {
-  listSandboxes,
   ensureSandbox,
+  listSandboxes,
   type SandboxInfo,
 } from '@/lib/platform-client';
 import { isBillingEnabled } from '@/lib/config';
 import {
+  activateInstanceSelection,
   activateServerSelection,
   useServerStore,
   type ServerEntry,
 } from '@/stores/server-store';
 import { useAccountState } from '@/hooks/billing/use-account-state';
 import { claimComputer } from '@/lib/api/billing';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
-
+import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
+
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
@@ -35,27 +51,32 @@ import {
 } from './_components/instance-card';
 import { InstanceSettingsModal } from './_components/instance-settings-modal';
 
-// ─── Main Page ──────────────────────────────────────────────────────────────
-
 export default function InstancesPage() {
   const router = useRouter();
-  const pathname = usePathname();
+  const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
   const { servers, activeServerId } = useServerStore();
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [autoCreating, setAutoCreating] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const [creatingLocal, setCreatingLocal] = useState(false);
   const [settingsTarget, setSettingsTarget] = useState<SandboxInfo | null>(null);
   const isCloud = isBillingEnabled();
-  const { data: adminRole, isLoading: adminRoleLoading } = useAdminRole();
-  const isAdmin = !!adminRole?.isAdmin;
+  // Local state — the global NewInstanceModal lives in AppProviders, which
+  // only wraps the (dashboard) route group. /instances is outside that
+  // group so the global instance is never mounted; we mount one locally
+  // here instead. Keeping it state-driven (not store-driven) avoids the
+  // dead-click bug where openNewInstanceModal() flips a store flag with
+  // no listener mounted.
+  const [showNewInstanceModal, setShowNewInstanceModal] = useState(false);
+  // Kept for parity in case any other component opens it via the store
+  // and we land here mid-flow.
+  const isStoreModalOpen = useNewInstanceModalStore((s) => s.isOpen);
+  const closeStoreModal = useNewInstanceModalStore((s) => s.closeNewInstanceModal);
+
   const {
     data: accountState,
-    isLoading: accountStateLoading,
     refetch: refetchAccountState,
-  } = useAccountState();
+  } = useAccountState({ enabled: !!user && isCloud });
 
-  // Redirect to auth if not logged in
   useEffect(() => {
     if (!authLoading && !user) {
       router.replace('/auth');
@@ -67,15 +88,13 @@ export default function InstancesPage() {
     queryFn: listSandboxes,
     enabled: !!user,
     refetchInterval: (query) => {
-      // Poll every 15s if any sandbox is provisioning (real-time updates happen on the detail page via SSE)
       const data = query.state.data;
       if (data?.some((s) => s.status === 'provisioning')) return 15_000;
-      return 60_000; // 60s when all stable
+      return 60_000;
     },
   });
 
-  // After Stripe checkout redirect — just clean the URL and refetch.
-  // The webhook already created the subscription + provisioned the sandbox.
+  // Stripe checkout return — clear the query, refetch.
   useEffect(() => {
     if (!user) return;
     const params = new URLSearchParams(window.location.search);
@@ -84,55 +103,29 @@ export default function InstancesPage() {
     clean.searchParams.delete('subscription');
     clean.searchParams.delete('session_id');
     window.history.replaceState({}, '', clean.pathname);
-    refetch();
-  }, [user, refetch]);
+    queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox'] });
+  }, [user, queryClient]);
 
-  // Local mode: auto-create the single sandbox if none exists, then redirect.
-  // Only 1 instance allowed in local mode.
-  useEffect(() => {
-    if (!user || isLoading || autoCreating || isCloud) return;
-    if (sandboxes && sandboxes.length === 0) {
-      setAutoCreating(true);
-      ensureSandbox()
-        .then(() => refetch())
-        .catch(() => { })
-        .finally(() => setAutoCreating(false));
-    }
-  }, [user, isLoading, sandboxes, autoCreating, isCloud, refetch]);
-
-  // Auto-redirect: if there's exactly 1 instance (local mode typical), go straight to it.
-  useEffect(() => {
-    if (isLoading || !sandboxes) return;
-    const active = sandboxes.filter((s) => s.status !== 'archived');
-    if (active.length === 1 && !isCloud) {
-      router.replace(`/instances/${active[0].sandbox_id}`);
-    }
-  }, [isLoading, sandboxes, isCloud, router]);
-
-  // Filter out archived — user shouldn't see those
   const visible = sandboxes?.filter((s) => s.status !== 'archived') ?? [];
   const fallbackServers = servers.filter((s) => !!s.provider || !!s.url);
-  const listError = error;
-  const refetchList = refetch;
 
   function handleOpenSettings(sandbox: SandboxInfo) {
     setSettingsTarget(sandbox);
   }
 
-  function handleInstanceClick(sandbox: SandboxInfo) {
-    // Active sandboxes go directly to the dashboard — skipping the
-    // `/instances/[id]` gatekeeper eliminates a route boundary and a
-    // remount of the connecting screen. For any non-active status the
-    // gatekeeper handles the UI (provisioning, error, stopped).
+  async function handleInstanceClick(sandbox: SandboxInfo) {
     if (sandbox.status === 'active') {
-      router.push(`/instances/${sandbox.sandbox_id}/dashboard`);
+      const result = await activateInstanceSelection(sandbox.sandbox_id, {
+        pathname: '/instances',
+      });
+      router.push(result?.href ?? `/instances/${sandbox.sandbox_id}/dashboard`);
       return;
     }
     router.push(`/instances/${sandbox.sandbox_id}`);
   }
 
   function handleFallbackServerClick(server: ServerEntry) {
-    const result = activateServerSelection(server.id, { pathname });
+    const result = activateServerSelection(server.id, { pathname: '/instances' });
     if (server.instanceId) {
       router.push(result?.href ?? `/instances/${server.instanceId}/dashboard`);
       return;
@@ -140,25 +133,26 @@ export default function InstancesPage() {
     router.push(result?.href ?? '/dashboard');
   }
 
-  function handleCreateInstance() {
+  async function handleCreateInstance() {
     if (isCloud) {
-      setCheckoutOpen(true);
-    } else {
-      // Local mode: create directly, no checkout
-      setAutoCreating(true);
-      ensureSandbox()
-        .then(() => refetch())
-        .catch(() => { })
-        .finally(() => setAutoCreating(false));
+      setShowNewInstanceModal(true);
+      return;
+    }
+    setCreatingLocal(true);
+    try {
+      await ensureSandbox();
+      await refetch();
+    } finally {
+      setCreatingLocal(false);
     }
   }
 
   const handleClaimComputer = async () => {
+    setClaiming(true);
     try {
-      setClaiming(true);
       const result = await claimComputer();
-      refetch();
-      refetchAccountState();
+      await refetch();
+      await refetchAccountState();
       if (result?.data?.sandbox_id) {
         router.push(`/instances/${result.data.sandbox_id}`);
       }
@@ -170,114 +164,105 @@ export default function InstancesPage() {
   };
 
   const canClaimComputer = accountState?.can_claim_computer === true;
-  const pageLoading = authLoading || adminRoleLoading || isLoading || (isCloud && accountStateLoading);
 
-  // Single canonical loader until auth + initial sandbox list are ready.
-  // Prevents showing the page shell with an inline spinner.
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" />;
+    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
   }
-  if (pageLoading && (sandboxes === undefined || sandboxes.length === 0)) {
-    return <ConnectingScreen forceConnecting overrideStage="routing" />;
+  if (isLoading && !sandboxes) {
+    return <ConnectingScreen forceConnecting overrideStage="routing" hideWorkspacePicker />;
   }
-
-  const containerWidth = 'max-w-lg';
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <InstancesTopBar user={user} />
 
       <main className="flex-1 flex items-start justify-center px-4 pt-12 pb-20">
-        <div className={cn('w-full', containerWidth)}>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-baseline gap-2.5">
-              <h1 className="text-xl font-semibold text-foreground">Instances</h1>
-              {visible.length > 0 && (
-                <span className="text-xs font-medium text-muted-foreground tabular-nums">
-                  {visible.length}
-                </span>
-              )}
+        <div className={cn('w-full max-w-lg')}>
+          {/* Header */}
+          <div className="flex items-end justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Choose a workspace
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                {visible.length === 0
+                  ? 'Create your first workspace to get started.'
+                  : `${visible.length} workspace${visible.length === 1 ? '' : 's'} · pick one to enter.`}
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              {isAdmin && (
-                <Button size="sm" variant="outline" onClick={() => window.location.assign('/admin')}>
-                  Admin Console
-                </Button>
-              )}
-              {isCloud && visible.length > 0 && (
-                <Button
-                  size="sm"
-                  onClick={handleCreateInstance}
-                  disabled={autoCreating}
-                  className="gap-1.5"
-                >
-                  {autoCreating ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Plus className="h-3.5 w-3.5" />
-                  )}
-                  {autoCreating ? 'Creating…' : 'New Instance'}
-                </Button>
-              )}
-            </div>
+            {visible.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCreateInstance}
+                disabled={creatingLocal}
+                className="gap-1.5"
+              >
+                {creatingLocal ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                {creatingLocal ? 'Creating…' : 'New workspace'}
+              </Button>
+            )}
           </div>
 
           {/* Error */}
-          {listError && !pageLoading && fallbackServers.length === 0 && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 flex items-center gap-3">
-              <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-destructive font-medium">Failed to load instances</p>
-                <p className="text-xs text-destructive/70 mt-0.5">{(listError as Error).message}</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => refetchList()}>
+          {error && fallbackServers.length === 0 && (
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 mb-4">
+              <p className="text-sm text-destructive font-medium">Failed to load workspaces</p>
+              <p className="text-xs text-destructive/70 mt-0.5">{(error as Error).message}</p>
+              <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-2">
                 Retry
               </Button>
             </div>
           )}
 
-          {/* Claim computer card for legacy paid users */}
-          {canClaimComputer && !pageLoading && (
-            <ComputerHeroCard
-              title="Kortix is now even better"
-              description={
-                <>
-                  Your plan now includes a dedicated cloud computer
-                  {accountState?.tier?.monthly_credits ? (
-                    <>
-                      {' '}with{' '}
-                      <span className="text-foreground font-medium">
-                        ${accountState.tier.monthly_credits}/mo
-                      </span>{' '}
-                      in credits
-                    </>
-                  ) : ''}
-                  . Always on, runs while you sleep, full root access.
-                </>
-              }
-              ctaLabel="Claim Computer"
-              ctaLoadingLabel="Setting up…"
-              onCta={handleClaimComputer}
-              loading={claiming}
-              features={['Included in your plan', 'Always on', 'Persistent storage']}
-            />
+          {/* Claim card for legacy paid users */}
+          {canClaimComputer && (
+            <div className="mb-4">
+              <ComputerHeroCard
+                title="Kortix is now even better"
+                description={
+                  <>
+                    Your plan now includes a dedicated cloud computer
+                    {accountState?.tier?.monthly_credits ? (
+                      <>
+                        {' '}with{' '}
+                        <span className="text-foreground font-medium">
+                          ${accountState.tier.monthly_credits}/mo
+                        </span>{' '}
+                        in credits
+                      </>
+                    ) : ''}
+                    . Always on, runs while you sleep, full root access.
+                  </>
+                }
+                ctaLabel="Claim Computer"
+                ctaLoadingLabel="Setting up…"
+                onCta={handleClaimComputer}
+                loading={claiming}
+                features={['Included in your plan', 'Always on', 'Persistent storage']}
+              />
+            </div>
           )}
 
-          {/* Empty state */}
-          {!pageLoading && !listError && visible.length === 0 && fallbackServers.length === 0 && !canClaimComputer && (
+          {/* Empty — no instances + no fallback */}
+          {visible.length === 0 && fallbackServers.length === 0 && !canClaimComputer && (
             <ComputerHeroCard
               title="Get your cloud computer"
               description="A dedicated cloud computer that's always on, runs while you sleep, with full root access and persistent storage."
               ctaLabel="Get started"
               ctaLoadingLabel="Setting up…"
               onCta={handleCreateInstance}
-              loading={autoCreating}
+              loading={creatingLocal}
               features={['Always on', 'Full root access', 'Persistent storage']}
             />
           )}
 
-          {/* Instance list — one row per instance, OG style */}
-          {!pageLoading && visible.length > 0 && (
+          {/* Workspace list */}
+          {visible.length > 0 && (
             <div className="flex flex-col gap-2">
               {visible.map((sandbox) => (
                 <InstanceCard
@@ -290,8 +275,8 @@ export default function InstancesPage() {
             </div>
           )}
 
-          {/* Fallback list from server store when sandbox API list is unavailable */}
-          {!pageLoading && visible.length === 0 && fallbackServers.length > 0 && (
+          {/* Fallback list */}
+          {visible.length === 0 && fallbackServers.length > 0 && (
             <div className="flex flex-col gap-2">
               {fallbackServers.map((server) => (
                 <FallbackInstanceCard
@@ -306,14 +291,25 @@ export default function InstancesPage() {
         </div>
       </main>
 
-      {/* Checkout modal — opens instantly, no page navigation */}
-      <NewInstanceModal open={checkoutOpen} onOpenChange={setCheckoutOpen} />
-
       <InstanceSettingsModal
         sandbox={settingsTarget}
         open={!!settingsTarget}
         onOpenChange={(open) => {
           if (!open) setSettingsTarget(null);
+        }}
+      />
+
+      {/* Local mount of NewInstanceModal — the global one in AppProviders
+          isn't reachable from this route. Listens to both the local state
+          (clicked via this page) AND the store flag (clicked via something
+          that bounced us here mid-flow). */}
+      <NewInstanceModal
+        open={showNewInstanceModal || isStoreModalOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setShowNewInstanceModal(false);
+            closeStoreModal();
+          }
         }}
       />
     </div>

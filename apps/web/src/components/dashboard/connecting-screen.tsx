@@ -19,7 +19,20 @@ import {
 } from 'lucide-react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { LogOut } from 'lucide-react';
+import { useAuth } from '@/components/AuthProvider';
+import { createClient } from '@/lib/supabase/client';
+import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { restartSandbox, type SandboxInfo } from '@/lib/platform-client';
@@ -74,6 +87,7 @@ export function ConnectingScreen({
   provider,
   backHref,
   minimal = false,
+  hideWorkspacePicker = false,
 }: ConnectingScreenProps = {}) {
   const status = useSandboxConnectionStore((s) => s.status);
   const wasConnected = useSandboxConnectionStore((s) => s.wasConnected);
@@ -163,10 +177,12 @@ export function ConnectingScreen({
     }
   }, [adminRepairMutation, isAdmin, primaryRepairAction, restarting, resolvedSandboxId, stopped, supportsLayeredHealth]);
 
-  const handleSwitch = useCallback(
-    () => router.push(backHref || '/instances'),
-    [router, backHref],
-  );
+  const handleSwitch = useCallback(() => {
+    // Always go to the workspace picker. The picker is a real page (not a
+    // sidebar popover) so it works even when the dashboard tree isn't
+    // mounted (initial loader, unreachable instance, etc.).
+    router.push(backHref || '/instances');
+  }, [router, backHref]);
   const handleOpenHealth = useCallback(() => {
     if (!resolvedSandboxId) return;
     setHealthOpen(true);
@@ -179,7 +195,7 @@ export function ConnectingScreen({
 
   if (error) {
     return (
-      <FullScreenShell>
+      <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
         <ErrorView
           label={labelOverride || serverLabel}
           message={error.message}
@@ -193,7 +209,7 @@ export function ConnectingScreen({
 
   if (stopped) {
     return (
-      <FullScreenShell>
+      <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
         <StoppedView
           label={stopped.name || labelOverride || serverLabel}
           onBack={handleSwitch}
@@ -205,7 +221,7 @@ export function ConnectingScreen({
 
   if (provisioning) {
     return (
-      <FullScreenShell>
+      <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
         <ProvisioningView
           label={labelOverride || serverLabel}
           title={title || 'Provisioning workspace'}
@@ -271,7 +287,7 @@ export function ConnectingScreen({
   if (!forceConnecting && status === 'unreachable') {
     return (
       <>
-        <FullScreenShell>
+        <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
           <UnreachableView
             label={serverLabel}
             reconnectAttempts={reconnectAttempts}
@@ -297,7 +313,7 @@ export function ConnectingScreen({
   }
 
   return (
-    <FullScreenShell>
+    <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
       <ConnectingView
         label={labelOverride || serverLabel}
         title={title}
@@ -353,6 +369,12 @@ export interface ConnectingScreenProps {
    * line. No stage text, no escape hatch.
    */
   minimal?: boolean;
+  /**
+   * Suppress the persistent top-right "Choose workspace" link. Use on
+   * pages that ARE the workspace picker (so the link wouldn't go anywhere
+   * useful) — e.g. /instances during its initial load shimmer.
+   */
+  hideWorkspacePicker?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -379,13 +401,114 @@ const STAGE_COPY: Record<Stage, string> = {
   restoring: 'Restoring session',
 };
 
-function FullScreenShell({ children }: { children: React.ReactNode }) {
+function FullScreenShell({
+  children,
+  showWorkspacePicker = true,
+}: {
+  children: React.ReactNode;
+  /** Hide the top-right "Choose workspace" link (e.g. on the picker itself). */
+  showWorkspacePicker?: boolean;
+}) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background">
+      <LoaderUserMenu />
+      {showWorkspacePicker && <LoaderWorkspaceLink />}
       <div className="relative z-10 flex w-full max-w-[420px] flex-col items-center gap-8 px-8">
         {children}
       </div>
       <SupportFooter />
+    </div>
+  );
+}
+
+/**
+ * Top-right "Choose workspace" link — always visible on every loader state.
+ * One-click escape to the workspace picker so users never have to wait for
+ * an unreachable timeout to switch instances. Hidden if there's no auth
+ * user (auth-loader / sign-in flows have nothing to switch to).
+ */
+function LoaderWorkspaceLink() {
+  const { user } = useAuth();
+  const router = useRouter();
+  if (!user) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => router.push('/instances')}
+      className="absolute top-4 right-4 z-20 inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+    >
+      <ArrowLeftRight className="h-3.5 w-3.5" />
+      Choose workspace
+    </button>
+  );
+}
+
+/**
+ * Compact user-menu pinned to the top-left of any full-screen loader.
+ * Lets the user open settings or sign out even when the dashboard tree
+ * hasn't mounted yet (or has been blocked by an unreachable instance).
+ *
+ * Renders nothing if no auth user — keeps the auth/sign-in loader clean.
+ */
+function LoaderUserMenu() {
+  const { user } = useAuth();
+  const router = useRouter();
+
+  if (!user) return null;
+
+  const name = (user.user_metadata?.name as string | undefined) ||
+    user.email?.split('@')[0] ||
+    'Account';
+  const email = user.email ?? '';
+  const avatar =
+    (user.user_metadata?.avatar_url as string | undefined) ||
+    (user.user_metadata?.picture as string | undefined) ||
+    '';
+  const initials = name.split(' ').map((p) => p[0]).join('').toUpperCase().slice(0, 2);
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    clearUserLocalStorage();
+    router.push('/auth');
+  };
+
+  // Settings is intentionally absent: the UserSettingsModal lives inside
+  // AppProviders, which is unmounted while the connecting gate is active —
+  // showing a Settings item that does nothing would feel broken. Log-out is
+  // the critical escape hatch for an unreachable workspace, so that's all
+  // we surface here.
+  return (
+    <div className="absolute top-3 left-3 z-20 pointer-events-auto">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="Account menu"
+            className="flex items-center justify-center h-9 w-9 rounded-full hover:bg-muted/70 transition-colors cursor-pointer"
+          >
+            <Avatar className="h-7 w-7">
+              {avatar && <AvatarImage src={avatar} alt={name} />}
+              <AvatarFallback className="text-[11px] bg-muted">{initials || '?'}</AvatarFallback>
+            </Avatar>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuLabel className="font-normal">
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-sm font-medium text-foreground truncate">{name}</span>
+              {email && (
+                <span className="text-xs text-muted-foreground truncate">{email}</span>
+              )}
+            </div>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={handleLogout} variant="destructive">
+            <LogOut className="h-4 w-4" />
+            Log out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -417,7 +540,6 @@ function ConnectingView({
   label,
   title,
   overrideStage,
-  onSwitch,
   onRestart,
   restarting = false,
   minimal = false,
@@ -430,14 +552,6 @@ function ConnectingView({
   restarting?: boolean;
   minimal?: boolean;
 }) {
-  const [slowHint, setSlowHint] = useState(false);
-
-  useEffect(() => {
-    if (minimal) return;
-    const t = setTimeout(() => setSlowHint(true), 10_000);
-    return () => clearTimeout(t);
-  }, [minimal]);
-
   // Resolve the single line shown beneath the logo.
   // - If `title` is given (e.g. "Signing in", "Provisioning workspace"), use it.
   // - Else if we know the stage, use its copy.
@@ -461,6 +575,9 @@ function ConnectingView({
 
       <ProgressLine />
 
+      {/* Restart is the contextual action when reaching a known instance.
+          Workspace switching is handled by the persistent top-right link
+          mounted in FullScreenShell — no delayed slow-hint needed. */}
       {!minimal && onRestart && (
         <Button
           type="button"
@@ -473,16 +590,6 @@ function ConnectingView({
           <RotateCw className={cn('h-3.5 w-3.5', restarting && 'animate-spin')} />
           {restarting ? 'Restarting workload…' : 'Restart workload'}
         </Button>
-      )}
-
-      {slowHint && !minimal && (
-        <button
-          type="button"
-          onClick={onSwitch}
-          className="text-[11px] text-muted-foreground/40 transition-colors hover:text-foreground/70 cursor-pointer"
-        >
-          Taking longer than usual — switch instance
-        </button>
       )}
     </>
   );

@@ -1033,15 +1033,15 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-background">
-      {/* Back to Instances — only on welcome step */}
+      {/* Back to dashboard — only on welcome step */}
       {step === 0 && (
         <Button
-          onClick={() => router.push('/instances')}
+          onClick={() => router.push('/dashboard')}
           variant="muted"
           size="xs"
           className="absolute top-6 left-6 cursor-pointer"
         >
-          <ArrowLeft className="h-3 w-3" /> Back to Instances
+          <ArrowLeft className="h-3 w-3" /> Back to Dashboard
         </Button>
       )}
 

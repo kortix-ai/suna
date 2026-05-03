@@ -101,5 +101,5 @@ export function toInstanceAwarePath(pathname: string, instanceId?: string | null
 export function normalizeAppPathname(pathname: string): string {
   const parsed = extractInstanceRoute(pathname);
   if (!parsed) return pathname;
-  return parsed.innerPath || '/instances';
+  return parsed.innerPath || '/dashboard';
 }

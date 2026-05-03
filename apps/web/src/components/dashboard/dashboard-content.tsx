@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useIsMobile } from '@/hooks/utils';
 import { toast } from '@/lib/toast';
 import { useSidebar } from '@/components/ui/sidebar';
@@ -21,8 +22,10 @@ import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useOpenCodeLocal, formatModelString } from '@/hooks/opencode/use-opencode-local';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import { ProjectSelector } from '@/components/dashboard/project-selector';
+import { NoInstanceState } from '@/components/dashboard/no-instance-state';
 import { useSelectedProjectStore } from '@/stores/selected-project-store';
 import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
+import { useSandbox } from '@/hooks/platform/use-sandbox';
 import { appendProjectRef } from '@/lib/project-preamble';
 import { Menu } from 'lucide-react';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
@@ -45,6 +48,27 @@ export function DashboardContent() {
   const { setOpen: setSidebarOpenState, setOpenMobile } = useSidebar();
   const createSession = useCreateOpenCodeSession();
   const sendMessage = useSendOpenCodeMessage();
+
+  // No-instance fallback: when the user has no sandbox at all, render the
+  // claim/onboarding hero in-place instead of bouncing to a dedicated page.
+  const { sandbox, isLoading: sandboxLoading } = useSandbox();
+  const showNoInstanceState = !sandboxLoading && !sandbox;
+
+  // After Stripe checkout (?subscription=success), the webhook has already
+  // provisioned the sandbox — refresh sandbox queries so the workspace
+  // switcher and dashboard reflect it, then strip the param so the URL
+  // stays clean and history-back doesn't re-trigger.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('subscription') !== 'success') return;
+    queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox'] });
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('subscription');
+    clean.searchParams.delete('session_id');
+    window.history.replaceState({}, '', `${clean.pathname}${clean.search}`);
+  }, [queryClient]);
 
   // Data
   const { data: agents } = useOpenCodeAgents();
@@ -160,6 +184,28 @@ export function DashboardContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [createSession, local.agent.current, local.model.currentKey, local.model.variant.current],
   );
+
+  if (showNoInstanceState) {
+    return (
+      <div className="relative flex flex-col h-full bg-background">
+        {isMobile && (
+          <div className="absolute left-3 top-1.5 z-10">
+            <button
+              onClick={() => {
+                setSidebarOpenState(true);
+                setOpenMobile(true);
+              }}
+              className="flex items-center justify-center h-9 w-9 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent transition-colors touch-manipulation"
+              aria-label="Open menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
+        )}
+        <NoInstanceState />
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex flex-col h-full bg-background">

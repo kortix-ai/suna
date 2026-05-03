@@ -8,7 +8,35 @@ const FETCH_TIMEOUT_MS = 30_000
 const OPENCODE_HEALTH_TIMEOUT_MS = 1_500
 const LOG_COOLDOWN_MS = 60_000
 
+const STRIP_REQUEST_HEADERS = new Set([
+  'host',
+  // Bun fetch can transparently decode upstream bodies while preserving the
+  // upstream Content-Encoding header. If we forward browser gzip/br support to
+  // OpenCode and then rebuild a Response, browsers receive plain bytes labeled
+  // as gzip and fail with ERR_CONTENT_DECODING_FAILED.
+  'accept-encoding',
+])
+
+const STRIP_RESPONSE_HEADERS = new Set([
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+  'content-length',
+  'content-encoding',
+])
+
 const seen = new Map<string, number>()
+
+function sanitizeResponseHeaders(input: Headers): Headers {
+  const headers = new Headers(input)
+  for (const key of STRIP_RESPONSE_HEADERS) headers.delete(key)
+  return headers
+}
 
 function note(key: string, msg: string): void {
   const now = Date.now()
@@ -44,7 +72,7 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
   // Build headers, forwarding most but not Host
   const headers = new Headers()
   for (const [key, value] of c.req.raw.headers.entries()) {
-    if (key.toLowerCase() !== 'host') {
+    if (!STRIP_REQUEST_HEADERS.has(key.toLowerCase())) {
       headers.set(key, value)
     }
   }
@@ -95,7 +123,7 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,
-        headers: response.headers,
+        headers: sanitizeResponseHeaders(response.headers),
       })
     }
 
@@ -130,7 +158,7 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
     return new Response(body, {
       status: response.status,
       statusText: response.statusText,
-      headers: response.headers,
+      headers: sanitizeResponseHeaders(response.headers),
     })
   } catch (error) {
     // Handle abort/timeout errors cleanly (Bun throws TimeoutError for AbortSignal.timeout,
@@ -168,7 +196,7 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
             return new Response(retryResponse.body, {
               status: retryResponse.status,
               statusText: retryResponse.statusText,
-              headers: retryResponse.headers,
+              headers: sanitizeResponseHeaders(retryResponse.headers),
             })
           }
 
@@ -176,7 +204,7 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
           return new Response(retryBody, {
             status: retryResponse.status,
             statusText: retryResponse.statusText,
-            headers: retryResponse.headers,
+            headers: sanitizeResponseHeaders(retryResponse.headers),
           })
         } catch (retryError) {
           const retryMsg = retryError instanceof Error ? retryError.message : String(retryError)

@@ -98,7 +98,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
       if (response.status === 'subscription_created' || response.status === 'no_change') {
         toast.success(response.message || 'Your Kortix is on its way');
         onOpenChange(false);
-        window.location.href = '/instances';
+        window.location.href = '/instances?subscription=success';
         return;
       }
       if (response.message) toast.success(response.message);
