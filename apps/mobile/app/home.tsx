@@ -1536,7 +1536,9 @@ export default function HomeScreen() {
             elevation: 0,
           }}
           overlayStyle={{ backgroundColor: 'transparent' }}
-          swipeEnabled={rightDrawerOpen}
+          swipeEnabled={!drawerOpen}
+          swipeEdgeWidth={80}
+          swipeMinDistance={30}
           renderDrawerContent={renderRightDrawerContent}
         >
         {React.createElement(
