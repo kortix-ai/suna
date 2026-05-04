@@ -3,6 +3,7 @@ import { Alert, Keyboard, AppState, AppStateStatus } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import type { UnifiedMessage } from '@/api/types';
@@ -345,6 +346,12 @@ export function useChat(): UseChatReturn {
   const lastStreamStartedRef = useRef<string | null>(null);
   const lastCompletedRunIdRef = useRef<string | null>(null);
   const lastErrorRunIdRef = useRef<string | null>(null); // Track runId that had error for retry
+  // Haptic bookkeeping for the chat experience: previous stream status (so we
+  // can detect transitions like "started responding" / "finished responding"),
+  // and a set of tool message ids already announced so each tool only ticks
+  // once instead of on every streaming chunk.
+  const prevStreamStatusRef = useRef<string | null>(null);
+  const seenToolMessageIdsRef = useRef<Set<string>>(new Set());
 
   const handleNewMessageFromStream = useCallback(
     (message: UnifiedMessage) => {
@@ -406,6 +413,32 @@ export function useChat(): UseChatReturn {
 
   const handleStreamStatusChange = useCallback(
     (hookStatus: string) => {
+      // Haptic transitions — fire BEFORE state machine work so the feedback
+      // lines up with the user's perception of "AI started" / "AI finished".
+      // We only fire on actual transitions, not on repeated emissions of the
+      // same status.
+      const prev = prevStreamStatusRef.current;
+      if (prev !== hookStatus) {
+        const wasActive =
+          prev === 'streaming' || prev === 'connecting' || prev === 'reconnecting';
+        if (hookStatus === 'streaming' && prev !== 'streaming') {
+          // Assistant just started responding — soft tick.
+          haptics.selection();
+        } else if (hookStatus === 'completed' && wasActive) {
+          // Assistant finished a successful response — gentle success ding.
+          haptics.success();
+        } else if (
+          (hookStatus === 'error' || hookStatus === 'failed') &&
+          prev !== 'error' &&
+          prev !== 'failed'
+        ) {
+          haptics.warning();
+        }
+        // 'stopped' is intentionally silent — the stop button itself fires a
+        // medium tap and the resulting status emit would just double-buzz.
+        prevStreamStatusRef.current = hookStatus;
+      }
+
       switch (hookStatus) {
         case 'idle':
         case 'completed':
@@ -415,6 +448,8 @@ export function useChat(): UseChatReturn {
         case 'failed':
           setAgentRunId(null);
           setUserInitiatedRun(false); // Reset when stream ends
+          // Forget which tool calls we've ticked so the next run starts fresh.
+          seenToolMessageIdsRef.current.clear();
           break;
         case 'connecting':
         case 'streaming':
@@ -444,8 +479,16 @@ export function useChat(): UseChatReturn {
   const handleStreamClose = useCallback(() => { }, []);
 
   const handleToolCallChunk = useCallback((message: UnifiedMessage) => {
-    // Tool call chunk received - already handled by useAgentStream state
-    // This callback can be used for additional processing if needed
+    // Tool call chunk received - already handled by useAgentStream state.
+    // Fire a single tick the first time we see each tool call so the user
+    // feels the moment a new "section" of the response starts (e.g. the
+    // assistant moves from text into a tool call), without buzzing on every
+    // streamed chunk of that same call.
+    const id = message.message_id;
+    if (id && !seenToolMessageIdsRef.current.has(id)) {
+      seenToolMessageIdsRef.current.add(id);
+      haptics.selection();
+    }
   }, []);
 
   const {

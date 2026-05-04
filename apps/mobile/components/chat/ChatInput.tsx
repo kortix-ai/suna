@@ -22,6 +22,7 @@ import { AudioWaveform } from '../attachments/AudioWaveform';
 import type { Agent } from '@/api/types';
 import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from './MarkdownToolbar';
 import { log } from '@/lib/logger';
+import { haptics } from '@/lib/haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -347,6 +348,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     // Priority 1: Stop if agent is running OR if we're in sending/transcribing state
     if (isAgentRunning || isSendingMessage || isTranscribing) {
       log.log('[ChatInput] 🛑 Calling onStopAgentRun (isAgentRunning:', isAgentRunning, ', isSendingMessage:', isSendingMessage, ')');
+      haptics.medium();
       setIsStopping(true);
       onStopAgentRun?.();
       return;
@@ -368,6 +370,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         log.warn('⚠️ No agent selected - cannot send message');
         return;
       }
+      haptics.tap();
       handleSendMessage();
       return;
     }
