@@ -64,6 +64,17 @@ export interface BottomBarRef {
 
 const STRIP_PADDING = 6;
 
+// Selection haptic: the iOS "picker wheel" tick — used when a new pill crosses
+// the center of the strip and when the scrubbed preview pill changes.
+const selectionHaptic = () => {
+  Haptics.selectionAsync().catch(() => {});
+};
+
+// Light tap haptic — used for discrete taps on bar buttons and menu items.
+const tapHaptic = () => {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+};
+
 export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function BottomBar({
   activeSessionId,
   tabs,
@@ -102,6 +113,13 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   const scrollOffsetRef = useRef(0);
   const viewportWidthRef = useRef(0);
   const contentWidthRef = useRef(0);
+  // Haptic bookkeeping: which pill last "ticked" at the center, whether the
+  // user is actively dragging the strip (we suppress haptics on programmatic
+  // snaps so tapping a far tab doesn't ripple ticks for every pill it passes),
+  // and the last previewed pill during a long-press scrub.
+  const lastCenteredPillIdRef = useRef<string | null>(null);
+  const isUserScrollingRef = useRef(false);
+  const lastPreviewIdRef = useRef<string | null>(null);
 
   useImperativeHandle(ref, () => ({
     presentMenu: () => sheetRef.current?.present(),
@@ -115,8 +133,24 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
 
   const handleMore = useCallback(() => {
     if (!moreEnabled) return;
+    tapHaptic();
     sheetRef.current?.present();
   }, [moreEnabled]);
+
+  const handleNewSession = useCallback(() => {
+    tapHaptic();
+    onNewSession();
+  }, [onNewSession]);
+
+  const handleSelectTab = useCallback((id: string) => {
+    tapHaptic();
+    onSelectTab(id);
+  }, [onSelectTab]);
+
+  const handleOpenTabsTap = useCallback(() => {
+    tapHaptic();
+    onOpenTabs();
+  }, [onOpenTabs]);
 
   const closeSheet = useCallback(() => {
     sheetRef.current?.dismiss();
@@ -186,6 +220,9 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   // Short defer lets layout settle first so we read accurate widths.
   useEffect(() => {
     if (!activeTabId) return;
+    // Seed the haptic bookkeeping so the resulting programmatic scroll doesn't
+    // tick haptics for every pill the auto-snap crosses on its way to center.
+    lastCenteredPillIdRef.current = activeTabId;
     const t = setTimeout(() => { snapPillToCenter(activeTabId); }, 30);
     return () => clearTimeout(t);
   }, [activeTabId, snapPillToCenter]);
@@ -217,12 +254,21 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     setIsHolding(true);
     expansion.value = withTiming(1, { duration: 340, easing: EASE_OUT });
-    setPreviewId(pillNearestCenter());
+    const initial = pillNearestCenter();
+    lastPreviewIdRef.current = initial;
+    setPreviewId(initial);
   }, [pillNearestCenter, expansion, EASE_OUT]);
 
   const handleDragUpdate = useCallback((dx: number) => {
     scrollBy(-dx);
-    setPreviewId(pillNearestCenter());
+    const next = pillNearestCenter();
+    if (next && next !== lastPreviewIdRef.current) {
+      lastPreviewIdRef.current = next;
+      // Tick on every pill the finger sweeps over — this is what makes the
+      // scrub feel like the iOS camera mode wheel.
+      selectionHaptic();
+    }
+    setPreviewId(next);
   }, [scrollBy, pillNearestCenter]);
 
   const handleDragEnd = useCallback((success: boolean) => {
@@ -266,7 +312,13 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
       .failOffsetX([-12, 12])
       .onUpdate((e) => {
         'worklet';
-        peekHeight.value = Math.min(240, Math.max(0, -e.translationY));
+        const next = Math.min(240, Math.max(0, -e.translationY));
+        // Tick once when crossing the commit threshold in either direction so
+        // the user feels the moment release would open the overview.
+        const wasOver = peekHeight.value > PEEK_COMMIT;
+        const isOver = next > PEEK_COMMIT;
+        if (wasOver !== isOver) runOnJS(tapHaptic)();
+        peekHeight.value = next;
       })
       .onEnd((e, success) => {
         'worklet';
@@ -399,7 +451,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
         {/* New Session (+) — collapses when the pill strip is held */}
         <Reanimated.View style={[sideButtonStyle, { overflow: 'hidden' }]}>
           <TouchableOpacity
-            onPress={onNewSession}
+            onPress={handleNewSession}
             className="items-center justify-center h-9 w-9 rounded-full bg-muted"
             activeOpacity={0.6}
           >
@@ -414,7 +466,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
         {tabs.length <= 1 ? (
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
             {tabs.length === 0 ? (
-              <TouchableOpacity onPress={onOpenTabs} activeOpacity={0.7} className="px-3 py-2">
+              <TouchableOpacity onPress={handleOpenTabsTap} activeOpacity={0.7} className="px-3 py-2">
                 <Text className="text-sm text-muted-foreground">No tabs</Text>
               </TouchableOpacity>
             ) : (
@@ -423,7 +475,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
                 const isActive = tab.id === activeTabId;
                 return (
                   <TouchableOpacity
-                    onPress={() => onSelectTab(tab.id)}
+                    onPress={() => handleSelectTab(tab.id)}
                     activeOpacity={0.7}
                     className={`items-center justify-center rounded-full px-3 py-1 ${isActive ? 'bg-muted' : ''}`}
                     style={{ maxWidth: 220 }}
@@ -460,8 +512,22 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
               setViewportWidth(w);
             }}
             onContentSizeChange={(w) => { contentWidthRef.current = w; }}
+            onScrollBeginDrag={() => { isUserScrollingRef.current = true; }}
+            onScrollEndDrag={() => {
+              // Momentum may still be running; cleared in onMomentumScrollEnd.
+            }}
+            onMomentumScrollEnd={() => { isUserScrollingRef.current = false; }}
             onScroll={(e) => {
               scrollOffsetRef.current = e.nativeEvent.contentOffset.x;
+              // Selection tick whenever a new pill crosses the center, but
+              // only for user-driven scroll — programmatic snaps shouldn't
+              // ripple haptics for every pill they pass through.
+              if (!isUserScrollingRef.current) return;
+              const centered = pillNearestCenter();
+              if (centered && centered !== lastCenteredPillIdRef.current) {
+                lastCenteredPillIdRef.current = centered;
+                selectionHaptic();
+              }
             }}
             scrollEventThrottle={16}
             contentContainerStyle={{
@@ -472,7 +538,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
             }}
           >
               {tabs.length === 0 ? (
-                <TouchableOpacity onPress={onOpenTabs} activeOpacity={0.7} className="px-3 py-2">
+                <TouchableOpacity onPress={handleOpenTabsTap} activeOpacity={0.7} className="px-3 py-2">
                   <Text className="text-sm text-muted-foreground">No tabs</Text>
                 </TouchableOpacity>
               ) : (
@@ -483,7 +549,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
                   return (
                     <TouchableOpacity
                       key={tab.id}
-                      onPress={() => onSelectTab(tab.id)}
+                      onPress={() => handleSelectTab(tab.id)}
                       activeOpacity={0.7}
                       onLayout={(e) => {
                         pillLayoutsRef.current[tab.id] = {
@@ -615,7 +681,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
               return (
                 <TouchableOpacity
                   key={item.label}
-                  onPress={() => { closeSheet(); item.onPress(); }}
+                  onPress={() => { tapHaptic(); closeSheet(); item.onPress(); }}
                   className="flex-row items-center px-6 py-3.5"
                   activeOpacity={0.6}
                 >
@@ -637,7 +703,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
             menuItems.map((item) => (
               <TouchableOpacity
                 key={item.label}
-                onPress={item.onPress}
+                onPress={() => { tapHaptic(); item.onPress(); }}
                 className="flex-row items-center px-6 py-3.5"
                 activeOpacity={0.6}
               >

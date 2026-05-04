@@ -22,7 +22,7 @@
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Kortix/Info.plist; sourceTree = "<group>"; };
 		19CE636D34730353CDC921D9 /* Pods-Kortix.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.release.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.release.xcconfig"; sourceTree = "<group>"; };
 		584CFEC597E91270ADDE1F84 /* Pods_Kortix.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Kortix.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		6C8395589283ED0E2B86DCBC /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Kortix/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		6C8395589283ED0E2B86DCBC /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Kortix/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		90AF7B4579EBA1DCD8A1A0A0 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Kortix/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		9FEAD5BDDDD3DEDD5B14DEC0 /* Pods-Kortix.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Kortix.debug.xcconfig"; path = "Target Support Files/Pods-Kortix/Pods-Kortix.debug.xcconfig"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Kortix/SplashScreen.storyboard; sourceTree = "<group>"; };
@@ -50,7 +50,6 @@
 				9FEAD5BDDDD3DEDD5B14DEC0 /* Pods-Kortix.debug.xcconfig */,
 				19CE636D34730353CDC921D9 /* Pods-Kortix.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -404,7 +403,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Kortix/Kortix.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 108;
 				DEVELOPMENT_TEAM = T8G9J33433;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -417,7 +416,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.2.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
@@ -441,7 +440,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Kortix/Kortix.entitlements;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 108;
 				DEVELOPMENT_TEAM = T8G9J33433;
 				INFOPLIST_FILE = Kortix/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
@@ -449,7 +448,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.2.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-ObjC",
