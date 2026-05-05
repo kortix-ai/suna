@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTabStore } from '@/stores/tab-store';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
+import { haptics } from '@/lib/haptics';
 
 interface MenuItem {
   icon: string;
@@ -72,11 +73,13 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
   const bgColor = isDark ? '#090909' : '#F5F5F5'; // matches --chrome-background
 
   const handleItemPress = (pageId: string) => {
+    haptics.tap();
     useTabStore.getState().navigateToPage(pageId);
     onClose();
   };
 
   const handleUpdatesPress = () => {
+    haptics.tap();
     useTabStore.getState().navigateToPage('page:updates');
     onClose();
   };
