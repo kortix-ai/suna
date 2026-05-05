@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   Menu,
   Play,
@@ -136,17 +136,30 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
 
   const handleAction = useCallback(async (service: SandboxService, action: ServiceAction) => {
     if (!sandboxUrl) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (action === 'delete') {
+      // Caution cue when the destructive confirm appears.
+      haptics.warning();
       Alert.alert('Delete Service', `Remove "${service.name}" from service manager?`, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            haptics.medium();
             setPendingAction(`${service.id}:delete`);
-            await sandboxServiceAction(sandboxUrl, service.id, 'delete');
+            try {
+              const success = await sandboxServiceAction(sandboxUrl, service.id, 'delete');
+              if (success) {
+                haptics.success();
+              } else {
+                haptics.warning();
+                Alert.alert('Error', `Failed to delete "${service.name}"`);
+              }
+            } catch {
+              haptics.warning();
+              Alert.alert('Error', `Failed to delete "${service.name}"`);
+            }
             queryClient.invalidateQueries({ queryKey: ['sandbox', 'services'] });
             setPendingAction(null);
           },
@@ -155,10 +168,15 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
       return;
     }
 
+    // start / stop / restart — heavier feel matches the lifecycle action.
+    haptics.medium();
     setPendingAction(`${service.id}:${action}`);
     const success = await sandboxServiceAction(sandboxUrl, service.id, action);
     if (!success) {
+      haptics.warning();
       Alert.alert('Error', `Failed to ${action} "${service.name}"`);
+    } else {
+      haptics.success();
     }
     queryClient.invalidateQueries({ queryKey: ['sandbox', 'services'] });
     setPendingAction(null);
@@ -167,8 +185,13 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
   // Reconcile
   const handleReconcile = useCallback(async () => {
     if (!sandboxUrl) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await reconcileSandboxServices(sandboxUrl, true);
+    haptics.tap();
+    try {
+      await reconcileSandboxServices(sandboxUrl, true);
+      haptics.success();
+    } catch {
+      haptics.warning();
+    }
     queryClient.invalidateQueries({ queryKey: ['sandbox', 'services'] });
   }, [sandboxUrl, queryClient]);
 
@@ -228,7 +251,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
           return (
             <Pressable
               key={key}
-              onPress={() => { setFilter(key); Haptics.selectionAsync(); }}
+              onPress={() => { haptics.selection(); setFilter(key); }}
               style={{
                 backgroundColor: active ? themeColors.primary : isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
                 borderRadius: 9999,
@@ -280,7 +303,7 @@ export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDra
                   sandboxUrl={sandboxUrl}
                   pendingAction={pendingAction}
                   expandedLogs={expandedLogs}
-                  onToggleLogs={(id) => setExpandedLogs(expandedLogs === id ? null : id)}
+                  onToggleLogs={(id) => { haptics.selection(); setExpandedLogs(expandedLogs === id ? null : id); }}
                   onAction={handleAction}
                 />
               ))}
