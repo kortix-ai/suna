@@ -66,10 +66,13 @@ export default function SoundsScreen() {
   }, []);
 
   const handleHapticsToggle = React.useCallback((enabled: boolean) => {
+    // Persist FIRST so the global gate sees the new value when we fire the
+    // preview tap below — otherwise the gate reads the old `false` and we'd
+    // toggle on without any haptic confirmation.
+    setHapticsEnabled(enabled);
     if (enabled) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    setHapticsEnabled(enabled);
   }, [setHapticsEnabled]);
 
   return (

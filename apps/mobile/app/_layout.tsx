@@ -28,6 +28,11 @@ import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
 import { useAppearanceStore } from '@/stores/appearance-store';
+import { installHapticsGate } from '@/lib/haptics';
+
+// Patch expo-haptics globally so every Haptics.* call across the app respects
+// the user's "Haptic Feedback" toggle in Settings → Sounds.
+installHapticsGate();
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 
