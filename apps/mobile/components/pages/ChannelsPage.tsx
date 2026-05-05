@@ -37,7 +37,7 @@ import {
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import BottomSheet, {
   BottomSheetBackdrop,
@@ -188,7 +188,7 @@ function ChannelsContent() {
   }, [channels, searchQuery]);
 
   const handleSelectChannel = useCallback((channel: ChannelConfig) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     setSelectedChannel(channel);
     setTimeout(() => {
       detailSheetRef.current?.present();
@@ -197,7 +197,7 @@ function ChannelsContent() {
 
   const handleDelete = useCallback(
     (channel: ChannelConfig) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      haptics.warning();
       Alert.alert(
         'Remove channel?',
         `This will disconnect ${channel.name} from this instance.`,
@@ -207,12 +207,14 @@ function ChannelsContent() {
             text: 'Remove channel',
             style: 'destructive',
             onPress: async () => {
+              haptics.medium();
               try {
                 await deleteChannelMut.mutateAsync((channel.id || channel.channelConfigId!));
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                haptics.success();
                 detailSheetRef.current?.dismiss();
                 setSelectedChannel(null);
               } catch (err: any) {
+                haptics.warning();
                 Alert.alert('Failed to remove channel', err?.message || 'The sandbox did not remove the channel.');
               }
             },
@@ -224,7 +226,7 @@ function ChannelsContent() {
   );
 
   const handleOpenAdd = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     addSheetRef.current?.present();
   }, []);
 
@@ -261,7 +263,7 @@ function ChannelsContent() {
             Failed to load channels
           </Text>
           <Pressable
-            onPress={() => refetch()}
+            onPress={() => { haptics.tap(); refetch(); }}
             style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}
           >
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Try Again</Text>
@@ -299,6 +301,7 @@ function ChannelsContent() {
             await toggleChannel.mutateAsync({ id: (channel.id || channel.channelConfigId!), enabled });
             setSelectedChannel((prev) => prev ? { ...prev, enabled } : null);
           } catch {
+            haptics.warning();
             Alert.alert('Error', 'Failed to toggle channel');
           }
         }}
@@ -306,8 +309,9 @@ function ChannelsContent() {
           try {
             await updateChannel.mutateAsync({ id: (channel.id || channel.channelConfigId!), data: { name } });
             setSelectedChannel((prev) => prev ? { ...prev, name } : null);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            haptics.success();
           } catch {
+            haptics.warning();
             Alert.alert('Error', 'Failed to update channel');
           }
         }}
@@ -324,12 +328,12 @@ function ChannelsContent() {
         sandboxUrl={sandboxUrl}
         sandboxUuid={sandboxUuid}
         onCreate={async () => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          haptics.success();
           addSheetRef.current?.dismiss();
           refetch();
         }}
         onCreated={() => {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          haptics.success();
           addSheetRef.current?.dismiss();
           refetch();
         }}
@@ -456,6 +460,7 @@ function ChannelDetailSheet({
 
   const handleSave = async () => {
     if (!channel) return;
+    haptics.tap();
     setSaving(true);
     const selModel = filteredModels[selectedModelIdx];
     const modelStr = selModel ? `${selModel.providerID}/${selModel.modelID}` : undefined;
@@ -470,9 +475,10 @@ function ChannelDetailSheet({
           instructions: instructions.trim(),
         },
       });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       setDirty(false);
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to save channel settings');
     } finally {
       setSaving(false);
@@ -484,7 +490,7 @@ function ChannelDetailSheet({
     if (!url) return;
     await Clipboard.setStringAsync(String(url));
     setWebhookCopied(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
     setTimeout(() => setWebhookCopied(false), 2000);
   };
 
@@ -527,7 +533,7 @@ function ChannelDetailSheet({
           </View>
           <Switch
             value={channel.enabled}
-            onValueChange={(val) => onToggle(channel, val)}
+            onValueChange={(val) => { haptics.selection(); onToggle(channel, val); }}
             trackColor={{ false: isDark ? '#3F3F46' : '#D4D4D8', true: theme.primary }}
             thumbColor="#fff"
           />
@@ -550,7 +556,7 @@ function ChannelDetailSheet({
             {agents.filter((a) => a.mode !== 'subagent').map((agent) => {
               const active = agentName === agent.name;
               return (
-                <Pressable key={agent.name} onPress={() => { setAgentName(agent.name); markDirty(); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
+                <Pressable key={agent.name} onPress={() => { haptics.selection(); setAgentName(agent.name); markDirty(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
                   <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }}>{agent.name}</Text>
                 </Pressable>
               );
@@ -565,7 +571,7 @@ function ChannelDetailSheet({
             {filteredModels.map((m, i) => {
               const active = selectedModelIdx === i;
               return (
-                <Pressable key={`${m.providerID}:${m.modelID}`} onPress={() => { setSelectedModelIdx(i); markDirty(); Haptics.selectionAsync(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
+                <Pressable key={`${m.providerID}:${m.modelID}`} onPress={() => { haptics.selection(); setSelectedModelIdx(i); markDirty(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
                   <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }} numberOfLines={1}>{m.modelName}</Text>
                 </Pressable>
               );
@@ -709,7 +715,7 @@ function AddChannelSheet({
   const reset = () => { setView('type-select'); setSelectedType(null); setChannelName(''); };
 
   const handleTypeSelect = (type: ChannelType) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     setSelectedType(type);
     if (type === 'telegram') setView('telegram-wizard');
     else if (type === 'slack') setView('slack-wizard');
@@ -718,6 +724,7 @@ function AddChannelSheet({
 
   const handleCreate = () => {
     if (!selectedType || !channelName.trim()) return;
+    haptics.tap();
     Keyboard.dismiss();
     onCreate({ name: channelName.trim(), channel_type: selectedType });
     reset();
@@ -829,7 +836,7 @@ function AddChannelSheet({
 
         {view === 'generic-config' && (
           <>
-            <Pressable onPress={() => { setView('type-select'); setSelectedType(null); setChannelName(''); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 16 }}>
+            <Pressable onPress={() => { haptics.tap(); setView('type-select'); setSelectedType(null); setChannelName(''); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 16 }}>
               <Ionicons name="chevron-back" size={16} color={muted} />
               <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>Back</Text>
             </Pressable>
@@ -890,31 +897,37 @@ function TelegramWizard({
 
   const handleVerify = async () => {
     if (!botToken.trim()) return;
+    haptics.tap();
     try {
       const result = await verifyMutation.mutateAsync({ botToken: botToken.trim() });
       if (!result.valid) {
+        haptics.warning();
         Alert.alert('Invalid Token', result.error || 'Could not verify token');
         return;
       }
       setBotInfo({ username: result.bot?.username || '', firstName: result.bot?.firstName || '' });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to verify token');
     }
   };
 
   const handleConnect = async () => {
     if (!botToken.trim() || !sandboxUrl) return;
+    haptics.tap();
     // Auto-verify if not yet verified
     if (!botInfo) {
       try {
         const result = await verifyMutation.mutateAsync({ botToken: botToken.trim() });
         if (!result.valid) {
+          haptics.warning();
           Alert.alert('Invalid Token', result.error || 'Could not verify token');
           return;
         }
         setBotInfo({ username: result.bot?.username || '', firstName: result.bot?.firstName || '' });
       } catch (err: any) {
+        haptics.warning();
         Alert.alert('Error', err?.message || 'Failed to verify token');
         return;
       }
@@ -928,8 +941,10 @@ function TelegramWizard({
         defaultAgent: agentName || undefined,
         defaultModel: modelStr,
       });
+      haptics.success();
       onCreated();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to connect bot');
     }
   };
@@ -944,7 +959,7 @@ function TelegramWizard({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>1.</Text>
           <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>Open</Text>
-          <Pressable onPress={() => Linking.openURL('https://t.me/BotFather')} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+          <Pressable onPress={() => { haptics.tap(); Linking.openURL('https://t.me/BotFather'); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primary }}>@BotFather</Text>
             <ExternalLink size={10} color={theme.primary} />
           </Pressable>
@@ -1006,7 +1021,7 @@ function TelegramWizard({
                 return (
                   <Pressable
                     key={agent.name}
-                    onPress={() => { setAgentName(agent.name); Haptics.selectionAsync(); }}
+                    onPress={() => { haptics.selection(); setAgentName(agent.name); }}
                     style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}
                   >
                     <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }}>{agent.name}</Text>
@@ -1024,7 +1039,7 @@ function TelegramWizard({
                 return (
                   <Pressable
                     key={`${m.providerID}:${m.modelID}`}
-                    onPress={() => { setSelectedModelIdx(i); Haptics.selectionAsync(); }}
+                    onPress={() => { haptics.selection(); setSelectedModelIdx(i); }}
                     style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}
                   >
                     <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }} numberOfLines={1}>{m.modelName}</Text>
@@ -1038,7 +1053,7 @@ function TelegramWizard({
 
       {/* Action buttons */}
       <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-        <Pressable onPress={onBack} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
+        <Pressable onPress={() => { haptics.tap(); onBack(); }} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
           <ArrowLeft size={16} color={fg} />
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
         </Pressable>
@@ -1122,11 +1137,13 @@ function SlackWizard({
 
   const handleGenerateManifest = async () => {
     if (!sandboxUrl) return;
+    haptics.tap();
     try {
       const result = await generateManifest.mutateAsync({ publicUrl: '', botName: botName.trim() || undefined });
       setManifestJson(result.manifestJson);
       setStep(2);
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to generate manifest');
     }
   };
@@ -1134,20 +1151,23 @@ function SlackWizard({
   const handleCopyManifest = async () => {
     await Clipboard.setStringAsync(manifestJson);
     setCopied(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleConnect = async () => {
     if (!botToken.trim() || !signingSecret.trim() || !sandboxUrl) return;
     if (!botToken.startsWith('xoxb-')) {
+      haptics.warning();
       Alert.alert('Invalid Token', 'Bot token must start with xoxb-');
       return;
     }
     if (signingSecret.trim().length < 10) {
+      haptics.warning();
       Alert.alert('Invalid Secret', 'Signing secret must be at least 10 characters');
       return;
     }
+    haptics.tap();
     const selModel = filteredModels[selectedModelIdx];
     const modelStr = selModel ? `${selModel.providerID}/${selModel.modelID}` : undefined;
     try {
@@ -1161,8 +1181,10 @@ function SlackWizard({
         defaultAgent: agentName || undefined,
         defaultModel: modelStr,
       });
+      haptics.success();
       onCreated();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to connect Slack');
     }
   };
@@ -1196,7 +1218,7 @@ function SlackWizard({
                 return (
                   <Pressable
                     key={agent.name}
-                    onPress={() => { setAgentName(agent.name); Haptics.selectionAsync(); }}
+                    onPress={() => { haptics.selection(); setAgentName(agent.name); }}
                     style={{
                       paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
                       backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
@@ -1220,7 +1242,7 @@ function SlackWizard({
                 return (
                   <Pressable
                     key={`${m.providerID}:${m.modelID}`}
-                    onPress={() => { setSelectedModelIdx(i); Haptics.selectionAsync(); }}
+                    onPress={() => { haptics.selection(); setSelectedModelIdx(i); }}
                     style={{
                       paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
                       backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
@@ -1261,7 +1283,7 @@ function SlackWizard({
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, lineHeight: 20 }}>
               {'1. Go to api.slack.com/apps → Create New App → From an app manifest\n2. Select your workspace, paste the manifest below\n3. After creating, Install to Workspace from OAuth & Permissions'}
             </Text>
-            <Pressable onPress={() => Linking.openURL('https://api.slack.com/apps')} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
+            <Pressable onPress={() => { haptics.tap(); Linking.openURL('https://api.slack.com/apps'); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 }}>
               <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primary }}>Open Slack API</Text>
               <ExternalLink size={12} color={theme.primary} />
             </Pressable>
@@ -1279,11 +1301,11 @@ function SlackWizard({
           </Pressable>
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable onPress={() => setStep(1)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
+            <Pressable onPress={() => { haptics.tap(); setStep(1); }} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
               <ArrowLeft size={16} color={fg} />
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
             </Pressable>
-            <Pressable onPress={() => setStep(3)} style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary }}>
+            <Pressable onPress={() => { haptics.tap(); setStep(3); }} style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary }}>
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Next</Text>
               <ArrowRight size={16} color={theme.primaryForeground} />
             </Pressable>
@@ -1329,7 +1351,7 @@ function SlackWizard({
           />
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <Pressable onPress={() => setStep(2)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
+            <Pressable onPress={() => { haptics.tap(); setStep(2); }} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
               <ArrowLeft size={16} color={fg} />
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
             </Pressable>
