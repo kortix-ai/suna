@@ -37,7 +37,7 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { SettingsHeader } from './SettingsHeader';
@@ -87,7 +87,7 @@ export function IntegrationsPage({ visible, onClose }: IntegrationsPageProps) {
   const router = useRouter();
 
   const handleClose = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     onClose();
   }, [onClose]);
 
@@ -165,20 +165,34 @@ function IntegrationsContent({
 
   const handleSaveCreds = useCallback(async () => {
     if (!canSaveCreds) return;
-    await saveCreds.mutateAsync({
-      client_id: credValues.client_id.trim(),
-      client_secret: credValues.client_secret.trim(),
-      project_id: credValues.project_id.trim(),
-      environment: 'production',
-    });
-    setCredValues({ client_id: '', client_secret: '', project_id: '' });
-    credSheetRef.current?.dismiss();
+    haptics.tap();
+    try {
+      await saveCreds.mutateAsync({
+        client_id: credValues.client_id.trim(),
+        client_secret: credValues.client_secret.trim(),
+        project_id: credValues.project_id.trim(),
+        environment: 'production',
+      });
+      haptics.success();
+      setCredValues({ client_id: '', client_secret: '', project_id: '' });
+      credSheetRef.current?.dismiss();
+    } catch {
+      haptics.warning();
+    }
   }, [canSaveCreds, credValues, saveCreds]);
 
   const handleDeleteCreds = useCallback(async () => {
-    await deleteCreds.mutateAsync();
-    setCredValues({ client_id: '', client_secret: '', project_id: '' });
-    credSheetRef.current?.dismiss();
+    // Acknowledge the destructive tap (revert to defaults) before the network
+    // round-trip.
+    haptics.medium();
+    try {
+      await deleteCreds.mutateAsync();
+      haptics.success();
+      setCredValues({ client_id: '', client_secret: '', project_id: '' });
+      credSheetRef.current?.dismiss();
+    } catch {
+      haptics.warning();
+    }
   }, [deleteCreds]);
 
   // Debounce search
@@ -243,7 +257,7 @@ function IntegrationsContent({
   // ── Connect flow ──
   const handleConnect = useCallback(
     async (app: IntegrationApp) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.tap();
       setConnectingApp(app.slug);
       try {
         // Use app deep link scheme so Safari auto-dismisses after OAuth
@@ -268,8 +282,11 @@ function IntegrationsContent({
         if (authResult.type === 'success') {
           const returnUrl = authResult.url;
           if (returnUrl.includes('error')) {
+            haptics.warning();
             Alert.alert('Connection Failed', `Could not connect ${app.name}. Please try again.`);
+            return;
           }
+          haptics.success();
         }
 
         // Sync connections from Pipedream — discovers newly connected accounts
@@ -280,6 +297,7 @@ function IntegrationsContent({
         }
         queryClient.invalidateQueries({ queryKey: integrationKeys.connections() });
       } catch (err: any) {
+        haptics.warning();
         log.error('[Integrations] Connect failed:', err?.message);
         Alert.alert('Connection Failed', `Could not connect ${app.name}. Please try again.`);
       } finally {
@@ -304,7 +322,7 @@ function IntegrationsContent({
       rightAction={(
         <Pressable
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            haptics.medium();
             credSheetRef.current?.present();
           }}
           style={{
@@ -364,7 +382,7 @@ function IntegrationsContent({
               imgSrc={appImgMap.get(conn.app)}
               isDark={isDark}
               onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                haptics.medium();
                 setManagingConnection(conn);
               }}
             />
@@ -413,7 +431,7 @@ function IntegrationsContent({
             isDark={isDark}
             onConnect={() => handleConnect(item)}
             onManage={(conn) => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              haptics.medium();
               setManagingConnection(conn);
             }}
           />
@@ -565,7 +583,7 @@ function IntegrationsContent({
             </Pressable>
 
             <Pressable
-              onPress={() => setShowSecrets(!showSecrets)}
+              onPress={() => { haptics.selection(); setShowSecrets(!showSecrets); }}
               style={{
                 width: 40, height: 40, borderRadius: 9999, alignItems: 'center', justifyContent: 'center',
                 backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
