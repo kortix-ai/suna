@@ -11,7 +11,7 @@ import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Text as RNText } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useColorScheme } from 'nativewind';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import * as Linking from 'expo-linking';
 import {
   RefreshCw,
@@ -75,7 +75,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   }, []);
 
   const handleRefresh = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     setIsLoading(true);
     setHasError(false);
     setIsConnected(false);
@@ -84,7 +84,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
 
   const handleOpenExternal = useCallback(() => {
     if (viewerUrl) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.tap();
       Linking.openURL(viewerUrl);
     }
   }, [viewerUrl]);
@@ -92,7 +92,7 @@ export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   // Send navigation commands via the viewer's /input API
   const sendNavCommand = useCallback(async (type: 'nav_back' | 'nav_forward') => {
     if (!inputApiUrl || !authToken) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     try {
       await fetch(inputApiUrl, {
         method: 'POST',
