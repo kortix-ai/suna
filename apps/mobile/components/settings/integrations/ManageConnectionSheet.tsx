@@ -10,7 +10,7 @@ import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView, BottomSheetText
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pencil, Trash2, Calendar, Link2, Unlink, Monitor } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 
 import { AppIcon } from './AppIcon';
 import {
@@ -81,20 +81,22 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
   const handleOpenRename = useCallback(() => {
     if (!connection) return;
     setRenameDraft(displayName);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     renameSheetRef.current?.present();
   }, [connection, displayName]);
 
   const handleConfirmRename = useCallback(async () => {
     if (!connection || !renameDraft.trim()) return;
+    haptics.tap();
     Keyboard.dismiss();
     try {
       const newLabel = renameDraft.trim();
       await rename.mutateAsync({ integrationId: connection.integrationId, label: newLabel });
       setLocalLabel(newLabel);
       renameSheetRef.current?.dismiss();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to rename');
     }
   }, [connection, renameDraft, rename]);
@@ -103,7 +105,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
   const handleToggleLink = useCallback(async () => {
     log.log('[ManageConnection] Toggle link:', { integrationId: connection?.integrationId, sandboxUuid, sandboxId, isLinked });
     if (!connection || !sandboxUuid) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.selection();
     try {
       if (isLinked) {
         log.log('[ManageConnection] Unlinking...');
@@ -113,8 +115,9 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
         await linkSandbox.mutateAsync({ integrationId: connection.integrationId, sandboxId: sandboxUuid });
       }
       log.log('[ManageConnection] Success!');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } catch (err: any) {
+      haptics.warning();
       log.error('[ManageConnection] Failed:', err?.message || err);
       Alert.alert('Error', err?.message || 'Failed to update sandbox link');
     }
@@ -123,7 +126,7 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
   // ── Disconnect ──
   const handleDisconnect = useCallback(() => {
     if (!connection) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    haptics.warning();
     Alert.alert(
       'Disconnect Integration',
       `Remove ${connection.appName || connection.app}? This will revoke access.`,
@@ -133,11 +136,13 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
           text: 'Disconnect',
           style: 'destructive',
           onPress: async () => {
+            haptics.medium();
             try {
               await disconnect.mutateAsync(connection.integrationId);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              haptics.success();
               onDismiss();
             } catch (err: any) {
+              haptics.warning();
               Alert.alert('Error', err?.message || 'Failed to disconnect');
             }
           },

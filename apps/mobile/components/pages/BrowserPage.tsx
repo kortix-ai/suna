@@ -2,7 +2,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import { useColorScheme } from 'nativewind';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   ArrowLeft,
   ArrowRight,
@@ -104,33 +104,35 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   }, [isEditing]);
 
   const handleGoBack = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     webViewRef.current?.goBack();
   }, []);
 
   const handleGoForward = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     webViewRef.current?.goForward();
   }, []);
 
   const handleRefresh = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     webViewRef.current?.reload();
   }, []);
 
   const handleStop = useCallback(() => {
+    haptics.tap();
     webViewRef.current?.stopLoading();
     setIsLoading(false);
   }, []);
 
   const handleOpenExternal = useCallback(() => {
     if (currentUrl) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.tap();
       Linking.openURL(currentUrl);
     }
   }, [currentUrl]);
 
   const handleUrlSubmit = useCallback(() => {
+    haptics.tap();
     setIsEditing(false);
     let url = urlInput.trim();
     if (!url) return;

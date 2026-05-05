@@ -37,7 +37,7 @@ import {
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import {
   BottomSheetModal,
@@ -149,12 +149,12 @@ function TunnelContent() {
   );
 
   const handleOpenCreate = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     createSheetRef.current?.present();
   }, []);
 
   const handleOpenDetail = useCallback((tunnel: TunnelConnection) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     setSelectedTunnel(tunnel);
     requestAnimationFrame(() => {
       detailSheetRef.current?.present();
@@ -162,6 +162,7 @@ function TunnelContent() {
   }, []);
 
   const handleDelete = useCallback((tunnel: TunnelConnection) => {
+    haptics.warning();
     Alert.alert(
       'Delete Connection',
       `Delete "${tunnel.name}"? This will remove all permissions and audit logs.`,
@@ -171,11 +172,13 @@ function TunnelContent() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            haptics.medium();
             try {
               await deleteMutation.mutateAsync(tunnel.tunnelId);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              haptics.success();
               detailSheetRef.current?.dismiss();
             } catch (err) {
+              haptics.warning();
               Alert.alert('Error', err instanceof Error ? err.message : 'Failed to delete');
             }
           },
@@ -247,7 +250,7 @@ function TunnelContent() {
               Run this command on any machine to connect it to Kortix. You'll approve the connection in your browser.
             </RNText>
             <Pressable
-              onPress={() => createSheetRef.current?.present()}
+              onPress={() => { haptics.medium(); createSheetRef.current?.present(); }}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -382,7 +385,7 @@ const CreateTunnelSheet = React.forwardRef<
   const handleCopy = useCallback(async () => {
     await Clipboard.setStringAsync(command);
     setCopied(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
     setTimeout(() => setCopied(false), 2500);
   }, [command]);
 
@@ -527,24 +530,30 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
 
     const handleToggleScope = useCallback(async (scope: ScopeInfo) => {
       if (!conn) return;
+      // Tick at the moment of tap so the toggle feels responsive even before
+      // the network call returns.
+      haptics.selection();
       const permissionId = activeScopeMap.get(scope.key);
-      if (permissionId) {
-        await revokeMutation.mutateAsync({ tunnelId: conn.tunnelId, permissionId });
-      } else {
-        await grantMutation.mutateAsync({
-          tunnelId: conn.tunnelId,
-          capability: scope.capability,
-          scope: { scope: scope.key },
-        });
+      try {
+        if (permissionId) {
+          await revokeMutation.mutateAsync({ tunnelId: conn.tunnelId, permissionId });
+        } else {
+          await grantMutation.mutateAsync({
+            tunnelId: conn.tunnelId,
+            capability: scope.capability,
+            scope: { scope: scope.key },
+          });
+        }
+      } catch {
+        haptics.warning();
       }
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }, [conn, activeScopeMap, grantMutation, revokeMutation]);
 
     const handleCopyId = useCallback(async () => {
       if (!conn) return;
       await Clipboard.setStringAsync(conn.tunnelId);
       setCopiedId(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       setTimeout(() => setCopiedId(false), 2000);
     }, [conn]);
 
@@ -619,7 +628,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
               return (
                 <Pressable
                   key={key}
-                  onPress={() => { setActiveTab(key); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  onPress={() => { haptics.selection(); setActiveTab(key); }}
                   style={{
                     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
                     paddingVertical: 8, borderRadius: 9999,
@@ -754,14 +763,14 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                       </RNText>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         <Pressable
-                          onPress={() => setAuditPage((p) => Math.max(1, p - 1))}
+                          onPress={() => { haptics.tap(); setAuditPage((p) => Math.max(1, p - 1)); }}
                           disabled={auditPage <= 1}
                           style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor, opacity: auditPage <= 1 ? 0.3 : 1 }}
                         >
                           <RNText style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>Prev</RNText>
                         </Pressable>
                         <Pressable
-                          onPress={() => setAuditPage((p) => Math.min(auditData.pagination.totalPages, p + 1))}
+                          onPress={() => { haptics.tap(); setAuditPage((p) => Math.min(auditData.pagination.totalPages, p + 1)); }}
                           disabled={auditPage >= auditData.pagination.totalPages}
                           style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor, opacity: auditPage >= auditData.pagination.totalPages ? 0.3 : 1 }}
                         >

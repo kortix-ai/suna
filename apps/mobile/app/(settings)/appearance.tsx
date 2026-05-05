@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { Check, ImageIcon, Monitor, Moon, Palette, Sun } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -106,7 +106,7 @@ export default function AppearanceScreen() {
     async (mode: ThemePreference) => {
       if (modePreference === mode) return;
 
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.selection();
       setModePreference(mode);
       setColorScheme(mode);
       await AsyncStorage.setItem(THEME_PREFERENCE_KEY, mode);
@@ -116,18 +116,18 @@ export default function AppearanceScreen() {
 
   const handleThemeSelect = React.useCallback((id: AppearanceThemeId) => {
     if (themeId === id) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.selection();
     setAppearanceThemeId(id);
   }, [setAppearanceThemeId, themeId]);
 
   const handleWallpaperSelect = React.useCallback((id: WallpaperId) => {
     if (wallpaperId === id) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.selection();
     setAppearanceWallpaperId(id);
   }, [setAppearanceWallpaperId, wallpaperId]);
 
   const handleReset = React.useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     resetAppearance();
   }, [resetAppearance]);
 

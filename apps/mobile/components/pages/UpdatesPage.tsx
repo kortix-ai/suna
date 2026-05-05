@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, View, type NativeScrollEvent,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   ArrowDownToLine,
   GitCommit,
@@ -180,7 +180,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const handleOpenDialog = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     setDialogOpen(true);
   }, []);
 
@@ -206,7 +206,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   }, [resetStatus, update]);
 
   const toggleDev = useCallback(() => {
-    Haptics.selectionAsync();
+    haptics.selection();
     setShowDev((prev) => {
       const next = !prev;
       if (!next) setFilter('stable');
@@ -295,7 +295,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
                 return (
                   <Pressable
                     key={key}
-                    onPress={() => { setFilter(key); Haptics.selectionAsync(); }}
+                    onPress={() => { haptics.selection(); setFilter(key); }}
                     style={{
                       backgroundColor: active ? fgColor : isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
                       borderRadius: 20,
@@ -536,7 +536,7 @@ function VersionEntryCard({
 
             {canExpandBody && (
               <Pressable
-                onPress={() => { setExpanded((prev) => !prev); Haptics.selectionAsync(); }}
+                onPress={() => { haptics.selection(); setExpanded((prev) => !prev); }}
                 className="mt-2"
               >
                 <Text className="font-roobert text-[11px] text-muted-foreground">

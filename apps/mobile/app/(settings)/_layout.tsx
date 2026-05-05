@@ -8,7 +8,7 @@ import { Icon } from '@/components/ui/icon';
 import { ChevronLeft } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 
 function SettingsIndexHeader({ title }: { title: string }) {
   const router = useRouter();
@@ -16,7 +16,7 @@ function SettingsIndexHeader({ title }: { title: string }) {
   const topPadding = Math.max(insets.top, 10) + 6;
 
   const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     router.back();
   };
 
@@ -49,7 +49,7 @@ function SubpageHeader({ title }: { title: string }) {
   const topPadding = Math.max(insets.top, 10) + 6;
 
   const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     router.back();
   };
 

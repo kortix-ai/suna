@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/text';
 import { billingApi } from '@/lib/billing/api';
+import { haptics } from '@/lib/haptics';
 
 function formatDate(value: unknown): string {
   if (!value) return 'Unknown date';
@@ -87,21 +88,21 @@ export default function TransactionsScreen() {
 
         <View className="mt-4 flex-row items-center" style={{ gap: 10 }}>
           <Pressable
-            onPress={() => setOffset((prev) => Math.max(0, prev - limit))}
+            onPress={() => { haptics.tap(); setOffset((prev) => Math.max(0, prev - limit)); }}
             disabled={!hasPrev || isFetching}
             className={`rounded-2xl px-3 py-2 ${hasPrev ? 'bg-muted' : 'bg-muted/50'}`}
           >
             <Text className="font-roobert-medium text-xs text-muted-foreground">Previous</Text>
           </Pressable>
           <Pressable
-            onPress={() => setOffset((prev) => prev + limit)}
+            onPress={() => { haptics.tap(); setOffset((prev) => prev + limit); }}
             disabled={!hasNext || isFetching}
             className={`rounded-2xl px-3 py-2 ${hasNext ? 'bg-muted' : 'bg-muted/50'}`}
           >
             <Text className="font-roobert-medium text-xs text-muted-foreground">Next</Text>
           </Pressable>
           <Pressable
-            onPress={() => refetch()}
+            onPress={() => { haptics.tap(); refetch(); }}
             disabled={isFetching}
             className="rounded-2xl bg-primary/10 px-3 py-2"
           >

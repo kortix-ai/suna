@@ -7,7 +7,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Sun, Moon, Check, Monitor } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -53,7 +53,7 @@ export default function ThemeScreen() {
       if (isTransitioning) return;
       if (themePreference !== null && themePreference === preference) return;
 
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      haptics.selection();
       setIsTransitioning(true);
 
       await saveThemePreference(preference);

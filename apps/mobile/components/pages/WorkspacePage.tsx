@@ -42,7 +42,7 @@ import {
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import {
   BottomSheetModal,
@@ -312,7 +312,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
   // Detail sheet
   const handleItemPress = useCallback((item: WorkspaceItem) => {
     setSelectedItem(item);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     detailSheetRef.current?.present();
   }, []);
 
@@ -515,7 +515,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
                 key={row.label}
                 onPress={() => {
                   Clipboard.setStringAsync(row.value);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  haptics.success();
                 }}
                 style={{
                   flexDirection: 'row',
@@ -611,7 +611,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
             style={{ flex: 1, marginLeft: 8, fontSize: 15, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
           />
           {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery('')} hitSlop={10}>
+            <Pressable onPress={() => { haptics.tap(); setSearchQuery(''); }} hitSlop={10}>
               <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
             </Pressable>
           )}
@@ -632,8 +632,8 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
               <Pressable
                 key={tab.value}
                 onPress={() => {
+                  haptics.selection();
                   setKindFilter(tab.value);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }}
                 style={{
                   flexDirection: 'row',
@@ -698,7 +698,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
           </RNText>
           {(searchQuery.trim() || kindFilter !== 'all') && (
             <Pressable
-              onPress={() => { setSearchQuery(''); setKindFilter('all'); }}
+              onPress={() => { haptics.tap(); setSearchQuery(''); setKindFilter('all'); }}
               style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: chipBg }}
             >
               <RNText style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Clear filters</RNText>
@@ -753,7 +753,7 @@ function CopyButton({ text, fg, muted, chipBg }: { text: string; fg: string; mut
 
   const handleCopy = useCallback(async () => {
     await Clipboard.setStringAsync(text);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.success();
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }, [text]);

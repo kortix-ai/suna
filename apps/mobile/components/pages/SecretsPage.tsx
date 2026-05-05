@@ -33,7 +33,7 @@ import {
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -248,19 +248,21 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const openAdd = useCallback(() => {
     setNewKey('');
     setNewValue('');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     addSheetRef.current?.present();
   }, []);
 
   const handleAdd = useCallback(async () => {
     if (!sandboxUrl || !newKey.trim()) return;
+    haptics.tap();
     setIsSaving(true);
     try {
       await putSecret(sandboxUrl, newKey.trim(), newValue);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       addSheetRef.current?.dismiss();
       refetch();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err.message);
     } finally {
       setIsSaving(false);
@@ -271,19 +273,21 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const openEdit = useCallback((key: string, value: string) => {
     setEditKey(key);
     setEditValue(value);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     editSheetRef.current?.present();
   }, []);
 
   const handleSave = useCallback(async () => {
     if (!sandboxUrl || !editKey) return;
+    haptics.tap();
     setIsSaving(true);
     try {
       await putSecret(sandboxUrl, editKey, editValue);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       editSheetRef.current?.dismiss();
       refetch();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err.message);
     } finally {
       setIsSaving(false);
@@ -293,19 +297,22 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   // ── Delete ──
   const openDelete = useCallback((key: string) => {
     setDeleteKey(key);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     deleteSheetRef.current?.present();
   }, []);
 
   const handleDelete = useCallback(async () => {
     if (!sandboxUrl || !deleteKey) return;
+    // Acknowledge the destructive tap before the network round-trip.
+    haptics.medium();
     setIsDeleting(true);
     try {
       await removeSecret(sandboxUrl, deleteKey);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       deleteSheetRef.current?.dismiss();
       refetch();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err.message);
     } finally {
       setIsDeleting(false);
@@ -313,6 +320,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   }, [sandboxUrl, deleteKey, refetch]);
 
   const handleToggleVisibility = useCallback((key: string) => {
+    haptics.selection();
     setVisibleKeys((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
@@ -356,7 +364,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             autoCapitalize="none"
           />
           {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+            <Pressable onPress={() => { haptics.tap(); setSearchQuery(''); }} hitSlop={8}>
               <X size={16} color={mutedColor} />
             </Pressable>
           )}
@@ -584,7 +592,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
           {/* Buttons */}
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <BottomSheetTouchable
-              onPress={() => deleteSheetRef.current?.dismiss()}
+              onPress={() => { haptics.tap(); deleteSheetRef.current?.dismiss(); }}
               style={{
                 flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
                 borderWidth: 1, borderColor: borderColor,

@@ -34,7 +34,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import { BottomSheetModal, BottomSheetView, BottomSheetTextInput, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 
@@ -200,7 +200,8 @@ function ApiKeysContent() {
   // ── Handlers ──
 
   const handleRevoke = useCallback((key: APIKeyResponse) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    // Caution cue when the destructive confirm appears.
+    haptics.warning();
     Alert.alert(
       `Revoke "${key.title}"`,
       'This will immediately invalidate the key. Any applications using it will stop working.',
@@ -210,10 +211,14 @@ function ApiKeysContent() {
           text: 'Revoke',
           style: 'destructive',
           onPress: async () => {
+            haptics.medium();
             try {
               await revokeKey.mutateAsync(key.key_id);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } catch { Alert.alert('Error', 'Failed to revoke key'); }
+              haptics.success();
+            } catch {
+              haptics.warning();
+              Alert.alert('Error', 'Failed to revoke key');
+            }
           },
         },
       ],
@@ -221,7 +226,7 @@ function ApiKeysContent() {
   }, [revokeKey]);
 
   const handleDelete = useCallback((key: APIKeyResponse) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    haptics.warning();
     Alert.alert(
       `Delete "${key.title}"`,
       'This will permanently remove the key. This cannot be undone.',
@@ -231,10 +236,14 @@ function ApiKeysContent() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            haptics.medium();
             try {
               await deleteKey.mutateAsync(key.key_id);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } catch { Alert.alert('Error', 'Failed to delete key'); }
+              haptics.success();
+            } catch {
+              haptics.warning();
+              Alert.alert('Error', 'Failed to delete key');
+            }
           },
         },
       ],
@@ -243,7 +252,7 @@ function ApiKeysContent() {
 
   const handleRegenerate = useCallback(() => {
     if (!activeSandboxKey) return;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    haptics.warning();
     Alert.alert(
       'Regenerate Sandbox Token',
       'This will revoke the current token and create a new one. It will be applied to the sandbox automatically.',
@@ -253,12 +262,16 @@ function ApiKeysContent() {
           text: 'Regenerate',
           style: 'destructive',
           onPress: async () => {
+            haptics.medium();
             try {
               const result = await regenerateKey.mutateAsync(activeSandboxKey.key_id);
               setCreatedKey(result);
               secretSheetRef.current?.present();
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } catch { Alert.alert('Error', 'Failed to regenerate token'); }
+              haptics.success();
+            } catch {
+              haptics.warning();
+              Alert.alert('Error', 'Failed to regenerate token');
+            }
           },
         },
       ],
@@ -266,17 +279,17 @@ function ApiKeysContent() {
   }, [activeSandboxKey, regenerateKey]);
 
   const handleOpenCreate = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     createSheetRef.current?.present();
   }, []);
 
   const handleOpenCreateLink = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     createLinkSheetRef.current?.present();
   }, []);
 
   const handleRevokeShare = useCallback((share: PublicShareEntry) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    haptics.warning();
     Alert.alert(
       'Revoke Public Link',
       `This will immediately disable the public link for port ${share.port}${share.label ? ` (${share.label})` : ''}.`,
@@ -285,7 +298,7 @@ function ApiKeysContent() {
         {
           text: 'Revoke',
           style: 'destructive',
-          onPress: () => revokeShareMutation.mutate(share.token),
+          onPress: () => { haptics.medium(); revokeShareMutation.mutate(share.token); },
         },
       ],
     );
@@ -475,7 +488,7 @@ function ApiKeysContent() {
               <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted, marginTop: 12, textAlign: 'center' }}>
                 Failed to load API keys
               </Text>
-              <Pressable onPress={() => refetch()} style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 9999, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
+              <Pressable onPress={() => { haptics.tap(); refetch(); }} style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 9999, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Try Again</Text>
               </Pressable>
             </View>
@@ -681,6 +694,7 @@ function CreateApiKeySheet({
 
   const handleCreate = async () => {
     if (!title.trim() || !sandboxUuid) return;
+    haptics.tap();
     Keyboard.dismiss();
     try {
       const result = await createKey.mutateAsync({
@@ -689,11 +703,12 @@ function CreateApiKeySheet({
         description: description.trim() || undefined,
         expires_in_days: expiration !== 'never' ? parseInt(expiration) : undefined,
       });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       sheetRef.current?.dismiss();
       reset();
       onCreated(result);
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to create API key');
     }
   };
@@ -770,7 +785,7 @@ function CreateApiKeySheet({
           {expirationOptions.map((opt) => (
             <Pressable
               key={opt.value}
-              onPress={() => setExpiration(opt.value)}
+              onPress={() => { haptics.selection(); setExpiration(opt.value); }}
               style={{
                 paddingHorizontal: 12,
                 paddingVertical: 8,
@@ -847,7 +862,7 @@ function SecretKeySheet({
     if (!secretKey) return;
     await Clipboard.setStringAsync(secretKey);
     setCopied(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
     setTimeout(() => setCopied(false), 2000);
   }, [secretKey]);
 
@@ -908,7 +923,7 @@ function SecretKeySheet({
 
         {/* Done button */}
         <Pressable
-          onPress={onDone}
+          onPress={() => { haptics.tap(); onDone(); }}
           style={{
             alignItems: 'center',
             justifyContent: 'center',
@@ -944,7 +959,7 @@ function PublicLinkRow({
   const handleCopy = useCallback(async () => {
     await Clipboard.setStringAsync(share.url);
     setCopied(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
     setTimeout(() => setCopied(false), 2000);
   }, [share.url]);
 
@@ -1007,7 +1022,7 @@ function PublicLinkRow({
       <Pressable onPress={handleCopy} hitSlop={8} style={{ padding: 6 }}>
         {copied ? <Check size={15} color="#34d399" /> : <Copy size={15} color={muted} />}
       </Pressable>
-      <Pressable onPress={onOpen} hitSlop={8} style={{ padding: 6 }}>
+      <Pressable onPress={() => { haptics.tap(); onOpen(); }} hitSlop={8} style={{ padding: 6 }}>
         <ExternalLink size={15} color={muted} />
       </Pressable>
       <Pressable onPress={onRevoke} hitSlop={8} style={{ padding: 6 }}>
@@ -1075,17 +1090,20 @@ function CreatePublicLinkSheet({
     },
     onSuccess: (data) => {
       setResultUrl(data.url);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       onCreated();
     },
-    onError: (err: any) => Alert.alert('Error', err?.message || 'Failed to create public link'),
+    onError: (err: any) => {
+      haptics.warning();
+      Alert.alert('Error', err?.message || 'Failed to create public link');
+    },
   });
 
   const handleCopyResult = useCallback(async () => {
     if (!resultUrl) return;
     await Clipboard.setStringAsync(resultUrl);
     setResultCopied(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
     setTimeout(() => setResultCopied(false), 2000);
   }, [resultUrl]);
 
@@ -1166,7 +1184,7 @@ function CreatePublicLinkSheet({
           {ttlOptions.map((opt) => (
             <Pressable
               key={opt.value}
-              onPress={() => setTtl(opt.value)}
+              onPress={() => { haptics.selection(); setTtl(opt.value); }}
               style={{
                 paddingHorizontal: 12,
                 paddingVertical: 8,
@@ -1197,7 +1215,7 @@ function CreatePublicLinkSheet({
 
         {/* Create button */}
         <Pressable
-          onPress={() => { Keyboard.dismiss(); createMutation.mutate(); }}
+          onPress={() => { haptics.tap(); Keyboard.dismiss(); createMutation.mutate(); }}
           disabled={!sandboxId || !port || createMutation.isPending}
           style={{
             alignItems: 'center',

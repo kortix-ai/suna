@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -166,9 +166,11 @@ export function UpdateDialog({
       setStep('updating');
     }
     if (phase === 'failed') {
+      haptics.warning();
       setStep('failed');
     }
     if (phase === 'complete') {
+      haptics.success();
       // Brief delay then show done
       const timer = setTimeout(() => setStep('done'), 1000);
       return () => clearTimeout(timer);
@@ -191,13 +193,13 @@ export function UpdateDialog({
   }, [step, onClose]);
 
   const handleConfirm = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     setStep('updating');
     onConfirm();
   }, [onConfirm]);
 
   const handleRetry = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     setStep('updating');
     onRetry();
   }, [onRetry]);
@@ -282,7 +284,7 @@ export function UpdateDialog({
                 </ScrollView>
                 {hasMore && (
                   <Pressable
-                    onPress={() => setExpanded(true)}
+                    onPress={() => { haptics.selection(); setExpanded(true); }}
                     style={{
                       borderTopWidth: 1,
                       borderTopColor: isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.04)',
@@ -300,7 +302,7 @@ export function UpdateDialog({
 
             {/* Buttons */}
             <View className="flex-row items-center justify-end" style={{ paddingHorizontal: 20, paddingVertical: 16, gap: 10 }}>
-              <Button variant="outline" onPress={onClose}>
+              <Button variant="outline" onPress={() => { haptics.tap(); onClose(); }}>
                 <Text className="font-roobert-medium text-foreground">Cancel</Text>
               </Button>
               <Button onPress={handleConfirm} style={{ backgroundColor: themeColors.primary }}>
@@ -387,7 +389,7 @@ export function UpdateDialog({
                 </ScrollView>
               )}
               <View className="flex-row items-center mt-6" style={{ gap: 10 }}>
-                <Button variant="outline" size="sm" onPress={onClose}>
+                <Button variant="outline" size="sm" onPress={() => { haptics.tap(); onClose(); }}>
                   <Text className="font-roobert-medium text-foreground">Close</Text>
                 </Button>
                 <Button size="sm" onPress={handleRetry} style={{ backgroundColor: themeColors.primary }}>

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Pressable, ScrollView, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   Check,
   CircleOff,
@@ -51,27 +51,27 @@ export default function SoundsScreen() {
   const isOff = preferences.pack === 'off';
 
   const handlePackSelect = React.useCallback((pack: SoundPack) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.selection();
     setPack(pack);
   }, [setPack]);
 
   const handleEventToggle = React.useCallback((event: SoundEvent, enabled: boolean) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.selection();
     setEventEnabled(event, enabled);
   }, [setEventEnabled]);
 
   const handlePreview = React.useCallback((event: SoundEvent) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     previewSound(event);
   }, []);
 
   const handleHapticsToggle = React.useCallback((enabled: boolean) => {
-    // Persist FIRST so the global gate sees the new value when we fire the
-    // preview tap below — otherwise the gate reads the old `false` and we'd
-    // toggle on without any haptic confirmation.
+    // Persist FIRST so the wrapper's `isEnabled()` check sees the new value
+    // when we fire the preview tap — otherwise it reads the old `false` and
+    // we'd toggle on without any haptic confirmation.
     setHapticsEnabled(enabled);
     if (enabled) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.tap();
     }
   }, [setHapticsEnabled]);
 
