@@ -128,9 +128,14 @@ export function groupMessagesIntoTurns(messages: MessageWithParts[]): Turn[] {
   const turns: Turn[] = [];
   const turnsByUserMsgId = new Map<string, Turn>();
 
-  // First pass: create turns from user messages
+  // First pass: create turns from user messages.
+  // Dedupe by id — a user message can transiently appear twice (e.g. an
+  // optimistic copy + the real one before reconcile finishes, or a hydrate
+  // that races a part.updated event). Two turns with the same userMessage.id
+  // would crash FlatList's keyExtractor with a duplicate-key warning.
   for (const msg of messages) {
     if (msg.info.role === 'user') {
+      if (turnsByUserMsgId.has(msg.info.id)) continue;
       const turn: Turn = { userMessage: msg, assistantMessages: [] };
       turns.push(turn);
       turnsByUserMsgId.set(msg.info.id, turn);

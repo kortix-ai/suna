@@ -58,6 +58,7 @@ import { ProjectsPage } from '@/components/pages/ProjectsPage';
 import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
+import { haptics } from '@/lib/haptics';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { PlaceholderPage } from '@/components/session/PlaceholderPage';
 import { UpdatesPage } from '@/components/pages/UpdatesPage';
@@ -345,8 +346,9 @@ function SessionListItem({
 
   return (
     <TouchableOpacity
-      onPress={() => onPress(item)}
+      onPress={() => { haptics.tap(); onPress(item); }}
       onLongPress={() => {
+        haptics.medium();
         Alert.alert(item.title || 'Session', undefined, [
           { text: 'Archive', onPress: () => onArchive?.(item.id) },
           { text: 'Delete', style: 'destructive', onPress: () => onDelete?.(item.id) },
@@ -375,6 +377,7 @@ function SessionListItem({
           <TouchableOpacity
             onPress={(e) => {
               e.stopPropagation();
+              haptics.selection();
               onToggleExpand();
             }}
             hitSlop={6}
@@ -400,7 +403,7 @@ function SessionListItem({
         {isActive && (
           <View className="flex-row items-center ml-2">
             <TouchableOpacity
-              onPress={() => onArchive?.(item.id)}
+              onPress={() => { haptics.medium(); onArchive?.(item.id); }}
               className="p-1.5 mr-0.5"
               hitSlop={6}
               activeOpacity={0.6}
@@ -408,7 +411,7 @@ function SessionListItem({
               <Ionicons name="archive-outline" size={16} color={mutedColor} />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => onDelete?.(item.id)}
+              onPress={() => { haptics.medium(); onDelete?.(item.id); }}
               className="p-1.5"
               hitSlop={6}
               activeOpacity={0.6}
@@ -897,10 +900,13 @@ export default function HomeScreen() {
 
   // ── Handlers (all useCallback for stable refs) ──
 
-  const handleDrawerOpen = useCallback(() => setDrawerOpen(true), []);
-  const handleDrawerClose = useCallback(() => setDrawerOpen(false), []);
-  const handleRightDrawerOpen = useCallback(() => setRightDrawerOpen(true), []);
-  const handleRightDrawerClose = useCallback(() => setRightDrawerOpen(false), []);
+  // Soft selection tick on drawer open/close so swipe-to-open and swipe-to-close
+  // feel snappy. The Drawer component fires these callbacks once per transition,
+  // so they don't repeat during the slide animation.
+  const handleDrawerOpen = useCallback(() => { haptics.selection(); setDrawerOpen(true); }, []);
+  const handleDrawerClose = useCallback(() => { haptics.selection(); setDrawerOpen(false); }, []);
+  const handleRightDrawerOpen = useCallback(() => { haptics.selection(); setRightDrawerOpen(true); }, []);
+  const handleRightDrawerClose = useCallback(() => { haptics.selection(); setRightDrawerOpen(false); }, []);
 
   const handleNewSession = useCallback(async () => {
     if (!sandboxUrl) return;
@@ -1194,7 +1200,7 @@ export default function HomeScreen() {
         {/* Top-level actions: New session / Search / Files */}
         <View className="px-2 mb-2">
           <TouchableOpacity
-            onPress={handleNewSession}
+            onPress={() => { haptics.tap(); handleNewSession(); }}
             className="flex-row items-center rounded-lg px-3 py-2.5"
             activeOpacity={0.6}
           >
@@ -1202,7 +1208,7 @@ export default function HomeScreen() {
             <Text className="flex-1 text-sm font-medium ml-3 text-foreground">New session</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => { setDrawerOpen(false); setCommandPaletteOpen(true); }}
+            onPress={() => { haptics.tap(); setDrawerOpen(false); setCommandPaletteOpen(true); }}
             className="flex-row items-center rounded-lg px-3 py-2.5"
             activeOpacity={0.6}
           >
@@ -1215,7 +1221,7 @@ export default function HomeScreen() {
         {sortedProjects.length > 0 && (
           <>
             <TouchableOpacity
-              onPress={() => setProjectsExpanded((v) => !v)}
+              onPress={() => { haptics.selection(); setProjectsExpanded((v) => !v); }}
               className="flex-row items-center justify-between px-5 py-2.5"
               activeOpacity={0.6}
             >
@@ -1236,7 +1242,7 @@ export default function HomeScreen() {
                 {sortedProjects.map((project: KortixProject) => (
                   <TouchableOpacity
                     key={project.id}
-                    onPress={() => handleProjectPress(project)}
+                    onPress={() => { haptics.tap(); handleProjectPress(project); }}
                     className="flex-row items-center rounded-lg px-4 py-2 mb-0.5"
                     activeOpacity={0.6}
                   >
@@ -1258,7 +1264,7 @@ export default function HomeScreen() {
 
         {/* Sessions header (collapsible) */}
         <TouchableOpacity
-          onPress={() => setSessionsExpanded((v) => !v)}
+          onPress={() => { haptics.selection(); setSessionsExpanded((v) => !v); }}
           className="flex-row items-center justify-between px-5 py-2.5"
           activeOpacity={0.6}
         >
@@ -1284,7 +1290,7 @@ export default function HomeScreen() {
               {archivedSessions.length > 0 && (
                 <>
                   <TouchableOpacity
-                    onPress={() => setArchivedExpanded((v) => !v)}
+                    onPress={() => { haptics.selection(); setArchivedExpanded((v) => !v); }}
                     className="flex-row items-center justify-between px-3 py-2.5"
                     activeOpacity={0.6}
                   >
@@ -1310,7 +1316,7 @@ export default function HomeScreen() {
                           {item.title || 'New Session'}
                         </Text>
                         <TouchableOpacity
-                          onPress={() => handleUnarchive(item.id)}
+                          onPress={() => { haptics.tap(); handleUnarchive(item.id); }}
                           className="p-1.5 mr-1"
                           hitSlop={6}
                           activeOpacity={0.6}
@@ -1318,7 +1324,7 @@ export default function HomeScreen() {
                           <Ionicons name="archive-outline" size={16} color={mutedColor} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                          onPress={() => handleDelete(item.id)}
+                          onPress={() => { haptics.medium(); handleDelete(item.id); }}
                           className="p-1.5"
                           hitSlop={6}
                           activeOpacity={0.6}
@@ -1365,7 +1371,7 @@ export default function HomeScreen() {
           style={{ paddingBottom: insets.bottom + 8 }}
         >
           <TouchableOpacity
-            onPress={handleUserMenuOpen}
+            onPress={() => { haptics.tap(); handleUserMenuOpen(); }}
             activeOpacity={0.8}
             className="flex-row items-center rounded-2xl border border-border"
             style={{
@@ -1536,7 +1542,9 @@ export default function HomeScreen() {
             elevation: 0,
           }}
           overlayStyle={{ backgroundColor: 'transparent' }}
-          swipeEnabled={rightDrawerOpen}
+          swipeEnabled={!drawerOpen}
+          swipeEdgeWidth={80}
+          swipeMinDistance={30}
           renderDrawerContent={renderRightDrawerContent}
         >
         {React.createElement(

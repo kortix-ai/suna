@@ -716,7 +716,7 @@ function AppRow({
           style={{
             paddingHorizontal: 12,
             paddingVertical: 6,
-            borderRadius: 8,
+            borderRadius: 9999,
             backgroundColor: theme.primary,
           }}
         >
