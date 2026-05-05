@@ -6,7 +6,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 
 const LANGUAGE_FLAGS: Record<string, string> = {
@@ -29,7 +29,7 @@ export default function LanguageScreen() {
 
   const handleLanguageSelect = async (languageCode: string) => {
     log.log('🌍 Language selected:', languageCode);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.selection();
     await setLanguage(languageCode);
   };
 

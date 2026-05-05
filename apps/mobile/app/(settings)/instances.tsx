@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   BottomSheetBackdrop,
   BottomSheetModal,
@@ -119,18 +119,18 @@ export default function InstancesScreen() {
 
   const handleSelect = React.useCallback((instance: SandboxInfo) => {
     if (instance.external_id === sandboxId) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     switchSandbox(instance);
   }, [sandboxId, switchSandbox]);
 
   const handleRename = React.useCallback((instance: SandboxInfo) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     setRenameTarget(instance);
     renameSheetRef.current?.present();
   }, []);
 
   const openAddSheet = React.useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     addSheetRef.current?.present();
   }, []);
 
@@ -315,8 +315,9 @@ const RenameSheet = React.forwardRef<
 
   const handleSave = React.useCallback(() => {
     if (!canSave) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     // TODO: wire to rename API when available
+    haptics.success();
     Alert.alert('Renamed', `Instance renamed to "${name.trim()}".`);
     onRenamed();
   }, [canSave, name, onRenamed]);
@@ -437,7 +438,7 @@ const AddInstanceSheet = React.forwardRef<
   }, []);
 
   const handleLocalDocker = React.useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     setIsCreating(true);
     const initial = { percent: 0, message: 'Initializing...' };
     setProgress(initial);
@@ -455,6 +456,7 @@ const AddInstanceSheet = React.forwardRef<
           setIsCreating(false);
           setProgress(null);
           onProgress(null);
+          haptics.success();
           onCreated();
           resetState();
         },
@@ -462,6 +464,7 @@ const AddInstanceSheet = React.forwardRef<
           setIsCreating(false);
           setProgress(null);
           onProgress(null);
+          haptics.warning();
           Alert.alert('Error', err?.message || 'Failed to create local instance');
         },
       },
@@ -472,17 +475,19 @@ const AddInstanceSheet = React.forwardRef<
     const url = customUrl.trim();
     if (!url) return;
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     setIsCreating(true);
 
     const version = await checkInstanceHealth(url);
     setIsCreating(false);
 
     if (version) {
+      haptics.success();
       Alert.alert('Connected', `Instance is reachable (v${version}). Custom URL instances will be available in a future update.`);
       onCreated();
       resetState();
     } else {
+      haptics.warning();
       Alert.alert('Unreachable', 'Could not connect to the instance. Check the URL and try again.');
     }
   }, [customUrl, onCreated, resetState]);
@@ -566,7 +571,7 @@ const AddInstanceSheet = React.forwardRef<
               )}
 
               <Pressable
-                onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setStep('custom'); }}
+                onPress={() => { haptics.tap(); setStep('custom'); }}
                 className="py-3.5 active:opacity-85"
               >
                 <View className="flex-row items-center">
@@ -644,7 +649,7 @@ const AddInstanceSheet = React.forwardRef<
               )}
             </Pressable>
 
-            <Pressable onPress={() => setStep('select')} className="mt-3 items-center py-2 active:opacity-70">
+            <Pressable onPress={() => { haptics.tap(); setStep('select'); }} className="mt-3 items-center py-2 active:opacity-70">
               <Text className="font-roobert-medium text-sm text-muted-foreground">Back</Text>
             </Pressable>
           </View>

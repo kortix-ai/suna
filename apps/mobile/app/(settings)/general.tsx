@@ -9,7 +9,7 @@ import { Camera, ChevronRight, Globe, Mail, Trash2, User } from 'lucide-react-na
 import { useAuthContext, useLanguage } from '@/contexts';
 import { supabase } from '@/api/supabase';
 import * as ImagePicker from 'expo-image-picker';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { ProfilePicture } from '@/components/settings/ProfilePicture';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import {
@@ -51,10 +51,11 @@ export default function GeneralSettingsScreen() {
 
   const pickAndUploadAvatar = React.useCallback(async () => {
     if (!user?.id || isUploadingAvatar) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
 
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permission.status !== 'granted') {
+      haptics.warning();
       Alert.alert('Permission required', 'Please allow photo library access to update your avatar.');
       return;
     }
@@ -102,10 +103,10 @@ export default function GeneralSettingsScreen() {
       if (userUpdateError) throw userUpdateError;
 
       setAvatarUrl(publicUrl);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } catch (error: any) {
+      haptics.warning();
       Alert.alert(t('common.error'), error?.message || 'Failed to update avatar');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -113,22 +114,25 @@ export default function GeneralSettingsScreen() {
 
   const openEditProfileSheet = React.useCallback(() => {
     setEditName(displayName);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     editProfileSheetRef.current?.present();
   }, [displayName]);
 
   const handleSaveName = React.useCallback(async () => {
     const trimmed = editName.trim();
     if (!trimmed) {
+      haptics.warning();
       Alert.alert(t('common.error'), t('nameEdit.nameRequired'));
       return;
     }
     if (trimmed.length > 100) {
+      haptics.warning();
       Alert.alert(t('common.error'), t('nameEdit.nameTooLong'));
       return;
     }
     if (!user?.id) return;
 
+    haptics.tap();
     setIsSavingName(true);
     try {
       const { error: updateError } = await supabase.auth.updateUser({
@@ -148,10 +152,10 @@ export default function GeneralSettingsScreen() {
       }
 
       setDisplayName(trimmed);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       editProfileSheetRef.current?.dismiss();
     } catch (error: any) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      haptics.warning();
       Alert.alert(t('common.error'), error?.message || t('nameEdit.failedToUpdate'));
     } finally {
       setIsSavingName(false);
@@ -212,7 +216,7 @@ export default function GeneralSettingsScreen() {
               icon={Globe}
               title="Language"
               description="App display language"
-              onPress={() => router.push('/(settings)/language')}
+              onPress={() => { haptics.tap(); router.push('/(settings)/language'); }}
               showDivider
             />
             <GeneralRow
@@ -237,7 +241,7 @@ export default function GeneralSettingsScreen() {
               description={deletionStatus?.has_pending_deletion
                 ? 'Manage or cancel your scheduled deletion'
                 : 'Request account deletion and data removal'}
-              onPress={() => router.push('/(settings)/account-deletion')}
+              onPress={() => { haptics.tap(); router.push('/(settings)/account-deletion'); }}
               destructive
               badge={deletionStatus?.has_pending_deletion ? 'Scheduled' : undefined}
               showDivider={false}

@@ -13,7 +13,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Save, Mail, AlertTriangle } from 'lucide-react-native';
 import { supabase } from '@/api/supabase';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { KortixLoader } from '@/components/ui';
 import { ProfilePicture } from '@/components/settings/ProfilePicture';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -51,7 +51,7 @@ export default function NameEditScreen() {
 
     if (validationError) {
       setError(validationError);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      haptics.warning();
       return;
     }
 
@@ -62,7 +62,7 @@ export default function NameEditScreen() {
 
     setIsLoading(true);
     setError(null);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.tap();
 
     try {
       log.log('📝 Updating user name');
@@ -89,7 +89,7 @@ export default function NameEditScreen() {
         log.warn('⚠️ RPC update failed (may not exist):', rpcError);
       }
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       Keyboard.dismiss();
       router.back();
 
@@ -100,7 +100,7 @@ export default function NameEditScreen() {
       log.error('❌ Failed to update name:', err);
       const errorMessage = err.message || t('nameEdit.failedToUpdate');
       setError(errorMessage);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      haptics.warning();
 
       Alert.alert(t('common.error'), errorMessage);
     } finally {

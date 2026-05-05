@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useQuery } from '@tanstack/react-query';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -74,12 +74,12 @@ export default function ChangelogScreen() {
   }, [fullChangelog, latestChangelog]);
 
   const handleUpdate = React.useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     update();
   }, [update]);
 
   const handleRetry = React.useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     resetStatus();
   }, [resetStatus]);
 

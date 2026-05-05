@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Alert, Linking, Pressable, ScrollView, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   AlertTriangle,
   Bell,
@@ -33,7 +33,7 @@ export default function NotificationsScreen() {
   const trackOff = isDark ? '#3A3A3C' : '#E5E7EB';
 
   const handleToggleEnabled = React.useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.selection();
     toggleEnabled();
   }, [toggleEnabled]);
 
@@ -41,17 +41,20 @@ export default function NotificationsScreen() {
     key: K,
     value: NotificationPreferences[K],
   ) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.selection();
     setPreference(key, value);
   }, [setPreference]);
 
   const handleUnregister = React.useCallback(async () => {
     if (!expoPushToken || isUnregistering) return;
+    haptics.medium();
     setIsUnregistering(true);
     try {
       await notificationsApi.unregisterDeviceToken(expoPushToken);
+      haptics.success();
       Alert.alert('Success', 'Device unregistered successfully');
     } catch (error: any) {
+      haptics.warning();
       Alert.alert('Error', error?.message || 'Failed to unregister device');
     } finally {
       setIsUnregistering(false);
@@ -59,7 +62,7 @@ export default function NotificationsScreen() {
   }, [expoPushToken, isUnregistering]);
 
   const openSettings = React.useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     Linking.openSettings();
   }, []);
 

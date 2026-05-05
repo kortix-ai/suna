@@ -20,7 +20,7 @@ import {
   Volume2,
   Wallet,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 
@@ -52,12 +52,12 @@ export default function SettingsScreen() {
   const { data: deletionStatus } = useAccountDeletionStatus({ enabled: !isGuest });
 
   const go = React.useCallback((path: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     router.push(path as any);
   }, [router]);
 
   const handlePlan = React.useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.tap();
     if (useNativePaywall) {
       await presentUpgradePaywall();
       return;
@@ -67,6 +67,7 @@ export default function SettingsScreen() {
 
   const handleSignOut = React.useCallback(async () => {
     if (isSigningOut) return;
+    haptics.warning();
     Alert.alert(
       t('settings.signOut'),
       t('auth.signOutConfirm'),
@@ -76,10 +77,13 @@ export default function SettingsScreen() {
           text: t('settings.signOut'),
           style: 'destructive',
           onPress: async () => {
+            haptics.medium();
             const result = await signOut();
             if (result.success) {
+              haptics.success();
               router.replace('/');
             } else {
+              haptics.warning();
               Alert.alert(t('common.error'), 'Failed to sign out. Please try again.');
             }
           },

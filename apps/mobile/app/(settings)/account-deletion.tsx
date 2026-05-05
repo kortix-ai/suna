@@ -8,7 +8,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Trash2, Calendar, AlertTriangle, CheckCircle, Zap, Clock, Info } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { KortixLoader } from '@/components/ui';
 import {
   useAccountDeletionStatus,
@@ -46,15 +46,16 @@ export default function AccountDeletionScreen() {
 
   const handleRequestDeletion = async () => {
     if (confirmText !== t('accountDeletion.deletePlaceholder')) {
+      haptics.warning();
       return;
     }
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
 
     try {
       if (deletionType === 'immediate') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         await deleteImmediately.mutateAsync();
+        haptics.success();
 
         setConfirmText('');
 
@@ -72,8 +73,8 @@ export default function AccountDeletionScreen() {
           ],
         );
       } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         await requestDeletion.mutateAsync('User requested deletion from mobile');
+        haptics.success();
 
         setConfirmText('');
 
@@ -89,12 +90,13 @@ export default function AccountDeletionScreen() {
         );
       }
     } catch (error: any) {
+      haptics.warning();
       Alert.alert(t('common.error'), error?.message || t('accountDeletion.failedToRequest'));
     }
   };
 
   const handleCancelDeletion = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.warning();
 
     Alert.alert(t('accountDeletion.cancelDeletionTitle'), t('accountDeletion.cancelDeletionDescription'), [
       {
@@ -104,9 +106,10 @@ export default function AccountDeletionScreen() {
       {
         text: t('accountDeletion.cancelDeletion'),
         onPress: async () => {
+          haptics.medium();
           try {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             await cancelDeletion.mutateAsync();
+            haptics.success();
 
             Alert.alert(
               t('accountDeletion.deletionCancelled'),
@@ -114,6 +117,7 @@ export default function AccountDeletionScreen() {
               [{ text: t('common.ok') }]
             );
           } catch (error: any) {
+            haptics.warning();
             Alert.alert(t('common.error'), error?.message || t('accountDeletion.failedToCancel'));
           }
         },
@@ -248,7 +252,7 @@ export default function AccountDeletionScreen() {
                 <DeletionTypeOption
                   selected={deletionType === 'grace-period'}
                   onPress={() => {
-                    Haptics.selectionAsync();
+                    haptics.selection();
                     setDeletionType('grace-period');
                   }}
                   icon={Clock}
@@ -259,7 +263,7 @@ export default function AccountDeletionScreen() {
                 <DeletionTypeOption
                   selected={deletionType === 'immediate'}
                   onPress={() => {
-                    Haptics.selectionAsync();
+                    haptics.selection();
                     setDeletionType('immediate');
                   }}
                   icon={Zap}
