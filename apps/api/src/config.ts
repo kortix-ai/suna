@@ -184,6 +184,7 @@ const envSchema = z.object({
   SANDBOX_VERSION:             optStr,  // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN:                optStr,  // optional: authenticated GitHub API calls for changelog
   SANDBOX_AUTO_UPDATE_ENABLED: optBoolTrue,
+  SANDBOX_AUTO_UPDATE_LOCAL_DOCKER_ENABLED: optBoolFalse,
   SANDBOX_AUTO_UPDATE_INTERVAL_MS: optInt(10 * 60_000),
   SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: optInt(6 * 60 * 60_000),
 
@@ -348,6 +349,15 @@ function validateEnv(): z.infer<typeof envSchema> {
 // ─── Run Validation at Module Load ──────────────────────────────────────────
 
 const env = validateEnv();
+
+// Auto-updates are safe to default-on for managed cloud sandboxes, but local
+// development also uses a Docker container named `kortix-sandbox`. If the API
+// auto-update loop runs with the local_docker provider, it can stop/remove the
+// developer's live `pnpm dev:sandbox` container. Keep local mode opt-in while
+// preserving the existing cloud default.
+const sandboxAutoUpdateExplicitlyConfigured =
+  typeof process.env.SANDBOX_AUTO_UPDATE_ENABLED === 'string'
+  && process.env.SANDBOX_AUTO_UPDATE_ENABLED.trim() !== '';
 
 // ─── Parse Providers ────────────────────────────────────────────────────────
 
@@ -518,7 +528,10 @@ export const config = {
   /** Dev override: force a specific sandbox version via env var. */
   SANDBOX_VERSION_OVERRIDE: env.SANDBOX_VERSION,
   GITHUB_TOKEN: env.GITHUB_TOKEN,
-  SANDBOX_AUTO_UPDATE_ENABLED: env.SANDBOX_AUTO_UPDATE_ENABLED,
+  SANDBOX_AUTO_UPDATE_ENABLED: sandboxAutoUpdateExplicitlyConfigured
+    ? env.SANDBOX_AUTO_UPDATE_ENABLED
+    : env.ENV_MODE === 'cloud',
+  SANDBOX_AUTO_UPDATE_LOCAL_DOCKER_ENABLED: env.SANDBOX_AUTO_UPDATE_LOCAL_DOCKER_ENABLED,
   SANDBOX_AUTO_UPDATE_INTERVAL_MS: env.SANDBOX_AUTO_UPDATE_INTERVAL_MS,
   SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: env.SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS,
 

@@ -86,6 +86,17 @@ function shouldRetry(policy: SandboxAutoUpdatePolicy, targetVersion: string, now
   return now - attemptedAt >= (config.SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS || DEFAULT_RETRY_COOLDOWN_MS);
 }
 
+function isProviderAutoUpdateAllowed(provider: ProviderName): boolean {
+  if (!AUTO_UPDATE_PROVIDERS.has(provider)) return false;
+
+  // Local Docker updates stop and recreate a fixed container name. That is safe
+  // only when an operator deliberately opts in; otherwise the cloud/dev API can
+  // kill the `pnpm dev:sandbox` compose container that shares that name.
+  if (provider === 'local_docker') return config.SANDBOX_AUTO_UPDATE_LOCAL_DOCKER_ENABLED;
+
+  return true;
+}
+
 async function getCurrentUpdatePhase(row: typeof sandboxes.$inferSelect) {
   if (row.provider === 'local_docker') {
     return getSandboxUpdateStatus().phase;
@@ -138,7 +149,7 @@ async function scanOnce() {
     );
 
     for (const row of rows) {
-      if (!AUTO_UPDATE_PROVIDERS.has(row.provider as ProviderName)) continue;
+      if (!isProviderAutoUpdateAllowed(row.provider as ProviderName)) continue;
 
       const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
       const currentVersion = getCurrentVersion(row);

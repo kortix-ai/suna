@@ -259,6 +259,37 @@ function getImageForVersion(version: string): string {
   const base = colonIdx > 0 ? current.slice(0, colonIdx) : current;
   return `${base}:${version}`;
 }
+
+export function isDevSandboxContainerEnv(env: Record<string, string | undefined>): boolean {
+  const value = env.KORTIX_DEV_MODE?.toLowerCase();
+  return value === '1' || value === 'true';
+}
+
+export function isDevSandboxImage(image: string | null | undefined): boolean {
+  if (!image) return false;
+  const colonIdx = image.lastIndexOf(':');
+  const tag = colonIdx >= 0 ? image.slice(colonIdx + 1).toLowerCase() : '';
+  return tag === 'dev' || tag.startsWith('dev-');
+}
+
+export function isDevSandboxContainerLabels(labels: Record<string, string | undefined> | null | undefined): boolean {
+  if (!labels) return false;
+  if (labels['kortix.devSourceBinds'] === 'true') return true;
+
+  // Docker Desktop annotates bind mounts as labels. Existing dev containers
+  // created before `kortix.devSourceBinds` existed still carry these labels,
+  // so use them as a safety signal before destructive update/recreate flows.
+  return Object.entries(labels).some(([key, value]) => (
+    key.startsWith('desktop.docker.io/binds/')
+    && key.endsWith('/Target')
+    && typeof value === 'string'
+    && (
+      value.startsWith('/ephemeral/kortix-master/')
+      || value.startsWith('/ephemeral/services')
+    )
+  ));
+}
+
 export class LocalDockerProvider implements SandboxProvider {
   readonly name: ProviderName = 'local_docker';
   private docker: Docker;
@@ -430,6 +461,27 @@ export class LocalDockerProvider implements SandboxProvider {
     try {
       const existing = await this.find();
       if (existing) {
+        const existingEnv = await this.getContainerEnv();
+        const existingLabels = await this.getContainerLabels();
+        if (
+          isDevSandboxContainerEnv(existingEnv)
+          || isDevSandboxImage(existing.image)
+          || isDevSandboxContainerLabels(existingLabels)
+        ) {
+          const message = `Refusing to update dev sandbox container "${CONTAINER_NAME}". Use pnpm dev:sandbox:build or restart the compose sandbox instead.`;
+          setUpdateStatus({
+            phase: 'failed',
+            progress: 0,
+            message,
+            targetVersion,
+            previousVersion: existing.image.split(':').pop() || null,
+            currentVersion: existing.image.split(':').pop() || null,
+            error: message,
+            startedAt: new Date().toISOString(),
+          });
+          throw new Error(message);
+        }
+
         const currentTag = existing.image.split(':').pop() || null;
         previousVersion = currentTag;
       }
@@ -922,6 +974,7 @@ export class LocalDockerProvider implements SandboxProvider {
       'REPLICATE_API_URL',
       'SERPER_API_URL',
       'FIRECRAWL_API_URL',
+      'KORTIX_DEV_MODE',
     ]);
 
     const filteredSandboxEnv = sandboxEnvVars.filter((entry) => {
@@ -931,6 +984,17 @@ export class LocalDockerProvider implements SandboxProvider {
 
     const sandboxApiBase = getSandboxInternalApiUrl();
     const routerBase = `${sandboxApiBase}/v1/router`;
+
+    // Dev-mode bind-mounts: when running from a repo checkout, mount the
+    // host's `core/kortix-master` source tree over the image's baked copy so
+    // plugin/agent/config edits are live without rebuilding the image. Without
+    // this, `pnpm start` auto-provisions with whatever's baked into
+    // `kortix/computer:latest` — which lags the branch. Mirrors what
+    // `core/docker/docker-compose.dev.yml` does for manual compose runs.
+    const devBinds = buildDevSourceBinds();
+    if (devBinds.length > 0) {
+      console.log(`[LOCAL-DOCKER] Dev-mode: mounting ${devBinds.length} source path(s) over baked image`);
+    }
 
     const env = [
       'PUID=911',
@@ -970,19 +1034,9 @@ export class LocalDockerProvider implements SandboxProvider {
       ...(config.KORTIX_LOCAL_IMAGES ? ['KORTIX_LOCAL_SOURCE=1'] : []),
       `ENV_MODE=${config.KORTIX_BILLING_INTERNAL_ENABLED ? 'cloud' : 'local'}`,
       `CORS_ALLOWED_ORIGINS=${[config.FRONTEND_URL, config.KORTIX_URL].filter(Boolean).join(',')}`,
+      ...(devBinds.length > 0 ? ['KORTIX_DEV_MODE=1'] : []),
       ...filteredSandboxEnv,
     ];
-
-    // Dev-mode bind-mounts: when running from a repo checkout, mount the
-    // host's `core/kortix-master` source tree over the image's baked copy so
-    // plugin/agent/config edits are live without rebuilding the image. Without
-    // this, `pnpm start` auto-provisions with whatever's baked into
-    // `kortix/computer:latest` — which lags the branch. Mirrors what
-    // `core/docker/docker-compose.dev.yml` does for manual compose runs.
-    const devBinds = buildDevSourceBinds();
-    if (devBinds.length > 0) {
-      console.log(`[LOCAL-DOCKER] Dev-mode: mounting ${devBinds.length} source path(s) over baked image`);
-    }
 
     const container = await this.docker.createContainer({
       Image: image,
@@ -1005,6 +1059,7 @@ export class LocalDockerProvider implements SandboxProvider {
         'kortix.sandbox': 'true',
         'kortix.account': 'local',
         'kortix.user': 'local',
+        'kortix.devSourceBinds': devBinds.length > 0 ? 'true' : 'false',
       },
     });
 
@@ -1031,6 +1086,16 @@ export class LocalDockerProvider implements SandboxProvider {
         }
       }
       return result;
+    } catch {
+      return {};
+    }
+  }
+
+  async getContainerLabels(): Promise<Record<string, string>> {
+    try {
+      const container = this.docker.getContainer(CONTAINER_NAME);
+      const info = await container.inspect();
+      return (info.Config.Labels || {}) as Record<string, string>;
     } catch {
       return {};
     }
