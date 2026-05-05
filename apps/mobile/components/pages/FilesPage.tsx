@@ -49,8 +49,8 @@ import {
   TouchableOpacity as BottomSheetTouchable,
 } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import * as Haptics from 'expo-haptics';
 import * as Clipboard from 'expo-clipboard';
+import { haptics } from '@/lib/haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -174,11 +174,13 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
   const openSearch = useCallback(() => {
+    haptics.selection();
     setIsSearchOpen(true);
     // Give the input a moment to mount before focusing.
     setTimeout(() => searchInputRef.current?.focus(), 50);
   }, []);
   const closeSearch = useCallback(() => {
+    haptics.selection();
     setIsSearchOpen(false);
     setSearchQuery('');
     Keyboard.dismiss();
@@ -247,7 +249,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
 
   const openCreateFolder = useCallback(() => {
     setNewFolderName('');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     createFolderSheetRef.current?.present();
   }, []);
 
@@ -339,7 +341,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
 
   const handleFileLongPress = useCallback(
     (file: SandboxFile) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      haptics.medium();
       setSelectedFile(file);
     },
     [],
@@ -360,7 +362,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   const handleCopyPath = useCallback(async () => {
     if (!selectedFile) return;
     await Clipboard.setStringAsync(selectedFile.path);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
     setSelectedFile(null);
   }, [selectedFile]);
 
@@ -368,12 +370,13 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
     if (!selectedFile) return;
     setRenameFile(selectedFile);
     setRenameName(selectedFile.name);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     renameSheetRef.current?.present();
   }, [selectedFile]);
 
   const handleConfirmRename = useCallback(async () => {
     if (!renameName.trim() || !renameFile || !sandboxUrl || renameNameExists) return;
+    haptics.tap();
     Keyboard.dismiss();
     try {
       const parentDir = renameFile.path.substring(0, renameFile.path.lastIndexOf('/'));
@@ -386,8 +389,9 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
       renameSheetRef.current?.dismiss();
       setRenameFile(null);
       setRenameName('');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } catch {
+      haptics.warning();
       Alert.alert('Error', 'Failed to rename');
     }
   }, [renameFile, renameName, sandboxUrl, renameMutation, renameNameExists]);
@@ -405,13 +409,17 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            // Acknowledge the destructive tap immediately, before awaiting
+            // the network round-trip — feels nicer than a silent pause.
+            haptics.medium();
             try {
               await deleteMutation.mutateAsync({
                 sandboxUrl,
                 filePath: selectedFile.path,
               });
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              haptics.success();
             } catch {
+              haptics.warning();
               Alert.alert('Error', 'Failed to delete');
             }
             setSelectedFile(null);
@@ -422,6 +430,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   }, [selectedFile, sandboxUrl, deleteMutation]);
 
   const handleNavigate = useCallback((path: string) => {
+    haptics.tap();
     setCurrentPath(normalizePath(path));
     setSelectedFile(null);
   }, []);
@@ -464,6 +473,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
 
   const handleUploadDocument = useCallback(async () => {
     if (!sandboxUrl) return;
+    haptics.tap();
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*',
@@ -481,14 +491,16 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         },
         targetPath: currentPath,
       });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } catch {
+      haptics.warning();
       Alert.alert('Error', 'Failed to upload file');
     }
   }, [sandboxUrl, uploadMutation, currentPath]);
 
   const handleUploadImage = useCallback(async () => {
     if (!sandboxUrl) return;
+    haptics.tap();
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -507,14 +519,16 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         },
         targetPath: currentPath,
       });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } catch {
+      haptics.warning();
       Alert.alert('Error', 'Failed to upload image');
     }
   }, [sandboxUrl, uploadMutation, currentPath]);
 
   const handleCreateFolder = useCallback(async () => {
     if (!newFolderName.trim() || !sandboxUrl || folderNameExists) return;
+    haptics.tap();
     Keyboard.dismiss();
     try {
       const folderPath = `${currentPath}/${newFolderName.trim()}`;
@@ -524,8 +538,9 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
       });
       createFolderSheetRef.current?.dismiss();
       setNewFolderName('');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } catch {
+      haptics.warning();
       Alert.alert('Error', 'Failed to create folder');
     }
   }, [sandboxUrl, createFolderMutation, currentPath, newFolderName, folderNameExists]);
@@ -627,7 +642,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             {!isSearchOpen && (
               <>
                 <AnimatedPressable
-                  onPress={() => setViewMode((v) => (v === 'list' ? 'grid' : 'list'))}
+                  onPress={() => { haptics.selection(); setViewMode((v) => (v === 'list' ? 'grid' : 'list')); }}
                   className="p-2 rounded-xl active:opacity-70"
                 >
                   <Icon
@@ -794,7 +809,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
               {error?.message || 'An error occurred'}
             </Text>
             <Pressable
-              onPress={() => refetch()}
+              onPress={() => { haptics.tap(); refetch(); }}
               className="px-8 py-3.5 rounded-full active:opacity-80"
               style={{ backgroundColor: isDark ? '#f8f8f8' : '#121215' }}
             >
@@ -1380,8 +1395,8 @@ function FileRowCard({
 
   return (
     <Pressable
-      onPress={onPress}
-      onLongPress={onLongPress}
+      onPress={() => { haptics.tap(); onPress(); }}
+      onLongPress={() => { haptics.medium(); onLongPress(); }}
       className="flex-row items-center rounded-xl border active:opacity-70"
       style={{
         borderColor: isDark
