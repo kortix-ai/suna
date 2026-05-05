@@ -8,6 +8,7 @@ import {
   useMigrateAllLegacyThreads,
   useMigrateAllStatus,
 } from '@/lib/legacy/use-legacy-threads';
+import { haptics } from '@/lib/haptics';
 
 interface LegacyChatsSectionProps {
   iconColor: string;
@@ -55,7 +56,7 @@ export function LegacyChatsSection({ iconColor, mutedColor, isDark }: LegacyChat
     <View>
       <View className="flex-row items-center px-3">
         <TouchableOpacity
-          onPress={() => setExpanded((v) => !v)}
+          onPress={() => { haptics.selection(); setExpanded((v) => !v); }}
           className="flex-row items-center flex-1 px-2 py-2.5 rounded-lg"
           activeOpacity={0.6}
         >
@@ -72,7 +73,7 @@ export function LegacyChatsSection({ iconColor, mutedColor, isDark }: LegacyChat
           />
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() => setConfirmOpen(true)}
+          onPress={() => { haptics.tap(); setConfirmOpen(true); }}
           disabled={buttonBusy || !sandboxId}
           className="items-center justify-center h-8 w-8 rounded-lg ml-1"
           activeOpacity={0.6}
@@ -150,14 +151,14 @@ export function LegacyChatsSection({ iconColor, mutedColor, isDark }: LegacyChat
             </Text>
             <View className="flex-row justify-end gap-2">
               <TouchableOpacity
-                onPress={() => setConfirmOpen(false)}
+                onPress={() => { haptics.tap(); setConfirmOpen(false); }}
                 className="px-5 py-2.5 rounded-full border border-border"
                 activeOpacity={0.7}
               >
                 <Text className="text-sm font-medium text-foreground">Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={handleConfirm}
+                onPress={() => { haptics.medium(); handleConfirm(); }}
                 disabled={!sandboxId}
                 className="px-5 py-2.5 rounded-full"
                 style={{
