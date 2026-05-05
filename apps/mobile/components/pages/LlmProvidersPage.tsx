@@ -32,7 +32,7 @@ import { useColorScheme } from 'nativewind';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -150,6 +150,7 @@ function ProviderRow({
   const label = getProviderLabel(provider.id, provider.name);
 
   const toggleModels = useCallback(() => {
+    haptics.selection();
     LayoutAnimation.configureNext({
       duration: 200,
       create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
@@ -331,19 +332,21 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   const openConnect = useCallback((provider: ProviderInfo) => {
     setConnectTarget(provider);
     setApiKey('');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     connectSheetRef.current?.present();
   }, []);
 
   const handleConnect = useCallback(async () => {
     if (!sandboxUrl || !connectTarget || !apiKey.trim()) return;
+    haptics.tap();
     setIsSaving(true);
     try {
       await connectProvider(sandboxUrl, connectTarget.id, apiKey.trim());
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       connectSheetRef.current?.dismiss();
       refetch();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err.message);
     } finally {
       setIsSaving(false);
@@ -353,19 +356,22 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   // Disconnect
   const openDisconnect = useCallback((provider: ProviderInfo) => {
     setDisconnectTarget(provider);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.medium();
     disconnectSheetRef.current?.present();
   }, []);
 
   const handleDisconnect = useCallback(async () => {
     if (!sandboxUrl || !disconnectTarget) return;
+    // Acknowledge the destructive tap before the network round-trip.
+    haptics.medium();
     setIsDisconnecting(true);
     try {
       await disconnectProvider(sandboxUrl, disconnectTarget.id);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       disconnectSheetRef.current?.dismiss();
       refetch();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err.message);
     } finally {
       setIsDisconnecting(false);
@@ -375,7 +381,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
   // Custom provider
   const openCustomSheet = useCallback(() => {
     setCustomForm(EMPTY_CUSTOM_FORM);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.medium();
     customSheetRef.current?.present();
   }, []);
 
@@ -383,10 +389,12 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
     if (!sandboxUrl) return;
     const error = validateCustomProviderForm(customForm);
     if (error) {
+      haptics.warning();
       Alert.alert('Validation Error', error);
       return;
     }
 
+    haptics.tap();
     setIsCustomSaving(true);
     const form = normalizeCustomProviderForm(customForm);
 
@@ -425,11 +433,12 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
         await fetch(`${sandboxUrl}/global/dispose`, { method: 'POST', headers }).catch(() => {});
       }
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       customSheetRef.current?.dismiss();
       setCustomForm(EMPTY_CUSTOM_FORM);
       refetch();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to add custom provider');
     } finally {
       setIsCustomSaving(false);
@@ -479,7 +488,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             return (
               <TouchableOpacity
                 key={tab.id}
-                onPress={() => { setActiveTab(tab.id); setSearchQuery(''); }}
+                onPress={() => { haptics.selection(); setActiveTab(tab.id); setSearchQuery(''); }}
                 style={{
                   flex: 1, paddingVertical: 7, borderRadius: 9999, alignItems: 'center',
                   backgroundColor: active ? getToggleActiveBg(isDark) : 'transparent',
@@ -499,7 +508,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder={activeTab === 'models' ? 'Search models' : 'Search providers'}
-            onClear={() => setSearchQuery('')}
+            onClear={() => { haptics.tap(); setSearchQuery(''); }}
           />
         </View>
       </View>
@@ -752,7 +761,7 @@ export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <BottomSheetTouchable
-              onPress={() => disconnectSheetRef.current?.dismiss()}
+              onPress={() => { haptics.tap(); disconnectSheetRef.current?.dismiss(); }}
               style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', borderWidth: 1, borderColor }}
             >
               <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: fgColor }}>Cancel</Text>
