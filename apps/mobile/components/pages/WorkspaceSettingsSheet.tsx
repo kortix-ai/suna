@@ -36,7 +36,7 @@ import {
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -208,11 +208,13 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
     update.snapshot = draftSnapshot;
     update.permission = draftPermission;
     update.tools = draftTools;
+    haptics.tap();
     try {
       await updateConfig.mutateAsync(update);
       setHasDraft(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to save settings');
     }
   }, [draftInstructions, draftModel, draftSnapshot, draftPermission, draftTools, updateConfig]);
@@ -222,6 +224,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
     if (mcpTransport === 'local' && !mcpCommand.trim()) { setMcpError('Command is required'); return; }
     if (mcpTransport === 'remote' && !mcpUrl.trim()) { setMcpError('URL is required'); return; }
     setMcpError('');
+    haptics.tap();
     try {
       const env: Record<string, string> = {};
       mcpEnvPairs.forEach((p) => { if (p.key.trim()) env[p.key.trim()] = p.value; });
@@ -232,15 +235,17 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
         url: mcpTransport === 'remote' ? mcpUrl.trim() : undefined,
         env: Object.keys(env).length > 0 ? env : undefined,
       });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       setMcpView('list');
       setMcpName(''); setMcpCommand(''); setMcpUrl(''); setMcpEnvPairs([]);
     } catch (err: any) {
+      haptics.warning();
       setMcpError(err?.message || 'Failed to add server');
     }
   }, [mcpName, mcpTransport, mcpCommand, mcpUrl, mcpEnvPairs, addMcpServer]);
 
   const handleMcpAuth = useCallback(async (name: string) => {
+    haptics.tap();
     setMcpAuthName(name);
     setMcpView('auth');
     setMcpAuthUrl('');
@@ -249,17 +254,20 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
       const result = await mcpAuthStart.mutateAsync(name);
       setMcpAuthUrl(result.authorizationUrl);
     } catch (err: any) {
+      haptics.warning();
       setMcpError(err?.message || 'Failed to start auth');
     }
   }, [mcpAuthStart]);
 
   const handleMcpAuthSubmit = useCallback(async () => {
     if (!mcpAuthCode.trim()) return;
+    haptics.tap();
     try {
       await mcpAuthCallback.mutateAsync({ name: mcpAuthName, code: mcpAuthCode.trim() });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       setMcpView('list');
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Auth Error', err?.message || 'Failed to complete auth');
     }
   }, [mcpAuthName, mcpAuthCode, mcpAuthCallback]);
@@ -341,7 +349,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
               return (
                 <Pressable
                   key={tab.id}
-                  onPress={() => { setActiveTab(tab.id); if (tab.id === 'mcp') setMcpView('list'); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                  onPress={() => { haptics.selection(); setActiveTab(tab.id); if (tab.id === 'mcp') setMcpView('list'); }}
                   style={{
                     flexDirection: 'row', alignItems: 'center', gap: 6,
                     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999,
@@ -393,11 +401,12 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
               <View style={{ backgroundColor: inputBg, borderRadius: 12, borderWidth: 1, borderColor }}>
                 <Pressable
                   onPress={() => {
+                    haptics.tap();
                     const options = [{ text: 'Auto-detect', value: '' }, ...allModels.map((m) => ({ text: `${m.providerID}/${m.modelID}`, value: `${m.providerID}/${m.modelID}` }))];
                     Alert.alert('Select Model', undefined, [
                       ...options.slice(0, 10).map((o) => ({
                         text: o.text,
-                        onPress: () => { setDraftModel(o.value); markDirty(); },
+                        onPress: () => { haptics.selection(); setDraftModel(o.value); markDirty(); },
                       })),
                       { text: 'Cancel', style: 'cancel' as const },
                     ]);
@@ -423,7 +432,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                 </View>
                 <Switch
                   value={draftSnapshot}
-                  onValueChange={(v) => { setDraftSnapshot(v); markDirty(); }}
+                  onValueChange={(v) => { haptics.selection(); setDraftSnapshot(v); markDirty(); }}
                   trackColor={{ false: chipBg, true: theme.primary }}
                   thumbColor="#FFFFFF"
                 />
@@ -485,11 +494,12 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     key={mode}
                     mode={mode}
                     active={!isPerTool && globalMode === mode}
-                    onPress={() => { setDraftPermission(mode); markDirty(); }}
+                    onPress={() => { haptics.selection(); setDraftPermission(mode); markDirty(); }}
                   />
                 ))}
                 <Pressable
                   onPress={() => {
+                    haptics.selection();
                     setDraftPermission(isPerTool ? 'ask' : { '*': globalMode });
                     markDirty();
                   }}
@@ -528,6 +538,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                             <Pressable
                               key={mode}
                               onPress={() => {
+                                haptics.selection();
                                 const p = { ...(draftPermission as Record<string, string>), [tool.key]: mode };
                                 setDraftPermission(p);
                                 markDirty();
@@ -570,6 +581,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     <Switch
                       value={enabled}
                       onValueChange={(v) => {
+                        haptics.selection();
                         const newTools = { ...draftTools };
                         if (v) { delete newTools[toolId]; } else { newTools[toolId] = false; }
                         setDraftTools(newTools);
@@ -592,7 +604,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                   MCP Servers ({mcpStatus ? Object.keys(mcpStatus).length : 0})
                 </RNText>
                 <Pressable
-                  onPress={() => setMcpView('add')}
+                  onPress={() => { haptics.tap(); setMcpView('add'); }}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: theme.primary, borderRadius: 9999, paddingHorizontal: 14, paddingVertical: 6 }}
                 >
                   <Plus size={14} color={theme.primaryForeground} />
@@ -628,6 +640,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                           )}
                           <TouchableOpacity
                             onPress={() => {
+                              haptics.medium();
                               if (status.status === 'connected') {
                                 disconnectMcp.mutate(name);
                               } else if (status.status === 'disabled' || status.status === 'failed') {
@@ -641,6 +654,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                           {tools.length > 0 && (
                             <TouchableOpacity
                               onPress={() => {
+                                haptics.selection();
                                 const next = new Set(expandedServers);
                                 isExpanded ? next.delete(name) : next.add(name);
                                 setExpandedServers(next);
@@ -686,7 +700,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {activeTab === 'mcp' && mcpView === 'add' && (
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                <TouchableOpacity onPress={() => { setMcpView('list'); setMcpError(''); }} style={{ marginRight: 12, padding: 4 }}>
+                <TouchableOpacity onPress={() => { haptics.tap(); setMcpView('list'); setMcpError(''); }} style={{ marginRight: 12, padding: 4 }}>
                   <X size={18} color={fg} />
                 </TouchableOpacity>
                 <RNText style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Add MCP Server</RNText>
@@ -712,7 +726,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                 {(['local', 'remote'] as const).map((t) => (
                   <Pressable
                     key={t}
-                    onPress={() => setMcpTransport(t)}
+                    onPress={() => { haptics.selection(); setMcpTransport(t); }}
                     style={{
                       flex: 1, paddingVertical: 10, borderRadius: 9999, alignItems: 'center',
                       backgroundColor: mcpTransport === t ? theme.primaryLight : chipBg,
@@ -762,7 +776,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                 <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase' }}>
                   Environment Variables
                 </RNText>
-                <TouchableOpacity onPress={() => setMcpEnvPairs([...mcpEnvPairs, { key: '', value: '' }])}>
+                <TouchableOpacity onPress={() => { haptics.tap(); setMcpEnvPairs([...mcpEnvPairs, { key: '', value: '' }]); }}>
                   <Plus size={16} color={theme.primary} />
                 </TouchableOpacity>
               </View>
@@ -784,7 +798,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     secureTextEntry
                     style={{ flex: 1, backgroundColor: inputBg, borderRadius: 10, borderWidth: 1, borderColor, padding: 10, fontSize: 12, fontFamily: 'Roobert', color: fg }}
                   />
-                  <TouchableOpacity onPress={() => setMcpEnvPairs(mcpEnvPairs.filter((_, j) => j !== i))} style={{ padding: 4 }}>
+                  <TouchableOpacity onPress={() => { haptics.medium(); setMcpEnvPairs(mcpEnvPairs.filter((_, j) => j !== i)); }} style={{ padding: 4 }}>
                     <Trash2 size={14} color="#EF4444" />
                   </TouchableOpacity>
                 </View>
@@ -821,7 +835,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           {activeTab === 'mcp' && mcpView === 'auth' && (
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                <TouchableOpacity onPress={() => setMcpView('list')} style={{ marginRight: 12, padding: 4 }}>
+                <TouchableOpacity onPress={() => { haptics.tap(); setMcpView('list'); }} style={{ marginRight: 12, padding: 4 }}>
                   <X size={18} color={fg} />
                 </TouchableOpacity>
                 <RNText style={{ fontSize: 15, fontFamily: 'Roobert-SemiBold', color: fg }}>Authorize: {mcpAuthName}</RNText>
@@ -838,7 +852,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
                     Open this URL to authorize, then paste the redirect URL below:
                   </RNText>
                   <Pressable
-                    onPress={() => Linking.openURL(mcpAuthUrl)}
+                    onPress={() => { haptics.tap(); Linking.openURL(mcpAuthUrl); }}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: theme.primaryLight, borderRadius: 10, padding: 12, marginBottom: 16 }}
                   >
                     <ExternalLink size={14} color={theme.primary} />
@@ -891,6 +905,7 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
           }}>
             <Pressable
               onPress={() => {
+                haptics.tap();
                 if (config) {
                   setDraftInstructions(Array.isArray(config.instructions) ? (config.instructions as string[]).join('\n') : '');
                   setDraftModel((config.model as string) || '');
