@@ -446,7 +446,16 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
 
       <View
         className="flex-row items-center bg-card border-t border-border px-2 pt-1.5"
-        style={{ paddingBottom: insets.bottom + 2 }}
+        style={{
+          paddingBottom: insets.bottom + 2,
+          // Match the 2px side hairlines drawn alongside the chat session card
+          // (see home.tsx — same color tokens) so the frame stays continuous
+          // through the bar regardless of which page is active.
+          borderLeftWidth: 2,
+          borderRightWidth: 2,
+          borderLeftColor: isDark ? '#222222' : '#e6e6e5',
+          borderRightColor: isDark ? '#222222' : '#e6e6e5',
+        }}
       >
         {/* New Session (+) — collapses when the pill strip is held */}
         <Reanimated.View style={[sideButtonStyle, { overflow: 'hidden' }]}>
