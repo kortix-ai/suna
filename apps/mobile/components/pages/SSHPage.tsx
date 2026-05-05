@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View, type N
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Check,
@@ -120,8 +120,8 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
   const codeBorder = isDark ? '#27272A' : '#3F3F46';
 
   const copyToClipboard = useCallback(async (text: string, field: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await Clipboard.setStringAsync(text);
+    haptics.success();
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
   }, []);
@@ -134,7 +134,9 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
       setSSHResult(result);
       await saveSSHMeta(result);
       setCachedMeta(await loadSSHMeta());
+      haptics.success();
     } catch (err: any) {
+      haptics.warning();
       setError(err?.message || 'Failed to generate SSH keys');
     } finally {
       setIsGenerating(false);
@@ -142,7 +144,9 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
   }, []);
 
   const handleRegenerate = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Acknowledge the destructive regen tap; the resulting setupSSH call
+    // will fire its own success/warning when it completes.
+    haptics.medium();
     setSSHResult(null);
     setShowRawKeys(false);
     await handleGenerate();
@@ -150,15 +154,16 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
 
   const handleDownloadKey = useCallback(async () => {
     if (!sshResult) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       // Copy key to clipboard and let user save it manually
       await Clipboard.setStringAsync(sshResult.private_key);
+      haptics.success();
       Alert.alert(
         'Key Copied',
         `Private key copied to clipboard.\n\nSave it as ~/.ssh/${sshResult.key_name} and run:\nchmod 600 ~/.ssh/${sshResult.key_name}`,
       );
     } catch (err: any) {
+      haptics.warning();
       Alert.alert('Error', err?.message || 'Failed to save key file');
     }
   }, [sshResult]);
@@ -215,7 +220,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
           {!sshResult && !isGenerating && (
             <View style={{ gap: 12 }} className="mt-5">
               <Pressable
-                onPress={handleGenerate}
+                onPress={() => { haptics.tap(); handleGenerate(); }}
                 className="flex-row items-center justify-center self-start rounded-full px-5 py-2.5 active:opacity-90"
                 style={{ backgroundColor: themeColors.primary }}
               >
@@ -262,7 +267,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
           {error && (
             <View className="mt-5 rounded-2xl border px-4 py-3" style={{ borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)', backgroundColor: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.03)' }}>
               <Text className="font-roobert-medium text-sm text-destructive">{error}</Text>
-              <Pressable onPress={handleGenerate} className="mt-2 active:opacity-70">
+              <Pressable onPress={() => { haptics.tap(); handleGenerate(); }} className="mt-2 active:opacity-70">
                 <Text className="font-roobert-medium text-xs text-primary">Try again</Text>
               </Pressable>
             </View>
@@ -342,7 +347,7 @@ export function SSHPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawe
               {/* Raw Keys (collapsible) */}
               <View>
                 <Pressable
-                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowRawKeys(!showRawKeys); }}
+                  onPress={() => { haptics.selection(); setShowRawKeys(!showRawKeys); }}
                   className="flex-row items-center py-2 active:opacity-70"
                 >
                   <Text className="font-roobert-medium text-[13px] text-muted-foreground">Raw Keys</Text>
