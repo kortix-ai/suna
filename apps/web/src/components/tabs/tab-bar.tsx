@@ -1063,14 +1063,14 @@ export function TabBar() {
 
   // Always render the bar so the bg-sidebar strip above the content curve is consistent
   if (orderedTabs.length === 0) {
-    return <div className="flex-shrink-0 bg-sidebar h-[44px] md:h-[38px]" />;
+    return <div className="flex-shrink-0 bg-sidebar h-[48px] md:h-[44px]" />;
   }
 
   return (
     <>
       <div
         ref={tabBarRef}
-        className="flex-shrink-0 flex items-stretch bg-sidebar h-[44px] md:h-[38px] relative overflow-hidden"
+        className="flex-shrink-0 flex items-stretch bg-sidebar h-[48px] md:h-[44px] relative overflow-hidden"
         role="tablist"
       >
         {/* Mobile: sidebar toggles */}
