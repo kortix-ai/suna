@@ -84,9 +84,22 @@ const nextConfig = (): NextConfig => ({
     ];
   },
 
-  // HTTP headers for caching and performance
+  // HTTP headers for security, caching and performance
   async headers() {
     return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: "frame-ancestors 'self';",
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'SAMEORIGIN',
+          },
+        ],
+      },
       {
         source: '/fonts/:path*',
         headers: [
