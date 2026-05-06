@@ -287,35 +287,46 @@ export class ProjectManager {
 	}
 
 	/**
-	 * Single-project paradigm: a sandbox owns exactly one Kortix project.
+	 * Single-project paradigm: a sandbox owns exactly one Kortix project,
+	 * canonically `proj-workspace` rooted at /workspace.
 	 *
 	 * This row is the implicit container for tickets, milestones, columns,
 	 * project-agents, and credentials when the project paradigm is enabled.
 	 * Sessions auto-bind to it, so the LLM never needs project_create or
 	 * project_select — those tools are gone in the new paradigm.
 	 *
-	 * Idempotent: returns the existing row when present, otherwise inserts
-	 * a v2 row with id `proj-default` rooted at the workspace.
+	 * Resolution order:
+	 *   1. Existing `proj-workspace` row → use as-is (the standard one).
+	 *   2. Any project at the workspace root path → adopt as THE project
+	 *      (handles sandboxes pre-dating this paradigm where the user had
+	 *      a different id at /workspace).
+	 *   3. Insert fresh `proj-workspace` row with structure_version=2.
+	 *
+	 * Always idempotent.
 	 */
 	ensureDefaultProject(): ProjectRow {
-		const id = "proj-default"
+		const canonicalId = "proj-workspace"
 		const existing = this.db.prepare("SELECT * FROM projects WHERE id=$id")
-			.get({ $id: id }) as ProjectRow | null
+			.get({ $id: canonicalId }) as ProjectRow | null
 		if (existing) return existing
+
+		const atRoot = this.db.prepare("SELECT * FROM projects WHERE path=$p")
+			.get({ $p: this.workspaceRoot }) as ProjectRow | null
+		if (atRoot) return atRoot
 
 		const now = new Date().toISOString()
 		this.db.prepare(
 			"INSERT INTO projects (id,name,path,description,created_at,opencode_id,structure_version) " +
 			"VALUES ($id,$n,$p,$d,$c,NULL,2)",
 		).run({
-			$id: id,
+			$id: canonicalId,
 			$n: "Workspace",
 			$p: this.workspaceRoot,
 			$d: "Default sandbox project — auto-bootstrapped. Owns the board, tickets, milestones.",
 			$c: now,
 		})
 		return {
-			id,
+			id: canonicalId,
 			name: "Workspace",
 			path: this.workspaceRoot,
 			description: "Default sandbox project — auto-bootstrapped. Owns the board, tickets, milestones.",
