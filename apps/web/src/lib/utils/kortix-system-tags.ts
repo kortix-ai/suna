@@ -98,21 +98,21 @@ export function extractKortixSystemMessages(text: string): KortixSystemMessage[]
 }
 
 function describeSystemMessage(type: string, source: string, body: string): { label: string; detail?: string } {
-	// Autowork / Ralph continuation
-	if (type === "autowork-continue" || type === "ralph-continue") {
-		const iterMatch = body.match(/\[(?:AUTOWORK|RALPH)\s*-\s*ITERATION\s+(\d+)\/(\d+)\]/i)
+	// Goal / Ralph continuation
+	if (type === "goal-continue" || type === "ralph-continue") {
+		const iterMatch = body.match(/\[(?:GOAL|RALPH)\s*-\s*ITERATION\s+(\d+)\/(\d+)\]/i)
 		if (iterMatch) {
-			return { label: `Autowork`, detail: `iteration ${iterMatch[1]}/${iterMatch[2]}` }
+			return { label: `Goal`, detail: `iteration ${iterMatch[1]}/${iterMatch[2]}` }
 		}
 		if (body.includes("COMPLETION REJECTED")) {
-			return { label: "Autowork", detail: "completion rejected — continuing" }
+			return { label: "Goal", detail: "completion rejected — continuing" }
 		}
-		return { label: "Autowork", detail: "continuing" }
+		return { label: "Goal", detail: "continuing" }
 	}
 
-	// Passive continuation (todo enforcer)
+	// Passive continuation
 	if (type === "passive-continuation") {
-		return { label: "Continue", detail: "todo enforcer" }
+		return { label: "Continue" }
 	}
 
 	// Task-related

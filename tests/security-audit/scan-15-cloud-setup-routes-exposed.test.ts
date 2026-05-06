@@ -25,10 +25,6 @@
  *   - Reveals cloud provider architecture: {"providers":["justavps"]}
  *   - Reveals capabilities: async, events, polling flags
  *
- * [LOW] POST /v1/setup/local-sandbox/warm — PUBLIC on cloud (but blocked)
- *   - Returns 403 "Local Docker provider is not enabled" (correctly blocked)
- *   - Still reveals that Docker mode exists as a feature
- *
  * [INFO] GET /v1/setup/install-status — PUBLIC on cloud
  *   - Returns {"installed":true} — by design, but shouldn't be needed on cloud
  *
@@ -134,12 +130,10 @@ describe('Cloud Scan: Setup Routes Exposed on Production', () => {
     });
   });
 
-  describe('[LOW] local-sandbox/warm exists on cloud', () => {
-    test('endpoint is public but blocked by provider check', async () => {
+  describe('local-sandbox/warm removed from cloud', () => {
+    test('endpoint is gone', async () => {
       const r = await probe('POST', '/v1/setup/local-sandbox/warm');
-      expect(r.status).toBe(403);
-      expect(r.body.error).toBe('Local Docker provider is not enabled');
-      // Correctly blocked, but the route shouldn't exist on cloud at all
+      expect(r.status).toBe(404);
     });
   });
 

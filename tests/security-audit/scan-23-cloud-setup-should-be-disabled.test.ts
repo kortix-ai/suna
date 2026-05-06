@@ -67,17 +67,14 @@ describe('Cloud Scan: Setup Routes Should Be Disabled (all should 404)', () => {
       expect(r.body.error).toContain('Owner already exists');
     });
 
-    test('POST /v1/setup/local-sandbox/warm — returns 403 (should be 404 on cloud)', async () => {
+    test('POST /v1/setup/local-sandbox/warm — removed', async () => {
       const r = await probe('POST', '/v1/setup/local-sandbox/warm');
-      // Currently returns 403 "Local Docker provider is not enabled"
-      // Should be 404 — this whole route shouldn't exist on cloud
-      expect(r.status).toBe(403);
+      expect(r.status).toBe(404);
     });
 
-    test('GET /v1/setup/local-sandbox/warm/status — should be 404 on cloud', async () => {
+    test('GET /v1/setup/local-sandbox/warm/status — removed', async () => {
       const r = await probe('GET', '/v1/setup/local-sandbox/warm/status');
-      // Check what it returns
-      expect([200, 403, 404]).toContain(r.status);
+      expect(r.status).toBe(404);
     });
   });
 
@@ -135,13 +132,11 @@ describe('Cloud Scan: Setup Routes Should Be Disabled (all should 404)', () => {
   });
 
   describe('Summary: routes that should not exist on cloud', () => {
-    test('15 setup routes exist on cloud — ALL should be removed', () => {
+    test('13 setup routes exist on cloud — ALL should be removed', () => {
       const routesOnCloud = [
         'GET /v1/setup/install-status',        // public, returns 200
         'GET /v1/setup/sandbox-providers',      // public, returns 200
         'POST /v1/setup/bootstrap-owner',       // public, LEAKS EMAIL
-        'POST /v1/setup/local-sandbox/warm',    // public, returns 403
-        'GET /v1/setup/local-sandbox/warm/status', // public
         'GET /v1/setup/status',                 // auth, returns 401
         'GET /v1/setup/env',                    // auth, NO ADMIN CHECK
         'POST /v1/setup/env',                   // auth, NO ADMIN CHECK

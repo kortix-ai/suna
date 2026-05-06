@@ -10,9 +10,9 @@
 import { Hono } from 'hono'
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
-import { basename, dirname, join } from 'path'
-import { ensureTicketTables, getAgentBySlug } from '../services/ticket-service'
-import { seedV2Project, syncTeamSection, DEFAULT_PM_SLUG, resolveDefaultModel } from '../services/project-v2-seed'
+import { dirname, join } from 'path'
+import { ensureTicketTables, getAgentBySlug, listColumns, replaceColumns } from '../services/ticket-service'
+import { DEFAULT_PM_SLUG } from '../services/project-v2-seed'
 import { wakeAgentForProject, type OpenCodeClientLike } from '../services/ticket-triggers'
 import { createOpencodeClient } from '@opencode-ai/sdk/client'
 import { config } from '../config'
@@ -26,6 +26,55 @@ interface ProjectRow {
   structure_version: number
 }
 
+const GLOBAL_PROJECT_ID = 'proj-global'
+const GLOBAL_PROJECT_NAME = 'Kortix'
+const GLOBAL_PROJECT_DESCRIPTION = 'Global Kortix workspace. All tasks, tickets, credentials, agents, and durable context live here.'
+
+function workspaceRoot(): string {
+  return process.env.KORTIX_WORKSPACE?.trim()
+    || process.env.OPENCODE_CONFIG_DIR?.replace(/\/opencode\/?$/, '')
+    || '/workspace'
+}
+
+function ensureGlobalProject(db: Database): ProjectRow {
+  const workspace = workspaceRoot()
+  const now = new Date().toISOString()
+  const ctxDir = join(workspace, '.kortix')
+  mkdirSync(ctxDir, { recursive: true })
+
+  let row = db.prepare('SELECT * FROM projects WHERE path=$path').get({ $path: workspace }) as ProjectRow | null
+  if (row) {
+    db.prepare("UPDATE projects SET description=COALESCE(NULLIF(description,''), $description), structure_version=1 WHERE id=$id")
+      .run({ $description: GLOBAL_PROJECT_DESCRIPTION, $id: row.id })
+    row = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: row.id }) as ProjectRow
+  } else {
+    row = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: GLOBAL_PROJECT_ID }) as ProjectRow | null
+    if (row) {
+      db.prepare("UPDATE projects SET path=$path, description=COALESCE(NULLIF(description,''), $description), structure_version=1 WHERE id=$id")
+        .run({ $path: workspace, $description: GLOBAL_PROJECT_DESCRIPTION, $id: row.id })
+      row = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: row.id }) as ProjectRow
+    } else {
+      db.prepare(`INSERT INTO projects (id, name, path, description, created_at, opencode_id, maintainer_session_id, structure_version, user_handle)
+        VALUES ($id, $name, $path, $description, $createdAt, NULL, NULL, 1, NULL)`)
+        .run({ $id: GLOBAL_PROJECT_ID, $name: GLOBAL_PROJECT_NAME, $path: workspace, $description: GLOBAL_PROJECT_DESCRIPTION, $createdAt: now })
+      row = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: GLOBAL_PROJECT_ID }) as ProjectRow
+    }
+  }
+
+  try {
+    if (listColumns(db, row.id).length === 0) {
+      replaceColumns(db, row.id, [
+        { key: 'backlog', label: 'Backlog' },
+        { key: 'in_progress', label: 'In Progress' },
+        { key: 'review', label: 'Review' },
+        { key: 'done', label: 'Done', is_terminal: true },
+      ])
+    }
+  } catch {}
+
+  return row
+}
+
 // ── DB singleton ─────────────────────────────────────────────────────────────
 
 let _db: Database | null = null
@@ -33,9 +82,7 @@ let _db: Database | null = null
 function getDb(): Database {
   if (_db) return _db
 
-  const workspace = process.env.KORTIX_WORKSPACE?.trim()
-    || process.env.OPENCODE_CONFIG_DIR?.replace(/\/opencode\/?$/, '')
-    || '/workspace'
+  const workspace = workspaceRoot()
   const dbPath = join(workspace, '.kortix', 'kortix.db')
 
   if (!existsSync(dirname(dbPath))) {
@@ -86,6 +133,7 @@ function getDb(): Database {
     if (up.changes > 0) console.log(`[projects] migrated ${up.changes} legacy project(s) from v1 → v2`)
   } catch {}
   ensureTicketTables(_db)
+  ensureGlobalProject(_db)
 
   return _db
 }
@@ -94,93 +142,23 @@ function getDb(): Database {
 
 const projectsRouter = new Hono()
 
-// POST / — create or ensure a project exists
+// POST / — compatibility endpoint; Kortix now has one implicit global workspace.
 projectsRouter.post('/', async (c) => {
   try {
     const db = getDb()
-    const body = await c.req.json<{ id?: string; name?: string; path?: string; description?: string; user_handle?: string }>().catch(() => ({} as { id?: string; name?: string; path?: string; description?: string; user_handle?: string }))
-    const rawPath = body.path?.trim() || ''
-    // Refuse workspace-root paths. v2 seed writes PM agent files under
-    // <path>/.opencode/agent/ — if path is the workspace root, those files
-    // pollute the global agent picker (every session in /workspace tree
-    // would discover the PM as a global agent). Past incidents created a
-    // rogue /workspace/.opencode/agent/project-manager.md exactly this way.
-    if (!rawPath || rawPath === '/workspace' || rawPath === '/workspace/') {
-      return c.json({
-        error: `path is required and must be a subdirectory of /workspace, e.g. /workspace/${(body.name?.trim() || 'my-project').replace(/[^\w-]/g, '-').toLowerCase()}. Refusing to create a project at the workspace root.`,
-      }, 400)
+    const body = await c.req.json<{ name?: string; description?: string; user_handle?: string }>().catch(() => ({}))
+    let global = ensureGlobalProject(db)
+    if (body.description !== undefined && body.description.trim()) {
+      db.prepare('UPDATE projects SET description=$d WHERE id=$id').run({ $d: body.description.trim(), $id: global.id })
     }
-    const projectPath = rawPath
-    const existing = db.prepare('SELECT * FROM projects WHERE path=$path').get({ $path: projectPath }) as ProjectRow | null
-    if (existing) {
-      if (body.user_handle && body.user_handle.trim() && !(existing as any).user_handle) {
-        db.prepare('UPDATE projects SET user_handle=$h WHERE id=$id').run({ $h: body.user_handle.trim(), $id: existing.id })
-        return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: existing.id }))
-      }
-      return c.json(existing)
+    if (body.name !== undefined && body.name.trim()) {
+      db.prepare('UPDATE projects SET name=$n WHERE id=$id').run({ $n: body.name.trim(), $id: global.id })
     }
-
-    const fallbackName = projectPath === '/workspace' ? 'Workspace' : basename(projectPath) || 'Project'
-    const name = body.name?.trim() || fallbackName
-    const id = body.id?.trim() || `project_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-    const description = body.description ?? ''
-    const userHandle = body.user_handle?.trim() || null
-    const createdAt = new Date().toISOString()
-    // All new projects are v2. There is no scenario for creating v1 — the
-    // legacy tasks-only layout is reserved for the virtual `proj-workspace`
-    // catch-all (created elsewhere). Anything a user creates is v2.
-    const structureVersion = 2
-
-    db.prepare(`INSERT INTO projects (id, name, path, description, created_at, opencode_id, maintainer_session_id, structure_version, user_handle)
-      VALUES ($id, $name, $path, $description, $createdAt, NULL, NULL, $sv, $uh)`)
-      .run({
-        $id: id,
-        $name: name,
-        $path: projectPath,
-        $description: description,
-        $createdAt: createdAt,
-        $sv: structureVersion,
-        $uh: userHandle,
-      })
-
-    const created = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow
-    {
-      try {
-        await seedV2Project(db, {
-          id: created.id,
-          name: created.name,
-          path: created.path,
-          description: created.description,
-          user_handle: userHandle,
-        })
-        // Kick off PM onboarding in a project-level session so the human can
-        // chat with the PM right away from the Sessions tab. Fire-and-forget
-        // — the create HTTP response should not wait on LLM turns.
-        if (userHandle) {
-          const pm = getAgentBySlug(db, created.id, DEFAULT_PM_SLUG)
-          if (pm) {
-            // PM was just seeded with a model — pass the SAME id into the
-            // onboarding prompt so PM tells team_create_agent calls to use
-            // it, instead of re-running resolveDefaultModel() (which can
-            // diverge from the seed if env changed between calls and
-            // makes PM seed the team on a different model than itself).
-            const seededModel = (pm.default_model && pm.default_model.trim()) || resolveDefaultModel()
-            wakeAgentForProject({
-              db,
-              client: getOpenCodeClient(),
-              projectId: created.id,
-              agent: pm,
-              sessionTitle: `Onboarding · ${created.name}`,
-              prompt: buildOnboardingPrompt(created.name, userHandle, created.description, seededModel),
-            }).then((sid) => console.log('[projects] PM onboarding session:', sid))
-              .catch((err) => console.warn('[projects] PM onboarding failed:', err))
-          }
-        }
-      } catch (err) {
-        console.warn('[projects] v2 seed failed:', err)
-      }
+    if (body.user_handle !== undefined && body.user_handle.trim()) {
+      db.prepare('UPDATE projects SET user_handle=$h WHERE id=$id').run({ $h: body.user_handle.trim(), $id: global.id })
     }
-    return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }))
+    global = ensureGlobalProject(db)
+    return c.json({ ...global, global: true })
   } catch (e) {
     return c.json({ error: String(e) }, 400)
   }
@@ -210,7 +188,7 @@ projectsRouter.post('/:id/pm-review', async (c) => {
     return c.json({ error: 'pm-review is v2-only' }, 400)
   }
   const pm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)
-  if (!pm) return c.json({ error: 'PM agent not found for this project' }, 404)
+  if (!pm) return c.json({ error: 'Global workspace has no separate Project Manager agent.' }, 404)
 
   const prompt = [
     `Scheduled board check-in for "${project.name}".`,
@@ -271,7 +249,7 @@ projectsRouter.post('/:id/pm-session', async (c) => {
     return c.json({ error: 'PM chat is only available on v2 projects' }, 400)
   }
   const pm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)
-  if (!pm) return c.json({ error: 'Project Manager agent not found — run v2 seed first' }, 404)
+  if (!pm) return c.json({ error: 'Global workspace has no separate Project Manager agent.' }, 404)
 
   try {
     const client = getOpenCodeClient()
@@ -298,88 +276,27 @@ projectsRouter.post('/:id/pm-session', async (c) => {
   }
 })
 
-// Small/cheap tiers struggle on real engineering tickets (patchy diff edits,
-// dropped tool calls, weak QA evidence). PM should flag this in onboarding
-// so the human can opt up before the team is created.
-const SMALL_MODELS = new Set<string>(['kortix-yolo/think', 'kortix-yolo/code'])
-
-function buildOnboardingPrompt(name: string, handle: string, description: string, seededModel: string): string {
-  // No `/autowork` wrapper — onboarding is a real back-and-forth, not a task
-  // loop. One turn, then wait for the human's reply.
-  const isSmallSeed = SMALL_MODELS.has(seededModel)
-  return [
-    `Fresh project "${name}". Human: @${handle}.`,
-    description ? `User's description: ${description}` : null,
-    '',
-    'Run the onboarding interview from your persona. ONE short question at a',
-    'time — no batching, no answering for the user. STOP after each turn and',
-    'wait for their reply.',
-    '',
-    'Cover (in order): project · stack · role + reach-back · autonomy ·',
-    'starting team · columns/templates. Apply each piece only after approval,',
-    'using your `project_manage` tools. Keep CONTEXT.md tight.',
-    '',
-    `Pass \`default_model: "${seededModel}"\` on every \`team_create_agent\``,
-    'call. This is the model the human selected for this project (their',
-    'current chat model, an explicit project_create override, or the',
-    "sandbox default in that order). Do NOT substitute another model unless",
-    'the human explicitly asks during onboarding — in which case use their',
-    'pick verbatim.',
-    isSmallSeed
-      ? `\n**MODEL ADVISORY** — the seeded model \`${seededModel}\` is a small/cheap tier and tends to misfire on real engineering work (dropped tool calls, patchy diff edits, weak QA evidence). Inside Q2 (stack), include ONE short sentence flagging this and offer a larger option (e.g. \`kortix/minimax-m27\`, \`anthropic/claude-sonnet-4-6\` if the human's API key is loaded). If they confirm the small model anyway, ship it — don't keep asking.`
-      : null,
-    '',
-    'Copy the Communication discipline block from your persona into each',
-    'agent body_md verbatim — non-negotiable.',
-    '',
-    'Your messages follow the same rules as the team: short, decisive, no',
-    'tables, no verdict banners.',
-    '',
-    `First message: brief intro + question #1, addressed to @${handle}. Then STOP.`,
-  ].filter(Boolean).join('\n')
-}
-
 // GET / — list all projects with stats
 projectsRouter.get('/', async (c) => {
   const db = getDb()
-  const rows = db.prepare('SELECT * FROM projects ORDER BY created_at DESC').all() as ProjectRow[]
-  const enriched = rows.map((p) => {
-    const sessionCount = (db.prepare(
-      'SELECT COUNT(*) as c FROM session_projects WHERE project_id=$pid'
-    ).get({ $pid: p.id }) as { c: number })?.c || 0
-    return {
-      ...p,
-      sessionCount,
-    }
-  })
-  return c.json(enriched)
+  const p = ensureGlobalProject(db)
+  const sessionCount = (db.prepare(
+    'SELECT COUNT(*) as c FROM session_projects WHERE project_id=$pid'
+  ).get({ $pid: p.id }) as { c: number })?.c || 0
+  return c.json([{ ...p, sessionCount, global: true }])
 })
 
 // GET /:id — single project
 projectsRouter.get('/:id', async (c) => {
   const db = getDb()
-  const id = decodeURIComponent(c.req.param('id'))
-  const p = (
-    db.prepare('SELECT * FROM projects WHERE id=$v').get({ $v: id })
-    || db.prepare('SELECT * FROM projects WHERE opencode_id=$v').get({ $v: id })
-    || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
-  ) as ProjectRow | null
-  if (!p) return c.json({ error: 'Project not found' }, 404)
-
-  return c.json(p)
+  return c.json({ ...ensureGlobalProject(db), global: true })
 })
 
 // GET /:id/sessions — sessions linked to this project via session_projects table
 // Enriches with OpenCode session data (title, time, etc.) from the OC API
 projectsRouter.get('/:id/sessions', async (c) => {
   const db = getDb()
-  const id = decodeURIComponent(c.req.param('id'))
-  const p = (
-    db.prepare('SELECT * FROM projects WHERE id=$v').get({ $v: id })
-    || db.prepare('SELECT * FROM projects WHERE opencode_id=$v').get({ $v: id })
-    || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
-  ) as ProjectRow | null
-  if (!p) return c.json({ error: 'Project not found' }, 404)
+  const p = ensureGlobalProject(db)
 
   // Get session IDs linked to this project
   const links = db.prepare(
@@ -427,11 +344,10 @@ projectsRouter.get('/:id/sessions', async (c) => {
 projectsRouter.get('/by-session/:sessionId', async (c) => {
   const db = getDb()
   const sessionId = decodeURIComponent(c.req.param('sessionId'))
-  const p = db.prepare(
-    'SELECT p.* FROM session_projects sp JOIN projects p ON sp.project_id = p.id WHERE sp.session_id=$sid LIMIT 1'
-  ).get({ $sid: sessionId }) as ProjectRow | null
-  if (!p) return c.json({ error: 'No project linked' }, 404)
-  return c.json(p)
+  const p = ensureGlobalProject(db)
+  db.prepare('INSERT OR REPLACE INTO session_projects (session_id, project_id, set_at) VALUES ($sid, $pid, $now)')
+    .run({ $sid: sessionId, $pid: p.id, $now: new Date().toISOString() })
+  return c.json({ ...p, global: true })
 })
 
 // DELETE /by-session/:sessionId — unlink a session from any project
@@ -439,13 +355,10 @@ projectsRouter.delete('/by-session/:sessionId', async (c) => {
   try {
     const db = getDb()
     const sessionId = decodeURIComponent(c.req.param('sessionId'))
-    db.exec(`CREATE TABLE IF NOT EXISTS session_projects (
-      session_id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL,
-      set_at TEXT NOT NULL
-    )`)
-    db.prepare('DELETE FROM session_projects WHERE session_id=$sid').run({ $sid: sessionId })
-    return c.json({ ok: true, session_id: sessionId })
+    const p = ensureGlobalProject(db)
+    db.prepare('INSERT OR REPLACE INTO session_projects (session_id, project_id, set_at) VALUES ($sid, $pid, $now)')
+      .run({ $sid: sessionId, $pid: p.id, $now: new Date().toISOString() })
+    return c.json({ ok: true, session_id: sessionId, project_id: p.id, global: true })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
@@ -454,96 +367,34 @@ projectsRouter.delete('/by-session/:sessionId', async (c) => {
 // DELETE /:id — remove project from registry (does NOT delete files on disk)
 projectsRouter.delete('/:id', async (c) => {
   const db = getDb()
-  const id = decodeURIComponent(c.req.param('id'))
-  const p = (
-    db.prepare('SELECT * FROM projects WHERE id=$v').get({ $v: id })
-    || db.prepare('SELECT * FROM projects WHERE opencode_id=$v').get({ $v: id })
-    || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
-  ) as ProjectRow | null
-  if (!p) return c.json({ error: 'Project not found' }, 404)
-
-  // Clean up all related records — cascade through every v2 table that
-  // holds a project_id FK. Previously only session_projects was nuked,
-  // which left orphans in triggers / tickets / milestones / agents /
-  // columns / credentials. The next project created under the same name
-  // then silently collided with those orphans (most visibly: the
-  // board-sweep trigger seed's idempotency check matched a dead row and
-  // skipped creation). Each DELETE is guarded because not every table
-  // exists on v1-only installs.
-  const v2Tables = [
-    'session_projects',
-    'project_credential_events',
-    'project_credentials',
-    'project_milestone_counter',
-    'milestone_events',
-    'milestones',
-    'project_ticket_counter',
-    'ticket_agent_sessions',
-    'ticket_assignees',
-    'ticket_events',
-    'tickets',
-    'ticket_templates',
-    'project_fields',
-    'project_columns',
-    'project_agents',
-    'project_members',
-    'pending_agent_triggers',
-    'triggers',
-  ] as const
-  for (const t of v2Tables) {
-    try { db.prepare(`DELETE FROM ${t} WHERE project_id=$pid`).run({ $pid: p.id }) } catch {}
-  }
-  db.prepare('DELETE FROM projects WHERE id=$id').run({ $id: p.id })
-
-  return c.json({ deleted: true, name: p.name, path: p.path })
+  const p = ensureGlobalProject(db)
+  return c.json({ deleted: false, global: true, name: p.name, path: p.path, message: 'The global Kortix workspace cannot be deleted.' })
 })
 
 // PATCH /:id — update project
 projectsRouter.patch('/:id', async (c) => {
   const db = getDb()
-  const id = decodeURIComponent(c.req.param('id'))
   const body = await c.req.json<{ name?: string; description?: string; user_handle?: string | null }>()
-  const p = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow | null
-  if (!p) return c.json({ error: 'Project not found' }, 404)
+  const p = ensureGlobalProject(db)
 
   if (body.name !== undefined) {
-    db.prepare('UPDATE projects SET name=$n WHERE id=$id').run({ $n: body.name, $id: id })
+    db.prepare('UPDATE projects SET name=$n WHERE id=$id').run({ $n: body.name, $id: p.id })
   }
   if (body.description !== undefined) {
-    db.prepare('UPDATE projects SET description=$d WHERE id=$id').run({ $d: body.description, $id: id })
+    db.prepare('UPDATE projects SET description=$d WHERE id=$id').run({ $d: body.description, $id: p.id })
   }
   if (body.user_handle !== undefined) {
     const handle = (typeof body.user_handle === 'string' && body.user_handle.trim()) || null
-    db.prepare('UPDATE projects SET user_handle=$h WHERE id=$id').run({ $h: handle, $id: id })
-    const refreshed = db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }) as ProjectRow
-    if ((refreshed as any).structure_version === 2) {
-      try {
-        await syncTeamSection(db, {
-          id: refreshed.id,
-          name: refreshed.name,
-          path: refreshed.path,
-          description: refreshed.description,
-          user_handle: handle,
-        })
-      } catch (err) {
-        console.warn('[projects] team-section sync failed:', err)
-      }
-    }
+    db.prepare('UPDATE projects SET user_handle=$h WHERE id=$id').run({ $h: handle, $id: p.id })
   }
-  return c.json(db.prepare('SELECT * FROM projects WHERE id=$id').get({ $id: id }))
+  return c.json({ ...ensureGlobalProject(db), global: true })
 })
 
 // POST /:id/link-session — bind any existing session to this project
 projectsRouter.post('/:id/link-session', async (c) => {
   try {
     const db = getDb()
-    const id = decodeURIComponent(c.req.param('id'))
-    const p = (
-      db.prepare('SELECT * FROM projects WHERE id=$v').get({ $v: id })
-      || db.prepare('SELECT * FROM projects WHERE opencode_id=$v').get({ $v: id })
-      || db.prepare('SELECT * FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
-    ) as ProjectRow | null
-    if (!p) return c.json({ error: 'Project not found' }, 404)
+    const p = ensureGlobalProject(db)
 
     const body = await c.req.json<{ session_id?: string }>()
     const sessionId = body.session_id?.trim()
@@ -560,7 +411,7 @@ projectsRouter.post('/:id/link-session', async (c) => {
       $now: new Date().toISOString(),
     })
 
-    return c.json({ ok: true, project_id: p.id, session_id: sessionId })
+    return c.json({ ok: true, project_id: p.id, session_id: sessionId, global: true })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }

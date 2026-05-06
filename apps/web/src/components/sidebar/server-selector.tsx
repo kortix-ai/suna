@@ -337,10 +337,13 @@ function DialogInstanceRow({
   const displayUrl = resolvedUrl.replace(/^https?:\/\//, '');
   const hasCustomLabel = server.label && server.label !== displayUrl;
 
-  // DB status is the source of truth. Only run health checks when sandbox is active.
+  // DB status is the source of truth. Do not probe every active row in the
+  // instance list; inactive JustaVPS rows can be stopped/dead and were causing
+  // repeated /v1/p/{sandbox}/8000/kortix/health 502s. Only the selected row
+  // gets a live health/version check.
   const dbStatus = sandboxInfo?.status;
   const isDbActive = !dbStatus || dbStatus === 'active';
-  const { status: connStatus, version } = useConnectionStatus(resolvedUrl, isDbActive);
+  const { status: connStatus, version } = useConnectionStatus(resolvedUrl, isActive && isDbActive);
 
   const isCancelledAtPeriodEnd = sandboxInfo?.cancel_at_period_end ?? false;
   const cancelAt = sandboxInfo?.cancel_at ?? null;
@@ -768,12 +771,6 @@ export function InstanceManagerDialog({
         : await createSandbox({
             provider,
             serverType,
-            onProgress: provider === 'local_docker'
-              ? (progress) => {
-                  setSandboxProgress(progress);
-                  setSandboxError(null);
-                }
-              : undefined,
           });
 
       // Managed VPS providers can report as active before services are actually ready.
@@ -865,7 +862,7 @@ export function InstanceManagerDialog({
           setSandboxProgress({
             status: 'pulling',
             progress: Math.max(0, Math.min(100, Number(parsed.progress) || 0)),
-            message: parsed.message || 'Pulling sandbox image...',
+            message: parsed.message || 'Provisioning sandbox...',
           });
           message = '';
         } else if (parsed?.message) {
@@ -1186,11 +1183,7 @@ export function InstanceManagerDialog({
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">Local Docker</p>
                     <p className="text-xs text-muted-foreground/70 mt-0.5">
-                      {isCreatingSandbox && creatingProvider === 'local_docker' && sandboxProgress
-                        ? sandboxProgress.message
-                        : isBillingEnabled()
-                          ? 'Runs on your machine via Docker alongside cloud instances'
-                          : 'Runs on your machine via Docker'}
+                      Connect to an already-running local sandbox
                     </p>
                   </div>
                 </button>

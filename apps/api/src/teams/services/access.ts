@@ -167,10 +167,14 @@ export async function loadSandboxForUser(
   sandboxId: string,
   action: SandboxAction = 'view',
 ): Promise<{ sandbox: typeof sandboxes.$inferSelect; decision: AccessDecision }> {
+  const idCondition = UUID_RE.test(sandboxId)
+    ? eq(sandboxes.sandboxId, sandboxId)
+    : eq(sandboxes.externalId, sandboxId);
+
   const [row] = await db
     .select()
     .from(sandboxes)
-    .where(eq(sandboxes.sandboxId, sandboxId))
+    .where(idCondition)
     .limit(1);
   if (!row) throw new NotFoundError('Sandbox not found');
   const decision = await decideAccess(

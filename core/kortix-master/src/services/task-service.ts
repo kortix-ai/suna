@@ -659,11 +659,11 @@ export function createTask(db: Database, input: CreateTaskInput): TaskRow {
 
 export function buildOwnerPrompt(project: ProjectRow, task: TaskRow): string {
   return [
-    `/autowork --max-iterations 50`,
+    `/goal --max-iterations 50`,
     '',
     'You are the single responsible owner for one task.',
     '',
-    'Project:',
+    'Global workspace:',
     `- name: ${project.name}`,
     `- id: ${project.id}`,
     `- path: ${project.path}`,
@@ -677,22 +677,20 @@ export function buildOwnerPrompt(project: ProjectRow, task: TaskRow): string {
     `- status: ${task.status}`,
     '',
     'Execution contract:',
-    `- FIRST: run project_select("${project.name}") to link this session to the project.`,
-    `- SECOND: read ${project.path}/.kortix/CONTEXT.md before making changes. Treat it as the shared project memory spine.`,
+    `- FIRST: read ${project.path}/.kortix/CONTEXT.md before making changes. Treat it as the shared global memory spine.`,
     '- You own exactly this one task for this run. Stay within scope and satisfy the verification condition.',
     '- Use task_progress for meaningful progress updates and task_evidence for important artifacts.',
     '- If blocked, call task_blocker with the exact missing input/decision.',
     '- When verification starts or finishes, record it with task_verification.',
     '- When the work is complete, call task_deliver with result and verification_summary.',
     '- If you need to revisit the task details, use the task block above in this prompt as the source of truth.',
-    '- Durable project docs (.kortix/CONTEXT.md) are maintained automatically by the hidden project-maintainer after each task event; you do not need to update them yourself.',
+    '- Durable global docs (.kortix/CONTEXT.md) are maintained automatically by the hidden maintainer after each task event; you do not need to update them yourself.',
     '',
     'Completion contract:',
-    '- The autowork loop stops when — and only when — you emit a <kortix_autowork_complete> tag with two children:',
-    '  - <verification> containing the exact commands you ran and their real output (proof the task works).',
-    '  - <requirements_check> containing a checklist where EVERY user / task requirement is `- [x] "requirement" — evidence` with concrete proof.',
-    '- Malformed, empty, or unchecked items → the plugin rejects the tag and continues the loop.',
-    "- After `task_deliver` succeeds, emit the completion tag. The autowork plugin will parse it and close the loop.",
+    '- The goal loop stops when — and only when — you call update_goal with status "complete" and the runtime accepts it.',
+    '- The runtime rejects premature completion if transcript evidence is weak or stale.',
+    '- If you changed files/state, rerun deterministic final verification after the last mutation before calling update_goal.',
+    '- After `task_deliver` succeeds and final verification is fresh, call `update_goal({ status: "complete" })`.',
   ].join('\n')
 }
 
@@ -761,11 +759,11 @@ export async function startTask(options: StartTaskOptions): Promise<TaskRow> {
   if (task.owner_session_id) {
     try {
       const resumePrompt = [
-        '/autowork --max-iterations 50',
+        '/goal --max-iterations 50',
         '',
         `Task ${task.id} has been restarted. Resume ownership now.`,
         'Use the task already in this session as the source of truth.',
-        'When complete, emit <kortix_autowork_complete> with <verification> and <requirements_check> children.',
+        'When complete, call task_deliver with real verification evidence, then call update_goal with status "complete".',
       ].join('\n')
 
       await client.session.promptAsync({

@@ -393,8 +393,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
  * time — critical for Docker deployments where the baked values are stale.
  *
  * Returns the access_token so the client-side wizard can continue with
- * sandbox provisioning (which requires the JWT for Bearer auth to the
- * backend API, and may involve async polling for Docker image pulls).
+ * instance setup (which requires the JWT for Bearer auth to the backend API).
  */
 export async function installOwner(_prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
@@ -441,10 +440,8 @@ export async function installOwner(_prevState: any, formData: FormData) {
     return { message: signInError.message || 'Account created but could not sign in' };
   }
 
-  // Return the access token so the client wizard can provision the sandbox.
-  // We intentionally do NOT provision the sandbox here because the local
-  // Docker flow involves async image pulling with progress polling that
-  // the client-side wizard handles with its own UI.
+  // Return the access token so the client wizard can continue instance setup.
+  // Local Docker is manual-only; the API never starts or pulls it here.
   return {
     success: true,
     accessToken: signInData.session?.access_token || null,

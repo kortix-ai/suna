@@ -150,7 +150,7 @@ export default function FactoryPageClient() {
           <DoctrineItem
             number="04"
             title="Run the loop"
-            body={<>Autowork: the autonomous execution loop. An agent takes a task, works it through to completion, self-verifies the result, and only stops when it can prove the output is correct. No hand-holding. No approval at every step. The job either gets done or the agent escalates with a clear explanation of why.</>}
+            body={<>Goal loop: the autonomous execution loop. An agent takes a task, works it through to completion, self-verifies the result, and only stops when it can prove the output is correct. No hand-holding. No approval at every step. The job either gets done or the agent escalates with a clear explanation of why.</>}
           />
           <DoctrineItem
             number="05"

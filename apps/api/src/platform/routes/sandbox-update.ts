@@ -13,12 +13,6 @@
 
 import { Hono } from 'hono';
 import { db } from '../../shared/db';
-import {
-  LocalDockerProvider,
-  getSandboxUpdateStatus,
-  resetSandboxUpdateStatus,
-} from '../providers/local-docker';
-import { getProvider, type ProviderName } from '../providers';
 import { combinedAuth as authMiddleware } from '../../middleware/auth';
 import { resolveAccountId } from '../../shared/resolve-account';
 import {
@@ -29,6 +23,20 @@ import {
 } from '../../update';
 import type { AuthVariables } from '../../types';
 import { findAccessibleSandboxForUser, hasSandboxScope } from '../services/sandbox-access';
+
+function localDockerManualUpdateStatus() {
+  return {
+    phase: 'idle',
+    progress: 0,
+    message: 'Local Docker updates are manual-only. Rebuild/restart with pnpm dev:sandbox:build.',
+    targetVersion: null,
+    previousVersion: null,
+    currentVersion: null,
+    error: null,
+    startedAt: null,
+    updatedAt: null,
+  };
+}
 
 // ── Per-sandbox routes: /sandbox/:id/update/* ────────────────────────────────
 
@@ -78,38 +86,10 @@ sandboxIdUpdateRouter.post('/', async (c) => {
   }
 
   if (sandbox.provider === 'local_docker') {
-    let provider: LocalDockerProvider;
-    try {
-      const p = getProvider('local_docker' as ProviderName);
-      if (!(p instanceof LocalDockerProvider)) {
-        return c.json({ success: false, error: 'local_docker provider not available' }, 400);
-      }
-      provider = p;
-    } catch {
-      return c.json({ success: false, error: 'local_docker provider not available' }, 400);
-    }
-
-    const currentStatus = getSandboxUpdateStatus();
-    if (currentStatus.phase !== 'idle' && currentStatus.phase !== 'complete' && currentStatus.phase !== 'failed') {
-      return c.json({
-        success: false,
-        error: `Update already in progress (phase: ${currentStatus.phase})`,
-        status: currentStatus,
-      }, 409);
-    }
-
-    provider.updateSandbox(targetVersion).catch((err) => {
-      console.error('[SANDBOX-UPDATE] Local Docker update failed:', err.message || err);
-    });
-
     return c.json({
-      success: true,
-      started: true,
-      message: `Update to v${targetVersion} started. Poll GET /status for progress.`,
-      targetVersion,
-      sandboxId: sandbox.sandboxId,
-      provider: 'local_docker',
-    });
+      success: false,
+      error: 'Local Docker updates are manual-only. Rebuild/restart with pnpm dev:sandbox:build.',
+    }, 400);
   }
 
   // Any remote provider — uses toolbox exec for docker commands
@@ -146,7 +126,7 @@ sandboxIdUpdateRouter.get('/status', async (c) => {
   }
 
   if (sandbox.provider === 'local_docker') {
-    return c.json(getSandboxUpdateStatus());
+    return c.json(localDockerManualUpdateStatus());
   }
 
   return c.json(await getUpdateStatus(sandbox.sandboxId));
@@ -166,8 +146,7 @@ sandboxIdUpdateRouter.post('/reset', async (c) => {
   }
 
   if (sandbox.provider === 'local_docker') {
-    resetSandboxUpdateStatus();
-    return c.json({ success: true, message: 'Update status reset to idle' });
+    return c.json({ success: true, message: 'Local Docker updates are manual-only; nothing to reset' });
   }
 
   await resetUpdateStatus(sandbox.sandboxId);
@@ -210,53 +189,18 @@ const sandboxUpdateRouter = new Hono<{ Variables: AuthVariables }>();
 sandboxUpdateRouter.use('/*', authMiddleware);
 
 sandboxUpdateRouter.post('/', async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const targetVersion = body?.version;
-
-  if (!targetVersion || typeof targetVersion !== 'string') {
-    return c.json({ success: false, error: 'Missing or invalid version' }, 400);
-  }
-
-  let provider: LocalDockerProvider;
-  try {
-    const p = getProvider('local_docker' as ProviderName);
-    if (!(p instanceof LocalDockerProvider)) {
-      return c.json({ success: false, error: 'Use /sandbox/:id/update for non-local providers' }, 400);
-    }
-    provider = p;
-  } catch {
-    return c.json({ success: false, error: 'local_docker provider not available' }, 400);
-  }
-
-  const currentStatus = getSandboxUpdateStatus();
-  if (currentStatus.phase !== 'idle' && currentStatus.phase !== 'complete' && currentStatus.phase !== 'failed') {
-    return c.json({
-      success: false,
-      error: `Update already in progress (phase: ${currentStatus.phase})`,
-      status: currentStatus,
-    }, 409);
-  }
-
-  provider.updateSandbox(targetVersion).catch((err) => {
-    console.error('[SANDBOX-UPDATE] Local Docker update failed:', err.message || err);
-  });
-
   return c.json({
-    success: true,
-    started: true,
-    message: `Update to v${targetVersion} started. Poll GET /status for progress.`,
-    targetVersion,
-    provider: 'local_docker',
-  });
+    success: false,
+    error: 'Local Docker updates are manual-only. Rebuild/restart with pnpm dev:sandbox:build.',
+  }, 400);
 });
 
 sandboxUpdateRouter.get('/status', async (c) => {
-  return c.json(getSandboxUpdateStatus());
+  return c.json(localDockerManualUpdateStatus());
 });
 
 sandboxUpdateRouter.post('/reset', async (c) => {
-  resetSandboxUpdateStatus();
-  return c.json({ success: true, message: 'Update status reset to idle' });
+  return c.json({ success: true, message: 'Local Docker updates are manual-only; nothing to reset' });
 });
 
 sandboxUpdateRouter.post('/cancel', async (c) => {

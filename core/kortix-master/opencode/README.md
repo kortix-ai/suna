@@ -16,7 +16,7 @@ commands/*.md           <- slash commands (natively discovered)
 tools/*.ts              <- custom tools (natively discovered)
 skills/                 <- built-in skills (natively discovered)
   plugin/                 <- plugins loaded individually via opencode.jsonc
-    kortix-system/        <- unified Kortix plugin (projects, tasks, sessions, connectors, autowork, triggers, worktree)
+    kortix-system/        <- unified Kortix plugin (projects, tasks, sessions, connectors, goal, triggers, worktree)
     opencode-pty/         <- PTY spawn/read/write tools
     worktree/             <- git worktree plugin
     connectors/           <- connector CRUD tools

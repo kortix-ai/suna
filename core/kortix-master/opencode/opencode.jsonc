@@ -49,45 +49,45 @@
           "family": "kortix-yolo"
         }
       }
-    },
-    "kortix": {
-      "npm": "@ai-sdk/openai-compatible",
-      "env": ["KORTIX_TOKEN", "KORTIX_API_URL"],
-      "options": {
-        "baseURL": "{env:KORTIX_API_URL}/v1/router",
-        "apiKey": "{env:KORTIX_TOKEN}"
-      },
-      "models": {
-        "minimax-m27": {
-          "name": "MiniMax M2.7",
-          "id": "minimax/minimax-m2.7",
-          "family": "kortix",
-          "cost": { "input": 0.30, "output": 1.20 },
-          "limit": { "context": 204800, "output": 131072 }
-        },
-        "glm-turbo": {
-          "name": "GLM-5 Turbo",
-          "id": "z-ai/glm-5-turbo",
-          "family": "kortix",
-          "cost": { "input": 1.20, "output": 4.00 },
-          "limit": { "context": 202752, "output": 131072 }
-        },
-        "kimi": {
-          "name": "Kimi K2.5",
-          "id": "moonshotai/kimi-k2.5",
-          "family": "kortix",
-          "cost": { "input": 0.45, "output": 2.20 },
-          "limit": { "context": 262144, "output": 65535 }
-        },
-        "minimax": {
-          "name": "MiniMax M2.5",
-          "id": "minimax/minimax-m2.5",
-          "family": "kortix",
-          "cost": { "input": 0.20, "output": 1.17 },
-          "limit": { "context": 196608, "output": 65536 }
-        }
-      }
     }
+    // "kortix": {
+    //   "npm": "@ai-sdk/openai-compatible",
+    //   "env": ["KORTIX_TOKEN", "KORTIX_API_URL"],
+    //   "options": {
+    //     "baseURL": "{env:KORTIX_API_URL}/v1/router",
+    //     "apiKey": "{env:KORTIX_TOKEN}"
+    //   },
+    //   "models": {
+    //     "minimax-m27": {
+    //       "name": "MiniMax M2.7",
+    //       "id": "minimax/minimax-m2.7",
+    //       "family": "kortix",
+    //       "cost": { "input": 0.30, "output": 1.20 },
+    //       "limit": { "context": 204800, "output": 131072 }
+    //     },
+    //     "glm-turbo": {
+    //       "name": "GLM-5 Turbo",
+    //       "id": "z-ai/glm-5-turbo",
+    //       "family": "kortix",
+    //       "cost": { "input": 1.20, "output": 4.00 },
+    //       "limit": { "context": 202752, "output": 131072 }
+    //     },
+    //     "kimi": {
+    //       "name": "Kimi K2.5",
+    //       "id": "moonshotai/kimi-k2.5",
+    //       "family": "kortix",
+    //       "cost": { "input": 0.45, "output": 2.20 },
+    //       "limit": { "context": 262144, "output": 65535 }
+    //     },
+    //     "minimax": {
+    //       "name": "MiniMax M2.5",
+    //       "id": "minimax/minimax-m2.5",
+    //       "family": "kortix",
+    //       "cost": { "input": 0.20, "output": 1.17 },
+    //       "limit": { "context": 196608, "output": 65536 }
+    //     }
+    //   }
+    // }
   },
   "plugin": [
     "./plugin/kortix-system/kortix-system.ts",

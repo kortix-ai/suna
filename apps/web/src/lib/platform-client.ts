@@ -70,6 +70,12 @@ function getPlatformUrl(): string {
   return 'http://localhost:8008/v1';
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isDbSandboxId(sandboxId: string | null | undefined): sandboxId is string {
+  return !!sandboxId && UUID_RE.test(sandboxId);
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps';
@@ -291,18 +297,16 @@ export async function getSandbox(): Promise<SandboxInfo | null> {
 }
 
 /**
- * Create a brand new sandbox. Unlike ensureSandbox(), this always provisions
- * a fresh one — it does NOT return an existing sandbox.
+ * Create a brand new remote sandbox. For local Docker this adopts an already
+ * running manual sandbox; it never starts, pulls, or creates a container.
  *
- * Use this when the user explicitly clicks "Cloud" or "Local Docker" in the
- * Instance Manager. For idempotent "make sure I have a sandbox" logic, use
- * ensureSandbox() instead.
+ * Use this when the user explicitly clicks a provider in the Instance Manager.
+ * For idempotent "make sure I have a sandbox" logic, use ensureSandbox() instead.
  */
 export async function createSandbox(opts?: {
   provider?: SandboxProviderName;
   serverType?: ServerTypeOption;
   name?: string;
-  onProgress?: (progress: SandboxCreateProgress) => void;
 }): Promise<{ sandbox: SandboxInfo }> {
   if (opts?.provider === 'local_docker') {
     const headers = {
@@ -326,52 +330,13 @@ export async function createSandbox(opts?: {
       return { sandbox: initData.data as SandboxInfo };
     }
 
-    if (initData.status === 'error') {
-      throw new Error(initData.message || initData.error || 'Failed to create sandbox');
-    }
-
-    if (initData.status === 'pulling') {
-      const reportProgress = (data: { progress?: number; message?: string }) => {
-        opts?.onProgress?.({
-          status: 'pulling',
-          progress: Math.max(0, Math.min(100, Number(data.progress) || 0)),
-          message: data.message || 'Pulling sandbox image...',
-        });
-      };
-
-      reportProgress(initData);
-
-      for (let attempt = 0; attempt < 360; attempt += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
-        const statusRes = await authenticatedFetch(`${getPlatformUrl()}/platform/init/local/status`, {
-          method: 'GET',
-        });
-        const statusData = await statusRes.json();
-
-        if (!statusRes.ok) {
-          throw new Error(statusData?.error || statusData?.message || `Platform API error ${statusRes.status}`);
-        }
-
-        if (statusData.status === 'ready' && statusData.data) {
-          return { sandbox: statusData.data as SandboxInfo };
-        }
-
-        if (statusData.status === 'error') {
-          throw new Error(statusData.message || statusData.error || 'Failed to create sandbox');
-        }
-
-        reportProgress(statusData);
-      }
-
-      throw new Error('Timed out while pulling sandbox image');
-    }
-
     if (initData.success && initData.data) {
       return { sandbox: initData.data as SandboxInfo };
     }
 
-    throw new Error(initData.error || initData.message || 'Failed to create sandbox');
+    throw new Error(
+      initData.error || initData.message || 'Local sandbox is not running. Start it manually with `pnpm dev:sandbox`, then try again.',
+    );
   }
 
   const result = await platformFetch<SandboxInfo>('/platform/sandbox', {
@@ -423,6 +388,10 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
 
     const row = response.data?.sandbox;
     if (!row) return null;
+    const providers = await getProviders().catch(() => null);
+    if (row.provider && providers && !providers.providers.includes(row.provider)) {
+      return null;
+    }
 
     return {
       sandbox_id: row.sandboxId,
@@ -831,7 +800,9 @@ export async function listSandboxes(sandboxId?: unknown): Promise<SandboxInfo[]>
       return rows;
     }
 
-    const withoutDuplicate = rows.filter((sandbox) => sandbox.sandbox_id !== discoveredLocal.sandbox_id);
+    const withoutDuplicate = rows.filter((sandbox) =>
+      sandbox.sandbox_id !== discoveredLocal.sandbox_id && sandbox.external_id !== discoveredLocal.external_id,
+    );
     return [discoveredLocal, ...withoutDuplicate];
   } catch {
     const discoveredLocal = await discoverLocalSandbox().catch(() => null);
@@ -1142,7 +1113,7 @@ export interface SandboxUpdateResult {
  * Update phases — Docker image-based flow.
  *
  * JustAVPS: backing_up → pulling → patching → stopping → restarting → verifying → complete
- * Local:    pulling → stopping → removing → recreating → health_check → complete
+ * Local Docker is manual-only and is not updated through the API.
  */
 export type UpdatePhase =
   | 'idle'
@@ -1192,7 +1163,21 @@ export function isDestructivePhase(phase: UpdatePhase): boolean {
 export async function getSandboxUpdateStatus(
   sandbox?: SandboxInfo,
 ): Promise<SandboxUpdateStatus> {
-  const url = sandbox?.sandbox_id
+  if (sandbox?.provider === 'local_docker') {
+    return {
+      phase: 'idle',
+      progress: 0,
+      message: 'Local Docker updates are manual-only.',
+      targetVersion: null,
+      previousVersion: null,
+      currentVersion: null,
+      error: null,
+      startedAt: null,
+      updatedAt: null,
+    };
+  }
+
+  const url = sandbox?.sandbox_id && isDbSandboxId(sandbox.sandbox_id)
     ? `${getPlatformUrl()}/platform/sandbox/${sandbox.sandbox_id}/update/status`
     : `${getPlatformUrl()}/platform/sandbox/update/status`;
   const res = await authenticatedFetch(url, {
@@ -1264,8 +1249,11 @@ export async function triggerSandboxUpdate(
   sandbox: SandboxInfo,
   version: string,
 ): Promise<SandboxUpdateResult> {
-  // Use per-sandbox route for cloud sandboxes, legacy route for local_docker
-  const url = sandbox.sandbox_id
+  if (sandbox.provider === 'local_docker') {
+    throw new Error('Local sandbox updates are manual-only. Rebuild/restart it with `pnpm dev:sandbox:build`.');
+  }
+
+  const url = sandbox.sandbox_id && isDbSandboxId(sandbox.sandbox_id)
     ? `${getPlatformUrl()}/platform/sandbox/${sandbox.sandbox_id}/update`
     : `${getPlatformUrl()}/platform/sandbox/update`;
   const res = await authenticatedFetch(url, {
@@ -1287,7 +1275,9 @@ export async function triggerSandboxUpdate(
  * Reset the update status on kortix-api (e.g. after a failed update to allow retry).
  */
 export async function resetSandboxUpdateStatus(sandbox?: SandboxInfo): Promise<void> {
-  const url = sandbox?.sandbox_id
+  if (sandbox?.provider === 'local_docker') return;
+
+  const url = sandbox?.sandbox_id && isDbSandboxId(sandbox.sandbox_id)
     ? `${getPlatformUrl()}/platform/sandbox/${sandbox.sandbox_id}/update/reset`
     : `${getPlatformUrl()}/platform/sandbox/update/reset`;
   const res = await authenticatedFetch(url, {
@@ -1300,7 +1290,11 @@ export async function resetSandboxUpdateStatus(sandbox?: SandboxInfo): Promise<v
 }
 
 export async function cancelSandboxUpdate(sandbox?: SandboxInfo): Promise<void> {
-  const url = sandbox?.sandbox_id
+  if (sandbox?.provider === 'local_docker') {
+    throw new Error('Local Docker updates are manual-only. Nothing to cancel.');
+  }
+
+  const url = sandbox?.sandbox_id && isDbSandboxId(sandbox.sandbox_id)
     ? `${getPlatformUrl()}/platform/sandbox/${sandbox.sandbox_id}/update/cancel`
     : `${getPlatformUrl()}/platform/sandbox/update/cancel`;
   const res = await authenticatedFetch(url, {

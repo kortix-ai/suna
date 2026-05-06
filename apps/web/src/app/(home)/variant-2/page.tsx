@@ -179,7 +179,7 @@ export default function Variant2Home() {
               </Reveal>
               <Reveal delay={0.1}>
                 <p className="mt-2 text-base text-muted-foreground leading-relaxed max-w-xl">
-                  Give an agent a goal. It plans, executes, self-verifies, and delivers a finished result. That&apos;s autowork.
+                  Give an agent a goal. It plans, executes, self-verifies, and delivers a finished result.
                 </p>
               </Reveal>
             </div>
@@ -233,7 +233,7 @@ export default function Variant2Home() {
                     {[
                       ['Agents', 'Markdown files with identity, permissions, tools, and triggers. Each one a specialist.'],
                       ['Skills', '60+ knowledge packs — coding, browser automation, deep research, legal writing, spreadsheets.'],
-                      ['Autowork', 'Autonomous execution loop. Works until done, self-verifies, only stops when correct.'],
+                      ['Goal loop', 'Autonomous execution loop. Works until done, self-verifies, only stops when correct.'],
                       ['Triggers', 'Cron schedules and webhooks in agent frontmatter. The machine works while you sleep.'],
                       ['Memory', 'Persistent, filesystem-based, semantic-searchable. The longer it runs, the smarter it gets.'],
                     ].map(([title, desc]) => (
@@ -348,7 +348,7 @@ export default function Variant2Home() {
                 </Reveal>
                 <Reveal delay={0.1}>
                   <p className="text-base text-muted-foreground leading-relaxed mb-8">
-                    Your agents run 24/7. Triggers fire them on schedule. Autowork keeps them going until the job is verified done. You check in from anywhere — whenever you want.
+                    Your agents run 24/7. Triggers fire them on schedule. Goal loops keep them going until the job is verified done. You check in from anywhere — whenever you want.
                   </p>
                 </Reveal>
                 <Reveal delay={0.2}>

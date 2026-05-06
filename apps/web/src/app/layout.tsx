@@ -198,7 +198,7 @@ export default async function RootLayout({
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>Kortix – The Autonomous Company Operating System</title>
         <meta name="description" content="A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory." />
-        <meta name="keywords" content="Kortix, autonomous company operating system, AI agents, self-driving company, cloud computer, AI automation, agent orchestration, autowork, AI triggers, persistent memory, autonomous workforce, AI operations" />
+        <meta name="keywords" content="Kortix, autonomous company operating system, AI agents, self-driving company, cloud computer, AI automation, agent orchestration, goal loops, AI triggers, persistent memory, autonomous workforce, AI operations" />
         <meta property="og:title" content="Kortix – The Autonomous Company Operating System" />
         <meta property="og:description" content="A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory." />
         <meta property="og:image" content="https://kortix.com/banner.png" />

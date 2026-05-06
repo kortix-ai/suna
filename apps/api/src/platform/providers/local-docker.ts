@@ -985,12 +985,11 @@ export class LocalDockerProvider implements SandboxProvider {
     const sandboxApiBase = getSandboxInternalApiUrl();
     const routerBase = `${sandboxApiBase}/v1/router`;
 
-    // Dev-mode bind-mounts: when running from a repo checkout, mount the
-    // host's `core/kortix-master` source tree over the image's baked copy so
-    // plugin/agent/config edits are live without rebuilding the image. Without
-    // this, `pnpm start` auto-provisions with whatever's baked into
-    // `kortix/computer:latest` — which lags the branch. Mirrors what
-    // `core/docker/docker-compose.dev.yml` does for manual compose runs.
+    // Dev-mode bind-mounts: when this explicit provider path is invoked from a
+    // repo checkout, mount the host's `core/kortix-master` source tree over the
+    // image's baked copy so plugin/agent/config edits are live without rebuilding
+    // the image. Mirrors what `core/docker/docker-compose.dev.yml` does for
+    // manual compose runs.
     const devBinds = buildDevSourceBinds();
     if (devBinds.length > 0) {
       console.log(`[LOCAL-DOCKER] Dev-mode: mounting ${devBinds.length} source path(s) over baked image`);

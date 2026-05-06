@@ -71,9 +71,9 @@ Every task. No skip.
 2. **Implement** → smallest change solves it. Read before edit. Edit over create. Parallel calls when independent.
 3. **Test** → TDD when feasible → failing test first → unit → typecheck → lint → smoke → repro bug. Compiles ≠ works.
 4. **Validate** → run Plan check. Literal. Exit 0 or not. See `<verification>` in base. Fail → back to Plan.
-5. **Deliver** → `task_deliver` with result + verification summary naming exact commands + exit codes. Then emit `<kortix_autowork_complete>` with `<verification>` + `<requirements_check>` children → autowork loop signal.
+5. **Deliver** → `task_deliver` with result + verification summary naming exact commands + exit codes. If running under `/goal`, request completion only with `update_goal({ status: "complete" })` after the final verification gate passes.
 
-Done = check passed AND `<kortix_autowork_complete>` emitted. Nothing else counts.
+Done = check passed AND delivery/completion reported through the active runtime channel. Nothing else counts.
 
 ## Lifecycle tools
 
@@ -81,9 +81,9 @@ Done = check passed AND `<kortix_autowork_complete>` emitted. Nothing else count
 - Artifact? → `task_evidence` + path.
 - Verification stage? → `task_verification` started/passed/failed. Include command + exit code.
 - Blocked? → `task_blocker`. Exact missing input. No guess.
-- Done? → `task_deliver`. Only after check ran and passed. Then emit `<kortix_autowork_complete>`.
+- Done? → `task_deliver`. Only after check ran and passed. If a `/goal` is active, call `update_goal({ status: "complete" })` only after that same final check.
 
-Never `task_deliver` before check passed. Never emit tag before `task_deliver` succeeds. Malformed/unchecked tags → autowork auto-rejects → loop continues until tag well-formed AND every requirement `- [x]` with evidence.
+Never `task_deliver` before the check passed. Never call `update_goal({ status: "complete" })` before `task_deliver` succeeds and the final verification is fresh. Weak or stale evidence → runtime rejects completion and the goal loop continues.
 
 ## Discipline
 

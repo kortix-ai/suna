@@ -74,6 +74,58 @@ function isExpectedStartupPreview(path: string, status: number, bodySnippet: str
 const MAX_SYNC_ATTEMPTS_PER_KEY = 3;
 let _lastSyncedKey: string | null = null;
 let _syncAttemptsForCurrentKey = 0;
+let _lastWorkingLocalServiceKey: string | null = null;
+
+export function getCachedLocalSandboxServiceKey(fallback = ''): string {
+  return _lastWorkingLocalServiceKey || fallback;
+}
+
+function rememberWorkingLocalServiceKey(serviceKey: string): void {
+  if (serviceKey) _lastWorkingLocalServiceKey = serviceKey;
+}
+
+function isAbortError(err: unknown): boolean {
+  const candidate = err as { name?: string; message?: string } | undefined;
+  return !!(
+    candidate?.name === 'AbortError' ||
+    candidate?.name === 'TimeoutError' ||
+    candidate?.message?.includes('The operation was aborted') ||
+    candidate?.message?.toLowerCase().includes('aborted')
+  );
+}
+
+function timeoutResponse(origin: string): Response {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (origin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+  }
+  return new Response(
+    JSON.stringify({
+      error: true,
+      message: 'Sandbox request timed out',
+      status: 504,
+    }),
+    { status: 504, headers },
+  );
+}
+
+async function fetchWithHeaderTimeout(
+  targetUrl: string,
+  init: RequestInit & { decompress?: boolean },
+): Promise<Response | null> {
+  const controller = new AbortController();
+  const connectTimer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    return await fetch(targetUrl, { ...init, signal: controller.signal } as RequestInit);
+  } catch (err) {
+    if (isAbortError(err)) return null;
+    throw err;
+  } finally {
+    clearTimeout(connectTimer);
+  }
+}
 
 function trySyncServiceKey(serviceKey: string): boolean {
   if (!serviceKey) return false;
@@ -217,7 +269,10 @@ export async function proxyToSandbox(
     headers.set(key, value);
   }
   headers.set('Host', new URL(sandboxBaseUrl).host);
-  const serviceKey = serviceKeyOverride || config.INTERNAL_SERVICE_KEY;
+  const configuredServiceKey = serviceKeyOverride || config.INTERNAL_SERVICE_KEY;
+  const serviceKey = !baseUrlOverride
+    ? getCachedLocalSandboxServiceKey(configuredServiceKey)
+    : configuredServiceKey;
   if (serviceKey) {
     headers.set('Authorization', `Bearer ${serviceKey}`);
   }
@@ -245,27 +300,18 @@ export async function proxyToSandbox(
     }
   }
 
-  // Abort handling — connection timeout only.
-  // The timer fires if the upstream doesn't return headers within FETCH_TIMEOUT_MS.
-  // Once headers arrive (fetch resolves), the timer is cleared so SSE / long-lived
-  // streams are never killed by the proxy timeout — regardless of whether the client
-  // sent Accept: text/event-stream (the OpenCode SDK doesn't).
-  const controller = new AbortController();
-  const connectTimer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-  const response = await fetch(targetUrl, {
+  const response = await fetchWithHeaderTimeout(targetUrl, {
     method,
     headers,
     body: incomingBody,
-    signal: controller.signal,
-    // @ts-ignore — Bun extension: no decompression, raw byte passthrough
+    // Bun extension: no decompression, raw byte passthrough
     decompress: false,
     redirect: 'manual',
   });
-
-  // Headers received — clear the connection timeout.
-  // The response body (potentially an SSE stream) continues flowing untouched.
-  clearTimeout(connectTimer);
+  if (!response) {
+    console.warn(`[LOCAL-PREVIEW] Upstream timed out before headers on ${method} ${path}`);
+    return timeoutResponse(origin);
+  }
 
   function sanitizeResponseHeaders(input: Headers): Headers {
     const out = new Headers(input);
@@ -293,19 +339,20 @@ export async function proxyToSandbox(
       console.log('[LOCAL-PREVIEW] 401 — retrying with container bootstrap key');
       const retryHeaders = new Headers(headers);
       retryHeaders.set('Authorization', `Bearer ${containerKey}`);
-      const retryController = new AbortController();
-      const retryTimer = setTimeout(() => retryController.abort(), FETCH_TIMEOUT_MS);
-      const retryResponse = await fetch(targetUrl, {
+      const retryResponse = await fetchWithHeaderTimeout(targetUrl, {
         method,
         headers: retryHeaders,
         body: incomingBody,
-        signal: retryController.signal,
-        // @ts-ignore
         decompress: false,
         redirect: 'manual',
       });
-      clearTimeout(retryTimer);
+      if (!retryResponse) {
+        console.warn(`[LOCAL-PREVIEW] Retry timed out before headers on ${method} ${path}`);
+        return timeoutResponse(origin);
+      }
       if (retryResponse.status !== 401) {
+        rememberWorkingLocalServiceKey(containerKey);
+        invalidateProviderCache(config.SANDBOX_CONTAINER_NAME);
         // Retry succeeded — push the working key back into the DB +
         // invalidate the provider cache so subsequent requests use it.
         void updateSandboxServiceKeyInDb(containerKey).catch(() => {});
@@ -325,18 +372,21 @@ export async function proxyToSandbox(
     // the container's bootstrap file (e.g. file missing on cloud sandboxes).
     const synced = trySyncServiceKey(serviceKey);
     if (synced) {
-      const retryController = new AbortController();
-      const retryTimer = setTimeout(() => retryController.abort(), FETCH_TIMEOUT_MS);
-      const retryResponse = await fetch(targetUrl, {
+      const retryResponse = await fetchWithHeaderTimeout(targetUrl, {
         method,
         headers,
         body: incomingBody,
-        signal: retryController.signal,
-        // @ts-ignore
         decompress: false,
         redirect: 'manual',
       });
-      clearTimeout(retryTimer);
+      if (!retryResponse) {
+        console.warn(`[LOCAL-PREVIEW] Retry after auth sync timed out before headers on ${method} ${path}`);
+        return timeoutResponse(origin);
+      }
+      if (retryResponse.status !== 401) {
+        rememberWorkingLocalServiceKey(serviceKey);
+        invalidateProviderCache(config.SANDBOX_CONTAINER_NAME);
+      }
       const retryHeaders = sanitizeResponseHeaders(retryResponse.headers);
       if (origin) {
         retryHeaders.set('Access-Control-Allow-Origin', origin);

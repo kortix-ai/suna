@@ -1,7 +1,7 @@
 import { type Plugin, tool } from "@opencode-ai/plugin"
 import type { Session, Todo } from "@opencode-ai/sdk"
 import { Database } from "bun:sqlite"
-import { ensureGlobalMemoryFiles, renderMergedMemoryContext, renderProjectContext, resolveKortixDir } from "./lib/paths"
+import { ensureGlobalMemoryFiles, renderMergedMemoryContext, renderProjectContext, resolveKortixDir, resolveKortixWorkspaceRoot } from "./lib/paths"
 import { MEMORY_CONTEXT_MARKER, upsertMemoryContextAtPromptEnd, wrapInKortixSystemTags } from "./lib/message-transform"
 import { DB_PATH, STORAGE_BASE, buildSessionLineage, changeSummary, formatMessages, getEnv, searchSessions, shortTs, ttcCompress } from "./lib/session"
 
@@ -15,14 +15,14 @@ function projectPathForSession(sessionID: string): string | null {
 			const row = db
 				.query("SELECT p.path FROM session_projects sp JOIN projects p ON sp.project_id = p.id WHERE sp.session_id = ? LIMIT 1")
 				.get(sessionID) as { path?: string } | null
-			const result = row?.path || null
+			const result = row?.path || resolveKortixWorkspaceRoot(import.meta.dir)
 			_projectPathCache.set(sessionID, result)
 			return result
 		} finally {
 			db.close()
 		}
 	} catch {
-		return null
+		return resolveKortixWorkspaceRoot(import.meta.dir)
 	}
 }
 

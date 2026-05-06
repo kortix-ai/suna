@@ -285,10 +285,9 @@ describe('Cloud Scan: Business Logic Vulnerabilities', () => {
       expect(r.status).toBe(401);
     });
 
-    test('POST /v1/setup/local-sandbox/warm is public but blocked on cloud', async () => {
+    test('POST /v1/setup/local-sandbox/warm is removed', async () => {
       const r = await probe('POST', '/v1/setup/local-sandbox/warm');
-      // Returns 403 "Local Docker provider is not enabled" on cloud
-      expect(r.status).toBe(403);
+      expect(r.status).toBe(404);
     });
   });
 });

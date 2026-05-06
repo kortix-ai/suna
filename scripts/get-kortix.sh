@@ -310,50 +310,8 @@ prompt_read() {
 
 warm_local_sandbox() {
   [ "$DEPLOY_MODE" = "local" ] || return 0
-
-  local warm_url="${API_PUBLIC_URL}/v1/setup/local-sandbox/warm"
-  local status_url="${API_PUBLIC_URL}/v1/setup/local-sandbox/warm/status"
-
-  dots "Pre-warming sandbox"
-  curl -sf -X POST "$warm_url" >/dev/null || {
-    printf "${YELLOW}skipped${NC}\n"
-    printf "    ${FADED}Onboarding will start the sandbox lazily.${NC}\n"
-    return 0
-  }
-
-  local attempts=0
-  local max_attempts=180
-  while [ $attempts -lt $max_attempts ]; do
-    local payload status progress message
-    payload=$(curl -sf "$status_url" 2>/dev/null || true)
-    status=$(JSON_PAYLOAD="$payload" python3 -c 'import json, os; data=json.loads(os.environ.get("JSON_PAYLOAD") or "{}"); print(data.get("status", ""))')
-    progress=$(JSON_PAYLOAD="$payload" python3 -c 'import json, os; data=json.loads(os.environ.get("JSON_PAYLOAD") or "{}"); print(data.get("progress", ""))')
-    message=$(JSON_PAYLOAD="$payload" python3 -c 'import json, os; data=json.loads(os.environ.get("JSON_PAYLOAD") or "{}"); print(data.get("message", ""))')
-
-    case "$status" in
-      ready)
-        dots_done
-        return 0
-        ;;
-      error)
-        printf "${YELLOW}error${NC}\n"
-        warn "Sandbox warmup: ${message:-unknown}"
-        return 0
-        ;;
-      pulling|creating)
-        printf "\r    ${CYAN}▸${NC}  Sandbox: ${message:-starting}${progress:+ (${progress}%%)}          "
-        ;;
-      *)
-        printf "\r    ${CYAN}▸${NC}  Sandbox: bootstrapping...          "
-        ;;
-    esac
-
-    sleep 2
-    attempts=$((attempts + 1))
-  done
-
-  printf "\n"
-  warn "Sandbox warmup timed out — the UI will continue waiting."
+  info "Local sandbox is manual-only; skipping automatic warmup."
+  printf "    ${FADED}Start/connect a sandbox explicitly when you need one.${NC}\n"
 }
 
 verify_local_image() {
@@ -488,7 +446,7 @@ free_kortix_ports() {
   if [ -n "$project_name" ]; then
     # Clean up containers from this compose project (e.g. kortix-frontend-1).
     # EXCLUDES standalone sandbox containers (kortix-sandbox, kortix-hosted-sandbox)
-    # which are managed by the API, not compose — killing them breaks dev mode.
+    # which are managed manually outside compose — killing them breaks dev mode.
     docker ps -a --format '{{.Names}}' 2>/dev/null \
       | grep -E "^${project_name}-" \
       | grep -v -E "^(kortix-sandbox|kortix-hosted-sandbox)$" \
@@ -1389,7 +1347,7 @@ _free_kortix_ports() {
   local freed=0
 
   # Clean up lingering compose containers from this project.
-  # EXCLUDES standalone sandbox containers (managed by the API, not compose).
+  # EXCLUDES standalone sandbox containers (managed manually outside compose).
   docker ps -a --format '{{.Names}}' 2>/dev/null \
     | grep -E "^${project_name}-" \
     | grep -v -E "^(kortix-sandbox|${SANDBOX_NAME})$" \
@@ -1483,55 +1441,14 @@ _wait_for_api_health() {
 
 _refresh_sandbox_container() {
   [ "$(_mode)" = "local" ] || return 0
-  local api_url warm_url status_url payload status progress message attempts
-  api_url="$(_api_url)"
-  warm_url="${api_url}/v1/setup/local-sandbox/warm"
-  status_url="${api_url}/v1/setup/local-sandbox/warm/status"
-
-  _info "Refreshing sandbox container..."
-  docker rm -f "$SANDBOX_NAME" >/dev/null 2>&1 || true
-
-  curl -sf -X POST "$warm_url" >/dev/null || {
-    _warn "Could not trigger sandbox warmup; it will recreate lazily on first use."
-    return 0
-  }
-
-  attempts=0
-  while [ $attempts -lt 180 ]; do
-    payload=$(curl -sf "$status_url" 2>/dev/null || true)
-    status=$(JSON_PAYLOAD="$payload" python3 -c 'import json, os; data=json.loads(os.environ.get("JSON_PAYLOAD") or "{}"); print(data.get("status", ""))')
-    progress=$(JSON_PAYLOAD="$payload" python3 -c 'import json, os; data=json.loads(os.environ.get("JSON_PAYLOAD") or "{}"); print(data.get("progress", ""))')
-    message=$(JSON_PAYLOAD="$payload" python3 -c 'import json, os; data=json.loads(os.environ.get("JSON_PAYLOAD") or "{}"); print(data.get("message", ""))')
-
-    case "$status" in
-      ready)
-        _ok "Sandbox refreshed"
-        return 0
-        ;;
-      error)
-        _warn "Sandbox refresh failed: ${message:-unknown}"
-        return 0
-        ;;
-      pulling|creating)
-        printf "\r  ${C}▸${N}  Sandbox: ${message:-starting}${progress:+ (${progress}%%)}          "
-        ;;
-      *)
-        printf "\r  ${C}▸${N}  Sandbox: bootstrapping...          "
-        ;;
-    esac
-
-    sleep 2
-    attempts=$((attempts + 1))
-  done
-
-  printf "\n"
-  _warn "Sandbox refresh timed out — it may still complete in the background."
+  _info "Leaving local sandbox untouched (manual-only)."
 }
 
 _banner() {
   printf "\n"
-  printf "  ${C}${B}Kortix CLI${N}  ${F}v${VERSION}${N}\n"
-  printf "  ${F}────────────────────────────────────────${N}\n"
+  printf "${C}╔════════════════════════════════════════╗${N}\n"
+  printf "${C}║             Kortix CLI                ║${N}\n"
+  printf "${C}╚════════════════════════════════════════╝${N}\n"
   _show_update_notice
 }
 
@@ -1541,13 +1458,6 @@ case "${1:-help}" in
     [ "$(_mode)" = "local" ] && _free_kortix_ports
     _sync_supabase_passwords
     docker compose up -d || true
-    # Also restart the sandbox container if it exists but is stopped
-    if docker ps -a --format '{{.Names}}' | grep -q "^${SANDBOX_NAME}$"; then
-      if ! docker ps --format '{{.Names}}' | grep -q "^${SANDBOX_NAME}$"; then
-        _info "Restarting sandbox container..."
-        docker start "$SANDBOX_NAME" 2>/dev/null || true
-      fi
-    fi
     echo ""
     _ok "Kortix is running!"
     printf "  ${W}Dashboard${N}:  ${C}$(_url)${N}\n\n"
@@ -1622,7 +1532,7 @@ case "${1:-help}" in
     if _wait_for_api_health; then
       _refresh_sandbox_container
     else
-      _warn "API did not become healthy in time; skipping sandbox refresh for now."
+      _warn "API did not become healthy in time; leaving local sandbox untouched."
     fi
     _refresh_installer_and_cli
     _ok "Updated and running."

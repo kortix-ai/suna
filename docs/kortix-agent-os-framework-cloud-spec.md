@@ -853,7 +853,7 @@ session_key = "lead:{{ body.lead_id }}"
 prompt = "Research the new lead and draft the first-touch email."
 
 [[heartbeats]]
-name = "autowork"
+name = "goal"
 interval = "15m"
 agent = "general"
 prompt = "Check open tasks, continue any safe background work, and report only material changes."
@@ -892,7 +892,7 @@ Best for real background agents.
 - memory and sessions accumulate,
 - triggers wake existing runtime,
 - channels feel continuous,
-- supports long-running Ralph/autowork loops.
+- supports long-running Ralph/goal loops.
 
 Use cases:
 
@@ -1071,7 +1071,7 @@ Heartbeats should:
 - prove the runtime is alive,
 - let persistent agents check queues/tasks,
 - resume safe background work,
-- drive Ralph/autowork loops,
+- drive Ralph/goal loops,
 - produce health telemetry.
 
 Example:

@@ -291,15 +291,15 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     // ── project_action: read/write tickets ─────────────────────────────────
 
     ticket_list: tool({
-      description: 'List tickets in the current project, optionally filtered by status (column key).',
+      description: 'List tickets in the global workspace, optionally filtered by status (column key).',
       args: {
         status: tool.schema.string().optional().describe('Column key filter — e.g. "backlog", "in_progress", "review", "done".'),
       },
       async execute(args: { status?: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const rows = listTickets(db, { projectId: pid, status: args.status })
-        if (!rows.length) return args.status ? `No tickets in column "${args.status}".` : 'No tickets in this project.'
+        if (!rows.length) return args.status ? `No tickets in column "${args.status}".` : 'No tickets in the global workspace.'
         return rows.map((t) => {
           const assignees = t.assignees.length
             ? ` — assignees: ${t.assignees.map((a) => `${a.assignee_type}:${a.assignee_id}`).join(', ')}`
@@ -314,7 +314,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: { id: tool.schema.string().describe('Ticket id (tk-…) or #number') },
       async execute(args: { id: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         let t = getTicket(db, args.id)
         if (!t && /^#?\d+$/.test(args.id)) {
           const n = Number(args.id.replace('#', ''))
@@ -340,7 +340,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       description: 'List the activity log (comments, status changes, assignments, etc.) for a ticket.',
       args: { id: tool.schema.string().describe('Ticket id') },
       async execute(args: { id: string }, ctx: ToolContext): Promise<string> {
-        if (!getProjectIdForCtx(mgr, ctx)) return 'Error: no project selected.'
+        if (!getProjectIdForCtx(mgr, ctx)) return 'Error: no session context.'
         const events = listTicketEvents(db, args.id)
         if (!events.length) return 'No events.'
         return events.map((e) => `[${e.created_at}] ${e.actor_type}${e.actor_id ? `:${e.actor_id}` : ''} · ${e.type}${e.message ? ` — ${e.message}` : ''}`).join('\n')
@@ -362,11 +362,11 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         template_id: tool.schema.string().optional(),
         assign_to: tool.schema.string().optional().describe('Comma-separated assignees (slugs). "user" for the human. Skips the column default-assignee when set.'),
         parent_id: tool.schema.string().optional().describe('Parent ticket id (tk-… or #number) to make this a sub-ticket. Required for contributors (non-PM). PM can also use it for explicit parent-child links.'),
-        milestone: tool.schema.string().optional().describe('Milestone reference (ms-… id, M-number like "M1", plain "1", or exact title) to link this ticket under. Optional but strongly preferred for project work.'),
+        milestone: tool.schema.string().optional().describe('Milestone reference (ms-… id, M-number like "M1", plain "1", or exact title) to link this ticket under. Optional but strongly preferred for workspace work.'),
       },
       async execute(args: { title: string; body_md?: string; status?: string; template_id?: string; assign_to?: string; parent_id?: string; milestone?: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
 
         // Resolve parent_id — accept #number or tk-… id.
@@ -468,7 +468,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         custom_fields_json: tool.schema.string().optional().describe('JSON object of custom field values to merge in.'),
       },
       async execute(args, ctx): Promise<string> {
-        if (!getProjectIdForCtx(mgr, ctx)) return 'Error: no project selected.'
+        if (!getProjectIdForCtx(mgr, ctx)) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
         let custom_fields: Record<string, unknown> | undefined
         if (args.custom_fields_json) {
@@ -487,7 +487,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         'Flow: move one column forward when your piece is done, or back if rework is needed.',
         'Skipping columns (e.g. in_progress → done past review) is blocked by default —',
         'the tool will return a warning naming the columns you\'d bypass. If the skip is',
-        'intentional (no QA on this project, trivial doc fix, etc.) re-call with',
+        'intentional (no QA in this workspace, trivial doc fix, etc.) re-call with',
         'continue_anyway: true and a reason.',
         'If the destination column has a default assignee (e.g. QA on review), they\'re',
         'auto-assigned and notified. Your own assignment is NOT auto-cleared by a move —',
@@ -501,7 +501,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
 
         const t = getTicket(db, args.id)
@@ -614,7 +614,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
         let resolvedId = args.assignee_id
         if (args.assignee_type === 'agent') {
@@ -650,7 +650,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
         let resolvedId = args.assignee_id
         if (args.assignee_type === 'agent') {
@@ -676,7 +676,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
         const r = addComment(db, {
           ticketId: args.id, body: args.body, actor_type: actor.type, actor_id: actor.id,
@@ -693,11 +693,11 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     // ── project_action: team + context reads ──────────────────────────────
 
     team_list: tool({
-      description: 'List all team agents in the current project (plus the user role).',
+      description: 'List all team agents in the global workspace (plus the user role).',
       args: {},
       async execute(_args: unknown, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const agents = listAgents(db, pid)
         const lines = ['- @user — real human. Tag when you need a decision an agent can\'t make.']
         for (const a of agents) {
@@ -714,7 +714,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: {},
       async execute(_args: unknown, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const proj = db.prepare('SELECT path FROM projects WHERE id=$id').get({ $id: pid }) as { path: string } | null
         if (!proj) return 'Error: project not found.'
         const body = await tryReadContext(proj.path)
@@ -752,7 +752,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: pid }) as { id: string; name: string; path: string; description: string } | null
         if (!proj) return 'Error: project not found.'
         if (getAgentBySlug(db, pid, args.slug)) return `Agent with slug "${args.slug}" already exists.`
@@ -801,7 +801,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: pid }) as { id: string; name: string; path: string; description: string } | null
         if (!proj) return 'Error: project not found.'
         const ag = getAgentBySlug(db, pid, args.slug)
@@ -863,7 +863,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: { slug: tool.schema.string() },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: pid }) as { id: string; name: string; path: string; description: string } | null
         if (!proj) return 'Error: project not found.'
         const ag = getAgentBySlug(db, pid, args.slug)
@@ -898,7 +898,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: { columns_json: tool.schema.string().describe('JSON array of column definitions in display order.') },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         let cols: any[]
         try { cols = JSON.parse(args.columns_json) } catch { return 'columns_json is not valid JSON.' }
         if (!Array.isArray(cols)) return 'columns_json must be an array.'
@@ -936,7 +936,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: { fields_json: tool.schema.string() },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         let fields: any[]
         try { fields = JSON.parse(args.fields_json) } catch { return 'fields_json is not valid JSON.' }
         if (!Array.isArray(fields)) return 'fields_json must be an array.'
@@ -950,7 +950,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: { templates_json: tool.schema.string() },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         let tpls: any[]
         try { tpls = JSON.parse(args.templates_json) } catch { return 'templates_json is not valid JSON.' }
         if (!Array.isArray(tpls)) return 'templates_json must be an array.'
@@ -964,7 +964,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: { body: tool.schema.string() },
       async execute(args, ctx): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const proj = db.prepare('SELECT id,name,path,description FROM projects WHERE id=$id').get({ $id: pid }) as { id: string; name: string; path: string; description: string } | null
         if (!proj) return 'Error: project not found.'
         await writeContextPreservingTeam(proj.path, args.body)
@@ -976,13 +976,13 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     // ── Milestones ─────────────────────────────────────────────────────────
 
     milestone_list: tool({
-      description: 'List milestones for the current project with per-milestone ticket progress (total/done/in_progress/blocked/review).',
+      description: 'List milestones for the global workspace with per-milestone ticket progress (total/done/in_progress/blocked/review).',
       args: {
         status: tool.schema.string().optional().describe('Filter: "open" (default), "closed", or "all"'),
       },
       async execute(args: { status?: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const filter = (args.status === 'closed' || args.status === 'all' ? args.status : 'open') as 'open' | 'closed' | 'all'
         const list = listMilestones(db, pid, filter)
         if (!list.length) return filter === 'open' ? 'No open milestones.' : 'No milestones.'
@@ -998,7 +998,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: { ref: tool.schema.string() },
       async execute(args: { ref: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const m = resolveMilestoneRefInCtx(db, pid, args.ref)
         if (!m) return `Milestone not found: ${args.ref}`
         const progress = computeMilestoneProgress(db, m.id)
@@ -1029,7 +1029,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args: { title: string; description_md?: string; acceptance_md?: string; due_at?: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
         try {
           const m = createMilestone(db, {
@@ -1060,7 +1060,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args: { ref: string; title?: string; description_md?: string; acceptance_md?: string; due_at?: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const m = resolveMilestoneRefInCtx(db, pid, args.ref)
         if (!m) return `Milestone not found: ${args.ref}`
         const actor = actorFromCtx(ctx)
@@ -1088,7 +1088,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args: { ref: string; summary_md: string; cancelled?: boolean }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const m = resolveMilestoneRefInCtx(db, pid, args.ref)
         if (!m) return `Milestone not found: ${args.ref}`
         const actor = actorFromCtx(ctx)
@@ -1109,7 +1109,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: { ref: tool.schema.string() },
       async execute(args: { ref: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const m = resolveMilestoneRefInCtx(db, pid, args.ref)
         if (!m) return `Milestone not found: ${args.ref}`
         const actor = actorFromCtx(ctx)
@@ -1128,7 +1128,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args: { ticket_id: string; milestone: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         // Resolve ticket.
         let ticket = getTicket(db, args.ticket_id)
         if (!ticket && /^#?\d+$/.test(args.ticket_id)) {
@@ -1174,9 +1174,9 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       args: {},
       async execute(_args: Record<string, never>, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const list = listCredentials(db, pid)
-        if (!list.length) return '(no credentials set for this project)'
+        if (!list.length) return '(no credentials set in the global workspace)'
         return list
           .map((c) => `- **${c.name}**${c.description ? ` — ${c.description}` : ''}${c.last_read_at ? ` (last read ${c.last_read_at})` : ''}`)
           .join('\n')
@@ -1185,21 +1185,21 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
 
     credential_get: tool({
       description: [
-        'Read the decrypted value of a project-scoped credential. Returns the raw secret — do NOT log, echo into a shell prompt, or paste into a ticket comment.',
+        'Read the decrypted value of a global workspace credential. Returns the raw secret — do NOT log, echo into a shell prompt, or paste into a ticket comment.',
         'Use this when you need an API key / token / connection string the project owns. If the credential does not exist in the project vault, try `getEnv(NAME)` for workspace-global defaults, then fall back to pinging the human on the ticket.',
         'Every call is audit-logged (actor + timestamp).',
       ].join(' '),
       args: { name: tool.schema.string().describe('Credential name — e.g. "STRIPE_API_KEY".') },
       async execute(args: { name: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
         try {
           const result = await readCredential(db, {
             project_id: pid, name: args.name,
             actor_type: actor.type, actor_id: actor.id,
           })
-          if (!result) return `not_found: no credential named "${args.name}" in this project's vault`
+          if (!result) return `not_found: no credential named "${args.name}" in the global workspace vault`
           return result.value
         } catch (err) {
           return `Error: ${err instanceof Error ? err.message : String(err)}`
@@ -1208,7 +1208,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     }),
 
     credential_set: tool({
-      description: 'Upsert a project-scoped credential. The value is AES-256-GCM encrypted at rest and scoped to this project only — other projects cannot read it. Use this when the human replies with a secret value after a block-for-creds ticket.',
+      description: 'Upsert a global workspace credential. The value is AES-256-GCM encrypted at rest and scoped to this Kortix instance. Use this when the human replies with a secret value after a block-for-creds ticket.',
       args: {
         name: tool.schema.string().describe('Credential name — e.g. "STRIPE_API_KEY". Letters, digits, underscore; no leading digit.'),
         value: tool.schema.string().describe('The secret value. Will be encrypted immediately; never logged.'),
@@ -1216,7 +1216,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
       },
       async execute(args: { name: string; value: string; description?: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
         try {
           const { created } = await upsertCredential(db, {
@@ -1224,7 +1224,7 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
             description: args.description ?? null,
             actor_type: actor.type, actor_id: actor.id,
           })
-          return `${created ? 'Created' : 'Updated'} credential **${args.name}** in this project's vault.`
+          return `${created ? 'Created' : 'Updated'} credential **${args.name}** in the global workspace vault.`
         } catch (err) {
           return `Error: ${err instanceof Error ? err.message : String(err)}`
         }
@@ -1232,11 +1232,11 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
     }),
 
     credential_delete: tool({
-      description: 'Delete a project-scoped credential. Audit log entry is preserved (the name persists in the event row even after the row is gone).',
+      description: 'Delete a global workspace credential. Audit log entry is preserved (the name persists in the event row even after the row is gone).',
       args: { name: tool.schema.string() },
       async execute(args: { name: string }, ctx: ToolContext): Promise<string> {
         const pid = getProjectIdForCtx(mgr, ctx)
-        if (!pid) return 'Error: no project selected.'
+        if (!pid) return 'Error: no session context.'
         const actor = actorFromCtx(ctx)
         const deleted = deleteCredential(db, {
           project_id: pid, name: args.name,
@@ -1244,13 +1244,13 @@ export function ticketTools(db: Database, mgr: ProjectManager, client: any) {
         })
         return deleted
           ? `Deleted credential **${args.name}**.`
-          : `No credential named "${args.name}" in this project's vault.`
+          : `No credential named "${args.name}" in the global workspace vault.`
       },
     }),
   }
 }
 
-/** Resolve a user-provided milestone reference within a project context.
+/** Resolve a user-provided milestone reference within the global workspace context.
  *  Accepts: ms-… id · "M1"/"M-1"/"1" number · exact title. Returns null if not
  *  resolvable. Kept module-local so the tools stay terse. */
 function resolveMilestoneRefInCtx(db: Database, projectId: string, ref: string) {
@@ -1307,4 +1307,3 @@ export function ticketToolGateHook(db: Database) {
     }
   }
 }
-

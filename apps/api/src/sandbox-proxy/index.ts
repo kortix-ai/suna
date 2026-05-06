@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
-import { eq, and, ne } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { config } from '../config';
 import { combinedAuth } from '../middleware/auth';
 import { preview, proxyToDaytona } from './routes/preview';
-import { proxyToSandbox } from './routes/local-preview';
+import { getCachedLocalSandboxServiceKey, proxyToSandbox } from './routes/local-preview';
 import { getAuthToken } from './routes/auth';
 import { shareApp } from './routes/share';
 import { db } from '../shared/db';
@@ -121,7 +121,7 @@ export async function resolveProvider(externalId: string): Promise<{ provider: C
   // rows with that same external_id from other accounts. Never use a global DB
   // lookup to resolve the local bridge — route it directly to the local proxy.
   if (isLocalBridgeSandboxId(externalId)) {
-    const fallbackServiceKey = config.INTERNAL_SERVICE_KEY;
+    const fallbackServiceKey = getCachedLocalSandboxServiceKey(config.INTERNAL_SERVICE_KEY);
     providerCache.set(externalId, {
       provider: 'local_docker',
       baseUrl: '',
@@ -147,12 +147,12 @@ export async function resolveProvider(externalId: string): Promise<{ provider: C
 
   try {
     const [sandbox] = await db
-      .select({ provider: sandboxes.provider, baseUrl: sandboxes.baseUrl, config: sandboxes.config, metadata: sandboxes.metadata })
+      .select({ provider: sandboxes.provider, status: sandboxes.status, baseUrl: sandboxes.baseUrl, config: sandboxes.config, metadata: sandboxes.metadata })
       .from(sandboxes)
       .where(
         and(
           eq(sandboxes.externalId, externalId),
-          ne(sandboxes.status, 'pooled'),
+          eq(sandboxes.status, 'active'),
         )
       )
       .limit(1);
@@ -162,6 +162,9 @@ export async function resolveProvider(externalId: string): Promise<{ provider: C
     }
 
     const provider = sandbox.provider as CachedProviderName;
+    if (!config.ALLOWED_SANDBOX_PROVIDERS.includes(provider)) {
+      return null;
+    }
     const baseUrl = sandbox.baseUrl || '';
     const configJson = (sandbox.config || {}) as Record<string, unknown>;
     const serviceKey = typeof configJson.serviceKey === 'string' ? configJson.serviceKey : '';

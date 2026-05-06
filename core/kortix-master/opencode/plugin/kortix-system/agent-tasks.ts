@@ -42,12 +42,12 @@ import {
 
 // ── Session tracking ─────────────────────────────────────────────────────────
 
-let autoworkActiveSessions: Set<string>
+let goalActiveSessions: Set<string>
 try {
-	const mod = require("./autowork/autowork")
-	autoworkActiveSessions = mod.autoworkActiveSessions ?? new Set<string>()
+	const mod = require("./goal/goal")
+	goalActiveSessions = mod.goalActiveSessions ?? new Set<string>()
 } catch {
-	autoworkActiveSessions = new Set<string>()
+	goalActiveSessions = new Set<string>()
 }
 
 const activeTaskSessions = new Set<string>()
@@ -133,7 +133,7 @@ export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 
 	async function createTaskExecute(args: { title: string; description?: string; verification_condition?: string; autostart?: boolean; status?: string }, ctx: ToolContext): Promise<string> {
 		const pid = getProjectId(ctx)
-		if (!pid) return "Error: no project selected."
+		if (!pid) return "Error: no session context."
 
 		const shouldStart = args.autostart !== false
 		const created = createTask(db, {
@@ -165,7 +165,7 @@ export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 
 	async function taskUpdateExecute(args: { id: string; action: string; message?: string }, ctx: ToolContext): Promise<string> {
 		const pid = getProjectId(ctx)
-		if (!pid) return "Error: no project selected."
+		if (!pid) return "Error: no session context."
 		const task = getTaskByIdForProject(db, args.id, pid)
 		if (!task) return `Task not found: ${args.id}`
 
@@ -227,16 +227,16 @@ export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 
 	async function taskListExecute(args: { status?: string }, ctx: ToolContext): Promise<string> {
 		const pid = getProjectId(ctx)
-		if (!pid) return "Error: no project selected."
+		if (!pid) return "Error: no session context."
 		const tasks = await listTasksResolved(db, client as OpenCodeClientLike, { projectId: pid, status: args.status })
-		if (!tasks.length) return args.status ? `No ${args.status} tasks.` : "No tasks in this project."
+		if (!tasks.length) return args.status ? `No ${args.status} tasks.` : "No tasks in the global workspace."
 		const icon = (s: string) => s === "in_progress" ? "→" : s === "input_needed" ? "◐" : s === "awaiting_review" ? "◌" : s === "completed" ? "✓" : s === "cancelled" ? "✗" : "○"
 		return tasks.map((t) => `${icon(t.status)} **${t.id}** ${t.title} — ${t.status}${t.owner_session_id ? ` [session: ${t.owner_session_id}]` : ""}`).join("\n")
 	}
 
 	async function taskGetExecute(args: { id: string }, ctx: ToolContext): Promise<string> {
 		const pid = getProjectId(ctx)
-		if (!pid) return "Error: no project selected."
+		if (!pid) return "Error: no session context."
 		const task = await getTaskResolvedForProject(db, client as OpenCodeClientLike, args.id, pid)
 		if (!task) return `Task not found: ${args.id}`
 		const lines = [
@@ -256,7 +256,7 @@ export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 
 	async function taskStatusExecute(args: { id: string }, ctx: ToolContext): Promise<string> {
 		const pid = getProjectId(ctx)
-		if (!pid) return "Error: no project selected."
+		if (!pid) return "Error: no session context."
 		const task = getTaskByIdForProject(db, args.id, pid)
 		if (!task) return `Task not found: ${args.id}`
 		const live = await getTaskLiveStatus(db, client as OpenCodeClientLike, task.id)
@@ -279,7 +279,7 @@ export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 			description: [
 				"Create a task. By default, immediately spawns a worker to execute it.",
 				"Set autostart=false to create without running (stays in todo for later).",
-				"Worker runs autonomously in an autowork loop and should report structured delivery/blockers back to the orchestrator.",
+				"Worker runs autonomously in a goal loop and should report structured delivery/blockers back to the orchestrator.",
 			].join(" "),
 			args: {
 				title: tool.schema.string().describe("What needs to be done"),
@@ -449,7 +449,7 @@ export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 
 		// ── agent_task_list ──────────────────────────────────────
 		agent_task_list: tool({
-			description: "List all tasks in the current project.",
+			description: "List all tasks in the global workspace.",
 			args: {
 				status: tool.schema.string().optional().describe("Filter by status"),
 			},
@@ -459,7 +459,7 @@ export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 		}),
 
 		task_list: tool({
-			description: "Canonical task list tool. Lists tasks in the current project.",
+			description: "Canonical task list tool. Lists tasks in the global workspace.",
 			args: {
 				status: tool.schema.string().optional().describe("Filter by status"),
 			},
@@ -516,7 +516,7 @@ export async function handleAgentTaskSessionEvent(
 	if (!task) return
 
 	if (eventType === "session.idle") {
-		if (autoworkActiveSessions.has(sessionId)) return
+		if (goalActiveSessions.has(sessionId)) return
 
 		if (task.status === "awaiting_review" || task.status === "input_needed") {
 			activeTaskSessions.delete(sessionId)

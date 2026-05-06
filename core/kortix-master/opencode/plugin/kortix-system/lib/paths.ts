@@ -134,7 +134,7 @@ function normalizeMemoryBody(text: string): string[] {
 
 /**
  * Render global memory context from USER.md + MEMORY.md.
- * Project context is handled separately and injected per selected project.
+ * Global workspace context is handled separately and injected for every session.
  */
 export function renderMergedMemoryContext(anchorDir?: string): string {
 	const globalFiles = ensureGlobalMemoryFiles(anchorDir)

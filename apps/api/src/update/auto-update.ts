@@ -2,8 +2,7 @@ import { eq } from 'drizzle-orm';
 import { sandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { config } from '../config';
-import { getProvider, type ProviderName } from '../platform/providers';
-import { LocalDockerProvider, getSandboxUpdateStatus } from '../platform/providers/local-docker';
+import type { ProviderName } from '../platform/providers';
 import { executeUpdate } from './executor';
 import { getUpdateStatus } from './status';
 import { getLatestVersionForChannel, hasNewerSandboxVersion, type VersionChannel } from '../platform/routes/version';
@@ -24,7 +23,7 @@ export interface SandboxAutoUpdatePolicy {
 const DEFAULT_INTERVAL_MS = 10 * 60_000;
 const DEFAULT_RETRY_COOLDOWN_MS = 6 * 60 * 60_000;
 const ACTIVE_PHASES = new Set(['pulling', 'patching', 'backing_up', 'stopping', 'removing', 'recreating', 'restarting', 'verifying', 'starting', 'health_check', 'preflight']);
-const AUTO_UPDATE_PROVIDERS = new Set<ProviderName>(['justavps', 'local_docker']);
+const AUTO_UPDATE_PROVIDERS = new Set<ProviderName>(['justavps']);
 
 let interval: ReturnType<typeof setInterval> | null = null;
 let running = false;
@@ -75,7 +74,6 @@ function getCurrentVersion(row: typeof sandboxes.$inferSelect) {
   const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
   const version = metadata.version;
   if (typeof version === 'string' && version.trim()) return version.trim();
-  if (row.provider === 'local_docker') return process.env.SANDBOX_VERSION || 'unknown';
   return null;
 }
 
@@ -87,20 +85,10 @@ function shouldRetry(policy: SandboxAutoUpdatePolicy, targetVersion: string, now
 }
 
 function isProviderAutoUpdateAllowed(provider: ProviderName): boolean {
-  if (!AUTO_UPDATE_PROVIDERS.has(provider)) return false;
-
-  // Local Docker updates stop and recreate a fixed container name. That is safe
-  // only when an operator deliberately opts in; otherwise the cloud/dev API can
-  // kill the `pnpm dev:sandbox` compose container that shares that name.
-  if (provider === 'local_docker') return config.SANDBOX_AUTO_UPDATE_LOCAL_DOCKER_ENABLED;
-
-  return true;
+  return AUTO_UPDATE_PROVIDERS.has(provider);
 }
 
 async function getCurrentUpdatePhase(row: typeof sandboxes.$inferSelect) {
-  if (row.provider === 'local_docker') {
-    return getSandboxUpdateStatus().phase;
-  }
   return (await getUpdateStatus(row.sandboxId)).phase;
 }
 
@@ -116,13 +104,7 @@ async function triggerAutoUpdate(row: typeof sandboxes.$inferSelect, targetVersi
     lastError: null,
   });
 
-  if (row.provider === 'local_docker') {
-    const provider = getProvider('local_docker');
-    if (!(provider instanceof LocalDockerProvider)) throw new Error('local_docker provider unavailable');
-    await provider.updateSandbox(targetVersion);
-  } else {
-    await executeUpdate(row.sandboxId, targetVersion);
-  }
+  await executeUpdate(row.sandboxId, targetVersion);
 
   await updatePolicy(row.sandboxId, metadata, {
     ...policy,
@@ -145,7 +127,7 @@ async function scanOnce() {
   try {
     const rows = (await db.select().from(sandboxes)).filter((row) =>
       (row.status === 'active' || row.status === 'stopped')
-      && (row.provider === 'justavps' || row.provider === 'local_docker'),
+      && row.provider === 'justavps',
     );
 
     for (const row of rows) {

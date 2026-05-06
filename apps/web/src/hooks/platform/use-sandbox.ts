@@ -47,6 +47,8 @@ function stableIdForSandbox(sandbox: SandboxInfo, isPrimary: boolean): string {
  * Returns the server ID of the registered entry, or null if sandbox has no external_id.
  */
 function registerSandboxServer(sandbox: SandboxInfo, autoSwitch: boolean, isPrimary: boolean): string | null {
+  if (sandbox.status !== 'active') return null;
+
   if (!sandbox.external_id) {
     console.warn('[useSandbox] Sandbox missing external_id, skipping registration');
     return null;
@@ -132,8 +134,6 @@ export function useSandbox() {
         .filter((s) => s.id !== 'default')
         .filter((s) => !!s.provider && !!s.instanceId)
         .filter((s) => s.id === 'cloud-sandbox' || s.id.startsWith('sandbox-'))
-        .filter((s) => s.instanceId !== routeInstance)
-        .filter((s) => s.id !== store.activeServerId)
         .filter((s) => !activeInstanceIds.has(s.instanceId!))
         .map((s) => s.id);
 

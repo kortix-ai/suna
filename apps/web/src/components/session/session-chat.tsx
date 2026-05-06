@@ -363,7 +363,7 @@ function SystemMessageIndicator({
 }) {
   if (messages.length === 0) return null;
 
-  // Combine all messages into a single line: "Autowork · iteration 3/50"
+  // Combine all messages into a single line: "Goal · iteration 3/50"
   const parts = messages.map((msg) =>
     msg.detail ? `${msg.label} · ${msg.detail}` : msg.label,
   );
@@ -3179,7 +3179,7 @@ function SessionTurn({
   }, [turn.userMessage.parts]);
   const [sessionReportModalOpen, setSessionReportModalOpen] = useState(false);
 
-  // Extract kortix_system messages for inline rendering (autowork continuations, etc.)
+  // Extract kortix_system messages for inline rendering (goal continuations, etc.)
   const systemMessages = useMemo<KortixSystemMessage[]>(() => {
     const msgs: KortixSystemMessage[] = [];
     for (const p of turn.userMessage.parts) {

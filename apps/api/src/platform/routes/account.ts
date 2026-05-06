@@ -10,10 +10,9 @@
  */
 
 import { Hono } from 'hono';
-import { eq, and, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, desc, ne } from 'drizzle-orm';
 import { sandboxes, type Database } from '@kortix/db';
 import { db as defaultDb } from '../../shared/db';
-import { createApiKey } from '../../repositories/api-keys';
 import { supabaseAuth as authMiddleware } from '../../middleware/auth';
 import {
   getProvider as defaultGetProvider,
@@ -25,7 +24,6 @@ import {
 import type { AuthVariables } from '../../types';
 import { resolveAccountId as defaultResolveAccountId } from '../../shared/resolve-account';
 import { config } from '../../config';
-import { generateSandboxName } from '../services/ensure-sandbox';
 import { registerCreator as ensureSandboxCreatorMember } from '../../teams';
 
 // ─── Dependency Injection ────────────────────────────────────────────────────
@@ -73,13 +71,87 @@ function serializeSandbox(row: typeof sandboxes.$inferSelect) {
   };
 }
 
+async function adoptRunningLocalSandbox(
+  db: Database,
+  accountId: string,
+  userId: string,
+): Promise<{ row: typeof sandboxes.$inferSelect; created: boolean } | null> {
+  const { LocalDockerProvider } = await import('../providers/local-docker');
+  const provider = new LocalDockerProvider();
+  const existing = await provider.find();
+
+  if (!existing || existing.status !== 'running') {
+    return null;
+  }
+
+  const metadata = {
+    containerName: existing.name,
+    containerId: existing.containerId,
+    image: existing.image,
+    mappedPorts: existing.mappedPorts,
+    manualLocal: true,
+  };
+
+  const [existingRow] = await db
+    .select()
+    .from(sandboxes)
+    .where(
+      and(
+        eq(sandboxes.accountId, accountId),
+        eq(sandboxes.provider, 'local_docker'),
+        ne(sandboxes.status, 'archived'),
+      ),
+    )
+    .orderBy(desc(sandboxes.createdAt))
+    .limit(1);
+
+  let row: typeof sandboxes.$inferSelect | undefined;
+  if (existingRow) {
+    [row] = await db
+      .update(sandboxes)
+      .set({
+        externalId: existing.name,
+        baseUrl: existing.baseUrl,
+        status: 'active',
+        metadata: {
+          ...(existingRow.metadata as Record<string, unknown> | null ?? {}),
+          ...metadata,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(sandboxes.sandboxId, existingRow.sandboxId))
+      .returning();
+  } else {
+    [row] = await db
+      .insert(sandboxes)
+      .values({
+        accountId,
+        name: 'Local Sandbox',
+        provider: 'local_docker',
+        externalId: existing.name,
+        status: 'active',
+        baseUrl: existing.baseUrl,
+        config: {},
+        metadata,
+      })
+      .returning();
+  }
+
+  if (!row) {
+    throw new Error('Failed to persist local sandbox state');
+  }
+
+  await ensureSandboxCreatorMember(db, row.sandboxId, userId);
+  return { row, created: !existingRow };
+}
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createAccountRouter(
   overrides: Partial<AccountRouterDeps> = {},
 ): Hono<{ Variables: AuthVariables }> {
   const deps = { ...defaultDeps, ...overrides };
-  const { db, getProvider, getDefaultProviderName, getAvailableProviders, resolveAccountId } = deps;
+  const { db, getDefaultProviderName, getAvailableProviders, resolveAccountId } = deps;
 
   const router = new Hono<{ Variables: AuthVariables }>();
 
@@ -135,6 +207,28 @@ export function createAccountRouter(
         }
       }
 
+      if (targetProvider === 'local_docker') {
+        if (!config.isLocalDockerEnabled()) {
+          return c.json({ success: false, error: 'Local Docker provider is not enabled' }, 403);
+        }
+
+        const adopted = await adoptRunningLocalSandbox(db, accountId, userId);
+        if (!adopted) {
+          return c.json({
+            success: false,
+            status: 'not_running',
+            code: 'LOCAL_SANDBOX_NOT_RUNNING',
+            error: 'Local sandbox is not running. Start it manually with `pnpm dev:sandbox`, then try again.',
+          }, 409);
+        }
+
+        console.log(`[PLATFORM] Adopted manually-started local sandbox ${adopted.row.sandboxId} for account ${accountId}`);
+        return c.json(
+          { success: true, data: serializeSandbox(adopted.row), created: adopted.created },
+          adopted.created ? 201 : 200,
+        );
+      }
+
       const { ensureSandbox } = await import('../services/ensure-sandbox');
       const { row, created } = await ensureSandbox({
         accountId,
@@ -155,10 +249,10 @@ export function createAccountRouter(
   });
 
   // ─── POST /init/local ──────────────────────────────────────────────────
-  // Local Docker sandbox init with async image pull + progress polling.
-  // Returns immediately with { status: 'pulling', progress: 0 } if image
-  // is missing, or creates the sandbox synchronously if image exists.
-  // Frontend polls GET /init/local/status for pull progress.
+  // Manual-only local Docker adoption. The API must never pull, create, start,
+  // or recreate `kortix-sandbox`; operators start it explicitly with
+  // `pnpm dev:sandbox` / docker compose, then this route records the running
+  // container in the DB for the signed-in user.
 
   router.post('/init/local', async (c) => {
     if (!config.isLocalDockerEnabled()) {
@@ -169,332 +263,70 @@ export function createAccountRouter(
 
     try {
       const accountId = await resolveAccountId(userId);
+      const adopted = await adoptRunningLocalSandbox(db, accountId, userId);
 
-      // If there's already an active sandbox, return it
-      const [active] = await db
-        .select()
-        .from(sandboxes)
-        .where(
-          and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.provider, 'local_docker'),
-            eq(sandboxes.status, 'active'),
-          ),
-        )
-        .limit(1);
-
-      if (active) {
-        return c.json({ success: true, data: serializeSandbox(active), status: 'ready' });
+      if (!adopted) {
+        return c.json({
+          success: false,
+          status: 'not_running',
+          code: 'LOCAL_SANDBOX_NOT_RUNNING',
+          error: 'Local sandbox is not running. Start it manually with `pnpm dev:sandbox`, then try again.',
+        }, 409);
       }
 
-      // Check if a provisioning sandbox already exists (pull in progress)
-      const [provisioning] = await db
-        .select()
-        .from(sandboxes)
-        .where(
-          and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.provider, 'local_docker'),
-            eq(sandboxes.status, 'provisioning'),
-          ),
-        )
-        .limit(1);
-
-      if (provisioning) {
-        const { getImagePullStatus, LocalDockerProvider } = await import('../providers/local-docker');
-        const pullStatus = getImagePullStatus();
-
-        // Stale provisioning row: nothing is actually pulling (e.g. server restarted
-        // or previous attempt failed). Check if the container is already running
-        // (the pull + create may have succeeded before the restart). If so, heal
-        // the row to 'active'. Otherwise mark as error and re-provision.
-        if (pullStatus.state === 'idle' || pullStatus.state === 'error') {
-          // Check if container is already running (auto-heal)
-          try {
-            const dockerProvider = new LocalDockerProvider();
-            const existing = await dockerProvider.find();
-            if (existing && existing.status === 'running') {
-              console.log(`[PLATFORM] Auto-healing stale provisioning row ${provisioning.sandboxId} — container is running`);
-              const [healed] = await db
-                .update(sandboxes)
-                .set({
-                  externalId: existing.name,
-                  baseUrl: existing.baseUrl,
-                  status: 'active',
-                  metadata: {
-                    containerName: existing.name,
-                    containerId: existing.containerId,
-                    image: existing.image,
-                    mappedPorts: existing.mappedPorts,
-                  },
-                  updatedAt: new Date(),
-                })
-                .where(eq(sandboxes.sandboxId, provisioning.sandboxId))
-                .returning();
-              if (healed) {
-                return c.json({ success: true, data: serializeSandbox(healed), status: 'ready' });
-              }
-            }
-          } catch (healErr) {
-            console.warn(`[PLATFORM] Auto-heal check failed:`, healErr);
-          }
-
-          console.warn(`[PLATFORM] Stale provisioning row ${provisioning.sandboxId} with pull state '${pullStatus.state}', cleaning up...`);
-          await db
-            .update(sandboxes)
-            .set({ status: 'error', updatedAt: new Date() })
-            .where(eq(sandboxes.sandboxId, provisioning.sandboxId));
-          // Fall through to provision fresh below
-        } else {
-          return c.json({
-            success: true,
-            status: pullStatus.state === 'done' ? 'creating' : 'pulling',
-            progress: pullStatus.progress,
-            message: pullStatus.message,
-          });
-        }
-      }
-
-      // Check if image exists locally
-      const provider = getProvider('local_docker' as ProviderName);
-      const { LocalDockerProvider } = await import('../providers/local-docker');
-      if (!(provider instanceof LocalDockerProvider)) {
-        return c.json({ success: false, error: 'local_docker provider not available' }, 400);
-      }
-
-      const hasImage = await provider.hasImage();
-      const sandboxName = await generateSandboxName(accountId);
-
-      if (hasImage) {
-        // Image exists — create sandbox row first, then provision
-        const [sandbox] = await db
-          .insert(sandboxes)
-          .values({
-            accountId,
-            name: sandboxName,
-            provider: 'local_docker',
-            externalId: '',
-            status: 'provisioning',
-            baseUrl: '',
-            config: {},
-            metadata: {},
-          })
-          .returning();
-
-        await ensureSandboxCreatorMember(db, sandbox.sandboxId, userId);
-
-        // Create sandbox-managed API key
-        const sandboxKey = await createApiKey({
-          sandboxId: sandbox.sandboxId,
-          accountId,
-          title: 'Sandbox Token',
-          type: 'sandbox',
-        });
-
-        let result: Awaited<ReturnType<typeof provider.create>> | null = null;
-        let racedWithExistingContainer = false;
-        try {
-          result = await provider.create({
-            accountId,
-            userId,
-            name: sandboxName,
-            envVars: { KORTIX_TOKEN: sandboxKey.secretKey },
-          });
-        } catch (createErr) {
-          const message = createErr instanceof Error ? createErr.message : String(createErr);
-          if (!message.includes('already in use')) throw createErr;
-
-          console.warn(`[PLATFORM] Local sandbox create raced with an existing container; returning creating state and letting status polling heal it.`);
-          racedWithExistingContainer = true;
-        }
-
-        if (racedWithExistingContainer) {
-          return c.json({
-            success: true,
-            status: 'creating',
-            progress: 95,
-            message: 'Sandbox container already exists, waiting for it to become ready…',
-          }, 202);
-        }
-
-        const [updated] = await db
-          .update(sandboxes)
-          .set({
-            externalId: result!.externalId,
-            status: 'active',
-            baseUrl: result!.baseUrl,
-            metadata: result!.metadata,
-            updatedAt: new Date(),
-          })
-          .where(eq(sandboxes.sandboxId, sandbox.sandboxId))
-          .returning();
-
-        if (!updated) {
-          return c.json({ success: false, error: 'Failed to persist sandbox state' }, 500);
-        }
-
-        console.log(`[PLATFORM] Local sandbox ${sandbox.sandboxId} created for account ${accountId}`);
-        return c.json({ success: true, data: serializeSandbox(updated), status: 'ready' }, 201);
-      }
-
-      // Image missing — insert provisioning row and pull in background
-      const [placeholder] = await db
-        .insert(sandboxes)
-        .values({
-          accountId,
-          name: sandboxName,
-          provider: 'local_docker',
-          externalId: '',
-          status: 'provisioning',
-          baseUrl: '',
-          config: {},
-          metadata: {},
-        })
-        .returning();
-
-      await ensureSandboxCreatorMember(db, placeholder.sandboxId, userId);
-
-      // Create sandbox-managed API key (before background pull so it's ready)
-      const sandboxKey = await createApiKey({
-        sandboxId: placeholder.sandboxId,
-        accountId,
-        title: 'Sandbox Token',
-        type: 'sandbox',
-      });
-
-      console.log(`[PLATFORM] Starting image pull for account ${accountId}...`);
-
-      // Background: pull image → create container → update DB row
-      (async () => {
-        try {
-          await provider.pullImage();
-
-          const result = await provider.create({
-            accountId,
-            userId,
-            name: sandboxName,
-            envVars: { KORTIX_TOKEN: sandboxKey.secretKey },
-          });
-
-          await db
-            .update(sandboxes)
-            .set({
-              externalId: result.externalId,
-              baseUrl: result.baseUrl,
-              status: 'active',
-              metadata: result.metadata,
-              updatedAt: new Date(),
-            })
-            .where(eq(sandboxes.sandboxId, placeholder.sandboxId));
-
-          console.log(`[PLATFORM] Local sandbox ${placeholder.sandboxId} provisioned after image pull`);
-        } catch (err) {
-          console.error(`[PLATFORM] Background provisioning failed:`, err);
-          await db
-            .update(sandboxes)
-            .set({ status: 'error', updatedAt: new Date() })
-            .where(eq(sandboxes.sandboxId, placeholder.sandboxId));
-        }
-      })();
-
-      return c.json({
-        success: true,
-        status: 'pulling',
-        progress: 0,
-        message: 'Pulling sandbox image... this may take a few minutes',
-      }, 202);
+      console.log(`[PLATFORM] Adopted manually-started local sandbox ${adopted.row.sandboxId} for account ${accountId}`);
+      return c.json({ success: true, data: serializeSandbox(adopted.row), status: 'ready' }, adopted.created ? 201 : 200);
     } catch (err) {
       console.error('[PLATFORM] init/local error:', err);
       const message = err instanceof Error ? err.message : String(err);
-      return c.json({ success: false, error: `Failed to initialize local sandbox: ${message}` }, 500);
+      return c.json({ success: false, error: `Failed to adopt local sandbox: ${message}` }, 500);
     }
   });
 
   // ─── GET /init/local/status ───────────────────────────────────────────
-  // Poll endpoint for local sandbox provisioning progress.
+  // Manual-only local status probe. This endpoint only inspects the container;
+  // it never pulls, creates, starts, or mutates DB state.
 
   router.get('/init/local/status', async (c) => {
     if (!config.isLocalDockerEnabled()) {
       return c.json({ success: false, error: 'Local Docker provider is not enabled' }, 403);
     }
 
-    const userId = c.get('userId');
-
     try {
-      const accountId = await resolveAccountId(userId);
+      const { LocalDockerProvider } = await import('../providers/local-docker');
+      const provider = new LocalDockerProvider();
+      const existing = await provider.find();
 
-      const [row] = await db
-        .select()
-        .from(sandboxes)
-        .where(
-          and(
-            eq(sandboxes.accountId, accountId),
-            eq(sandboxes.provider, 'local_docker'),
-          ),
-        )
-        .orderBy(desc(sandboxes.createdAt))
-        .limit(1);
-
-      if (!row) {
-        return c.json({ success: true, status: 'none', message: 'No sandbox found' });
-      }
-
-      if (row.status === 'active') {
-        return c.json({ success: true, status: 'ready', data: serializeSandbox(row) });
-      }
-
-      if (row.status === 'provisioning') {
-        const { getImagePullStatus, LocalDockerProvider } = await import('../providers/local-docker');
-        const pullStatus = getImagePullStatus();
-
-        // Auto-heal: if in-memory pull state is idle (e.g. server restarted after
-        // the pull + container creation succeeded), check if the container is
-        // actually running. If so, transition the DB row to 'active'.
-        if (pullStatus.state === 'idle' || pullStatus.state === 'done') {
-          try {
-            const provider = new LocalDockerProvider();
-            const existing = await provider.find();
-            if (existing && existing.status === 'running') {
-              console.log(`[PLATFORM] Auto-healing stale provisioning row ${row.sandboxId} — container is running`);
-              const [healed] = await db
-                .update(sandboxes)
-                .set({
-                  externalId: existing.name,
-                  baseUrl: existing.baseUrl,
-                  status: 'active',
-                  metadata: {
-                    containerName: existing.name,
-                    containerId: existing.containerId,
-                    image: existing.image,
-                    mappedPorts: existing.mappedPorts,
-                  },
-                  updatedAt: new Date(),
-                })
-                .where(eq(sandboxes.sandboxId, row.sandboxId))
-                .returning();
-              if (healed) {
-                return c.json({ success: true, status: 'ready', data: serializeSandbox(healed) });
-              }
-            }
-          } catch (healErr) {
-            console.warn(`[PLATFORM] Auto-heal check failed:`, healErr);
-          }
-        }
-
+      if (!existing || existing.status !== 'running') {
         return c.json({
           success: true,
-          status: pullStatus.state === 'error' ? 'error' : 'pulling',
-          progress: pullStatus.progress,
-          message: pullStatus.message,
-          error: pullStatus.error,
+          status: 'none',
+          message: 'Local sandbox is not running. Start it manually with `pnpm dev:sandbox`.',
         });
       }
 
-      if (row.status === 'error') {
-        return c.json({ success: true, status: 'error', message: 'Sandbox provisioning failed' });
+      const healthUrl = config.SANDBOX_NETWORK
+        ? `http://${config.SANDBOX_CONTAINER_NAME}:8000/kortix/health`
+        : `http://localhost:${config.SANDBOX_PORT_BASE || 14000}/kortix/health`;
+
+      try {
+        const health = await fetch(healthUrl, { signal: AbortSignal.timeout(3000) });
+        if (health.ok) {
+          const payload = await health.json() as { status?: string; runtimeReady?: boolean };
+          if (payload.status === 'ok' && payload.runtimeReady === true) {
+            return c.json({ success: true, status: 'ready', message: 'Local sandbox is running' });
+          }
+        }
+      } catch {
+        // Container is running but health endpoint is still warming up.
       }
 
-      return c.json({ success: true, status: row.status });
+      return c.json({
+        success: true,
+        status: 'creating',
+        progress: 95,
+        message: 'Local sandbox container is running and finishing Kortix boot...',
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ success: false, error: message }, 500);

@@ -371,7 +371,7 @@ function VariantSelector({
 // AutoContinue Mode Selector
 // ============================================================================
 
-export type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3';
+export type AutoContinueMode = 'goal' | 'goal1' | 'goal2' | 'goal3';
 
 interface AutoContinueAlgorithm {
   id: AutoContinueMode;
@@ -387,11 +387,11 @@ interface AutoContinueAlgorithm {
 
 const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
   {
-    id: 'autowork',
+    id: 'goal',
     label: 'Kraemer',
     role: 'Executor',
     description: 'Fast TDD loop — reliable for clear specs',
-    commandName: 'autowork',
+    commandName: 'goal',
     bestFor: 'Clear specs, coding tasks, "just build it" work',
     strengths: [
       'Reliable and balanced speed/cost',
@@ -402,14 +402,14 @@ const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
       'Can miss subtle edge cases that need deeper second-pass reasoning',
       'No adversarial self-review — trusts its own DONE claim',
     ],
-    howItWorks: 'The original autowork algorithm. Runs an autonomous loop where the agent works until it emits DONE, then enters a verification phase where it self-reviews and emits VERIFIED. Simple binary loop — no staged validators, no critic, no phase system. The agent drives its own process.',
+    howItWorks: 'The goal algorithm runs an autonomous loop where the agent works until it can prove completion, then requests runtime-verified completion. Simple binary loop — no staged validators, no critic, no phase system. The agent drives its own process.',
   },
   {
-    id: 'autowork1',
+    id: 'goal1',
     label: 'Kubet',
     role: 'Validator',
     description: 'Adversarial review — catches hidden issues',
-    commandName: 'autowork1',
+    commandName: 'goal1',
     bestFor: 'Correctness-critical tasks — ops planning, complex logic, risk analysis',
     strengths: [
       'Catches hidden issues through forced adversarial self-review',
@@ -424,11 +424,11 @@ const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
     howItWorks: 'After the agent claims DONE, the system drives it through a 3-level validator pipeline:\n\nLevel 1 (Format) — Are all files valid? Does the build pass? Any syntax errors?\nLevel 2 (Quality) — Do tests pass? Are requirements traced? Any anti-patterns?\nLevel 3 (Top-Notch) — Adversarial edge cases, performance review, regression sweep.\n\nThe agent must pass each level before advancing. If a level fails, the agent fixes issues and retries that level.\n\nDuring the work phase, an async process critic fires periodically to check: is the agent going in circles? Skipping tests? Gold-plating? The critic injects course-correction prompts without interrupting the task itself.\n\nThe agent cannot skip validators by emitting DONE and VERIFIED together — the system forces the full pipeline.',
   },
   {
-    id: 'autowork2',
+    id: 'goal2',
     label: 'Ino',
     role: 'Decomposer',
     description: 'Kanban cards — structured per-module work',
-    commandName: 'autowork2',
+    commandName: 'goal2',
     bestFor: 'Multi-domain tasks — investigations, audits, research, modular systems',
     strengths: [
       'Strong structured breakdown into discrete work units',
@@ -443,11 +443,11 @@ const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
     howItWorks: 'Work is organized as a kanban board. The agent decomposes the task into cards, each prefixed with a stage:\n\n[BACKLOG] — Waiting to start\n[IN PROGRESS] — Currently being worked on (max 1 at a time)\n[REVIEW] — Self-review checkpoint\n[TESTING] — Run tests for this specific card\n[DONE] — Fully verified\n\nCards progress through stages in order. The system monitors todo items for these prefixes and provides stage-aware continuation prompts. If the agent claims DONE but cards aren\'t all in [DONE], the system rejects it.\n\nAfter all cards complete, a final integration check runs across the entire project.',
   },
   {
-    id: 'autowork3',
+    id: 'goal3',
     label: 'Saumya',
     role: 'Architect',
     description: 'Entropy search — diverge then compress',
-    commandName: 'autowork3',
+    commandName: 'goal3',
     bestFor: 'Design, strategy, architecture — problems with ambiguity',
     strengths: [
       'Fastest and cheapest across all tasks',
@@ -481,7 +481,7 @@ function InfinityOff({ className, strokeWidth = 2 }: { className?: string; strok
   );
 }
 
-const DEFAULT_AUTOCONTINUE_MODE: AutoContinueMode = 'autowork';
+const DEFAULT_AUTOCONTINUE_MODE: AutoContinueMode = 'goal';
 
 function AutoContinueSelector({
   selected,

@@ -6858,12 +6858,9 @@ function cleanWorkerOutput(raw: string): string {
   text = text.replace(/^\*\*Status:\*\*.*\n?/m, '');
   text = text.replace(/^\*\*Session:\*\*.*\n?/m, '');
   text = text.replace(/^\*\*Duration:\*\*.*\n?/m, '');
-  // Strip autowork plugin-injected wrappers and the structured completion
-  // contract so the rendered UI stays readable. These are protocol messages,
-  // not user-facing content.
-  text = text.replace(/<kortix_autowork_system[^>]*>[\s\S]*?<\/kortix_autowork_system>/g, '');
-  text = text.replace(/<kortix_autowork_request[^>]*>[\s\S]*?<\/kortix_autowork_request>/g, '');
-  text = text.replace(/<kortix_autowork_complete[^>]*>[\s\S]*?<\/kortix_autowork_complete>/g, '');
+  // Strip goal plugin-injected wrappers so the rendered UI stays readable.
+  // These are protocol messages, not user-facing content.
+  text = text.replace(/<kortix_goal_system[^>]*>[\s\S]*?<\/kortix_goal_system>/g, '');
   // Strip agent_task bookkeeping output
   text = text.replace(/^Task \*\*task-[a-z0-9]+\*\* created and started\..*$/gm, '');
   text = text.replace(/^Task \*\*task-[a-z0-9]+\*\* created:.*$/gm, '');

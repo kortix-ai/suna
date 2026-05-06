@@ -199,7 +199,7 @@ export default function Home() {
             {[
               { icon: <Bot className="size-4" />, title: 'Agents', desc: 'Markdown files with their own identity, permissions, tools, and triggers. A support agent, a bookkeeper, a recruiter, a sales rep — each a specialist operating inside the same machine.' },
               { icon: <Sparkles className="size-4" />, title: 'Skills', desc: 'Reusable knowledge packs that teach agents how to do real work — coding, browser automation, deep research, legal writing, spreadsheets, data analysis, and more. 60+ built-in, and writing new ones is just writing code.' },
-              { icon: <RefreshCw className="size-4" />, title: 'Autowork', desc: 'The autonomous execution loop. An agent works until the task is done, self-verifies, and only stops when it can prove the result is correct.' },
+              { icon: <RefreshCw className="size-4" />, title: 'Goal loop', desc: 'The autonomous execution loop. An agent works toward a goal, self-verifies, and only stops when it can prove the result is correct.' },
               { icon: <Zap className="size-4" />, title: 'Triggers', desc: 'Time-driven or event-driven. Cron schedules and webhooks with prompt, command, or HTTP actions. Git-versionable config. Morning briefings, recurring jobs, real-time reactions.' },
               { icon: <Brain className="size-4" />, title: 'Memory', desc: 'Persistent, filesystem-based, and shared across all agents. Every decision, preference, and context is retained on the same machine. The longer the system runs, the smarter the whole company gets.' },
               { icon: <GitFork className="size-4" />, title: 'Orchestration', desc: 'One agent delegates to many. Projects, background sessions, parallel sub-agents. A primary orchestrator decomposes work and tracks it to completion — like departments in a company.' },
@@ -282,7 +282,7 @@ export default function Home() {
                 <ConfigCard
                   icon={<Terminal className="size-4 text-foreground" />}
                   title="Commands"
-                  desc="Slash commands that trigger structured workflows. /autowork and /onboarding — your playbooks, automated."
+                  desc="Slash commands that trigger structured workflows. /goal and /onboarding — your playbooks, automated."
                 />
                 <ConfigCard
                   icon={<Zap className="size-4 text-foreground" />}
@@ -301,7 +301,7 @@ export default function Home() {
                 <span className="text-sm font-semibold text-foreground">Deploy and check in</span>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed mb-4 max-w-xl">
-                Your agents run 24/7. Triggers fire them on schedule. Autowork keeps them going until the job is verified done. You check in from the dashboard, your phone, or your team&apos;s messaging platform — whenever you want.
+                Your agents run 24/7. Triggers fire them on schedule. Goal loops keep them going until the job is verified done. You check in from the dashboard, your phone, or your team&apos;s messaging platform — whenever you want.
               </p>
               <div className="flex flex-wrap gap-2">
                 <IntegrationPill icon={<Globe className="size-4 text-foreground" />} name="Web" />

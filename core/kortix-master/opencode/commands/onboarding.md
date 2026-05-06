@@ -59,10 +59,7 @@ If softer ("later", "just let me in", "skip the tools part"):
 
 Before the first user-visible message:
 
-1. `project_create(name: "workspace", description: "Main workspace", path: "/workspace")`
-2. `project_select(project: "workspace")`
-
-If create fails because "workspace" exists, only `project_select`. Do NOT `project_list` or ask which project.
+The global Kortix workspace is already active. Do **not** create or select projects.
 
 ---
 

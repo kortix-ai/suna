@@ -679,7 +679,7 @@ export default function HomeWip() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 {[
                   { icon: <Layers className="size-4" />, title: 'Skills', desc: '60+ built-in capability packs — coding, browser automation, research, spreadsheets, deck-building. Add your own as code.' },
-                  { icon: <Workflow className="size-4" />, title: 'Autowork loop', desc: 'Suna self-verifies. It plans, executes, checks the output, retries — and only stops when the deliverable is provably done.' },
+                  { icon: <Workflow className="size-4" />, title: 'Goal loop', desc: 'Suna self-verifies. It plans, executes, checks the output, retries — and only stops when the deliverable is provably done.' },
                   { icon: <GitFork className="size-4" />, title: 'Orchestration', desc: 'A primary agent decomposes work and delegates to parallel sub-agents. Like assembling a team for the job.' },
                 ].map(({ icon, title, desc }) => (
                   <div key={title} className="rounded-2xl border border-border bg-card/40 p-6">

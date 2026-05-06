@@ -48,13 +48,40 @@ const STAGE_ORDER: Record<string, number> = {
   services_ready: 6,
 };
 
+const TERMINAL_PROVIDER_FAILURE_PREFIXES = [
+  'Machine not found on provider',
+  'Machine was deleted by the provider',
+  'Machine provisioning failed',
+];
+
+export function isTerminalProviderFailure(metadata: Record<string, unknown>): boolean {
+  const messages = [
+    metadata.provisioningError,
+    metadata.lastProvisioningError,
+    metadata.errorMessage,
+  ];
+
+  return messages.some((value) => (
+    typeof value === 'string'
+    && TERMINAL_PROVIDER_FAILURE_PREFIXES.some((prefix) => value.startsWith(prefix))
+  ));
+}
+
+export function shouldPollProvisioningSandbox(row: { status: string; metadata: unknown }): boolean {
+  if (row.status === 'provisioning') return true;
+  if (row.status !== 'error') return false;
+
+  const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
+  return !isTerminalProviderFailure(metadata);
+}
+
 export function stripFailureMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
   return stripSandboxInitFailureMetadata(metadata);
 }
 
-export function nextRecoveredStatus(currentStatus: 'provisioning' | 'error', ready: boolean): 'provisioning' | 'active' {
+export function nextRecoveredStatus(currentStatus: string, ready: boolean): 'provisioning' | 'active' {
   if (ready) return 'active';
-  return currentStatus === 'error' ? 'provisioning' : currentStatus;
+  return 'provisioning';
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -122,14 +149,16 @@ async function pollProvisioningSandboxes(): Promise<void> {
         ),
       );
 
-    if (rows.length === 0) {
+    const pollableRows = rows.filter(shouldPollProvisioningSandbox);
+
+    if (pollableRows.length === 0) {
       _running = false;
       return;
     }
 
     // Process in batches to avoid hammering JustAVPS
-    for (let i = 0; i < rows.length; i += MAX_CONCURRENT) {
-      const batch = rows.slice(i, i + MAX_CONCURRENT);
+    for (let i = 0; i < pollableRows.length; i += MAX_CONCURRENT) {
+      const batch = pollableRows.slice(i, i + MAX_CONCURRENT);
       await Promise.allSettled(batch.map((sandbox) => pollSingleSandbox(sandbox)));
     }
   } catch (err) {
@@ -340,7 +369,7 @@ async function pollSingleSandbox(sandbox: typeof sandboxes.$inferSelect): Promis
         externalId: sandbox.externalId,
         event: 'provision_poll',
         status: 'error',
-        message: errorMeta.provisioningError,
+        message: typeof errorMeta.provisioningError === 'string' ? errorMeta.provisioningError : 'Machine provisioning failed',
         timestamp: new Date().toISOString(),
       });
       return;

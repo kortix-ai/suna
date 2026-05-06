@@ -140,6 +140,14 @@ function getProviderDisplayName(providerName: ProviderName): string {
   }
 }
 
+function enabledSandboxProviders(): ProviderName[] {
+  return config.ALLOWED_SANDBOX_PROVIDERS as ProviderName[];
+}
+
+function isProviderEnabled(providerName: string | null | undefined): boolean {
+  return !!providerName && enabledSandboxProviders().includes(providerName as ProviderName);
+}
+
 // ─── Factory ─────────────────────────────────────────────────────────────────
 
 export function createCloudSandboxRouter(
@@ -207,6 +215,7 @@ export function createCloudSandboxRouter(
         .where(
           and(
             eq(sandboxes.accountId, accountId),
+            inArray(sandboxes.provider, enabledSandboxProviders()),
             inArray(sandboxes.status, ['active', 'provisioning', 'stopped', 'error']),
           ),
         )
@@ -831,7 +840,8 @@ export function createCloudSandboxRouter(
         ownerAccountIds: access.ownerAccountIds,
         isPlatformAdmin: access.isPlatformAdmin,
       };
-      return c.json({ success: true, data: rows.map((r) => serializeSandbox(r, viewer)) });
+      const enabledRows = rows.filter((row) => isProviderEnabled(row.provider));
+      return c.json({ success: true, data: enabledRows.map((r) => serializeSandbox(r, viewer)) });
     } catch (err) {
       console.error('[SANDBOX-CLOUD] list error:', err);
       return c.json({ success: false, error: 'Failed to list sandboxes' }, 500);

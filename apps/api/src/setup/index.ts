@@ -32,9 +32,7 @@ setupApp.use('/*', async (c, next) => {
   if (
     c.req.path.endsWith('/install-status') ||
     c.req.path.endsWith('/sandbox-providers') ||
-    c.req.path.endsWith('/bootstrap-owner') ||
-    c.req.path.endsWith('/local-sandbox/warm') ||
-    c.req.path.endsWith('/local-sandbox/warm/status')
+    c.req.path.endsWith('/bootstrap-owner')
   ) {
     return next();
   }
@@ -144,58 +142,6 @@ async function setSandboxEnv(keys: Record<string, string>): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keys }),
   }, 15000);
-}
-
-async function getLocalSandboxWarmStatus() {
-  const { getImagePullStatus, LocalDockerProvider } = await import('../platform/providers/local-docker');
-  const provider = new LocalDockerProvider();
-  const existing = await provider.find();
-  const sandboxHealthUrl = config.SANDBOX_NETWORK
-    ? `http://${config.SANDBOX_CONTAINER_NAME}:8000/kortix/health`
-    : `http://localhost:${config.SANDBOX_PORT_BASE || 14000}/kortix/health`;
-
-  if (existing && existing.status === 'running') {
-    try {
-      const health = await fetchWithTimeout(sandboxHealthUrl, {}, 3000);
-      if (health.ok) {
-        const payload = await health.json() as { status?: string; runtimeReady?: boolean };
-        if (payload.status === 'ok' && payload.runtimeReady === true) {
-          return { success: true, status: 'ready', data: existing };
-        }
-      }
-    } catch {
-      // still warming
-    }
-
-    return {
-      success: true,
-      status: 'creating',
-      progress: 95,
-      message: 'Sandbox container is running and finishing Kortix boot...',
-    };
-  }
-
-  const pullStatus = getImagePullStatus();
-  if (pullStatus.state === 'pulling') {
-    return {
-      success: true,
-      status: 'pulling',
-      progress: pullStatus.progress,
-      message: pullStatus.message,
-    };
-  }
-
-  if (pullStatus.state === 'error') {
-    return {
-      success: true,
-      status: 'error',
-      progress: pullStatus.progress,
-      message: pullStatus.message,
-      error: pullStatus.error,
-    };
-  }
-
-  return { success: true, status: 'none', message: 'No local sandbox warmup in progress' };
 }
 
 function parseEnvFile(path: string): Record<string, string> {
@@ -312,7 +258,7 @@ setupApp.get('/sandbox-providers', async (c) => {
 
   // Provider capabilities — tells the frontend how to handle provisioning UI
   const capabilities: Record<string, { async: boolean; events: boolean; polling: boolean }> = {
-    local_docker: { async: false, events: false, polling: true },
+    local_docker: { async: false, events: false, polling: false },
     daytona: { async: false, events: false, polling: false },
     justavps: { async: true, events: true, polling: false },
   };
@@ -322,39 +268,6 @@ setupApp.get('/sandbox-providers', async (c) => {
     default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'local_docker'),
     capabilities: Object.fromEntries(available.map((p) => [p, capabilities[p] || { async: false, events: false, polling: false }])),
   });
-});
-
-setupApp.post('/local-sandbox/warm', async (c) => {
-  if (!config.isLocalDockerEnabled()) {
-    return c.json({ success: false, error: 'Local Docker provider is not enabled' }, 403);
-  }
-
-  const current = await getLocalSandboxWarmStatus();
-  if (current.status === 'ready' || current.status === 'pulling' || current.status === 'creating') {
-    return c.json(current, current.status === 'ready' ? 200 : 202);
-  }
-
-  const { LocalDockerProvider } = await import('../platform/providers/local-docker');
-  const provider = new LocalDockerProvider();
-
-  void provider.ensure().catch((err) => {
-    console.error('[setup] local sandbox warmup failed:', err);
-  });
-
-  return c.json({
-    success: true,
-    status: 'creating',
-    progress: 1,
-    message: 'Starting local sandbox warmup...',
-  }, 202);
-});
-
-setupApp.get('/local-sandbox/warm/status', async (c) => {
-  if (!config.isLocalDockerEnabled()) {
-    return c.json({ success: false, error: 'Local Docker provider is not enabled' }, 403);
-  }
-
-  return c.json(await getLocalSandboxWarmStatus());
 });
 
 setupApp.post('/bootstrap-owner', async (c) => {

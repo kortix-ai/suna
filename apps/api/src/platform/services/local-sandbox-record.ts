@@ -1,5 +1,4 @@
-import { and, desc, eq, ne } from 'drizzle-orm';
-import { accounts, sandboxes, type Database } from '@kortix/db';
+import { sandboxes, type Database } from '@kortix/db';
 import { config } from '../../config';
 
 type SandboxRow = typeof sandboxes.$inferSelect;
@@ -17,15 +16,6 @@ type LocalSandboxRecord = Pick<
   | 'isIncluded'
   | 'stripeSubscriptionItemId'
 >;
-
-function isLocalDatabaseUrl(): boolean {
-  try {
-    const host = new URL(config.DATABASE_URL).hostname.toLowerCase();
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === 'host.docker.internal' || host.startsWith('supabase_db_');
-  } catch {
-    return false;
-  }
-}
 
 function getMappedPorts(): Record<string, string> {
   const base = config.SANDBOX_PORT_BASE || 14000;
@@ -121,74 +111,12 @@ async function getLocalSandboxSnapshot(): Promise<{
   }
 }
 
-async function findExistingLocalSandboxRow(db: Database): Promise<SandboxRow | null> {
-  const [row] = await db
-    .select()
-    .from(sandboxes)
-    .where(
-      and(
-        eq(sandboxes.provider, 'local_docker'),
-        eq(sandboxes.externalId, config.SANDBOX_CONTAINER_NAME),
-        ne(sandboxes.status, 'archived'),
-      ),
-    )
-    .orderBy(desc(sandboxes.updatedAt), desc(sandboxes.createdAt))
-    .limit(1);
-
-  return row ?? null;
-}
-
-export async function ensureGenericLocalSandboxRecord(db: Database): Promise<LocalSandboxRecord | null> {
+export async function ensureGenericLocalSandboxRecord(_db: Database): Promise<LocalSandboxRecord | null> {
   const snapshot = await getLocalSandboxSnapshot();
   if (!snapshot) return null;
 
-  // If a local API is pointed at a shared/remote Supabase database, the generic
-  // local bridge must not mutate or reuse global `external_id = kortix-sandbox`
-  // rows from other accounts. Return a synthetic local record; authenticated
-  // routes can still create a user-owned local row via POST /platform/init/local.
-  if (!isLocalDatabaseUrl()) {
-    return syntheticLocalSandbox(snapshot);
-  }
-
-  const existing = await findExistingLocalSandboxRow(db);
-
-  if (existing) {
-    const [updated] = await db
-      .update(sandboxes)
-      .set({
-        name: 'Local Sandbox',
-        provider: 'local_docker',
-        externalId: snapshot.externalId,
-        status: 'active',
-        baseUrl: snapshot.baseUrl,
-        metadata: {
-          ...(existing.metadata as Record<string, unknown> | null ?? {}),
-          ...snapshot.metadata,
-        },
-        updatedAt: new Date(),
-      })
-      .where(eq(sandboxes.sandboxId, existing.sandboxId))
-      .returning();
-
-    return updated ?? existing;
-  }
-
-  const [account] = await db.select().from(accounts).limit(1);
-  if (!account) return null;
-
-  const [created] = await db
-    .insert(sandboxes)
-    .values({
-      accountId: account.accountId,
-      name: 'Local Sandbox',
-      provider: 'local_docker',
-      externalId: snapshot.externalId,
-      status: 'active',
-      baseUrl: snapshot.baseUrl,
-      config: {},
-      metadata: snapshot.metadata,
-    })
-    .returning();
-
-  return created ?? null;
+  // Read-only discovery: never create/update DB rows from the unauthenticated
+  // bridge. Authenticated users can explicitly adopt a manually-running local
+  // sandbox via POST /platform/init/local.
+  return syntheticLocalSandbox(snapshot);
 }

@@ -184,7 +184,6 @@ const envSchema = z.object({
   SANDBOX_VERSION:             optStr,  // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN:                optStr,  // optional: authenticated GitHub API calls for changelog
   SANDBOX_AUTO_UPDATE_ENABLED: optBoolTrue,
-  SANDBOX_AUTO_UPDATE_LOCAL_DOCKER_ENABLED: optBoolFalse,
   SANDBOX_AUTO_UPDATE_INTERVAL_MS: optInt(10 * 60_000),
   SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: optInt(6 * 60 * 60_000),
 
@@ -531,7 +530,6 @@ export const config = {
   SANDBOX_AUTO_UPDATE_ENABLED: sandboxAutoUpdateExplicitlyConfigured
     ? env.SANDBOX_AUTO_UPDATE_ENABLED
     : env.ENV_MODE === 'cloud',
-  SANDBOX_AUTO_UPDATE_LOCAL_DOCKER_ENABLED: env.SANDBOX_AUTO_UPDATE_LOCAL_DOCKER_ENABLED,
   SANDBOX_AUTO_UPDATE_INTERVAL_MS: env.SANDBOX_AUTO_UPDATE_INTERVAL_MS,
   SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: env.SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS,
 
