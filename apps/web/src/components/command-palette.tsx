@@ -543,12 +543,13 @@ export function CommandPalette() {
   }, [allPaletteItems, hasQuery, query]);
 
   // ── Submenu: agents ──
-  // Project-only agents (orchestrator/project-maintainer/worker) are hidden
-  // from the palette when the multi-project paradigm is off — their bodies
-  // reference project tools that aren't registered in default mode.
+  // Project-only agents (orchestrator/project-maintainer/worker/project-manager)
+  // are hidden from the palette when the multi-project paradigm is off —
+  // their bodies reference project tools that aren't registered in default
+  // mode. Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
   const visibleAgents = useMemo(() => {
     if (!agents) return [];
-    const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker']);
+    const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker', 'project-manager']);
     return agents.filter(
       (a) => !a.hidden && (featureFlags.enableMultiProject || !projectOnlyAgents.has(a.name))
     );

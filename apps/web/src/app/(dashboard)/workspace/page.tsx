@@ -458,10 +458,11 @@ export default function WorkspacePage() {
     // location, just no jargon.
     const localScope: ItemScope = featureFlags.enableMultiProject ? 'project' : 'global';
 
-    // Project-only agents (orchestrator, project-maintainer, worker) are
-    // hidden when the multi-project paradigm is off — their bodies still
-    // reference project tools that aren't registered in that mode.
-    const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker']);
+    // Project-only agents (orchestrator/project-maintainer/worker/project-manager)
+    // are hidden when the multi-project paradigm is off — their bodies still
+    // reference project tools that aren't registered in that mode. Keep in
+    // sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
+    const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker', 'project-manager']);
     agents?.filter((a) => !a.hidden && (featureFlags.enableMultiProject || !projectOnlyAgents.has(a.name))).forEach((a) => {
       items.push({ id: `agent:${a.name}`, name: a.name, description: a.description, kind: 'agent', scope: localScope, meta: a.model?.modelID, raw: a });
     });

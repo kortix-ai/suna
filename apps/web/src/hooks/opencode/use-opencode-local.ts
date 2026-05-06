@@ -217,7 +217,8 @@ export function useOpenCodeLocal({
   // tools that aren't registered in default mode.
   const visibleAgents = useMemo<Agent[]>(
     () => {
-      const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker']);
+      // Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
+      const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker', 'project-manager']);
       return (Array.isArray(rawAgents) ? rawAgents : []).filter(
         (a) => !a.hidden && (featureFlags.enableMultiProject || !projectOnlyAgents.has(a.name)),
       );

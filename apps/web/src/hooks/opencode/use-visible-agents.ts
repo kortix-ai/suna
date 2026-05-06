@@ -12,8 +12,18 @@ import { featureFlags } from '@/lib/feature-flags';
  * separately via KORTIX_PROJECTS_ENABLED on the sandbox. Hiding them in the
  * UI matches what the sandbox would refuse to do anyway, and keeps the
  * picker simple in default mode (general agent only).
+ *
+ * Includes `project-manager` — the per-project PM agent slug seeded by
+ * seedV2Project at /workspace/.opencode/agent/project-manager.md. The file
+ * persists on disk after a flag-on cycle even when the flag flips back off,
+ * so the picker filter is the only thing keeping it out of the UI.
  */
-const PROJECT_ONLY_AGENTS = new Set(['orchestrator', 'project-maintainer', 'worker']);
+const PROJECT_ONLY_AGENTS = new Set([
+  'orchestrator',
+  'project-maintainer',
+  'worker',
+  'project-manager',
+]);
 
 function hideProjectOnly(a: Agent): boolean {
   if (featureFlags.enableMultiProject) return false;
