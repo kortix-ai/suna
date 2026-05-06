@@ -170,7 +170,8 @@ ci "overlay disables worker when flag off" '"worker"' "$OVERLAY"
 
 echo
 echo "── 9. Default-agent system prompt: zero project tokens ──"
-docker cp /tmp/prompt-leak-test.ts kortix-sandbox:/tmp/prompt-leak-test.ts >/dev/null 2>&1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+docker cp "$SCRIPT_DIR/_helpers-prompt-leak-test.ts" kortix-sandbox:/tmp/prompt-leak-test.ts >/dev/null 2>&1
 LEAK=$(docker exec kortix-sandbox /opt/bun/bin/bun /tmp/prompt-leak-test.ts 2>&1)
 ci "general agent prompt has 0 project-paradigm tokens" "ZERO project-paradigm tokens" "$LEAK"
 
