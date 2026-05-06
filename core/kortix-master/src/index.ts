@@ -138,31 +138,32 @@ if (!authSyncDisabled) {
 // Updates are Docker image-based — no crash recovery needed
 
 // Project paradigm overlay: when KORTIX_PROJECTS_ENABLED=false (default) we
-// hide the project-only agents (orchestrator, project-maintainer, worker) by
-// writing a workspace-level OpenCode config overlay that disables them.
-// OpenCode merges /workspace/.opencode/opencode.jsonc on top of the global
-// config; setting `agent.<name>.disable=true` removes them from the picker
-// and prevents the LLM from being routed there. The general agent (cleaned
-// of project content) remains the default. The overlay is rewritten on every
-// kortix-master start so flipping the flag at runtime takes effect on the
-// next service-manager restart pass.
+// disable JUST the per-project Project Manager agent (`project-manager`)
+// by writing a workspace-level OpenCode config overlay. Other agents
+// (general, orchestrator, worker, project-maintainer) stay visible — they
+// have legitimate roles outside the project paradigm too.
+//
+// `project-manager` is special: it's seeded by seedV2Project as a real
+// .opencode/agent/project-manager.md file in the workspace. The file
+// persists on disk after a flag-on cycle even when the flag flips back
+// off; without this overlay it would keep showing in the picker.
+//
+// The overlay is rewritten on every kortix-master start so flipping the
+// flag at runtime takes effect on the next service-manager restart pass.
 function syncAgentOverlayForProjectFlag() {
   const overlayPath = '/workspace/.opencode/opencode.jsonc'
-  const projectOnlyAgents = ['orchestrator', 'project-maintainer', 'worker']
   try {
     if (!existsSync('/workspace/.opencode')) {
       mkdirSync('/workspace/.opencode', { recursive: true })
     }
     const overlay: Record<string, unknown> = { $schema: 'https://opencode.ai/config.json' }
     if (!config.PROJECTS_ENABLED) {
-      const agentBlock: Record<string, { disable: boolean }> = {}
-      for (const name of projectOnlyAgents) agentBlock[name] = { disable: true }
-      overlay.agent = agentBlock
+      overlay.agent = { 'project-manager': { disable: true } }
     }
     Bun.write(overlayPath, JSON.stringify(overlay, null, 2)).catch(() => {})
     console.log(
       `[Kortix Master] Agent overlay written: PROJECTS_ENABLED=${config.PROJECTS_ENABLED}; ` +
-      `disabled-when-off: ${projectOnlyAgents.join(', ')}`,
+      `disabled-when-off: project-manager`,
     )
   } catch (err) {
     console.warn('[Kortix Master] Failed to write agent overlay:', err)

@@ -549,7 +549,7 @@ export function CommandPalette() {
   // mode. Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
   const visibleAgents = useMemo(() => {
     if (!agents) return [];
-    const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker', 'project-manager']);
+    const projectOnlyAgents = new Set(['project-manager']);
     return agents.filter(
       (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name))
     );

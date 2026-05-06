@@ -7,23 +7,19 @@ import { featureFlags } from '@/lib/feature-flags';
 
 /**
  * Project-only agents — surfaced only when the project paradigm is on.
- * These agents' bodies still contain project/ticket workflow knowledge; the
- * runtime gates the project tools they reference (project_*, ticket_*, etc.)
- * separately via KORTIX_PROJECTS_ENABLED on the sandbox. Hiding them in the
- * UI matches what the sandbox would refuse to do anyway, and keeps the
- * picker simple in default mode (general agent only).
  *
- * Includes `project-manager` — the per-project PM agent slug seeded by
- * seedV2Project at /workspace/.opencode/agent/project-manager.md. The file
- * persists on disk after a flag-on cycle even when the flag flips back off,
- * so the picker filter is the only thing keeping it out of the UI.
+ * Just `project-manager`. The other agents (orchestrator, worker,
+ * project-maintainer) stay visible regardless of flag state — they're
+ * useful general-purpose roles, even when their preferred tools (task_*)
+ * aren't registered. The user reasons about the PM agent as the
+ * project-paradigm gate.
+ *
+ * `project-manager` is the per-project PM slug seeded by seedV2Project at
+ * /workspace/.opencode/agent/project-manager.md. The file persists on disk
+ * after a flag-on cycle even when the flag flips back off, so this picker
+ * filter is what keeps it out of the UI in default mode.
  */
-const PROJECT_ONLY_AGENTS = new Set([
-  'orchestrator',
-  'project-maintainer',
-  'worker',
-  'project-manager',
-]);
+const PROJECT_ONLY_AGENTS = new Set(['project-manager']);
 
 function hideProjectOnly(a: Agent): boolean {
   if (featureFlags.enableProjects) return false;

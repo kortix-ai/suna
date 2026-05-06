@@ -462,7 +462,7 @@ export default function WorkspacePage() {
     // are hidden when the project paradigm is off — their bodies still
     // reference project tools that aren't registered in that mode. Keep in
     // sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
-    const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker', 'project-manager']);
+    const projectOnlyAgents = new Set(['project-manager']);
     agents?.filter((a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name))).forEach((a) => {
       items.push({ id: `agent:${a.name}`, name: a.name, description: a.description, kind: 'agent', scope: localScope, meta: a.model?.modelID, raw: a });
     });
