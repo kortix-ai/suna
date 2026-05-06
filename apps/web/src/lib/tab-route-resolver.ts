@@ -129,21 +129,9 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
   },
   '/board': {
     id: 'page:/board',
-    title: 'Board',
+    title: 'Project view',
     type: 'page',
     href: '/board',
-  },
-  '/milestones': {
-    id: 'page:/milestones',
-    title: 'Milestones',
-    type: 'page',
-    href: '/milestones',
-  },
-  '/team': {
-    id: 'page:/team',
-    title: 'Team',
-    type: 'page',
-    href: '/team',
   },
   '/tunnel': {
     id: 'page:/tunnel',

@@ -297,11 +297,12 @@ export const menuRegistry: MenuItemDef[] = [
     tabId: 'page:/files',
   },
   {
-    // Board — single-sandbox kanban surface. Hidden until the project
-    // paradigm flag is on (board / tickets / milestones aren't ready yet).
-    // The /board route itself is also redirect-gated by the same flag.
-    id: 'board-quick',
-    label: 'Board',
+    // Project view — single-sandbox combined surface (Board + Milestones +
+    // Team in inline tabs). Even though we don't expose a multi-project
+    // model, the user-facing label is "Project view" because that's how the
+    // user reasons about it. Hidden until the project paradigm flag is on.
+    id: 'project-view-quick',
+    label: 'Project view',
     icon: FolderKanban,
     group: 'quickActions',
     subGroup: 'tools',
@@ -309,35 +310,7 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/board',
     tabId: 'page:/board',
-    keywords: 'board kanban tickets project',
-    requiresProjectsFlag: true,
-  },
-  {
-    // Milestones — single-sandbox milestone view. Same flag-gating as Board.
-    id: 'milestones-quick',
-    label: 'Milestones',
-    icon: LayoutTemplate,
-    group: 'quickActions',
-    subGroup: 'tools',
-    showIn: ['rightSidebar', 'commandPalette'],
-    kind: 'navigate',
-    href: '/milestones',
-    tabId: 'page:/milestones',
-    keywords: 'milestones outcome roadmap',
-    requiresProjectsFlag: true,
-  },
-  {
-    // Team — single-sandbox project_agents view. Same flag-gating as Board.
-    id: 'team-quick',
-    label: 'Team',
-    icon: Users,
-    group: 'quickActions',
-    subGroup: 'tools',
-    showIn: ['rightSidebar', 'commandPalette'],
-    kind: 'navigate',
-    href: '/team',
-    tabId: 'page:/team',
-    keywords: 'team agents project workers',
+    keywords: 'project view board kanban milestones team tickets',
     requiresProjectsFlag: true,
   },
   {
