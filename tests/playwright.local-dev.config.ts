@@ -7,7 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e/specs',
-  testMatch: ['**/single-project-paradigm-ui.spec.ts'],
+  testMatch: ['**/single-project-paradigm-ui.spec.ts', '**/_board-screenshot.spec.ts'],
   timeout: 180_000,
   expect: { timeout: 30_000 },
   fullyParallel: false,
