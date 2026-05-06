@@ -19,10 +19,6 @@ permission:
   scrape_webpage: allow
   'context7_resolve-library-id': allow
   context7_query-docs: allow
-  task_create: allow
-  task_update: allow
-  task_list: allow
-  task_get: allow
   project_get: allow
   project_update: allow
   session_get: allow

@@ -20,6 +20,7 @@ import { agentTaskTools, handleAgentTaskSessionEvent } from "./agent-tasks"
 import { ticketTools, ticketToolGateHook } from "./ticket-tools"
 import { ensureTasksTable, reconcileAllRunningTasks } from "../../../src/services/task-service"
 import { ensureTicketTables } from "../../../src/services/ticket-service"
+import { seedV2Project } from "../../../src/services/project-v2-seed"
 import { resolveKortixWorkspaceRoot, ensureKortixDir } from "./lib/paths"
 import { markStartupAbortedSession } from "./lib/startup-aborted-sessions"
 import { getBusySessionIds } from "../../../src/services/runtime-reload"
@@ -173,14 +174,25 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	// resurfaces them. Mirror flag in web: NEXT_PUBLIC_ENABLE_MULTI_PROJECT.
 	const projectsEnabled = config.PROJECTS_ENABLED
 	// Single-project paradigm: when enabled, ensure THE project exists in
-	// SQLite so all downstream surfaces (sessions, tickets, milestones) have
-	// somewhere to live without project_create/project_select. Idempotent.
+	// SQLite AND is fully seeded (PM agent + default kanban columns) so the
+	// board, ticket_create, and milestone routes work without a manual
+	// project_create / project_select dance. Both ensureDefaultProject and
+	// seedV2Project are idempotent — re-running on every plugin init is safe
+	// and fixes pre-paradigm sandboxes whose proj-workspace row was inserted
+	// without columns.
 	if (projectsEnabled) {
 		try {
 			const def = mgr.ensureDefaultProject()
-			console.log(`[kortix-system] Default project ready: ${def.id} @ ${def.path}`)
+			await seedV2Project(db, {
+				id: def.id,
+				name: def.name,
+				path: def.path,
+				description: def.description,
+				user_handle: null,
+			})
+			console.log(`[kortix-system] Default project seeded: ${def.id} @ ${def.path}`)
 		} catch (e) {
-			console.warn("[kortix-system] ensureDefaultProject failed:", (e as Error).message)
+			console.warn("[kortix-system] default-project bootstrap failed:", (e as Error).message)
 		}
 	}
 	const projectToolMap = projectsEnabled ? projectTools(mgr, db) : {}
