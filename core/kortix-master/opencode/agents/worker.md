@@ -40,11 +40,7 @@ permission:
   task_verification: allow
   task_deliver: allow
   task: deny
-  project_create: deny
-  project_delete: deny
   project_get: allow
-  project_list: allow
-  project_select: allow
   project_update: deny
   worktree_create: deny
   worktree_delete: deny

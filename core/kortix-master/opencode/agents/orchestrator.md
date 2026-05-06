@@ -23,11 +23,7 @@ permission:
   task_update: allow
   task_list: allow
   task_get: allow
-  project_create: allow
-  project_delete: allow
   project_get: allow
-  project_list: allow
-  project_select: allow
   project_update: allow
   session_get: allow
   session_list: allow
