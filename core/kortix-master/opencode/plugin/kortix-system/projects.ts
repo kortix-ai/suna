@@ -285,6 +285,44 @@ export class ProjectManager {
 			|| this.db.prepare("SELECT * FROM projects WHERE LOWER(name) LIKE LOWER($v)").get({ $v: `%${q}%` })
 		) as ProjectRow | null
 	}
+
+	/**
+	 * Single-project paradigm: a sandbox owns exactly one Kortix project.
+	 *
+	 * This row is the implicit container for tickets, milestones, columns,
+	 * project-agents, and credentials when the project paradigm is enabled.
+	 * Sessions auto-bind to it, so the LLM never needs project_create or
+	 * project_select — those tools are gone in the new paradigm.
+	 *
+	 * Idempotent: returns the existing row when present, otherwise inserts
+	 * a v2 row with id `proj-default` rooted at the workspace.
+	 */
+	ensureDefaultProject(): ProjectRow {
+		const id = "proj-default"
+		const existing = this.db.prepare("SELECT * FROM projects WHERE id=$id")
+			.get({ $id: id }) as ProjectRow | null
+		if (existing) return existing
+
+		const now = new Date().toISOString()
+		this.db.prepare(
+			"INSERT INTO projects (id,name,path,description,created_at,opencode_id,structure_version) " +
+			"VALUES ($id,$n,$p,$d,$c,NULL,2)",
+		).run({
+			$id: id,
+			$n: "Workspace",
+			$p: this.workspaceRoot,
+			$d: "Default sandbox project — auto-bootstrapped. Owns the board, tickets, milestones.",
+			$c: now,
+		})
+		return {
+			id,
+			name: "Workspace",
+			path: this.workspaceRoot,
+			description: "Default sandbox project — auto-bootstrapped. Owns the board, tickets, milestones.",
+			created_at: now,
+			opencode_id: null,
+		}
+	}
 }
 
 // ── Tools ────────────────────────────────────────────────────────────────────
