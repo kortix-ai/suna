@@ -18,6 +18,7 @@
  */
 
 import type { LucideIcon } from 'lucide-react';
+import { featureFlags } from './feature-flags';
 import {
   // Navigation
   LayoutDashboard,
@@ -196,6 +197,10 @@ export interface MenuItemDef {
   requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
+  /** If true, item is only shown when the multi-project / project-paradigm
+   *  feature flag (NEXT_PUBLIC_ENABLE_MULTI_PROJECT) is on. Used to gate
+   *  project-paradigm surfaces (Board today; Milestones, Team later). */
+  requiresMultiProjectFlag?: boolean;
 }
 
 // ============================================================================
@@ -290,6 +295,22 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/files',
     tabId: 'page:/files',
+  },
+  {
+    // Board — single-sandbox kanban surface. Hidden until the project
+    // paradigm flag is on (board / tickets / milestones aren't ready yet).
+    // The /board route itself is also redirect-gated by the same flag.
+    id: 'board-quick',
+    label: 'Board',
+    icon: FolderKanban,
+    group: 'quickActions',
+    subGroup: 'tools',
+    showIn: ['rightSidebar', 'commandPalette'],
+    kind: 'navigate',
+    href: '/board',
+    tabId: 'page:/board',
+    keywords: 'board kanban tickets milestones project',
+    requiresMultiProjectFlag: true,
   },
   {
     id: 'new-terminal',
@@ -788,7 +809,13 @@ export function getItemsByGroup(
   group: MenuGroup,
 ): MenuItemDef[] {
   return menuRegistry.filter(
-    (item) => item.showIn.includes(surface) && item.group === group,
+    (item) =>
+      item.showIn.includes(surface) &&
+      item.group === group &&
+      // Hide project-paradigm entries (Board today, Milestones / Team later)
+      // until the flag is flipped on. The flag is a build-time const so the
+      // unused entries tree-shake out.
+      (!item.requiresMultiProjectFlag || featureFlags.enableMultiProject),
   );
 }
 

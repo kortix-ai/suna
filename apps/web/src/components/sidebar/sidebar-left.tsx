@@ -1593,27 +1593,9 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               <span className="flex-1 text-left">Files</span>
             </Button>
 
-            {/* Board — single-project paradigm: the sandbox's kanban,
-                surfaced globally. Gated by enableMultiProject because the
-                board UX (and the project-paradigm tools backing it) isn't
-                ready yet. */}
-            {featureFlags.enableMultiProject && (
-              <Button
-                onClick={() => {
-                  openTabAndNavigate({
-                    id: 'page:/board',
-                    title: 'Board',
-                    type: 'page',
-                    href: '/board',
-                  });
-                }}
-                variant="sidebar"
-                className="rounded-lg"
-              >
-                <FolderKanban className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-                <span className="flex-1 text-left">Board</span>
-              </Button>
-            )}
+            {/* Board lives in the right sidebar (menu-registry entry
+                `board` with showIn=['rightSidebar']) — see comment there
+                for the placement rationale. */}
 
             {/* Sessions — expandable, default open */}
             </nav>
