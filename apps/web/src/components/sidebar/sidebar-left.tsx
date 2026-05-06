@@ -706,38 +706,10 @@ function SidebarSections() {
 
   return (
     <div className="flex flex-col min-h-0 flex-1 pt-0.5 space-y-0.5">
-      {/* Projects — collapsible list above Sessions, same UX as Sessions.
-          Hidden entirely when the multi-project paradigm is off (default).
-          Existing project rows in SQLite stay; flag-on revives this section. */}
-      {featureFlags.enableMultiProject && sortedProjects.length > 0 && (
-        <Collapsible defaultOpen={false} className="group/projects flex flex-col min-h-0">
-          <div className="px-3 flex-shrink-0">
-            <CollapsibleTrigger asChild>
-              <Button variant="sidebar" className="rounded-lg">
-                <FolderKanban className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-                <span className="flex-1 text-left">Projects</span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/projects:-rotate-90" />
-              </Button>
-            </CollapsibleTrigger>
-          </div>
-          <CollapsibleContent className="min-h-0 data-[state=open]:pt-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <div className="flex flex-col px-3">
-              <div className="px-2 pb-2">
-                <div className="space-y-0.5">
-                  {sortedProjects.map((project) => (
-                    <SidebarProjectRow
-                      key={project.id}
-                      project={project}
-                      active={pathname?.startsWith(`/projects/${project.id}`) ?? false}
-                      onClick={() => handleProjectClick(project)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
+      {/* No "Projects" accordion. The sandbox IS the project (single-project
+          paradigm) — there is never a list to choose from. Project-paradigm
+          surfaces live as global entries (Board, Milestones, Team) when the
+          feature flag is on, not nested under per-project navigation. */}
 
       {/* Sessions — always visible, takes remaining space */}
       <Collapsible defaultOpen className="group/sessions flex flex-col min-h-0 data-[state=open]:flex-1">
@@ -1550,13 +1522,8 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               });
             }}
           />
-          {featureFlags.enableMultiProject && (
-            <CollapsedIconButton
-              icon={<FolderKanban className="h-4 w-4" />}
-              label="Projects"
-              flyoutContent={<ProjectsFlyout />}
-            />
-          )}
+          {/* Collapsed-sidebar Projects flyout removed — single-project
+              paradigm has no list to flyout to. */}
           <CollapsedIconButton
             icon={<ListTree className="h-4 w-4" />}
             label="Sessions"
