@@ -66,7 +66,7 @@ function registerSandboxServer(sandbox: SandboxInfo, autoSwitch: boolean, isPrim
       instanceId: sandbox.sandbox_id,
       mappedPorts: extractMappedPorts(sandbox),
     },
-    { autoSwitch, isLocal, stableId: isLocal ? undefined : stableId },
+    { autoSwitch, restoreSelection: autoSwitch, isLocal, stableId: isLocal ? undefined : stableId },
   );
 
   // For cloud mode, registerOrUpdateSandbox returns the targetId.

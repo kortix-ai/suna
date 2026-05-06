@@ -424,7 +424,7 @@ export function RunningServicesPanel() {
   const filters: { key: ServiceFilter; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: counts.all },
     { key: 'system', label: 'System', count: counts.system },
-    { key: 'projects', label: 'Projects', count: counts.projects },
+    { key: 'projects', label: 'Workspace', count: counts.projects },
     { key: 'unmanaged', label: 'Observed', count: counts.unmanaged },
   ];
 

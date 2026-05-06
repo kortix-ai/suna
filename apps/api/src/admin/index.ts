@@ -920,6 +920,30 @@ adminApp.get('/api/sandboxes/:id', async (c) => {
   try {
     const sandboxId = c.req.param('id');
     const { db } = await import('../shared/db');
+
+    if (sandboxId === config.SANDBOX_CONTAINER_NAME) {
+      const { ensureGenericLocalSandboxRecord } = await import('../platform/services/local-sandbox-record');
+      const localRow = await ensureGenericLocalSandboxRecord(db);
+      if (!localRow) {
+        return c.json({ error: 'Local sandbox is not accessible right now' }, 503);
+      }
+      const metadata = getSandboxMetadata(localRow.metadata);
+      return c.json({
+        sandbox: redactAdminSecrets({
+          ...localRow,
+          accountName: 'Local',
+          ownerEmail: null,
+          lastUsedAt: null,
+          initStatus: deriveSandboxInitStatus(localRow.status, metadata),
+          healthStatus: deriveSandboxHealthStatus(localRow.status, metadata),
+          initAttempts: getSandboxInitAttempts(metadata),
+          lastInitError: getSandboxLastInitError(metadata),
+        }),
+        provider_detail: null,
+        provider_error: null,
+      });
+    }
+
     const { sandboxes, accounts } = await import('@kortix/db');
     const { eq, sql } = await import('drizzle-orm');
     const { membersTableSql } = await import('./members-table');
@@ -1088,17 +1112,18 @@ adminApp.post('/api/sandboxes/health-batch', async (c) => {
         return;
       }
 
+      const externalId = row.externalId;
       const provider = getProvider('justavps') as InstanceType<typeof JustAVPSProvider>;
       let endpoint = null;
       let endpointError: string | null = null;
       try {
-        endpoint = await provider.resolveEndpoint(row.externalId);
+        endpoint = await provider.resolveEndpoint(externalId);
       } catch (error) {
         endpointError = error instanceof Error ? error.message : String(error);
       }
 
       try {
-        const health = await getJustAvpsInstanceHealth(row.sandboxId, row.externalId, endpoint, endpointError);
+        const health = await getJustAvpsInstanceHealth(row.sandboxId, externalId, endpoint, endpointError);
         healthById.set(row.sandboxId, health);
       } catch (error) {
         const fallback = createUnsupportedInstanceHealth(row.sandboxId, row.provider);
@@ -1150,6 +1175,7 @@ adminApp.post('/api/sandboxes/:id/repair', async (c) => {
     if (!row.externalId && action !== 'reinitialize') {
       return c.json({ error: 'Repair requires a provider machine id' }, 400);
     }
+    const externalId = row.externalId;
 
     const { getProvider } = await import('../platform/providers');
     const { JustAVPSProvider, justavpsFetch } = await import('../platform/providers/justavps');
@@ -1163,7 +1189,8 @@ adminApp.post('/api/sandboxes/:id/repair', async (c) => {
     };
 
     const callCore = async (path: string, method: 'GET' | 'POST' = 'POST', payload?: unknown) => {
-      const endpoint = await provider.resolveEndpoint(row.externalId!);
+      if (!externalId) throw new Error('Repair requires a provider machine id');
+      const endpoint = await provider.resolveEndpoint(externalId);
       const response = await fetch(`${endpoint.url}${path}`, {
         method,
         headers: {
@@ -1186,31 +1213,35 @@ adminApp.post('/api/sandboxes/:id/repair', async (c) => {
 
     switch (action) {
       case 'start_host': {
-        await justavpsFetch(`/machines/${row.externalId}/start`, { method: 'POST' });
-        queueRecovery(provider.waitForHostRecovery(row.externalId, `repair:start_host:${sandboxId}`), 'start_host');
+        if (!externalId) return c.json({ error: 'Repair requires a provider machine id' }, 400);
+        await justavpsFetch(`/machines/${externalId}/start`, { method: 'POST' });
+        queueRecovery(provider.waitForHostRecovery(externalId, `repair:start_host:${sandboxId}`), 'start_host');
         await db.update(sandboxes).set({ status: 'active' }).where(eq(sandboxes.sandboxId, sandboxId));
         return c.json({ success: true, action, state: 'recovering' }, 202);
       }
       case 'reboot_host': {
-        const dispatched = await provider.dispatchHostRestart(row.externalId);
-        queueRecovery(provider.waitForHostRecovery(row.externalId, `repair:reboot_host:${sandboxId}`), 'reboot_host');
+        if (!externalId) return c.json({ error: 'Repair requires a provider machine id' }, 400);
+        const dispatched = await provider.dispatchHostRestart(externalId);
+        queueRecovery(provider.waitForHostRecovery(externalId, `repair:reboot_host:${sandboxId}`), 'reboot_host');
         await db.update(sandboxes).set({ status: 'active' }).where(eq(sandboxes.sandboxId, sandboxId));
         return c.json({ success: true, action, dispatched, state: 'recovering' }, 202);
       }
       case 'stop_host': {
-        await provider.stop(row.externalId);
+        if (!externalId) return c.json({ error: 'Repair requires a provider machine id' }, 400);
+        await provider.stop(externalId);
         await db.update(sandboxes).set({ status: 'stopped' }).where(eq(sandboxes.sandboxId, sandboxId));
         return c.json({ success: true, action, state: 'stopped' });
       }
       case 'start_workload':
       case 'restart_workload': {
-        queueRecovery(provider.ensureRunning(row.externalId), action);
+        if (!externalId) return c.json({ error: 'Repair requires a provider machine id' }, 400);
+        queueRecovery(provider.ensureRunning(externalId), action);
         await db.update(sandboxes).set({ status: 'active' }).where(eq(sandboxes.sandboxId, sandboxId));
         return c.json({ success: true, action, state: 'recovering' }, 202);
       }
       case 'reinitialize': {
-        const providerStatus = row.externalId ? await provider.getStatus(row.externalId) : null;
-        if (shouldReprovisionFailedJustAvpsSandbox(row.status, row.externalId, providerStatus)) {
+        const providerStatus = externalId ? await provider.getStatus(externalId) : null;
+        if (shouldReprovisionFailedJustAvpsSandbox(row.status, externalId, providerStatus)) {
           const refreshed = await reprovisionFailedJustAvpsSandbox({
             db,
             sandbox: row,
@@ -1219,14 +1250,16 @@ adminApp.post('/api/sandboxes/:id/repair', async (c) => {
           });
           return c.json({ success: true, action, state: 'reprovisioned', sandbox: refreshed });
         }
-        queueRecovery(provider.ensureRunning(row.externalId), action);
+        if (!externalId) return c.json({ error: 'Repair requires a provider machine id' }, 400);
+        queueRecovery(provider.ensureRunning(externalId), action);
         await db.update(sandboxes).set({ status: 'active' }).where(eq(sandboxes.sandboxId, sandboxId));
         return c.json({ success: true, action, state: 'recovering' }, 202);
       }
       case 'stop_workload': {
-        const machineStatus = await provider.getStatus(row.externalId);
+        if (!externalId) return c.json({ error: 'Repair requires a provider machine id' }, 400);
+        const machineStatus = await provider.getStatus(externalId);
         if (machineStatus !== 'stopped' && machineStatus !== 'removed') {
-          const endpoint = await provider.resolveEndpoint(row.externalId);
+          const endpoint = await provider.resolveEndpoint(externalId);
           await execOnHost(endpoint, 'systemctl stop justavps-docker.service 2>/dev/null || true; docker rm -f justavps-workload 2>/dev/null || true', 45);
         }
         return c.json({ success: true, action, state: 'stopped' });

@@ -12,6 +12,7 @@ import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
  * and try each one when converting absolute → relative.
  */
 let cachedPrefixes: string[] | null = null;
+let prefixFetchPromise: Promise<string[]> | null = null;
 
 /** Try stripping each candidate prefix from an absolute path → project-relative */
 function toRelative(absPath: string, prefixes: string[]): string {
@@ -35,6 +36,16 @@ function toRelative(absPath: string, prefixes: string[]): string {
  * and /path requests that were previously made on every tool-view mount.
  */
 async function fetchPrefixesFromSdk(queryClient?: ReturnType<typeof useQueryClient>): Promise<string[]> {
+  if (cachedPrefixes && cachedPrefixes.length > 0) return cachedPrefixes;
+  if (prefixFetchPromise) return prefixFetchPromise;
+
+  prefixFetchPromise = fetchPrefixesFromSdkUncached(queryClient).finally(() => {
+    prefixFetchPromise = null;
+  });
+  return prefixFetchPromise;
+}
+
+async function fetchPrefixesFromSdkUncached(queryClient?: ReturnType<typeof useQueryClient>): Promise<string[]> {
   const candidates: string[] = [];
 
   // 1) Try React Query cache first (shared with other hooks)

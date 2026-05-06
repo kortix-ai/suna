@@ -193,7 +193,6 @@ export function ChannelsTab({ projectId }: { projectId: string }) {
         onOpenChange={setConfigOpen}
         onCreated={() => { void load(); }}
         initialPlatform={configPlatform}
-        initialProjectId={projectId}
       />
 
       <ChannelSettingsDialog

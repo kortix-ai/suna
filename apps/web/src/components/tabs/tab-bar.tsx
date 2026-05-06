@@ -97,7 +97,6 @@ function resolveRouteTab(pathname: string): Omit<Tab, 'openedAt'> | null {
     '/skills': { title: 'Skills Browser', type: 'page' },
     '/tools': { title: 'Tools', type: 'page' },
     '/commands': { title: 'Commands', type: 'page' },
-    '/projects': { title: 'Projects', type: 'page' },
     '/files': { title: 'Files', type: 'page' },
     '/configuration': { title: 'Workspace', type: 'page' },
     '/settings/credentials': { title: 'Connectors', type: 'settings' },
@@ -137,7 +136,7 @@ function resolveRouteTab(pathname: string): Omit<Tab, 'openedAt'> | null {
     };
   }
 
-  // Project detail routes (/projects/<id>), file viewer routes (/files/<path>),
+  // File viewer routes (/files/<path>)
   // and terminal routes (/terminal/<ptyId>) are NOT auto-opened here.
   // They are opened explicitly by the sidebar or their respective catch-all
   // route pages. Auto-opening from the sync effect would re-create a tab

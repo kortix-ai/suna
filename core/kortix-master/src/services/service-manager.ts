@@ -181,6 +181,7 @@ const WATCHDOG_INTERVAL_MS = Number(
 const RECOVERY_THROTTLE_MS = Number(
   process.env.KORTIX_SERVICE_RECOVERY_THROTTLE_MS || 4_000,
 );
+const OPENCODE_SERVICE_ID = "opencode-serve";
 const PORT_MIN = 10_000;
 const PORT_MAX = 60_000;
 const PERSISTED_SOURCE_ROOT = WORKSPACE_ROOT;
@@ -261,8 +262,11 @@ const BUILTIN_SERVICES: RegisteredServiceSpec[] = [
     restartPolicy: "always",
     restartDelayMs: 3000,
     s6ServiceName: null,
-    processPatterns: ["opencode serve --port 4096"],
-    healthCheck: { type: "tcp", timeoutMs: 2000 },
+    processPatterns: [
+      "opencode-kortix serve --port 4096",
+      "opencode serve --port 4096",
+    ],
+    healthCheck: { type: "http", path: "/global/health", timeoutMs: 10_000 },
     createdAt: "",
     updatedAt: "",
   },
@@ -652,6 +656,14 @@ async function findPidByPattern(pattern: string): Promise<number | null> {
   return null;
 }
 
+async function findPidByPatterns(patterns: string[]): Promise<number | null> {
+  for (const pattern of patterns) {
+    const pid = await findPidByPattern(pattern);
+    if (pid) return pid;
+  }
+  return null;
+}
+
 async function findPidByPort(port: number): Promise<number | null> {
   const commands = [`fuser ${port}/tcp`, `fuser -4 ${port}/tcp`];
 
@@ -974,7 +986,7 @@ export class ServiceManager {
 
     // No port or port not bound — check by process pattern
     if (spec.processPatterns.length > 0) {
-      const pid = await findPidByPattern(spec.processPatterns[0]);
+      const pid = await findPidByPatterns(spec.processPatterns);
       if (pid) {
         state.pid = getInnerNsPid(pid) || pid;
         state.status = spec.port ? "starting" : "running";
@@ -999,7 +1011,7 @@ export class ServiceManager {
       const adoptedPid =
         (spec.port ? await findPidByPort(spec.port) : null) ||
         (spec.processPatterns.length > 0
-          ? await findPidByPattern(spec.processPatterns[0])
+          ? await findPidByPatterns(spec.processPatterns)
           : null);
       const effectivePid = persistedPid || adoptedPid;
       if (effectivePid) {
@@ -1183,9 +1195,29 @@ export class ServiceManager {
     for (const key of spec.envVarKeys) {
       if (process.env[key]) env[key] = process.env[key] as string;
     }
-    if (spec.port) env.PORT = String(spec.port);
+    if (spec.port) {
+      env.KORTIX_SERVICE_PORT = String(spec.port);
+      if (spec.id !== OPENCODE_SERVICE_ID) {
+        env.PORT = env.PORT || String(spec.port);
+        env.APP_PORT = env.APP_PORT || String(spec.port);
+      }
+    }
     env.HOST = "0.0.0.0";
     env.NODE_OPTIONS = buildNodeOptions();
+    return env;
+  }
+
+  private buildSpawnEnv(spec: RegisteredServiceSpec): Record<string, string> {
+    const env: Record<string, string> = {
+      ...(process.env as Record<string, string>),
+      ...this.buildServiceEnv(spec),
+    };
+
+    if (spec.id === OPENCODE_SERVICE_ID) {
+      delete env.PORT;
+      delete env.APP_PORT;
+    }
+
     return env;
   }
 
@@ -1231,15 +1263,21 @@ export class ServiceManager {
       return { ok: true, output: "already running", service: { ...state } };
     }
 
+    const existingPortOwner = spec.port
+      ? await findPidByPort(spec.port).catch(() => null)
+      : null;
     if (
       spec.port &&
-      (await probeServicePort(spec, spec.healthCheck.timeoutMs || 1500))
+      (existingPortOwner ||
+        (await probeServicePort(spec, spec.healthCheck.timeoutMs || 1500)))
     ) {
       const persistedPid = this.readPidFile(spec.id);
       const adoptedPid =
         (spec.processPatterns.length > 0
-          ? await findPidByPattern(spec.processPatterns[0])
-          : null) || (await findPidByPort(spec.port));
+          ? await findPidByPatterns(spec.processPatterns)
+          : null) ||
+        existingPortOwner ||
+        (await findPidByPort(spec.port));
       if (item.proc) {
         state.status = "running";
         state.port = spec.port;
@@ -1283,10 +1321,7 @@ export class ServiceManager {
     try {
       proc = Bun.spawn(["/bin/sh", "-c", spec.startCommand], {
         cwd,
-        env: {
-          ...(process.env as Record<string, string>),
-          ...this.buildServiceEnv(spec),
-        },
+        env: this.buildSpawnEnv(spec),
         stdout: "pipe",
         stderr: "pipe",
       });
@@ -1343,6 +1378,19 @@ export class ServiceManager {
           } catch {}
           return { ok: false, output: state.lastError, service: { ...state } };
         }
+
+        const portOwnerPid = await findPidByPort(spec.port).catch(() => null);
+        if (portOwnerPid && portOwnerPid !== process.pid) {
+          const innerPid = getInnerNsPid(portOwnerPid) || portOwnerPid;
+          if (innerPid !== state.pid) {
+            this.appendLog(
+              spec.id,
+              `[manager] port ${spec.port} owned by pid ${innerPid}; tracking service pid separately from wrapper pid ${proc.pid}`,
+            );
+          }
+          state.pid = innerPid;
+          this.writePidFile(spec.id, innerPid);
+        }
       }
 
       state.status = "running";
@@ -1369,26 +1417,31 @@ export class ServiceManager {
       const adoptedPid =
         persistedPid ||
         (spec.processPatterns.length > 0
-          ? await findPidByPattern(spec.processPatterns[0])
+          ? await findPidByPatterns(spec.processPatterns)
           : null) ||
         (spec.port ? await findPidByPort(spec.port) : null);
       if (adoptedPid) {
         const innerPid = getInnerNsPid(adoptedPid) || adoptedPid;
         if (innerPid !== process.pid) {
-          try {
-            process.kill(innerPid, "SIGTERM");
-          } catch {}
-          await Bun.sleep(500);
-          if (spec.port) {
-            const closed = await waitForPortToClose(spec.port, 3000).catch(
-              () => false,
+          this.appendLog(
+            spec.id,
+            `[manager] stopping adopted pid ${innerPid}`,
+          );
+          await killPidAndWait(innerPid, spec.port, 5_000);
+        }
+      }
+      if (spec.port) {
+        const lingeringPortOwner = await findPidByPort(spec.port).catch(
+          () => null,
+        );
+        if (lingeringPortOwner) {
+          const innerPid = getInnerNsPid(lingeringPortOwner) || lingeringPortOwner;
+          if (innerPid !== process.pid && innerPid !== adoptedPid) {
+            this.appendLog(
+              spec.id,
+              `[manager] stopping lingering port ${spec.port} owner pid ${innerPid}`,
             );
-            if (!closed) {
-              try {
-                process.kill(innerPid, "SIGKILL");
-              } catch {}
-              await waitForPortToClose(spec.port, 3000).catch(() => {});
-            }
+            await killPidAndWait(innerPid, spec.port, 5_000);
           }
         }
       }
@@ -1401,6 +1454,9 @@ export class ServiceManager {
 
     item.intentionallyStopped = true;
     const proc = item.proc;
+    const portOwnerBeforeStop = spec.port
+      ? await findPidByPort(spec.port).catch(() => null)
+      : null;
     try {
       proc.kill("SIGTERM");
     } catch {}
@@ -1416,12 +1472,41 @@ export class ServiceManager {
       } catch {}
     }
 
+    if (spec.port) {
+      let closed = await waitForPortToClose(spec.port, 2_000).catch(
+        () => false,
+      );
+      if (!closed) {
+        const currentPortOwner =
+          (await findPidByPort(spec.port).catch(() => null)) ||
+          portOwnerBeforeStop;
+        if (currentPortOwner) {
+          const innerPid = getInnerNsPid(currentPortOwner) || currentPortOwner;
+          if (innerPid !== process.pid && innerPid !== proc.pid) {
+            this.appendLog(
+              spec.id,
+              `[manager] stopping port ${spec.port} owner pid ${innerPid} after wrapper pid ${proc.pid}`,
+            );
+            await killPidAndWait(innerPid, spec.port, 5_000);
+            closed = await waitForPortToClose(spec.port, 1_000).catch(
+              () => false,
+            );
+          }
+        }
+      }
+      if (!closed) {
+        this.appendLog(
+          spec.id,
+          `[manager] port ${spec.port} still open after stop`,
+        );
+      }
+    }
+
     item.proc = null;
     state.status = "stopped";
     state.pid = null;
     this.writePidFile(spec.id, null);
     state.stoppedAt = nowIso();
-    if (spec.port) await waitForPortToClose(spec.port, 5000).catch(() => {});
     return {
       ok: true,
       output: exited ? "stopped" : "killed",

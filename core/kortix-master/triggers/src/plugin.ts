@@ -208,7 +208,7 @@ Examples:
                                 logger("warn", `[triggers] passed project_id="${args.project_id}" not found; using session-bound project "${bound.project_id}"`)
                                 args.project_id = bound.project_id
                               } else {
-                                return `Error: project_id "${args.project_id}" not found, and no session binding to fall back on. Call project_get or project_list to get the real ID.`
+                                return `Error: project_id "${args.project_id}" not found. Use the global workspace id or omit project_id.`
                               }
                             }
                           }

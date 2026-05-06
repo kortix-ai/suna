@@ -3,7 +3,7 @@
 /**
  * Milestone hooks — list/get/create/update/close/reopen/delete/events.
  *
- * Server shape comes from /kortix/projects/:projectId/milestones (see
+ * Server shape comes from legacy /kortix/projects/:projectId/milestones (see
  * core/kortix-master/src/routes/milestones.ts). The GET list returns
  * milestones-with-progress + percent_complete. The detail endpoint
  * (GET :ref) additionally returns `tickets`.

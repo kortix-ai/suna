@@ -1872,7 +1872,7 @@ export default function BrandPage() {
                         </BreadcrumbItem>
                         <BreadcrumbSeparator />
                         <BreadcrumbItem>
-                          <BreadcrumbLink href="#">Projects</BreadcrumbLink>
+                          <BreadcrumbLink href="#">Workspace</BreadcrumbLink>
                         </BreadcrumbItem>
                         <BreadcrumbSeparator />
                         <BreadcrumbItem>

@@ -20,6 +20,9 @@ export function resolveKortixWorkspaceRoot(anchorDir?: string): string {
 	const explicitWorkspace = process.env.KORTIX_WORKSPACE?.trim()
 	if (explicitWorkspace) return normalizeAbsolutePath(explicitWorkspace)
 
+	const explicitWorkspaceDir = process.env.WORKSPACE_DIR?.trim() || process.env.KORTIX_WORKSPACE_ROOT?.trim()
+	if (explicitWorkspaceDir) return normalizeAbsolutePath(explicitWorkspaceDir)
+
 	const storageBase = process.env.OPENCODE_STORAGE_BASE?.trim()
 	if (storageBase) return resolve(normalizeAbsolutePath(storageBase), "..", "..", "..")
 
@@ -30,6 +33,11 @@ export function resolveKortixWorkspaceRoot(anchorDir?: string): string {
 			return dirname(normalizedConfigDir)
 		}
 	}
+
+	// Production Kortix instances are single-workspace sandboxes rooted at
+	// /workspace. Prefer that over repo discovery whenever it exists so no
+	// session accidentally becomes scoped to a source checkout or nested folder.
+	if (existsSync("/workspace")) return "/workspace"
 
 	const anchor = anchorDir?.trim() || process.cwd()
 	const repoRoot = findWorkspaceRoot(anchor)
@@ -162,5 +170,5 @@ export function renderProjectContext(projectPath: string): string {
 	if (!raw) return ""
 	const lines = normalizeMemoryBody(raw)
 	if (lines.length === 0) return ""
-	return ["## Project", ...lines].join("\n")
+	return ["## Workspace", ...lines].join("\n")
 }

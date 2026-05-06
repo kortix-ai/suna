@@ -6824,7 +6824,7 @@ ToolRegistry.register('oc-session_list_spawned', SessionListBackgroundTool);
 ToolRegistry.register('oc-session-list-spawned', SessionListBackgroundTool);
 
 // ============================================================================
-// ProjectDeleteTool
+// Workspace compatibility delete tool
 // ============================================================================
 
 function ProjectDeleteTool({ part }: ToolProps) {
@@ -6833,7 +6833,7 @@ function ProjectDeleteTool({ part }: ToolProps) {
   return (
     <div className="flex items-center gap-2 px-2.5 py-1 text-xs text-muted-foreground/40">
       <Trash2 className="size-3 flex-shrink-0" />
-      <span>Deleted {project}</span>
+      <span>Workspace delete disabled{project ? ` (${project})` : ''}</span>
     </div>
   );
 }
@@ -7671,7 +7671,8 @@ function SkillTool({ part, forceOpen }: ToolProps) {
 ToolRegistry.register('skill', SkillTool);
 
 // ============================================================================
-// Project Tools — Kortix Orchestrator project management
+// Workspace compatibility tools — historical project_* tool names now map to
+// the single global workspace.
 // ============================================================================
 
 import {
@@ -7692,10 +7693,10 @@ function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
     <BasicTool
       icon={<Folder />}
       trigger={{
-        title: 'Project List',
+        title: 'Workspace',
         subtitle:
           projects.length > 0
-            ? `${projects.length} project${projects.length !== 1 ? 's' : ''}`
+            ? 'global workspace'
             : undefined,
       }}
       defaultOpen={defaultOpen || projects.length === 0}
@@ -7738,7 +7739,7 @@ function ProjectGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
     <BasicTool
       icon={<Folder className="size-3.5 text-muted-foreground" />}
       trigger={{
-        title: 'Project Details',
+        title: 'Workspace Details',
         subtitle: name || 'Fetching...',
       }}
       defaultOpen={defaultOpen}
@@ -7772,26 +7773,22 @@ function ProjectSelectTool({ part }: ToolProps) {
   const project = (input.project as string) || '';
   const data = useMemo(() => parseProjectSelectOutput(output || ''), [output]);
   const name = data?.name || project;
-  const projectId = useMemo(() => {
-    const m = (output || '').match(/\(proj-[a-z0-9-]+\)/);
-    return m ? m[0].slice(1, -1) : name;
-  }, [output, name]);
 
   return (
     <BasicTool
       icon={<Folder />}
       trigger={{
-        title: 'Project Select',
+        title: 'Workspace Active',
         subtitle: name,
       }}
       onClick={
         navigationEnabled
           ? () =>
               openTab({
-                id: `project:${projectId}`,
+                id: 'page:/workspace',
                 title: name,
                 type: 'page' as any,
-                href: `/projects/${encodeURIComponent(projectId)}`,
+                href: '/workspace',
               })
           : undefined
       }
@@ -7811,26 +7808,22 @@ function ProjectCreateTool({ part }: ToolProps) {
   const name = (input.name as string) || '';
   const data = useMemo(() => parseProjectCreateOutput(output || ''), [output]);
   const displayName = data?.name || name;
-  const projectId = useMemo(() => {
-    const m = (output || '').match(/proj-[a-z0-9-]+/);
-    return m ? m[0] : displayName;
-  }, [output, displayName]);
 
   return (
     <BasicTool
       icon={<Plus />}
       trigger={{
-        title: 'Project Create',
+        title: 'Workspace',
         subtitle: displayName,
       }}
       onClick={
         navigationEnabled
           ? () =>
               openTab({
-                id: `project:${projectId}`,
+                id: 'page:/workspace',
                 title: displayName,
                 type: 'page' as any,
-                href: `/projects/${encodeURIComponent(projectId)}`,
+                href: '/workspace',
               })
           : undefined
       }

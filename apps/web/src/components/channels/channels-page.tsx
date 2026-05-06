@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,6 @@ import {
   Settings,
   MessageSquare,
   ExternalLink,
-  FolderKanban,
 } from 'lucide-react';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { PageHeader } from '@/components/ui/page-header';
@@ -35,7 +34,6 @@ import { toast } from '@/lib/toast';
 import { featureFlags } from '@/lib/feature-flags';
 import { useServerStore, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
 import { ChannelConfigDialog } from './channel-config-dialog';
 import { ChannelSettingsDialog } from './channel-settings-dialog';
 
@@ -104,15 +102,12 @@ async function detectChannelsFromEnv(): Promise<Channel[]> {
 function ChannelCard({
   channel,
   index,
-  projectName,
   onToggle,
   onRemove,
   onSettings,
 }: {
   channel: Channel;
   index: number;
-  /** Display name for channel.project_id, or null when workspace-scoped */
-  projectName: string | null;
   onToggle: (id: string, enabled: boolean) => void;
   onRemove: (id: string) => void;
   onSettings: (channel: Channel) => void;
@@ -145,12 +140,6 @@ function ChannelCard({
               >
                 {channel.enabled ? "Live" : "Off"}
               </Badge>
-              {channel.project_id && (
-                <Badge variant="secondary" className="text-[10px] shrink-0 inline-flex items-center gap-1">
-                  <FolderKanban className="h-2.5 w-2.5" />
-                  {projectName ?? channel.project_id}
-                </Badge>
-              )}
             </div>
             <p className="text-xs text-muted-foreground truncate">
               @{channel.bot_username || '?'}
@@ -184,52 +173,6 @@ function ChannelCard({
 
 // ─── Main ───────────────────────────────────────────────────────────────────
 
-/** Sentinel value used when "All projects" is selected. */
-const FILTER_ALL = '__all__';
-const FILTER_WORKSPACE = '__workspace__';
-
-/**
- * Compact dropdown that drives both the channel list filter and the
- * default project for new channels created from this view.
- *
- * Three states the user can pick:
- *   • All        → show every channel (FILTER_ALL)
- *   • Workspace  → only channels with no project (null)
- *   • <project>  → only channels scoped to that project id
- */
-function ChannelsProjectFilter({
-  value,
-  onChange,
-}: {
-  value: string | null | typeof FILTER_ALL;
-  onChange: (next: string | null | typeof FILTER_ALL) => void;
-}) {
-  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
-  const visibleProjects = projects.filter((p) => p.id !== 'proj-workspace');
-
-  const current = value === FILTER_ALL ? FILTER_ALL : value === null ? FILTER_WORKSPACE : value;
-
-  return (
-    <select
-      value={current}
-      onChange={(e) => {
-        const next = e.target.value;
-        if (next === FILTER_ALL) onChange(FILTER_ALL);
-        else if (next === FILTER_WORKSPACE) onChange(null);
-        else onChange(next);
-      }}
-      className="h-7 rounded-md border border-border/50 bg-card px-2 text-xs text-foreground hover:bg-muted/50 cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary/30"
-      aria-label="Filter channels by project"
-    >
-      <option value={FILTER_ALL}>All projects</option>
-      <option value={FILTER_WORKSPACE}>Workspace (no project)</option>
-      {visibleProjects.map((p) => (
-        <option key={p.id} value={p.id}>{p.name}</option>
-      ))}
-    </select>
-  );
-}
-
 export function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -240,21 +183,8 @@ export function ChannelsPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<Channel | null>(null);
   const [removing, setRemoving] = useState(false);
-  // Project filter:
-  //   FILTER_ALL  → show every channel
-  //   null        → workspace-scoped channels only (channel.project_id IS NULL)
-  //   "<id>"      → channels scoped to this project
-  // Same value seeds `initialProjectId` on the setup wizard so a new channel
-  // inherits the current view.
-  const [projectFilter, setProjectFilter] = useState<string | null | typeof FILTER_ALL>(FILTER_ALL);
 
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
-  const projectNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const p of projects) map.set(p.id, p.name);
-    return map;
-  }, [projects]);
 
   const load = useCallback(async () => {
     const data = await channelFetch('');
@@ -374,20 +304,10 @@ export function ChannelsPage() {
     setConfigDialogOpen(true);
   };
 
-  // Apply the project filter before splitting by platform.
-  const visibleChannels = useMemo(() => {
-    if (projectFilter === FILTER_ALL) return channels;
-    if (projectFilter === null) return channels.filter((c) => !c.project_id);
-    return channels.filter((c) => c.project_id === projectFilter);
-  }, [channels, projectFilter]);
+  const visibleChannels = channels;
 
   const telegramChannels = visibleChannels.filter(c => c.platform === 'telegram');
   const slackChannels = visibleChannels.filter(c => c.platform === 'slack');
-
-  // Seed value for the setup-wizard `initialProjectId`. When the user has
-  // narrowed to a specific project, new channels default to that project.
-  // FILTER_ALL = no preference → workspace-global by default.
-  const wizardInitialProjectId = projectFilter === FILTER_ALL ? null : projectFilter;
 
   return (
     <div className="min-h-[100dvh]">
@@ -411,20 +331,6 @@ export function ChannelsPage() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your Channels</span>
                 <Badge variant="secondary" className="text-xs tabular-nums">{visibleChannels.length}</Badge>
               </div>
-              {/*
-                Project filter — narrows the visible list and seeds the
-                "new channel" wizard with the same project so a workflow
-                like "open this project's view → add a Slack channel"
-                lands the channel scoped correctly without an extra step.
-                Hidden when the project paradigm is off — every
-                channel is sandbox-wide in default mode.
-              */}
-              {featureFlags.enableProjects && (
-                <ChannelsProjectFilter
-                  value={projectFilter}
-                  onChange={setProjectFilter}
-                />
-              )}
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={load}>
@@ -506,7 +412,6 @@ export function ChannelsPage() {
                         key={ch.id}
                         channel={ch}
                         index={i}
-                        projectName={featureFlags.enableProjects && ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
                         onToggle={handleToggle}
                         onRemove={handleRemove}
                         onSettings={(ch) => { setSettingsChannel(ch); setSettingsOpen(true); }}
@@ -531,7 +436,6 @@ export function ChannelsPage() {
                         key={ch.id}
                         channel={ch}
                         index={i}
-                        projectName={featureFlags.enableProjects && ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
                         onToggle={handleToggle}
                         onRemove={handleRemove}
                         onSettings={(ch) => { setSettingsChannel(ch); setSettingsOpen(true); }}
@@ -550,7 +454,6 @@ export function ChannelsPage() {
         onOpenChange={setConfigDialogOpen}
         onCreated={() => load()}
         initialPlatform={configDialogPlatform}
-        initialProjectId={wizardInitialProjectId}
       />
 
       <ChannelSettingsDialog

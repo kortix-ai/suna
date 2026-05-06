@@ -194,6 +194,9 @@ function summarizeRuntime(
   coreStatus: HttpProbeResult<any>,
   status: InstanceLayerStatus,
 ): string {
+  if (hasStorageFullSignal(kortix, globalHealth, sessionStatus, coreStatus)) {
+    return 'Runtime cannot write because host storage is full';
+  }
   if (status === 'healthy') return 'Core runtime healthy';
   if (!kortix.ok) {
     return kortix.status === 0 && kortix.error
@@ -220,6 +223,35 @@ function describeProbeFailure(result: HttpProbeResult<any>, label: string): stri
   return `${label} returned ${result.status}`;
 }
 
+function probePayloadText(result: HttpProbeResult<any>): string {
+  return [
+    result.error,
+    result.text,
+    result.data ? JSON.stringify(result.data) : '',
+  ].filter(Boolean).join('\n');
+}
+
+function hasStorageFullSignal(...results: HttpProbeResult<any>[]): boolean {
+  return results.some((result) =>
+    /database or disk is full|no space left on device|\bENOSPC\b|disk is full/i.test(probePayloadText(result)),
+  );
+}
+
+function parseNumber(value: unknown): number | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatDiskSummary(percent: number | null, availableKb: number | null): string {
+  const pct = percent === null ? 'unknown' : `${percent}%`;
+  const availableGb = availableKb === null ? null : Math.max(availableKb / 1024 / 1024, 0);
+  const free = availableGb === null
+    ? 'unknown free'
+    : `${availableGb < 1 ? availableGb.toFixed(2) : availableGb.toFixed(1)} GB free`;
+  return `Host disk full · ${pct} used · ${free}`;
+}
+
 function deriveOverallStatus(
   host: InstanceLayerStatus,
   workload: InstanceLayerStatus,
@@ -236,6 +268,7 @@ function deriveRecommendedAction(
   workload: InstanceLayerHealth,
   runtime: InstanceLayerHealth,
 ): InstanceRepairAction | null {
+  if (host.details.disk_full === true || runtime.details.storage_full === true) return null;
   if (host.status === 'offline') return host.details.machine_status === 'stopped' ? 'start_host' : 'reboot_host';
   if (workload.status !== 'healthy') return workload.status === 'offline' ? 'restart_workload' : 'start_workload';
   if (runtime.status !== 'healthy') return 'restart_runtime';
@@ -311,6 +344,7 @@ export async function getJustAvpsInstanceHealth(
         'printf "workload_service=%s\n" "$(systemctl is-active justavps-docker.service 2>/dev/null || echo unknown)"',
         'printf "workload_enabled=%s\n" "$(systemctl is-enabled justavps-docker.service 2>/dev/null || echo unknown)"',
         'printf "container_status=%s\n" "$(docker inspect justavps-workload --format \"{{.State.Status}}\" 2>/dev/null || echo missing)"',
+        `df -Pk / 2>/dev/null | awk 'NR==2 {gsub("%","",$5); printf "root_disk_used_percent=%s\\nroot_disk_available_kb=%s\\nroot_disk_total_kb=%s\\n", $5, $4, $2}'`,
       ].join('; '),
       8,
     );
@@ -319,6 +353,20 @@ export async function getJustAvpsInstanceHealth(
     const dockerService = workloadDetails.docker_service || 'unknown';
     const workloadService = workloadDetails.workload_service || 'unknown';
     const containerStatus = workloadDetails.container_status || 'unknown';
+    const rootDiskUsedPercent = parseNumber(workloadDetails.root_disk_used_percent);
+    const rootDiskAvailableKb = parseNumber(workloadDetails.root_disk_available_kb);
+    const rootDiskTotalKb = parseNumber(workloadDetails.root_disk_total_kb);
+    const rootDiskFull = (rootDiskUsedPercent !== null && rootDiskUsedPercent >= 99) ||
+      (rootDiskAvailableKb !== null && rootDiskAvailableKb <= 1024 * 1024);
+
+    if (rootDiskFull) {
+      hostLayer.status = 'degraded';
+      hostLayer.summary = formatDiskSummary(rootDiskUsedPercent, rootDiskAvailableKb);
+      hostLayer.details.disk_full = true;
+      hostLayer.details.root_disk_used_percent = rootDiskUsedPercent;
+      hostLayer.details.root_disk_available_kb = rootDiskAvailableKb;
+      hostLayer.details.root_disk_total_kb = rootDiskTotalKb;
+    }
 
     let workloadStatus: InstanceLayerStatus = 'unknown';
     if (dockerService === 'active' && workloadService === 'active' && containerStatus === 'running') {
@@ -404,6 +452,7 @@ export async function getJustAvpsInstanceHealth(
         : [];
 
       const degradedServices = services.filter((service: any) => service.status === 'failed' || service.status === 'backoff' || service.status === 'unresponsive');
+      const storageFull = rootDiskFull || hasStorageFullSignal(kortixHealth, globalHealth, sessionStatus, coreStatus);
 
       let runtimeStatus: InstanceLayerStatus = 'unknown';
       if (kortixHealth.ok && globalHealth.ok && sessionStatus.ok && degradedServices.length === 0) {
@@ -419,19 +468,22 @@ export async function getJustAvpsInstanceHealth(
         label: 'Runtime',
         status: runtimeStatus,
         summary: summarizeRuntime(kortixHealth, globalHealth, sessionStatus, coreStatus, runtimeStatus),
-        actions: [
-          { action: 'restart_runtime', label: 'Restart core runtime' },
-          ...services.map((service: any) => ({
-            action: 'restart_service' as const,
-            label: `Restart ${service.name}`,
-            serviceId: service.id,
-          })),
-        ],
+        actions: storageFull
+          ? []
+          : [
+              { action: 'restart_runtime', label: 'Restart core runtime' },
+              ...services.map((service: any) => ({
+                action: 'restart_service' as const,
+                label: `Restart ${service.name}`,
+                serviceId: service.id,
+              })),
+            ],
         details: {
           kortix_health: { status: kortixHealth.status, data: kortixHealth.data ?? null, error: kortixHealth.error ?? null },
           global_health: { status: globalHealth.status, data: globalHealth.data ?? null, error: globalHealth.error ?? null },
           session_status: { status: sessionStatus.status, data: sessionStatus.data ?? null, error: sessionStatus.error ?? null },
           runtime_probe_issues: runtimeProbeIssues,
+          storage_full: storageFull,
           services,
         },
       };

@@ -1,7 +1,7 @@
 /**
- * Kortix Projects hooks.
+ * Kortix workspace compatibility hooks.
  *
- * Fetches from kortix-master's /kortix/projects API through the currently
+ * Fetches from kortix-master's legacy /kortix/projects API through the currently
  * active sandbox route (/v1/p/.../8000/kortix/projects). This keeps Kortix
  * workspace data on the same authenticated transport path as the rest of the
  * dashboard/OpenCode APIs.
@@ -21,7 +21,7 @@ export interface KortixProject {
   description: string;
   created_at: string;
   opencode_id: string | null;
-  /** 1 = legacy tasks layout, 2 = new tickets/board. New projects default to 2. */
+  /** 1 = legacy tasks layout, 2 = new tickets/board. */
   structure_version?: number;
   sessionCount?: number;
   // Extended properties from OpenCode Project (optional for compatibility)
@@ -164,4 +164,3 @@ export function usePatchProject() {
     },
   });
 }
-

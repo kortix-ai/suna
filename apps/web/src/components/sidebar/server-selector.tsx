@@ -39,7 +39,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { useAuth } from '@/components/AuthProvider';
-import { createSandbox, ensureSandbox, extractMappedPorts, getSandboxUrl, getSSHConnection, setupSSH, cancelSandbox, reactivateSandbox, listSandboxes, type SandboxCreateProgress, type SandboxProviderName, type SandboxInfo, type ServerTypeOption, type ChangelogEntry, type SSHConnectionInfo, type SSHSetupResult } from '@/lib/platform-client';
+import { createSandbox, ensureSandbox, extractMappedPorts, getSandboxById, getSandboxUrl, getSSHConnection, setupSSH, cancelSandbox, reactivateSandbox, listSandboxes, type SandboxCreateProgress, type SandboxProviderName, type SandboxInfo, type ServerTypeOption, type ChangelogEntry, type SSHConnectionInfo, type SSHSetupResult } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';
 import { isBillingEnabled } from '@/lib/config';
 
@@ -772,6 +772,7 @@ export function InstanceManagerDialog({
             provider,
             serverType,
           });
+      let readySandbox = sandbox;
 
       // Managed VPS providers can report as active before services are actually ready.
       // Do not route to dashboard until /kortix/health returns a real version.
@@ -781,7 +782,6 @@ export function InstanceManagerDialog({
           managedVpsProgressTimer = null;
         }
 
-        const sandboxUrl = getSandboxUrl(sandbox);
         const readyDeadline = Date.now() + 180_000;
         let readyVersion = '';
 
@@ -796,6 +796,13 @@ export function InstanceManagerDialog({
           });
 
           try {
+            const refreshed = await getSandboxById(sandbox.sandbox_id).catch(() => null);
+            if (!refreshed || refreshed.status !== 'active' || !refreshed.external_id) {
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+              continue;
+            }
+            readySandbox = refreshed;
+            const sandboxUrl = getSandboxUrl(refreshed);
             const res = await authenticatedFetch(
               `${sandboxUrl}/kortix/health`,
               { signal: AbortSignal.timeout(5000) },
@@ -827,12 +834,12 @@ export function InstanceManagerDialog({
         });
       }
 
-      const label = sandbox.name || (provider === 'local_docker'
+      const label = readySandbox.name || (provider === 'local_docker'
         ? 'Local Sandbox'
         : provider === 'justavps'
           ? 'JustaVPS'
           : 'Cloud Sandbox');
-      const isLocal = sandbox.provider === 'local_docker';
+      const isLocal = readySandbox.provider === 'local_docker';
 
       const store = useServerStore.getState();
 
@@ -841,10 +848,10 @@ export function InstanceManagerDialog({
       const serverId = store.registerOrUpdateSandbox(
         {
           label,
-          provider: sandbox.provider,
-          sandboxId: sandbox.external_id,
-          instanceId: sandbox.sandbox_id,
-          mappedPorts: extractMappedPorts(sandbox),
+          provider: readySandbox.provider,
+          sandboxId: readySandbox.external_id,
+          instanceId: readySandbox.sandbox_id,
+          mappedPorts: extractMappedPorts(readySandbox),
         },
         { autoSwitch: false, isLocal },
       );
@@ -852,7 +859,7 @@ export function InstanceManagerDialog({
       // Invalidate sandbox query so useSandbox picks up the latest state.
       queryClient.invalidateQueries({ queryKey: ['platform', 'sandbox'] });
       const result = activateServerSelection(serverId, { pathname });
-      router.push(result?.href ?? (sandbox.sandbox_id ? buildInstancePath(sandbox.sandbox_id, '/dashboard') : '/dashboard'));
+      router.push(result?.href ?? (readySandbox.sandbox_id ? buildInstancePath(readySandbox.sandbox_id, '/dashboard') : '/dashboard'));
       onOpenChange(false);
     } catch (err: any) {
       let message = err?.message || 'Failed to create sandbox';

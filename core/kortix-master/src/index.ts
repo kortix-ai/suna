@@ -179,14 +179,14 @@ if (process.env.KORTIX_DISABLE_CORE_SUPERVISOR !== 'true') {
 
 // Cron scheduling + webhook routing handled by unified triggers plugin.
 // TriggerManager starts cron jobs from .kortix/triggers.yaml + DB on boot —
-// but the plugin is project-scoped and opencode only loads it after the
+// but the plugin loads lazily and only registers cron triggers after the
 // first request bootstraps a project directory. On a container respawn
 // with no immediate user activity, hourly fires get silently skipped
 // until something pokes opencode (saw this 2026-04-27: respawn at 18:10,
 // plugin registered at 19:31 → 18:00 and 19:00 fires dropped).
 // Force a bootstrap for every known project so triggers register at boot.
-import { warmTriggerPluginForAllProjects } from './services/trigger-warmer'
-void warmTriggerPluginForAllProjects().catch((err) =>
+import { warmTriggerPluginForGlobalWorkspace } from './services/trigger-warmer'
+void warmTriggerPluginForGlobalWorkspace().catch((err) =>
   console.warn('[Kortix Master] trigger warmup failed:', err),
 )
 
@@ -284,7 +284,26 @@ app.use('*', async (c, next) => {
 // ─── Runtime readiness tracking ──────────────────────────────────────────────
 let openCodeReady = false
 let openCodeLastCheck = 0
+let openCodeConsecutiveMisses = 0
 const OPENCODE_CHECK_INTERVAL = 5_000 // recheck every 5s when not ready
+const OPENCODE_READY_TIMEOUT_MS = 5_000
+const OPENCODE_READY_BUSY_LOG_THRESHOLD = 3
+
+function isConnectionFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('ECONNREFUSED')
+    || message.includes('Unable to connect')
+    || message.includes('Connection refused')
+}
+
+function keepReadyWhileBusy(reason: string): boolean {
+  if (!openCodeReady) return false
+  openCodeConsecutiveMisses++
+  if (openCodeConsecutiveMisses === OPENCODE_READY_BUSY_LOG_THRESHOLD) {
+    console.warn(`[Kortix Master] OpenCode health probe is slow (${reason}); keeping runtime marked ready`)
+  }
+  return true
+}
 
 function inspectOpencodeDb(path: string | null) {
   if (!path || !existsSync(path)) return { sessionCount: null, latestSessionUpdate: null }
@@ -342,24 +361,36 @@ async function checkOpenCodeReady(): Promise<boolean> {
   openCodeLastCheck = now
 
   try {
-    const res = await fetch(`http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}/session`, {
-      signal: AbortSignal.timeout(3_000),
+    // Use the runtime's own lightweight health endpoint. Probing /session here
+    // is expensive on workspaces with large OpenCode state and can falsely mark
+    // a busy runtime as dead, which then triggers unnecessary restarts.
+    const res = await fetch(`http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}/global/health`, {
+      signal: AbortSignal.timeout(OPENCODE_READY_TIMEOUT_MS),
     })
     if (res.ok) {
       if (!openCodeReady) {
         console.log('[Kortix Master] OpenCode is ready')
       }
       openCodeReady = true
+      openCodeConsecutiveMisses = 0
       await res.arrayBuffer()
       return true
     }
     await res.arrayBuffer().catch(() => {})
-  } catch {}
-  if (openCodeReady) {
-    console.warn('[Kortix Master] OpenCode is no longer reachable')
+    return keepReadyWhileBusy(`HTTP ${res.status}`)
+  } catch (err) {
+    if (isConnectionFailure(err)) {
+      void serviceManager.requestRecovery('opencode-serve', 'health-check-connect')
+      if (openCodeReady) {
+        console.warn('[Kortix Master] OpenCode is no longer reachable')
+      }
+      openCodeReady = false
+      openCodeConsecutiveMisses = 0
+      return false
+    }
+    const message = err instanceof Error ? err.message : String(err)
+    return keepReadyWhileBusy(message)
   }
-  openCodeReady = false
-  void serviceManager.requestRecovery('opencode-serve', 'health-check')
   return false
 }
 
@@ -524,48 +555,30 @@ app.route('/kortix/marketplace', marketplaceRouter)
 // Preferences — default model management
 app.route('/kortix/preferences', preferencesRouter)
 
-// Projects + Tasks — Kortix project management. Gated behind PROJECTS_ENABLED
-// so the project paradigm is fully off by default. When the flag is off
-// every /kortix/projects/*, /kortix/tickets/*, and /kortix/tasks/* request
-// returns 503 with a clear payload so the web UI (which mirrors the flag) can
-// surface a coherent error if it accidentally calls these endpoints. Existing
-// SQLite rows are preserved — flipping the flag back on resurfaces them.
-if (config.PROJECTS_ENABLED) {
-  // Mount at both paths — Hono sub-routers don't match trailing slash from parent
-  app.route('/kortix/projects', projectsRouter)
-  app.route('/kortix/projects/', projectsRouter)
-  app.route('/kortix/tasks', tasksRouter)
-  app.route('/kortix/tasks/', tasksRouter)
+// Workspace + Tasks — global Kortix workspace compatibility API
+// Mount at both paths — Hono sub-routers don't match trailing slash from parent
+app.route('/kortix/projects', projectsRouter)
+app.route('/kortix/projects/', projectsRouter)
+app.route('/kortix/tasks', tasksRouter)
+app.route('/kortix/tasks/', tasksRouter)
 
-  // v2 board — tickets, columns, fields, templates, project_agents
-  // ticketProjectsRouter layers project-scoped config under /kortix/projects/:id/*
-  // so it's mounted at /kortix/projects after the base projects router (last writer wins
-  // for path-specific handlers; base projects router has no sub-paths like /columns).
-  app.route('/kortix/tickets', ticketsRouter)
-  app.route('/kortix/tickets/', ticketsRouter)
-  app.route('/kortix/projects', ticketProjectsRouter)
-  app.route('/kortix/projects/', ticketProjectsRouter)
+// v2 board — tickets, columns, fields, templates, project_agents
+// ticketProjectsRouter keeps legacy /kortix/projects/:id/* URLs working, but
+// every id resolves to the single global workspace.
+// so it's mounted at /kortix/projects after the base projects router (last writer wins
+// for path-specific handlers; base projects router has no sub-paths like /columns).
+app.route('/kortix/tickets', ticketsRouter)
+app.route('/kortix/tickets/', ticketsRouter)
+app.route('/kortix/projects', ticketProjectsRouter)
+app.route('/kortix/projects/', ticketProjectsRouter)
 
-  // Milestones — outcome-level grouping under /kortix/projects/:projectId/milestones
-  app.route('/kortix/projects', milestonesRouter)
-  app.route('/kortix/projects/', milestonesRouter)
+// Milestones — outcome-level grouping under /kortix/projects/:projectId/milestones
+app.route('/kortix/projects', milestonesRouter)
+app.route('/kortix/projects/', milestonesRouter)
 
-  // Project-scoped credentials under /kortix/projects/:projectId/credentials
-  app.route('/kortix/projects', credentialsRouter)
-  app.route('/kortix/projects/', credentialsRouter)
-} else {
-  const projectsDisabledHandler = (c: any) => c.json({
-    error: 'projects_disabled',
-    message: 'The project paradigm is disabled on this sandbox. Set KORTIX_PROJECTS_ENABLED=true to enable.',
-  }, 503)
-  app.all('/kortix/projects/*', projectsDisabledHandler)
-  app.all('/kortix/projects', projectsDisabledHandler)
-  app.all('/kortix/tickets/*', projectsDisabledHandler)
-  app.all('/kortix/tickets', projectsDisabledHandler)
-  app.all('/kortix/tasks/*', projectsDisabledHandler)
-  app.all('/kortix/tasks', projectsDisabledHandler)
-  console.log('[kortix-master] PROJECTS_ENABLED=false — /kortix/{projects,tickets,tasks}/* return 503')
-}
+// Project-scoped credentials under /kortix/projects/:projectId/credentials
+app.route('/kortix/projects', credentialsRouter)
+app.route('/kortix/projects/', credentialsRouter)
 
 // Public URL sharing — /kortix/share/:port returns the public URL for a sandbox port
 app.route('/kortix/share', shareRouter)

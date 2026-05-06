@@ -76,7 +76,7 @@ function parseProjectGetOutput(output: string): ProjectGetData | null {
   }
 
   return {
-    name: nameMatch?.[1] || 'Unknown Project',
+    name: nameMatch?.[1] || 'Workspace',
     path: pathMatch?.[1] || '',
     description: descMatch?.[1] || null,
     id: idMatch?.[1] || '',
@@ -108,7 +108,7 @@ export function OcProjectGetToolView({
   const data = useMemo(() => parseProjectGetOutput(output), [output]);
 
   if (isStreaming && !toolResult) {
-    return <LoadingState title="Loading project" subtitle={projectName || 'Fetching project details...'} />;
+    return <LoadingState title="Loading workspace" subtitle={projectName || 'Fetching workspace details...'} />;
   }
 
   return (
@@ -117,7 +117,7 @@ export function OcProjectGetToolView({
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Folder}
-            title={data?.name ?? 'Project'}
+            title={data?.name ?? 'Workspace'}
             subtitle={projectName}
           />
           {data?.id && (

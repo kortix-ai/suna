@@ -8,7 +8,6 @@ import {
   ChevronDown,
   Copy,
   FileText,
-  FolderOpen,
   Link,
   Loader2,
   Plug,
@@ -23,7 +22,6 @@ import {
 import { AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { featureFlags } from '@/lib/feature-flags';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
@@ -55,11 +53,7 @@ import {
   type Command,
   type McpStatus,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { useKortixProjects, type KortixProject } from '@/hooks/kortix/use-kortix-projects';
 import { useKortixConnectors, type KortixConnector } from '@/hooks/kortix/use-kortix-connectors';
-
-// Re-export as Project for backward compat in this file
-type Project = KortixProject;
 import { useSkills } from '@/features/skills/hooks';
 import { getSkillSource, type Skill } from '@/features/skills/types';
 import { openTabAndNavigate } from '@/stores/tab-store';
@@ -69,11 +63,11 @@ import { useServerStore } from '@/stores/server-store';
 // Types
 // ---------------------------------------------------------------------------
 
-type ItemKind = 'project' | 'agent' | 'skill' | 'command' | 'tool' | 'mcp' | 'connector';
+type ItemKind = 'agent' | 'skill' | 'command' | 'tool' | 'mcp' | 'connector';
 type ItemScope = 'project' | 'global' | 'external' | 'built-in';
 type KindFilter = 'all' | ItemKind;
 type ScopeFilter = 'all' | ItemScope;
-type WorkspaceComposerKind = 'agent' | 'skill' | 'command' | 'project';
+type WorkspaceComposerKind = 'agent' | 'skill' | 'command';
 
 interface WorkspaceItem {
   id: string;
@@ -82,14 +76,13 @@ interface WorkspaceItem {
   kind: ItemKind;
   scope: ItemScope;
   meta?: string;
-  raw?: Agent | Skill | Command | Project | KortixConnector | { toolId: string; server?: string } | { serverName: string; status: McpStatus };
+  raw?: Agent | Skill | Command | KortixConnector | { toolId: string; server?: string } | { serverName: string; status: McpStatus };
 }
 
 const COMPOSER_PRESETS: Record<WorkspaceComposerKind, { title: string; prompt: string }> = {
   agent:   { title: 'New agent',   prompt: "HEY let's build a new agent. Ask what job it should own, then scaffold it in the right workspace location and wire up any supporting skills." },
   skill:   { title: 'New skill',   prompt: "HEY let's build a new skill. Ask what should trigger it, then create the SKILL.md and any supporting files in the right workspace location." },
   command: { title: 'New command', prompt: "HEY let's build a new slash command. Ask what the command should do, then add it in the right workspace location and connect it to the correct agent." },
-  project: { title: 'New project', prompt: "HEY let's set up a new project. Ask for the name and purpose, then create it in the right workspace location with a clean starting structure." },
 };
 
 // ---------------------------------------------------------------------------
@@ -113,7 +106,6 @@ function mcpServerName(id: string): string | undefined {
 // ---------------------------------------------------------------------------
 
 const KIND_CONFIG: Record<ItemKind, { icon: typeof Bot; label: string }> = {
-  project:   { icon: FolderOpen, label: 'Project' },
   agent:     { icon: Bot,        label: 'Agent' },
   skill:     { icon: Sparkles,   label: 'Skill' },
   command:   { icon: Terminal,    label: 'Command' },
@@ -123,7 +115,7 @@ const KIND_CONFIG: Record<ItemKind, { icon: typeof Bot; label: string }> = {
 };
 
 const SCOPE_LABEL: Record<ItemScope, string> = {
-  project:    'Project',
+  project:    'Workspace',
   global:     'Global',
   external:   'External',
   'built-in': 'Built-in',
@@ -176,12 +168,6 @@ function DetailSheet({
     if (c.model) rows.push({ label: 'Model', value: c.model, mono: true });
     if (c.hints?.length) rows.push({ label: 'Hints', value: c.hints.join(', ') });
     if (c.template) content = c.template;
-  }
-  if (item?.kind === 'project' && item.raw) {
-    const p = item.raw as Project;
-    rows.push({ label: 'ID', value: p.id, mono: true });
-    if (p.path) rows.push({ label: 'Path', value: p.path, mono: true });
-    if (p.description) rows.push({ label: 'Description', value: p.description });
   }
   if (item?.kind === 'tool' && item.raw) {
     const t = item.raw as { toolId: string; server?: string };
@@ -377,7 +363,7 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
       <Blocks className="h-7 w-7 text-muted-foreground/30 mb-3" />
       <p className="text-sm font-medium text-foreground mb-1">Nothing here yet</p>
       <p className="text-xs text-muted-foreground text-center max-w-xs">
-        Use the actions above to add agents, skills, commands, projects, or MCP servers.
+        Use the actions above to add agents, skills, commands, connectors, or MCP servers.
       </p>
     </div>
   );
@@ -419,16 +405,8 @@ export default function WorkspacePage() {
     }
   }, [createSession]);
 
-  // Data — Kortix projects are the source of truth.
-  // Skip the query when the project paradigm is off so the workspace
-  // page in default mode never hits /kortix/projects (which 503s when sandbox-
-  // side PROJECTS_ENABLED is also off).
-  const { data: projects,  isLoading: lProjects, error: projectsError  } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
-  // Debug: log to browser console if projects fail to load
-  if (typeof window !== 'undefined') {
-    if (projectsError) console.error('[workspace] projects error:', projectsError);
-    if (!lProjects && !projectsError && !projects && featureFlags.enableProjects) console.warn('[workspace] projects: no data, no error, not loading');
-  }
+  // Data — workspace-global registries only. Historical projects stay in the
+  // backend DB for compatibility, but the UI does not expose projects.
   const { data: agents,    isLoading: lAgents    } = useOpenCodeAgents();
   const { data: skills,    isLoading: lSkills    } = useSkills();
   const { data: commands,  isLoading: lCommands  } = useOpenCodeCommands();
@@ -436,53 +414,24 @@ export default function WorkspacePage() {
   const { data: mcpStatus, isLoading: lMcp       } = useOpenCodeMcpStatus();
   const { data: connectors, isLoading: lConnectors } = useKortixConnectors();
 
-  const isLoading = lProjects || lAgents || lSkills || lCommands || lTools || lMcp || lConnectors;
+  const isLoading = lAgents || lSkills || lCommands || lTools || lMcp || lConnectors;
 
   const allItems = useMemo<WorkspaceItem[]>(() => {
     const items: WorkspaceItem[] = [];
 
-    // Projects only appear when the project paradigm is enabled.
-    if (featureFlags.enableProjects && projects && Array.isArray(projects)) {
-      const sorted = [...projects].sort((a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      for (const p of sorted) {
-        items.push({
-          id: `project:${p.id}`,
-          name: p.name,
-          description: p.path && p.path !== '/' ? p.path : undefined,
-          kind: 'project',
-          scope: 'project',
-          raw: p as any,
-        });
-      }
-    }
-
-    // 'project' scope means the item lives inside the workspace's `.opencode/`
-    // dir (vs `/.config/` for global, `/.claude/` etc for external). When the
-    // project paradigm is off there is no user-facing concept of a
-    // "project" so we collapse the label to 'global' — same items, same
-    // location, just no jargon.
-    const localScope: ItemScope = featureFlags.enableProjects ? 'project' : 'global';
-
-    // Project-only agents (orchestrator/project-maintainer/worker/project-manager)
-    // are hidden when the project paradigm is off — their bodies still
-    // reference project tools that aren't registered in that mode. Keep in
-    // sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
-    const projectOnlyAgents = new Set(['project-manager']);
-    agents?.filter((a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name))).forEach((a) => {
-      items.push({ id: `agent:${a.name}`, name: a.name, description: a.description, kind: 'agent', scope: localScope, meta: a.model?.modelID, raw: a });
+    agents?.filter((a) => !a.hidden).forEach((a) => {
+      items.push({ id: `agent:${a.name}`, name: a.name, description: a.description, kind: 'agent', scope: 'project', meta: a.model?.modelID, raw: a });
     });
 
     skills?.filter((s) => !(s as any).hidden).forEach((s) => {
       const src = getSkillSource(s.location);
-      const scope: ItemScope = src === 'project' ? localScope : src === 'global' ? 'global' : 'external';
+      const scope: ItemScope = src === 'project' ? 'project' : src === 'global' ? 'global' : 'external';
       items.push({ id: `skill:${s.name}`, name: s.name, description: s.description, kind: 'skill', scope, raw: s });
     });
 
     commands?.filter((c) => !(c as any).hidden && !c.subtask).forEach((c) => {
       const cs = commandScope(c.source);
-      items.push({ id: `command:${c.name}`, name: `/${c.name}`, description: c.description, kind: 'command', scope: cs === 'project' ? localScope : cs, meta: c.agent, raw: c });
+      items.push({ id: `command:${c.name}`, name: `/${c.name}`, description: c.description, kind: 'command', scope: cs === 'project' ? 'project' : cs, meta: c.agent, raw: c });
     });
 
     if (toolIds) {
@@ -506,7 +455,7 @@ export default function WorkspacePage() {
           name: c.name,
           description: c.description || undefined,
           kind: 'connector',
-          scope: localScope,
+          scope: 'project',
           meta: c.source || 'custom',
           raw: c,
         });
@@ -514,10 +463,10 @@ export default function WorkspacePage() {
     }
 
     return items;
-  }, [projects, agents, skills, commands, toolIds, mcpStatus, connectors]);
+  }, [agents, skills, commands, toolIds, mcpStatus, connectors]);
 
   const kindCounts = useMemo(() => {
-    const c: Record<KindFilter, number> = { all: allItems.length, project: 0, agent: 0, skill: 0, command: 0, tool: 0, mcp: 0, connector: 0 };
+    const c: Record<KindFilter, number> = { all: allItems.length, agent: 0, skill: 0, command: 0, tool: 0, mcp: 0, connector: 0 };
     allItems.forEach((i) => c[i.kind]++);
     return c;
   }, [allItems]);
@@ -543,7 +492,7 @@ export default function WorkspacePage() {
 
   const activeScopeTabs = useMemo(() => {
     const tabs: { value: ScopeFilter; label: string }[] = [{ value: 'all', label: 'All' }];
-    if (scopeCounts.project > 0)    tabs.push({ value: 'project',    label: 'Project' });
+    if (scopeCounts.project > 0)    tabs.push({ value: 'project',    label: 'Workspace' });
     if (scopeCounts.global > 0)     tabs.push({ value: 'global',     label: 'Global' });
     if (scopeCounts.external > 0)   tabs.push({ value: 'external',   label: 'External' });
     if (scopeCounts['built-in'] > 0) tabs.push({ value: 'built-in',  label: 'Built-in' });
@@ -553,11 +502,14 @@ export default function WorkspacePage() {
   const hasFilters = search.trim() !== '' || kindFilter !== 'all' || scopeFilter !== 'all';
   const clearFilters = () => { setSearch(''); setKindFilter('all'); setScopeFilter('all'); };
 
-  // Projects tab is filtered out below when the project paradigm is off.
-  // Kept in this list so the tuple type stays stable for downstream `kindCounts`.
-  const kindTabsAll = [
+  const quickActions = [
+    { title: 'New agent',   desc: 'Scaffold a new agent in your workspace',              meta: `${kindCounts.agent} live`,    icon: Bot,      kind: 'agent'   as WorkspaceComposerKind },
+    { title: 'New skill',   desc: 'Build a skill with the right trigger and file layout', meta: `${kindCounts.skill} live`,    icon: Sparkles, kind: 'skill'   as WorkspaceComposerKind },
+    { title: 'New command', desc: 'Create a slash command and wire it to an agent',       meta: `${kindCounts.command} live`,  icon: Terminal, kind: 'command' as WorkspaceComposerKind },
+  ];
+
+  const kindTabs = [
     { value: 'all'       as KindFilter, label: 'All' },
-    { value: 'project'   as KindFilter, label: 'Projects' },
     { value: 'agent'     as KindFilter, label: 'Agents' },
     { value: 'skill'     as KindFilter, label: 'Skills' },
     { value: 'command'   as KindFilter, label: 'Commands' },
@@ -565,10 +517,6 @@ export default function WorkspacePage() {
     { value: 'mcp'       as KindFilter, label: 'MCP' },
     { value: 'connector' as KindFilter, label: 'Connectors' },
   ] as const;
-  const kindTabs = featureFlags.enableProjects
-    ? kindTabsAll
-    : kindTabsAll.filter((t) => t.value !== 'project');
-
   return (
     <>
       <div className="flex-1 overflow-y-auto">
@@ -618,15 +566,6 @@ export default function WorkspacePage() {
                       {kindCounts.command}
                     </span>
                   </DropdownMenuItem>
-                  {featureFlags.enableProjects && (
-                    <DropdownMenuItem onClick={() => openComposer('project')}>
-                      <FolderOpen className="mr-2 h-3.5 w-3.5" />
-                      Project
-                      <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
-                        {kindCounts.project}
-                      </span>
-                    </DropdownMenuItem>
-                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => openSettings('mcp')}>
                     <Plug className="mr-2 h-3.5 w-3.5" />
@@ -731,12 +670,7 @@ export default function WorkspacePage() {
                       }}
                       index={index}
                       onClick={() => {
-                        if (item.kind === 'project' && item.raw) {
-                          const proj = item.raw as Project;
-                          openTabAndNavigate({ id: `project:${proj.id}`, title: item.name, type: 'project', href: `/projects/${encodeURIComponent(proj.id)}` });
-                        } else {
-                          setSelectedItem(item);
-                        }
+                        setSelectedItem(item);
                       }}
                       actions={
                         <Button
@@ -744,12 +678,7 @@ export default function WorkspacePage() {
                           className="text-muted-foreground hover:text-foreground h-8 px-2.5 text-xs"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (item.kind === 'project' && item.raw) {
-                              const proj = item.raw as Project;
-                              openTabAndNavigate({ id: `project:${proj.id}`, title: item.name, type: 'project', href: `/projects/${encodeURIComponent(proj.id)}` });
-                            } else {
-                              setSelectedItem(item);
-                            }
+                            setSelectedItem(item);
                           }}
                         >
                           View

@@ -1,15 +1,15 @@
 /**
- * Kortix Projects — project CRUD + session-project linking + file gating.
+ * Kortix Workspace — legacy project storage + global context helpers.
  *
- * SQLite (kortix.db) is the single source of truth.
- * No filesystem scanning, no markers.
+ * SQLite (kortix.db) remains the compatibility store, but runtime behavior is
+ * one global workspace rooted at /workspace (or the configured workspace path).
  */
 
 import { Database } from "bun:sqlite"
 import * as fs from "node:fs/promises"
 import { existsSync, mkdirSync, unlinkSync, statSync, writeFileSync } from "node:fs"
 import * as path from "node:path"
-import { tool, type ToolContext } from "@opencode-ai/plugin"
+import { tool } from "@opencode-ai/plugin"
 import { ensureGlobalMemoryFiles } from "./lib/paths"
 import { ensureSchema } from "./lib/schema"
 import { listColumns, replaceColumns } from "../../../src/services/ticket-service"
@@ -19,7 +19,7 @@ import { listColumns, replaceColumns } from "../../../src/services/ticket-servic
 export interface ProjectRow {
 	id: string; name: string; path: string; description: string
 	created_at: string; opencode_id: string | null
-	/** Hidden project-maintainer session id. Auto-created on first task lifecycle event. */
+	/** Hidden maintainer session id. Auto-created on first task lifecycle event. */
 	maintainer_session_id?: string | null
 }
 
@@ -272,6 +272,7 @@ export class ProjectManager {
 		try {
 			const result = await this.client.session.create({
 				body: { title: `${project.name} maintainer` },
+				query: { directory: this.workspaceRoot },
 			})
 			const sessionId = result?.data?.id as string | undefined
 			if (!sessionId) return null
@@ -308,57 +309,7 @@ export class ProjectManager {
 // ── Tools ────────────────────────────────────────────────────────────────────
 
 export function projectTools(mgr: ProjectManager, db: Database) {
-	const renderGlobal = (p: ProjectRow) => {
-		const contextPath = projectContextPath(p.path)
-		return [
-			`## ${p.name}`,
-			``,
-			`**Mode:** Global workspace`,
-			`**Path:** \`${p.path}\``,
-			p.description ? `**Description:** ${p.description}` : null,
-			`**ID:** \`${p.id}\``,
-			``,
-			`**Context:** \`${contextPath}\` ${existsSync(contextPath) ? "✓" : "(not created)"}`,
-		].filter(Boolean).join("\n")
-	}
-
 	return {
-		project_create: tool({
-			description: "Compatibility no-op. Kortix now uses one implicit global workspace; this updates/returns that workspace instead of creating a separate project.",
-			args: {
-				name: tool.schema.string().describe("Ignored; the global workspace is always used."),
-				description: tool.schema.string().describe('Optional global workspace description. "" to keep current.'),
-				path: tool.schema.string().describe("Ignored; the global workspace path is fixed."),
-				user_handle: tool.schema.string().optional().describe("Optional human handle stored on the global workspace."),
-				default_model: tool.schema.string().optional().describe("Ignored; there is no isolated project model seed."),
-			},
-			async execute(args: { name: string; description: string; path: string; user_handle?: string; default_model?: string }, toolCtx: ToolContext): Promise<string> {
-				const p = await mgr.createProject(args.name, args.description, args.path)
-				if (args.user_handle?.trim()) {
-					db.prepare("UPDATE projects SET user_handle=$h WHERE id=$id").run({ $h: args.user_handle.trim(), $id: p.id })
-				}
-				if (toolCtx?.sessionID) mgr.setSessionProject(toolCtx.sessionID, p.id)
-				return `Kortix uses one global workspace now; no separate project was created.\n\n${renderGlobal(mgr.getGlobalProject())}`
-			},
-		}),
-
-		project_list: tool({
-			description: "Show the single global Kortix workspace.",
-			args: {},
-			async execute(): Promise<string> {
-				const p = mgr.getGlobalProject()
-				return `| Workspace | Path | Description |\n|---|---|---|\n| **${p.name}** | \`${p.path}\` | ${p.description || "—"} |\n\n1 global workspace.`
-			},
-		}),
-
-		project_get: tool({
-			description: "Get global workspace details.",
-			args: { name: tool.schema.string().describe("Ignored; the global workspace is always returned.") },
-			async execute(): Promise<string> {
-				return renderGlobal(mgr.getGlobalProject())
-			},
-		}),
-
 		project_context_get: tool({
 			description: "Get the global workspace CONTEXT.md path and confirm whether it exists.",
 			args: { project: tool.schema.string().describe("Ignored; the global workspace is always used.") },
@@ -379,40 +330,6 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 			},
 		}),
 
-		project_update: tool({
-			description: "Update the global workspace name/description.",
-			args: {
-				project: tool.schema.string().describe("Ignored; the global workspace is always used."),
-				name: tool.schema.string().describe('"" to keep current'),
-				description: tool.schema.string().describe('"" to keep current'),
-			},
-			async execute(args: { project: string; name: string; description: string }): Promise<string> {
-				const p = mgr.getGlobalProject()
-				const n = args.name || p.name
-				const d = args.description || p.description
-				db.prepare("UPDATE projects SET name=$n,description=$d WHERE id=$id").run({ $n: n, $d: d, $id: p.id })
-				mgr.refreshGlobalProject()
-				return `Updated global workspace: **${n}**`
-			},
-		}),
-
-		project_delete: tool({
-			description: "Disabled. Kortix uses one global workspace that cannot be deleted.",
-			args: { project: tool.schema.string().describe("Ignored; the global workspace is always used.") },
-			async execute(): Promise<string> {
-				return "Refused: the global Kortix workspace cannot be deleted."
-			},
-		}),
-
-		project_select: tool({
-			description: "Compatibility no-op. The global Kortix workspace is always active for every session.",
-			args: { project: tool.schema.string().describe("Ignored; the global workspace is always active.") },
-			async execute(_args: { project: string }, toolCtx: ToolContext): Promise<string> {
-				const p = mgr.getGlobalProject()
-				if (toolCtx?.sessionID) mgr.setSessionProject(toolCtx.sessionID, p.id)
-				return `Global workspace **${p.name}** is active for this session.\nPath: \`${p.path}\``
-			},
-		}),
 	}
 }
 

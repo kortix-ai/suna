@@ -15,6 +15,7 @@ import {
 	type MessageWithParts,
 	useSyncStore,
 } from "@/stores/opencode-sync-store";
+import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
 import { loadSessionFromIDB, saveSessionToIDB } from "@/lib/idb-sync-cache";
 
 const EMPTY_MESSAGES: MessageWithParts[] = [];
@@ -23,6 +24,8 @@ const EMPTY_QUES: QuestionRequest[] = [];
 const EMPTY_DIFFS: FileDiff[] = [];
 const EMPTY_TODOS: Todo[] = [];
 const IDLE_STATUS = { type: "idle" } as SessionStatus;
+const MESSAGE_POLL_INTERVAL_MS = 10_000;
+const NETWORK_REVALIDATE_COOLDOWN_MS = 60_000;
 
 /**
  * Build MessageWithParts[] with reference caching.
@@ -40,6 +43,17 @@ const messageCache = new Map<
 	}
 >();
 const inFlightInitialLoads = new Map<string, Promise<void>>();
+const lastNetworkLoadAttemptAt = new Map<string, number>();
+const pollInFlightSessions = new Set<string>();
+
+function markNetworkLoadAttempt(sessionId: string) {
+	lastNetworkLoadAttemptAt.delete(sessionId);
+	lastNetworkLoadAttemptAt.set(sessionId, Date.now());
+	if (lastNetworkLoadAttemptAt.size > MESSAGE_CACHE_MAX) {
+		const oldest = lastNetworkLoadAttemptAt.keys().next().value;
+		if (oldest) lastNetworkLoadAttemptAt.delete(oldest);
+	}
+}
 
 function touchMessageCache(sessionId: string) {
 	const entry = messageCache.get(sessionId);
@@ -97,6 +111,7 @@ function buildMessages(
  */
 export function useSessionSync(sessionId: string) {
 	const fetchedRef = useRef<string | null>(null);
+	const runtimeHealthy = useSandboxConnectionStore((s) => s.healthy === true);
 
 	// Fetch messages on first access (or session change).
 	// On failure, retries with backoff (500ms, 1s, 2s) up to 3 times.
@@ -144,9 +159,31 @@ export function useSessionSync(sessionId: string) {
 		};
 		hydrateFromCache();
 
-		const fetchWithRetry = async (attempt = 0) => {
-			try {
-				const res = await getClient().session.messages({
+			if (!runtimeHealthy) {
+				fetchedRef.current = null;
+				return () => {
+					cancelled = true;
+					messageCache.delete(sessionId);
+				};
+			}
+
+			const existingMessages = useSyncStore.getState().messages[sessionId];
+			const lastNetworkLoad = lastNetworkLoadAttemptAt.get(sessionId) ?? 0;
+			if (
+				existingMessages &&
+				existingMessages.length > 0 &&
+				Date.now() - lastNetworkLoad < NETWORK_REVALIDATE_COOLDOWN_MS
+			) {
+				return () => {
+					cancelled = true;
+					fetchedRef.current = null;
+					messageCache.delete(sessionId);
+				};
+			}
+
+			const fetchWithRetry = async (attempt = 0) => {
+				try {
+					const res = await getClient().session.messages({
 					sessionID: sessionId,
 				});
 				if (cancelled) return;
@@ -198,12 +235,13 @@ export function useSessionSync(sessionId: string) {
 			existingLoad.catch(() => {
 				// Error handling is already performed by the owner.
 			});
-		} else {
-			const loadPromise = fetchWithRetry().finally(() => {
-				inFlightInitialLoads.delete(sessionId);
-			});
-			inFlightInitialLoads.set(sessionId, loadPromise);
-		}
+			} else {
+				const loadPromise = fetchWithRetry().finally(() => {
+					markNetworkLoadAttempt(sessionId);
+					inFlightInitialLoads.delete(sessionId);
+				});
+				inFlightInitialLoads.set(sessionId, loadPromise);
+			}
 
 		return () => {
 			cancelled = true;
@@ -213,19 +251,27 @@ export function useSessionSync(sessionId: string) {
 			// Evict stale cache entry to prevent unbounded memory growth
 			messageCache.delete(sessionId);
 		};
-	}, [sessionId]);
+	}, [sessionId, runtimeHealthy]);
 
 	// ── Polling fallback ──
 	// When the session is busy, SSE should deliver streaming events. But if
 	// SSE is broken (502, ERR_QUIC_PROTOCOL_ERROR, etc.), no events arrive
 	// and the UI is stuck on "Considering next steps..." forever. As a
-	// fallback, poll for messages every 3s while the session is busy.
+	// fallback, poll for messages while the session is busy.
 	// The poll stops as soon as the session goes idle or the component unmounts.
 	const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 	const lastPartCountRef = useRef(0);
+	const pollInFlightRef = useRef(false);
 
 	useEffect(() => {
 		if (!sessionId) return;
+		if (!runtimeHealthy) {
+			if (pollTimerRef.current) {
+				clearInterval(pollTimerRef.current);
+				pollTimerRef.current = null;
+			}
+			return;
+		}
 
 		const state = useSyncStore.getState();
 		const currentStatus = state.sessionStatus[sessionId];
@@ -262,15 +308,18 @@ export function useSessionSync(sessionId: string) {
 
 					// Skip fetch if SSE is delivering data (part count grew)
 					const currentCount = countParts();
-					if (currentCount > lastPartCountRef.current) {
-						lastPartCountRef.current = currentCount;
-						return;
-					}
+						if (currentCount > lastPartCountRef.current) {
+							lastPartCountRef.current = currentCount;
+							return;
+						}
+						if (pollInFlightRef.current || pollInFlightSessions.has(sessionId)) return;
 
-					// SSE appears stalled — fetch messages AND session status
-					try {
-						const [msgRes, statusRes] = await Promise.all([
-							getClient().session.messages({ sessionID: sessionId }),
+						// SSE appears stalled — fetch messages AND session status
+						pollInFlightRef.current = true;
+						pollInFlightSessions.add(sessionId);
+						try {
+							const [msgRes, statusRes] = await Promise.all([
+								getClient().session.messages({ sessionID: sessionId }),
 							getClient().session.status().catch(() => null),
 						]);
 						if (msgRes.data) {
@@ -290,10 +339,13 @@ export function useSessionSync(sessionId: string) {
 							}
 						}
 					} catch {
-						// Silently ignore — will retry on next interval
-					}
-					lastPartCountRef.current = countParts();
-				}, 3000);
+							// Silently ignore — will retry on next interval
+						} finally {
+							pollInFlightRef.current = false;
+							pollInFlightSessions.delete(sessionId);
+							lastPartCountRef.current = countParts();
+						}
+					}, MESSAGE_POLL_INTERVAL_MS);
 			}
 		} else {
 			// Session is idle — stop polling

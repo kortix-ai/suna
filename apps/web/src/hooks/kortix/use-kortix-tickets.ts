@@ -1,8 +1,9 @@
 'use client';
 
 /**
- * Kortix v2 Tickets — hooks for tickets, columns, fields, templates, and
- * project agents (the "team"). Hits /kortix/tickets and /kortix/projects/:id/*.
+ * Kortix tickets — hooks for tickets, columns, fields, templates, and
+ * workspace agents (the "team"). Hits /kortix/tickets and legacy
+ * /kortix/projects/:id/* compatibility routes.
  */
 
 import {

@@ -40,8 +40,6 @@ permission:
   task_verification: allow
   task_deliver: allow
   task: deny
-  project_get: allow
-  project_update: deny
   worktree_create: deny
   worktree_delete: deny
   instance_dispose: deny

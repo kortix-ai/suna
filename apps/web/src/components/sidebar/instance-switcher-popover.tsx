@@ -104,7 +104,7 @@ function WorkspaceAvatar({
 //
 // When the sidebar is in icon-only mode we don't render the full Slack-style
 // pill — instead the workspace gets a collapsed icon button matching the
-// Sessions/Projects pattern: avatar of the current workspace, hover reveals
+// session-list pattern: avatar of the current workspace, hover reveals
 // a flyout panel with the workspace list.
 
 /** Avatar (initials tile) of the currently-active workspace, sized for the

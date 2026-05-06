@@ -14,15 +14,26 @@ describe('probeJustAvpsSandboxReadiness', () => {
     expect(result.message).toContain('slug missing');
   });
 
+  test('does not probe backend proxy for provisioning rows', async () => {
+    const fetchMock = mock(async () => new Response('{}', { status: 200 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await probeJustAvpsSandboxReadiness({ externalId: 'vm-123' } as any);
+
+    expect(result.ready).toBe(false);
+    expect(result.message).toContain('slug missing');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   test('treats 200 as ready', async () => {
-    globalThis.fetch = mock(async () => new Response('{}', { status: 200 })) as typeof fetch;
+    globalThis.fetch = mock(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch;
     const result = await probeJustAvpsSandboxReadiness({ slug: 'abc', proxyToken: 'pt_test', serviceKey: 'sk_test' });
     expect(result.ready).toBe(true);
     expect(result.httpStatus).toBe(200);
   });
 
   test('treats 503 as still starting', async () => {
-    globalThis.fetch = mock(async () => new Response('{}', { status: 503 })) as typeof fetch;
+    globalThis.fetch = mock(async () => new Response('{}', { status: 503 })) as unknown as typeof fetch;
     const result = await probeJustAvpsSandboxReadiness({ slug: 'abc' });
     expect(result.ready).toBe(false);
     expect(result.httpStatus).toBe(503);

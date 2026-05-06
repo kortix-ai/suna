@@ -606,31 +606,7 @@ export async function updateSandboxMemberScope(
   }
 }
 
-export interface SandboxProjectSummary {
-  id: string;
-  name: string;
-  path: string;
-  description?: string;
-  created_at?: string;
-  opencode_id?: string | null;
-  sessionCount?: number;
-}
-
-
-export async function listSandboxProjects(sandbox: SandboxInfo): Promise<SandboxProjectSummary[]> {
-  const base = getSandboxUrl(sandbox);
-  const res = await authenticatedFetch(`${base.replace(/\/+$/, '')}/kortix/projects`, {
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(body || `Failed to list projects (${res.status})`);
-  }
-  const data = await res.json();
-  return Array.isArray(data) ? (data as SandboxProjectSummary[]) : [];
-}
-
-// ─── Per-project ACL inside a sandbox ────────────────────────────────────────
+// ─── Legacy project ACL inside a sandbox ─────────────────────────────────────
 //
 // The ACL lives in kortix-master's sqlite next to the projects it governs, so
 // these helpers talk to kortix-master via the preview proxy. Emails aren't

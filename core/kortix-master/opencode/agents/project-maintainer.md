@@ -12,7 +12,6 @@ permission:
   show: allow
   bash: allow
   skill: allow
-  project_get: allow
   project_context_get: allow
   project_context_sync: allow
   task_list: allow

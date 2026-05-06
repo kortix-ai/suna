@@ -1,21 +1,20 @@
 /**
- * Session categorisation for the Project Sessions tab + sidebar filtering.
+ * Session categorisation for workspace sessions + sidebar filtering.
  *
- * OpenCode sessions in a Kortix project come from three very different
+ * OpenCode sessions in the Kortix workspace come from different
  * sources and the sidebar/tabs should treat them differently:
  *
  *   - `human`       — user created this in the general chat, or any other
  *                     interactive session. Shows in the sidebar.
- *   - `onboarding`  — PM's onboarding chat spawned by `project_create` with
- *                     a `user_handle`. User needs to answer questions here,
- *                     so it stays in the sidebar.
+ *   - `onboarding`  — legacy PM onboarding chat. User needs to answer
+ *                     questions here, so it stays in the sidebar.
  *   - `agent_bound` — ticket-work session owned by a team agent (engineer /
  *                     qa / tech-lead / …). Created by `fireAgentTrigger`.
  *                     Hidden from sidebar; shown grouped under the agent
- *                     in the project Sessions tab.
+ *                     in workspace session groupings.
  *   - `trigger_fire`— spawned by a cron or webhook trigger fire (board
  *                     sweep, recurring monitor run). Hidden from sidebar;
- *                     shown under its trigger in the project Sessions tab.
+ *                     shown under its trigger in workspace session groupings.
  *
  * Detection is currently title-based — that's what's reliably available
  * on every opencode session record. Exact string formats are set by the
@@ -24,9 +23,9 @@
  *   ticket-triggers.ts  → `${agent.name} · #${number} ${title}`
  *                         (Engineer · #3 Project scaffold)
  *   ticket-triggers.ts  → `${agent.name} · ${project.name}`
- *                         (Engineer · status-page-service) — project-level
+ *                         (Engineer · status-page-service) — workspace-level
  *                          wake without a ticket
- *   project_create      → `Onboarding · ${project.name}`
+ *   legacy onboarding   → `Onboarding · ${workspace.name}`
  *                         (Onboarding · status-page-service)
  *   trigger fire        → `${trigger.name}`
  *                         (status-page-service-board-sweep, etc.)
@@ -45,9 +44,9 @@ export interface SessionLike {
 }
 
 export interface ClassifyContext {
-  /** Known agent display names for this project, e.g. ["Engineer", "QA", "Tech Lead"]. */
+  /** Known agent display names for this workspace, e.g. ["Engineer", "QA", "Tech Lead"]. */
   agentNames?: string[];
-  /** Known trigger names for this project, e.g. ["status-page-service-board-sweep"]. */
+  /** Known trigger names for this workspace, e.g. ["status-page-service-board-sweep"]. */
   triggerNames?: string[];
 }
 
@@ -56,7 +55,7 @@ const ONBOARDING_TITLE_RE = /^Onboarding\s*·/i;
 //   "Engineer · #3 Build X"
 //   "QA · #4 Review …"
 //   "Tech Lead · #2 …"
-//   "Engineer · my-project"   (project-level wake, no ticket)
+//   "Engineer · my-workspace"   (workspace-level wake, no ticket)
 const AGENT_BOUND_TITLE_RE = /^([A-Za-z][\w\s-]*?)\s*·\s*(#\d+|[\w-]+)/;
 
 export interface Classification {

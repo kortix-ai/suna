@@ -247,31 +247,16 @@ async function handleChannelCommand(
 // ── Dispatch to OpenCode ────────────────────────────────────────────────────
 
 /**
- * If the channel is scoped to a project, resolve the project's working
- * directory so opencode loads its `.opencode/agent/` tree. Without this,
- * a `default_agent` like `engineer` / `qa` (which only exist as project
- * agents) silently falls back to the global agent set and the wrong
- * persona answers.
- *
- * Workspace-global channels (no project_id) return undefined → opencode
- * uses the global agent registry, same as before.
+ * All channels dispatch against the single global workspace directory. Legacy
+ * channel.project_id values are preserved as data only; they no longer create
+ * per-project OpenCode instances.
  */
 async function resolveChannelDirectory(channel: ChannelConfig): Promise<string | undefined> {
-  if (!channel.project_id) return undefined
-  try {
-    const { Database } = await import('bun:sqlite')
-    const path = await import('path')
-    const dbPath = path.join(process.env.KORTIX_WORKSPACE || '/workspace', '.kortix', 'kortix.db')
-    const db = new Database(dbPath, { readonly: true })
-    try {
-      const row = db.prepare('SELECT path FROM projects WHERE id = ?').get(channel.project_id) as { path?: string } | undefined
-      return row?.path || undefined
-    } finally {
-      try { db.close() } catch {}
-    }
-  } catch {
-    return undefined
-  }
+  void channel
+  return process.env.KORTIX_WORKSPACE?.trim()
+    || process.env.WORKSPACE_DIR?.trim()
+    || process.env.KORTIX_WORKSPACE_ROOT?.trim()
+    || '/workspace'
 }
 
 async function dispatchToOpenCode(
@@ -290,9 +275,8 @@ async function dispatchToOpenCode(
       })()
     : undefined
 
-  // Project scope — directory passed as a query param so opencode loads
-  // <directory>/.opencode/agent/* and the channel's default_agent slug
-  // resolves against it.
+  // Workspace scope — directory passed as a query param so opencode loads
+  // /workspace/.opencode/agent/* and the channel's default_agent slug resolves.
   const directory = await resolveChannelDirectory(channel)
   const dirQuery = directory ? `?directory=${encodeURIComponent(directory)}` : ''
 
@@ -320,8 +304,7 @@ async function dispatchToOpenCode(
     }
   }
 
-  // Create new session — pass directory as a query so the new session is
-  // bound to the project's opencode project record (not the workspace root).
+  // Create new session in the global workspace instance.
   const createRes = await fetch(`${OPENCODE_URL}/session${dirQuery}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

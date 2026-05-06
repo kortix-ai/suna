@@ -448,8 +448,11 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const adminRepairMutation = useAdminSandboxRepair();
   const adminHealth = supportsLayeredHealth ? adminHealthQuery.data : undefined;
   const primaryRepairAction = supportsLayeredHealth
-    ? (adminHealth?.recommended_action || 'restart_workload')
+    ? adminHealth
+      ? adminHealth.recommended_action
+      : 'restart_workload'
     : 'restart_workload';
+  const storageFull = !!adminHealth && (adminHealth.layers.host.details.disk_full === true || adminHealth.layers.runtime.details.storage_full === true);
   const primaryRepairLabel =
     primaryRepairAction === 'restart_runtime' ? 'Restart runtime'
       : primaryRepairAction === 'restart_workload' ? 'Restart workload'
@@ -701,6 +704,10 @@ export function SessionList({ projectId }: SessionListProps = {}) {
 
   const handleRecoverHost = useCallback(async () => {
     if (!activeInstanceId || recoveringHost) return;
+    if (!primaryRepairAction) {
+      toast.error('Manual repair required before restarting services.');
+      return;
+    }
     setRecoveringHost(true);
     const phase = primaryRepairAction === 'restart_runtime'
       ? 'restarting_runtime'
@@ -846,6 +853,8 @@ export function SessionList({ projectId }: SessionListProps = {}) {
                   ? 'Restarting workload'
                   : recoveryPhase === 'restarting_runtime'
                     ? 'Restarting runtime services'
+                : storageFull
+                  ? 'Instance disk full'
                 : adminHealth && adminHealth.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy'
                   ? 'Runtime services unavailable'
                 : adminHealth && adminHealth.layers.workload.status !== 'healthy'
@@ -861,6 +870,8 @@ export function SessionList({ projectId }: SessionListProps = {}) {
                   ? 'Workload restart accepted. Waiting for the container and workspace services to come back online.'
                 : recoveryPhase === 'restarting_runtime'
                     ? 'Runtime restart accepted. Waiting for core services to come back online.'
+                : storageFull
+                  ? 'The host and container are alive, but storage is full. Free disk space before restarting services.'
                 : adminHealth && adminHealth.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy'
                   ? 'Host and workload are healthy, but runtime services inside the workspace are failing. Restart the runtime layer first.'
                 : adminHealth && adminHealth.layers.workload.status !== 'healthy'
@@ -870,7 +881,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
                 : 'Could not reach server'}
             </p>
             <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              {connectionStatus === 'unreachable' && activeServer?.provider === 'justavps' && activeInstanceId ? (
+              {connectionStatus === 'unreachable' && activeServer?.provider === 'justavps' && activeInstanceId && primaryRepairAction ? (
                 <Button
                   onClick={() => void handleRecoverHost()}
                   variant="default"

@@ -94,8 +94,8 @@ export default function AdminStressTestPage() {
 
   // Build thread URL
   const getThreadUrl = (result: StressTestResult) => {
-    if (!result.thread_id || !result.project_id) return null;
-    return `/projects/${result.project_id}/thread/${result.thread_id}`;
+    if (!result.thread_id) return null;
+    return `/legacy/${result.thread_id}`;
   };
 
   return (

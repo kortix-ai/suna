@@ -3,6 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { getClient } from "@/lib/opencode-sdk";
 import { useSyncStore } from "@/stores/opencode-sync-store";
+import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
 import {
   saveSessionToIDB,
   loadSessionFromIDB,
@@ -18,6 +19,7 @@ const inFlightPrefetches = new Map<string, Promise<void>>();
  * Skips if the session is already in the sync store.
  */
 export async function prefetchSession(sessionId: string): Promise<void> {
+  if (useSandboxConnectionStore.getState().healthy !== true) return;
   if (prefetchedSessions.has(sessionId)) return;
   const existingPrefetch = inFlightPrefetches.get(sessionId);
   if (existingPrefetch) return existingPrefetch;

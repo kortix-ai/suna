@@ -51,6 +51,13 @@ export interface ServerEntry {
 interface ServerStore {
   servers: ServerEntry[];
   activeServerId: string;
+  /**
+   * Last explicitly selected managed sandbox. Managed server entries are
+   * rebuilt from the platform API on reload, so this survives the hydration gap
+   * where the entry itself is not in `servers` yet.
+   */
+  lastSelectedInstanceId: string;
+  lastSelectedSandboxId: string;
   /** True when the user has manually picked a server via the selector UI. */
   userSelected: boolean;
   /**
@@ -116,6 +123,8 @@ interface ServerStore {
   }, options?: {
     /** If true, auto-switch to this sandbox when user hasn't manually selected */
     autoSwitch?: boolean;
+    /** If true, restore this sandbox when it matches the persisted selection */
+    restoreSelection?: boolean;
     /** If true, this is local mode — update default entry instead of cloud-sandbox */
     isLocal?: boolean;
     /** Optional stable ID to use for cloud sandboxes (e.g. "sandbox-<sandboxId>") */
@@ -251,6 +260,14 @@ function deleteServerFromApi(id: string) {
     { retryOnAuthError: false }).catch(() => {});
 }
 
+function selectedSandboxPatch(server: ServerEntry | null | undefined) {
+  if (!server?.provider && !server?.instanceId && !server?.sandboxId) return {};
+  return {
+    lastSelectedInstanceId: server.instanceId ?? '',
+    lastSelectedSandboxId: server.sandboxId ?? '',
+  };
+}
+
 /** Bulk sync all servers to API (used on initial hydration). */
 function syncAllToApi(servers: ServerEntry[]) {
   const custom = servers.filter((s) => !isManagedEntry(s));
@@ -307,6 +324,8 @@ export const useServerStore = create<ServerStore>()(
       // Starts empty — sandboxes are loaded via useSandbox hook after auth.
       servers: [],
       activeServerId: '',
+      lastSelectedInstanceId: '',
+      lastSelectedSandboxId: '',
       userSelected: false,
       serverVersion: 0,
       urlVersion: 0,
@@ -433,6 +452,7 @@ export const useServerStore = create<ServerStore>()(
         set({
           servers: newServers,
           activeServerId: fallbackId,
+          ...(wasActive && server ? selectedSandboxPatch(newServers.find((s) => s.id === fallbackId) ?? null) : {}),
           // If we removed the active server, bump version and reset userSelected
           // so the next sandbox creation can auto-switch.
           ...(wasActive ? {
@@ -443,7 +463,7 @@ export const useServerStore = create<ServerStore>()(
         deleteServerFromApi(id);
       },
 
-      setActiveServer: (id: string, options?: { auto?: boolean }) => {
+      setActiveServer: (id: string, options?: { auto?: boolean; force?: boolean }) => {
         const state = get();
         const isSameId = state.activeServerId === id;
         const target = state.servers.find((s) => s.id === id) ?? null;
@@ -460,6 +480,7 @@ export const useServerStore = create<ServerStore>()(
         set({
           activeServerId: id,
           serverVersion: state.serverVersion + 1,
+          ...selectedSandboxPatch(target),
           // Mark userSelected unless this is an auto-switch (e.g. from useSandbox)
           ...(options?.auto ? {} : { userSelected: true }),
         });
@@ -497,6 +518,7 @@ export const useServerStore = create<ServerStore>()(
         const state = get();
         const isLocal = options?.isLocal ?? false;
         const autoSwitch = options?.autoSwitch ?? false;
+        const restoreSelection = options?.restoreSelection ?? true;
         const targetId = options?.stableId ?? (isLocal ? DEFAULT_SERVER_ID : CLOUD_SANDBOX_SERVER_ID);
 
         // In pure local mode, keep using the default entry. Discovered local sandboxes
@@ -513,6 +535,7 @@ export const useServerStore = create<ServerStore>()(
             });
           } else {
             // Entry was stripped on rehydration — re-create it now.
+            const wasPendingActive = state.activeServerId === DEFAULT_SERVER_ID;
             const newDefault: ServerEntry = {
               id: DEFAULT_SERVER_ID,
               label: sandbox.label || 'Local Sandbox',
@@ -523,7 +546,19 @@ export const useServerStore = create<ServerStore>()(
               instanceId: sandbox.instanceId,
               mappedPorts: sandbox.mappedPorts,
             };
-            set((s) => ({ servers: [...s.servers, newDefault] }));
+            set((s) => ({
+              servers: [...s.servers, newDefault],
+              ...(wasPendingActive ? { serverVersion: s.serverVersion + 1 } : {}),
+            }));
+          }
+          const freshAfterLocalRegister = get();
+          const matchesLastSelection = restoreSelection && (
+            (!!sandbox.instanceId && freshAfterLocalRegister.lastSelectedInstanceId === sandbox.instanceId) ||
+            (!!sandbox.sandboxId && freshAfterLocalRegister.lastSelectedSandboxId === sandbox.sandboxId)
+          );
+          if (matchesLastSelection) {
+            get().setActiveServer(DEFAULT_SERVER_ID, { auto: true, force: true });
+            set({ userSelected: true });
           }
           // Auto-switch to local default if nothing is selected.
           if (autoSwitch) {
@@ -565,9 +600,21 @@ export const useServerStore = create<ServerStore>()(
             instanceId: sandbox.instanceId,
             mappedPorts: sandbox.mappedPorts,
           };
+          const wasPendingActive = state.activeServerId === resolvedTargetId;
           set((state) => ({
             servers: [...state.servers, newEntry],
+            ...(wasPendingActive ? { serverVersion: state.serverVersion + 1 } : {}),
           }));
+        }
+
+        const freshAfterRegister = get();
+        const matchesLastSelection = restoreSelection && (
+          (!!sandbox.instanceId && freshAfterRegister.lastSelectedInstanceId === sandbox.instanceId) ||
+          (!!sandbox.sandboxId && freshAfterRegister.lastSelectedSandboxId === sandbox.sandboxId)
+        );
+        if (matchesLastSelection) {
+          get().setActiveServer(resolvedTargetId, { auto: true, force: true });
+          set({ userSelected: true });
         }
 
         // Auto-switch to the sandbox if the user hasn't manually picked a server.
@@ -592,10 +639,14 @@ export const useServerStore = create<ServerStore>()(
       partialize: (state) => ({
         servers: state.servers.filter((s) => !isManagedEntry(s)),
         activeServerId: state.activeServerId,
+        lastSelectedInstanceId: state.lastSelectedInstanceId,
+        lastSelectedSandboxId: state.lastSelectedSandboxId,
         userSelected: state.userSelected,
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
+        state.lastSelectedInstanceId = state.lastSelectedInstanceId ?? '';
+        state.lastSelectedSandboxId = state.lastSelectedSandboxId ?? '';
 
         // Remove ALL managed sandbox entries from localStorage — sandboxes
         // are loaded fresh via useSandbox hook on every page load. This strips:
@@ -607,16 +658,33 @@ export const useServerStore = create<ServerStore>()(
           (s) => !isManagedEntry(s) && !s.provider,
         );
 
-        // Active server will be set by useSandbox hook once it loads.
-        // If current activeServerId was a removed entry, clear it and
-        // reset userSelected so useSandbox can auto-switch.
+        // Managed sandbox entries are rebuilt from the platform API, so the
+        // active server may be missing during hydration. Keep the selected
+        // managed ID/cookie alive so refresh restores the same instance once
+        // useSandbox registers it again.
         if (state.activeServerId && !state.servers.some((s) => s.id === state.activeServerId)) {
-          state.activeServerId = state.servers[0]?.id ?? '';
-          state.userSelected = false;
+          const activeLooksManaged =
+            state.activeServerId === DEFAULT_SERVER_ID ||
+            state.activeServerId === CLOUD_SANDBOX_SERVER_ID ||
+            state.activeServerId.startsWith('sandbox-');
+          const hasPersistedSandboxSelection = !!state.lastSelectedInstanceId || !!state.lastSelectedSandboxId;
+
+          if (activeLooksManaged || hasPersistedSandboxSelection) {
+            state.userSelected = true;
+          } else {
+            state.activeServerId = state.servers[0]?.id ?? '';
+            state.userSelected = false;
+          }
         }
 
         const active = state.servers.find((s) => s.id === state.activeServerId) ?? null;
-        syncActiveInstanceCookie(active);
+        if (active) {
+          syncActiveInstanceCookie(active);
+        } else if (state.lastSelectedInstanceId) {
+          setActiveInstanceCookie(state.lastSelectedInstanceId);
+        } else {
+          syncActiveInstanceCookie(null);
+        }
 
         // Load custom entries from API (user-added URLs).
         // Sandbox entries come from useSandbox hook, not from here.

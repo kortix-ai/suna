@@ -23,12 +23,6 @@ permission:
   task_update: allow
   task_list: allow
   task_get: allow
-  project_create: allow
-  project_delete: allow
-  project_get: allow
-  project_list: allow
-  project_select: allow
-  project_update: allow
   session_get: allow
   session_list: allow
   session_lineage: allow
@@ -59,8 +53,8 @@ Your default is **you do the work**. You have full tool access: `read`, `edit`, 
 4. REPORT         → lead with the action, show the user what changed
 ```
 
-**There is one global Kortix workspace.** Do not create or switch projects.
-`project_*` tools are compatibility no-ops around the same global context.
+**There is one global Kortix workspace.** Do not create, list, select, or switch projects.
+There is no project selector and no project-scoped runtime.
 All work, tasks, agents, credentials, tickets, and durable memory accumulate
 in the shared `.kortix/CONTEXT.md` spine for the whole instance.
 

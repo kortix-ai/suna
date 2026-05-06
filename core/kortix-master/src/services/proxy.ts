@@ -5,8 +5,10 @@ import { serviceManager } from './service-manager'
 
 // 30s timeout for regular requests
 const FETCH_TIMEOUT_MS = 30_000
-const OPENCODE_HEALTH_TIMEOUT_MS = 1_500
+const OPENCODE_HEALTH_TIMEOUT_MS = 5_000
 const LOG_COOLDOWN_MS = 60_000
+const OPENCODE_FAST_FAIL_MS = 10_000
+const OPENCODE_ABORT_TIMEOUT_MS = 5_000
 
 const STRIP_REQUEST_HEADERS = new Set([
   'host',
@@ -31,6 +33,8 @@ const STRIP_RESPONSE_HEADERS = new Set([
 ])
 
 const seen = new Map<string, number>()
+let openCodeFastFailUntil = 0
+let openCodeRestartInFlight: Promise<unknown> | null = null
 
 function sanitizeResponseHeaders(input: Headers): Headers {
   const headers = new Headers(input)
@@ -46,25 +50,61 @@ function note(key: string, msg: string): void {
   console.error(msg)
 }
 
+function markOpenCodeUnhealthy(): void {
+  openCodeFastFailUntil = Date.now() + OPENCODE_FAST_FAIL_MS
+}
+
+function clearOpenCodeUnhealthy(): void {
+  openCodeFastFailUntil = 0
+}
+
 function recover(path: string): boolean {
   return path !== '/file/status'
 }
 
-async function isOpenCodeHealthy(): Promise<boolean> {
+function isOpenCodeAbortRequest(method: string, path: string): boolean {
+  return method === 'POST' && /^\/session\/[^/]+\/abort$/.test(path)
+}
+
+function scheduleOpenCodeRestart(reason: string): void {
+  if (openCodeRestartInFlight) return
+  openCodeRestartInFlight = serviceManager.restartService('opencode-serve')
+    .then((result) => {
+      if (!result.ok) {
+        console.warn(`[Kortix Master] OpenCode restart failed (${reason}): ${result.output}`)
+      }
+    })
+    .catch((err) => {
+      console.warn(`[Kortix Master] OpenCode restart failed (${reason}): ${err instanceof Error ? err.message : String(err)}`)
+    })
+    .finally(() => {
+      openCodeRestartInFlight = null
+    })
+}
+
+async function isOpenCodeConnectable(): Promise<boolean> {
   try {
-    const res = await fetch(`http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}/session`, {
+    const res = await fetch(`http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}/global/health`, {
       signal: AbortSignal.timeout(OPENCODE_HEALTH_TIMEOUT_MS),
     })
     await res.arrayBuffer().catch(() => {})
-    return res.ok
-  } catch {
-    return false
+    return true
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes('ECONNREFUSED') || message.includes('Unable to connect') || message.includes('Connection refused')) {
+      return false
+    }
+    // A health timeout means OpenCode is overloaded or busy, not necessarily
+    // gone. Avoid entering fast-fail mode unless the TCP connection is refused.
+    return true
   }
 }
 
 export async function proxyToOpenCode(c: Context): Promise<Response> {
   const url = new URL(c.req.url)
   const targetUrl = `http://${config.OPENCODE_HOST}:${config.OPENCODE_PORT}${url.pathname}${url.search}`
+  const isAbortRequest = isOpenCodeAbortRequest(c.req.method, url.pathname)
+  const requestTimeoutMs = isAbortRequest ? OPENCODE_ABORT_TIMEOUT_MS : FETCH_TIMEOUT_MS
   const requestBody = c.req.method !== 'GET' && c.req.method !== 'HEAD'
     ? await c.req.raw.arrayBuffer()
     : undefined
@@ -80,12 +120,20 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
   // Detect if this is likely an SSE request (Accept: text/event-stream)
   const acceptsSSE = (c.req.header('accept') || '').includes('text/event-stream')
 
+  if (Date.now() < openCodeFastFailUntil) {
+    return c.json({
+      error: 'OpenCode not responding',
+      details: 'OpenCode is currently restarting or unavailable',
+    }, 503)
+  }
+
   async function fetchUpstream(): Promise<Response> {
     // For SSE: use an AbortController linked to the client request's signal
     // so when the client disconnects, we abort the upstream fetch too.
     // For regular requests: use a 30s timeout.
     const controller = new AbortController()
     const { signal } = controller
+    let timer: ReturnType<typeof setTimeout> | null = null
 
     if (acceptsSSE) {
       // If the client request has a signal (Bun provides this when client disconnects),
@@ -99,27 +147,40 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
         }
       }
     } else {
-      // Regular request: 30s timeout
-      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-      signal.addEventListener('abort', () => clearTimeout(timer), { once: true })
+      timer = setTimeout(() => controller.abort(), requestTimeoutMs)
+      signal.addEventListener('abort', () => {
+        if (timer) clearTimeout(timer)
+      }, { once: true })
     }
 
-    return fetch(targetUrl, {
-      method: c.req.method,
-      headers,
-      body: requestBody ? requestBody.slice(0) : undefined,
-      // @ts-ignore - Bun supports duplex
-      duplex: 'half',
-      signal,
-    })
+    try {
+      return await fetch(targetUrl, {
+        method: c.req.method,
+        headers,
+        body: requestBody ? requestBody.slice(0) : undefined,
+        // @ts-ignore - Bun supports duplex
+        duplex: 'half',
+        signal,
+      })
+    } finally {
+      // The timeout protects "no upstream headers" cases. Once OpenCode has
+      // answered, do not abort a slow/large body read, especially huge
+      // /session/:id/message payloads.
+      if (timer) clearTimeout(timer)
+    }
   }
 
   try {
     const response = await fetchUpstream()
+    if (response.ok) clearOpenCodeUnhealthy()
 
     // Check if this is an SSE/streaming response — pass body as stream
     const contentType = response.headers.get('content-type') || ''
-    if (contentType.includes('text/event-stream') || contentType.includes('application/octet-stream')) {
+    const shouldStreamJson =
+      response.ok &&
+      c.req.method === 'GET' &&
+      /^\/session\/[^/]+\/message$/.test(url.pathname)
+    if (contentType.includes('text/event-stream') || contentType.includes('application/octet-stream') || shouldStreamJson) {
       return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,
@@ -165,15 +226,26 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
     // AbortError for manual controller.abort())
     if (error instanceof DOMException && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
       if (!acceptsSSE) {
-        const healthy = await isOpenCodeHealthy()
-        if (!healthy && recover(url.pathname)) {
-          void serviceManager.requestRecovery('opencode-serve', `proxy-timeout:${url.pathname}`)
+        if (isAbortRequest) {
+          markOpenCodeUnhealthy()
+          scheduleOpenCodeRestart(`abort-timeout:${url.pathname}`)
+          note(
+            `timeout:${c.req.method}:${url.pathname}`,
+            `[Kortix Master] OpenCode abort timed out on ${url.pathname} after ${requestTimeoutMs / 1000}s; restarting runtime`,
+          )
+          return c.json(true)
         }
+        const connectable = await isOpenCodeConnectable()
+        if (!connectable) markOpenCodeUnhealthy()
+        // A timed-out data endpoint usually means OpenCode is busy handling a
+        // large session, not that the process is dead. Do not restart it here:
+        // process-level recovery is reserved for connect failures and watchdog
+        // TCP probes.
         note(
           `timeout:${c.req.method}:${url.pathname}`,
-          `[Kortix Master] OpenCode timeout on ${c.req.method} ${url.pathname} after ${FETCH_TIMEOUT_MS / 1000}s`,
+          `[Kortix Master] OpenCode timeout on ${c.req.method} ${url.pathname} after ${requestTimeoutMs / 1000}s`,
         )
-        return c.json({ error: 'OpenCode not responding', details: `${url.pathname} timed out after ${FETCH_TIMEOUT_MS / 1000}s — OpenCode may still be starting` }, 504)
+        return c.json({ error: 'OpenCode not responding', details: `${url.pathname} timed out after ${requestTimeoutMs / 1000}s — OpenCode may be busy or temporarily unavailable` }, 504)
       }
       // SSE client disconnected — just return empty response (connection is already gone)
       return new Response(null, { status: 499 })
@@ -181,6 +253,7 @@ export async function proxyToOpenCode(c: Context): Promise<Response> {
     const errMsg = error instanceof Error ? error.message : String(error)
     const isConnRefused = errMsg.includes('ECONNREFUSED') || errMsg.includes('Unable to connect')
     if (isConnRefused) {
+      markOpenCodeUnhealthy()
       note(
         `unreachable:${c.req.method}:${url.pathname}`,
         `[Kortix Master] OpenCode unreachable on ${c.req.method} ${url.pathname}: ${errMsg} — is OpenCode running on ${config.OPENCODE_HOST}:${config.OPENCODE_PORT}?`,

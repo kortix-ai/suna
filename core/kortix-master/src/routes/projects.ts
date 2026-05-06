@@ -1,15 +1,16 @@
 /**
- * Kortix Projects API
+ * Kortix global workspace compatibility API
  *
  * Reads/writes from the shared .kortix/kortix.db (same DB the orchestrator plugin uses).
- * This is the frontend's source of truth for project data — NOT the OpenCode SDK.
+ * This is the frontend's compatibility surface for workspace data — NOT the OpenCode SDK.
  *
- * Mounted at /kortix/projects in kortix-master.
+ * Mounted at legacy /kortix/projects in kortix-master. All ids resolve to
+ * the single global workspace; historical project rows are preserved as data.
  */
 
 import { Hono } from 'hono'
 import { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, unlinkSync, statSync } from 'fs'
+import { existsSync, mkdirSync, unlinkSync, statSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { ensureTicketTables, getAgentBySlug, listColumns, replaceColumns } from '../services/ticket-service'
 import { DEFAULT_PM_SLUG } from '../services/project-v2-seed'
@@ -32,6 +33,8 @@ const GLOBAL_PROJECT_DESCRIPTION = 'Global Kortix workspace. All tasks, tickets,
 
 function workspaceRoot(): string {
   return process.env.KORTIX_WORKSPACE?.trim()
+    || process.env.WORKSPACE_DIR?.trim()
+    || process.env.KORTIX_WORKSPACE_ROOT?.trim()
     || process.env.OPENCODE_CONFIG_DIR?.replace(/\/opencode\/?$/, '')
     || '/workspace'
 }
@@ -41,6 +44,8 @@ function ensureGlobalProject(db: Database): ProjectRow {
   const now = new Date().toISOString()
   const ctxDir = join(workspace, '.kortix')
   mkdirSync(ctxDir, { recursive: true })
+  const ctxPath = join(ctxDir, 'CONTEXT.md')
+  if (!existsSync(ctxPath)) writeFileSync(ctxPath, `# ${GLOBAL_PROJECT_NAME}\n\n${GLOBAL_PROJECT_DESCRIPTION}\n`, 'utf8')
 
   let row = db.prepare('SELECT * FROM projects WHERE path=$path').get({ $path: workspace }) as ProjectRow | null
   if (row) {
@@ -146,7 +151,8 @@ const projectsRouter = new Hono()
 projectsRouter.post('/', async (c) => {
   try {
     const db = getDb()
-    const body = await c.req.json<{ name?: string; description?: string; user_handle?: string }>().catch(() => ({}))
+    const body = await c.req.json<{ name?: string; description?: string; user_handle?: string }>()
+      .catch(() => ({} as { name?: string; description?: string; user_handle?: string }))
     let global = ensureGlobalProject(db)
     if (body.description !== undefined && body.description.trim()) {
       db.prepare('UPDATE projects SET description=$d WHERE id=$id').run({ $d: body.description.trim(), $id: global.id })
@@ -181,12 +187,7 @@ function getOpenCodeClient(): OpenCodeClientLike {
 // doesn't need to know about project directories — it just POSTs.
 projectsRouter.post('/:id/pm-review', async (c) => {
   const db = getDb()
-  const pid = decodeURIComponent(c.req.param('id'))
-  const project = db.prepare('SELECT * FROM projects WHERE id=$id OR path=$id').get({ $id: pid }) as ProjectRow | null
-  if (!project) return c.json({ error: 'Project not found' }, 404)
-  if ((project as any).structure_version !== 2) {
-    return c.json({ error: 'pm-review is v2-only' }, 400)
-  }
+  const project = ensureGlobalProject(db)
   const pm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)
   if (!pm) return c.json({ error: 'Global workspace has no separate Project Manager agent.' }, 404)
 
@@ -242,12 +243,7 @@ projectsRouter.post('/:id/pm-review', async (c) => {
 // visible pollution in the chat.
 projectsRouter.post('/:id/pm-session', async (c) => {
   const db = getDb()
-  const pid = decodeURIComponent(c.req.param('id'))
-  const project = db.prepare('SELECT * FROM projects WHERE id=$id OR path=$id').get({ $id: pid }) as ProjectRow | null
-  if (!project) return c.json({ error: 'Project not found' }, 404)
-  if ((project as any).structure_version !== 2) {
-    return c.json({ error: 'PM chat is only available on v2 projects' }, 400)
-  }
+  const project = ensureGlobalProject(db)
   const pm = getAgentBySlug(db, project.id, DEFAULT_PM_SLUG)
   if (!pm) return c.json({ error: 'Global workspace has no separate Project Manager agent.' }, 404)
 
@@ -255,9 +251,9 @@ projectsRouter.post('/:id/pm-session', async (c) => {
     const client = getOpenCodeClient()
     const res = await client.session.create({
       body: { title: `PM · ${project.name}` },
-      // Scope to the project directory. OpenCode will then discover the
-      // project's real agents from `<project.path>/.opencode/agent/*.md`.
-      query: { directory: project.path },
+      // Scope to the single global workspace directory. No per-project
+      // OpenCode instances are created anymore.
+      query: { directory: workspaceRoot() },
     } as any)
     const sessionId = (res as any)?.data?.id as string | undefined
     if (!sessionId) return c.json({ error: 'Failed to create session' }, 500)
@@ -314,9 +310,18 @@ projectsRouter.get('/:id/sessions', async (c) => {
       const body = await res.json() as any
       const allSessions = Array.isArray(body) ? body : (body?.data ?? [])
 
-      // Include all project sessions (parents + children)
+      // Global workspace mode: every OpenCode session belongs to the one
+      // workspace view. Keep session_projects as compatibility metadata, but
+      // do not hide sessions just because an old project link is missing.
+      for (const s of allSessions) {
+        if (s?.id && !sessionIds.has(s.id)) {
+          try {
+            db.prepare('INSERT OR REPLACE INTO session_projects (session_id, project_id, set_at) VALUES ($sid, $pid, $now)')
+              .run({ $sid: s.id, $pid: p.id, $now: new Date().toISOString() })
+          } catch {}
+        }
+      }
       const matched = allSessions
-        .filter((s: any) => sessionIds.has(s.id))
         .sort((a: any, b: any) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
 
       // Enrich with task info — which task owns which session

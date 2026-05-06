@@ -18,40 +18,27 @@ import { useTelegramVerifyToken, useTelegramConnect } from '@/hooks/channels/use
 import { AgentSelector, flattenModels } from '@/components/session/session-chat-input';
 import { ModelSelector } from '@/components/session/model-selector';
 import { useVisibleAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
-import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
-import { ChannelProjectPicker } from './channel-project-picker';
 
 interface TelegramSetupWizardProps {
   onCreated: () => void;
   onBack: () => void;
-  /** Pre-select a project (e.g. when launched from a project-filtered view) */
-  initialProjectId?: string | null;
 }
 
-export function TelegramSetupWizard({ onCreated, onBack, initialProjectId = null }: TelegramSetupWizardProps) {
+export function TelegramSetupWizard({ onCreated, onBack }: TelegramSetupWizardProps) {
   const [botToken, setBotToken] = useState('');
   const [botInfo, setBotInfo] = useState<{ id: number; username: string; firstName: string } | null>(null);
-  const [projectId, setProjectId] = useState<string | null>(initialProjectId);
   const [agentName, setAgentName] = useState<string | null>('kortix');
   const [selectedModel, setSelectedModel] = useState<{ providerID: string; modelID: string } | null>(null);
 
   const verifyToken = useTelegramVerifyToken();
   const connect = useTelegramConnect();
 
-  // Project list — used to resolve the project's working directory so the
-  // agent picker shows that project's per-role agents (engineer, qa, …).
-  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
-  const projectDirectory = useMemo(
-    () => projects.find((p) => p.id === projectId)?.path,
-    [projects, projectId],
-  );
-
-  const agents = useVisibleAgents(projectDirectory ? { directory: projectDirectory } : undefined);
+  const agents = useVisibleAgents();
   const { data: providers, isLoading: modelsLoading } = useOpenCodeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
 
-  // When the project changes, the available agent set changes — reset the
-  // picked agent if it isn't valid for the new scope so we never persist
+  // When the available agent set changes, reset the picked agent if it isn't
+  // valid for the new scope so we never persist
   // a stale slug. `kortix` is always present, so it's a safe default.
   useEffect(() => {
     if (!agentName) return;
@@ -95,7 +82,7 @@ export function TelegramSetupWizard({ onCreated, onBack, initialProjectId = null
         publicUrl: '',
         defaultAgent: agentName || undefined,
         defaultModel: modelStr,
-        projectId,
+        projectId: null,
       });
       const webhookUrl = result.channel?.webhookUrl;
       if (webhookUrl) {
@@ -173,22 +160,18 @@ export function TelegramSetupWizard({ onCreated, onBack, initialProjectId = null
           </div>
         )}
 
-        {/* Project & Agent & Model — shown after token is verified */}
+        {/* Workspace, agent, and model — shown after token is verified */}
         {botInfo && (
           <div className="space-y-3">
-            {/* Project — hidden when the project paradigm is off.
-                The bot then runs as a sandbox-wide channel (project_id=null). */}
-            {featureFlags.enableProjects && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">Project</Label>
-                <ChannelProjectPicker value={projectId} onChange={setProjectId} className="bg-card" />
-                <p className="text-[11px] text-muted-foreground px-0.5">
-                  {projectId
-                    ? 'Bot runs inside this project — agents pick is scoped to it.'
-                    : 'Workspace channel — uses the global agent set.'}
-                </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Workspace</Label>
+              <div className="rounded-xl border border-border/60 bg-card px-3 py-2 text-sm font-medium text-foreground">
+                Global workspace
               </div>
-            )}
+              <p className="text-[11px] text-muted-foreground px-0.5">
+                Telegram runs in the single global workspace — all context and agents are shared.
+              </p>
+            </div>
 
             <div className="space-y-1.5">
               <Label className="text-xs">Agent</Label>

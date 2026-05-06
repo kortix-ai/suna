@@ -49,6 +49,8 @@ export function useServerHealth(options?: { enabled?: boolean }) {
  * which caused independent duplicate requests.
  */
 export function useCurrentProject(options?: { enabled?: boolean }) {
+  const runtimeReady = useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
+
   return useQuery<OpenCodeProjectInfo>({
     queryKey: opencodeKeys.currentProject(),
     queryFn: async () => {
@@ -60,7 +62,7 @@ export function useCurrentProject(options?: { enabled?: boolean }) {
       }
       return result.data as OpenCodeProjectInfo;
     },
-    enabled: options?.enabled !== false,
+    enabled: runtimeReady && options?.enabled !== false,
     staleTime: Infinity,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,

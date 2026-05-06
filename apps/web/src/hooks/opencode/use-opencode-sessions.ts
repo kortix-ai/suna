@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
+import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import type {
   Session,
@@ -154,7 +155,12 @@ const LS_AGENTS = 'kortix_cache_agents';
 const LS_COMMANDS = 'kortix_cache_commands';
 const LS_PROVIDERS = 'kortix_cache_providers';
 
+function useOpenCodeRuntimeReady() {
+  return useSandboxConnectionStore((s) => s.status === 'connected' && s.healthy === true);
+}
+
 export function useOpenCodeSessions() {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Session[]>({
     queryKey: opencodeKeys.sessions(),
     queryFn: async () => {
@@ -166,6 +172,7 @@ export function useOpenCodeSessions() {
       return sorted;
     },
     placeholderData: () => getLSCache<Session[]>(LS_SESSIONS),
+    enabled: runtimeReady,
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -176,6 +183,7 @@ export function useOpenCodeSessions() {
 
 export function useOpenCodeSession(sessionId: string) {
   const queryClient = useQueryClient();
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Session>({
     queryKey: opencodeKeys.session(sessionId),
     queryFn: async () => {
@@ -183,7 +191,7 @@ export function useOpenCodeSession(sessionId: string) {
       const result = await client.session.get({ sessionID: sessionId });
       return unwrap(result);
     },
-    enabled: !!sessionId,
+    enabled: runtimeReady && !!sessionId,
     staleTime: Infinity,
     placeholderData: () => {
       const sessions = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
@@ -283,6 +291,7 @@ export function useUpdateOpenCodeSession() {
 }
 
 export function useOpenCodeSessionDiff(sessionId: string) {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery({
     queryKey: ['opencode', 'session-diff', sessionId],
     queryFn: async () => {
@@ -290,12 +299,13 @@ export function useOpenCodeSessionDiff(sessionId: string) {
       const result = await client.session.diff({ sessionID: sessionId });
       return unwrap(result);
     },
-    enabled: !!sessionId,
+    enabled: runtimeReady && !!sessionId,
     staleTime: Infinity,
   });
 }
 
 export function useOpenCodeSessionTodo(sessionId: string) {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery({
     queryKey: ['opencode', 'session-todo', sessionId],
     queryFn: async () => {
@@ -304,7 +314,7 @@ export function useOpenCodeSessionTodo(sessionId: string) {
       const data = unwrap(result);
       return Array.isArray(data) ? data : [];
     },
-    enabled: !!sessionId,
+    enabled: runtimeReady && !!sessionId,
     staleTime: Infinity,
   });
 }
@@ -515,6 +525,7 @@ export function useAbortOpenCodeSession() {
  */
 export function useOpenCodeAgents(options?: { directory?: string }) {
   const directory = options?.directory;
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Agent[]>({
     queryKey: directory ? [...opencodeKeys.agents(), 'dir', directory] : opencodeKeys.agents(),
     queryFn: async () => {
@@ -527,12 +538,14 @@ export function useOpenCodeAgents(options?: { directory?: string }) {
     },
     // Per-directory results aren't cached to LS — only the global list is.
     placeholderData: directory ? undefined : () => getLSCache<Agent[]>(LS_AGENTS),
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
 }
 
 export function useOpenCodeAgent(agentName: string) {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Agent | undefined>({
     queryKey: [...opencodeKeys.agents(), agentName],
     queryFn: async () => {
@@ -541,7 +554,7 @@ export function useOpenCodeAgent(agentName: string) {
       const agents = unwrap(result);
       return agents.find((a: Agent) => a.name === agentName);
     },
-    enabled: !!agentName,
+    enabled: runtimeReady && !!agentName,
     staleTime: Infinity,
   });
 }
@@ -551,6 +564,7 @@ export function useOpenCodeAgent(agentName: string) {
 // ============================================================================
 
 export function useOpenCodeToolIds() {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<string[]>({
     queryKey: opencodeKeys.toolIds(),
     queryFn: async () => {
@@ -558,12 +572,14 @@ export function useOpenCodeToolIds() {
       const result = await client.tool.ids();
       return unwrap(result);
     },
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
 }
 
 export function useOpenCodeTools(providerID: string, modelID: string) {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<ToolListItem[]>({
     queryKey: opencodeKeys.tools(providerID, modelID),
     queryFn: async () => {
@@ -571,7 +587,7 @@ export function useOpenCodeTools(providerID: string, modelID: string) {
       const result = await client.tool.list({ provider: providerID, model: modelID });
       return unwrap(result) as ToolListItem[];
     },
-    enabled: !!providerID && !!modelID,
+    enabled: runtimeReady && !!providerID && !!modelID,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
@@ -582,6 +598,7 @@ export function useOpenCodeTools(providerID: string, modelID: string) {
 // ============================================================================
 
 export function useOpenCodeSkills() {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Skill[]>({
     queryKey: opencodeKeys.skills(),
     queryFn: async () => {
@@ -589,6 +606,7 @@ export function useOpenCodeSkills() {
       const result = await client.app.skills();
       return unwrap(result) as Skill[];
     },
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
@@ -599,6 +617,7 @@ export function useOpenCodeSkills() {
 // ============================================================================
 
 export function useOpenCodeProjects() {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Project[]>({
     queryKey: opencodeKeys.projects(),
     queryFn: async () => {
@@ -606,12 +625,14 @@ export function useOpenCodeProjects() {
       const result = await client.project.list();
       return unwrap(result);
     },
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 5 * 60 * 1000,
   });
 }
 
 export function useOpenCodeCurrentProject() {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Project>({
     queryKey: opencodeKeys.currentProject(),
     queryFn: async () => {
@@ -619,6 +640,7 @@ export function useOpenCodeCurrentProject() {
       const result = await client.project.current();
       return unwrap(result);
     },
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 5 * 60 * 1000,
   });
@@ -629,6 +651,7 @@ export function useOpenCodeCurrentProject() {
 // ============================================================================
 
 export function useOpenCodePathInfo() {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<PathInfo>({
     queryKey: opencodeKeys.pathInfo(),
     queryFn: async () => {
@@ -636,6 +659,7 @@ export function useOpenCodePathInfo() {
       const result = await client.path.get();
       return unwrap(result);
     },
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
@@ -646,6 +670,7 @@ export function useOpenCodePathInfo() {
 // ============================================================================
 
 export function useOpenCodeCommands() {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Command[]>({
     queryKey: opencodeKeys.commands(),
     queryFn: async () => {
@@ -656,6 +681,7 @@ export function useOpenCodeCommands() {
       return commands;
     },
     placeholderData: () => getLSCache<Command[]>(LS_COMMANDS),
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
@@ -880,6 +906,7 @@ export function useInitSession() {
 // ============================================================================
 
 export function useOpenCodeProviders() {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<ProviderListResponse>({
     queryKey: opencodeKeys.providers(),
     queryFn: async () => {
@@ -890,6 +917,7 @@ export function useOpenCodeProviders() {
       return providers;
     },
     placeholderData: () => getLSCache<ProviderListResponse>(LS_PROVIDERS),
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
@@ -900,6 +928,7 @@ export function useOpenCodeProviders() {
 // ============================================================================
 
 export function useOpenCodeMcpStatus() {
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Record<string, McpStatus>>({
     queryKey: opencodeKeys.mcpStatus(),
     queryFn: async () => {
@@ -907,6 +936,7 @@ export function useOpenCodeMcpStatus() {
       const result = await client.mcp.status();
       return unwrap(result) as Record<string, McpStatus>;
     },
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 5 * 60 * 1000,
   });

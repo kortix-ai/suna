@@ -21,7 +21,7 @@ import {
   History,
   ArrowRightLeft,
   CheckCircle2,
-  FolderKanban,
+  FolderOpen,
   AlertCircle,
   AlertTriangle,
   Copy,
@@ -58,6 +58,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -69,20 +74,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
-import { featureFlags } from '@/lib/feature-flags';
 import { useAdminRole } from '@/hooks/admin';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { isBillingEnabled } from '@/lib/config';
 
 import { useCreateOpenCodeSession, useOpenCodeSessions } from '@/hooks/opencode/use-opencode-sessions';
-import { useKortixProjects, type KortixProject } from '@/hooks/kortix/use-kortix-projects';
-import {
-  useProjectActivity,
-  useUserHandle,
-  computeUnread,
-  readLastSeen,
-  LAST_SEEN_EVENT,
-} from '@/hooks/kortix/use-kortix-tickets';
 import { openTabAndNavigate } from '@/stores/tab-store';
 import { useServerStore } from '@/stores/server-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
@@ -380,50 +376,6 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
 }
 
 // ============================================================================
-// Projects Flyout Content
-// ============================================================================
-
-function ProjectsFlyout() {
-  // The collapsed-sidebar flyout is only ever rendered when the project
-  // flag is on (see CollapsedIconButton wrap below), but we still gate the
-  // query as belt-and-braces for any future non-flagged caller.
-  const { data: projects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
-
-  const sorted = React.useMemo(() => {
-    if (!projects || !Array.isArray(projects)) return [];
-    return [...projects].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [projects]);
-
-  return (
-    <div className="overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-      {sorted.length === 0 ? (
-        <div className="px-3 py-8 text-center text-xs text-muted-foreground">No projects yet</div>
-      ) : (
-        sorted.map((project) => (
-          <button
-            key={project.id}
-            onClick={() => {
-              openTabAndNavigate({
-                id: `project:${project.id}`,
-                title: project.name,
-                type: 'project',
-                href: `/projects/${encodeURIComponent(project.id)}`,
-              });
-            }}
-            className="flex items-center gap-2.5 w-full px-3 py-1.5 text-[13px] cursor-pointer transition-colors duration-100 text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          >
-            <span className="flex-1 truncate text-left">{project.name}</span>
-            {(project.sessionCount ?? 0) > 0 && (
-              <span className="text-[10px] text-muted-foreground/40 tabular-nums">{project.sessionCount}</span>
-            )}
-          </button>
-        ))
-      )}
-    </div>
-  );
-}
-
-// ============================================================================
 // User Profile Section
 // ============================================================================
 
@@ -651,7 +603,7 @@ function UserProfileSection({ user }: { user: { name: string; email: string; ava
 }
 
 // ============================================================================
-// Sessions + Legacy Threads + Projects Accordion
+// Sessions + Legacy Threads Accordion
 // ============================================================================
 
 function SidebarSections() {
@@ -659,28 +611,6 @@ function SidebarSections() {
   const { data: legacyData, isLoading: legacyLoading } = useLegacyThreads();
   const pathname = normalizeAppPathname(usePathname());
   const { isMobile, setOpenMobile } = useSidebar();
-
-  // Projects data — Kortix projects are the source of truth.
-  // Skip the query entirely when the project paradigm is off so the
-  // sidebar in default mode never hits /kortix/projects (which 503s when
-  // sandbox-side PROJECTS_ENABLED is also off).
-  const { data: projectsData } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
-  const sortedProjects = React.useMemo(() => {
-    if (!projectsData || !Array.isArray(projectsData)) return [];
-    return [...projectsData].sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-  }, [projectsData]);
-
-  const handleProjectClick = React.useCallback((project: KortixProject) => {
-    openTabAndNavigate({
-      id: `project:${project.id}`,
-      title: project.name,
-      type: 'project',
-      href: `/projects/${encodeURIComponent(project.id)}`,
-    });
-    if (isMobile) setOpenMobile(false);
-  }, [isMobile, setOpenMobile]);
 
   // Legacy threads
   const migrateAll = useMigrateAllLegacyThreads();
@@ -715,21 +645,21 @@ function SidebarSections() {
 
   return (
     <div className="flex flex-col min-h-0 flex-1 pt-0.5 space-y-0.5">
-      {/* No "Projects" accordion. The sandbox IS the project (single-project
-          paradigm) — there is never a list to choose from. Project-paradigm
-          surfaces live as global entries (Board, Milestones, Team) when the
-          feature flag is on, not nested under per-project navigation. */}
-
-      {/* Sessions — always visible, no collapse. The list takes the
-          remaining vertical space below the static heading. */}
-      <div className="flex flex-col min-h-0 flex-1">
-        <div className="px-6 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/50 flex-shrink-0">
-          Sessions
+      {/* Sessions — always visible, takes remaining space */}
+      <Collapsible defaultOpen className="group/sessions flex flex-col min-h-0 data-[state=open]:flex-1">
+        <div className="px-3 flex-shrink-0">
+          <CollapsibleTrigger asChild>
+            <Button variant="sidebar" className="rounded-lg">
+              <ListTree className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
+              <span className="flex-1 text-left">Sessions</span>
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
+            </Button>
+          </CollapsibleTrigger>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <SessionList projectId={null} />
-        </div>
-      </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       {hasLegacy && (
         // mt-auto pins this block to the bottom of the SidebarSections column.
@@ -861,89 +791,6 @@ function SidebarSections() {
 // ============================================================================
 // Main Sidebar
 // ============================================================================
-
-/**
- * One sidebar row for a project with a red unread-count badge.
- *
- * Per-project activity is queried here so the row re-renders independently
- * when new events land. Unread = events past the localStorage last-seen
- * timestamp that are assignments to the user or @-mentions in comments.
- * Read computeUnread for the exact rule set. v1 projects have no
- * ticket_events so the badge naturally stays hidden.
- */
-function SidebarProjectRow({
-  project,
-  active,
-  onClick,
-}: {
-  project: KortixProject & { sessionCount?: number };
-  active?: boolean;
-  onClick: () => void;
-}) {
-  const userHandle = useUserHandle();
-  const isV2 = project.structure_version === 2;
-  const { data: events } = useProjectActivity(isV2 ? project.id : undefined, {
-    enabled: isV2,
-    pollingEnabled: isV2,
-  });
-  const [lastSeen, setLastSeen] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    if (!isV2 || !userHandle) return;
-    setLastSeen(readLastSeen(project.id, userHandle));
-    // Instant update when the project page (or another row) writes a new
-    // last-seen — custom event dispatched from writeLastSeen().
-    const onCustom = (e: Event) => {
-      const d = (e as CustomEvent).detail;
-      if (d?.projectId === project.id && d?.handle === userHandle) setLastSeen(d.iso);
-    };
-    // Cross-tab updates still come through the native storage event.
-    const onStorage = (e: StorageEvent) => {
-      if (!e.key?.startsWith('kortix:activity-last-seen:')) return;
-      setLastSeen(readLastSeen(project.id, userHandle));
-    };
-    window.addEventListener(LAST_SEEN_EVENT, onCustom);
-    window.addEventListener('storage', onStorage);
-    return () => {
-      window.removeEventListener(LAST_SEEN_EVENT, onCustom);
-      window.removeEventListener('storage', onStorage);
-    };
-  }, [isV2, project.id, userHandle]);
-  const unread = React.useMemo(
-    () => (isV2 ? computeUnread(events, userHandle, lastSeen).total : 0),
-    [isV2, events, userHandle, lastSeen],
-  );
-
-  return (
-    <div
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-2 rounded-lg cursor-pointer transition-colors duration-150',
-        'pr-1.5 py-1.5 pl-3',
-        active
-          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
-      )}
-    >
-      <span className={cn('flex-1 truncate text-[13px]', (active || unread > 0) && 'font-medium')}>
-        {project.name}
-      </span>
-      {unread > 0 && (
-        <span
-          className="flex-shrink-0 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold leading-none tabular-nums"
-          aria-label={`${unread} unread`}
-          title={`${unread} unread`}
-        >
-          {unread > 99 ? '99+' : unread}
-        </span>
-      )}
-      {unread === 0 && (project.sessionCount ?? 0) > 0 && (
-        <span className="flex-shrink-0 text-[10px] text-muted-foreground/40 tabular-nums">
-          {project.sessionCount}
-        </span>
-      )}
-    </div>
-  );
-}
 
 function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; onExpand: () => void }) {
   const { sandbox, refetch } = useSandbox();
@@ -1273,8 +1120,6 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
   const currentInstanceId = getCurrentInstanceIdFromPathname(rawPathname) || getActiveInstanceIdFromCookie();
   const searchParams = useSearchParams();
 
-  // Project filtering for session list removed — projects page merged into workspace
-
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
 
   const { data: adminRoleData } = useAdminRole();
@@ -1483,7 +1328,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
           effectiveState === 'collapsed' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         )}>
           {/* Workspace preview — current workspace avatar with hover flyout
-              for switching, matching the Sessions/Projects pattern. Sits at
+              for switching instances. Sits at
               the top of the rail so users always see "this is the workspace
               I'm in" even when collapsed. */}
           <CollapsedIconButton
@@ -1513,10 +1358,19 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               );
             }}
           />
-          {/* Files moved off the left sidebar — accessible from the right
-              sidebar (single source of truth, no redundant entry). */}
-          {/* Collapsed-sidebar Projects flyout removed — single-project
-              paradigm has no list to flyout to. */}
+          <CollapsedIconButton
+            icon={<FolderOpen className="h-4 w-4" />}
+            label="Files"
+            isActive={pathname === '/files'}
+            onClick={() => {
+              openTabAndNavigate({
+                id: 'page:/files',
+                title: 'Files',
+                type: 'page',
+                href: '/files',
+              });
+            }}
+          />
           <CollapsedIconButton
             icon={<ListTree className="h-4 w-4" />}
             label="Sessions"

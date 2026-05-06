@@ -34,7 +34,7 @@ export function OcProjectSelectToolView({
   const data = useMemo(() => parseProjectSelectOutput(output), [output]);
 
   if (isStreaming && !toolResult) {
-    return <LoadingState title="Selecting project" subtitle={projectArg || 'Linking session to project...'} />;
+    return <LoadingState title="Activating workspace" subtitle={projectArg || 'Using global workspace...'} />;
   }
 
   // If we couldn't parse the output or it was an error, show the raw output
@@ -45,7 +45,7 @@ export function OcProjectSelectToolView({
           <div className="flex flex-row items-center justify-between">
             <ToolViewIconTitle
               icon={Folder}
-              title="Project Select"
+              title="Workspace"
               subtitle={projectArg || 'Failed'}
             />
           </div>
@@ -53,7 +53,7 @@ export function OcProjectSelectToolView({
         <CardContent className="p-0 h-full flex-1 overflow-hidden">
           <div className="flex items-start gap-2.5 px-4 py-6 text-muted-foreground">
             <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-            <p className="text-sm">{output || 'Failed to select project'}</p>
+            <p className="text-sm">{output || 'Failed to activate workspace'}</p>
           </div>
         </CardContent>
         <ToolViewFooter
@@ -76,7 +76,7 @@ export function OcProjectSelectToolView({
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Folder}
-            title="Project Selected"
+            title="Workspace Active"
             subtitle={data.name}
           />
           {data.success && (
@@ -89,14 +89,14 @@ export function OcProjectSelectToolView({
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden">
         <div className="p-4 space-y-4">
-          {/* Project name */}
+          {/* Workspace name */}
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-muted border border-border">
               <Folder className="w-5 h-5 text-muted-foreground" />
             </div>
             <div>
               <p className="text-sm font-medium text-foreground">{data.name}</p>
-              <p className="text-xs text-muted-foreground">Project selected for this session</p>
+              <p className="text-xs text-muted-foreground">Global workspace is active for this session</p>
             </div>
           </div>
 
@@ -123,7 +123,7 @@ export function OcProjectSelectToolView({
       >
         {!isStreaming && data.success && (
           <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-            Project active
+            Workspace active
           </Badge>
         )}
       </ToolViewFooter>

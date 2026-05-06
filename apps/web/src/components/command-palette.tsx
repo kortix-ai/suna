@@ -13,7 +13,6 @@ import {
   ArrowUp,
   ArrowDown,
   CornerDownLeft,
-  FolderKanban,
   Bot,
   Cpu,
   ChevronRight,
@@ -43,7 +42,6 @@ import {
 import { useSidebar } from '@/components/ui/sidebar';
 import {
   useOpenCodeSessions,
-  // useOpenCodeProjects — replaced by Kortix projects
   useOpenCodeAgents,
   useOpenCodeProviders,
 } from '@/hooks/opencode/use-opencode-sessions';
@@ -71,7 +69,6 @@ import {
   MODEL_SELECTOR_PROVIDER_IDS,
 } from '@/components/providers/provider-branding';
 import { useWorkspaceSearch, useFilesStore } from '@/features/files';
-import { useKortixProjects, type KortixProject } from '@/hooks/kortix/use-kortix-projects';
 import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { groupMessagesIntoTurns, isTextPart, type TextPart } from '@/ui';
@@ -108,12 +105,6 @@ function formatRelativeTime(timestamp: number): string {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
   return new Date(timestamp).toLocaleDateString();
-}
-
-function deriveProjectName(project: { id: string; name?: string; path?: string; worktree?: string }): string {
-  if (project.name) return project.name;
-  const p = project.path || project.worktree;
-  return p?.split('/').pop() || p || 'Project';
 }
 
 /**
@@ -376,10 +367,6 @@ export function CommandPalette() {
 
   // ── Data hooks ──
   const { data: sessions } = useOpenCodeSessions();
-  // Skip the projects query when the project paradigm is off — the
-  // palette never lists projects in default mode and the sandbox-side
-  // /kortix/projects route 503s in that mode.
-  const { data: projects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const { data: agents } = useOpenCodeAgents();
   const { data: providers } = useOpenCodeProviders();
 
@@ -490,21 +477,6 @@ export function CommandPalette() {
       .slice(0, 20);
   }, [sessions, query, fuzzyMatch]);
 
-  // ── Filter: projects ──
-  const filteredProjects = useMemo(() => {
-    if (!projects) return [];
-    const sorted = [...projects].sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0));
-    if (!query.trim()) return sorted.slice(0, 5);
-    const q = query.trim();
-    return sorted
-      .filter((p) => {
-        const name = deriveProjectName(p);
-        const searchable = [name, p.worktree, p.id].join(' ');
-        return fuzzyMatch(searchable, q);
-      })
-      .slice(0, 15);
-  }, [projects, query, fuzzyMatch]);
-
   // Recent sessions for idle state
   const recentSessions = useMemo(() => {
     if (!sessions) return [];
@@ -515,8 +487,6 @@ export function CommandPalette() {
   const queryLongEnough = query.trim().length >= 2;
 
   const hasSessionResults = filteredSessions.length > 0;
-  const hasProjectResults = filteredProjects.length > 0;
-
   // ── Palette items ──
   const allPaletteItems = useMemo(() => {
     return getItemsForSurface('commandPalette').filter((item) => {
@@ -638,7 +608,7 @@ export function CommandPalette() {
 
   const hasNavResults = filteredNavItems.length > 0;
   const hasSessionActionResults = sessionActionItems.length > 0;
-  const hasAnyResults = hasNavResults || hasSessionResults || hasProjectResults || hasSessionActionResults;
+  const hasAnyResults = hasNavResults || hasSessionResults || hasSessionActionResults;
 
   const showNoResults =
     hasQuery &&
@@ -696,19 +666,6 @@ export function CommandPalette() {
       close();
     },
     [close],
-  );
-
-  const handleSelectProject = useCallback(
-    (projectId: string, name: string) => {
-      openTabAndNavigate({
-        id: `page:/projects/${projectId}`,
-        title: name,
-        type: 'page',
-        href: `/projects/${projectId}`,
-      }, router);
-      close();
-    },
-    [router, close],
   );
 
   const handleSelectFile = useCallback(
@@ -988,8 +945,8 @@ export function CommandPalette() {
     if (page === 'models') return visibleModels.length;
     if (page === 'messages') return 0; // count is shown inline by MessagesPage
     if (!hasQuery) return 0;
-    return filteredNavItems.length + filteredSessions.length + filteredProjects.length + sessionActionItems.length;
-  }, [page, hasQuery, filteredNavItems, filteredSessions, filteredProjects, sessionActionItems, filteredAgents, visibleModels]);
+    return filteredNavItems.length + filteredSessions.length + sessionActionItems.length;
+  }, [page, hasQuery, filteredNavItems, filteredSessions, sessionActionItems, filteredAgents, visibleModels]);
 
   // ── Placeholder text ──
   const placeholder = useMemo(() => {
@@ -997,7 +954,7 @@ export function CommandPalette() {
     if (page === 'models') return 'Search models...';
     if (page === 'files') return 'Search files in /workspace...';
     if (page === 'messages') return 'Search messages...';
-    return 'Search commands, projects, sessions...';
+    return 'Search commands, sessions...';
   }, [page]);
 
   // ── Page title for submenu header ──
@@ -1140,37 +1097,6 @@ export function CommandPalette() {
                     </CommandItem>
                   </CommandGroup>
 
-                  {/* Projects */}
-                  {filteredProjects.length > 0 && (
-                    <CommandGroup heading="Projects" forceMount>
-                      {filteredProjects.map((project) => {
-                        const name = deriveProjectName(project);
-                        return (
-                          <CommandItem
-                            key={project.id}
-                            value={sanitizeCmdkValue(`project ${name} ${project.worktree} ${project.id}`)}
-                            onSelect={() => handleSelectProject(project.id, name)}
-                          >
-                            <FolderKanban className="h-4 w-4 flex-shrink-0" />
-                            <div className="flex flex-col overflow-hidden flex-1 min-w-0">
-                              <span className="truncate text-sm font-medium">{name}</span>
-                              {project.worktree && project.worktree !== '/' && (
-                                <span className="text-[11px] text-muted-foreground/40 truncate font-mono">
-                                  {project.worktree}
-                                </span>
-                              )}
-                            </div>
-                            {project.time?.updated && (
-                              <span className="text-[10px] text-muted-foreground/30 tabular-nums flex-shrink-0">
-                                {formatRelativeTime(project.time.updated)}
-                              </span>
-                            )}
-                          </CommandItem>
-                        );
-                      })}
-                    </CommandGroup>
-                  )}
-
                   {/* Recent Sessions */}
                   {recentSessions.length > 0 && (
                     <CommandGroup heading="Recent Sessions" forceMount>
@@ -1253,39 +1179,6 @@ export function CommandPalette() {
                             )}
                             {isActiveTheme && (
                               <span className="text-[10px] text-primary/60 font-medium">Active</span>
-                            )}
-                          </CommandItem>
-                        );
-                      })}
-                    </CommandGroup>
-                  )}
-
-                  {/* Projects */}
-                  {hasProjectResults && (
-                    <CommandGroup heading="Projects" forceMount>
-                      {filteredProjects.map((project) => {
-                        const name = deriveProjectName(project);
-                        return (
-                          <CommandItem
-                            key={project.id}
-                            value={`project-${project.id}`}
-                            onSelect={() => handleSelectProject(project.id, name)}
-                          >
-                            <FolderKanban className="h-4 w-4 flex-shrink-0" />
-                            <div className="flex flex-col overflow-hidden flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="truncate text-sm font-medium">{name}</span>
-                                {project.worktree && project.worktree !== '/' && (
-                                  <span className="text-[10px] text-muted-foreground/40 font-mono flex-shrink-0 truncate max-w-[200px]">
-                                    {project.worktree}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {project.time?.updated && (
-                              <span className="text-[10px] text-muted-foreground/30 tabular-nums flex-shrink-0">
-                                {formatRelativeTime(project.time.updated)}
-                              </span>
                             )}
                           </CommandItem>
                         );

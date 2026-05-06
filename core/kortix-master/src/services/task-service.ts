@@ -768,6 +768,7 @@ export async function startTask(options: StartTaskOptions): Promise<TaskRow> {
 
       await client.session.promptAsync({
         path: { id: task.owner_session_id },
+        query: { directory: project.path },
         body: { agent: workerAgent, parts: [{ type: 'text', text: resumePrompt }] },
       })
 
@@ -796,6 +797,7 @@ export async function startTask(options: StartTaskOptions): Promise<TaskRow> {
     body: parentSessionId
       ? { parentID: parentSessionId, title: `${task.title} [${task.id}]` }
       : { title: `Task ${task.id}: ${task.title}` },
+    query: { directory: project.path },
   })
   const ownerSessionId = sessionResult.data?.id
   if (!ownerSessionId) throw new Error('Failed to create worker session')
@@ -808,6 +810,7 @@ export async function startTask(options: StartTaskOptions): Promise<TaskRow> {
   try {
     await client.session.promptAsync({
       path: { id: ownerSessionId },
+      query: { directory: project.path },
       body: { agent: workerAgent, parts: [{ type: 'text', text: prompt }] },
     })
   } catch (error) {

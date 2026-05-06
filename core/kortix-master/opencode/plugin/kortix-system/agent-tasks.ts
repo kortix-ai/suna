@@ -79,13 +79,13 @@ async function notifyTaskLifecycle(
 		}
 	}
 
-	// 2. Fan out to the hidden project-maintainer so it can keep CONTEXT.md current.
+	// 2. Fan out to the hidden workspace maintainer so it can keep CONTEXT.md current.
 	try {
 		const maintainerId = await mgr.ensureMaintainerSession(task.project_id)
 		if (maintainerId && maintainerId !== task.parent_session_id) {
 			const maintainerBody = [
-				"<project_maintainer_event>",
-				`Project: ${task.project_id}`,
+				"<workspace_maintainer_event>",
+				`Workspace: ${task.project_id}`,
 				`Task: ${task.id}`,
 				`Title: ${task.title}`,
 				`Status: ${task.status}`,
@@ -93,12 +93,13 @@ async function notifyTaskLifecycle(
 				message ? `Message: ${message}` : null,
 				"",
 				eventText,
-				"</project_maintainer_event>",
+				"</workspace_maintainer_event>",
 				"",
 				"Update .kortix/CONTEXT.md to reflect this event, then call project_context_sync and stop.",
 			].filter((line): line is string => line !== null).join("\n")
 			await client.session.promptAsync({
 				path: { id: maintainerId },
+				query: { directory: mgr.getGlobalProject().path },
 				body: { agent: PROJECT_MAINTAINER_AGENT, parts: [{ type: "text", text: maintainerBody }] },
 			})
 		}
@@ -215,6 +216,7 @@ export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 				}
 				client.session.promptAsync({
 					path: { id: task.owner_session_id },
+					query: { directory: mgr.getGlobalProject().path },
 					body: { parts: [{ type: "text", text: args.message }] },
 				}).catch(() => {})
 				return `Message sent to task **${task.id}** worker.`

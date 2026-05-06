@@ -1,5 +1,5 @@
 /**
- * Forces opencode to bootstrap every project on this sandbox at startup so
+ * Forces opencode to bootstrap the single global workspace at startup so
  * the kortix-system plugin (which owns the cron trigger scheduler) loads
  * eagerly instead of lazily on first user request.
  *
@@ -11,19 +11,16 @@
  * the trigger plugin only registered when an unrelated /session request
  * hit at 19:31.
  *
- * What we do: read projects from .kortix/kortix.db and `GET /session`
- * with `?directory=<project.path>` for each — that's enough to make
- * opencode call `Project.fromDirectory` and load the project-scoped
- * plugin tree (which includes triggers).
+ * What we do: `GET /session?directory=/workspace` (or KORTIX_WORKSPACE) —
+ * that's enough to make opencode load the single workspace plugin tree
+ * (which includes triggers).
  *
  * Idempotent + cheap. Failures are logged and swallowed — opencode's
  * plugin will still load on first real request, this just closes the
  * race.
  */
 
-import { Database } from 'bun:sqlite'
 import { existsSync } from 'fs'
-import { join } from 'path'
 import { config } from '../config'
 
 const POLL_INTERVAL_MS = 1_000
@@ -51,28 +48,11 @@ async function waitForOpencode(): Promise<boolean> {
   return false
 }
 
-function listProjectPaths(): string[] {
-  const workspace = process.env.KORTIX_WORKSPACE?.trim() || '/workspace'
-  const dbPath = join(workspace, '.kortix', 'kortix.db')
-  if (!existsSync(dbPath)) return []
-
-  let db: Database
-  try {
-    db = new Database(dbPath, { readonly: true })
-  } catch {
-    return []
-  }
-
-  try {
-    const rows = db
-      .prepare(`SELECT DISTINCT path FROM projects WHERE path IS NOT NULL AND path <> ''`)
-      .all() as Array<{ path: string }>
-    return rows.map((r) => r.path).filter((p) => p && p !== '/' && existsSync(p))
-  } catch {
-    return []
-  } finally {
-    try { db.close() } catch {}
-  }
+function workspacePath(): string {
+  return process.env.KORTIX_WORKSPACE?.trim()
+    || process.env.WORKSPACE_DIR?.trim()
+    || process.env.KORTIX_WORKSPACE_ROOT?.trim()
+    || '/workspace'
 }
 
 async function bootstrapProject(path: string): Promise<boolean> {
@@ -85,23 +65,18 @@ async function bootstrapProject(path: string): Promise<boolean> {
   }
 }
 
-export async function warmTriggerPluginForAllProjects(): Promise<void> {
+export async function warmTriggerPluginForGlobalWorkspace(): Promise<void> {
   if (!(await waitForOpencode())) {
     console.warn('[trigger-warmer] opencode never came up within 60s; skipping warmup')
     return
   }
 
-  const paths = listProjectPaths()
-  if (paths.length === 0) {
-    console.log('[trigger-warmer] no projects to warm')
+  const path = workspacePath()
+  if (!existsSync(path)) {
+    console.log(`[trigger-warmer] workspace ${path} does not exist; skipping warmup`)
     return
   }
 
-  let warmed = 0
-  for (const path of paths) {
-    if (await bootstrapProject(path)) warmed++
-  }
-  console.log(
-    `[trigger-warmer] bootstrapped ${warmed}/${paths.length} project(s) — cron triggers should now be registered`,
-  )
+  const warmed = await bootstrapProject(path)
+  console.log(`[trigger-warmer] bootstrapped global workspace: ${warmed ? 'ok' : 'failed'} — cron triggers should now be registered`)
 }

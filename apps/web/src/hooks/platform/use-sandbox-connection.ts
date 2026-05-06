@@ -33,7 +33,6 @@ const FAIL_THRESHOLD_RECONNECT = 2;
 const POLL_CONNECTED = 30_000; // 30s when healthy
 const POLL_FAILING = 3_000; // 3s when any failure detected (fast retry)
 const POLL_UNREACHABLE = 5_000; // 5s when confirmed unreachable
-const RUNTIME_FAIL_THRESHOLD = 2;
 
 const CHECK_TIMEOUT = 20_000;
 
@@ -59,8 +58,6 @@ export function useSandboxConnection() {
 	const isMountRef = useRef(true);
 	const prevServerVersionRef = useRef(serverVersion);
 	const portsFetchedRef = useRef(false);
-	const versionFetchedRef = useRef(false);
-	const runtimeFailCountRef = useRef(0);
 
 	useEffect(() => {
 		const isFirstMount = isMountRef.current;
@@ -73,8 +70,6 @@ export function useSandboxConnection() {
 			// Each instance starts with a clean slate.
 			resetForServerSwitch();
 			portsFetchedRef.current = false;
-			versionFetchedRef.current = false;
-			runtimeFailCountRef.current = 0;
 		}
 
 		let alive = true;
@@ -103,10 +98,10 @@ export function useSandboxConnection() {
 			try {
 				const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT);
 
-				const res = await authenticatedFetch(`${url}/global/health`, {
+				const res = await authenticatedFetch(`${url}/kortix/health`, {
 					method: "GET",
 					signal: controller.signal,
-				});
+				}, { retryOnAuthError: false });
 				clearTimeout(timer);
 
 				if (!alive) return;
@@ -123,6 +118,23 @@ export function useSandboxConnection() {
 					throw new Error(`Auth error: ${res.status}`);
 				}
 
+				if (res.status === 503) {
+					const body = await res.text().catch(() => "");
+					let parsed: any = null;
+					try {
+						parsed = body ? JSON.parse(body) : null;
+					} catch {
+						parsed = null;
+					}
+					resetSandboxFail();
+					setSandboxStatus("connected");
+					setOpenCodeHealth(false, parsed?.version);
+					if (parsed?.version) {
+						setSandboxVersion(parsed.version);
+					}
+					return;
+				}
+
 				if (!res.ok) {
 					const body = await res.text().catch(() => "");
 					const offlineSignal =
@@ -137,18 +149,13 @@ export function useSandboxConnection() {
 
 				resetSandboxFail();
 				setSandboxStatus("connected");
-
-				// Parse health response — extract healthy/version for consumers
-				// that previously relied on the duplicate useServerHealth hook.
-				try {
-					const healthData = await res.json();
-					setOpenCodeHealth(
-						healthData?.healthy === true,
-						healthData?.version,
-					);
-				} catch {
-					// Body already consumed or not JSON — treat as healthy since status was ok
-					setOpenCodeHealth(true);
+				const healthData = await res.json().catch(() => null) as { status?: string; runtimeReady?: boolean; version?: string } | null;
+				setOpenCodeHealth(
+					healthData?.runtimeReady !== false && healthData?.status !== "starting",
+					healthData?.version,
+				);
+				if (healthData?.version) {
+					setSandboxVersion(healthData.version);
 				}
 
 				// Fetch port mappings once on first successful connection.
@@ -173,40 +180,6 @@ export function useSandboxConnection() {
 					}
 				}
 
-				// Fetch sandbox version on every successful connect (detects upgrades/downgrades)
-				{
-					try {
-						const coreRes = await authenticatedFetch(`${url}/session/status`, {
-							signal: AbortSignal.timeout(8000),
-						}, { retryOnAuthError: false });
-						if (!coreRes.ok) {
-							const body = await coreRes.text().catch(() => "");
-							runtimeFailCountRef.current += 1;
-							if (runtimeFailCountRef.current >= RUNTIME_FAIL_THRESHOLD) {
-								setOpenCodeHealth(false);
-							}
-							console.warn('[sandbox-connection] session/status failed after global health succeeded', {
-								status: coreRes.status,
-								body: body.slice(0, 120),
-								runtimeFailCount: runtimeFailCountRef.current,
-							});
-						} else {
-							runtimeFailCountRef.current = 0;
-						}
-
-						const hRes = await authenticatedFetch(`${url}/kortix/health`, {
-							signal: AbortSignal.timeout(8000),
-						}, { retryOnAuthError: false });
-						if (hRes.ok) {
-							const hData = await hRes.json();
-							if (hData.version) {
-								setSandboxVersion(hData.version);
-							}
-						}
-					} catch {
-						/* non-critical */
-					}
-				}
 			} catch (error) {
 				if (!alive) return;
 				if ((error as { immediateOffline?: boolean } | undefined)?.immediateOffline) {
@@ -240,9 +213,11 @@ export function useSandboxConnection() {
 			if (!alive) return;
 			if (timerRef.current) clearTimeout(timerRef.current);
 
-			const { status, failCount } = useSandboxConnectionStore.getState();
+			const { status, failCount, healthy } = useSandboxConnectionStore.getState();
 			let delay: number;
-			if (status === "connected") {
+			if (status === "connected" && healthy === false) {
+				delay = POLL_FAILING;
+			} else if (status === "connected") {
 				delay = POLL_CONNECTED;
 			} else if (status === "unreachable") {
 				delay = POLL_UNREACHABLE;

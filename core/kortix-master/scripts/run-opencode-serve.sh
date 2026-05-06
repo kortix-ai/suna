@@ -13,6 +13,12 @@ export OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 export OPENCODE_FILE_ROOT=/
 export PATH="/opt/bun/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 CANONICAL_OPENCODE_STORAGE_BASE="/persistent/opencode"
+
+# OpenCode launches user commands. Do not leak the runtime service port as a
+# generic app port into every agent shell/dev server.
+unset PORT
+unset APP_PORT
+
 if [ -x "/usr/local/bin/opencode-kortix" ]; then
   export OPENCODE_BIN_PATH="/usr/local/bin/opencode-kortix"
 fi

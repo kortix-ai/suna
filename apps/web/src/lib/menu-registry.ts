@@ -18,13 +18,11 @@
  */
 
 import type { LucideIcon } from 'lucide-react';
-import { featureFlags } from './feature-flags';
 import {
   // Navigation
   LayoutDashboard,
   Blocks,
   FolderOpen,
-  FolderKanban,
   Plug,
   MessageSquare,
   Calendar,
@@ -297,23 +295,6 @@ export const menuRegistry: MenuItemDef[] = [
     tabId: 'page:/files',
   },
   {
-    // Project view — single-sandbox combined surface (Board + Milestones +
-    // Team in inline tabs). Even though we don't expose a multi-project
-    // model, the user-facing label is "Project view" because that's how the
-    // user reasons about it. Hidden until the project paradigm flag is on.
-    id: 'project-view-quick',
-    label: 'Project view',
-    icon: FolderKanban,
-    group: 'quickActions',
-    subGroup: 'tools',
-    showIn: ['rightSidebar', 'commandPalette'],
-    kind: 'navigate',
-    href: '/board',
-    tabId: 'page:/board',
-    keywords: 'project view board kanban milestones team tickets',
-    requiresProjectsFlag: true,
-  },
-  {
     id: 'new-terminal',
     label: 'Terminal',
     icon: TerminalSquare,
@@ -403,17 +384,6 @@ export const menuRegistry: MenuItemDef[] = [
     subGroup: 'tools',
     kind: 'navigate',
     href: '/marketplace',
-  },
-  {
-    id: 'projects',
-    label: 'Projects',
-    icon: FolderKanban,
-    group: 'navigation',
-    subGroup: 'tools',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects',
-    keywords: 'project task milestone kanban board plan auto orchestrate',
   },
   {
     id: 'scheduled-tasks',
@@ -812,11 +782,7 @@ export function getItemsByGroup(
   return menuRegistry.filter(
     (item) =>
       item.showIn.includes(surface) &&
-      item.group === group &&
-      // Hide project-paradigm entries (Board today, Milestones / Team later)
-      // until the flag is flipped on. The flag is a build-time const so the
-      // unused entries tree-shake out.
-      (!item.requiresProjectsFlag || featureFlags.enableProjects),
+      item.group === group,
   );
 }
 
@@ -897,7 +863,6 @@ export function getPreferenceTabs(): SettingsTab[] {
 export function getInstanceTabs(): SettingsTab[] {
   return [
     { id: 'instance-members', label: 'Team', icon: Users },
-    { id: 'instance-projects', label: 'Projects', icon: FolderKanban },
   ];
 }
 

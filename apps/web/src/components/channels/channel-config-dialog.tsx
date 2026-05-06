@@ -22,11 +22,9 @@ interface ChannelConfigDialogProps {
   onCreated: () => void;
   /** Pre-select a platform when opening (bypasses the picker) */
   initialPlatform?: 'telegram' | 'slack';
-  /** Pre-select a project for the new channel (e.g. from project-filtered view) */
-  initialProjectId?: string | null;
 }
 
-export function ChannelConfigDialog({ open, onOpenChange, onCreated, initialPlatform, initialProjectId = null }: ChannelConfigDialogProps) {
+export function ChannelConfigDialog({ open, onOpenChange, onCreated, initialPlatform }: ChannelConfigDialogProps) {
   const [platform, setPlatform] = useState<Platform>(initialPlatform ?? null);
 
   // Sync platform when dialog opens with a new initialPlatform
@@ -92,7 +90,6 @@ export function ChannelConfigDialog({ open, onOpenChange, onCreated, initialPlat
             <TelegramSetupWizard
               onCreated={handleCreated}
               onBack={handleBack}
-              initialProjectId={initialProjectId}
             />
           </>
         ) : (
@@ -101,7 +98,6 @@ export function ChannelConfigDialog({ open, onOpenChange, onCreated, initialPlat
             <SlackSetupWizard
               onCreated={handleCreated}
               onBack={handleBack}
-              initialProjectId={initialProjectId}
             />
           </>
         )}

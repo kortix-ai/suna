@@ -11,6 +11,8 @@
  */
 
 import { Database } from 'bun:sqlite'
+import * as fs from 'node:fs/promises'
+import * as path from 'node:path'
 import {
   type ProjectAgentRow,
   getAgentById,
@@ -20,7 +22,7 @@ import {
   setTicketAgentSession,
   enqueuePendingTrigger,
 } from './ticket-service'
-import { tryReadContext } from './project-v2-seed'
+import { globalWorkspacePath, tryReadContext } from './project-v2-seed'
 
 export interface OpenCodeClientLike {
   session: {
@@ -76,6 +78,22 @@ function parseModel(raw: string | null | undefined): { providerID: string; model
   return { providerID: trimmed.slice(0, slash), modelID: trimmed.slice(slash + 1) }
 }
 
+async function ensureAgentFileInGlobalWorkspace(db: Database, agent: ProjectAgentRow, workspace: string): Promise<void> {
+  const target = path.join(workspace, '.opencode', 'agent', `${agent.slug}.md`)
+  if (agent.file_path === target) return
+  try {
+    const body = await fs.readFile(agent.file_path, 'utf8')
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(target, body, 'utf8')
+    db.prepare('UPDATE project_agents SET file_path=$fp WHERE id=$id').run({ $fp: target, $id: agent.id })
+    agent.file_path = target
+  } catch {
+    // Keep historical project files untouched. If the old file cannot be read,
+    // dispatch still proceeds against the global agent registry and OpenCode
+    // will surface any missing-agent failure normally.
+  }
+}
+
 function ticketNotificationPrompt(params: {
   projectName: string
   agent: ProjectAgentRow
@@ -91,10 +109,10 @@ function ticketNotificationPrompt(params: {
   // Persona is applied as a SYSTEM prompt by the plugin's
   // experimental.chat.system.transform hook — no need to prepend it here.
   return [
-    `Project: ${projectName}`,
+    `Workspace: ${projectName}`,
     `You are agent: ${agent.name} (@${agent.slug})`,
     '',
-    '## Project context (CONTEXT.md)',
+    '## Workspace context (CONTEXT.md)',
     contextBody.trim() || '(empty)',
     '',
     '## Ticket',
@@ -141,6 +159,9 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
     }
   }
 
+  const workspace = globalWorkspacePath(project.path)
+  await ensureAgentFileInGlobalWorkspace(db, agent, workspace)
+
   // Agent-cache freshness guard MUST run BEFORE session.create. Reason:
   // ensureAgentCacheFresh may POST /instance/dispose to flush the
   // directory's stale cache — and dispose nukes EVERY session in that
@@ -149,15 +170,15 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
   // (opencode no longer has X), and the agent never wakes (msgs=0,
   // ready_at=null forever). Always make the cache fresh first, then mint
   // the session into a stable instance.
-  await ensureAgentCacheFresh(project.path, agent.slug)
+  await ensureAgentCacheFresh(workspace, agent.slug)
 
   if (!sessionId) {
     try {
       const res = await client.session.create({
         body: { title: `${agent.name} · #${ticket.number} ${ticket.title}` },
-        // Scope the session to the project's directory so opencode discovers
-        // `.opencode/agent/<slug>.md` files under it.
-        query: { directory: project.path },
+        // Scope every session to the single global workspace directory so
+        // OpenCode sees one Kortix instance instead of per-project instances.
+        query: { directory: workspace },
       })
       sessionId = res?.data?.id as string | undefined ?? null
     } catch (err) {
@@ -180,7 +201,7 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
     }
   }
 
-  const contextBody = await tryReadContext(project.path)
+  const contextBody = await tryReadContext(workspace)
 
   const prompt = ticketNotificationPrompt({
     projectName: project.name,
@@ -197,9 +218,9 @@ export async function fireAgentTrigger(opts: FireTriggerOptions): Promise<string
   try {
     await client.session.promptAsync({
       path: { id: sessionId },
-      // Dispatch under the agent's real opencode name — opencode loads the
-      // persona + config from `<project>/.opencode/agent/<slug>.md`.
-      query: { directory: project.path },
+      // Dispatch under the agent's real opencode name from the global
+      // workspace `.opencode/agent/<slug>.md` registry.
+      query: { directory: workspace },
       body: {
         agent: agent.slug,
         parts: [{ type: 'text', text: prompt }],
@@ -276,18 +297,22 @@ export async function wakeAgentForProject(opts: {
   const project = db.prepare('SELECT id,name,path FROM projects WHERE id=$id').get({ $id: projectId }) as { id: string; name: string; path: string } | null
   if (!project) return null
 
+  const workspace = globalWorkspacePath(project.path)
+  await ensureAgentFileInGlobalWorkspace(db, agent, workspace)
+
   // Make the agent cache hot BEFORE minting a session — see comment on the
   // matching call in fireAgentTrigger. dispose-after-create wipes our
   // freshly-created session and the prompt vanishes silently.
-  await ensureAgentCacheFresh(project.path, agent.slug)
+  await ensureAgentCacheFresh(workspace, agent.slug)
 
   let sessionId = agent.session_id
   if (!sessionId) {
     try {
       const res = await client.session.create({
         body: { title: sessionTitle || `${agent.name} · ${project.name}` },
-        // Scope to project directory so opencode discovers the agent file.
-        query: { directory: project.path },
+        // Scope to the single global workspace so opencode discovers the
+        // global agent file registry.
+        query: { directory: workspace },
       })
       sessionId = (res?.data?.id as string | undefined) ?? null
     } catch (err) {
@@ -308,13 +333,13 @@ export async function wakeAgentForProject(opts: {
     } catch {}
   }
 
-  // Dispatch to the real opencode agent — persona + config live in the file
-  // under `<project>/.opencode/agent/<slug>.md`. Pass `directory` so opencode
-  // resolves the agent from the project's `.opencode/agent/` tree.
+  // Dispatch to the real opencode agent — persona + config live in the global
+  // workspace `.opencode/agent/<slug>.md` file. Pass `directory` so opencode
+  // resolves the agent from that single registry.
   try {
     await client.session.promptAsync({
       path: { id: sessionId },
-      query: { directory: project.path },
+      query: { directory: workspace },
       body: {
         agent: agent.slug,
         parts: [{ type: 'text', text: prompt }],
@@ -352,4 +377,3 @@ export async function fireAgentTriggers(opts: {
     })
   }
 }
-

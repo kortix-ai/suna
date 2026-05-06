@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useIsMobile } from '@/hooks/utils';
 import { toast } from '@/lib/toast';
@@ -21,13 +20,8 @@ import { usePendingFilesStore } from '@/stores/pending-files-store';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useOpenCodeLocal, formatModelString } from '@/hooks/opencode/use-opencode-local';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
-import { ProjectSelector } from '@/components/dashboard/project-selector';
 import { NoInstanceState } from '@/components/dashboard/no-instance-state';
-import { useSelectedProjectStore } from '@/stores/selected-project-store';
-import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
-import { appendProjectRef } from '@/lib/project-preamble';
-import { featureFlags } from '@/lib/feature-flags';
 import { Menu } from 'lucide-react';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import { playSound } from '@/lib/sounds';
@@ -44,7 +38,6 @@ const SEND_FADE_MS = 150;
 export function DashboardContent() {
   const [isSending, setIsSending] = useState(false);
 
-  const router = useRouter();
   const isMobile = useIsMobile();
   const { setOpen: setSidebarOpenState, setOpenMobile } = useSidebar();
   const createSession = useCreateOpenCodeSession();
@@ -80,26 +73,6 @@ export function DashboardContent() {
   // Unified model/agent/variant state
   const local = useOpenCodeLocal({ agents, providers, config });
 
-  // Project selection — persisted across reloads. Force-null when the
-  // project flag is off so no project preamble is appended on send and
-  // the LLM never sees a project context. Store reads are still wired (cheap
-  // zustand subscriptions) so flipping the flag on rehydrates the prior pick.
-  const selectedProjectIdRaw = useSelectedProjectStore((s) => s.projectId);
-  const setSelectedProjectId = useSelectedProjectStore((s) => s.setProjectId);
-  const selectedProjectId = featureFlags.enableProjects ? selectedProjectIdRaw : null;
-  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
-  const selectedProject = React.useMemo(
-    () => (featureFlags.enableProjects ? kortixProjects?.find((p) => p.id === selectedProjectId) ?? null : null),
-    [kortixProjects, selectedProjectId],
-  );
-  // If the persisted project id no longer exists, clear it transparently
-  React.useEffect(() => {
-    if (!featureFlags.enableProjects) return;
-    if (selectedProjectId && kortixProjects && !selectedProject) {
-      setSelectedProjectId(null);
-    }
-  }, [selectedProjectId, kortixProjects, selectedProject, setSelectedProjectId]);
-
   const handleSend = useCallback(
     async (text: string, files?: AttachedFile[]) => {
       if ((!text.trim() && !files?.length) || isSending) return;
@@ -118,8 +91,7 @@ export function DashboardContent() {
         // Stash everything the session page needs BEFORE navigating — its
         // pending-prompt effect runs on the first render after pushState,
         // so sessionStorage must be populated first.
-        const finalText = appendProjectRef(text, selectedProject);
-        sessionStorage.setItem(`opencode_pending_prompt:${session.id}`, finalText);
+        sessionStorage.setItem(`opencode_pending_prompt:${session.id}`, text);
 
         if (files?.length) {
           usePendingFilesStore.getState().setPendingFiles(files);
@@ -158,7 +130,7 @@ export function DashboardContent() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isSending, createSession, local.agent.current, local.model.currentKey, local.model.variant.current, selectedProject],
+    [isSending, createSession, local.agent.current, local.model.currentKey, local.model.variant.current],
   );
 
   const handleCommand = useCallback(
@@ -232,7 +204,7 @@ export function DashboardContent() {
       )}
 
       {/* Full-bleed wallpaper — spans the entire dashboard so the chat input
-          and project selector overlay the same backdrop instead of sitting on
+          overlays the same backdrop instead of sitting on
           a separate opaque block. Emphasized-exit curve yanks it on send. */}
       <div
         className={cn(
@@ -248,18 +220,6 @@ export function DashboardContent() {
       {/* Spacer — keeps the input anchored to the bottom while the wallpaper
           is absolute-positioned behind. */}
       <div className="relative flex-1 min-h-0 z-10" />
-
-      {/* Project selector — sits above the chat input, pill style. Hidden
-          when the project paradigm is off (default); the input then
-          sends straight to a fresh session with no project preamble. */}
-      {featureFlags.enableProjects && (
-        <div className="relative z-10">
-          <ProjectSelector
-            selectedProjectId={selectedProjectId}
-            onSelect={setSelectedProjectId}
-          />
-        </div>
-      )}
 
       {/* Chat Input — pinned to bottom, overlays the wallpaper */}
       <SessionChatInput

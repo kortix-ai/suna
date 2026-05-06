@@ -104,10 +104,6 @@ const LegacyThreadPage = lazy(() =>
 	import('@/app/(dashboard)/legacy/[threadId]/page'),
 );
 
-const ProjectDetailPage = lazy(() =>
-	import('@/app/(dashboard)/projects/[id]/page'),
-);
-
 const TaskDetailPage = lazy(() =>
 	import('@/app/(dashboard)/tasks/[id]/page'),
 );
@@ -125,7 +121,6 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/credits-explained': CreditsPage,
 	'/changelog': ChangelogPage,
 	'/workspace': WorkspacePage,
-	'/projects': WorkspacePage,
 	// Marketplace - browse and install all components from registry
 	'/marketplace': MarketplacePage,
 	'/skills': MarketplacePage, // backwards compat
@@ -155,11 +150,6 @@ function resolveComponent(routeKey: string): { Component: ComponentType<any>; pa
 	const legacyMatch = routeKey.match(/^\/legacy\/(.+)$/);
 	if (legacyMatch) {
 		return { Component: LegacyThreadPage, params: { threadId: legacyMatch[1] } };
-	}
-
-	const projectMatch = routeKey.match(/^\/projects\/([^/]+)$/);
-	if (projectMatch) {
-		return { Component: ProjectDetailPage, params: { id: decodeURIComponent(projectMatch[1]) } };
 	}
 
 	const taskMatch = routeKey.match(/^\/tasks\/([^/]+)$/);

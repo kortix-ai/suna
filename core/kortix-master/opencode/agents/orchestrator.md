@@ -23,8 +23,6 @@ permission:
   task_update: allow
   task_list: allow
   task_get: allow
-  project_get: allow
-  project_update: allow
   session_get: allow
   session_list: allow
   session_lineage: allow

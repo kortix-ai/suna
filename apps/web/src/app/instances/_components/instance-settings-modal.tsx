@@ -11,7 +11,6 @@ import {
   KeyRound,
   Loader2,
   Cpu,
-  Folder,
   MemoryStick,
   RotateCw,
   RefreshCw,
@@ -42,7 +41,6 @@ import {
 import { hasNewerVersion, InstanceUpdateDialog } from './instance-update-dialog';
 import { useCan } from '@/hooks/platform/use-can';
 import { InstanceMembersPanel } from './instance-members-panel';
-import { InstanceProjectsPanel } from './instance-projects-panel';
 import { VersionHistoryPanel } from '@/components/changelog/version-history-panel';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxAction, useAdminSandboxDetail, useAdminSandboxHealth, useAdminSandboxRepair, type AdminInstanceLayerAction, type AdminInstanceLayerHealth } from '@/hooks/admin/use-admin-sandboxes';
@@ -63,7 +61,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useServerStore } from '@/stores/server-store';
 
-type TabId = 'overview' | 'host' | 'members' | 'projects' | 'updates' | 'backups';
+type TabId = 'overview' | 'host' | 'members' | 'updates' | 'backups';
 
 interface TabDef {
   id: TabId;
@@ -536,11 +534,9 @@ export function InstanceSettingsModal({
     { id: 'overview', label: 'General', icon: Settings2 },
     { id: 'host', label: 'Health', icon: Server },
     { id: 'members', label: 'Members', icon: Users },
-    // Projects tab is owner-only (Phase 2 ACL is strictly an owner tool).
-    { id: 'projects', label: 'Projects', icon: Folder, hidden: !canManageSandbox },
     { id: 'updates', label: 'Updates', icon: ArrowDownToLine, hidden: !supportsUpdates },
     { id: 'backups', label: 'Backups', icon: Archive, hidden: !supportsBackups },
-  ], [canManageSandbox, supportsBackups, supportsUpdates]);
+  ], [supportsBackups, supportsUpdates]);
 
   const visibleTabs = tabs.filter((tab) => !tab.hidden);
   const sandboxUrl = useMemo(() => {
@@ -851,6 +847,17 @@ export function InstanceSettingsModal({
       default:
         return 'border-border/60 bg-muted/10 text-muted-foreground';
     }
+  }
+
+  function overallHealthHint(health: NonNullable<typeof adminHealth>) {
+    if (health.recommended_action) {
+      return `Recommended action: ${health.recommended_action.replace(/_/g, ' ')}`;
+    }
+    if (health.overall_status === 'healthy') return 'All layers healthy';
+    if (health.layers.host.details.disk_full === true || health.layers.runtime.details.storage_full === true) {
+      return 'Manual action required: free disk space before restarting services';
+    }
+    return 'Manual inspection required';
   }
 
   function actionButtonVariant(action: AdminInstanceLayerAction['action']) {
@@ -1224,9 +1231,7 @@ export function InstanceSettingsModal({
                   <div>
                     <div className="text-sm font-medium">Overall status</div>
                     <div className="text-xs text-muted-foreground mt-1">
-                      {adminHealth.recommended_action
-                        ? `Recommended action: ${adminHealth.recommended_action.replace(/_/g, ' ')}`
-                        : 'All layers healthy'}
+                      {overallHealthHint(adminHealth)}
                     </div>
                   </div>
                   <div className={cn('rounded-full border px-3 py-1 text-xs font-medium capitalize', layerTone(adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy' && adminHealth.layers.runtime.status === 'healthy' ? 'healthy' : adminHealth.overall_status === 'offline' ? 'offline' : adminHealth.overall_status === 'degraded' ? 'degraded' : 'unknown'))}>
@@ -1430,10 +1435,6 @@ export function InstanceSettingsModal({
 
     if (activeTab === 'members') {
       return <InstanceMembersPanel sandboxId={sandbox.sandbox_id} />;
-    }
-
-    if (activeTab === 'projects') {
-      return <InstanceProjectsPanel sandbox={sandbox} canManage={canManageSandbox} />;
     }
 
     if (activeTab === 'updates') {

@@ -31,9 +31,6 @@ declare module 'hono' {
 export function kortixUserContextMiddleware() {
   return async (c: Context, next: Next) => {
     const raw = c.req.header(KORTIX_USER_CONTEXT_HEADER)
-    console.log(
-      `[kortix-user] ${c.req.method} ${c.req.path} header=${raw ? `present(${raw.slice(0, 16)}…)` : 'absent'}`,
-    )
     if (!raw) {
       await next()
       return
@@ -55,9 +52,6 @@ export function kortixUserContextMiddleware() {
       return
     }
 
-    console.log(
-      `[kortix-user] verified user=${result.context.userId} sandbox=${result.context.sandboxId} role=${result.context.sandboxRole}`,
-    )
     c.set('kortixUser', result.context)
     rememberUserScopes(result.context.userId, result.context.scopes ?? [])
 

@@ -130,13 +130,20 @@ export function ConnectingScreen({
   const runtimeOnlyDegraded = !forceConnecting && healthy === false && status === 'connected';
   const runtimeSummary = adminHealth?.layers.runtime.summary || 'Runtime services degraded';
 
-  const primaryRepairAction: AdminInstanceLayerAction['action'] =
+  const primaryRepairAction: AdminInstanceLayerAction['action'] | null =
     supportsLayeredHealth
-      ? (adminHealth?.recommended_action || 'restart_workload')
+      ? adminHealth
+        ? adminHealth.recommended_action
+        : 'restart_workload'
       : 'restart_workload';
 
   const handleRestart = useCallback(async () => {
     if (restarting) return;
+    if (supportsLayeredHealth && adminHealth && !primaryRepairAction) {
+      setHealthOpen(true);
+      toast.error('Manual repair required before restarting services.', { duration: 5000 });
+      return;
+    }
     setRestarting(true);
     const adminAction = supportsLayeredHealth && isAdmin && resolvedSandboxId ? primaryRepairAction : null;
     const phase = adminAction === 'restart_runtime'
@@ -162,7 +169,7 @@ export function ConnectingScreen({
     } finally {
       setTimeout(() => setRestarting(false), 15_000);
     }
-  }, [adminRepairMutation, isAdmin, primaryRepairAction, restarting, resolvedSandboxId, stopped, supportsLayeredHealth]);
+  }, [adminHealth, adminRepairMutation, isAdmin, primaryRepairAction, restarting, resolvedSandboxId, stopped, supportsLayeredHealth]);
 
   const handleSwitch = useCallback(() => {
     // Error/offline escape hatch: open the workspace list as a real page so it
@@ -671,6 +678,7 @@ function UnreachableView({
   const adminRuntimeDegraded = !!adminHealth && adminHealth.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy';
   const adminWorkloadBroken = !!adminHealth && adminHealth.layers.workload.status !== 'healthy';
   const adminHostOffline = !!adminHealth && adminHealth.layers.host.status === 'offline';
+  const adminStorageFull = !!adminHealth && (adminHealth.layers.host.details.disk_full === true || adminHealth.layers.runtime.details.storage_full === true);
 
   return (
     <>
@@ -683,7 +691,7 @@ function UnreachableView({
 
       <div className="flex flex-col items-center gap-1.5">
         <h1 className="text-[14px] font-medium text-foreground/90">
-          {isLocalDocker ? 'Local sandbox unreachable' : recoveryPhase === 'restarting_host' ? 'Rebooting host' : recoveryPhase === 'restarting_runtime' ? 'Restarting runtime services' : recoveryPhase === 'restarting_workload' ? 'Restarting workload' : adminRuntimeDegraded ? 'Runtime services unavailable' : adminWorkloadBroken ? 'Workspace container unavailable' : adminHostOffline ? 'Host offline' : degraded ? 'Workspace services unavailable' : 'Workspace offline'}
+          {isLocalDocker ? 'Local sandbox unreachable' : recoveryPhase === 'restarting_host' ? 'Rebooting host' : recoveryPhase === 'restarting_runtime' ? 'Restarting runtime services' : recoveryPhase === 'restarting_workload' ? 'Restarting workload' : adminStorageFull ? 'Instance disk full' : adminRuntimeDegraded ? 'Runtime services unavailable' : adminWorkloadBroken ? 'Workspace container unavailable' : adminHostOffline ? 'Host offline' : degraded ? 'Workspace services unavailable' : 'Workspace offline'}
         </h1>
         <p className="max-w-[300px] text-center text-[12px] leading-relaxed text-muted-foreground/55">
           {isLocalDocker
@@ -694,6 +702,8 @@ function UnreachableView({
                 ? 'The runtime restart was accepted. Waiting for core services to come back online.'
               : recoveryPhase === 'restarting_workload'
                 ? 'The workload restart was accepted. Waiting for the container and core services to come back online.'
+              : adminStorageFull
+                ? 'The host and container are alive, but storage is full. Free disk space before restarting runtime services.'
               : adminRuntimeDegraded
                 ? 'The host and workload are healthy, but the managed runtime services inside the container are failing. Restart the runtime layer first.'
               : adminWorkloadBroken

@@ -34,6 +34,7 @@ const POLL_INTERVAL_MS = 8_000;       // 8s between sweeps
 const JUSTAVPS_TIMEOUT_MS = 10_000;   // 10s per machine fetch
 const MAX_CONCURRENT = 5;             // don't hammer JustAVPS
 const CREATION_GRACE_MS = 60_000;     // 60s grace period before treating 404 as fatal
+const SERVICES_READY_TIMEOUT_MS = 15 * 60_000; // stop retrying unreachable runtimes after 15m
 
 let _intervalId: ReturnType<typeof setInterval> | null = null;
 let _running = false;
@@ -52,6 +53,7 @@ const TERMINAL_PROVIDER_FAILURE_PREFIXES = [
   'Machine not found on provider',
   'Machine was deleted by the provider',
   'Machine provisioning failed',
+  'Sandbox services did not become reachable',
 ];
 
 export function isTerminalProviderFailure(metadata: Record<string, unknown>): boolean {
@@ -82,6 +84,23 @@ export function stripFailureMetadata(metadata: Record<string, unknown>): Record<
 export function nextRecoveredStatus(currentStatus: string, ready: boolean): 'provisioning' | 'active' {
   if (ready) return 'active';
   return 'provisioning';
+}
+
+function parseTimestampMs(value: unknown): number | null {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || !value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getProvisioningAgeMs(sandbox: typeof sandboxes.$inferSelect, metadata: Record<string, unknown>): number {
+  const startedAt =
+    parseTimestampMs(metadata.initStartedAt) ??
+    parseTimestampMs(metadata.createdAt) ??
+    parseTimestampMs(sandbox.createdAt);
+  if (!startedAt) return 0;
+  return Math.max(0, Date.now() - startedAt);
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -241,10 +260,37 @@ async function pollSingleSandbox(sandbox: typeof sandboxes.$inferSelect): Promis
         slug: (meta.justavpsSlug as string | undefined) || undefined,
         proxyToken: (meta.justavpsProxyToken as string | undefined) || undefined,
         serviceKey: ((sandbox.config as Record<string, unknown> | null)?.serviceKey as string | undefined) || undefined,
-        externalId: sandbox.externalId || undefined,
       });
 
       if (!readiness.ready) {
+        const provisioningAgeMs = getProvisioningAgeMs(sandbox, meta);
+        if (provisioningAgeMs >= SERVICES_READY_TIMEOUT_MS) {
+          const message = `Sandbox services did not become reachable after ${Math.round(SERVICES_READY_TIMEOUT_MS / 60_000)} minutes: ${readiness.message}`;
+          const errorMeta = buildSandboxInitFailureMetadata(healedMeta, message, initAttempts, false);
+
+          await db
+            .update(sandboxes)
+            .set({
+              status: 'error',
+              metadata: errorMeta,
+              updatedAt: new Date(),
+            })
+            .where(eq(sandboxes.sandboxId, sandbox.sandboxId));
+
+          console.warn(`[provision-poller] ${sandbox.sandboxId} → error (${message})`);
+
+          sandboxEventBus.emit({
+            sandboxId: sandbox.sandboxId,
+            externalId: sandbox.externalId,
+            event: 'provision_poll',
+            stage: 'services_ready',
+            status: 'error',
+            message,
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+
         const recoveredStatus = nextRecoveredStatus(sandbox.status, false);
         await db
           .update(sandboxes)

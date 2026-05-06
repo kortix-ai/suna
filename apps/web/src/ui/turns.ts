@@ -797,7 +797,7 @@ export function getToolInfo(tool: string, input: Record<string, any> = {}): Tool
       return { icon: 'book-open', title: 'Session Get', subtitle: input.session_id?.slice(-12) };
     case 'project_delete':
     case 'project-delete':
-      return { icon: 'trash-2', title: 'Delete Project', subtitle: input.project };
+      return { icon: 'trash-2', title: 'Workspace Delete Disabled', subtitle: input.project };
     case 'agent_spawn':
     case 'agent-spawn':
       return { icon: 'cpu', title: `Agent (${input.agent_type || 'worker'})`, subtitle: input.description };

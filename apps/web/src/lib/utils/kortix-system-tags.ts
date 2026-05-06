@@ -87,6 +87,7 @@ export function extractKortixSystemMessages(text: string): KortixSystemMessage[]
 			type.startsWith("pty-") ||
 			type === "project-status" ||
 			type === "project-context" ||
+			type === "workspace-context" ||
 			type === "session-context" ||
 			type === "memory-context"
 		) continue

@@ -96,7 +96,7 @@ export function getPageContext(pathname: string): ContainerLoadData {
     };
   }
   
-  // Projects/Threads - NOT tracked for routeChange (internal navigation)
+  // Workspace/Threads - NOT tracked for routeChange (internal navigation)
   if (pathname.startsWith('/projects') || pathname.startsWith('/workspace') || pathname.startsWith('/thread')) {
     return {
       master_group: 'Platform',
@@ -728,4 +728,3 @@ export function trackAddToCart(item: PlanItemData, currency: string, value: numb
     console.log('[GTM] add_to_cart pushed:', addToCartEvent);
   }
 }
-

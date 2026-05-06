@@ -49,7 +49,6 @@ import type {
   PromptPart,
 } from '@/hooks/opencode/use-opencode-sessions';
 import { useOpenCodeSessions, useOpenCodeSessionTodo } from '@/hooks/opencode/use-opencode-sessions';
-import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
@@ -440,7 +439,7 @@ const AUTOCONTINUE_ALGORITHMS: AutoContinueAlgorithm[] = [
       'Integration mistakes between independently-built parts',
       'Most expensive due to per-card overhead',
     ],
-    howItWorks: 'Work is organized as a kanban board. The agent decomposes the task into cards, each prefixed with a stage:\n\n[BACKLOG] — Waiting to start\n[IN PROGRESS] — Currently being worked on (max 1 at a time)\n[REVIEW] — Self-review checkpoint\n[TESTING] — Run tests for this specific card\n[DONE] — Fully verified\n\nCards progress through stages in order. The system monitors todo items for these prefixes and provides stage-aware continuation prompts. If the agent claims DONE but cards aren\'t all in [DONE], the system rejects it.\n\nAfter all cards complete, a final integration check runs across the entire project.',
+    howItWorks: 'Work is organized as a kanban board. The agent decomposes the task into cards, each prefixed with a stage:\n\n[BACKLOG] — Waiting to start\n[IN PROGRESS] — Currently being worked on (max 1 at a time)\n[REVIEW] — Self-review checkpoint\n[TESTING] — Run tests for this specific card\n[DONE] — Fully verified\n\nCards progress through stages in order. The system monitors todo items for these prefixes and provides stage-aware continuation prompts. If the agent claims DONE but cards aren\'t all in [DONE], the system rejects it.\n\nAfter all cards complete, a final integration check runs across the whole workspace.',
   },
   {
     id: 'goal3',
@@ -1014,22 +1013,16 @@ function SlashCommandPopover({
 // ============================================================================
 
 export interface MentionItem {
-  kind: 'file' | 'agent' | 'session' | 'project';
+  kind: 'file' | 'agent' | 'session';
   label: string;
   value?: string;
   description?: string;
-  /** Project-only: absolute workspace path (e.g. `/workspace/foo`). */
-  path?: string;
 }
 
 export interface TrackedMention {
-  kind: 'file' | 'agent' | 'session' | 'project';
+  kind: 'file' | 'agent' | 'session';
   label: string;
-  value?: string; // session ID for session mentions, project ID for project mentions
-  /** Project-only: absolute workspace path. */
-  path?: string;
-  /** Project-only: short description, passed through to the <project_ref>. */
-  description?: string;
+  value?: string; // session ID for session mentions
 }
 
 function MentionPopover({
@@ -1061,7 +1054,6 @@ function MentionPopover({
   const r = el.getBoundingClientRect();
 
   const agents = items.filter((i) => i.kind === 'agent');
-  const projects = items.filter((i) => i.kind === 'project');
   const sessions = items.filter((i) => i.kind === 'session');
   const files = items.filter((i) => i.kind === 'file');
 
@@ -1091,35 +1083,6 @@ function MentionPopover({
                   <span className="size-4 rounded flex items-center justify-center bg-foreground/10 text-foreground/60 text-[10px] font-semibold shrink-0">@</span>
                   <span className="truncate font-medium capitalize">{item.label}</span>
                   {item.description && <span className="text-muted-foreground/40 truncate text-[10px]">{item.description}</span>}
-                </button>
-              );
-            })}
-          </>
-        )}
-        {projects.length > 0 && (
-          <>
-            <div className="px-3 py-1 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Projects</div>
-            {projects.map((item) => {
-              const idx = globalIndex++;
-              return (
-                <button
-                  key={`project-${item.value}`}
-                  data-mention-index={idx}
-                  onMouseDown={(e) => { e.preventDefault(); onSelect(item); }}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer',
-                    idx === selectedIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
-                  )}
-                >
-                  <Folder className="size-4 text-foreground/50 shrink-0" />
-                  <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
-                    <span className="truncate text-sm font-medium">{item.label}</span>
-                    {item.path && (
-                      <span className="text-[10px] text-muted-foreground/35 font-mono truncate flex-shrink min-w-0">
-                        {item.path}
-                      </span>
-                    )}
-                  </div>
                 </button>
               );
             })}
@@ -1400,7 +1363,7 @@ export function SessionChatInput({
       placeholder,
       'Use / to run commands',
       'Reference files with @',
-      'Ask about any file in this project',
+      'Ask about any file in this workspace',
       'Use Cmd+K to open command palette',
       'Press Tab to switch modes',
       'Use Up arrow to recall your last prompt',
@@ -1525,9 +1488,6 @@ export function SessionChatInput({
 
   // Sessions for @ mention search
   const { data: allSessions } = useOpenCodeSessions();
-  // Skip the projects query entirely when the project paradigm is off —
-  // the @-mention popover never offers a project bucket in that mode.
-  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
 
   useEffect(() => {
     if (text.trim().length > 0) return;
@@ -1741,22 +1701,6 @@ export function SessionChatInput({
       .filter((a) => (a.name || '').toLowerCase().includes(q))
       .map((a) => ({ kind: 'agent' as const, label: a.name || '', value: a.name || '' }));
 
-    // Project items: filter by name, path, or description. Sort by recency.
-    const projectItems: MentionItem[] = (kortixProjects ?? [])
-      .filter((p) => {
-        const hay = [p.name, p.path, p.description].join(' ').toLowerCase();
-        return !q || hay.includes(q);
-      })
-      .sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))
-      .slice(0, 5)
-      .map((p) => ({
-        kind: 'project' as const,
-        label: p.name,
-        value: p.id,
-        path: p.path,
-        description: p.description,
-      }));
-
     // Session items: filter by title, session ID, or changed file paths, exclude current/child/archived
     const sessionItems: MentionItem[] = (allSessions ?? [])
       .filter((s: Session) => {
@@ -1789,8 +1733,8 @@ export function SessionChatInput({
       label: f,
       value: f,
     }));
-    return [...agentItems, ...projectItems, ...sessionItems, ...fileItems];
-  }, [mentionQuery, agents, kortixProjects, allSessions, sessionId, fileResults]);
+    return [...agentItems, ...sessionItems, ...fileItems];
+  }, [mentionQuery, agents, allSessions, sessionId, fileResults]);
 
   // Clamp mention index when items change to prevent out-of-bounds selection
   useEffect(() => {
@@ -1929,9 +1873,6 @@ export function SessionChatInput({
         kind: item.kind,
         label: item.label,
         ...(item.kind === 'session' ? { value: item.value } : {}),
-        ...(item.kind === 'project'
-          ? { value: item.value, path: item.path, description: item.description }
-          : {}),
       },
     ]);
     setMentionQuery(null);
@@ -2090,7 +2031,7 @@ export function SessionChatInput({
   // Build highlighted segments for the overlay behind the textarea
   const highlightSegments = useMemo(() => {
     if (mentions.length === 0 || !text) return null;
-    type SegKind = 'file' | 'agent' | 'session' | 'project';
+    type SegKind = 'file' | 'agent' | 'session';
     // Collect all mention ranges sorted by position
     const ranges: { start: number; end: number; kind: SegKind }[] = [];
     for (const m of mentions) {
@@ -2294,7 +2235,7 @@ export function SessionChatInput({
                     <span
                       key={i}
                       className={cn(
-                        (seg.kind === 'file' || seg.kind === 'agent' || seg.kind === 'session' || seg.kind === 'project') && 'border-b border-foreground/40 font-medium text-foreground/80',
+                        (seg.kind === 'file' || seg.kind === 'agent' || seg.kind === 'session') && 'border-b border-foreground/40 font-medium text-foreground/80',
                       )}
                     >
                       {seg.text}

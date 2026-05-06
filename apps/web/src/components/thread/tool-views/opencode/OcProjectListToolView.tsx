@@ -34,14 +34,14 @@ export function OcProjectListToolView({
 
   const { projects, total } = useMemo(() => {
     const parsed = parseProjectListOutput(output);
-    // Extract total count from footer like "2 projects."
+    // Extract total count from legacy footer like "2 projects."
     const totalMatch = output.match(/(\d+)\s+project/);
     const total = totalMatch ? parseInt(totalMatch[1], 10) : parsed.length;
     return { projects: parsed, total };
   }, [output]);
 
   if (isStreaming && !toolResult) {
-    return <LoadingState title="Loading projects" subtitle="Fetching project list..." />;
+    return <LoadingState title="Loading workspace" subtitle="Fetching workspace details..." />;
   }
 
   return (
@@ -50,8 +50,8 @@ export function OcProjectListToolView({
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Folder}
-            title="Project List"
-            subtitle={projects.length > 0 ? `${total} project${total !== 1 ? 's' : ''}` : 'All projects'}
+            title="Workspace"
+            subtitle={projects.length > 0 ? 'Global workspace' : 'Workspace details'}
           />
           {projects.length > 0 && (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted flex-shrink-0 ml-2">
@@ -103,13 +103,12 @@ export function OcProjectListToolView({
         ) : isError ? (
           <div className="flex items-start gap-2.5 px-4 py-6 text-muted-foreground">
             <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-            <p className="text-sm">{output || 'Failed to list projects'}</p>
+            <p className="text-sm">{output || 'Failed to load workspace'}</p>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6">
             <Folder className="h-8 w-8 text-muted-foreground/30 mb-3" />
-            <p className="text-sm text-muted-foreground">No projects found</p>
-            <p className="text-xs text-muted-foreground/50 mt-1">Use project_create to create one</p>
+            <p className="text-sm text-muted-foreground">No workspace details found</p>
           </div>
         )}
       </CardContent>
@@ -128,7 +127,7 @@ export function OcProjectListToolView({
           ) : projects.length > 0 ? (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
               <CheckCircle className="h-3 w-3 text-emerald-500" />
-              {projects.length} project{projects.length !== 1 ? 's' : ''}
+              Workspace
             </Badge>
           ) : null
         )}

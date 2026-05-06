@@ -1,9 +1,9 @@
 /**
- * v2 project bootstrap — seed PM agent, default columns, and maintain the
- * "## Team" section of CONTEXT.md on any agent CRUD.
+ * Global workspace bootstrap — seed PM/team agents, default columns, and
+ * maintain the "## Team" section of the single workspace CONTEXT.md.
  *
- * Filesystem layout per project:
- *   <project.path>/
+ * Filesystem layout:
+ *   /workspace/ (or KORTIX_WORKSPACE/WORKSPACE_DIR in local tests)
  *     ├── .kortix/
  *     │   └── CONTEXT.md                  (we own a "## Team" region inside)
  *     └── .opencode/
@@ -13,7 +13,7 @@
  *
  * Agent files live under `.opencode/agent/` so OpenCode discovers them as
  * real first-class agents when a session is created with
- * `?directory=<project.path>`. The YAML frontmatter carries BOTH opencode-
+ * `?directory=/workspace`. The YAML frontmatter carries BOTH opencode-
  * native keys (name, description, mode, model) AND kortix metadata
  * (slug, tool_groups, execution_mode, default_assignee_columns). OpenCode
  * ignores unknown keys; the kortix plugin reads the kortix ones from our DB
@@ -46,6 +46,18 @@ export const MILESTONES_SECTION_START = '<!-- KORTIX:MILESTONES:START -->'
 export const MILESTONES_SECTION_END = '<!-- KORTIX:MILESTONES:END -->'
 
 export const DEFAULT_PM_SLUG = 'project-manager'
+
+export function globalWorkspacePath(fallbackPath?: string | null): string {
+  return process.env.KORTIX_WORKSPACE?.trim()
+    || process.env.WORKSPACE_DIR?.trim()
+    || process.env.KORTIX_WORKSPACE_ROOT?.trim()
+    || fallbackPath
+    || '/workspace'
+}
+
+export function globalContextPath(fallbackPath?: string | null): string {
+  return path.join(globalWorkspacePath(fallbackPath), '.kortix', 'CONTEXT.md')
+}
 
 /**
  * Resolve the default `providerID/modelID` for seeded agents based on what
@@ -90,7 +102,7 @@ export const DEFAULT_MODEL = resolveDefaultModel()
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function agentFilePath(projectPath: string, slug: string): string {
-  return path.join(projectPath, '.opencode', 'agent', `${slug}.md`)
+  return path.join(globalWorkspacePath(projectPath), '.opencode', 'agent', `${slug}.md`)
 }
 
 export interface AgentFileMeta {
@@ -117,20 +129,9 @@ export interface AgentFileMeta {
  * kortix tool gating.
  */
 /**
- * Per-project agents must NEVER call workspace-global project CRUD —
- * they're already scoped inside a project. Mirrors `worker.md`'s deny
- * policy for project_create/delete/update while keeping list/get/select
- * open so `<project_status>` injection can still resolve. Emitted on
- * every agent file rendered by `renderAgentFile` so PM, engineer, qa,
- * and any `team_create_agent`-seeded role inherit the same boundary.
+ * Generated team-agent permission defaults.
  */
 const PER_PROJECT_AGENT_PERMISSIONS: Record<string, 'allow' | 'deny'> = {
-  project_create: 'deny',
-  project_delete: 'deny',
-  project_update: 'deny',
-  project_get: 'allow',
-  project_list: 'allow',
-  project_select: 'allow',
   // The 'question' tool puts the session in a structured-form-pending state —
   // free-text replies don't satisfy it, lock breaks if user types instead of
   // clicking, and the session permanently stalls. PM persona explicitly says
@@ -175,14 +176,14 @@ export function renderAgentFile(meta: AgentFileMeta, body: string): string {
 
 /**
  * Invalidate OpenCode's per-directory agent/config cache so freshly-written
- * `.opencode/agent/*.md` files become discoverable. Scoped to one directory
- * — other projects' sessions are unaffected.
+ * `.opencode/agent/*.md` files become discoverable. Kortix uses one global
+ * workspace directory.
  *
  * WARNING: if any session is *actively generating a turn* in this same
  * directory when dispose fires, that turn dies with MessageAbortedError
  * (verified empirically against opencode 1.2.25). Idle sessions survive.
  * Only call this when you're certain the directory is idle — e.g. during
- * project seeding (before any session exists) or via `scheduleAgentRefresh`
+ * workspace seeding (before any session exists) or via `scheduleAgentRefresh`
  * in ticket-triggers.ts, which debounces + drains pending triggers.
  */
 export async function fireOpencodeDispose(directory: string): Promise<boolean> {
@@ -268,9 +269,8 @@ at all. Three shapes:
 3. **Modify existing** — user wants work done inside a pre-existing
    repo. Signals: a URL or path to a repo, phrases like "my repo",
    "our codebase", "this project", "attached repo", "I'll give you
-   the repo". project_create should have been called with that
-   path — if it wasn't, you need to ask the human for the absolute
-   path before team creation so team agents wake in the right tree.
+   the repo". Ask the human for the absolute path before team creation
+   so team agents wake in the right tree.
 
 Shapes combine: an Ops workflow usually also targets an existing
 repo; a Build project is usually greenfield.
@@ -289,10 +289,8 @@ question instead:
 
 LOCK THE SHAPE before Q2. If shape = Ops, skip the stack question
 (Q2) entirely — the team uses existing tooling, there's nothing
-to build. If shape = Modify-existing but project_create used a
-fresh /workspace/<name> path, ask for the real repo path and update
-CONTEXT.md to reference it (or tell the human to re-create with the
-correct path).
+to build. If shape = Modify-existing, ask for the real repo path and
+update CONTEXT.md to reference it.
 
 **Q2 — Stack.**
 Ask plainly:
@@ -405,17 +403,11 @@ If they say "no" / "skip" / "kill it" → DELETE the trigger.
 
 ---
 
-### NEVER call these
+### Global workspace rule
 
-You ARE the PM of an **existing** project. These tools are workspace-global
-and will hard-abort your turn on permission-deny:
-
-- \`project_create\` — you are not bootstrapping. Call \`project_context_write\`
-  to seed/update CONTEXT.md instead.
-- \`project_delete\`, \`project_update\` — deny-listed.
-
-If you feel the urge to "set up the project" or "create it," STOP. The
-project already exists. Jump straight to the setup sequence below.
+You are operating in the existing global workspace. Do not create, list,
+select, switch, delete, or update projects. If you need durable setup notes,
+call \`project_context_write\` to seed/update CONTEXT.md instead.
 
 ---
 
@@ -425,7 +417,7 @@ project already exists. Jump straight to the setup sequence below.
 1. \`project_context_write\` — tight Overview + Stack + Autonomy
    (three short sections, nothing else).
 2. \`team_create_agent\` for each approved role from Q4. Pass
-   \`default_model: "${teamModel}"\` (the model this project
+   \`default_model: "${teamModel}"\` (the model this workspace
    was seeded with, mirroring what's actually provisioned in this
    sandbox) unless the human asked for a different one during onboarding
    — in which case use their pick verbatim. **ALWAYS pass
@@ -433,8 +425,8 @@ project already exists. Jump straight to the setup sequence below.
    so each contributor (engineer, qa, tech-lead, designer, …) has
    ONE long-lived session that handles every ticket sequentially.
    Per-ticket sessions cause parallel-deadlock pain: two concurrent
-   assignments would race on the agent file's persona, on opencode's
-   per-directory cache, and on shared resources in the project tree.
+    assignments would race on the agent file's persona, on opencode's
+    workspace cache, and on shared resources in the workspace tree.
    Persistent mode + the queue (see "session.idle drain" in the
    triggers engine) gives sequential-by-default execution per agent
    — assignments queue when busy, drain on idle.
@@ -517,10 +509,8 @@ project already exists. Jump straight to the setup sequence below.
          wants an immediate kickoff, they can manually run the
          trigger from the Triggers tab.
 
-     **IMPORTANT: get the project_id from \`project_get\` — do not
-     generate / guess it.** PM-hallucinated IDs (like
-     \`proj-<random6>\`) have broken past runs; always fetch the
-     real \`proj-<slug>-<timestamp>\` via a tool call.
+     Use the global workspace id already present in your tool context; do not
+     generate or guess ids.
 
    - **Modify-existing shape**: same as Build, but the body must
      explicitly reference the existing repo layout (engineer should
@@ -714,21 +704,20 @@ restate, don't trim, don't edit. Just paste.
   decided = noise.
 - Need a secret / API key / env var? BEFORE blocking, check these
   in order (cheap — a few reads, takes seconds):
-  1. **\`credential_get("<VAR_NAME>")\`** — project-scoped vault. Always
+  1. **\`credential_get("<VAR_NAME>")\`** — workspace vault. Always
      try this first. If it returns a value, use it; the value is
      decrypted on demand and never needs to go into \`.env\` or
      \`process.env\`. If it returns \`not_found:\`, continue.
   2. \`process.env.<VAR_NAME>\` — workspace-global default.
-  3. Project-root \`.env\` — \`<project.path>/.env\`. Read it, look
-     for the VAR_NAME. If present, export/load it and proceed.
-  4. \`<project.path>/.kortix/.env\` (project-local secrets).
-  5. \`/workspace/.env\` (workspace-wide secrets).
+  3. \`/workspace/.env\` (workspace-wide secrets). Read it, look for the
+     VAR_NAME. If present, export/load it and proceed.
+  4. \`/workspace/.kortix/.env\` (workspace-local secrets).
   If any of these has the value, use it — don't ask the human.
   Only if NONE have it: STOP. Don't stub it, don't fake values, don't
   ship a TODO. Post a \`ticket_comment\` on the current ticket with
   EXACTLY what you need:
   > "@${handle} — I need \`<EXACT_VAR_NAME>\` (used for: <one-line purpose>).
-  > Paste the value in a reply and I'll store it in the project vault
+   > Paste the value in a reply and I'll store it in the workspace vault
   > via \`credential_set\`, or set it in the sandbox env. Blocking until
   > I have it."
   Then move the ticket to \`blocked\` and **END YOUR TURN**. Do NOT do
@@ -740,10 +729,10 @@ restate, don't trim, don't edit. Just paste.
   \`ticket_update_status\` to move blocked → in_progress without a
   visible human reply, you are violating this rule. Same discipline for
   OAuth tokens, DB connection strings, third-party API endpoints —
-  anything the project can't legally guess.
+  anything the workspace can't legally guess.
   WHEN THE HUMAN REPLIES with the value: call
   \`credential_set(name=<EXACT_VAR_NAME>, value=<paste>)\` to store it
-  in the project vault, then resume via \`credential_get\`. Do NOT
+  in the workspace vault, then resume via \`credential_get\`. Do NOT
   echo the value back into a comment, a filename, or a bash prompt —
   once it's in the vault, the vault is the source of truth.
 - Evidence over verdict. "Ran \`pnpm build\` → exit 0" beats "✅ looks
@@ -926,10 +915,10 @@ export async function seedV2Project(
       default_model: seededModel,
     }
     pm = insertAgent(db, project.id, input)
-    // Seeding runs before any session exists in this directory, so calling
+    // Seeding runs before any session exists in the global workspace directory, so calling
     // dispose synchronously is safe — no active turns to abort. After the
     // dispose resolves we mark PM ready so wakeAgentForProject can dispatch.
-    await fireOpencodeDispose(project.path)
+    await fireOpencodeDispose(globalWorkspacePath(project.path))
     markAgentReady(db, pm.id)
   }
 
@@ -1147,7 +1136,7 @@ export async function syncTeamSection(
   project: ProjectRowLite,
   opts: SeedOptions = {},
 ): Promise<string> {
-  const ctxPath = path.join(project.path, '.kortix', 'CONTEXT.md')
+  const ctxPath = globalContextPath(project.path)
   const agents = listAgents(db, project.id)
   // If caller didn't pass user_handle on the project literal, read it fresh
   // from the row — seed/update paths don't always include it.
@@ -1210,7 +1199,7 @@ export async function syncMilestonesSection(
   project: ProjectRowLite,
   opts: SeedOptions = {},
 ): Promise<string> {
-  const ctxPath = path.join(project.path, '.kortix', 'CONTEXT.md')
+  const ctxPath = globalContextPath(project.path)
   const rows = db.prepare(
     "SELECT number, title, acceptance_md, status FROM milestones WHERE project_id=$pid ORDER BY number ASC"
   ).all({ $pid: project.id }) as Array<{ number: number; title: string; acceptance_md: string; status: string }>
@@ -1244,7 +1233,7 @@ export async function syncMilestonesSection(
 }
 
 export async function tryReadContext(projectPath: string): Promise<string> {
-  const ctxPath = path.join(projectPath, '.kortix', 'CONTEXT.md')
+  const ctxPath = globalContextPath(projectPath)
   if (!existsSync(ctxPath)) return ''
   try { return await fs.readFile(ctxPath, 'utf8') } catch { return '' }
 }
@@ -1253,7 +1242,7 @@ export async function writeContextPreservingTeam(
   projectPath: string,
   newFullBody: string,
 ): Promise<void> {
-  const ctxPath = path.join(projectPath, '.kortix', 'CONTEXT.md')
+  const ctxPath = globalContextPath(projectPath)
   let preservedTeam = ''
   let preservedMilestones = ''
   try {

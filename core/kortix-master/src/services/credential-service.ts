@@ -1,5 +1,6 @@
 /**
- * Project-scoped credentials — per-project encrypted secret store.
+ * Workspace credentials — encrypted secret store backed by the legacy
+ * project_credentials table for compatibility.
  *
  * Motivation: before this, agents resolved env vars by walking
  *   process.env → <project>/.env → /workspace/.env — all workspace-global.
@@ -293,7 +294,7 @@ export interface UpsertCredentialInput {
   actor_id?: string | null
 }
 
-/** Create or update a project-scoped credential. Re-encrypts on every write
+/** Create or update a workspace credential. Re-encrypts on every write
  *  (new IV + tag). Emits `create` or `update` event. Value is never logged. */
 export async function upsertCredential(
   db: Database,

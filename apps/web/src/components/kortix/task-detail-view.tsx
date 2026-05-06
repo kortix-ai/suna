@@ -4,7 +4,7 @@
  * TaskDetailView — modal dialog.
  *
  * Layout:
- *   Header:  [Project › id]                [Primary action] [×]
+ *   Header:  [Workspace › id]              [Primary action] [×]
  *   Title:   Big inline-editable title
  *   Meta:    [status pill] · updated time · live detail (if running)
  *   Body (scrollable):

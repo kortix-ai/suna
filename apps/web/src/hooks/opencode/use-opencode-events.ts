@@ -4,7 +4,7 @@ import type {
 	Event as OpenCodeEvent,
 	Part,
 } from "@opencode-ai/sdk/v2/client";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { fileContentKeys } from "@/features/files/hooks/use-file-content";
 import { fileListKeys } from "@/features/files/hooks/use-file-list";
@@ -24,13 +24,57 @@ import {
 import { useDiagnosticsStore, parseDiagnosticsFromToolOutput } from "@/stores/diagnostics-store";
 import { useOpenCodeCompactionStore } from "@/stores/opencode-compaction-store";
 import { useOpenCodePendingStore } from "@/stores/opencode-pending-store";
+import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
 import { useSyncStore } from "@/stores/opencode-sync-store";
 import { useServerStore, getActiveOpenCodeUrl } from "@/stores/server-store";
 import { ptyKeys } from "./use-opencode-pty";
 import { opencodeKeys, type Session, type MessageWithParts } from "./use-opencode-sessions";
-import { kortixKeys } from "@/hooks/kortix/use-kortix-projects";
 import { saveSessionToIDB, deleteSessionFromIDB } from "@/lib/idb-sync-cache";
 import { resetPrefetchState } from "./use-session-prefetch";
+
+const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
+const PROJECT_METADATA_REFETCH_COOLDOWN_MS = 5_000;
+const messageRehydrateInFlight = new Set<string>();
+const messageRehydrateLastAt = new Map<string, number>();
+let projectMetadataRefetchLastAt = 0;
+let projectMetadataRefetchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function reserveMessageRehydrate(sessionID: string): boolean {
+	if (!sessionID || messageRehydrateInFlight.has(sessionID)) return false;
+	const now = Date.now();
+	const last = messageRehydrateLastAt.get(sessionID) ?? 0;
+	if (now - last < MESSAGE_REHYDRATE_COOLDOWN_MS) return false;
+	messageRehydrateInFlight.add(sessionID);
+	messageRehydrateLastAt.set(sessionID, now);
+	return true;
+}
+
+function releaseMessageRehydrate(sessionID: string): void {
+	messageRehydrateInFlight.delete(sessionID);
+}
+
+function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
+	const run = () => {
+		projectMetadataRefetchTimer = null;
+		projectMetadataRefetchLastAt = Date.now();
+		queryClient.refetchQueries({ queryKey: opencodeKeys.projects(), type: 'active' });
+		queryClient.refetchQueries({ queryKey: opencodeKeys.currentProject(), type: 'active' });
+	};
+
+	const now = Date.now();
+	const wait = PROJECT_METADATA_REFETCH_COOLDOWN_MS - (now - projectMetadataRefetchLastAt);
+	if (wait <= 0) {
+		if (projectMetadataRefetchTimer) {
+			clearTimeout(projectMetadataRefetchTimer);
+			projectMetadataRefetchTimer = null;
+		}
+		run();
+		return;
+	}
+	if (!projectMetadataRefetchTimer) {
+		projectMetadataRefetchTimer = setTimeout(run, wait);
+	}
+}
 
 /**
  * Connects to OpenCode's SSE event stream via the SDK and
@@ -51,6 +95,8 @@ export function useOpenCodeEventStream() {
 	const applySyncEvent = useSyncStore((s) => s.applyEvent);
 	const serverVersion = useServerStore((s) => s.serverVersion);
 	const activeServerUrl = useServerStore((s) => s.getActiveServerUrl());
+	const sandboxStatus = useSandboxConnectionStore((s) => s.status);
+	const runtimeHealthy = useSandboxConnectionStore((s) => s.healthy);
 	const abortRef = useRef<AbortController | null>(null);
 	const isMountRef = useRef(true);
 	const prevServerVersionRef = useRef(serverVersion);
@@ -213,9 +259,11 @@ export function useOpenCodeEventStream() {
 			resetClient();
 		}
 
-		// During initial cloud bootstrap, the active server URL may be unresolved
-		// briefly (rehydration gap). Skip SSE setup until a URL exists.
-		if (!activeServerUrl) return;
+		// Do not connect SSE or hydrate OpenCode-backed endpoints while the
+		// runtime is starting/degraded. Otherwise every mounted dashboard tab
+		// fans out into /session/*, /path, /permission, /question, and /lsp/*
+		// requests that each sit for 30s and retry.
+		if (!activeServerUrl || sandboxStatus !== "connected" || runtimeHealthy !== true) return;
 
 		const client = getClient();
 
@@ -283,6 +331,9 @@ export function useOpenCodeEventStream() {
 				const syncState = useSyncStore.getState();
 				const loadedSessionIds = Object.keys(syncState.messages);
 				for (const sid of loadedSessionIds) {
+					const status = syncState.sessionStatus[sid];
+					if (status?.type !== "busy" && status?.type !== "retry") continue;
+					if (!reserveMessageRehydrate(sid)) continue;
 					client.session
 						.messages({ sessionID: sid })
 						.then((res) => {
@@ -293,7 +344,8 @@ export function useOpenCodeEventStream() {
 								if (msgs.length > 0) saveSessionToIDB(sid, msgs, s.parts);
 							}
 						})
-						.catch(() => {});
+						.catch(() => {})
+						.finally(() => releaseMessageRehydrate(sid));
 				}
 			}
 		};
@@ -383,7 +435,6 @@ export function useOpenCodeEventStream() {
 					// arrive for 15s, abort and reconnect. This is the ONLY
 					// recovery mechanism we need — replaces the stall watchdog,
 					// reconciler, and visibility handler.
-					let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
 					const HEARTBEAT_MS = 15_000;
 					const heartbeatAbort = new AbortController();
 					const resetHeartbeat = () => {
@@ -531,25 +582,6 @@ export function useOpenCodeEventStream() {
 					// Extract diagnostics from tool output and/or metadata
 					const part = (event.properties as any).part as Part;
 					const partState = (part as any)?.state;
-
-					// --- Sidebar projects list refresh on project_* tool completion ---
-					// When an agent's `project_create` / `project_update` / `project_delete`
-					// tool finishes, the sidebar's Projects list is stale — invalidate so
-					// it refetches once instead of polling on a timer. Covers:
-					//   - user prompts general agent to create a project → sidebar picks
-					//     it up immediately without a page refresh
-					//   - agent renames/deletes → sidebar mirrors the change
-					if (partState?.status === "completed" && (part as any)?.type === "tool") {
-						const toolName = (part as any).tool as string | undefined;
-						if (
-							toolName === "project_create" ||
-							toolName === "project_update" ||
-							toolName === "project_delete" ||
-							toolName === "project_select"
-						) {
-							queryClient.invalidateQueries({ queryKey: kortixKeys.projects() });
-						}
-					}
 
 					// --- Primary path: parse diagnostics from tool output text ---
 					// The OpenCode backend embeds diagnostics as plain text inside
@@ -975,10 +1007,9 @@ export function useOpenCodeEventStream() {
 			// ---- Project updated ----
 			case "project.updated": {
 				// Targeted refetch — project data is small and changes rarely,
-				// but we need the full response. Use refetchQueries to only
-				// refetch if the query is currently mounted (no orphan requests).
-				queryClient.refetchQueries({ queryKey: opencodeKeys.projects(), type: 'active' });
-				queryClient.refetchQueries({ queryKey: opencodeKeys.currentProject(), type: 'active' });
+				// but OpenCode can emit bursts while tools are running. Coalesce
+				// these so a burst cannot spam /project/current.
+				scheduleProjectMetadataRefetch(queryClient);
 				break;
 			}
 
@@ -1045,6 +1076,8 @@ export function useOpenCodeEventStream() {
 		clearPending,
 		serverVersion,
 		activeServerUrl,
+		sandboxStatus,
+		runtimeHealthy,
 		applySyncEvent,
 		stopCompaction,
 	]);

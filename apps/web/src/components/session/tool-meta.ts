@@ -156,9 +156,9 @@ export function contextToolTrigger(part: ToolPart): {
     case 'session_start_background':
       return { title: 'Worker', subtitle: sub };
     case 'project_select':
-      return { title: 'Project', subtitle: sub };
+      return { title: 'Workspace', subtitle: sub };
     case 'project_list':
-      return { title: 'Projects', subtitle: sub };
+      return { title: 'Workspace', subtitle: sub };
     default: {
       const display = n
         .replace(/_/g, ' ')

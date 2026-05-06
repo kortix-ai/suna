@@ -29,7 +29,7 @@ export class TriggerYaml {
    * process. Before the first reconcile, the DB is treated as
    * authoritative (see syncFromYaml): if YAML is empty but DB has rows,
    * we flush DB→YAML instead of deleting DB rows. This prevents a classic
-   * race where project_create seeds a trigger directly into the DB
+   * race where a workspace bootstrap seeds a trigger directly into the DB
    * moments before the plugin finishes booting, and the plugin's first
    * sync wipes the seed because YAML is still empty.
    */
@@ -245,7 +245,7 @@ export class TriggerYaml {
 
     // Bootstrap safety: on the very first reconcile of this process, if
     // YAML is empty but the DB already has rows (typical when
-    // project_create seeded a trigger moments before the plugin finished
+    // workspace bootstrap seeded a trigger moments before the plugin finished
     // booting), flush DB→YAML instead of deleting. The alternative —
     // deleting — is the root cause of the "seeded trigger vanishes after
     // boot" bug. Subsequent syncs (post-bootstrap) delete orphans as usual

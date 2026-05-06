@@ -111,7 +111,6 @@ import {
 import { getCurrentInstanceIdFromPathname } from '@/lib/instance-routes';
 import { listSandboxes, type SandboxInfo } from '@/lib/platform-client';
 import { InstanceMembersPanel } from '@/app/instances/_components/instance-members-panel';
-import { InstanceProjectsPanel } from '@/app/instances/_components/instance-projects-panel';
 
 type TabId = SettingsTabId;
 
@@ -140,7 +139,7 @@ export function UserSettingsModal({
     const billingActive = isBillingEnabled();
     const pathname = usePathname();
 
-    // Scope Instance-level tabs (Team / Projects) to `/instances/:id/...` so
+    // Scope Instance-level tabs to `/instances/:id/...` so
     // the section vanishes on the `/instances` list or account-only pages.
     const currentInstanceId = getCurrentInstanceIdFromPathname(pathname);
     const instanceSandboxQuery = useQuery({
@@ -186,7 +185,7 @@ export function UserSettingsModal({
 
     useEffect(() => {
         if (
-            (activeTab === 'instance-members' || activeTab === 'instance-projects') &&
+            activeTab === 'instance-members' &&
             !hasInstance
         ) {
             setActiveTab('general');
@@ -272,12 +271,6 @@ export function UserSettingsModal({
                                 {activeTab === 'instance-members' && instanceSandbox && (
                                     <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                                 )}
-                                {activeTab === 'instance-projects' && instanceSandbox && (
-                                    <InstanceProjectsPanel
-                                        sandbox={instanceSandbox}
-                                        canManage={!!instanceSandbox.can_manage}
-                                    />
-                                )}
                                 {/* {activeTab === 'referrals' && <ReferralsTab isActive={open && activeTab === 'referrals'} />} */}
                             </div>
                         </div>
@@ -356,12 +349,6 @@ export function UserSettingsModal({
                             {activeTab === 'transactions' && <TransactionsTab />}
                             {activeTab === 'instance-members' && instanceSandbox && (
                                 <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
-                            )}
-                            {activeTab === 'instance-projects' && instanceSandbox && (
-                                <InstanceProjectsPanel
-                                    sandbox={instanceSandbox}
-                                    canManage={!!instanceSandbox.can_manage}
-                                />
                             )}
                             {/* {activeTab === 'referrals' && <ReferralsTab isActive={open && activeTab === 'referrals'} />} */}
                         </div>

@@ -8,7 +8,7 @@
 
 import { Hono } from 'hono'
 import { Database } from 'bun:sqlite'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync } from 'fs'
 import * as fs from 'node:fs/promises'
 import { join } from 'path'
 import {
@@ -45,6 +45,9 @@ import {
   syncTeamSection,
   tryReadContext,
   writeContextPreservingTeam,
+  agentFilePath,
+  renderAgentFile,
+  type AgentFileMeta,
 } from '../services/project-v2-seed'
 import { fireAgentTrigger, fireAgentTriggers, type OpenCodeClientLike } from '../services/ticket-triggers'
 import { createOpencodeClient } from '@opencode-ai/sdk/client'
@@ -71,6 +74,72 @@ function getOpenCodeClient(): OpenCodeClientLike {
 }
 
 interface ProjectRow { id: string; name: string; path: string; description: string; user_handle?: string | null }
+
+const GLOBAL_PROJECT_ID = 'proj-global'
+const GLOBAL_PROJECT_NAME = 'Kortix'
+const GLOBAL_PROJECT_DESCRIPTION = 'Global Kortix workspace. All tickets, agents, credentials, and durable context live here.'
+
+function workspaceRoot(): string {
+  return process.env.KORTIX_WORKSPACE?.trim()
+    || process.env.WORKSPACE_DIR?.trim()
+    || process.env.KORTIX_WORKSPACE_ROOT?.trim()
+    || '/workspace'
+}
+
+function ensureGlobalBoardDefaults(db: Database, projectId: string): void {
+  try {
+    if (listColumns(db, projectId).length === 0) {
+      replaceColumns(db, projectId, [
+        { key: 'backlog', label: 'Backlog' },
+        { key: 'in_progress', label: 'In Progress' },
+        { key: 'review', label: 'Review' },
+        { key: 'done', label: 'Done', is_terminal: true },
+      ])
+    }
+  } catch {}
+}
+
+function finalizeGlobalProject(db: Database, row: ProjectRow | null): ProjectRow | null {
+  if (row) ensureGlobalBoardDefaults(db, row.id)
+  return row
+}
+
+function ensureGlobalProject(db: Database): ProjectRow | null {
+  const workspace = workspaceRoot()
+  mkdirSync(join(workspace, '.kortix'), { recursive: true })
+  const now = new Date().toISOString()
+  let row = db.prepare('SELECT id,name,path,description,user_handle FROM projects WHERE path=$path')
+    .get({ $path: workspace }) as ProjectRow | null
+  if (row) return finalizeGlobalProject(db, row)
+
+  row = db.prepare('SELECT id,name,path,description,user_handle FROM projects WHERE id=$id')
+    .get({ $id: GLOBAL_PROJECT_ID }) as ProjectRow | null
+  if (row) {
+    try {
+      db.prepare('UPDATE projects SET path=$path, description=COALESCE(NULLIF(description,\'\'), $description), structure_version=1 WHERE id=$id')
+        .run({ $path: workspace, $description: GLOBAL_PROJECT_DESCRIPTION, $id: row.id })
+    } catch {}
+    return finalizeGlobalProject(db, db.prepare('SELECT id,name,path,description,user_handle FROM projects WHERE id=$id')
+      .get({ $id: row.id }) as ProjectRow | null
+    )
+  }
+
+  try {
+    db.prepare(`INSERT INTO projects (id,name,path,description,created_at,opencode_id,structure_version,user_handle)
+      VALUES ($id,$name,$path,$description,$now,NULL,1,NULL)`).run({
+      $id: GLOBAL_PROJECT_ID,
+      $name: GLOBAL_PROJECT_NAME,
+      $path: workspace,
+      $description: GLOBAL_PROJECT_DESCRIPTION,
+      $now: now,
+    })
+  } catch {
+    return null
+  }
+  return finalizeGlobalProject(db, db.prepare('SELECT id,name,path,description,user_handle FROM projects WHERE id=$id')
+    .get({ $id: GLOBAL_PROJECT_ID }) as ProjectRow | null
+  )
+}
 
 /**
  * After a ticket status update, check whether the ticket's milestone is
@@ -120,12 +189,8 @@ async function maybePingPmOnMilestoneCompletion(
   })
 }
 
-function resolveProject(db: Database, id: string): ProjectRow | null {
-  return (
-    db.prepare('SELECT id,name,path,description,user_handle FROM projects WHERE id=$v').get({ $v: id })
-    || db.prepare('SELECT id,name,path,description,user_handle FROM projects WHERE opencode_id=$v').get({ $v: id })
-    || db.prepare('SELECT id,name,path,description,user_handle FROM projects WHERE LOWER(name)=LOWER($v)').get({ $v: id })
-  ) as ProjectRow | null
+function resolveProject(db: Database, _id: string): ProjectRow | null {
+  return ensureGlobalProject(db)
 }
 
 const ticketsRouter = new Hono()
@@ -469,15 +534,26 @@ ticketProjectsRouter.post('/:id/agents', async (c) => {
   if (getAgentBySlug(db, project.id, body.slug)) {
     return c.json({ error: 'Agent with this slug already exists' }, 409)
   }
-  const filePath = join(project.path, '.kortix', 'agents', `${body.slug}.md`)
-  await fs.mkdir(join(project.path, '.kortix', 'agents'), { recursive: true })
-  await fs.writeFile(filePath, body.body_md, 'utf8')
+  const filePath = agentFilePath(project.path, body.slug)
+  const toolGroups = body.tool_groups ?? ['project_action']
+  const meta: AgentFileMeta = {
+    slug: body.slug,
+    name: body.name,
+    description: `${body.name} — workspace agent`,
+    mode: 'primary',
+    model: body.default_model ?? null,
+    tool_groups: toolGroups,
+    execution_mode: body.execution_mode ?? 'per_ticket',
+    default_assignee_columns: body.default_assignee_columns ?? [],
+  }
+  await fs.mkdir(join(filePath, '..'), { recursive: true })
+  await fs.writeFile(filePath, renderAgentFile(meta, body.body_md), 'utf8')
   const agent = insertAgent(db, project.id, {
     slug: body.slug,
     name: body.name,
     file_path: filePath,
     execution_mode: body.execution_mode,
-    tool_groups: body.tool_groups,
+    tool_groups: toolGroups,
     default_assignee_columns: body.default_assignee_columns,
     default_model: body.default_model,
     color_hue: body.color_hue,
@@ -504,7 +580,23 @@ ticketProjectsRouter.patch('/:id/agents/:slug', async (c) => {
     icon?: string | null
   }>()
   if (body.body_md !== undefined) {
-    try { await fs.writeFile(agent.file_path, body.body_md, 'utf8') } catch {}
+    const targetPath = agentFilePath(project.path, agent.slug)
+    const toolGroups = body.tool_groups ?? JSON.parse(agent.tool_groups_json || '[]')
+    const meta: AgentFileMeta = {
+      slug: agent.slug,
+      name: body.name ?? agent.name,
+      description: `${body.name ?? agent.name} — workspace agent`,
+      mode: 'primary',
+      model: body.default_model ?? agent.default_model ?? null,
+      tool_groups: toolGroups,
+      execution_mode: body.execution_mode ?? agent.execution_mode,
+      default_assignee_columns: body.default_assignee_columns ?? JSON.parse(agent.default_assignee_columns_json || '[]'),
+    }
+    try {
+      await fs.mkdir(join(targetPath, '..'), { recursive: true })
+      await fs.writeFile(targetPath, renderAgentFile(meta, body.body_md), 'utf8')
+      db.prepare('UPDATE project_agents SET file_path=$fp WHERE id=$id').run({ $fp: targetPath, $id: agent.id })
+    } catch {}
   }
   const updated = updateAgent(db, agent.id, {
     name: body.name,
