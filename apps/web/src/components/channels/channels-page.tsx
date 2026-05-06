@@ -204,7 +204,7 @@ function ChannelsProjectFilter({
   value: string | null | typeof FILTER_ALL;
   onChange: (next: string | null | typeof FILTER_ALL) => void;
 }) {
-  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const visibleProjects = projects.filter((p) => p.id !== 'proj-workspace');
 
   const current = value === FILTER_ALL ? FILTER_ALL : value === null ? FILTER_WORKSPACE : value;
@@ -249,7 +249,7 @@ export function ChannelsPage() {
   const [projectFilter, setProjectFilter] = useState<string | null | typeof FILTER_ALL>(FILTER_ALL);
 
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const projectNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of projects) map.set(p.id, p.name);
@@ -416,10 +416,10 @@ export function ChannelsPage() {
                 "new channel" wizard with the same project so a workflow
                 like "open this project's view → add a Slack channel"
                 lands the channel scoped correctly without an extra step.
-                Hidden when the multi-project paradigm is off — every
+                Hidden when the project paradigm is off — every
                 channel is sandbox-wide in default mode.
               */}
-              {featureFlags.enableMultiProject && (
+              {featureFlags.enableProjects && (
                 <ChannelsProjectFilter
                   value={projectFilter}
                   onChange={setProjectFilter}
@@ -506,7 +506,7 @@ export function ChannelsPage() {
                         key={ch.id}
                         channel={ch}
                         index={i}
-                        projectName={featureFlags.enableMultiProject && ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
+                        projectName={featureFlags.enableProjects && ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
                         onToggle={handleToggle}
                         onRemove={handleRemove}
                         onSettings={(ch) => { setSettingsChannel(ch); setSettingsOpen(true); }}
@@ -531,7 +531,7 @@ export function ChannelsPage() {
                         key={ch.id}
                         channel={ch}
                         index={i}
-                        projectName={featureFlags.enableMultiProject && ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
+                        projectName={featureFlags.enableProjects && ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
                         onToggle={handleToggle}
                         onRemove={handleRemove}
                         onSettings={(ch) => { setSettingsChannel(ch); setSettingsOpen(true); }}

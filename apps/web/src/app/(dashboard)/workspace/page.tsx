@@ -413,14 +413,14 @@ export default function WorkspacePage() {
   }, [createSession]);
 
   // Data — Kortix projects are the source of truth.
-  // Skip the query when the multi-project paradigm is off so the workspace
+  // Skip the query when the project paradigm is off so the workspace
   // page in default mode never hits /kortix/projects (which 503s when sandbox-
   // side PROJECTS_ENABLED is also off).
-  const { data: projects,  isLoading: lProjects, error: projectsError  } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const { data: projects,  isLoading: lProjects, error: projectsError  } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   // Debug: log to browser console if projects fail to load
   if (typeof window !== 'undefined') {
     if (projectsError) console.error('[workspace] projects error:', projectsError);
-    if (!lProjects && !projectsError && !projects && featureFlags.enableMultiProject) console.warn('[workspace] projects: no data, no error, not loading');
+    if (!lProjects && !projectsError && !projects && featureFlags.enableProjects) console.warn('[workspace] projects: no data, no error, not loading');
   }
   const { data: agents,    isLoading: lAgents    } = useOpenCodeAgents();
   const { data: skills,    isLoading: lSkills    } = useSkills();
@@ -434,8 +434,8 @@ export default function WorkspacePage() {
   const allItems = useMemo<WorkspaceItem[]>(() => {
     const items: WorkspaceItem[] = [];
 
-    // Projects only appear when the multi-project paradigm is enabled.
-    if (featureFlags.enableMultiProject && projects && Array.isArray(projects)) {
+    // Projects only appear when the project paradigm is enabled.
+    if (featureFlags.enableProjects && projects && Array.isArray(projects)) {
       const sorted = [...projects].sort((a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
@@ -453,17 +453,17 @@ export default function WorkspacePage() {
 
     // 'project' scope means the item lives inside the workspace's `.opencode/`
     // dir (vs `/.config/` for global, `/.claude/` etc for external). When the
-    // multi-project paradigm is off there is no user-facing concept of a
+    // project paradigm is off there is no user-facing concept of a
     // "project" so we collapse the label to 'global' — same items, same
     // location, just no jargon.
-    const localScope: ItemScope = featureFlags.enableMultiProject ? 'project' : 'global';
+    const localScope: ItemScope = featureFlags.enableProjects ? 'project' : 'global';
 
     // Project-only agents (orchestrator/project-maintainer/worker/project-manager)
-    // are hidden when the multi-project paradigm is off — their bodies still
+    // are hidden when the project paradigm is off — their bodies still
     // reference project tools that aren't registered in that mode. Keep in
     // sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
     const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker', 'project-manager']);
-    agents?.filter((a) => !a.hidden && (featureFlags.enableMultiProject || !projectOnlyAgents.has(a.name))).forEach((a) => {
+    agents?.filter((a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name))).forEach((a) => {
       items.push({ id: `agent:${a.name}`, name: a.name, description: a.description, kind: 'agent', scope: localScope, meta: a.model?.modelID, raw: a });
     });
 
@@ -550,11 +550,11 @@ export default function WorkspacePage() {
     { title: 'New agent',   desc: 'Scaffold a new agent in your workspace',              meta: `${kindCounts.agent} live`,    icon: Bot,      kind: 'agent'   as WorkspaceComposerKind },
     { title: 'New skill',   desc: 'Build a skill with the right trigger and file layout', meta: `${kindCounts.skill} live`,    icon: Sparkles, kind: 'skill'   as WorkspaceComposerKind },
     { title: 'New command', desc: 'Create a slash command and wire it to an agent',       meta: `${kindCounts.command} live`,  icon: Terminal, kind: 'command' as WorkspaceComposerKind },
-    // "New project" is part of the multi-project paradigm — hidden by default.
-    ...(featureFlags.enableMultiProject ? [{ title: 'New project', desc: 'Set up a new project with a clean structure', meta: `${kindCounts.project} live`, icon: FolderOpen, kind: 'project' as WorkspaceComposerKind }] : []),
+    // "New project" is part of the project paradigm — hidden by default.
+    ...(featureFlags.enableProjects ? [{ title: 'New project', desc: 'Set up a new project with a clean structure', meta: `${kindCounts.project} live`, icon: FolderOpen, kind: 'project' as WorkspaceComposerKind }] : []),
   ];
 
-  // Projects tab is filtered out below when the multi-project paradigm is off.
+  // Projects tab is filtered out below when the project paradigm is off.
   // Kept in this list so the tuple type stays stable for downstream `kindCounts`.
   const kindTabsAll = [
     { value: 'all'       as KindFilter, label: 'All' },
@@ -566,7 +566,7 @@ export default function WorkspacePage() {
     { value: 'mcp'       as KindFilter, label: 'MCP' },
     { value: 'connector' as KindFilter, label: 'Connectors' },
   ] as const;
-  const kindTabs = featureFlags.enableMultiProject
+  const kindTabs = featureFlags.enableProjects
     ? kindTabsAll
     : kindTabsAll.filter((t) => t.value !== 'project');
 

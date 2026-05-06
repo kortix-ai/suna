@@ -358,7 +358,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                 {/* "Create Ticket" / "Add to board" — only when the multi-
                     project paradigm is on AND the trigger is scoped to a
                     project. Default mode hides this action entirely. */}
-                {featureFlags.enableMultiProject && (
+                {featureFlags.enableProjects && (
                   <Button
                     type="button"
                     onClick={() => setActionType('ticket_create')}

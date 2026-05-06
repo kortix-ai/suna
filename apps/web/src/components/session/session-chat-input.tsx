@@ -1537,9 +1537,9 @@ export function SessionChatInput({
 
   // Sessions for @ mention search
   const { data: allSessions } = useOpenCodeSessions();
-  // Skip the projects query entirely when the multi-project paradigm is off —
+  // Skip the projects query entirely when the project paradigm is off —
   // the @-mention popover never offers a project bucket in that mode.
-  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
 
   useEffect(() => {
     if (text.trim().length > 0) return;

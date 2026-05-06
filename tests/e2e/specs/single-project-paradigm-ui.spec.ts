@@ -7,7 +7,7 @@
  * has Board, etc.).
  *
  * Requires:
- *   - Next dev on http://localhost:3000 with NEXT_PUBLIC_ENABLE_MULTI_PROJECT=true
+ *   - Next dev on http://localhost:3000 with NEXT_PUBLIC_ENABLE_PROJECTS=true
  *   - kortix-sandbox with KORTIX_PROJECTS_ENABLED=true
  *   - Local Supabase at http://127.0.0.1:54321
  *

@@ -68,7 +68,7 @@ export function SlackSetupWizard({ onCreated, onBack, initialProjectId = null }:
   const [isGenerating, setIsGenerating] = useState(false);
 
   const slackConnect = useSlackConnect();
-  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const projectDirectory = useMemo(
     () => projects.find((p) => p.id === projectId)?.path,
     [projects, projectId],
@@ -239,10 +239,10 @@ export function SlackSetupWizard({ onCreated, onBack, initialProjectId = null }:
               <p className="text-[11px] text-muted-foreground">Display name in Slack.</p>
             </div>
 
-            {/* Project — hidden when the multi-project paradigm is off.
+            {/* Project — hidden when the project paradigm is off.
                 In that mode every channel is sandbox-wide (project_id=null),
                 which the existing nullable column already supports. */}
-            {featureFlags.enableMultiProject && (
+            {featureFlags.enableProjects && (
               <div className="space-y-1.5">
                 <Label className="text-xs">Project</Label>
                 <ChannelProjectPicker value={projectId} onChange={setProjectId} className="bg-card" />

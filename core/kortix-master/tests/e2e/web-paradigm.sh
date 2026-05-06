@@ -63,11 +63,11 @@ REG=/Users/vukasinkubet/dev/comp/apps/web/src/lib/menu-registry.ts
 ci "menu-registry has 'board-quick' entry" "id: 'board-quick'" "$(cat "$REG")"
 ci "board entry hrefs /board" "href: '/board'" "$(cat "$REG")"
 ci "board entry shown in rightSidebar" "showIn: ['rightSidebar', 'commandPalette']" "$(cat "$REG")"
-ci "board entry requires the multi-project flag" "requiresMultiProjectFlag: true" "$(cat "$REG")"
+ci "board entry requires the project flag" "requiresProjectsFlag: true" "$(cat "$REG")"
 
 echo
-echo "── 5. menu-registry filter respects requiresMultiProjectFlag ──"
-ci "getItemsByGroup checks the flag" "!item.requiresMultiProjectFlag" "$(cat "$REG")"
+echo "── 5. menu-registry filter respects requiresProjectsFlag ──"
+ci "getItemsByGroup checks the flag" "!item.requiresProjectsFlag" "$(cat "$REG")"
 
 echo
 echo "── 6. PROJECT_ONLY_AGENTS includes project-manager (PM agent file is hidden) ──"
@@ -97,7 +97,7 @@ echo "── 8. /board page imports resolve (no missing deps) ──"
 BP=/Users/vukasinkubet/dev/comp/apps/web/src/app/\(dashboard\)/board/page.tsx
 ci "board page imports TicketBoard" "from '@/components/kortix/ticket-board'" "$(cat "$BP")"
 ci "board page hardcodes proj-workspace" "PROJECT_ID = 'proj-workspace'" "$(cat "$BP")"
-ci "board page redirect-gates on the flag" "featureFlags.enableMultiProject" "$(cat "$BP")"
+ci "board page redirect-gates on the flag" "featureFlags.enableProjects" "$(cat "$BP")"
 
 echo
 echo "═══════════════════════════════════════════════════════════════════════"

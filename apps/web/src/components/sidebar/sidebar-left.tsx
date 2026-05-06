@@ -375,10 +375,10 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
 // ============================================================================
 
 function ProjectsFlyout() {
-  // The collapsed-sidebar flyout is only ever rendered when the multi-project
+  // The collapsed-sidebar flyout is only ever rendered when the project
   // flag is on (see CollapsedIconButton wrap below), but we still gate the
   // query as belt-and-braces for any future non-flagged caller.
-  const { data: projects } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const { data: projects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
 
   const sorted = React.useMemo(() => {
     if (!projects || !Array.isArray(projects)) return [];
@@ -652,10 +652,10 @@ function SidebarSections() {
   const { isMobile, setOpenMobile } = useSidebar();
 
   // Projects data — Kortix projects are the source of truth.
-  // Skip the query entirely when the multi-project paradigm is off so the
+  // Skip the query entirely when the project paradigm is off so the
   // sidebar in default mode never hits /kortix/projects (which 503s when
   // sandbox-side PROJECTS_ENABLED is also off).
-  const { data: projectsData } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const { data: projectsData } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const sortedProjects = React.useMemo(() => {
     if (!projectsData || !Array.isArray(projectsData)) return [];
     return [...projectsData].sort((a, b) =>

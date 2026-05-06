@@ -79,10 +79,10 @@ import { ProjectSettingsTab } from '@/components/kortix/project-settings-tab';
 import { NotificationsBell } from '@/components/kortix/notifications-bell';
 import { useIsRouteActive } from '@/hooks/utils/use-is-route-active';
 
-// Stub used when the multi-project paradigm is off. Routes /projects/[id]
+// Stub used when the project paradigm is off. Routes /projects/[id]
 // back to /workspace and renders a single-line placeholder while navigating.
 // Existing project rows in SQLite are preserved; flipping
-// NEXT_PUBLIC_ENABLE_MULTI_PROJECT back on lights this page up unchanged.
+// NEXT_PUBLIC_ENABLE_PROJECTS back on lights this page up unchanged.
 function ProjectPageRedirect() {
   const router = useRouter();
   useEffect(() => { router.replace('/workspace'); }, [router]);
@@ -97,7 +97,7 @@ export default function ProjectPage(props: { params?: Promise<{ id: string }> })
   // Build-time gate. The flag is a const, so the unused branch is tree-shaken
   // and the rules-of-hooks invariant ("hook count stable per render") holds
   // because every render in a given bundle takes the same path.
-  if (!featureFlags.enableMultiProject) return <ProjectPageRedirect />;
+  if (!featureFlags.enableProjects) return <ProjectPageRedirect />;
   return <ProjectPageInner {...props} />;
 }
 

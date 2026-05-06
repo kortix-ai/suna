@@ -6,7 +6,7 @@ import { useOpenCodeAgents } from './use-opencode-sessions';
 import { featureFlags } from '@/lib/feature-flags';
 
 /**
- * Project-only agents — surfaced only when the multi-project paradigm is on.
+ * Project-only agents — surfaced only when the project paradigm is on.
  * These agents' bodies still contain project/ticket workflow knowledge; the
  * runtime gates the project tools they reference (project_*, ticket_*, etc.)
  * separately via KORTIX_PROJECTS_ENABLED on the sandbox. Hiding them in the
@@ -26,7 +26,7 @@ const PROJECT_ONLY_AGENTS = new Set([
 ]);
 
 function hideProjectOnly(a: Agent): boolean {
-  if (featureFlags.enableMultiProject) return false;
+  if (featureFlags.enableProjects) return false;
   return PROJECT_ONLY_AGENTS.has(a.name);
 }
 

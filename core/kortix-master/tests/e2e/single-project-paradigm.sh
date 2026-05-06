@@ -2,13 +2,13 @@
 # E2E test: single-project paradigm in the kortix sandbox.
 #
 # Paradigm:
-#   - 1 project = 1 sandbox (no multi-project, ever).
+#   - 1 project = 1 sandbox (no project, ever).
 #   - The project is `proj-workspace` rooted at /workspace, auto-bootstrapped.
 #   - No project_create / project_select / project_delete / project_list tools.
 #   - Sessions auto-bind to proj-workspace on first ticket/task tool call.
 #   - Feature flag KORTIX_PROJECTS_ENABLED gates the project-paradigm surface
 #     (board, tickets, milestones, team agents) entirely.
-#   - Web mirror flag NEXT_PUBLIC_ENABLE_MULTI_PROJECT hides the PM agent
+#   - Web mirror flag NEXT_PUBLIC_ENABLE_PROJECTS hides the PM agent
 #     and project URLs in the UI.
 #
 # Runs entirely against the live kortix-sandbox container via docker exec —

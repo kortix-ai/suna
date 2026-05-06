@@ -40,7 +40,7 @@ export function TelegramSetupWizard({ onCreated, onBack, initialProjectId = null
 
   // Project list — used to resolve the project's working directory so the
   // agent picker shows that project's per-role agents (engineer, qa, …).
-  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const projectDirectory = useMemo(
     () => projects.find((p) => p.id === projectId)?.path,
     [projects, projectId],
@@ -176,9 +176,9 @@ export function TelegramSetupWizard({ onCreated, onBack, initialProjectId = null
         {/* Project & Agent & Model — shown after token is verified */}
         {botInfo && (
           <div className="space-y-3">
-            {/* Project — hidden when the multi-project paradigm is off.
+            {/* Project — hidden when the project paradigm is off.
                 The bot then runs as a sandbox-wide channel (project_id=null). */}
-            {featureFlags.enableMultiProject && (
+            {featureFlags.enableProjects && (
               <div className="space-y-1.5">
                 <Label className="text-xs">Project</Label>
                 <ChannelProjectPicker value={projectId} onChange={setProjectId} className="bg-card" />

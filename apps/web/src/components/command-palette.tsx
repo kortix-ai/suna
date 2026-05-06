@@ -376,10 +376,10 @@ export function CommandPalette() {
 
   // ── Data hooks ──
   const { data: sessions } = useOpenCodeSessions();
-  // Skip the projects query when the multi-project paradigm is off — the
+  // Skip the projects query when the project paradigm is off — the
   // palette never lists projects in default mode and the sandbox-side
   // /kortix/projects route 503s in that mode.
-  const { data: projects } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const { data: projects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const { data: agents } = useOpenCodeAgents();
   const { data: providers } = useOpenCodeProviders();
 
@@ -544,14 +544,14 @@ export function CommandPalette() {
 
   // ── Submenu: agents ──
   // Project-only agents (orchestrator/project-maintainer/worker/project-manager)
-  // are hidden from the palette when the multi-project paradigm is off —
+  // are hidden from the palette when the project paradigm is off —
   // their bodies reference project tools that aren't registered in default
   // mode. Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
   const visibleAgents = useMemo(() => {
     if (!agents) return [];
     const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker', 'project-manager']);
     return agents.filter(
-      (a) => !a.hidden && (featureFlags.enableMultiProject || !projectOnlyAgents.has(a.name))
+      (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name))
     );
   }, [agents]);
 

@@ -443,6 +443,29 @@ app.get('/kortix/health',
   },
 )
 
+// ── Features endpoint — set/clear KORTIX_PROJECTS_ENABLED persistently ──
+// /persistent/.kortix-projects-enabled survives container respawns; the
+// config getter reads it on every plugin init. Auth-required.
+app.post('/kortix/features/projects', async (c) => {
+  const body = await c.req.json().catch(() => ({})) as { enabled?: unknown }
+  const enabled = body?.enabled === true
+  const persistentRoot = process.env.KORTIX_PERSISTENT_ROOT || '/persistent'
+  const path = `${persistentRoot}/.kortix-projects-enabled`
+  try {
+    await Bun.write(path, enabled ? 'true' : 'false')
+    process.env.KORTIX_PROJECTS_ENABLED = enabled ? 'true' : 'false'
+    // Mirror to s6 env dir so subprocesses (opencode) see the flag without
+    // requiring kortix-master to forward it explicitly.
+    const s6Dir = process.env.S6_ENV_DIR || '/run/s6/container_environment'
+    if (existsSync(s6Dir)) {
+      try { await Bun.write(`${s6Dir}/KORTIX_PROJECTS_ENABLED`, enabled ? 'true' : 'false') } catch {}
+    }
+    return c.json({ ok: true, projectsEnabled: enabled, persisted: path, hint: 'Restart kortix-master + opencode to apply: pkill -TERM -f bun  /  pkill -TERM -f opencode-kortix' })
+  } catch (err) {
+    return c.json({ ok: false, error: (err as Error).message }, 500)
+  }
+})
+
 // Port mappings — returns container→host port map so the frontend
 // can use direct URLs instead of guessing proxy paths.
 app.get('/kortix/ports',
@@ -501,7 +524,7 @@ app.route('/kortix/marketplace', marketplaceRouter)
 app.route('/kortix/preferences', preferencesRouter)
 
 // Projects + Tasks — Kortix project management. Gated behind PROJECTS_ENABLED
-// so the multi-project paradigm is fully off by default. When the flag is off
+// so the project paradigm is fully off by default. When the flag is off
 // every /kortix/projects/*, /kortix/tickets/*, and /kortix/tasks/* request
 // returns 503 with a clear payload so the web UI (which mirrors the flag) can
 // surface a coherent error if it accidentally calls these endpoints. Existing
@@ -532,7 +555,7 @@ if (config.PROJECTS_ENABLED) {
 } else {
   const projectsDisabledHandler = (c: any) => c.json({
     error: 'projects_disabled',
-    message: 'The multi-project paradigm is disabled on this sandbox. Set KORTIX_PROJECTS_ENABLED=true to enable.',
+    message: 'The project paradigm is disabled on this sandbox. Set KORTIX_PROJECTS_ENABLED=true to enable.',
   }, 503)
   app.all('/kortix/projects/*', projectsDisabledHandler)
   app.all('/kortix/projects', projectsDisabledHandler)

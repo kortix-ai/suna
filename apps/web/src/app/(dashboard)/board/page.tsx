@@ -8,7 +8,7 @@
  * columns, milestones live under that project sandbox-wide; this page
  * surfaces them as a global kanban without a per-project URL.
  *
- * Gated by `featureFlags.enableMultiProject` — when off, we redirect to
+ * Gated by `featureFlags.enableProjects` — when off, we redirect to
  * /workspace so the route is unreachable in default mode. The legacy
  * /projects/[id] route stays in place for direct navigation but is no
  * longer linked from any UI.
@@ -47,7 +47,7 @@ function BoardRedirect() {
 export default function BoardPage() {
   // Build-time gate. The flag is a const, so the unused branch tree-shakes
   // and the rules-of-hooks invariant holds.
-  if (!featureFlags.enableMultiProject) return <BoardRedirect />;
+  if (!featureFlags.enableProjects) return <BoardRedirect />;
   return <BoardPageInner />;
 }
 

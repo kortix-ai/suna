@@ -81,20 +81,20 @@ export function DashboardContent() {
   const local = useOpenCodeLocal({ agents, providers, config });
 
   // Project selection — persisted across reloads. Force-null when the
-  // multi-project flag is off so no project preamble is appended on send and
+  // project flag is off so no project preamble is appended on send and
   // the LLM never sees a project context. Store reads are still wired (cheap
   // zustand subscriptions) so flipping the flag on rehydrates the prior pick.
   const selectedProjectIdRaw = useSelectedProjectStore((s) => s.projectId);
   const setSelectedProjectId = useSelectedProjectStore((s) => s.setProjectId);
-  const selectedProjectId = featureFlags.enableMultiProject ? selectedProjectIdRaw : null;
-  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
+  const selectedProjectId = featureFlags.enableProjects ? selectedProjectIdRaw : null;
+  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const selectedProject = React.useMemo(
-    () => (featureFlags.enableMultiProject ? kortixProjects?.find((p) => p.id === selectedProjectId) ?? null : null),
+    () => (featureFlags.enableProjects ? kortixProjects?.find((p) => p.id === selectedProjectId) ?? null : null),
     [kortixProjects, selectedProjectId],
   );
   // If the persisted project id no longer exists, clear it transparently
   React.useEffect(() => {
-    if (!featureFlags.enableMultiProject) return;
+    if (!featureFlags.enableProjects) return;
     if (selectedProjectId && kortixProjects && !selectedProject) {
       setSelectedProjectId(null);
     }
@@ -250,9 +250,9 @@ export function DashboardContent() {
       <div className="relative flex-1 min-h-0 z-10" />
 
       {/* Project selector — sits above the chat input, pill style. Hidden
-          when the multi-project paradigm is off (default); the input then
+          when the project paradigm is off (default); the input then
           sends straight to a fresh session with no project preamble. */}
-      {featureFlags.enableMultiProject && (
+      {featureFlags.enableProjects && (
         <div className="relative z-10">
           <ProjectSelector
             selectedProjectId={selectedProjectId}

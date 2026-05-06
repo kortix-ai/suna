@@ -197,10 +197,10 @@ export interface MenuItemDef {
   requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
-  /** If true, item is only shown when the multi-project / project-paradigm
-   *  feature flag (NEXT_PUBLIC_ENABLE_MULTI_PROJECT) is on. Used to gate
+  /** If true, item is only shown when the project / project-paradigm
+   *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
    *  project-paradigm surfaces (Board today; Milestones, Team later). */
-  requiresMultiProjectFlag?: boolean;
+  requiresProjectsFlag?: boolean;
 }
 
 // ============================================================================
@@ -310,7 +310,7 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/board',
     tabId: 'page:/board',
     keywords: 'board kanban tickets milestones project',
-    requiresMultiProjectFlag: true,
+    requiresProjectsFlag: true,
   },
   {
     id: 'new-terminal',
@@ -815,7 +815,7 @@ export function getItemsByGroup(
       // Hide project-paradigm entries (Board today, Milestones / Team later)
       // until the flag is flipped on. The flag is a build-time const so the
       // unused entries tree-shake out.
-      (!item.requiresMultiProjectFlag || featureFlags.enableMultiProject),
+      (!item.requiresProjectsFlag || featureFlags.enableProjects),
   );
 }
 

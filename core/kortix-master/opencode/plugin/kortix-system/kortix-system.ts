@@ -167,11 +167,11 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	})
 	const spendingCap = await load("spending-cap", () => import("./spending-cap").then(m => m.default(ctx)))
 	
-	// Feature flag: when KORTIX_PROJECTS_ENABLED=false (default) the multi-project
+	// Feature flag: when KORTIX_PROJECTS_ENABLED=false (default) the project
 	// paradigm is OFF — no project_*/ticket_* tools are exposed to the LLM, no
 	// project status hint is injected, and the agent never knows projects exist.
 	// Existing project rows in SQLite are preserved; flipping the flag on
-	// resurfaces them. Mirror flag in web: NEXT_PUBLIC_ENABLE_MULTI_PROJECT.
+	// resurfaces them. Mirror flag in web: NEXT_PUBLIC_ENABLE_PROJECTS.
 	const projectsEnabled = config.PROJECTS_ENABLED
 	// Single-project paradigm: when enabled, ensure THE project exists in
 	// SQLite AND is fully seeded (PM agent + default kanban columns) so the

@@ -213,14 +213,14 @@ export function useOpenCodeLocal({
 
   // ---- Agent state — persisted per-session in localStorage so switching tabs preserves selection ----
   // Project-only agents (orchestrator/project-maintainer/worker) are hidden
-  // when the multi-project paradigm is off; their bodies reference project
+  // when the project paradigm is off; their bodies reference project
   // tools that aren't registered in default mode.
   const visibleAgents = useMemo<Agent[]>(
     () => {
       // Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
       const projectOnlyAgents = new Set(['orchestrator', 'project-maintainer', 'worker', 'project-manager']);
       return (Array.isArray(rawAgents) ? rawAgents : []).filter(
-        (a) => !a.hidden && (featureFlags.enableMultiProject || !projectOnlyAgents.has(a.name)),
+        (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name)),
       );
     },
     [rawAgents],
