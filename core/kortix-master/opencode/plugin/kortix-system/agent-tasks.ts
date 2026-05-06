@@ -117,7 +117,18 @@ function getCurrentTaskForWorker(db: Database, ctx: ToolContext): TaskRow | null
 export function agentTaskTools(db: Database, mgr: ProjectManager, client: any) {
 	function getProjectId(ctx: ToolContext): string | null {
 		if (!ctx?.sessionID) return null
-		return mgr.getSessionProject(ctx.sessionID)?.id || null
+		// Single-project paradigm: auto-bind to THE project on first hit so the
+		// LLM doesn't need project_select. Mirrors getProjectIdForCtx in
+		// ticket-tools.ts. Idempotent.
+		const existing = mgr.getSessionProject(ctx.sessionID)
+		if (existing) return existing.id
+		try {
+			const def = mgr.ensureDefaultProject()
+			mgr.setSessionProject(ctx.sessionID, def.id)
+			return def.id
+		} catch {
+			return null
+		}
 	}
 
 	async function createTaskExecute(args: { title: string; description?: string; verification_condition?: string; autostart?: boolean; status?: string }, ctx: ToolContext): Promise<string> {

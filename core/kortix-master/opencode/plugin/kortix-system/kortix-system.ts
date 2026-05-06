@@ -172,6 +172,17 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	// Existing project rows in SQLite are preserved; flipping the flag on
 	// resurfaces them. Mirror flag in web: NEXT_PUBLIC_ENABLE_MULTI_PROJECT.
 	const projectsEnabled = config.PROJECTS_ENABLED
+	// Single-project paradigm: when enabled, ensure THE project exists in
+	// SQLite so all downstream surfaces (sessions, tickets, milestones) have
+	// somewhere to live without project_create/project_select. Idempotent.
+	if (projectsEnabled) {
+		try {
+			const def = mgr.ensureDefaultProject()
+			console.log(`[kortix-system] Default project ready: ${def.id} @ ${def.path}`)
+		} catch (e) {
+			console.warn("[kortix-system] ensureDefaultProject failed:", (e as Error).message)
+		}
+	}
 	const projectToolMap = projectsEnabled ? projectTools(mgr, db) : {}
 	const ticketToolMap = projectsEnabled ? ticketTools(db, mgr, client) : {}
 	// agentTaskTools (task_create, task_list, task_deliver…) are runtime-coupled

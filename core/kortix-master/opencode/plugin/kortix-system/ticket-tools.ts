@@ -169,7 +169,20 @@ export function agentHasGroup(_agent: ProjectAgentRow | null, _group: ToolGroup)
 
 function getProjectIdForCtx(mgr: ProjectManager, ctx: ToolContext): string | null {
   if (!ctx?.sessionID) return null
-  return mgr.getSessionProject(ctx.sessionID)?.id || null
+  // Single-project paradigm: every session implicitly belongs to THE project.
+  // If this session was never explicitly bound (no project_select ever ran —
+  // and that tool no longer exists), auto-bind to the default project so
+  // ticket/milestone tools resolve transparently. The bind is idempotent and
+  // persisted, so subsequent calls hit the cache.
+  const existing = mgr.getSessionProject(ctx.sessionID)
+  if (existing) return existing.id
+  try {
+    const def = mgr.ensureDefaultProject()
+    mgr.setSessionProject(ctx.sessionID, def.id)
+    return def.id
+  } catch {
+    return null
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
