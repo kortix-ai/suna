@@ -32,7 +32,10 @@ cni() { local n="$1"; local needle="$2"; local hay="$3"; total=$((total+1))
 
 flip() {
   local val="$1"
+  # Persist BOTH the s6 env and /persistent so a container respawn doesn't
+  # silently drop the flag mid-test. Mirrors the production flow.
   docker exec kortix-sandbox sh -c "echo -n \"$val\" > /run/s6/container_environment/KORTIX_PROJECTS_ENABLED"
+  docker exec kortix-sandbox sh -c "echo -n \"$val\" > /persistent/.kortix-projects-enabled" 2>/dev/null
   PID=$(docker exec kortix-sandbox sh -c "ps -ef | grep 'bun run /ephemeral/kortix-master' | grep -v grep | awk '{print \$2}'" | head -1)
   [ -n "$PID" ] && docker exec kortix-sandbox kill -TERM "$PID" 2>/dev/null
   for i in $(seq 1 30); do
@@ -49,6 +52,14 @@ flip() {
     for i in $(seq 1 60); do sleep 1; T=$(docker exec kortix-sandbox curl -s --max-time 2 $INNER/experimental/tool/ids 2>/dev/null); [ -n "$T" ] && ! echo "$T" | grep -q "project_get" && return 0; done
   fi
 }
+
+# Capture the starting flag state so we can restore it at the end. The
+# /persistent file is the source of truth across container respawns.
+INITIAL_FLAG=$(docker exec kortix-sandbox cat /persistent/.kortix-projects-enabled 2>/dev/null || echo "false")
+trap 'flip "$INITIAL_FLAG" >/dev/null 2>&1' EXIT
+
+# Force flag-OFF baseline before running tier 1.
+flip "false" >&2
 
 echo "═══════════════════════════════════════════════════════════════════════"
 echo " SINGLE-PROJECT PARADIGM — E2E (docker exec)"
