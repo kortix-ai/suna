@@ -36,6 +36,16 @@ export const config = {
   // Feature flag: enable or disable local deployment routes (/kortix/deploy/*)
   KORTIX_DEPLOYMENTS_ENABLED: process.env.KORTIX_DEPLOYMENTS_ENABLED === 'true',
 
+  // Feature flag: enable the multi-project paradigm (board / tickets /
+  // milestones / project agents / per-project credentials).
+  //
+  // Default: false. With this off, the LLM has no project_*/ticket_*/
+  // milestone_* tools, the project status transform stays silent, and the
+  // sandbox advertises features.projectsEnabled=false on /kortix/health so
+  // the web UI can mirror state. Existing project rows in SQLite are
+  // preserved; flipping the flag back on resurfaces them untouched.
+  PROJECTS_ENABLED: process.env.KORTIX_PROJECTS_ENABLED === 'true',
+
   // Secret storage
   SECRET_FILE_PATH: process.env.SECRET_FILE_PATH || `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/secrets/.secrets.json`,
   SALT_FILE_PATH: process.env.SALT_FILE_PATH || `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/secrets/.salt`,

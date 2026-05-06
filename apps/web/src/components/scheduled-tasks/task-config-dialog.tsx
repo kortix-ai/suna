@@ -31,6 +31,7 @@ import { getSandboxUrl } from '@/lib/platform-client';
 import { toast } from 'sonner';
 import { ScheduleBuilder } from './schedule-builder';
 import { cn } from '@/lib/utils';
+import { featureFlags } from '@/lib/feature-flags';
 import { useTickets, useColumns, useProjectAgents } from '@/hooks/kortix/use-kortix-tickets';
 
 // Shared selectors from ChatInput (same as used in channels)
@@ -354,21 +355,26 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                   <div className="text-sm font-medium">HTTP</div>
                   <div className="text-xs text-muted-foreground text-center">Call external URL</div>
                 </Button>
-                <Button
-                  type="button"
-                  onClick={() => setActionType('ticket_create')}
-                  disabled={!projectId}
-                  variant="outline"
-                  title={!projectId ? 'Only available when the trigger is scoped to a project' : undefined}
-                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", actionType === 'ticket_create'
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30",
-                    !projectId && "opacity-50 cursor-not-allowed")}
-                >
-                  <TicketIcon className="h-5 w-5" />
-                  <div className="text-sm font-medium">Create Ticket</div>
-                  <div className="text-xs text-muted-foreground text-center">Drop a new ticket on the board</div>
-                </Button>
+                {/* "Create Ticket" / "Add to board" — only when the multi-
+                    project paradigm is on AND the trigger is scoped to a
+                    project. Default mode hides this action entirely. */}
+                {featureFlags.enableMultiProject && (
+                  <Button
+                    type="button"
+                    onClick={() => setActionType('ticket_create')}
+                    disabled={!projectId}
+                    variant="outline"
+                    title={!projectId ? 'Only available when the trigger is scoped to a project' : undefined}
+                    className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", actionType === 'ticket_create'
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/50 hover:bg-muted/30",
+                      !projectId && "opacity-50 cursor-not-allowed")}
+                  >
+                    <TicketIcon className="h-5 w-5" />
+                    <div className="text-sm font-medium">Create Ticket</div>
+                    <div className="text-xs text-muted-foreground text-center">Drop a new ticket on the board</div>
+                  </Button>
+                )}
               </div>
             </div>
           )}

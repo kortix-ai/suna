@@ -55,6 +55,7 @@ import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
+import { featureFlags } from '@/lib/feature-flags';
 
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import {
@@ -1536,7 +1537,9 @@ export function SessionChatInput({
 
   // Sessions for @ mention search
   const { data: allSessions } = useOpenCodeSessions();
-  const { data: kortixProjects } = useKortixProjects();
+  // Skip the projects query entirely when the multi-project paradigm is off —
+  // the @-mention popover never offers a project bucket in that mode.
+  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
 
   useEffect(() => {
     if (text.trim().length > 0) return;

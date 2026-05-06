@@ -137,6 +137,39 @@ if (!authSyncDisabled) {
 
 // Updates are Docker image-based — no crash recovery needed
 
+// Project paradigm overlay: when KORTIX_PROJECTS_ENABLED=false (default) we
+// hide the project-only agents (orchestrator, project-maintainer, worker) by
+// writing a workspace-level OpenCode config overlay that disables them.
+// OpenCode merges /workspace/.opencode/opencode.jsonc on top of the global
+// config; setting `agent.<name>.disable=true` removes them from the picker
+// and prevents the LLM from being routed there. The general agent (cleaned
+// of project content) remains the default. The overlay is rewritten on every
+// kortix-master start so flipping the flag at runtime takes effect on the
+// next service-manager restart pass.
+function syncAgentOverlayForProjectFlag() {
+  const overlayPath = '/workspace/.opencode/opencode.jsonc'
+  const projectOnlyAgents = ['orchestrator', 'project-maintainer', 'worker']
+  try {
+    if (!existsSync('/workspace/.opencode')) {
+      mkdirSync('/workspace/.opencode', { recursive: true })
+    }
+    const overlay: Record<string, unknown> = { $schema: 'https://opencode.ai/config.json' }
+    if (!config.PROJECTS_ENABLED) {
+      const agentBlock: Record<string, { disable: boolean }> = {}
+      for (const name of projectOnlyAgents) agentBlock[name] = { disable: true }
+      overlay.agent = agentBlock
+    }
+    Bun.write(overlayPath, JSON.stringify(overlay, null, 2)).catch(() => {})
+    console.log(
+      `[Kortix Master] Agent overlay written: PROJECTS_ENABLED=${config.PROJECTS_ENABLED}; ` +
+      `disabled-when-off: ${projectOnlyAgents.join(', ')}`,
+    )
+  } catch (err) {
+    console.warn('[Kortix Master] Failed to write agent overlay:', err)
+  }
+}
+syncAgentOverlayForProjectFlag()
+
 if (process.env.KORTIX_DISABLE_CORE_SUPERVISOR !== 'true') {
   void serviceManager.start().catch(err =>
     console.error('[Kortix Master] service manager start error:', err)
@@ -398,7 +431,15 @@ app.get('/kortix/health',
     await checkOpenCodeReady()
     const status = openCodeReady ? 'ok' : 'starting'
     const httpStatus = openCodeReady ? 200 : 503
-    return c.json({ status, version, imageVersion: version, activeWs: activeConnections, runtimeReady: openCodeReady, ...inspectOpencodeState() }, httpStatus)
+    return c.json({
+      status,
+      version,
+      imageVersion: version,
+      activeWs: activeConnections,
+      runtimeReady: openCodeReady,
+      ...inspectOpencodeState(),
+      features: { projectsEnabled: config.PROJECTS_ENABLED },
+    }, httpStatus)
   },
 )
 
@@ -459,29 +500,48 @@ app.route('/kortix/marketplace', marketplaceRouter)
 // Preferences — default model management
 app.route('/kortix/preferences', preferencesRouter)
 
-// Projects + Tasks — Kortix project management (frontend source of truth)
-// Mount at both paths — Hono sub-routers don't match trailing slash from parent
-app.route('/kortix/projects', projectsRouter)
-app.route('/kortix/projects/', projectsRouter)
-app.route('/kortix/tasks', tasksRouter)
-app.route('/kortix/tasks/', tasksRouter)
+// Projects + Tasks — Kortix project management. Gated behind PROJECTS_ENABLED
+// so the multi-project paradigm is fully off by default. When the flag is off
+// every /kortix/projects/*, /kortix/tickets/*, and /kortix/tasks/* request
+// returns 503 with a clear payload so the web UI (which mirrors the flag) can
+// surface a coherent error if it accidentally calls these endpoints. Existing
+// SQLite rows are preserved — flipping the flag back on resurfaces them.
+if (config.PROJECTS_ENABLED) {
+  // Mount at both paths — Hono sub-routers don't match trailing slash from parent
+  app.route('/kortix/projects', projectsRouter)
+  app.route('/kortix/projects/', projectsRouter)
+  app.route('/kortix/tasks', tasksRouter)
+  app.route('/kortix/tasks/', tasksRouter)
 
-// v2 board — tickets, columns, fields, templates, project_agents
-// ticketProjectsRouter layers project-scoped config under /kortix/projects/:id/*
-// so it's mounted at /kortix/projects after the base projects router (last writer wins
-// for path-specific handlers; base projects router has no sub-paths like /columns).
-app.route('/kortix/tickets', ticketsRouter)
-app.route('/kortix/tickets/', ticketsRouter)
-app.route('/kortix/projects', ticketProjectsRouter)
-app.route('/kortix/projects/', ticketProjectsRouter)
+  // v2 board — tickets, columns, fields, templates, project_agents
+  // ticketProjectsRouter layers project-scoped config under /kortix/projects/:id/*
+  // so it's mounted at /kortix/projects after the base projects router (last writer wins
+  // for path-specific handlers; base projects router has no sub-paths like /columns).
+  app.route('/kortix/tickets', ticketsRouter)
+  app.route('/kortix/tickets/', ticketsRouter)
+  app.route('/kortix/projects', ticketProjectsRouter)
+  app.route('/kortix/projects/', ticketProjectsRouter)
 
-// Milestones — outcome-level grouping under /kortix/projects/:projectId/milestones
-app.route('/kortix/projects', milestonesRouter)
-app.route('/kortix/projects/', milestonesRouter)
+  // Milestones — outcome-level grouping under /kortix/projects/:projectId/milestones
+  app.route('/kortix/projects', milestonesRouter)
+  app.route('/kortix/projects/', milestonesRouter)
 
-// Project-scoped credentials under /kortix/projects/:projectId/credentials
-app.route('/kortix/projects', credentialsRouter)
-app.route('/kortix/projects/', credentialsRouter)
+  // Project-scoped credentials under /kortix/projects/:projectId/credentials
+  app.route('/kortix/projects', credentialsRouter)
+  app.route('/kortix/projects/', credentialsRouter)
+} else {
+  const projectsDisabledHandler = (c: any) => c.json({
+    error: 'projects_disabled',
+    message: 'The multi-project paradigm is disabled on this sandbox. Set KORTIX_PROJECTS_ENABLED=true to enable.',
+  }, 503)
+  app.all('/kortix/projects/*', projectsDisabledHandler)
+  app.all('/kortix/projects', projectsDisabledHandler)
+  app.all('/kortix/tickets/*', projectsDisabledHandler)
+  app.all('/kortix/tickets', projectsDisabledHandler)
+  app.all('/kortix/tasks/*', projectsDisabledHandler)
+  app.all('/kortix/tasks', projectsDisabledHandler)
+  console.log('[kortix-master] PROJECTS_ENABLED=false — /kortix/{projects,tickets,tasks}/* return 503')
+}
 
 // Public URL sharing — /kortix/share/:port returns the public URL for a sandbox port
 app.route('/kortix/share', shareRouter)

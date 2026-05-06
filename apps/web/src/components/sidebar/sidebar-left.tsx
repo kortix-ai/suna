@@ -75,6 +75,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
+import { featureFlags } from '@/lib/feature-flags';
 import { useAdminRole } from '@/hooks/admin';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { isBillingEnabled } from '@/lib/config';
@@ -374,7 +375,10 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
 // ============================================================================
 
 function ProjectsFlyout() {
-  const { data: projects } = useKortixProjects();
+  // The collapsed-sidebar flyout is only ever rendered when the multi-project
+  // flag is on (see CollapsedIconButton wrap below), but we still gate the
+  // query as belt-and-braces for any future non-flagged caller.
+  const { data: projects } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
 
   const sorted = React.useMemo(() => {
     if (!projects || !Array.isArray(projects)) return [];
@@ -647,8 +651,11 @@ function SidebarSections() {
   const pathname = normalizeAppPathname(usePathname());
   const { isMobile, setOpenMobile } = useSidebar();
 
-  // Projects data — Kortix projects are the source of truth
-  const { data: projectsData } = useKortixProjects();
+  // Projects data — Kortix projects are the source of truth.
+  // Skip the query entirely when the multi-project paradigm is off so the
+  // sidebar in default mode never hits /kortix/projects (which 503s when
+  // sandbox-side PROJECTS_ENABLED is also off).
+  const { data: projectsData } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
   const sortedProjects = React.useMemo(() => {
     if (!projectsData || !Array.isArray(projectsData)) return [];
     return [...projectsData].sort((a, b) =>
@@ -699,8 +706,10 @@ function SidebarSections() {
 
   return (
     <div className="flex flex-col min-h-0 flex-1 pt-0.5 space-y-0.5">
-      {/* Projects — collapsible list above Sessions, same UX as Sessions */}
-      {sortedProjects.length > 0 && (
+      {/* Projects — collapsible list above Sessions, same UX as Sessions.
+          Hidden entirely when the multi-project paradigm is off (default).
+          Existing project rows in SQLite stay; flag-on revives this section. */}
+      {featureFlags.enableMultiProject && sortedProjects.length > 0 && (
         <Collapsible defaultOpen={false} className="group/projects flex flex-col min-h-0">
           <div className="px-3 flex-shrink-0">
             <CollapsibleTrigger asChild>
@@ -1541,11 +1550,13 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               });
             }}
           />
-          <CollapsedIconButton
-            icon={<FolderKanban className="h-4 w-4" />}
-            label="Projects"
-            flyoutContent={<ProjectsFlyout />}
-          />
+          {featureFlags.enableMultiProject && (
+            <CollapsedIconButton
+              icon={<FolderKanban className="h-4 w-4" />}
+              label="Projects"
+              flyoutContent={<ProjectsFlyout />}
+            />
+          )}
           <CollapsedIconButton
             icon={<ListTree className="h-4 w-4" />}
             label="Sessions"

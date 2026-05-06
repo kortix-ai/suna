@@ -152,6 +152,7 @@ import {
   type AgentRefLike,
 } from '@/lib/project-preamble';
 import { ProjectSelector } from '@/components/dashboard/project-selector';
+import { featureFlags } from '@/lib/feature-flags';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
@@ -4135,14 +4136,20 @@ export function SessionChat({
   // ---- Project selection (shared with dashboard via persisted store) ----
   // Drives the ProjectSelector on the empty-state session view and injects
   // a project preamble into the first message sent in this session.
-  const selectedProjectId = useSelectedProjectStore((s) => s.projectId);
+  // Force-null when the multi-project flag is off so first-message preamble
+  // (line ~5470) and merged refs (~5585) are no-ops; the LLM gets no project
+  // mention. Store reads are still wired so flipping the flag back on
+  // restores the prior selection.
+  const selectedProjectIdRaw = useSelectedProjectStore((s) => s.projectId);
   const setSelectedProjectId = useSelectedProjectStore((s) => s.setProjectId);
-  const { data: kortixProjects } = useKortixProjects();
+  const selectedProjectId = featureFlags.enableMultiProject ? selectedProjectIdRaw : null;
+  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
   const selectedProject = useMemo(
-    () => kortixProjects?.find((p) => p.id === selectedProjectId) ?? null,
+    () => (featureFlags.enableMultiProject ? kortixProjects?.find((p) => p.id === selectedProjectId) ?? null : null),
     [kortixProjects, selectedProjectId],
   );
   useEffect(() => {
+    if (!featureFlags.enableMultiProject) return;
     if (selectedProjectId && kortixProjects && !selectedProject) {
       setSelectedProjectId(null);
     }
@@ -6443,8 +6450,8 @@ export function SessionChat({
       {/* Project selector — only on the empty state, above the chat input.
           Same component the dashboard uses, so the picked project is shared
           via the selected-project store. The preamble is injected on first
-          send inside handleSend. */}
-      {!readOnly && !hasChatContent && (
+          send inside handleSend. Hidden when multi-project paradigm is off. */}
+      {featureFlags.enableMultiProject && !readOnly && !hasChatContent && (
         <div className="relative z-10">
           <ProjectSelector
             selectedProjectId={selectedProjectId}

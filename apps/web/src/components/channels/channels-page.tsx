@@ -32,6 +32,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { toast } from '@/lib/toast';
+import { featureFlags } from '@/lib/feature-flags';
 import { useServerStore, getActiveOpenCodeUrl } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
 import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
@@ -203,7 +204,7 @@ function ChannelsProjectFilter({
   value: string | null | typeof FILTER_ALL;
   onChange: (next: string | null | typeof FILTER_ALL) => void;
 }) {
-  const { data: projects = [] } = useKortixProjects();
+  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
   const visibleProjects = projects.filter((p) => p.id !== 'proj-workspace');
 
   const current = value === FILTER_ALL ? FILTER_ALL : value === null ? FILTER_WORKSPACE : value;
@@ -248,7 +249,7 @@ export function ChannelsPage() {
   const [projectFilter, setProjectFilter] = useState<string | null | typeof FILTER_ALL>(FILTER_ALL);
 
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  const { data: projects = [] } = useKortixProjects();
+  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
   const projectNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of projects) map.set(p.id, p.name);
@@ -415,11 +416,15 @@ export function ChannelsPage() {
                 "new channel" wizard with the same project so a workflow
                 like "open this project's view → add a Slack channel"
                 lands the channel scoped correctly without an extra step.
+                Hidden when the multi-project paradigm is off — every
+                channel is sandbox-wide in default mode.
               */}
-              <ChannelsProjectFilter
-                value={projectFilter}
-                onChange={setProjectFilter}
-              />
+              {featureFlags.enableMultiProject && (
+                <ChannelsProjectFilter
+                  value={projectFilter}
+                  onChange={setProjectFilter}
+                />
+              )}
             </div>
             <div className="flex gap-2">
               <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={load}>
@@ -501,7 +506,7 @@ export function ChannelsPage() {
                         key={ch.id}
                         channel={ch}
                         index={i}
-                        projectName={ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
+                        projectName={featureFlags.enableMultiProject && ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
                         onToggle={handleToggle}
                         onRemove={handleRemove}
                         onSettings={(ch) => { setSettingsChannel(ch); setSettingsOpen(true); }}
@@ -526,7 +531,7 @@ export function ChannelsPage() {
                         key={ch.id}
                         channel={ch}
                         index={i}
-                        projectName={ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
+                        projectName={featureFlags.enableMultiProject && ch.project_id ? projectNameById.get(ch.project_id) ?? null : null}
                         onToggle={handleToggle}
                         onRemove={handleRemove}
                         onSettings={(ch) => { setSettingsChannel(ch); setSettingsOpen(true); }}

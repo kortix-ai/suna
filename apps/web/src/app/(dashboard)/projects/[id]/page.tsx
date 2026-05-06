@@ -12,7 +12,9 @@
  */
 
 import { use, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { FolderGit2, MessageSquareText, Loader2 } from 'lucide-react';
+import { featureFlags } from '@/lib/feature-flags';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -77,7 +79,29 @@ import { ProjectSettingsTab } from '@/components/kortix/project-settings-tab';
 import { NotificationsBell } from '@/components/kortix/notifications-bell';
 import { useIsRouteActive } from '@/hooks/utils/use-is-route-active';
 
-export default function ProjectPage({ params }: { params?: Promise<{ id: string }> }) {
+// Stub used when the multi-project paradigm is off. Routes /projects/[id]
+// back to /workspace and renders a single-line placeholder while navigating.
+// Existing project rows in SQLite are preserved; flipping
+// NEXT_PUBLIC_ENABLE_MULTI_PROJECT back on lights this page up unchanged.
+function ProjectPageRedirect() {
+  const router = useRouter();
+  useEffect(() => { router.replace('/workspace'); }, [router]);
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      Redirecting to workspace…
+    </div>
+  );
+}
+
+export default function ProjectPage(props: { params?: Promise<{ id: string }> }) {
+  // Build-time gate. The flag is a const, so the unused branch is tree-shaken
+  // and the rules-of-hooks invariant ("hook count stable per render") holds
+  // because every render in a given bundle takes the same path.
+  if (!featureFlags.enableMultiProject) return <ProjectPageRedirect />;
+  return <ProjectPageInner {...props} />;
+}
+
+function ProjectPageInner({ params }: { params?: Promise<{ id: string }> }) {
   const { id: raw } = params ? use(params) : { id: '' };
   const pid = raw ? decodeURIComponent(raw) : '';
   const projectFilesStoreRef = useRef(createFilesStore());

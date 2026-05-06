@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { SlackIcon } from '@/components/ui/icons/slack';
 import { toast } from '@/lib/toast';
+import { featureFlags } from '@/lib/feature-flags';
 import { useSlackConnect } from '@/hooks/channels/use-slack-wizard';
 import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
@@ -67,7 +68,7 @@ export function SlackSetupWizard({ onCreated, onBack, initialProjectId = null }:
   const [isGenerating, setIsGenerating] = useState(false);
 
   const slackConnect = useSlackConnect();
-  const { data: projects = [] } = useKortixProjects();
+  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableMultiProject });
   const projectDirectory = useMemo(
     () => projects.find((p) => p.id === projectId)?.path,
     [projects, projectId],
@@ -238,16 +239,20 @@ export function SlackSetupWizard({ onCreated, onBack, initialProjectId = null }:
               <p className="text-[11px] text-muted-foreground">Display name in Slack.</p>
             </div>
 
-            {/* Project */}
-            <div className="space-y-1.5">
-              <Label className="text-xs">Project</Label>
-              <ChannelProjectPicker value={projectId} onChange={setProjectId} className="bg-card" />
-              <p className="text-[11px] text-muted-foreground px-0.5">
-                {projectId
-                  ? 'Bot runs inside this project — agent pick is scoped to it.'
-                  : 'Workspace channel — uses the global agent set.'}
-              </p>
-            </div>
+            {/* Project — hidden when the multi-project paradigm is off.
+                In that mode every channel is sandbox-wide (project_id=null),
+                which the existing nullable column already supports. */}
+            {featureFlags.enableMultiProject && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Project</Label>
+                <ChannelProjectPicker value={projectId} onChange={setProjectId} className="bg-card" />
+                <p className="text-[11px] text-muted-foreground px-0.5">
+                  {projectId
+                    ? 'Bot runs inside this project — agent pick is scoped to it.'
+                    : 'Workspace channel — uses the global agent set.'}
+                </p>
+              </div>
+            )}
 
             {/* Agent */}
             <div className="space-y-1.5">
