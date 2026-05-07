@@ -513,32 +513,39 @@ export function InstanceSwitcherPopover() {
           </CommandList>
 
           <div className="border-t border-border/40 p-1 flex flex-col">
-            <Button
-              variant="ghost"
-              size="sm"
+            <button
+              type="button"
               onClick={handleNewInstance}
               disabled={creatingLocal}
-              className="w-full justify-start gap-2 text-[12.5px] font-normal h-7 px-2 rounded-[6px]"
+              className={cn(
+                'flex items-center gap-2 w-full px-2 py-1 rounded-[6px] cursor-pointer outline-hidden',
+                'text-[12.5px] text-foreground/80 hover:text-foreground',
+                'hover:bg-foreground/[0.06] transition-colors',
+                'disabled:opacity-50 disabled:pointer-events-none',
+              )}
             >
               {creatingLocal ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader2 className="size-3.5 text-muted-foreground/65 animate-spin" />
               ) : (
-                <Plus className="h-3 w-3" />
+                <Plus className="size-3.5 text-muted-foreground/65" />
               )}
               {creatingLocal ? 'Creating…' : 'New workspace'}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setOpen(false);
                 router.push('/instances');
               }}
-              className="w-full justify-start gap-2 text-[12.5px] font-normal h-7 px-2 rounded-[6px]"
+              className={cn(
+                'flex items-center gap-2 w-full px-2 py-1 rounded-[6px] cursor-pointer outline-hidden',
+                'text-[12.5px] text-foreground/80 hover:text-foreground',
+                'hover:bg-foreground/[0.06] transition-colors',
+              )}
             >
-              <ArrowUpRight className="h-3 w-3" />
+              <ArrowUpRight className="size-3.5 text-muted-foreground/65" />
               All workspaces
-            </Button>
+            </button>
           </div>
         </CommandPopoverContent>
       </CommandPopover>
