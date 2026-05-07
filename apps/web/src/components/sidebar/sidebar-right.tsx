@@ -306,18 +306,15 @@ export function SidebarRight() {
         >
 
           {/* ====== HEADER ======
-              Same pt-3 + h-[32px] row as the left sidebar's header so
-              the icon stack below it starts at the same vertical band
-              as the Kortix logo on the left. macOS Tauri adds extra
-              padding-top via globals.css so the row clears the traffic
-              lights' zone (mirrors the left sidebar). */}
-          {/* Header in both states — sits in the same vertical band as
-              the inset's tab bar (40px on macOS via the role=tablist CSS
-              rule, 52px on other desktop, 56px on mobile). Arrow lives
-              here, vertically aligned with the back / forward / home
-              controls on the inset side. Quick Actions label sits on
-              the left in expanded mode, fades out cleanly when
-              collapsing without wrapping (truncate + opacity). */}
+              Sits in the same vertical band as the inset's tab bar so
+              the toggle button is aligned with back / forward / home.
+              Heights match the tab bar exactly:
+                base   h-[56px]  (mobile)
+                md:    h-[52px]  (desktop)
+                macOS  height:40 !important via globals.css (right's
+                       data-sidebar=header), matching the macOS tab bar.
+              Always rendered in both states; the Quick Actions label
+              fades opacity to avoid wrap/flash mid-collapse-animation. */}
           <div
             data-sidebar="header"
             className="flex h-[56px] md:h-[52px] items-center px-3 justify-between gap-2 overflow-hidden flex-shrink-0"
