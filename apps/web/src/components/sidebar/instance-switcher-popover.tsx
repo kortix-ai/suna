@@ -462,7 +462,7 @@ export function InstanceSwitcherPopover() {
                       key={s.sandbox_id}
                       value={`workspace-${s.sandbox_id}-${s.name ?? ''}`}
                       onSelect={() => handleSelect(s)}
-                      className="group/row gap-2"
+                      className={cn('group/row', isActive && 'bg-foreground/[0.06]')}
                     >
                       <WorkspaceAvatar sandbox={s} size="xs" />
                       <div className="flex-1 min-w-0">
@@ -475,7 +475,7 @@ export function InstanceSwitcherPopover() {
                           {displayName(s)}
                         </span>
                         {s.version && (
-                          <p className="text-[10.5px] text-muted-foreground/45 leading-tight truncate">
+                          <p className="text-[10px] text-muted-foreground/45 leading-tight truncate">
                             v{s.version}
                           </p>
                         )}
@@ -494,7 +494,7 @@ export function InstanceSwitcherPopover() {
                           handleSettings(s);
                         }}
                         className={cn(
-                          'flex items-center justify-center h-6 w-6 rounded-md cursor-pointer flex-shrink-0',
+                          'flex items-center justify-center h-5 w-5 rounded-[4px] cursor-pointer flex-shrink-0',
                           'text-muted-foreground/60 hover:text-foreground hover:bg-muted',
                           'opacity-0 group-hover/row:opacity-100 group-data-[selected=true]:opacity-100',
                           'transition-opacity duration-150',
@@ -503,7 +503,7 @@ export function InstanceSwitcherPopover() {
                         <Settings2 className="size-3" />
                       </span>
                       {isActive && (
-                        <Check className="size-3.5 text-foreground shrink-0" />
+                        <Check className="size-3 text-foreground shrink-0" />
                       )}
                     </CommandItem>
                   );
@@ -512,18 +512,18 @@ export function InstanceSwitcherPopover() {
             </CommandGroup>
           </CommandList>
 
-          <div className="border-t border-border/50 p-1 flex flex-col">
+          <div className="border-t border-border/40 p-1 flex flex-col">
             <Button
               variant="ghost"
               size="sm"
               onClick={handleNewInstance}
               disabled={creatingLocal}
-              className="w-full justify-start gap-2 text-[12.5px] font-normal h-8 px-2"
+              className="w-full justify-start gap-2 text-[12.5px] font-normal h-7 px-2 rounded-[6px]"
             >
               {creatingLocal ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-3 w-3" />
               )}
               {creatingLocal ? 'Creating…' : 'New workspace'}
             </Button>
@@ -534,9 +534,9 @@ export function InstanceSwitcherPopover() {
                 setOpen(false);
                 router.push('/instances');
               }}
-              className="w-full justify-start gap-2 text-[12.5px] font-normal h-8 px-2"
+              className="w-full justify-start gap-2 text-[12.5px] font-normal h-7 px-2 rounded-[6px]"
             >
-              <ArrowUpRight className="h-3.5 w-3.5" />
+              <ArrowUpRight className="h-3 w-3" />
               All workspaces
             </Button>
           </div>

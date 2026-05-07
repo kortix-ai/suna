@@ -45,15 +45,21 @@ function DropdownMenuContent({
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         className={cn(
-          // Same surface DNA as CommandPopoverContent — solid dark slab,
-          // hairline white inner border, soft drop, and a subtle top-edge
-          // highlight gradient. Keeps every dropdown in the app on the same
-          // material so users build a single mental model.
-          'relative bg-popover dark:bg-[oklch(0.10_0_0)] text-popover-foreground',
+          // Shared dropdown surface (matches CommandPopoverContent exactly).
+          'relative bg-card text-popover-foreground',
           'border border-white/[0.06] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6),0_0_0_0.5px_rgba(255,255,255,0.05)]',
           'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
+          // Same gentle entrance as the command popover.
           'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
           'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
+          // Compactness: bring DropdownMenu items in line with command
+          // popovers (text-[12.5px], py-1 px-2, size-3.5 icons). Scoped to
+          // descendants so the rule never leaks past this surface.
+          '[&_[data-slot=dropdown-menu-item]]:py-1 [&_[data-slot=dropdown-menu-item]]:px-2 [&_[data-slot=dropdown-menu-item]]:text-[12.5px] [&_[data-slot=dropdown-menu-item]]:rounded-[6px] [&_[data-slot=dropdown-menu-item]]:gap-2',
+          "[&_[data-slot=dropdown-menu-item]_svg:not([class*='size-'])]:size-3.5",
+          '[&_[data-slot=dropdown-menu-checkbox-item]]:py-1 [&_[data-slot=dropdown-menu-checkbox-item]]:text-[12.5px]',
+          '[&_[data-slot=dropdown-menu-radio-item]]:py-1 [&_[data-slot=dropdown-menu-radio-item]]:text-[12.5px]',
+          '[&_[data-slot=dropdown-menu-label]]:py-1 [&_[data-slot=dropdown-menu-label]]:px-2 [&_[data-slot=dropdown-menu-label]]:text-[10.5px]',
           'max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl p-1',
           className,
         )}

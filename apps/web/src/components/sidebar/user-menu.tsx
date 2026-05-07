@@ -116,28 +116,28 @@ export function UserMenu({ user }: UserMenuProps) {
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-64 p-1.5"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-64"
               side={isMobile ? 'bottom' : 'top'}
               align="start"
-              sideOffset={4}
+              sideOffset={6}
             >
               {/* Account-only menu. Workspace switching lives exclusively in
                   the sidebar-header switcher (Slack/Linear style) so there's
                   one obvious place for "what workspace am I in / switch". */}
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => openSettings('billing')} className="gap-2 px-2 py-1.5 text-[12.5px] cursor-pointer">
-                  <CreditCard className="size-3.5" />
+                <DropdownMenuItem onClick={() => openSettings('billing')} className="cursor-pointer">
+                  <CreditCard />
                   <span>Billing</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openSettings('general')} className="gap-2 px-2 py-1.5 text-[12.5px] cursor-pointer">
-                  <SettingsIcon className="size-3.5" />
+                <DropdownMenuItem onClick={() => openSettings('general')} className="cursor-pointer">
+                  <SettingsIcon />
                   <span>Settings</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator className="my-1" />
 
               {/* Theme toggle + Log out */}
-              <div className="flex items-center justify-between px-1 py-1">
+              <div className="flex items-center justify-between px-1 py-0.5">
                 <div className="flex gap-0.5 p-0.5 bg-muted/50 rounded-md">
                   {themeOptions.map((mode) => {
                     const Icon = mode.icon;
@@ -147,13 +147,13 @@ export function UserMenu({ user }: UserMenuProps) {
                         key={mode.value}
                         type="button"
                         onClick={(e) => handleThemeChange(mode.value, e)}
-                        className={cn('p-1.5 rounded-sm transition-colors duration-150 cursor-pointer', 
+                        className={cn('p-1 rounded-[4px] transition-colors duration-150 cursor-pointer',
                           isActive
                             ? 'bg-background text-foreground'
                             : 'text-muted-foreground hover:text-foreground'
                         )}
                       >
-                        <Icon className="size-3.5" />
+                        <Icon className="size-3" />
                       </button>
                     );
                   })}
@@ -161,7 +161,7 @@ export function UserMenu({ user }: UserMenuProps) {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2 py-1"
+                  className="text-[11.5px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2 py-1"
                 >
                   Log out
                 </button>

@@ -168,10 +168,12 @@ function CommandPopoverContent({
       sideOffset={sideOffset}
       className={cn(
         'w-[300px] p-0 overflow-hidden rounded-xl',
-        // Solid (fully opaque) surface — no see-through. Subtle white inset
-        // top-edge gradient still catches light like a real material slab.
+        // Same `bg-card` token as DropdownMenuContent — every dropdown in
+        // the app sits on the same material. Hairline white inner border
+        // and a 1px top-edge highlight gradient catch light like a real
+        // slab. Always opaque (no transparency).
+        'relative bg-card text-popover-foreground',
         'border border-white/[0.06] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6),0_0_0_0.5px_rgba(255,255,255,0.05)]',
-        'bg-popover dark:bg-[oklch(0.10_0_0)]',
         'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
         // Smoother, more macOS-like entrance / exit (zoom-in-95 → 97 so the
         // pop is gentler, cubic-bezier(0.16, 1, 0.3, 1) easing).
