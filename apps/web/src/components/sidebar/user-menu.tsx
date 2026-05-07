@@ -125,12 +125,12 @@ export function UserMenu({ user }: UserMenuProps) {
                   the sidebar-header switcher (Slack/Linear style) so there's
                   one obvious place for "what workspace am I in / switch". */}
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => openSettings('billing')} className="gap-2 p-2 cursor-pointer">
-                  <CreditCard className="size-4" />
+                <DropdownMenuItem onClick={() => openSettings('billing')} className="gap-2 px-2 py-1.5 text-[12.5px] cursor-pointer">
+                  <CreditCard className="size-3.5" />
                   <span>Billing</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openSettings('general')} className="gap-2 p-2 cursor-pointer">
-                  <SettingsIcon className="size-4" />
+                <DropdownMenuItem onClick={() => openSettings('general')} className="gap-2 px-2 py-1.5 text-[12.5px] cursor-pointer">
+                  <SettingsIcon className="size-3.5" />
                   <span>Settings</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>

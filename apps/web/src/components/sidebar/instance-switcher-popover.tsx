@@ -468,14 +468,14 @@ export function InstanceSwitcherPopover() {
                       <div className="flex-1 min-w-0">
                         <span
                           className={cn(
-                            'truncate text-[13px] block',
+                            'truncate text-[12.5px] leading-tight block',
                             isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
                           )}
                         >
                           {displayName(s)}
                         </span>
                         {s.version && (
-                          <p className="text-[10.5px] text-muted-foreground/60 leading-snug mt-0.5 truncate">
+                          <p className="text-[10.5px] text-muted-foreground/45 leading-tight truncate">
                             v{s.version}
                           </p>
                         )}
