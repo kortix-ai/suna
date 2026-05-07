@@ -311,15 +311,22 @@ export function SidebarRight() {
               as the Kortix logo on the left. macOS Tauri adds extra
               padding-top via globals.css so the row clears the traffic
               lights' zone (mirrors the left sidebar). */}
-          <div data-sidebar="header" className="flex flex-col pt-3 pb-0 overflow-visible">
-            <div className="flex h-[32px] items-center px-3 justify-between">
-              {state === 'expanded' ? (
-                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
-                  Quick Actions
-                </span>
-              ) : <span aria-hidden />}
+          <div data-sidebar="header" className="flex flex-col pt-3 pb-0 overflow-hidden">
+            <div className="flex h-[32px] items-center px-3 justify-between gap-2">
+              {/* Always rendered; truncated + opacity-faded so the panel's
+                  width animation doesn't cause the label to wrap & flash
+                  mid-transition. Same pattern the rest of the sidebar
+                  uses for collapsed-state content. */}
+              <span
+                className={cn(
+                  'min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1 transition-opacity duration-200',
+                  state === 'collapsed' && 'opacity-0 pointer-events-none',
+                )}
+              >
+                Quick Actions
+              </span>
               <button
-                className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150"
+                className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 flex-shrink-0"
                 onClick={toggleSidebar}
                 aria-label={state === 'expanded' ? 'Collapse sidebar' : 'Expand sidebar'}
               >
