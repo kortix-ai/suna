@@ -1799,10 +1799,14 @@ html[data-desktop-platform="macos"] [role="tablist"] {
   app-region: drag;
   height: 40px !important;
 }
-/* On macOS Tauri, the inset starts right where the traffic lights end —
-   push the tab bar's contents (back/forward chevrons, etc.) further right
-   so they aren't visually flush against the OS lights. */
-html[data-desktop-platform="macos"] [role="tablist"] {
+/* On macOS Tauri, when the sidebar is COLLAPSED to its icon rail the
+   inset begins right where the traffic lights end, so the tab bar's
+   back/forward chevrons would sit flush against the OS lights — push
+   them right with extra left padding. When the sidebar is expanded
+   (workspace switcher visible) it's already wide enough to fully
+   contain the lights, so no extra padding is needed and the chevrons
+   should sit at their natural position. */
+html[data-desktop-platform="macos"]:has([data-slot="sidebar"][data-state="collapsed"][data-collapsible="icon"]) [role="tablist"] {
   padding-left: 28px;
 }
 html[data-desktop="true"] [role="tablist"] [role="tab"] {
