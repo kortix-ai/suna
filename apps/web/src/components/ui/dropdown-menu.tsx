@@ -52,17 +52,10 @@ function DropdownMenuContent({
           // Same gentle entrance as the command popover.
           'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
           'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
-          // Compactness: bring DropdownMenu items in line with command
-          // popovers (text-[12.5px], py-1 px-2, size-3.5 icons). Scoped to
-          // descendants so the rule never leaks past this surface. The
-          // `!` important modifier is required — DropdownMenuItem itself
-          // applies py-1.5/text-sm/size-4 with the same specificity, and
-          // without `!` the cascade order wins one or the other randomly.
-          '[&_[data-slot=dropdown-menu-item]]:!py-1 [&_[data-slot=dropdown-menu-item]]:!px-2 [&_[data-slot=dropdown-menu-item]]:!text-[12.5px] [&_[data-slot=dropdown-menu-item]]:!rounded-[6px] [&_[data-slot=dropdown-menu-item]]:!gap-2',
-          "[&_[data-slot=dropdown-menu-item]_svg:not([class*='size-'])]:!size-3.5",
-          '[&_[data-slot=dropdown-menu-checkbox-item]]:!py-1 [&_[data-slot=dropdown-menu-checkbox-item]]:!text-[12.5px]',
-          '[&_[data-slot=dropdown-menu-radio-item]]:!py-1 [&_[data-slot=dropdown-menu-radio-item]]:!text-[12.5px]',
-          '[&_[data-slot=dropdown-menu-label]]:!py-1 [&_[data-slot=dropdown-menu-label]]:!px-2 [&_[data-slot=dropdown-menu-label]]:!text-[10.5px]',
+          // No size overrides on items — DropdownMenuItem's natural spec
+          // (py-1.5 px-2 text-sm gap-2 size-4 icons) is the look we want
+          // for Billing / Settings rows. CommandItem matches it now too,
+          // so the workspace dropdown rows feel identical.
           'max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl p-1',
           className,
         )}

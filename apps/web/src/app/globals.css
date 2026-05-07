@@ -1799,18 +1799,10 @@ html[data-desktop-platform="macos"] [role="tablist"] {
   app-region: drag;
   height: 40px !important;
 }
-/* On macOS Tauri, when the sidebar is COLLAPSED to its icon rail the
-   inset begins right where the traffic lights end, so the tab bar's
-   back/forward chevrons would sit flush against the OS lights — push
-   them right with extra left padding. When the sidebar is expanded the
-   workspace switcher already covers the lights area and the chevrons
-   sit at their natural position with NO extra padding. Uses sibling
-   combinator (peer is sibling of inset) for broad WebKit compat. */
-html[data-desktop-platform="macos"]
-  [data-slot="sidebar"][data-collapsible="icon"]
-  ~ * [role="tablist"] {
-  padding-left: 28px;
-}
+/* Tab-bar back/forward left padding for the macOS-collapsed-sidebar
+   case is handled in JS (tab-bar.tsx) — read sidebar.state +
+   desktopPlatform(), apply pl-7 conditionally. CSS-only is hard to
+   keep correct as the sidebar state changes. */
 html[data-desktop="true"] [role="tablist"] [role="tab"] {
   font-size: 12px;
 }

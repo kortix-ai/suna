@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useRightSidebarSafe } from '@/components/ui/sidebar-right-provider';
+import { isDesktop, desktopPlatform } from '@/lib/desktop';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
@@ -567,6 +568,16 @@ export function TabBar() {
   const queryClient = useQueryClient();
   const sidebar = useSidebar();
   const rightSidebar = useRightSidebarSafe();
+
+  // On macOS Tauri with the sidebar collapsed to its icon rail, the inset
+  // begins right where the OS traffic lights end — push the back/forward
+  // chevrons right so they're not flush against the lights. SSR-safe via
+  // useEffect (window only exists client-side under Tauri).
+  const [isMacDesktop, setIsMacDesktop] = useState(false);
+  useEffect(() => {
+    setIsMacDesktop(isDesktop() && desktopPlatform() === 'macos');
+  }, []);
+  const needsTrafficLightSpace = isMacDesktop && sidebar.state === 'collapsed';
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -1091,7 +1102,12 @@ export function TabBar() {
           </button>
         </div>
         {/* Desktop: Back/Forward navigation */}
-        <div className="flex-shrink-0 flex items-center gap-0 pl-2 pr-1 hidden md:flex">
+        <div
+          className={cn(
+            'flex-shrink-0 flex items-center gap-0 pr-1 hidden md:flex',
+            needsTrafficLightSpace ? 'pl-7' : 'pl-2',
+          )}
+        >
           <Tooltip>
             <TooltipTrigger asChild>
               <button

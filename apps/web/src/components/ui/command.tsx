@@ -306,16 +306,16 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        // Compact-by-default — matches the visual spec of every inline
-        // popover (agent / model / workspace switcher / pfp menu). The
-        // CommandDialog (cmd palette) bumps these back up via descendant
-        // rules on its own surface.
-        'relative flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1 text-[12.5px] text-foreground/80 outline-hidden select-none transition-colors duration-75',
+        // Matches the natural DropdownMenuItem spec (Billing / Settings
+        // look) — same gap-2 rounded-lg px-2 py-1.5 text-sm size-4
+        // icons. Both surfaces feel like one family. CommandDialog
+        // (Cmd+K palette) bumps these back up via descendant rules.
+        'relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground/80 outline-hidden select-none transition-colors duration-75',
         'data-[selected=true]:bg-foreground/[0.06] data-[selected=true]:text-foreground',
         "data-[selected=true]:[&_svg:not([class*='text-'])]:text-foreground/80",
         "[&_svg:not([class*='text-'])]:text-muted-foreground/65",
         'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40',
-        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[14px]",
+        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}
