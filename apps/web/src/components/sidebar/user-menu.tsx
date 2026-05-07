@@ -138,7 +138,7 @@ export function UserMenu({ user }: UserMenuProps) {
 
               {/* Theme toggle + Log out */}
               <div className="flex items-center justify-between px-1 py-1">
-                <div className="flex gap-0.5 p-0.5 bg-muted/50 rounded-md">
+                <div className="flex gap-0.5 p-0.5 bg-muted/50 rounded-full">
                   {themeOptions.map((mode) => {
                     const Icon = mode.icon;
                     const isActive = theme === mode.value;
@@ -147,9 +147,9 @@ export function UserMenu({ user }: UserMenuProps) {
                         key={mode.value}
                         type="button"
                         onClick={(e) => handleThemeChange(mode.value, e)}
-                        className={cn('p-1.5 rounded-[5px] transition-colors duration-150 cursor-pointer',
+                        className={cn('p-1.5 rounded-full transition-colors duration-150 cursor-pointer',
                           isActive
-                            ? 'bg-background text-foreground'
+                            ? 'bg-background text-foreground shadow-sm'
                             : 'text-muted-foreground hover:text-foreground'
                         )}
                       >
