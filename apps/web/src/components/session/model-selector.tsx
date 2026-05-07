@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Check,
   ChevronDown,
+  Cpu,
   Plus,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -253,12 +254,13 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                         className={isSelected ? 'bg-foreground/[0.06]' : undefined}
                         onSelect={() => handleSelect(model)}
                       >
+                        <Cpu />
                         <div className="min-w-0 flex-1">
                           <div className="truncate font-medium leading-tight">{model.modelName}</div>
-                          <p className="text-[11px] text-muted-foreground/55 truncate leading-snug mt-0.5">{model.modelID}</p>
+                          <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-0.5">{model.modelID}</p>
                         </div>
                         {isFree && <Tag variant="free">Free</Tag>}
-                        {isSelected && <Check className="h-3.5 w-3.5 text-foreground flex-shrink-0" />}
+                        {isSelected && <Check className="text-foreground shrink-0" />}
                       </CommandItem>
                     );
                   })}

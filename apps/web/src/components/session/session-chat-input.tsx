@@ -6,6 +6,7 @@ import { normalizeAppPathname } from '@/lib/instance-routes';
 import {
   ArrowUp,
   ArrowUpLeft,
+  Bot,
   ChevronDown,
   Check,
   GitFork,
@@ -257,15 +258,14 @@ export function AgentSelector({
                       setOpen(false);
                     }}
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium truncate capitalize">{agent.name}</span>
-                      </div>
+                    <Bot />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium leading-tight capitalize">{agent.name}</div>
                       {agent.description && (
-                        <p className="text-[11px] text-muted-foreground/55 leading-snug line-clamp-1 mt-0.5">{agent.description}</p>
+                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-0.5">{agent.description}</p>
                       )}
                     </div>
-                    {isSelected && <Check className="size-3.5 text-foreground shrink-0" />}
+                    {isSelected && <Check className="text-foreground shrink-0" />}
                   </CommandItem>
                 );
               })}
@@ -287,15 +287,14 @@ export function AgentSelector({
                       setOpen(false);
                     }}
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium truncate capitalize">{agent.name}</span>
-                      </div>
+                    <Bot />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium leading-tight capitalize">{agent.name}</div>
                       {agent.description && (
-                        <p className="text-[11px] text-muted-foreground/55 leading-snug line-clamp-1 mt-0.5">{agent.description}</p>
+                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-0.5">{agent.description}</p>
                       )}
                     </div>
-                    {isSelected && <Check className="size-3.5 text-foreground shrink-0" />}
+                    {isSelected && <Check className="text-foreground shrink-0" />}
                   </CommandItem>
                 );
               })}
