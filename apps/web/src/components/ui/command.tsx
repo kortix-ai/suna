@@ -192,7 +192,7 @@ function CommandPopoverContent({
         '[&_[data-slot=command-input]]:h-9 [&_[data-slot=command-input]]:text-[13px]',
         '[&_[data-slot=command-list]]:py-0',
         '[&_[data-slot=command-group]]:py-1',
-        '[&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:tracking-[0.12em]',
+        '[&_[cmdk-group-heading]]:!pt-2 [&_[cmdk-group-heading]]:!pb-1 [&_[cmdk-group-heading]]:!px-2 [&_[cmdk-group-heading]]:!text-[10px] [&_[cmdk-group-heading]]:!tracking-[0.12em]',
         className,
       )}
     >
