@@ -167,7 +167,19 @@ function CommandPopoverContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'w-[340px] p-0 overflow-hidden rounded-xl',
+        'w-[340px] p-0 overflow-hidden rounded-xl border border-border/60 shadow-xl shadow-black/20',
+        // Inline selector should sit clearly *above* the page in dark mode —
+        // default popover token (oklch 0.24) reads too washed-out against
+        // the chat background. Drop a notch darker without going pitch black.
+        'dark:bg-[oklch(0.16_0_0)]',
+        // Scoped compactness: tighten the input/groups/items only inside the
+        // popover variant (CommandDialog stays at its roomier dimensions).
+        '[&_[data-slot=command-input-wrapper]]:h-9 [&_[data-slot=command-input-wrapper]]:px-3 [&_[data-slot=command-input-wrapper]]:gap-2',
+        '[&_[data-slot=command-input]]:h-9 [&_[data-slot=command-input]]:text-[12.5px]',
+        '[&_[data-slot=command-list]]:py-0.5',
+        '[&_[data-slot=command-group]]:py-1',
+        '[&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:px-2.5',
+        '[&_[data-slot=command-item]]:py-1.5 [&_[data-slot=command-item]]:px-2.5 [&_[data-slot=command-item]]:gap-2.5 [&_[data-slot=command-item]]:rounded-md',
         className,
       )}
     >

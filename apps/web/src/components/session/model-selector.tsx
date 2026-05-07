@@ -6,9 +6,6 @@ import {
   ChevronDown,
   Plus,
   SlidersHorizontal,
-  ArrowUp,
-  ArrowDown,
-  CornerDownLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -24,8 +21,6 @@ import {
   CommandList,
   CommandGroup,
   CommandItem,
-  CommandFooter,
-  CommandKbd,
 } from '@/components/ui/command';
 
 import { useModelStore } from '@/hooks/opencode/use-model-store';
@@ -275,22 +270,6 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
             </div>
           )}
         </CommandList>
-
-        <CommandFooter>
-          <div className="flex items-center gap-1">
-            <ArrowUp className="h-3 w-3" />
-            <ArrowDown className="h-3 w-3" />
-            <span>navigate</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CornerDownLeft className="h-3 w-3" />
-            <span>select</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CommandKbd>esc</CommandKbd>
-            <span>close</span>
-          </div>
-        </CommandFooter>
       </CommandPopoverContent>
     </CommandPopover>
   );

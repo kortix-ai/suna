@@ -5,11 +5,9 @@ import { usePathname } from 'next/navigation';
 import { normalizeAppPathname } from '@/lib/instance-routes';
 import {
   ArrowUp,
-  ArrowDown,
   ArrowUpLeft,
   ChevronDown,
   Check,
-  CornerDownLeft,
   GitFork,
   // Info,       // AutoContinue — commented out
   // Infinity,   // AutoContinue — commented out
@@ -66,8 +64,6 @@ import {
   CommandList,
   CommandGroup,
   CommandItem,
-  CommandFooter,
-  CommandKbd,
 } from '@/components/ui/command';
 
 export type { ProviderListResponse };
@@ -311,22 +307,6 @@ export function AgentSelector({
             </div>
           )}
         </CommandList>
-
-        <CommandFooter>
-          <div className="flex items-center gap-1">
-            <ArrowUp className="h-3 w-3" />
-            <ArrowDown className="h-3 w-3" />
-            <span>navigate</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CornerDownLeft className="h-3 w-3" />
-            <span>select</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CommandKbd>Tab</CommandKbd>
-            <span>cycle</span>
-          </div>
-        </CommandFooter>
       </CommandPopoverContent>
     </CommandPopover>
   );
