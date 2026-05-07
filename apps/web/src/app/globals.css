@@ -1777,7 +1777,7 @@ html[data-desktop="true"] .kx-desktop-ctrl-close:hover {
    workspace selector below — full width, untouched. */
 html[data-desktop-platform="macos"]
   [data-side="left"] [data-sidebar="header"] {
-  padding-top: 28px;
+  padding-top: 40px;
   -webkit-app-region: drag;
   app-region: drag;
   transition: padding 240ms ease;
@@ -1797,7 +1797,13 @@ html[data-desktop="true"] [data-slot="sidebar-wrapper"] {
 html[data-desktop-platform="macos"] [role="tablist"] {
   -webkit-app-region: drag;
   app-region: drag;
-  height: 28px !important;
+  height: 40px !important;
+}
+/* On macOS Tauri, the inset starts right where the traffic lights end —
+   push the tab bar's contents (back/forward chevrons, etc.) further right
+   so they aren't visually flush against the OS lights. */
+html[data-desktop-platform="macos"] [role="tablist"] {
+  padding-left: 28px;
 }
 html[data-desktop="true"] [role="tablist"] [role="tab"] {
   font-size: 12px;
