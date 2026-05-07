@@ -35,7 +35,6 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '@/components/AuthProvider';
-import { Button } from '@/components/ui/button';
 import {
   CommandPopover,
   CommandPopoverTrigger,
@@ -199,19 +198,27 @@ export function WorkspacesFlyoutContent({
     }
   };
 
+  // Shared row styling — matches CommandItem's natural spec exactly so
+  // the collapsed-sidebar flyout reads identical to the popover dropdown.
+  const rowClass = cn(
+    'group/row relative flex items-center gap-2 w-full rounded-lg px-2 py-1.5',
+    'text-sm text-foreground/80 outline-hidden cursor-pointer transition-colors duration-75',
+    'hover:bg-foreground/[0.06] hover:text-foreground',
+    "[&_svg:not([class*='text-'])]:text-muted-foreground/65",
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  );
+  const iconColClass = 'shrink-0';
+
   return (
     <>
-      <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-        Workspaces
-      </div>
-      <div className="overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="p-1 flex flex-col">
         {isLoading && visible.length === 0 ? (
-          <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
+          <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
             Loading…
           </div>
         ) : visible.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground/60">
+          <div className="px-2 py-6 text-center text-xs text-muted-foreground/60">
             No workspaces yet
           </div>
         ) : (
@@ -223,17 +230,15 @@ export function WorkspacesFlyoutContent({
                 type="button"
                 onClick={() => handleSelect(s)}
                 className={cn(
-                  'group/row flex items-center gap-2 w-full px-2 py-1.5 text-[13px] cursor-pointer transition-colors duration-100',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-foreground'
-                    : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                  rowClass,
+                  isActive && 'bg-foreground/[0.06] text-foreground',
                 )}
               >
-                <WorkspaceAvatar sandbox={s} size="xs" />
+                <Box className={iconColClass} />
                 <span
                   className={cn(
-                    'flex-1 truncate text-left',
-                    isActive && 'font-semibold text-foreground',
+                    'flex-1 truncate text-left leading-tight',
+                    isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/85',
                   )}
                 >
                   {displayName(s)}
@@ -253,46 +258,41 @@ export function WorkspacesFlyoutContent({
                     setSettingsTarget(s);
                   }}
                   className={cn(
-                    'flex items-center justify-center h-6 w-6 rounded-md flex-shrink-0',
+                    'flex items-center justify-center h-5 w-5 rounded-[4px] flex-shrink-0',
                     'text-muted-foreground/60 hover:text-foreground hover:bg-muted',
                     'opacity-0 group-hover/row:opacity-100 transition-opacity duration-150',
                   )}
                 >
                   <Settings2 className="size-3" />
                 </span>
-                {isActive && <Check className="size-3.5 text-foreground shrink-0" />}
+                {isActive && <Check className="text-foreground" />}
               </button>
             );
           })
         )}
-      </div>
-      <div className="border-t border-border/50 p-1 flex flex-col">
-        <Button
-          variant="ghost"
-          size="sm"
+        <div className="border-t border-border/40 my-1" />
+        <button
+          type="button"
           onClick={handleNewInstance}
           disabled={creatingLocal}
-          className="w-full justify-start gap-2 text-[12.5px] font-normal h-8 px-2"
+          className={cn(rowClass, 'disabled:opacity-50 disabled:pointer-events-none')}
         >
-          {creatingLocal ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Plus className="h-3.5 w-3.5" />
-          )}
-          {creatingLocal ? 'Creating…' : 'New workspace'}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
+          {creatingLocal ? <Loader2 className="animate-spin" /> : <Plus />}
+          <span className="flex-1 text-left">
+            {creatingLocal ? 'Creating…' : 'New workspace'}
+          </span>
+        </button>
+        <button
+          type="button"
           onClick={() => {
             onAfterAction?.();
             router.push('/instances');
           }}
-          className="w-full justify-start gap-2 text-[12.5px] font-normal h-8 px-2"
+          className={rowClass}
         >
-          <ArrowUpRight className="h-3.5 w-3.5" />
-          All workspaces
-        </Button>
+          <ArrowUpRight />
+          <span className="flex-1 text-left">All workspaces</span>
+        </button>
       </div>
 
       <InstanceSettingsModal
