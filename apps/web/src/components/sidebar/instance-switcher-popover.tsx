@@ -36,14 +36,10 @@ import {
 
 import { useAuth } from '@/components/AuthProvider';
 import {
-  CommandPopover,
-  CommandPopoverTrigger,
-  CommandPopoverContent,
-  CommandInput,
-  CommandList,
-  CommandGroup,
-  CommandItem,
-} from '@/components/ui/command';
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from '@/components/ui/popover';
 import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { listSandboxes, ensureSandbox, type SandboxInfo } from '@/lib/platform-client';
@@ -309,20 +305,10 @@ export function WorkspacesFlyoutContent({
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function InstanceSwitcherPopover() {
-  const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
-  const isCloud = isBillingEnabled();
-  const openNewInstanceModal = useNewInstanceModalStore((s) => s.openNewInstanceModal);
 
   const [open, setOpen] = React.useState(false);
-  const [search, setSearch] = React.useState('');
-  const [settingsTarget, setSettingsTarget] = React.useState<SandboxInfo | null>(null);
-  const [creatingLocal, setCreatingLocal] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!open) setSearch('');
-  }, [open]);
 
   // Allow other components (e.g. the unreachable connecting screen's
   // "Switch workspace" button) to pop this switcher without a router push.
@@ -332,7 +318,7 @@ export function InstanceSwitcherPopover() {
     return () => window.removeEventListener('open-instance-switcher', handler);
   }, []);
 
-  const { data: sandboxes, isLoading, refetch } = useQuery({
+  const { data: sandboxes } = useQuery({
     queryKey: ['platform', 'sandbox', 'list'],
     queryFn: listSandboxes,
     enabled: !!user,
@@ -349,60 +335,18 @@ export function InstanceSwitcherPopover() {
     [sandboxes],
   );
 
-  const filtered = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return visible;
-    return visible.filter((s) =>
-      [s.name, s.sandbox_id].filter(Boolean).join(' ').toLowerCase().includes(q),
-    );
-  }, [visible, search]);
-
   const currentInstanceId = getCurrentInstanceIdFromPath(pathname);
   const activeServer = useServerStore((s) =>
     s.servers.find((srv) => srv.id === s.activeServerId),
   );
   const activeInstanceId = currentInstanceId || activeServer?.instanceId || null;
-  const active = visible.find((s) => s.sandbox_id === activeInstanceId) ?? null;
-  // Fall back to the first known workspace ONLY for display. We never auto-pick
-  // it as "active" — that would lie about which workspace the user is in.
-  const triggerSandbox = active ?? null;
+  const triggerSandbox = visible.find((s) => s.sandbox_id === activeInstanceId) ?? null;
   const triggerLabel = triggerSandbox ? displayName(triggerSandbox) : 'Select workspace';
-
-  const handleSelect = async (sandbox: SandboxInfo) => {
-    setOpen(false);
-    if (sandbox.sandbox_id === activeInstanceId) return;
-    if (sandbox.status === 'active') {
-      const result = await activateInstanceSelection(sandbox.sandbox_id, { pathname });
-      router.push(result?.href ?? `/instances/${sandbox.sandbox_id}/dashboard`);
-      return;
-    }
-    router.push(`/instances/${sandbox.sandbox_id}`);
-  };
-
-  const handleSettings = (sandbox: SandboxInfo) => {
-    setOpen(false);
-    setSettingsTarget(sandbox);
-  };
-
-  const handleNewInstance = async () => {
-    setOpen(false);
-    if (isCloud) {
-      openNewInstanceModal();
-      return;
-    }
-    setCreatingLocal(true);
-    try {
-      await ensureSandbox();
-      await refetch();
-    } finally {
-      setCreatingLocal(false);
-    }
-  };
 
   return (
     <>
-      <CommandPopover open={open} onOpenChange={setOpen} modal={false}>
-        <CommandPopoverTrigger>
+      <Popover open={open} onOpenChange={setOpen} modal={false}>
+        <PopoverTrigger asChild>
           <button
             type="button"
             className={cn(
@@ -423,128 +367,27 @@ export function InstanceSwitcherPopover() {
             </div>
             <ChevronsUpDown className="size-3.5 opacity-50 flex-shrink-0 group-hover/switcher:opacity-100 transition-opacity" />
           </button>
-        </CommandPopoverTrigger>
+        </PopoverTrigger>
 
-        <CommandPopoverContent
+        <PopoverContent
           side="bottom"
           align="start"
           sideOffset={6}
-          className="w-[280px]"
-        >
-          {visible.length > 4 && (
-            <CommandInput
-              compact
-              placeholder="Search workspaces…"
-              value={search}
-              onValueChange={setSearch}
-            />
+          className={cn(
+            'w-[280px] p-0 overflow-hidden rounded-xl border-0',
+            // Same dark slab surface as the unified dropdown system —
+            // bg-card with hairline white inner border, soft drop, top-edge
+            // gradient highlight. Identical material to DropdownMenuContent.
+            'bg-card text-popover-foreground',
+            'border border-white/[0.06] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6),0_0_0_0.5px_rgba(255,255,255,0.05)]',
+            'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
+            'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
           )}
-
-          <CommandList className="max-h-[320px]">
-            <CommandGroup forceMount className="[&_[cmdk-group-items]]:max-h-[280px] [&_[cmdk-group-items]]:overflow-y-auto">
-              {isLoading && visible.length === 0 ? (
-                <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Loading…
-                </div>
-              ) : filtered.length === 0 && search.trim() ? (
-                <div className="py-6 text-center text-xs text-muted-foreground/60">
-                  No workspaces match &ldquo;{search.trim()}&rdquo;
-                </div>
-              ) : visible.length === 0 ? (
-                <div className="py-6 text-center text-xs text-muted-foreground/60">
-                  No workspaces yet
-                </div>
-              ) : (
-                filtered.map((s) => {
-                  const isActive = s.sandbox_id === activeInstanceId;
-                  return (
-                    <CommandItem
-                      key={s.sandbox_id}
-                      value={`workspace-${s.sandbox_id}-${s.name ?? ''}`}
-                      onSelect={() => handleSelect(s)}
-                      className={cn('group/row', isActive && 'bg-foreground/[0.06]')}
-                    >
-                      <Box />
-                      <span
-                        className={cn(
-                          'flex-1 min-w-0 truncate leading-tight',
-                          isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/85',
-                        )}
-                      >
-                        {displayName(s)}
-                        {s.version && s.version !== 'unknown' && (
-                          <span className="ml-1.5 font-normal text-muted-foreground/45">v{s.version}</span>
-                        )}
-                      </span>
-                      <span
-                        role="button"
-                        tabIndex={-1}
-                        aria-label={`Settings for ${displayName(s)}`}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleSettings(s);
-                        }}
-                        className={cn(
-                          'flex items-center justify-center h-5 w-5 rounded-[4px] cursor-pointer flex-shrink-0',
-                          'text-muted-foreground/60 hover:text-foreground hover:bg-muted',
-                          'opacity-0 group-hover/row:opacity-100 group-data-[selected=true]:opacity-100',
-                          'transition-opacity duration-150',
-                        )}
-                      >
-                        <Settings2 className="size-3" />
-                      </span>
-                      {isActive && (
-                        <Check className="size-3 text-foreground shrink-0" />
-                      )}
-                    </CommandItem>
-                  );
-                })
-              )}
-            </CommandGroup>
-            <CommandGroup forceMount className="border-t border-border/40 mt-1 pt-1">
-              <CommandItem
-                value="action-new-workspace"
-                onSelect={() => {
-                  if (creatingLocal) return;
-                  void handleNewInstance();
-                }}
-                disabled={creatingLocal}
-              >
-                {creatingLocal ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Plus />
-                )}
-                {creatingLocal ? 'Creating…' : 'New workspace'}
-              </CommandItem>
-              <CommandItem
-                value="action-all-workspaces"
-                onSelect={() => {
-                  setOpen(false);
-                  router.push('/instances');
-                }}
-              >
-                <ArrowUpRight />
-                All workspaces
-              </CommandItem>
-            </CommandGroup>
-          </CommandList>
-        </CommandPopoverContent>
-      </CommandPopover>
-
-      <InstanceSettingsModal
-        sandbox={settingsTarget}
-        open={!!settingsTarget}
-        onOpenChange={(o) => {
-          if (!o) setSettingsTarget(null);
-        }}
-      />
+        >
+          <WorkspacesFlyoutContent onAfterAction={() => setOpen(false)} />
+        </PopoverContent>
+      </Popover>
     </>
   );
 }
+
