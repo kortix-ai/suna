@@ -7,12 +7,22 @@ import {
   Plus,
   SlidersHorizontal,
 } from 'lucide-react';
+import { LayoutGroup, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+
+// Same spring as the agent picker — keeps the morph timing identical between
+// the two selectors that sit side-by-side in the chat composer.
+const SHARED_PILL_SPRING = {
+  type: 'spring' as const,
+  stiffness: 600,
+  damping: 42,
+  mass: 0.55,
+};
 import {
   CommandPopover,
   CommandPopoverTrigger,
@@ -170,6 +180,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   }, [openProviderModal]);
 
   return (
+    <LayoutGroup id="model-picker">
     <CommandPopover open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -177,12 +188,19 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
             <button
               type="button"
               className={cn(
-                'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 cursor-pointer',
-                open && 'bg-muted text-foreground',
+                'group relative inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground transition-colors duration-200 cursor-pointer',
+                open && 'text-foreground',
               )}
             >
-              <span className="truncate max-w-[120px]">{displayName}</span>
-              <ChevronDown className={cn('size-3 opacity-50 transition-transform duration-200', open && 'rotate-180')} />
+              {!open && (
+                <motion.span
+                  layoutId="model-active-pill"
+                  className="absolute inset-0 rounded-xl bg-transparent group-hover:bg-muted pointer-events-none transition-colors duration-200"
+                  transition={SHARED_PILL_SPRING}
+                />
+              )}
+              <span className="relative truncate max-w-[120px]">{displayName}</span>
+              <ChevronDown className={cn('relative size-3 opacity-50 transition-transform duration-200', open && 'rotate-180')} />
             </button>
           </CommandPopoverTrigger>
         </TooltipTrigger>
@@ -250,14 +268,22 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                       <CommandItem
                         key={`${model.providerID}:${model.modelID}`}
                         value={`model-${model.providerID}-${model.modelID}`}
+                        className="relative"
                         onSelect={() => handleSelect(model)}
                       >
-                        <div className="min-w-0 flex-1">
+                        {isSelected && (
+                          <motion.span
+                            layoutId="model-active-pill"
+                            className="absolute inset-0 rounded-[6px] bg-foreground/[0.08] ring-1 ring-inset ring-foreground/[0.05] pointer-events-none"
+                            transition={SHARED_PILL_SPRING}
+                          />
+                        )}
+                        <div className="relative min-w-0 flex-1">
                           <div className="truncate font-medium text-[12.5px] leading-tight">{model.modelName}</div>
                           <div className="text-[10.5px] text-muted-foreground/45 truncate leading-tight mt-0.5">{model.modelID}</div>
                         </div>
-                        {isFree && <Tag variant="free">Free</Tag>}
-                        {isSelected && <Check className="h-3.5 w-3.5 text-foreground flex-shrink-0" />}
+                        {isFree && <Tag variant="free" className="relative">Free</Tag>}
+                        {isSelected && <Check className="relative h-3.5 w-3.5 text-foreground flex-shrink-0" />}
                       </CommandItem>
                     );
                   })}
@@ -272,5 +298,6 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
         </CommandList>
       </CommandPopoverContent>
     </CommandPopover>
+    </LayoutGroup>
   );
 }
