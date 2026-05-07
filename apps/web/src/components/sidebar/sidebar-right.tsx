@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useCallback, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { PanelRight } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
@@ -318,7 +318,7 @@ export function SidebarRight() {
           <div
             data-sidebar="header"
             className={cn(
-              'flex h-[56px] md:h-[52px] items-center px-3 gap-2 overflow-hidden flex-shrink-0',
+              'flex h-[56px] md:h-[52px] items-center px-3 pt-2 gap-2 overflow-hidden flex-shrink-0',
               state === 'expanded' ? 'justify-between' : 'justify-center',
             )}
           >
@@ -328,15 +328,11 @@ export function SidebarRight() {
               </span>
             )}
             <button
-              className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 flex-shrink-0"
+              className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent transition-colors duration-150 flex-shrink-0"
               onClick={toggleSidebar}
               aria-label={state === 'expanded' ? 'Collapse sidebar' : 'Expand sidebar'}
             >
-              {state === 'expanded' ? (
-                <ChevronRight className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronLeft className="h-3.5 w-3.5" />
-              )}
+              <PanelRight className="h-4 w-4" />
             </button>
           </div>
 
