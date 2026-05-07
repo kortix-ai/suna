@@ -200,7 +200,7 @@ interface CollapsedIconButtonProps {
 // so the sidebar reads clean by default.
 function KbdHint({ mod, letter }: { mod: string; letter: string }) {
   const chip =
-    'inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md bg-foreground/[0.06] border border-border/40 text-[10px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
+    'inline-flex items-center justify-center size-5 rounded-md bg-foreground/[0.06] border border-border/40 text-[10px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
   return (
     <span className="ml-auto flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
       <kbd className={chip}>{mod}</kbd>
