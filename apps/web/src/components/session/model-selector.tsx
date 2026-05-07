@@ -250,7 +250,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                       <CommandItem
                         key={`${model.providerID}:${model.modelID}`}
                         value={`model-${model.providerID}-${model.modelID}`}
-                        className={cn('!pl-10', isSelected && 'bg-foreground/[0.06]')}
+                        className={cn('!pl-5', isSelected && 'bg-foreground/[0.06]')}
                         onSelect={() => handleSelect(model)}
                       >
                         <div className="min-w-0 flex-1 py-0.5">
