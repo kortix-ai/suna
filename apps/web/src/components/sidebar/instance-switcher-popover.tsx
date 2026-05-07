@@ -86,9 +86,12 @@ function WorkspaceAvatar({
   size = 'sm',
 }: {
   sandbox: SandboxInfo | null;
-  size?: 'sm' | 'xs';
+  size?: 'sm' | 'xs' | 'menu';
 }) {
-  const dim = size === 'sm' ? 'h-6 w-6 text-[10px]' : 'h-5 w-5 text-[9px]';
+  const dim =
+    size === 'sm' ? 'h-6 w-6 text-[10px]' :
+    size === 'menu' ? 'h-4 w-4 text-[8px] rounded' :
+    'h-5 w-5 text-[9px]';
   return (
     <span
       aria-hidden
@@ -440,7 +443,7 @@ export function InstanceSwitcherPopover() {
           )}
 
           <CommandList className="max-h-[320px]">
-            <CommandGroup forceMount>
+            <CommandGroup forceMount className="[&_[cmdk-group-items]]:max-h-[280px] [&_[cmdk-group-items]]:overflow-y-auto">
               {isLoading && visible.length === 0 ? (
                 <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -464,7 +467,7 @@ export function InstanceSwitcherPopover() {
                       onSelect={() => handleSelect(s)}
                       className={cn('group/row', isActive && 'bg-foreground/[0.06]')}
                     >
-                      <WorkspaceAvatar sandbox={s} size="xs" />
+                      <WorkspaceAvatar sandbox={s} size="menu" />
                       <span
                         className={cn(
                           'flex-1 min-w-0 truncate leading-tight',
@@ -506,43 +509,34 @@ export function InstanceSwitcherPopover() {
                 })
               )}
             </CommandGroup>
+            <CommandGroup forceMount className="border-t border-border/40 mt-1 pt-1">
+              <CommandItem
+                value="action-new-workspace"
+                onSelect={() => {
+                  if (creatingLocal) return;
+                  void handleNewInstance();
+                }}
+                disabled={creatingLocal}
+              >
+                {creatingLocal ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Plus />
+                )}
+                {creatingLocal ? 'Creating…' : 'New workspace'}
+              </CommandItem>
+              <CommandItem
+                value="action-all-workspaces"
+                onSelect={() => {
+                  setOpen(false);
+                  router.push('/instances');
+                }}
+              >
+                <ArrowUpRight />
+                All workspaces
+              </CommandItem>
+            </CommandGroup>
           </CommandList>
-
-          <div className="border-t border-border/40 px-1.5 py-1 flex flex-col">
-            <button
-              type="button"
-              onClick={handleNewInstance}
-              disabled={creatingLocal}
-              className={cn(
-                'flex items-center gap-2 w-full px-2 py-1 rounded-[6px] cursor-pointer outline-hidden',
-                'text-[12.5px] text-foreground/80 hover:text-foreground',
-                'hover:bg-foreground/[0.06] transition-colors',
-                'disabled:opacity-50 disabled:pointer-events-none',
-              )}
-            >
-              {creatingLocal ? (
-                <Loader2 className="size-3.5 text-muted-foreground/65 animate-spin" />
-              ) : (
-                <Plus className="size-3.5 text-muted-foreground/65" />
-              )}
-              {creatingLocal ? 'Creating…' : 'New workspace'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                router.push('/instances');
-              }}
-              className={cn(
-                'flex items-center gap-2 w-full px-2 py-1 rounded-[6px] cursor-pointer outline-hidden',
-                'text-[12.5px] text-foreground/80 hover:text-foreground',
-                'hover:bg-foreground/[0.06] transition-colors',
-              )}
-            >
-              <ArrowUpRight className="size-3.5 text-muted-foreground/65" />
-              All workspaces
-            </button>
-          </div>
         </CommandPopoverContent>
       </CommandPopover>
 
