@@ -1782,20 +1782,14 @@ html[data-desktop-platform="macos"]
   app-region: drag;
   transition: padding 240ms ease;
 }
-/* Right sidebar — match the left sidebar's macOS top inset so the
-   collapsed icon stack's first item (the expand toggle) lands on the
-   same vertical band as the left sidebar's Kortix logo. We push down
-   the collapsed-state content container (no header in collapsed mode)
-   and the expanded-state header (h-32 row containing the collapse
-   toggle + 'Quick Actions' label). */
-html[data-desktop-platform="macos"]
-  [data-side="right"] [data-sidebar="content-collapsed"] {
-  padding-top: 40px;
-}
+/* Right sidebar header sits in the same vertical band as the inset's
+   tab bar so the expand/collapse toggle aligns visually with the
+   back/forward/home controls. macOS tab bar is 40px tall, so the
+   right sidebar header matches that. The collapsed icon stack starts
+   immediately after the header — no extra inset on macOS. */
 html[data-desktop-platform="macos"]
   [data-side="right"] [data-sidebar="header"] {
-  padding-top: 40px;
-  transition: padding 240ms ease;
+  height: 40px !important;
 }
 /* Collapsed sidebar's icon-mode rail: bumped from 3.25rem (52px) to
    4.5rem (72px) on desktop only, so it's wide enough to fully contain

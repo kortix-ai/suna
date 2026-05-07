@@ -311,26 +311,37 @@ export function SidebarRight() {
               as the Kortix logo on the left. macOS Tauri adds extra
               padding-top via globals.css so the row clears the traffic
               lights' zone (mirrors the left sidebar). */}
-          {/* Header only in expanded mode — Quick Actions label + collapse
-              toggle. In collapsed mode the toggle becomes the first icon
-              in the stack below (handled in the content section) so the
-              icon stack starts at the same y as the left sidebar's logo. */}
-          {state === 'expanded' && (
-            <div data-sidebar="header" className="flex flex-col pt-3 pb-0 overflow-hidden">
-              <div className="flex h-[32px] items-center px-3 justify-between gap-2">
-                <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
-                  Quick Actions
-                </span>
-                <button
-                  className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 flex-shrink-0"
-                  onClick={toggleSidebar}
-                  aria-label="Collapse sidebar"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
+          {/* Header in both states — sits in the same vertical band as
+              the inset's tab bar (40px on macOS via the role=tablist CSS
+              rule, 52px on other desktop, 56px on mobile). Arrow lives
+              here, vertically aligned with the back / forward / home
+              controls on the inset side. Quick Actions label sits on
+              the left in expanded mode, fades out cleanly when
+              collapsing without wrapping (truncate + opacity). */}
+          <div
+            data-sidebar="header"
+            className="flex h-[56px] md:h-[52px] items-center px-3 justify-between gap-2 overflow-hidden flex-shrink-0"
+          >
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1 transition-opacity duration-200',
+                state === 'collapsed' && 'opacity-0 pointer-events-none',
+              )}
+            >
+              Quick Actions
+            </span>
+            <button
+              className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 flex-shrink-0"
+              onClick={toggleSidebar}
+              aria-label={state === 'expanded' ? 'Collapse sidebar' : 'Expand sidebar'}
+            >
+              {state === 'expanded' ? (
+                <ChevronRight className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronLeft className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
 
           {/* ====== CONTENT ====== */}
           <div className={cn(
@@ -338,11 +349,9 @@ export function SidebarRight() {
             state === 'collapsed' ? 'overflow-visible' : 'overflow-hidden',
           )}>
             {/* --- Collapsed: icon buttons (registry-driven, clustered) ---
-                In collapsed mode there's no separate header — the toggle
-                lives as the first item in the icon stack and the rest
-                follow below. Top inset matches the left sidebar's logo
-                row so the first icon (toggle) is vertically centered
-                with the left logo. */}
+                The header above contains the expand toggle; this stack
+                is purely the registry-driven icons. Starts immediately
+                under the header. */}
             <div
               data-sidebar="content-collapsed"
               className={cn(
@@ -350,23 +359,6 @@ export function SidebarRight() {
                 state === 'collapsed' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
               )}
             >
-              {/* Expand toggle — first item in the stack */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={toggleSidebar}
-                    variant="sidebar"
-                    className="h-8 w-full justify-center rounded-lg px-0 py-2"
-                    aria-label="Expand sidebar"
-                  >
-                    <ChevronLeft className="h-4 w-4 text-sidebar-foreground" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left" sideOffset={12} className="text-xs">
-                  Expand sidebar
-                </TooltipContent>
-              </Tooltip>
-              <div className="mx-auto my-2 h-px w-6 bg-sidebar-border/60" />
               {/* Quick action clusters */}
               {quickActionClusters.map((cluster, clusterIdx) => (
                 <div key={cluster[0]?.subGroup ?? clusterIdx} className="w-full">
