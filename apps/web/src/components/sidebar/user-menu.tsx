@@ -149,7 +149,7 @@ export function UserMenu({ user }: UserMenuProps) {
                         onClick={(e) => handleThemeChange(mode.value, e)}
                         className={cn('p-1.5 rounded-full transition-colors duration-150 cursor-pointer',
                           isActive
-                            ? 'bg-background text-foreground shadow-sm'
+                            ? 'bg-background text-foreground'
                             : 'text-muted-foreground hover:text-foreground'
                         )}
                       >
