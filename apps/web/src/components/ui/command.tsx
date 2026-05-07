@@ -180,15 +180,18 @@ function CommandPopoverContent({
         'data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
         'data-[state=open]:zoom-in-[0.97] data-[state=closed]:zoom-out-[0.97]',
         // Scoped compactness — applies to popover only, CommandDialog
-        // (cmd palette) keeps its roomier dimensions.
-        '[&_[data-slot=command-input-wrapper]]:h-8 [&_[data-slot=command-input-wrapper]]:px-2.5 [&_[data-slot=command-input-wrapper]]:gap-1.5 [&_[data-slot=command-input-wrapper]]:border-border/40',
-        '[&_[data-slot=command-input]]:h-8 [&_[data-slot=command-input]]:text-[12px]',
-        '[&_[data-slot=command-list]]:py-0',
-        '[&_[data-slot=command-group]]:py-0.5',
-        '[&_[cmdk-group-heading]]:pt-1.5 [&_[cmdk-group-heading]]:pb-0.5 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:text-[9.5px] [&_[cmdk-group-heading]]:tracking-[0.12em]',
-        '[&_[data-slot=command-item]]:py-1 [&_[data-slot=command-item]]:px-2 [&_[data-slot=command-item]]:gap-2 [&_[data-slot=command-item]]:rounded-[6px] [&_[data-slot=command-item]]:text-[12.5px]',
+        // (cmd palette) keeps its roomier dimensions. `!` important is
+        // required because CommandItem / input apply their own padding
+        // at the same specificity; without it the cascade order picks
+        // randomly and the values bleed back to the dialog defaults.
+        '[&_[data-slot=command-input-wrapper]]:!h-8 [&_[data-slot=command-input-wrapper]]:!px-2.5 [&_[data-slot=command-input-wrapper]]:!gap-1.5',
+        '[&_[data-slot=command-input]]:!h-8 [&_[data-slot=command-input]]:!text-[12px]',
+        '[&_[data-slot=command-list]]:!py-0',
+        '[&_[data-slot=command-group]]:!py-0.5',
+        '[&_[cmdk-group-heading]]:!pt-1 [&_[cmdk-group-heading]]:!pb-0.5 [&_[cmdk-group-heading]]:!px-2 [&_[cmdk-group-heading]]:!text-[9.5px] [&_[cmdk-group-heading]]:!tracking-[0.12em]',
+        '[&_[data-slot=command-item]]:!py-1 [&_[data-slot=command-item]]:!px-2 [&_[data-slot=command-item]]:!gap-2 [&_[data-slot=command-item]]:!rounded-[6px] [&_[data-slot=command-item]]:!text-[12.5px]',
         // Slimmer secondary line under the item title (description / model id)
-        '[&_[data-slot=command-item]_p]:text-[10.5px] [&_[data-slot=command-item]_p]:mt-0',
+        '[&_[data-slot=command-item]_p]:!text-[10.5px] [&_[data-slot=command-item]_p]:!mt-0',
         className,
       )}
     >

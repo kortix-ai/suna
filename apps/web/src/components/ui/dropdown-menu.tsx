@@ -54,12 +54,15 @@ function DropdownMenuContent({
           'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
           // Compactness: bring DropdownMenu items in line with command
           // popovers (text-[12.5px], py-1 px-2, size-3.5 icons). Scoped to
-          // descendants so the rule never leaks past this surface.
-          '[&_[data-slot=dropdown-menu-item]]:py-1 [&_[data-slot=dropdown-menu-item]]:px-2 [&_[data-slot=dropdown-menu-item]]:text-[12.5px] [&_[data-slot=dropdown-menu-item]]:rounded-[6px] [&_[data-slot=dropdown-menu-item]]:gap-2',
-          "[&_[data-slot=dropdown-menu-item]_svg:not([class*='size-'])]:size-3.5",
-          '[&_[data-slot=dropdown-menu-checkbox-item]]:py-1 [&_[data-slot=dropdown-menu-checkbox-item]]:text-[12.5px]',
-          '[&_[data-slot=dropdown-menu-radio-item]]:py-1 [&_[data-slot=dropdown-menu-radio-item]]:text-[12.5px]',
-          '[&_[data-slot=dropdown-menu-label]]:py-1 [&_[data-slot=dropdown-menu-label]]:px-2 [&_[data-slot=dropdown-menu-label]]:text-[10.5px]',
+          // descendants so the rule never leaks past this surface. The
+          // `!` important modifier is required — DropdownMenuItem itself
+          // applies py-1.5/text-sm/size-4 with the same specificity, and
+          // without `!` the cascade order wins one or the other randomly.
+          '[&_[data-slot=dropdown-menu-item]]:!py-1 [&_[data-slot=dropdown-menu-item]]:!px-2 [&_[data-slot=dropdown-menu-item]]:!text-[12.5px] [&_[data-slot=dropdown-menu-item]]:!rounded-[6px] [&_[data-slot=dropdown-menu-item]]:!gap-2',
+          "[&_[data-slot=dropdown-menu-item]_svg:not([class*='size-'])]:!size-3.5",
+          '[&_[data-slot=dropdown-menu-checkbox-item]]:!py-1 [&_[data-slot=dropdown-menu-checkbox-item]]:!text-[12.5px]',
+          '[&_[data-slot=dropdown-menu-radio-item]]:!py-1 [&_[data-slot=dropdown-menu-radio-item]]:!text-[12.5px]',
+          '[&_[data-slot=dropdown-menu-label]]:!py-1 [&_[data-slot=dropdown-menu-label]]:!px-2 [&_[data-slot=dropdown-menu-label]]:!text-[10.5px]',
           'max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl p-1',
           className,
         )}

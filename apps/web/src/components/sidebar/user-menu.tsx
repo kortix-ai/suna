@@ -137,7 +137,7 @@ export function UserMenu({ user }: UserMenuProps) {
               <DropdownMenuSeparator className="my-1" />
 
               {/* Theme toggle + Log out */}
-              <div className="flex items-center justify-between px-1 py-0.5">
+              <div className="flex items-center justify-between px-1 py-1">
                 <div className="flex gap-0.5 p-0.5 bg-muted/50 rounded-md">
                   {themeOptions.map((mode) => {
                     const Icon = mode.icon;
@@ -147,13 +147,13 @@ export function UserMenu({ user }: UserMenuProps) {
                         key={mode.value}
                         type="button"
                         onClick={(e) => handleThemeChange(mode.value, e)}
-                        className={cn('p-1 rounded-[4px] transition-colors duration-150 cursor-pointer',
+                        className={cn('p-1.5 rounded-[5px] transition-colors duration-150 cursor-pointer',
                           isActive
                             ? 'bg-background text-foreground'
                             : 'text-muted-foreground hover:text-foreground'
                         )}
                       >
-                        <Icon className="size-3" />
+                        <Icon className="size-3.5" />
                       </button>
                     );
                   })}
@@ -161,7 +161,7 @@ export function UserMenu({ user }: UserMenuProps) {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="text-[11.5px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2 py-1"
+                  className="text-[12px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2 py-1"
                 >
                   Log out
                 </button>
