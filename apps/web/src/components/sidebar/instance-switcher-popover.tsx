@@ -26,6 +26,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowUpRight,
+  Box,
   Check,
   ChevronsUpDown,
   Loader2,
@@ -86,12 +87,9 @@ function WorkspaceAvatar({
   size = 'sm',
 }: {
   sandbox: SandboxInfo | null;
-  size?: 'sm' | 'xs' | 'menu';
+  size?: 'sm' | 'xs';
 }) {
-  const dim =
-    size === 'sm' ? 'h-6 w-6 text-[10px]' :
-    size === 'menu' ? 'h-4 w-4 text-[8px] rounded' :
-    'h-5 w-5 text-[9px]';
+  const dim = size === 'sm' ? 'h-6 w-6 text-[10px]' : 'h-5 w-5 text-[9px]';
   return (
     <span
       aria-hidden
@@ -467,7 +465,7 @@ export function InstanceSwitcherPopover() {
                       onSelect={() => handleSelect(s)}
                       className={cn('group/row', isActive && 'bg-foreground/[0.06]')}
                     >
-                      <WorkspaceAvatar sandbox={s} size="menu" />
+                      <Box />
                       <span
                         className={cn(
                           'flex-1 min-w-0 truncate leading-tight',
