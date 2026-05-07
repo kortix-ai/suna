@@ -6,7 +6,6 @@ import { normalizeAppPathname } from '@/lib/instance-routes';
 import {
   ArrowUp,
   ArrowUpLeft,
-  Bot,
   ChevronDown,
   Check,
   GitFork,
@@ -258,11 +257,15 @@ export function AgentSelector({
                       setOpen(false);
                     }}
                   >
-                    <Bot />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium leading-tight capitalize">{agent.name}</div>
+                    <div className="min-w-0 flex-1 py-0.5">
+                      <div className={cn(
+                        'truncate text-[13px] leading-tight capitalize',
+                        isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
+                      )}>
+                        {agent.name}
+                      </div>
                       {agent.description && (
-                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-0.5">{agent.description}</p>
+                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
                       )}
                     </div>
                     {isSelected && <Check className="text-foreground shrink-0" />}
@@ -287,11 +290,15 @@ export function AgentSelector({
                       setOpen(false);
                     }}
                   >
-                    <Bot />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium leading-tight capitalize">{agent.name}</div>
+                    <div className="min-w-0 flex-1 py-0.5">
+                      <div className={cn(
+                        'truncate text-[13px] leading-tight capitalize',
+                        isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
+                      )}>
+                        {agent.name}
+                      </div>
                       {agent.description && (
-                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-0.5">{agent.description}</p>
+                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
                       )}
                     </div>
                     {isSelected && <Check className="text-foreground shrink-0" />}
