@@ -1105,7 +1105,7 @@ export function TabBar() {
         <div
           className={cn(
             'flex-shrink-0 flex items-center gap-0 pr-1 hidden md:flex',
-            needsTrafficLightSpace ? 'pl-7' : 'pl-2',
+            needsTrafficLightSpace ? 'pl-10' : 'pl-2',
           )}
         >
           <Tooltip>
