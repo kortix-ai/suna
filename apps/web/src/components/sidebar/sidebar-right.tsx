@@ -317,16 +317,16 @@ export function SidebarRight() {
               fades opacity to avoid wrap/flash mid-collapse-animation. */}
           <div
             data-sidebar="header"
-            className="flex h-[56px] md:h-[52px] items-center px-3 justify-between gap-2 overflow-hidden flex-shrink-0"
+            className={cn(
+              'flex h-[56px] md:h-[52px] items-center px-3 gap-2 overflow-hidden flex-shrink-0',
+              state === 'expanded' ? 'justify-between' : 'justify-center',
+            )}
           >
-            <span
-              className={cn(
-                'min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1 transition-opacity duration-200',
-                state === 'collapsed' && 'opacity-0 pointer-events-none',
-              )}
-            >
-              Quick Actions
-            </span>
+            {state === 'expanded' && (
+              <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
+                Quick Actions
+              </span>
+            )}
             <button
               className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 flex-shrink-0"
               onClick={toggleSidebar}
