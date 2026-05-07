@@ -168,13 +168,10 @@ function CommandPopoverContent({
       sideOffset={sideOffset}
       className={cn(
         'w-[300px] p-0 overflow-hidden rounded-xl',
-        // Frosted-glass surface, Apple-feel. The bg is mostly opaque (88%) so
-        // text stays crisp, but the backdrop-blur picks up motion / glow from
-        // whatever's behind. Subtle inset white ring at the top edge catches
-        // light like a real material slab.
+        // Solid (fully opaque) surface — no see-through. Subtle white inset
+        // top-edge gradient still catches light like a real material slab.
         'border border-white/[0.06] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6),0_0_0_0.5px_rgba(255,255,255,0.05)]',
-        'bg-popover/95 dark:bg-[oklch(0.135_0_0_/_0.88)]',
-        'supports-[backdrop-filter]:backdrop-blur-2xl supports-[backdrop-filter]:dark:bg-[oklch(0.135_0_0_/_0.78)]',
+        'bg-popover dark:bg-[oklch(0.135_0_0)]',
         'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
         // Smoother, more macOS-like entrance / exit (zoom-in-95 → 97 so the
         // pop is gentler, cubic-bezier(0.16, 1, 0.3, 1) easing).
