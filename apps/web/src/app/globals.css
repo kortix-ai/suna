@@ -1782,6 +1782,15 @@ html[data-desktop-platform="macos"]
   app-region: drag;
   transition: padding 240ms ease;
 }
+/* Right sidebar header gets the same padding-top so its toggle row +
+   icon stack start at the same vertical band as the left sidebar's
+   logo / workspace selector. No drag region (only left's traffic-light
+   gutter is draggable). */
+html[data-desktop-platform="macos"]
+  [data-side="right"] [data-sidebar="header"] {
+  padding-top: 40px;
+  transition: padding 240ms ease;
+}
 /* Collapsed sidebar's icon-mode rail: bumped from 3.25rem (52px) to
    4.5rem (72px) on desktop only, so it's wide enough to fully contain
    the macOS traffic lights (~70px wide) without them spilling onto the

@@ -1202,32 +1202,6 @@ export function TabBar() {
             <TooltipContent side="bottom" className="text-xs">Open tab list</TooltipContent>
           </Tooltip>
 
-          {/* Right-sidebar toggle — lives at tab-bar level so it's
-              vertically aligned with home / back / forward instead of
-              sitting awkwardly on top of the sidebar's own icon stack. */}
-          {rightSidebar && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => rightSidebar.toggleSidebar()}
-                  className={cn(
-                    'flex items-center justify-center w-7 h-7 rounded-md cursor-pointer',
-                    'text-muted-foreground/50 hover:text-muted-foreground transition-colors',
-                  )}
-                  aria-label={rightSidebar.state === 'expanded' ? 'Collapse right sidebar' : 'Expand right sidebar'}
-                >
-                  {rightSidebar.state === 'expanded' ? (
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="text-xs">
-                {rightSidebar.state === 'expanded' ? 'Collapse right sidebar' : 'Expand right sidebar'}
-              </TooltipContent>
-            </Tooltip>
-          )}
         </div>
       </div>
 

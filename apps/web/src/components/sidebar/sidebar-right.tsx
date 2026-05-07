@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useCallback, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
@@ -305,20 +306,31 @@ export function SidebarRight() {
         >
 
           {/* ====== HEADER ======
-              The previous expand/collapse buttons that lived here have
-              been moved to the tab bar (tab-bar.tsx) so the toggle sits
-              at the same vertical band as the other top-of-window
-              controls. In expanded mode we still keep the "Quick
-              Actions" label as a section title. */}
-          {state === 'expanded' && (
-            <div data-sidebar="header" className="flex flex-col pt-3 pb-0 overflow-visible">
-              <div className="flex h-[32px] items-center px-3">
+              Same pt-3 + h-[32px] row as the left sidebar's header so
+              the icon stack below it starts at the same vertical band
+              as the Kortix logo on the left. macOS Tauri adds extra
+              padding-top via globals.css so the row clears the traffic
+              lights' zone (mirrors the left sidebar). */}
+          <div data-sidebar="header" className="flex flex-col pt-3 pb-0 overflow-visible">
+            <div className="flex h-[32px] items-center px-3 justify-between">
+              {state === 'expanded' ? (
                 <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
                   Quick Actions
                 </span>
-              </div>
+              ) : <span aria-hidden />}
+              <button
+                className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150"
+                onClick={toggleSidebar}
+                aria-label={state === 'expanded' ? 'Collapse sidebar' : 'Expand sidebar'}
+              >
+                {state === 'expanded' ? (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                )}
+              </button>
             </div>
-          )}
+          </div>
 
           {/* ====== CONTENT ====== */}
           <div className={cn(
