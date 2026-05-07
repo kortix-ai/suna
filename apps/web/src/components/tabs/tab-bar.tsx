@@ -1167,13 +1167,16 @@ export function TabBar() {
         <div className="flex-shrink-0 flex items-center gap-px pr-2 relative z-20 bg-sidebar pl-1 h-full">
           {/* Fade edge — hidden when scrolled fully right */}
           <div ref={scrollFadeRef} className="absolute right-full top-0 bottom-0 w-3 bg-gradient-to-r from-transparent to-sidebar pointer-events-none transition-opacity duration-150" />
-          {/* New tab button */}
+          {/* New tab + Open tab list — kept in DOM but hidden visually
+              per design feedback: the controls felt like clutter at the
+              top of the right sidebar. They're still here so we can
+              re-enable easily; they're not part of the visible chrome. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={handleNewTab}
                 className={cn(
-                  'flex items-center justify-center w-7 h-7 rounded-md cursor-pointer',
+                  'hidden items-center justify-center w-7 h-7 rounded-md cursor-pointer',
                   'text-muted-foreground/50 hover:text-muted-foreground transition-colors',
                 )}
               >
@@ -1185,7 +1188,7 @@ export function TabBar() {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <div>
+              <div className="hidden">
                 <TabListDropdown
                   tabs={orderedTabs}
                   activeTabId={activeTabId}
@@ -1198,6 +1201,33 @@ export function TabBar() {
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">Open tab list</TooltipContent>
           </Tooltip>
+
+          {/* Right-sidebar toggle — lives at tab-bar level so it's
+              vertically aligned with home / back / forward instead of
+              sitting awkwardly on top of the sidebar's own icon stack. */}
+          {rightSidebar && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => rightSidebar.toggleSidebar()}
+                  className={cn(
+                    'flex items-center justify-center w-7 h-7 rounded-md cursor-pointer',
+                    'text-muted-foreground/50 hover:text-muted-foreground transition-colors',
+                  )}
+                  aria-label={rightSidebar.state === 'expanded' ? 'Collapse right sidebar' : 'Expand right sidebar'}
+                >
+                  {rightSidebar.state === 'expanded' ? (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                {rightSidebar.state === 'expanded' ? 'Collapse right sidebar' : 'Expand right sidebar'}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
 
