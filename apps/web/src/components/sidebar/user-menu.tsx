@@ -102,9 +102,9 @@ export function UserMenu({ user }: UserMenuProps) {
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className='bg-muted/40 hover:bg-muted/20 rounded-2xl border'
+                className='bg-muted/40 hover:bg-muted/20 rounded-2xl border group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!size-9'
               >
-                <Avatar className="h-8 w-8 rounded-full flex-shrink-0">
+                <Avatar className="h-8 w-8 rounded-full flex-shrink-0 group-data-[collapsible=icon]:h-7 group-data-[collapsible=icon]:w-7">
                   <AvatarImage src={user.avatar} alt={user.name} />
                   <AvatarFallback className="rounded-full text-xs">{getInitials(user.name)}</AvatarFallback>
                 </Avatar>
