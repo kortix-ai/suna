@@ -184,15 +184,15 @@ function CommandPopoverContent({
         // pop is gentler, cubic-bezier(0.16, 1, 0.3, 1) easing).
         'data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
         'data-[state=open]:zoom-in-[0.97] data-[state=closed]:zoom-out-[0.97]',
-        // CommandItem is compact-by-default now — only need to scope the
-        // input + list / group / heading (the surrounding chrome).
-        '[&_[data-slot=command-input-wrapper]]:h-8 [&_[data-slot=command-input-wrapper]]:px-2.5 [&_[data-slot=command-input-wrapper]]:gap-1.5',
-        '[&_[data-slot=command-input]]:h-8 [&_[data-slot=command-input]]:text-[12px]',
+        // CommandItem is at natural roomy spec (matching DropdownMenuItem)
+        // by default — no item overrides needed here. Just trim the
+        // surrounding chrome (input + group / heading) so popovers don't
+        // feel as cavernous as the Cmd+K palette.
+        '[&_[data-slot=command-input-wrapper]]:h-9 [&_[data-slot=command-input-wrapper]]:px-3 [&_[data-slot=command-input-wrapper]]:gap-2',
+        '[&_[data-slot=command-input]]:h-9 [&_[data-slot=command-input]]:text-[13px]',
         '[&_[data-slot=command-list]]:py-0',
-        '[&_[data-slot=command-group]]:py-0.5',
-        '[&_[cmdk-group-heading]]:pt-1 [&_[cmdk-group-heading]]:pb-0.5 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:text-[9.5px] [&_[cmdk-group-heading]]:tracking-[0.12em]',
-        // Slimmer secondary line under the item title (description / model id)
-        '[&_[data-slot=command-item]_p]:text-[10.5px] [&_[data-slot=command-item]_p]:mt-0',
+        '[&_[data-slot=command-group]]:py-1',
+        '[&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:tracking-[0.12em]',
         className,
       )}
     >
