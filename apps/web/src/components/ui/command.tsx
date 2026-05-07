@@ -171,7 +171,7 @@ function CommandPopoverContent({
         // Solid (fully opaque) surface — no see-through. Subtle white inset
         // top-edge gradient still catches light like a real material slab.
         'border border-white/[0.06] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6),0_0_0_0.5px_rgba(255,255,255,0.05)]',
-        'bg-popover dark:bg-[oklch(0.135_0_0)]',
+        'bg-popover dark:bg-[oklch(0.10_0_0)]',
         'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
         // Smoother, more macOS-like entrance / exit (zoom-in-95 → 97 so the
         // pop is gentler, cubic-bezier(0.16, 1, 0.3, 1) easing).
