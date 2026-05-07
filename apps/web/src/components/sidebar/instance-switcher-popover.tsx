@@ -465,21 +465,17 @@ export function InstanceSwitcherPopover() {
                       className={cn('group/row', isActive && 'bg-foreground/[0.06]')}
                     >
                       <WorkspaceAvatar sandbox={s} size="xs" />
-                      <div className="flex-1 min-w-0">
-                        <span
-                          className={cn(
-                            'truncate text-[12.5px] leading-tight block',
-                            isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
-                          )}
-                        >
-                          {displayName(s)}
-                        </span>
-                        {s.version && (
-                          <p className="text-[10px] text-muted-foreground/45 leading-tight truncate">
-                            v{s.version}
-                          </p>
+                      <span
+                        className={cn(
+                          'flex-1 min-w-0 truncate leading-tight',
+                          isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/85',
                         )}
-                      </div>
+                      >
+                        {displayName(s)}
+                        {s.version && s.version !== 'unknown' && (
+                          <span className="ml-1.5 font-normal text-muted-foreground/45">v{s.version}</span>
+                        )}
+                      </span>
                       <span
                         role="button"
                         tabIndex={-1}
@@ -512,7 +508,7 @@ export function InstanceSwitcherPopover() {
             </CommandGroup>
           </CommandList>
 
-          <div className="border-t border-border/40 p-1 flex flex-col">
+          <div className="border-t border-border/40 px-1.5 py-1 flex flex-col">
             <button
               type="button"
               onClick={handleNewInstance}
