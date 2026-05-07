@@ -1782,10 +1782,16 @@ html[data-desktop-platform="macos"]
   app-region: drag;
   transition: padding 240ms ease;
 }
-/* Right sidebar header gets the same padding-top so its toggle row +
-   icon stack start at the same vertical band as the left sidebar's
-   logo / workspace selector. No drag region (only left's traffic-light
-   gutter is draggable). */
+/* Right sidebar — match the left sidebar's macOS top inset so the
+   collapsed icon stack's first item (the expand toggle) lands on the
+   same vertical band as the left sidebar's Kortix logo. We push down
+   the collapsed-state content container (no header in collapsed mode)
+   and the expanded-state header (h-32 row containing the collapse
+   toggle + 'Quick Actions' label). */
+html[data-desktop-platform="macos"]
+  [data-side="right"] [data-sidebar="content-collapsed"] {
+  padding-top: 40px;
+}
 html[data-desktop-platform="macos"]
   [data-side="right"] [data-sidebar="header"] {
   padding-top: 40px;
