@@ -440,7 +440,7 @@ export function InstanceSwitcherPopover() {
           )}
 
           <CommandList className="max-h-[320px]">
-            <CommandGroup heading={visible.length > 0 ? 'Workspaces' : undefined} forceMount>
+            <CommandGroup forceMount>
               {isLoading && visible.length === 0 ? (
                 <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
                   <Loader2 className="h-3 w-3 animate-spin" />
