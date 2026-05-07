@@ -379,7 +379,7 @@ export function InstanceSwitcherPopover() {
             // bg-card with hairline white inner border, soft drop, top-edge
             // gradient highlight. Identical material to DropdownMenuContent.
             'bg-card text-popover-foreground',
-            'border border-white/[0.06] shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6),0_0_0_0.5px_rgba(255,255,255,0.05)]',
+            'border border-border/60',
             'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
             'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
           )}
