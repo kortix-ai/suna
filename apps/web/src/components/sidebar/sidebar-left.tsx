@@ -194,6 +194,21 @@ interface CollapsedIconButtonProps {
   isActive?: boolean;
 }
 
+// Two-chip keybind hint shown on the right of sidebar nav rows. Each
+// key gets its own rounded chip with a subtle bg, like macOS's native
+// shortcut display. Visible only when the parent `group/row` is hovered
+// so the sidebar reads clean by default.
+function KbdHint({ mod, letter }: { mod: string; letter: string }) {
+  const chip =
+    'inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md bg-foreground/[0.06] border border-border/40 text-[10px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
+  return (
+    <span className="ml-auto flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+      <kbd className={chip}>{mod}</kbd>
+      <kbd className={chip}>{letter}</kbd>
+    </span>
+  );
+}
+
 function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, isActive }: CollapsedIconButtonProps) {
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -1521,13 +1536,11 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               onClick={handleNewSession}
               disabled={createSession.isPending}
               variant="sidebar"
-              className="rounded-lg"
+              className="group/row rounded-lg"
             >
               <SquarePen className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
-              <kbd className="text-[10px] text-muted-foreground">
-                {isMac ? '\u2318J' : 'Ctrl J'}
-              </kbd>
+              <KbdHint mod={isMac ? '\u2318' : 'Ctrl'} letter="J" />
             </Button>
 
             {/* Search */}
@@ -1545,13 +1558,11 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
                 );
               }}
               variant="sidebar"
-              className="rounded-lg"
+              className="group/row rounded-lg"
             >
               <Search className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">Search</span>
-              <kbd className="text-[10px] text-muted-foreground">
-                {isMac ? '\u2318K' : 'Ctrl K'}
-              </kbd>
+              <KbdHint mod={isMac ? '\u2318' : 'Ctrl'} letter="K" />
             </Button>
 
             {/* Files lives exclusively on the right sidebar — no redundant
