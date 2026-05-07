@@ -73,6 +73,11 @@ function CommandDialog({
           'bg-popover',
           // Subtle slide-in from above
           'data-[state=open]:slide-in-from-top-[2%] data-[state=closed]:slide-out-to-top-[2%]',
+          // Bump items back up inside the cmd palette — items are
+          // compact-by-default everywhere else, but this is the big
+          // Cmd+K surface so it gets the roomier spec.
+          '[&_[data-slot=command-item]]:gap-3 [&_[data-slot=command-item]]:rounded-lg [&_[data-slot=command-item]]:px-3 [&_[data-slot=command-item]]:py-2.5 [&_[data-slot=command-item]]:text-[13.5px]',
+          "[&_[data-slot=command-item]_svg:not([class*='size-'])]:size-[17px]",
           className,
         )}
         hideCloseButton
@@ -179,19 +184,15 @@ function CommandPopoverContent({
         // pop is gentler, cubic-bezier(0.16, 1, 0.3, 1) easing).
         'data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
         'data-[state=open]:zoom-in-[0.97] data-[state=closed]:zoom-out-[0.97]',
-        // Scoped compactness — applies to popover only, CommandDialog
-        // (cmd palette) keeps its roomier dimensions. `!` important is
-        // required because CommandItem / input apply their own padding
-        // at the same specificity; without it the cascade order picks
-        // randomly and the values bleed back to the dialog defaults.
-        '[&_[data-slot=command-input-wrapper]]:!h-8 [&_[data-slot=command-input-wrapper]]:!px-2.5 [&_[data-slot=command-input-wrapper]]:!gap-1.5',
-        '[&_[data-slot=command-input]]:!h-8 [&_[data-slot=command-input]]:!text-[12px]',
-        '[&_[data-slot=command-list]]:!py-0',
-        '[&_[data-slot=command-group]]:!py-0.5',
-        '[&_[cmdk-group-heading]]:!pt-1 [&_[cmdk-group-heading]]:!pb-0.5 [&_[cmdk-group-heading]]:!px-2 [&_[cmdk-group-heading]]:!text-[9.5px] [&_[cmdk-group-heading]]:!tracking-[0.12em]',
-        '[&_[data-slot=command-item]]:!py-1 [&_[data-slot=command-item]]:!px-2 [&_[data-slot=command-item]]:!gap-2 [&_[data-slot=command-item]]:!rounded-[6px] [&_[data-slot=command-item]]:!text-[12.5px]',
+        // CommandItem is compact-by-default now — only need to scope the
+        // input + list / group / heading (the surrounding chrome).
+        '[&_[data-slot=command-input-wrapper]]:h-8 [&_[data-slot=command-input-wrapper]]:px-2.5 [&_[data-slot=command-input-wrapper]]:gap-1.5',
+        '[&_[data-slot=command-input]]:h-8 [&_[data-slot=command-input]]:text-[12px]',
+        '[&_[data-slot=command-list]]:py-0',
+        '[&_[data-slot=command-group]]:py-0.5',
+        '[&_[cmdk-group-heading]]:pt-1 [&_[cmdk-group-heading]]:pb-0.5 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:text-[9.5px] [&_[cmdk-group-heading]]:tracking-[0.12em]',
         // Slimmer secondary line under the item title (description / model id)
-        '[&_[data-slot=command-item]_p]:!text-[10.5px] [&_[data-slot=command-item]_p]:!mt-0',
+        '[&_[data-slot=command-item]_p]:text-[10.5px] [&_[data-slot=command-item]_p]:mt-0',
         className,
       )}
     >
@@ -305,12 +306,16 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        'relative flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] text-foreground/80 outline-hidden select-none transition-colors duration-75',
+        // Compact-by-default — matches the visual spec of every inline
+        // popover (agent / model / workspace switcher / pfp menu). The
+        // CommandDialog (cmd palette) bumps these back up via descendant
+        // rules on its own surface.
+        'relative flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-1 text-[12.5px] text-foreground/80 outline-hidden select-none transition-colors duration-75',
         'data-[selected=true]:bg-foreground/[0.06] data-[selected=true]:text-foreground',
         "data-[selected=true]:[&_svg:not([class*='text-'])]:text-foreground/80",
         "[&_svg:not([class*='text-'])]:text-muted-foreground/65",
         'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40',
-        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px]",
+        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[14px]",
         className,
       )}
       {...props}

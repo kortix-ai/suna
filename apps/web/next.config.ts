@@ -6,6 +6,11 @@ import { withBetterStack } from '@logtail/next';
 
 const nextConfig = (): NextConfig => ({
   output: 'standalone',
+  // Hide Next.js's persistent dev badge in the corner. It only ever
+  // really matters when there's a build error / route compile issue —
+  // the error overlay still shows in those cases.
+  devIndicators: false,
+
   // Pin tracing root to monorepo root so standalone preserves
   // the correct `apps/web/server.js` path structure.
   outputFileTracingRoot: path.join(__dirname, '../../'),
