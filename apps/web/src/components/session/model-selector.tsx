@@ -253,8 +253,8 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                         onSelect={() => handleSelect(model)}
                       >
                         <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium text-[13px]">{model.modelName}</div>
-                          <div className="text-[11px] text-muted-foreground/50 truncate mt-0.5">{model.modelID}</div>
+                          <div className="truncate font-medium text-[12.5px] leading-tight">{model.modelName}</div>
+                          <div className="text-[10.5px] text-muted-foreground/45 truncate leading-tight mt-0.5">{model.modelID}</div>
                         </div>
                         {isFree && <Tag variant="free">Free</Tag>}
                         {isSelected && <Check className="h-3.5 w-3.5 text-foreground flex-shrink-0" />}

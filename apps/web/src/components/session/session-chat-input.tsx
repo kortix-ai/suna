@@ -261,7 +261,7 @@ export function AgentSelector({
                         <span className="font-medium truncate capitalize">{agent.name}</span>
                       </div>
                       {agent.description && (
-                        <p className="text-[11px] text-muted-foreground/50 leading-snug mt-0.5 line-clamp-1">{agent.description}</p>
+                        <p className="text-[10.5px] text-muted-foreground/45 leading-snug line-clamp-1">{agent.description}</p>
                       )}
                     </div>
                     {isSelected && <Check className="size-3.5 text-foreground shrink-0" />}
@@ -290,7 +290,7 @@ export function AgentSelector({
                         <span className="font-medium truncate capitalize">{agent.name}</span>
                       </div>
                       {agent.description && (
-                        <p className="text-[11px] text-muted-foreground/50 leading-snug mt-0.5 line-clamp-1">{agent.description}</p>
+                        <p className="text-[10.5px] text-muted-foreground/45 leading-snug line-clamp-1">{agent.description}</p>
                       )}
                     </div>
                     {isSelected && <Check className="size-3.5 text-foreground shrink-0" />}

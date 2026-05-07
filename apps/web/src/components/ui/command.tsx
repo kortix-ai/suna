@@ -167,19 +167,22 @@ function CommandPopoverContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'w-[340px] p-0 overflow-hidden rounded-xl border border-border/60 shadow-xl shadow-black/20',
+        'w-[300px] p-0 overflow-hidden rounded-xl border border-border/50 shadow-2xl shadow-black/30',
         // Inline selector should sit clearly *above* the page in dark mode —
-        // default popover token (oklch 0.24) reads too washed-out against
-        // the chat background. Drop a notch darker without going pitch black.
-        'dark:bg-[oklch(0.16_0_0)]',
+        // default popover token (oklch 0.24) reads too washed-out against the
+        // chat background. Drop two notches darker for proper separation
+        // without going pitch black.
+        'dark:bg-[oklch(0.135_0_0)]',
         // Scoped compactness: tighten the input/groups/items only inside the
         // popover variant (CommandDialog stays at its roomier dimensions).
-        '[&_[data-slot=command-input-wrapper]]:h-9 [&_[data-slot=command-input-wrapper]]:px-3 [&_[data-slot=command-input-wrapper]]:gap-2',
-        '[&_[data-slot=command-input]]:h-9 [&_[data-slot=command-input]]:text-[12.5px]',
-        '[&_[data-slot=command-list]]:py-0.5',
-        '[&_[data-slot=command-group]]:py-1',
-        '[&_[cmdk-group-heading]]:pt-2 [&_[cmdk-group-heading]]:pb-1 [&_[cmdk-group-heading]]:px-2.5',
-        '[&_[data-slot=command-item]]:py-1.5 [&_[data-slot=command-item]]:px-2.5 [&_[data-slot=command-item]]:gap-2.5 [&_[data-slot=command-item]]:rounded-md',
+        '[&_[data-slot=command-input-wrapper]]:h-8 [&_[data-slot=command-input-wrapper]]:px-2.5 [&_[data-slot=command-input-wrapper]]:gap-1.5 [&_[data-slot=command-input-wrapper]]:border-border/40',
+        '[&_[data-slot=command-input]]:h-8 [&_[data-slot=command-input]]:text-[12px]',
+        '[&_[data-slot=command-list]]:py-0',
+        '[&_[data-slot=command-group]]:py-0.5',
+        '[&_[cmdk-group-heading]]:pt-1.5 [&_[cmdk-group-heading]]:pb-0.5 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:text-[9.5px] [&_[cmdk-group-heading]]:tracking-[0.12em]',
+        '[&_[data-slot=command-item]]:py-1 [&_[data-slot=command-item]]:px-2 [&_[data-slot=command-item]]:gap-2 [&_[data-slot=command-item]]:rounded-[6px] [&_[data-slot=command-item]]:text-[12.5px]',
+        // Slimmer secondary line under the item title (description / model id)
+        '[&_[data-slot=command-item]_p]:text-[10.5px] [&_[data-slot=command-item]_p]:mt-0',
         className,
       )}
     >
