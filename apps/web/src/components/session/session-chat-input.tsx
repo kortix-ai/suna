@@ -38,7 +38,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { VoiceRecorder } from '@/components/thread/chat-input/voice-recorder';
 import { ModelSelector } from './model-selector';
 import type {
@@ -67,16 +67,6 @@ import {
 } from '@/components/ui/command';
 
 export type { ProviderListResponse };
-
-// Apple-style spring used for the layoutId morph between trigger pill and the
-// selected item highlight inside the popover. Tuned for a quick, organic
-// settle — not bouncy, but with enough energy to feel responsive.
-const SHARED_PILL_SPRING = {
-  type: 'spring' as const,
-  stiffness: 600,
-  damping: 42,
-  mass: 0.55,
-};
 
 function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
@@ -221,7 +211,6 @@ export function AgentSelector({
   const displayName = currentAgent?.name || 'Agent';
 
   return (
-    <LayoutGroup id="agent-picker">
     <CommandPopover open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -229,22 +218,13 @@ export function AgentSelector({
             <button
               type="button"
               className={cn(
-                'group relative inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground transition-colors duration-200 capitalize cursor-pointer',
-                (flash || open) && 'text-foreground',
+                'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 capitalize cursor-pointer',
+                flash && 'bg-primary/10 text-foreground',
+                open && 'bg-muted text-foreground',
               )}
             >
-              {!open && (
-                <motion.span
-                  layoutId="agent-active-pill"
-                  className={cn(
-                    'absolute inset-0 rounded-xl pointer-events-none transition-colors duration-200',
-                    flash ? 'bg-primary/10' : 'bg-transparent group-hover:bg-muted',
-                  )}
-                  transition={SHARED_PILL_SPRING}
-                />
-              )}
-              <span className="relative truncate max-w-[100px]">{displayName}</span>
-              <ChevronDown className={cn('relative size-3 opacity-50 transition-transform duration-200', open && 'rotate-180')} />
+              <span className="truncate max-w-[100px]">{displayName}</span>
+              <ChevronDown className={cn('size-3 opacity-50 transition-transform duration-200', open && 'rotate-180')} />
             </button>
           </CommandPopoverTrigger>
         </TooltipTrigger>
@@ -271,20 +251,13 @@ export function AgentSelector({
                   <CommandItem
                     key={agent.name}
                     value={`agent-${agent.name}`}
-                    className="relative"
+                    className={isSelected ? 'bg-foreground/[0.06]' : undefined}
                     onSelect={() => {
                       onSelect(agent.name);
                       setOpen(false);
                     }}
                   >
-                    {isSelected && (
-                      <motion.span
-                        layoutId="agent-active-pill"
-                        className="absolute inset-0 rounded-[6px] bg-foreground/[0.08] ring-1 ring-inset ring-foreground/[0.05] pointer-events-none"
-                        transition={SHARED_PILL_SPRING}
-                      />
-                    )}
-                    <div className="relative flex-1 min-w-0">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="font-medium truncate capitalize">{agent.name}</span>
                       </div>
@@ -292,7 +265,7 @@ export function AgentSelector({
                         <p className="text-[10.5px] text-muted-foreground/45 leading-snug line-clamp-1">{agent.description}</p>
                       )}
                     </div>
-                    {isSelected && <Check className="relative size-3.5 text-foreground shrink-0" />}
+                    {isSelected && <Check className="size-3.5 text-foreground shrink-0" />}
                   </CommandItem>
                 );
               })}
@@ -308,20 +281,13 @@ export function AgentSelector({
                   <CommandItem
                     key={agent.name}
                     value={`subagent-${agent.name}`}
-                    className="relative"
+                    className={isSelected ? 'bg-foreground/[0.06]' : undefined}
                     onSelect={() => {
                       onSelect(agent.name);
                       setOpen(false);
                     }}
                   >
-                    {isSelected && (
-                      <motion.span
-                        layoutId="agent-active-pill"
-                        className="absolute inset-0 rounded-[6px] bg-foreground/[0.08] ring-1 ring-inset ring-foreground/[0.05] pointer-events-none"
-                        transition={SHARED_PILL_SPRING}
-                      />
-                    )}
-                    <div className="relative flex-1 min-w-0">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="font-medium truncate capitalize">{agent.name}</span>
                       </div>
@@ -329,7 +295,7 @@ export function AgentSelector({
                         <p className="text-[10.5px] text-muted-foreground/45 leading-snug line-clamp-1">{agent.description}</p>
                       )}
                     </div>
-                    {isSelected && <Check className="relative size-3.5 text-foreground shrink-0" />}
+                    {isSelected && <Check className="size-3.5 text-foreground shrink-0" />}
                   </CommandItem>
                 );
               })}
@@ -345,7 +311,6 @@ export function AgentSelector({
         </CommandList>
       </CommandPopoverContent>
     </CommandPopover>
-    </LayoutGroup>
   );
 }
 
