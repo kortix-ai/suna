@@ -21,7 +21,6 @@ import {
   History,
   ArrowRightLeft,
   CheckCircle2,
-  FolderOpen,
   FolderKanban,
   AlertCircle,
   AlertTriangle,
@@ -58,11 +57,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -711,21 +705,16 @@ function SidebarSections() {
           surfaces live as global entries (Board, Milestones, Team) when the
           feature flag is on, not nested under per-project navigation. */}
 
-      {/* Sessions — always visible, takes remaining space */}
-      <Collapsible defaultOpen className="group/sessions flex flex-col min-h-0 data-[state=open]:flex-1">
-        <div className="px-3 flex-shrink-0">
-          <CollapsibleTrigger asChild>
-            <Button variant="sidebar" className="rounded-lg">
-              <ListTree className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-              <span className="flex-1 text-left">Sessions</span>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
-            </Button>
-          </CollapsibleTrigger>
+      {/* Sessions — always visible, no collapse. The list takes the
+          remaining vertical space below the static heading. */}
+      <div className="flex flex-col min-h-0 flex-1">
+        <div className="px-6 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/50 flex-shrink-0">
+          Sessions
         </div>
-        <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="min-h-0 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <SessionList projectId={null} />
-        </CollapsibleContent>
-      </Collapsible>
+        </div>
+      </div>
 
       {hasLegacy && (
         // mt-auto pins this block to the bottom of the SidebarSections column.
@@ -1509,19 +1498,8 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               );
             }}
           />
-          <CollapsedIconButton
-            icon={<FolderOpen className="h-4 w-4" />}
-            label="Files"
-            isActive={pathname === '/files'}
-            onClick={() => {
-              openTabAndNavigate({
-                id: 'page:/files',
-                title: 'Files',
-                type: 'page',
-                href: '/files',
-              });
-            }}
-          />
+          {/* Files moved off the left sidebar — accessible from the right
+              sidebar (single source of truth, no redundant entry). */}
           {/* Collapsed-sidebar Projects flyout removed — single-project
               paradigm has no list to flyout to. */}
           <CollapsedIconButton
@@ -1576,29 +1554,10 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               </kbd>
             </Button>
 
-            {/* Files */}
-            <Button
-              onClick={() => {
-                openTabAndNavigate({
-                  id: 'page:/files',
-                  title: 'Files',
-                  type: 'page',
-                  href: '/files',
-                });
-              }}
-              variant="sidebar"
-              className="rounded-lg"
-            >
-              <FolderOpen className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-              <span className="flex-1 text-left">Files</span>
-            </Button>
-
-            {/* Board lives in the right sidebar (menu-registry entry
-                `board` with showIn=['rightSidebar']) — see comment there
-                for the placement rationale. */}
-
-            {/* Sessions — expandable, default open */}
-            </nav>
+            {/* Files lives exclusively on the right sidebar — no redundant
+                entry here. Board is also right-sidebar-only (see
+                menu-registry entry `board`). */}
+          </nav>
 
           <SidebarSections />
         </div>
