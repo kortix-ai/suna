@@ -29,7 +29,6 @@ import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-session
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
-  ProviderLogo,
 } from '@/components/providers/provider-branding';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
@@ -232,10 +231,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                 <CommandGroup
                   key={group.providerID}
                   heading={
-                    <div className="flex items-center gap-2">
-                      <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
+                    <div className="flex items-center justify-between">
                       <span>{PROVIDER_LABELS[group.providerID] || group.providerName}</span>
-                      <span className="ml-auto text-[10px] text-muted-foreground/30 normal-case tracking-normal">
+                      <span className="text-[10px] text-muted-foreground/30 normal-case tracking-normal">
                         {group.models.length}
                       </span>
                     </div>
