@@ -408,7 +408,7 @@ export function ProviderModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[540px] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+      <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[600px] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
         <DialogHeader className="space-y-0.5 px-5 pt-5 pb-3 pr-12">
           <DialogTitle className="text-sm font-semibold">LLM Providers</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground/60">
@@ -455,7 +455,7 @@ export function ProviderModal({
               </FilterBarItem>
             </FilterBar>
 
-            <div className="relative ml-auto h-9 w-60 shrink-0">
+            <div className="relative ml-auto h-9 w-72 shrink-0">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
               <Input
                 type="text"
