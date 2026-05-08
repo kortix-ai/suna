@@ -47,6 +47,7 @@ import {
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/components/providers/provider-branding';
+import { ProviderRowContent } from '@/components/providers/provider-card';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
@@ -191,51 +192,59 @@ function ConnectedTabContent({
                     <CommandItem
                       value={`provider-${provider.id}`}
                       onSelect={() => setExpanded(isExpanded ? null : provider.id)}
-                      className="py-3"
+                      className="py-2.5"
                     >
-                      <ProviderLogo providerID={provider.id} name={provider.name} size="default" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">
-                            {PROVIDER_LABELS[provider.id] || provider.name || provider.id}
-                          </span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-px text-[0.5625rem] font-medium text-emerald-600 dark:text-emerald-400">
-                            <span className="h-1 w-1 rounded-full bg-emerald-500" />
-                            connected
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground/50 mt-0.5">
-                          {modelCount} model{modelCount === 1 ? '' : 's'}
-                          {source ? ` · ${source}` : ''}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        {modelCount > 0 && (
-                          isExpanded
-                            ? <ChevronDown className="h-3 w-3 text-muted-foreground/40" />
-                            : <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
-                        )}
-                         <Button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDisconnect(provider.id);
-                          }}
-                          disabled={isDisconnecting}
-                          variant="ghost"
-                          size="icon-sm"
-                          className="text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive"
-                          title="Disconnect"
-                        >
-                          {isDisconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
-                        </Button>
-                      </div>
+                      <ProviderRowContent
+                        providerID={provider.id}
+                        name={PROVIDER_LABELS[provider.id] || provider.name || provider.id}
+                        connected
+                        description={
+                          <>
+                            {modelCount} model{modelCount === 1 ? '' : 's'}
+                            {source ? ` · ${source}` : ''}
+                          </>
+                        }
+                        rightSlot={
+                          <div
+                            className="ml-auto flex shrink-0 items-center gap-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {modelCount > 0 &&
+                              (isExpanded ? (
+                                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/40" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40" />
+                              ))}
+                            <Button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setConfirmDisconnect(provider.id);
+                              }}
+                              disabled={isDisconnecting}
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive"
+                              title="Disconnect"
+                            >
+                              {isDisconnecting ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Unplug className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          </div>
+                        }
+                      />
                     </CommandItem>
 
                     {isExpanded && modelCount > 0 && (
-                      <div className="ml-8 mr-3 mb-2 rounded-lg border border-border/20 bg-background/40 overflow-hidden">
+                      <div className="ml-11 mr-2 mb-1.5 overflow-hidden rounded-lg border border-border/30 bg-background/40">
                         {Object.values(provider.models ?? {}).map((model: any) => (
-                          <div key={model.id} className="px-3 py-1.5 text-xs text-muted-foreground/60 hover:bg-muted/20">
+                          <div
+                            key={model.id}
+                            className="px-3 py-1.5 text-xs text-muted-foreground/60 hover:bg-muted/20"
+                          >
                             {model.name || model.id}
                           </div>
                         ))}
@@ -365,9 +374,15 @@ function ModelsTabContent({
                 key={providerID}
                 heading={
                   <div className="flex items-center gap-2">
-                    <ProviderLogo providerID={providerID} name={providerModels[0]?.providerName || providerID} size="small" />
-                    <span>{PROVIDER_LABELS[providerID] || providerModels[0]?.providerName || providerID}</span>
-                    <span className="ml-auto text-[10px] text-muted-foreground/30 normal-case tracking-normal">
+                    <ProviderLogo
+                      providerID={providerID}
+                      name={providerModels[0]?.providerName || providerID}
+                      size="small"
+                    />
+                    <span>
+                      {PROVIDER_LABELS[providerID] || providerModels[0]?.providerName || providerID}
+                    </span>
+                    <span className="ml-auto text-[10px] font-normal normal-case tracking-normal text-muted-foreground/40">
                       {providerModels.length}
                     </span>
                   </div>
@@ -382,13 +397,19 @@ function ModelsTabContent({
                       key={`${model.providerID}:${model.modelID}`}
                       value={`model-${model.providerID}-${model.modelID}`}
                       onSelect={() => modelStore.setVisibility(key, !visible)}
+                      className="py-2"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm text-foreground">{model.modelName}</div>
-                        <div className="truncate text-[10px] text-muted-foreground/40 mt-0.5">{model.modelID}</div>
+                        <div className="mt-0.5 truncate text-[10px] text-muted-foreground/50">
+                          {model.modelID}
+                        </div>
                       </div>
                       <div onClick={(e) => e.stopPropagation()}>
-                        <Switch checked={visible} onCheckedChange={(checked) => modelStore.setVisibility(key, checked)} />
+                        <Switch
+                          checked={visible}
+                          onCheckedChange={(checked) => modelStore.setVisibility(key, checked)}
+                        />
                       </div>
                     </CommandItem>
                   );
@@ -465,20 +486,23 @@ export function ProviderModal({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Tab bar */}
-        <div className="px-5 pb-2">
-          <FilterBar className="w-full">
+        {/* Tab bar — sized to content + centered, so labels don't drift apart
+            in seas of whitespace as they did with w-full + flex-1 items. */}
+        <div className="flex justify-center px-5 pb-3">
+          <FilterBar>
             {visibleTabs.map((tabItem) => (
               <FilterBarItem
                 key={tabItem.id}
                 value={tabItem.id}
                 onClick={() => setTab(tabItem.id)}
                 data-state={tab === tabItem.id ? 'active' : 'inactive'}
-                className="flex-1"
+                className="text-[13px]"
               >
                 {tabItem.label}
                 {tabItem.id === 'connected' && connectedProviders.length > 0 && (
-                  <span className="ml-1 text-[10px] text-muted-foreground/40">{connectedProviders.length}</span>
+                  <span className="ml-0.5 text-[10px] text-muted-foreground/40">
+                    {connectedProviders.length}
+                  </span>
                 )}
               </FilterBarItem>
             ))}
