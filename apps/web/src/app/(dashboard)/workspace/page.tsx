@@ -2,16 +2,17 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import {
-  ArrowUpRight,
   Blocks,
   Bot,
   Check,
+  ChevronDown,
   Copy,
   FileText,
   FolderOpen,
   Link,
   Loader2,
   Plug,
+  Plus,
   Search,
   Settings,
   Sparkles,
@@ -28,8 +29,14 @@ import { Button } from '@/components/ui/button';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PageHeader } from '@/components/ui/page-header';
 import { WorkspaceItemCard } from '@/components/ui/workspace-item-card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Sheet,
   SheetContent,
@@ -546,14 +553,6 @@ export default function WorkspacePage() {
   const hasFilters = search.trim() !== '' || kindFilter !== 'all' || scopeFilter !== 'all';
   const clearFilters = () => { setSearch(''); setKindFilter('all'); setScopeFilter('all'); };
 
-  const quickActions = [
-    { title: 'New agent',   desc: 'Scaffold a new agent in your workspace',              meta: `${kindCounts.agent} live`,    icon: Bot,      kind: 'agent'   as WorkspaceComposerKind },
-    { title: 'New skill',   desc: 'Build a skill with the right trigger and file layout', meta: `${kindCounts.skill} live`,    icon: Sparkles, kind: 'skill'   as WorkspaceComposerKind },
-    { title: 'New command', desc: 'Create a slash command and wire it to an agent',       meta: `${kindCounts.command} live`,  icon: Terminal, kind: 'command' as WorkspaceComposerKind },
-    // "New project" is part of the project paradigm — hidden by default.
-    ...(featureFlags.enableProjects ? [{ title: 'New project', desc: 'Set up a new project with a clean structure', meta: `${kindCounts.project} live`, icon: FolderOpen, kind: 'project' as WorkspaceComposerKind }] : []),
-  ];
-
   // Projects tab is filtered out below when the project paradigm is off.
   // Kept in this list so the tuple type stays stable for downstream `kindCounts`.
   const kindTabsAll = [
@@ -573,143 +572,143 @@ export default function WorkspacePage() {
   return (
     <>
       <div className="flex-1 overflow-y-auto">
-        {/* Page header */}
-        <div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
-          <PageHeader icon={Blocks}>
-            <div className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
-              <span className="text-primary">Workspace</span>
+        <div className="container mx-auto max-w-7xl space-y-5 px-3 py-5 sm:px-4 sm:py-6 animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+          {/* Header — title + actions in one row, like /settings/* pages.
+              The tab bar already says "Workspace" so no need for a giant
+              banner; this keeps actions one click away. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-xl font-semibold">Workspace</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Agents, skills, commands, tools, and connectors.
+              </p>
             </div>
-          </PageHeader>
-        </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={createSession.isPending}>
+                    {createSession.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    New
+                    <ChevronDown className="h-3 w-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem onClick={() => openComposer('agent')}>
+                    <Bot className="mr-2 h-3.5 w-3.5" />
+                    Agent
+                    <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                      {kindCounts.agent}
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openComposer('skill')}>
+                    <Sparkles className="mr-2 h-3.5 w-3.5" />
+                    Skill
+                    <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                      {kindCounts.skill}
+                    </span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openComposer('command')}>
+                    <Terminal className="mr-2 h-3.5 w-3.5" />
+                    Command
+                    <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                      {kindCounts.command}
+                    </span>
+                  </DropdownMenuItem>
+                  {featureFlags.enableProjects && (
+                    <DropdownMenuItem onClick={() => openComposer('project')}>
+                      <FolderOpen className="mr-2 h-3.5 w-3.5" />
+                      Project
+                      <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                        {kindCounts.project}
+                      </span>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => openSettings('mcp')}>
+                    <Plug className="mr-2 h-3.5 w-3.5" />
+                    MCP server
+                    <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
+                      {kindCounts.mcp}
+                    </span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-        <div className="container mx-auto max-w-7xl px-3 sm:px-4">
-
-          {/* Quick actions */}
-          <div className="mb-6 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both delay-50">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">Quick actions</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-              {quickActions.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <button
-                    key={action.title}
-                    type="button"
-                    onClick={() => openComposer(action.kind)}
-                    disabled={createSession.isPending}
-                    className="group flex items-center gap-3 w-full rounded-xl border border-border/50 bg-card px-4 py-3 text-left transition-colors hover:bg-accent hover:border-border disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-                  >
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted">
-                      {createSession.isPending
-                        ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                        : <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                      }
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground">{action.title}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {action.meta && <span className="text-[10px] text-muted-foreground/50 tabular-nums">{action.meta}</span>}
-                      <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* MCP + Settings row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-              {[
-                { title: 'Add MCP server', desc: 'Register a new MCP server and connect its tools', meta: `${kindCounts.mcp} connected`, icon: Plug, onClick: () => openSettings('mcp') },
-                { title: 'Settings', desc: 'Providers, permissions, and workspace defaults', meta: undefined, icon: Settings, onClick: () => openSettings('general') },
-              ].map((action) => {
-                const Icon = action.icon;
-                return (
-                  <button
-                    key={action.title}
-                    type="button"
-                    onClick={action.onClick}
-                    className="group flex items-center gap-3 w-full rounded-xl border border-border/50 bg-card px-4 py-3 text-left transition-colors hover:bg-accent hover:border-border cursor-pointer"
-                  >
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted">
-                      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-foreground">{action.title}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {action.meta && <span className="text-[10px] text-muted-foreground/50 tabular-nums">{action.meta}</span>}
-                      <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                    </div>
-                  </button>
-                );
-              })}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => openSettings('general')}
+              >
+                <Settings className="h-4 w-4" />
+                Settings
+              </Button>
             </div>
           </div>
 
-          {/* Search + kind filter */}
-          <div className="flex items-center gap-2 pb-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both delay-75">
-            <PageSearchBar
-              value={search}
-              onChange={setSearch}
-              placeholder="Search..."
-              className="max-w-sm"
-            />
+          {/* Filters — search + kind tabs in one row; scope sub-filter below
+              when present. Active filter pill shows the count, so we drop
+              the "ALL ITEMS 190" header that used to live above the grid. */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <PageSearchBar
+                value={search}
+                onChange={setSearch}
+                placeholder="Search..."
+                className="max-w-sm flex-1 sm:flex-initial"
+              />
 
-            <FilterBar className="hidden lg:inline-flex">
-              {kindTabs.map((tab) => (
-                <FilterBarItem
-                  key={tab.value}
-                  value={tab.value}
-                  onClick={() => { setKindFilter(tab.value); setScopeFilter('all'); }}
-                  data-state={kindFilter === tab.value ? 'active' : 'inactive'}
-                >
-                  {tab.label}
-                  {kindCounts[tab.value] > 0 && <span className="ml-1 opacity-50 tabular-nums">{kindCounts[tab.value]}</span>}
-                </FilterBarItem>
-              ))}
-            </FilterBar>
+              <FilterBar className="hidden lg:inline-flex">
+                {kindTabs.map((tab) => (
+                  <FilterBarItem
+                    key={tab.value}
+                    value={tab.value}
+                    onClick={() => { setKindFilter(tab.value); setScopeFilter('all'); }}
+                    data-state={kindFilter === tab.value ? 'active' : 'inactive'}
+                  >
+                    {tab.label}
+                    {kindCounts[tab.value] > 0 && (
+                      <span className="ml-1 opacity-50 tabular-nums">{kindCounts[tab.value]}</span>
+                    )}
+                  </FilterBarItem>
+                ))}
+              </FilterBar>
 
-            <select
-              value={kindFilter}
-              onChange={(e) => { setKindFilter(e.target.value as KindFilter); setScopeFilter('all'); }}
-              className="lg:hidden h-9 rounded-lg border border-input bg-card px-3 text-sm cursor-pointer"
-            >
-              {kindTabs.map((tab) => (
-                <option key={tab.value} value={tab.value}>{tab.label} ({kindCounts[tab.value]})</option>
-              ))}
-            </select>
+              <select
+                value={kindFilter}
+                onChange={(e) => { setKindFilter(e.target.value as KindFilter); setScopeFilter('all'); }}
+                className="lg:hidden h-9 rounded-lg border border-input bg-card px-3 text-sm cursor-pointer"
+              >
+                {kindTabs.map((tab) => (
+                  <option key={tab.value} value={tab.value}>{tab.label} ({kindCounts[tab.value]})</option>
+                ))}
+              </select>
+            </div>
+
+            {!isLoading && activeScopeTabs.length > 2 && (
+              <FilterBar className="w-fit">
+                {activeScopeTabs.map((tab) => (
+                  <FilterBarItem
+                    key={tab.value}
+                    value={tab.value}
+                    onClick={() => setScopeFilter(tab.value)}
+                    data-state={scopeFilter === tab.value ? 'active' : 'inactive'}
+                  >
+                    {tab.label}{' '}
+                    <span className="ml-1 opacity-50 tabular-nums">{scopeCounts[tab.value]}</span>
+                  </FilterBarItem>
+                ))}
+              </FilterBar>
+            )}
           </div>
-
-          {/* Scope sub-filter */}
-          {!isLoading && activeScopeTabs.length > 2 && (
-            <FilterBar className="w-fit mb-4">
-              {activeScopeTabs.map((tab) => (
-                <FilterBarItem
-                  key={tab.value}
-                  value={tab.value}
-                  onClick={() => setScopeFilter(tab.value)}
-                  data-state={scopeFilter === tab.value ? 'active' : 'inactive'}
-                >
-                  {tab.label} <span className="ml-1 opacity-50 tabular-nums">{scopeCounts[tab.value]}</span>
-                </FilterBarItem>
-              ))}
-            </FilterBar>
-          )}
 
           <OpenCodeSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} initialTab={settingsTab} />
 
-          {/* Count label */}
-          {!isLoading && allItems.length > 0 && (
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {kindFilter === 'all' ? 'All items' : kindFilter === 'mcp' ? 'MCP Servers' : `${kindFilter.charAt(0).toUpperCase()}${kindFilter.slice(1)}s`}
-              </span>
-              <span className="text-xs tabular-nums text-muted-foreground/50">{filteredItems.length}</span>
-            </div>
-          )}
-
           {/* Grid */}
-          <div className="pb-8 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both delay-100">
+          <div className="pb-8">
             {isLoading ? (
               <LoadingSkeleton />
             ) : allItems.length === 0 ? (
