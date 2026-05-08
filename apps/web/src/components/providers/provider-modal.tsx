@@ -454,15 +454,15 @@ export function ProviderModal({
               </FilterBarItem>
             </FilterBar>
 
-            <div className="relative ml-auto w-44 shrink-0">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
+            <div className="relative ml-auto w-48 shrink-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
               <Input
                 type="text"
                 placeholder={searchPlaceholder}
                 autoComplete="off"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-8 rounded-lg border-border/40 bg-muted/20 pl-7 pr-2.5 text-xs shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
               />
             </div>
           </div>
