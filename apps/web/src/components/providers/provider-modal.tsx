@@ -2,11 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ArrowDown,
-  ArrowUp,
   ChevronDown,
   ChevronRight,
-  CornerDownLeft,
   Loader2,
   Plus,
   Unplug,
@@ -19,7 +16,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import {
@@ -32,22 +28,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Command,
-  CommandInput,
-  CommandList,
-  CommandGroup,
-  CommandItem,
-  CommandFooter,
-  CommandKbd,
-} from '@/components/ui/command';
 import { ConnectProviderContent } from '@/components/providers/connect-provider-content';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/components/providers/provider-branding';
-import { ProviderRowContent } from '@/components/providers/provider-card';
+import {
+  GroupHeading,
+  ProviderRowContent,
+} from '@/components/providers/provider-card';
 import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
@@ -63,60 +53,62 @@ export type { ProviderModalTab };
 
 type Provider = NonNullable<ProviderListResponse['all']>[number];
 
-const TAB_CONFIG: { id: ProviderModalTab; label: string }[] = [
-  { id: 'providers', label: 'Add Provider' },
-  { id: 'connected', label: 'Connected' },
-  { id: 'models', label: 'Models' },
-];
+// Two top-level views — no tabs. Mirrors the /settings/providers IA:
+//  - 'manage': dashboard (connected list + models). Default when ≥1 connected.
+//  - 'catalog': add-a-provider catalog. Default with 0 connected, or pushed
+//    explicitly via the "+ Add provider" header button.
+type ModalView = 'manage' | 'catalog';
 
-// ─── Shared cmdk overrides for modal context ─────────────────────────────────
+// ─── Manage view ─────────────────────────────────────────────────────────────
 
-const MODAL_CMDK_CLASSES = [
-  '[&_[cmdk-group]]:px-1.5',
-  '[&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0',
-].join(' ');
-
-// ─── Empty state ─────────────────────────────────────────────────────────────
-
-function EmptyState({ message, action }: { message: string; action?: { label: string; onClick: () => void } }) {
-  return (
-    <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 text-center">
-      <p className="text-xs text-muted-foreground/60">{message}</p>
-      {action && (
-        <Button variant="outline" size="sm" className="h-7 px-3 text-[11px]" onClick={action.onClick}>
-          <Plus className="h-3 w-3" />
-          {action.label}
-        </Button>
-      )}
-    </div>
-  );
-}
-
-// ─── Connected tab ───────────────────────────────────────────────────────────
-
-function ConnectedTabContent({
+function ManageView({
   connectedProviders,
+  models,
+  modelStore,
+  modelsOpenInitial,
   onDisconnected,
-  onAddProvider,
 }: {
   connectedProviders: Provider[];
+  models: FlatModel[];
+  modelStore: ReturnType<typeof useModelStore>;
+  modelsOpenInitial: boolean;
   onDisconnected?: () => void;
-  onAddProvider: () => void;
 }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [modelsOpen, setModelsOpen] = useState(modelsOpenInitial);
 
-  const filteredProviders = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return connectedProviders;
-    return connectedProviders.filter((provider) => {
-      const label = (PROVIDER_LABELS[provider.id] || provider.name || provider.id).toLowerCase();
-      return label.includes(q) || provider.id.toLowerCase().includes(q);
+  const visibleModelCount = useMemo(
+    () =>
+      models.filter((m) =>
+        modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }),
+      ).length,
+    [models, modelStore],
+  );
+
+  const groupedModels = useMemo(() => {
+    const groups = new Map<string, FlatModel[]>();
+    for (const m of models) {
+      const list = groups.get(m.providerID) || [];
+      list.push(m);
+      groups.set(m.providerID, list);
+    }
+    const entries = Array.from(groups.entries());
+    entries.sort((a, b) => {
+      const ai = MODEL_SELECTOR_PROVIDER_IDS.indexOf(a[0]);
+      const bi = MODEL_SELECTOR_PROVIDER_IDS.indexOf(b[0]);
+      if (ai >= 0 && bi < 0) return -1;
+      if (ai < 0 && bi >= 0) return 1;
+      if (ai >= 0 && bi >= 0) return ai - bi;
+      return a[0].localeCompare(b[0]);
     });
-  }, [connectedProviders, search]);
+    return entries.map(
+      ([id, list]) =>
+        [id, list.sort((a, b) => a.modelName.localeCompare(b.modelName))] as const,
+    );
+  }, [models]);
 
   const doDisconnect = useCallback(
     async (providerID: string) => {
@@ -153,143 +145,192 @@ function ConnectedTabContent({
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <Command shouldFilter={false} className={MODAL_CMDK_CLASSES}>
-        <CommandInput
-          compact
-          placeholder="Search connected providers..."
-          value={search}
-          onValueChange={setSearch}
-          rightElement={
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2.5 text-[11px] shrink-0 -mr-1"
-              onClick={onAddProvider}
-            >
-              <Plus className="h-3 w-3" />
-              Add
-            </Button>
-          }
-        />
-
-        <CommandList className="flex-1 max-h-none px-1.5 py-1.5">
-          {filteredProviders.length === 0 ? (
-            <EmptyState
-              message={connectedProviders.length === 0 ? 'No providers connected yet' : 'No match'}
-              action={{ label: 'Connect provider', onClick: onAddProvider }}
-            />
-          ) : (
-            <CommandGroup forceMount>
-              {filteredProviders.map((provider) => {
-                const modelCount = Object.keys(provider.models ?? {}).length;
-                const isExpanded = expanded === provider.id;
-                const isDisconnecting = disconnecting === provider.id;
-                const source = (provider as { source?: string }).source;
-
-                return (
-                  <div key={provider.id}>
-                    <CommandItem
-                      value={`provider-${provider.id}`}
-                      onSelect={() => setExpanded(isExpanded ? null : provider.id)}
-                      className="py-2.5"
+    <div className="space-y-5 px-4 pb-5">
+      {/* Connected providers */}
+      <div className="space-y-1">
+        <GroupHeading>Connected</GroupHeading>
+        {connectedProviders.map((provider) => {
+          const modelCount = Object.keys(provider.models ?? {}).length;
+          const isExpanded = expanded === provider.id;
+          const isDisconnecting = disconnecting === provider.id;
+          const source = (provider as { source?: string }).source;
+          return (
+            <div key={provider.id}>
+              <button
+                type="button"
+                onClick={() => setExpanded(isExpanded ? null : provider.id)}
+                className="group flex h-auto w-full items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
+              >
+                <ProviderRowContent
+                  providerID={provider.id}
+                  name={PROVIDER_LABELS[provider.id] || provider.name || provider.id}
+                  connected
+                  description={
+                    <>
+                      {modelCount} model{modelCount === 1 ? '' : 's'}
+                      {source ? ` · ${source}` : ''}
+                    </>
+                  }
+                  rightSlot={
+                    <div
+                      className="ml-auto flex shrink-0 items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <ProviderRowContent
-                        providerID={provider.id}
-                        name={PROVIDER_LABELS[provider.id] || provider.name || provider.id}
-                        connected
-                        description={
-                          <>
-                            {modelCount} model{modelCount === 1 ? '' : 's'}
-                            {source ? ` · ${source}` : ''}
-                          </>
-                        }
-                        rightSlot={
-                          <div
-                            className="ml-auto flex shrink-0 items-center gap-1"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {modelCount > 0 &&
-                              (isExpanded ? (
-                                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/40" />
-                              ) : (
-                                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40" />
-                              ))}
-                            <Button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirmDisconnect(provider.id);
-                              }}
-                              disabled={isDisconnecting}
-                              variant="ghost"
-                              size="icon-sm"
-                              className="text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive"
-                              title="Disconnect"
-                            >
-                              {isDisconnecting ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Unplug className="h-3.5 w-3.5" />
-                              )}
-                            </Button>
-                          </div>
-                        }
-                      />
-                    </CommandItem>
-
-                    {isExpanded && modelCount > 0 && (
-                      <div className="ml-11 mr-2 mb-1.5 overflow-hidden rounded-lg border border-border/30 bg-background/40">
-                        {Object.values(provider.models ?? {}).map((model: any) => (
-                          <div
-                            key={model.id}
-                            className="px-3 py-1.5 text-xs text-muted-foreground/60 hover:bg-muted/20"
-                          >
-                            {model.name || model.id}
-                          </div>
+                      {modelCount > 0 &&
+                        (isExpanded ? (
+                          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/40" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40" />
                         ))}
-                      </div>
-                    )}
+                      <Button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDisconnect(provider.id);
+                        }}
+                        disabled={isDisconnecting}
+                        variant="ghost"
+                        size="icon-sm"
+                        className="text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive"
+                        title="Disconnect"
+                      >
+                        {isDisconnecting ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Unplug className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </div>
+                  }
+                />
+              </button>
+              {isExpanded && modelCount > 0 && (
+                <div className="ml-11 mr-2 mb-1 mt-1 overflow-hidden rounded-lg border border-border/30 bg-background/40">
+                  {Object.values(provider.models ?? {}).map((model: any) => (
+                    <div
+                      key={model.id}
+                      className="px-3 py-1.5 text-xs text-muted-foreground/60 hover:bg-muted/20"
+                    >
+                      {model.name || model.id}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Models section — collapsible. Power-user surface, not a peer of
+          providers; it's about which models are *visible* in chat. */}
+      {models.length > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setModelsOpen((o) => !o)}
+            className="flex w-full items-center justify-between gap-2 px-1 pb-2 pt-1 text-left transition-opacity hover:opacity-70"
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+              Models
+            </span>
+            <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground/50">
+              <span>
+                {visibleModelCount} of {models.length} visible
+              </span>
+              <ChevronDown
+                className={cn(
+                  'h-3 w-3 transition-transform duration-200',
+                  modelsOpen && 'rotate-180',
+                )}
+              />
+            </span>
+          </button>
+          {modelsOpen && (
+            <div className="space-y-3">
+              {groupedModels.map(([providerID, list]) => (
+                <div key={providerID}>
+                  <div className="flex items-center gap-2 px-1 pb-1">
+                    <ProviderLogo
+                      providerID={providerID}
+                      name={list[0]?.providerName || providerID}
+                      size="small"
+                    />
+                    <span className="text-xs font-medium text-foreground/70">
+                      {PROVIDER_LABELS[providerID] ||
+                        list[0]?.providerName ||
+                        providerID}
+                    </span>
+                    <span className="ml-auto text-[10px] text-muted-foreground/40">
+                      {list.length}
+                    </span>
                   </div>
-                );
-              })}
-            </CommandGroup>
+                  <div className="overflow-hidden rounded-xl border border-border/40 bg-background/40">
+                    {list.map((m, i) => {
+                      const key = {
+                        providerID: m.providerID,
+                        modelID: m.modelID,
+                      };
+                      const visible = modelStore.isVisible(key);
+                      return (
+                        <label
+                          key={`${m.providerID}:${m.modelID}`}
+                          className={cn(
+                            'flex cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-muted/30',
+                            i > 0 && 'border-t border-border/20',
+                          )}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm text-foreground">
+                              {m.modelName}
+                            </div>
+                            <div className="mt-0.5 truncate text-[10px] text-muted-foreground/50">
+                              {m.modelID}
+                            </div>
+                          </div>
+                          <Switch
+                            checked={visible}
+                            onCheckedChange={(c) =>
+                              modelStore.setVisibility(key, c)
+                            }
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-        </CommandList>
+        </div>
+      )}
 
-        <CommandFooter>
-          <div className="flex items-center gap-1">
-            <ArrowUp className="h-3 w-3" />
-            <ArrowDown className="h-3 w-3" />
-            <span>navigate</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CornerDownLeft className="h-3 w-3" />
-            <span>expand</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CommandKbd>esc</CommandKbd>
-            <span>close</span>
-          </div>
-        </CommandFooter>
-      </Command>
-
-      <AlertDialog open={!!confirmDisconnect} onOpenChange={(open) => !open && setConfirmDisconnect(null)}>
+      <AlertDialog
+        open={!!confirmDisconnect}
+        onOpenChange={(open) => !open && setConfirmDisconnect(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect provider?</AlertDialogTitle>
             <AlertDialogDescription className="text-xs">
               {confirmDisconnect && (
                 <>
-                  Remove <span className="font-medium text-foreground">{PROVIDER_LABELS[confirmDisconnect] || confirmDisconnect}</span>?
-                  {' '}You&apos;ll need to reconnect it to use it again.
+                  Remove{' '}
+                  <span className="font-medium text-foreground">
+                    {PROVIDER_LABELS[confirmDisconnect] || confirmDisconnect}
+                  </span>
+                  ? You&apos;ll need to reconnect it to use it again.
                 </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => confirmDisconnect && doDisconnect(confirmDisconnect)} className="bg-destructive text-white hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={() =>
+                confirmDisconnect && doDisconnect(confirmDisconnect)
+              }
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
               Disconnect
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -299,147 +340,7 @@ function ConnectedTabContent({
   );
 }
 
-// ─── Models tab ──────────────────────────────────────────────────────────────
-
-function ModelsTabContent({
-  models,
-  modelStore,
-  onAddProvider,
-}: {
-  models: FlatModel[];
-  modelStore: ReturnType<typeof useModelStore>;
-  onAddProvider: () => void;
-}) {
-  const [search, setSearch] = useState('');
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return models
-      .filter(
-        (model) =>
-          !q ||
-          model.modelName.toLowerCase().includes(q) ||
-          model.modelID.toLowerCase().includes(q) ||
-          model.providerName.toLowerCase().includes(q),
-      )
-      .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [models, search]);
-
-  const grouped = useMemo(() => {
-    const groups = new Map<string, FlatModel[]>();
-    for (const model of filtered) {
-      const list = groups.get(model.providerID) || [];
-      list.push(model);
-      groups.set(model.providerID, list);
-    }
-    const entries = Array.from(groups.entries());
-    entries.sort((a, b) => {
-      const ai = MODEL_SELECTOR_PROVIDER_IDS.indexOf(a[0]);
-      const bi = MODEL_SELECTOR_PROVIDER_IDS.indexOf(b[0]);
-      if (ai >= 0 && bi < 0) return -1;
-      if (ai < 0 && bi >= 0) return 1;
-      if (ai >= 0 && bi >= 0) return ai - bi;
-      return a[0].localeCompare(b[0]);
-    });
-    return entries;
-  }, [filtered]);
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <Command shouldFilter={false} className={MODAL_CMDK_CLASSES}>
-        <CommandInput
-          compact
-          placeholder="Search models..."
-          value={search}
-          onValueChange={setSearch}
-          rightElement={
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2.5 text-[11px] shrink-0 -mr-1"
-              onClick={onAddProvider}
-            >
-              <Plus className="h-3 w-3" />
-              Add
-            </Button>
-          }
-        />
-
-        <CommandList className="flex-1 max-h-none px-1.5 py-1.5">
-          {grouped.length === 0 ? (
-            <EmptyState message="No models found" />
-          ) : (
-            grouped.map(([providerID, providerModels]) => (
-              <CommandGroup
-                key={providerID}
-                heading={
-                  <div className="flex items-center gap-2">
-                    <ProviderLogo
-                      providerID={providerID}
-                      name={providerModels[0]?.providerName || providerID}
-                      size="small"
-                    />
-                    <span>
-                      {PROVIDER_LABELS[providerID] || providerModels[0]?.providerName || providerID}
-                    </span>
-                    <span className="ml-auto text-[10px] font-normal normal-case tracking-normal text-muted-foreground/40">
-                      {providerModels.length}
-                    </span>
-                  </div>
-                }
-                forceMount
-              >
-                {providerModels.map((model) => {
-                  const key = { providerID: model.providerID, modelID: model.modelID };
-                  const visible = modelStore.isVisible(key);
-                  return (
-                    <CommandItem
-                      key={`${model.providerID}:${model.modelID}`}
-                      value={`model-${model.providerID}-${model.modelID}`}
-                      onSelect={() => modelStore.setVisibility(key, !visible)}
-                      className="py-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm text-foreground">{model.modelName}</div>
-                        <div className="mt-0.5 truncate text-[10px] text-muted-foreground/50">
-                          {model.modelID}
-                        </div>
-                      </div>
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <Switch
-                          checked={visible}
-                          onCheckedChange={(checked) => modelStore.setVisibility(key, checked)}
-                        />
-                      </div>
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-            ))
-          )}
-        </CommandList>
-
-        <CommandFooter>
-          <div className="flex items-center gap-1">
-            <ArrowUp className="h-3 w-3" />
-            <ArrowDown className="h-3 w-3" />
-            <span>navigate</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CornerDownLeft className="h-3 w-3" />
-            <span>toggle</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CommandKbd>esc</CommandKbd>
-            <span>close</span>
-          </div>
-        </CommandFooter>
-      </Command>
-    </div>
-  );
-}
-
-// ─── Provider Modal ──────────────────────────────────────────────────────────
+// ─── ProviderModal ───────────────────────────────────────────────────────────
 
 export interface ProviderModalProps {
   open: boolean;
@@ -458,82 +359,81 @@ export function ProviderModal({
   models,
   onProviderConnected,
 }: ProviderModalProps) {
-  const [tab, setTab] = useState<ProviderModalTab>(defaultTab);
   const { data: fetchedProviders } = useOpenCodeProviders();
   const providers = providersProp ?? fetchedProviders;
-
-  useEffect(() => {
-    if (open) setTab(defaultTab);
-  }, [defaultTab, open]);
 
   const connectedProviders = useMemo(() => {
     if (!providers) return [];
     const connectedIds = new Set(providers.connected ?? []);
-    return (providers.all ?? []).filter((provider) => connectedIds.has(provider.id));
+    return (providers.all ?? []).filter((provider) =>
+      connectedIds.has(provider.id),
+    );
   }, [providers]);
 
+  const hasConnections = connectedProviders.length > 0;
+
+  // Pick view at open. Explicit "providers" intent (= "+ Add" was clicked
+  // somewhere) always opens catalog; otherwise land on manage if there's
+  // anything to manage, else fall through to catalog.
+  const pickInitialView = (): ModalView => {
+    if (defaultTab === 'providers') return 'catalog';
+    return hasConnections ? 'manage' : 'catalog';
+  };
+  const [view, setView] = useState<ModalView>(pickInitialView);
+
+  useEffect(() => {
+    if (open) setView(pickInitialView());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultTab]);
+
   const modelStore = useModelStore(models ?? []);
-  const hasModelsTab = !!models?.length;
-  const visibleTabs = hasModelsTab ? TAB_CONFIG : TAB_CONFIG.filter((tabItem) => tabItem.id !== 'models');
+  const hasModels = !!models?.length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[520px] grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden p-0 gap-0">
-        <DialogHeader className="px-5 pb-2 pt-5">
-          <DialogTitle className="text-sm font-semibold">LLM Providers</DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground/60">
-            Connect providers and manage which models appear in chat.
-          </DialogDescription>
+      <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[520px] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+        {/* Header — title + description left, "+ Add provider" right when on
+            manage view. Mirrors /settings/providers/page.tsx exactly. The
+            pr-12 reserves room for the Dialog primitive's absolute close
+            button at top-right. */}
+        <DialogHeader className="flex flex-row items-start justify-between gap-3 space-y-0 px-5 pt-5 pb-4 pr-12">
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="text-sm font-semibold">
+              LLM Providers
+            </DialogTitle>
+            <DialogDescription className="mt-0.5 text-xs text-muted-foreground/60">
+              Connect providers and manage which models appear in chat.
+            </DialogDescription>
+          </div>
+          {view === 'manage' && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 px-2.5 text-[11px]"
+              onClick={() => setView('catalog')}
+            >
+              <Plus className="h-3 w-3" />
+              Add provider
+            </Button>
+          )}
         </DialogHeader>
 
-        {/* Tab bar — sized to content + centered, so labels don't drift apart
-            in seas of whitespace as they did with w-full + flex-1 items. */}
-        <div className="flex justify-center px-5 pb-3">
-          <FilterBar>
-            {visibleTabs.map((tabItem) => (
-              <FilterBarItem
-                key={tabItem.id}
-                value={tabItem.id}
-                onClick={() => setTab(tabItem.id)}
-                data-state={tab === tabItem.id ? 'active' : 'inactive'}
-                className="text-[13px]"
-              >
-                {tabItem.label}
-                {tabItem.id === 'connected' && connectedProviders.length > 0 && (
-                  <span className="ml-0.5 text-[10px] text-muted-foreground/40">
-                    {connectedProviders.length}
-                  </span>
-                )}
-              </FilterBarItem>
-            ))}
-          </FilterBar>
-        </div>
-
-        {/* Tab content */}
-        <div className="min-h-0 overflow-hidden">
-          {tab === 'providers' && (
-            <div className="h-full overflow-y-auto">
-              <ConnectProviderContent
-                providers={providers}
-                onClose={() => onOpenChange(false)}
-                onProviderConnected={onProviderConnected}
-              />
-            </div>
-          )}
-
-          {tab === 'connected' && (
-            <ConnectedTabContent
+        <div className="min-h-0 overflow-y-auto">
+          {view === 'manage' && (
+            <ManageView
               connectedProviders={connectedProviders}
+              models={hasModels ? models! : []}
+              modelStore={modelStore}
+              modelsOpenInitial={defaultTab === 'models'}
               onDisconnected={onProviderConnected}
-              onAddProvider={() => setTab('providers')}
             />
           )}
 
-          {tab === 'models' && hasModelsTab && (
-            <ModelsTabContent
-              models={models!}
-              modelStore={modelStore}
-              onAddProvider={() => setTab('providers')}
+          {view === 'catalog' && (
+            <ConnectProviderContent
+              providers={providers}
+              onBackOut={hasConnections ? () => setView('manage') : undefined}
+              onProviderConnected={onProviderConnected}
             />
           )}
         </div>
@@ -553,7 +453,15 @@ export function GlobalProviderModal() {
     const connectedIds = new Set(providers.connected ?? []);
     // If kortix provider is connected, it serves all models — hide redundant
     // built-in providers so users see a clean Kortix-only model list.
-    const KORTIX_SUPERSEDED = ['anthropic', 'openai', 'google', 'xai', 'moonshotai', 'minimax', 'zhipuai'];
+    const KORTIX_SUPERSEDED = [
+      'anthropic',
+      'openai',
+      'google',
+      'xai',
+      'moonshotai',
+      'minimax',
+      'zhipuai',
+    ];
     const kortixConnected = connectedIds.has('kortix');
     const result: FlatModel[] = [];
     for (const provider of providers.all ?? []) {

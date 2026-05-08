@@ -145,10 +145,18 @@ function methodDescription(method: { type: string; label: string }) {
 export function ConnectProviderContent({
   providers,
   onClose,
+  onBackOut,
   onProviderConnected,
 }: {
   providers: ProviderListResponse | undefined;
   onClose?: () => void;
+  /**
+   * Called when the user wants to leave the catalog from the *list* sub-view.
+   * When set, the list renders an inline back arrow that returns the user to
+   * the parent surface (e.g. the modal's manage view). When undefined, the
+   * list has no inline header — the catalog *is* the parent surface.
+   */
+  onBackOut?: () => void;
   onProviderConnected?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -588,15 +596,25 @@ export function ConnectProviderContent({
 
   const customMatchesSearch = !search || 'custom provider'.includes(search.toLowerCase());
 
+  // Inline header logic:
+  //  - connect/custom subview: always show (back returns to list)
+  //  - list subview, has onBackOut: show with back to parent (manage view)
+  //  - list subview, no onBackOut: skip — catalog IS the parent surface
+  const showInlineHeader =
+    view.type !== 'list' || onBackOut !== undefined;
+
   return (
     <div className={cn(view.type === 'list' ? 'pb-4' : 'px-5 py-4')}>
-      {/* Header — only for connect/custom flows. The list view uses the modal's
-          DialogTitle + tab bar, so an inline header would be a third hat. */}
-      {view.type !== 'list' && (
-        <div className="flex items-center gap-2 pb-3">
+      {showInlineHeader && (
+        <div
+          className={cn(
+            'flex items-center gap-2',
+            view.type === 'list' ? 'px-4 pt-4 pb-2' : 'pb-3',
+          )}
+        >
           <Button
             type="button"
-            onClick={handleBack}
+            onClick={view.type === 'list' ? onBackOut : handleBack}
             variant="ghost"
             size="icon-sm"
             className="-ml-1.5"
@@ -604,6 +622,7 @@ export function ConnectProviderContent({
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h3 className="flex-1 text-sm font-medium text-foreground">
+            {view.type === 'list' && 'Add provider'}
             {view.type === 'custom' && 'Add Custom Provider'}
             {view.type === 'connect' && connectTitle}
           </h3>
