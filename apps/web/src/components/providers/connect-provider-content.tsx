@@ -39,10 +39,7 @@ import {
   PROVIDER_NOTES,
   ProviderLogo,
 } from '@/components/providers/provider-branding';
-import {
-  GroupHeading,
-  ProviderCard,
-} from '@/components/providers/provider-card';
+import { ProviderCard } from '@/components/providers/provider-card';
 
 import { getClient } from '@/lib/opencode-sdk';
 import { useQueryClient } from '@tanstack/react-query';
@@ -145,18 +142,17 @@ function methodDescription(method: { type: string; label: string }) {
 export function ConnectProviderContent({
   providers,
   onClose,
-  onBackOut,
+  onSubviewChange,
   onProviderConnected,
 }: {
   providers: ProviderListResponse | undefined;
   onClose?: () => void;
   /**
-   * Called when the user wants to leave the catalog from the *list* sub-view.
-   * When set, the list renders an inline back arrow that returns the user to
-   * the parent surface (e.g. the modal's manage view). When undefined, the
-   * list has no inline header — the catalog *is* the parent surface.
+   * Fires whenever the internal subview switches. Lets the modal hide
+   * surrounding sections (Connected, Models) when the user enters a
+   * connect/custom flow, so the form takes over the modal cleanly.
    */
-  onBackOut?: () => void;
+  onSubviewChange?: (kind: 'list' | 'connect' | 'custom') => void;
   onProviderConnected?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -172,6 +168,10 @@ export function ConnectProviderContent({
     | { type: 'connect'; providerID: string };
 
   const [view, setView] = useState<View>({ type: 'list' });
+
+  useEffect(() => {
+    onSubviewChange?.(view.type);
+  }, [view.type, onSubviewChange]);
   const [search, setSearch] = useState('');
   const [otherOpen, setOtherOpen] = useState(false);
 
@@ -596,25 +596,15 @@ export function ConnectProviderContent({
 
   const customMatchesSearch = !search || 'custom provider'.includes(search.toLowerCase());
 
-  // Inline header logic:
-  //  - connect/custom subview: always show (back returns to list)
-  //  - list subview, has onBackOut: show with back to parent (manage view)
-  //  - list subview, no onBackOut: skip — catalog IS the parent surface
-  const showInlineHeader =
-    view.type !== 'list' || onBackOut !== undefined;
-
   return (
-    <div className={cn(view.type === 'list' ? 'pb-4' : 'px-5 py-4')}>
-      {showInlineHeader && (
-        <div
-          className={cn(
-            'flex items-center gap-2',
-            view.type === 'list' ? 'px-4 pt-4 pb-2' : 'pb-3',
-          )}
-        >
+    <div className={cn(view.type !== 'list' && 'px-5 py-4')}>
+      {/* Inline header for connect/custom flows. List view has no inline
+          header — the parent renders the section heading. */}
+      {view.type !== 'list' && (
+        <div className="flex items-center gap-2 pb-3">
           <Button
             type="button"
-            onClick={view.type === 'list' ? onBackOut : handleBack}
+            onClick={handleBack}
             variant="ghost"
             size="icon-sm"
             className="-ml-1.5"
@@ -622,7 +612,6 @@ export function ConnectProviderContent({
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h3 className="flex-1 text-sm font-medium text-foreground">
-            {view.type === 'list' && 'Add provider'}
             {view.type === 'custom' && 'Add Custom Provider'}
             {view.type === 'connect' && connectTitle}
           </h3>
@@ -653,97 +642,85 @@ export function ConnectProviderContent({
 
       {/* ============ PROVIDER LIST ============ */}
       {view.type === 'list' && (
-        <div className="flex flex-col">
-          {/* Search — flush, with bottom border, matches CommandInput compact */}
-          <div className="relative flex h-11 items-center gap-2.5 border-b border-border/40 px-4">
-            <Search className="size-4 shrink-0 text-muted-foreground/60" />
+        <div className="space-y-1">
+          {/* Search — regular rounded input, lives inline with the card column */}
+          <div className="relative pb-1">
+            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
             <Input
               type="text"
               placeholder="Search providers..."
               autoComplete="off"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-11 flex-1 rounded-none border-0 bg-transparent px-0 text-[13px] shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0 focus-visible:ring-offset-0"
-              autoFocus
+              className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
             />
           </div>
 
-          {/* Provider list */}
-          <div className="px-3 pt-2">
-            {/* Popular providers */}
-            {popularGroup.length > 0 && (
-              <div className="space-y-1">
-                <GroupHeading>Popular</GroupHeading>
-                {popularGroup.map((p) => (
-                  <ProviderCard
-                    key={p.id}
-                    providerID={p.id}
-                    name={PROVIDER_LABELS[p.id] || p.name}
-                    description={PROVIDER_NOTES[p.id]}
-                    connected={connectedIds.has(p.id)}
-                    onClick={() => handleSelectProvider(p.id)}
-                  />
-                ))}
-              </div>
-            )}
+          {/* Popular providers — rendered first, no sub-heading. The order
+              IS the heading. */}
+          {popularGroup.map((p) => (
+            <ProviderCard
+              key={p.id}
+              providerID={p.id}
+              name={PROVIDER_LABELS[p.id] || p.name}
+              description={PROVIDER_NOTES[p.id]}
+              connected={connectedIds.has(p.id)}
+              onClick={() => handleSelectProvider(p.id)}
+            />
+          ))}
 
-            {/* Other providers */}
-            {otherGroup.length > 0 && (
-              <Accordion
-                type="single"
-                collapsible
-                value={otherOpen ? 'other' : undefined}
-                onValueChange={(value) => setOtherOpen(value === 'other')}
-                className="mt-3"
-              >
-                <AccordionItem value="other" className="border-none">
-                  <AccordionTrigger className="rounded-xl px-1 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40 hover:no-underline hover:text-foreground/60 [&>svg]:hidden">
-                    <span className="flex w-full items-center justify-between gap-2">
-                      <span>Other ({otherGroup.length})</span>
-                      <ChevronDown
-                        className={cn(
-                          'h-3 w-3 text-muted-foreground/50 transition-transform duration-200',
-                          otherOpen && 'rotate-180',
-                        )}
+          {/* More providers — collapsible. Self-labeled in the trigger. */}
+          {otherGroup.length > 0 && (
+            <Accordion
+              type="single"
+              collapsible
+              value={otherOpen ? 'other' : undefined}
+              onValueChange={(value) => setOtherOpen(value === 'other')}
+            >
+              <AccordionItem value="other" className="border-none">
+                <AccordionTrigger className="rounded-xl px-3.5 py-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/35 hover:no-underline hover:text-foreground [&>svg]:hidden">
+                  <span className="flex w-full items-center justify-between gap-2">
+                    <span>More providers ({otherGroup.length})</span>
+                    <ChevronDown
+                      className={cn(
+                        'h-3.5 w-3.5 text-muted-foreground/50 transition-transform duration-200',
+                        otherOpen && 'rotate-180',
+                      )}
+                    />
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="pt-1 pb-0">
+                  <div className="space-y-1">
+                    {otherGroup.map((p) => (
+                      <ProviderCard
+                        key={p.id}
+                        providerID={p.id}
+                        name={PROVIDER_LABELS[p.id] || p.name}
+                        connected={connectedIds.has(p.id)}
+                        onClick={() => handleSelectProvider(p.id)}
                       />
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-1 pb-0">
-                    <div className="space-y-1">
-                      {otherGroup.map((p) => (
-                        <ProviderCard
-                          key={p.id}
-                          providerID={p.id}
-                          name={PROVIDER_LABELS[p.id] || p.name}
-                          connected={connectedIds.has(p.id)}
-                          onClick={() => handleSelectProvider(p.id)}
-                        />
-                      ))}
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            )}
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          )}
 
-            {/* Custom — its own group at the bottom so structure mirrors above */}
-            {customMatchesSearch && (
-              <div className="mt-3 space-y-1">
-                <GroupHeading>Custom</GroupHeading>
-                <ProviderCard
-                  providerID="custom"
-                  name="Custom Provider"
-                  description="Add any OpenAI-compatible endpoint"
-                  onClick={() => setView({ type: 'custom' })}
-                />
-              </div>
-            )}
+          {/* Custom — last card, same chrome as everything else */}
+          {customMatchesSearch && (
+            <ProviderCard
+              providerID="custom"
+              name="Custom Provider"
+              description="Add any OpenAI-compatible endpoint"
+              onClick={() => setView({ type: 'custom' })}
+            />
+          )}
 
-            {filteredProviders.length === 0 && !customMatchesSearch && (
-              <div className="py-8 text-center text-sm text-muted-foreground/60">
-                No providers found
-              </div>
-            )}
-          </div>
+          {filteredProviders.length === 0 && !customMatchesSearch && (
+            <div className="py-8 text-center text-sm text-muted-foreground/60">
+              No providers found
+            </div>
+          )}
         </div>
       )}
 
