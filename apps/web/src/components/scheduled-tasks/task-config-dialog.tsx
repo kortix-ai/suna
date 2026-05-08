@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calendar, ArrowRight, ArrowLeft, Loader2, Timer, Webhook, MessageSquare, Terminal, Globe, Ticket as TicketIcon } from 'lucide-react';
+import { Calendar, ArrowRight, ArrowLeft, Clock, Loader2, Timer, Webhook, MessageSquare, Terminal, Globe, Ticket as TicketIcon } from 'lucide-react';
 import {
   useCreateTrigger,
   type SessionMode,
@@ -271,30 +271,13 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                 </div>
               </div>
 
-              {/* Source config */}
+              {/* Source config — timezone moved to the modal footer */}
               {sourceType === 'cron' && (
-                <div className="space-y-4 pt-1">
-                  <div className="space-y-1.5">
-                    <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
-                      Schedule
-                    </div>
-                    <ScheduleBuilder value={cronExpr} onChange={setCronExpr} />
+                <div className="space-y-1.5 pt-1">
+                  <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                    Schedule
                   </div>
-                  <div className="space-y-1.5">
-                    <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
-                      Timezone
-                    </div>
-                    <Select value={timezone} onValueChange={setTimezone}>
-                      <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TIMEZONES.map((tz) => (
-                          <SelectItem key={tz} value={tz} className="cursor-pointer">{tz}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <ScheduleBuilder value={cronExpr} onChange={setCronExpr} />
                 </div>
               )}
 
@@ -595,12 +578,30 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
         </div>
 
         {/* ─── Footer ────────────────────────────────────────────── */}
-        <div className="flex justify-between gap-3 pt-4 shrink-0 border-t mt-2">
-          <div>
+        <div className="flex items-center justify-between gap-3 pt-4 shrink-0 border-t mt-2">
+          <div className="flex items-center gap-2">
             {step !== 'source' && (
               <Button variant="ghost" size="sm" onClick={() => setStep(step === 'config' ? 'action' : 'source')} className="cursor-pointer rounded-xl">
                 <ArrowLeft className="h-4 w-4 mr-1" /> Back
               </Button>
+            )}
+            {step === 'source' && sourceType === 'cron' && (
+              <Select value={timezone} onValueChange={setTimezone}>
+                <SelectTrigger
+                  className="h-8 w-auto gap-1.5 rounded-lg border-border/40 bg-muted/20 px-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/40 cursor-pointer"
+                  title="Timezone"
+                >
+                  <Clock className="h-3 w-3" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONES.map((tz) => (
+                    <SelectItem key={tz} value={tz} className="cursor-pointer">
+                      {tz}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
           <div className="flex gap-3">
