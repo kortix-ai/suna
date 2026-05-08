@@ -142,15 +142,22 @@ function methodDescription(method: { type: string; label: string }) {
 export function ConnectProviderContent({
   providers,
   onClose,
+  searchValue,
   onSubviewChange,
   onProviderConnected,
 }: {
   providers: ProviderListResponse | undefined;
   onClose?: () => void;
   /**
-   * Fires whenever the internal subview switches. Lets the modal hide
-   * surrounding sections (Connected, Models) when the user enters a
-   * connect/custom flow, so the form takes over the modal cleanly.
+   * Controlled search value, hosted by the parent (e.g. modal) so a single
+   * search input can filter multiple tabs. When provided, the internal
+   * search input is hidden and this value drives filtering.
+   */
+  searchValue?: string;
+  /**
+   * Fires whenever the internal subview switches. Lets the parent hide
+   * surrounding chrome (sidebar, search, sibling sections) when the user
+   * enters a connect/custom flow, so the form takes over the surface.
    */
   onSubviewChange?: (kind: 'list' | 'connect' | 'custom') => void;
   onProviderConnected?: () => void;
@@ -172,7 +179,11 @@ export function ConnectProviderContent({
   useEffect(() => {
     onSubviewChange?.(view.type);
   }, [view.type, onSubviewChange]);
-  const [search, setSearch] = useState('');
+
+  const [internalSearch, setInternalSearch] = useState('');
+  const search = searchValue ?? internalSearch;
+  const setSearch = setInternalSearch;
+  const isControlledSearch = searchValue !== undefined;
   const [otherOpen, setOtherOpen] = useState(false);
 
   // --- Connect flow state ---
@@ -642,19 +653,21 @@ export function ConnectProviderContent({
 
       {/* ============ PROVIDER LIST ============ */}
       {view.type === 'list' && (
-        <div className="space-y-1">
-          {/* Search — regular rounded input, lives inline with the card column */}
-          <div className="relative pb-1">
-            <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
-            <Input
-              type="text"
-              placeholder="Search providers..."
-              autoComplete="off"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
-            />
-          </div>
+        <div className="space-y-1 px-3 pb-4 pt-3">
+          {/* Search — only when not controlled by a parent (e.g. modal). */}
+          {!isControlledSearch && (
+            <div className="relative pb-1">
+              <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <Input
+                type="text"
+                placeholder="Search providers..."
+                autoComplete="off"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+              />
+            </div>
+          )}
 
           {/* Popular providers — rendered first, no sub-heading. The order
               IS the heading. */}
