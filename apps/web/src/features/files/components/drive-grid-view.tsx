@@ -499,7 +499,7 @@ export function DriveGridView({
             <Sparkles className="h-3 w-3 text-primary/60" />
             System
           </h3>
-          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+          <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
             {elevatedDirs.map((node) => {
               const meta = ELEVATED_DIR_META[node.name];
               const DirIcon = meta?.icon ?? FolderCog;
@@ -507,26 +507,18 @@ export function DriveGridView({
                 <div
                   key={node.path}
                   onClick={() => onNavigateToDir(node)}
+                  title={meta?.description}
                   className={cn(
-                    'group flex items-center gap-3 px-3.5 py-3 rounded-lg cursor-pointer select-none',
-                    'border border-primary/20 bg-primary/[0.03]',
-                    'hover:bg-primary/[0.06] hover:border-primary/30',
-                    'transition-colors duration-150 active:scale-[0.98]',
+                    'group flex h-10 cursor-pointer select-none items-center gap-2.5 rounded-lg border border-border/50 px-3',
+                    'transition-colors duration-150',
+                    'hover:bg-muted/50 hover:border-border',
+                    'active:scale-[0.98]',
                   )}
                 >
-                  <div className="shrink-0 h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
-                    <DirIcon className="h-4 w-4 text-primary/70" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-[13px] font-medium text-foreground block truncate">
-                      {node.name}
-                    </span>
-                    {meta?.description && (
-                      <span className="text-[11px] text-muted-foreground/50 block truncate">
-                        {meta.description}
-                      </span>
-                    )}
-                  </div>
+                  <DirIcon className="h-4.5 w-4.5 shrink-0 text-primary/70" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                    {node.name}
+                  </span>
                 </div>
               );
             })}
