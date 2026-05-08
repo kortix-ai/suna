@@ -6,6 +6,7 @@ import {
   Search,
   Unplug,
 } from 'lucide-react';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -316,46 +317,6 @@ function ModelsTabBody({
   );
 }
 
-// ─── Sidebar tab item ───────────────────────────────────────────────────────
-
-function SidebarTab({
-  active,
-  onClick,
-  label,
-  badge,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  badge?: string | number;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      data-active={active}
-      className={cn(
-        'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-left text-[13px] transition-colors',
-        active
-          ? 'bg-muted/60 text-foreground'
-          : 'text-muted-foreground hover:bg-muted/25 hover:text-foreground',
-      )}
-    >
-      <span className="truncate">{label}</span>
-      {badge !== undefined && badge !== '' && (
-        <span
-          className={cn(
-            'shrink-0 text-[10px] tabular-nums',
-            active ? 'text-muted-foreground/60' : 'text-muted-foreground/40',
-          )}
-        >
-          {badge}
-        </span>
-      )}
-    </button>
-  );
-}
-
 // ─── ProviderModal ──────────────────────────────────────────────────────────
 
 export interface ProviderModalProps {
@@ -447,96 +408,103 @@ export function ProviderModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[600px] grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
-        <DialogHeader className="space-y-0.5 px-5 pt-5 pb-4 pr-12">
+      <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[540px] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+        <DialogHeader className="space-y-0.5 px-5 pt-5 pb-3 pr-12">
           <DialogTitle className="text-sm font-semibold">LLM Providers</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground/60">
             Connect providers and manage which models appear in chat.
           </DialogDescription>
         </DialogHeader>
 
-        {/* Body — sidebar + content split. The sub-flow (connect/custom auth
-            forms) takes over the whole body so the form has the full surface
-            and isn't competing with the sidebar for attention. */}
-        <div className="flex min-h-0 flex-col">
-          {!inSubflow && (
-            <div className="relative shrink-0 border-t border-border/40 px-5 py-2.5">
-              <Search className="absolute left-[1.875rem] top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+        {/* Tab bar — pills on the left, search input on the right, same row.
+            Hidden in connect/custom sub-flow so the form takes over cleanly. */}
+        {!inSubflow && (
+          <div className="flex items-center gap-3 px-5 pb-3">
+            <FilterBar>
+              <FilterBarItem
+                data-state={activeTab === 'connected' ? 'active' : 'inactive'}
+                onClick={() => switchTab('connected')}
+                className="text-[12px]"
+              >
+                Connected
+                {connectedProviders.length > 0 && (
+                  <span className="ml-0.5 text-[10px] text-muted-foreground/40 tabular-nums">
+                    {connectedProviders.length}
+                  </span>
+                )}
+              </FilterBarItem>
+              <FilterBarItem
+                data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
+                onClick={() => switchTab('catalog')}
+                className="text-[12px]"
+              >
+                Add provider
+              </FilterBarItem>
+              <FilterBarItem
+                data-state={activeTab === 'models' ? 'active' : 'inactive'}
+                onClick={() => switchTab('models')}
+                className="text-[12px]"
+              >
+                Models
+                {hasModels && (
+                  <span className="ml-0.5 text-[10px] text-muted-foreground/40 tabular-nums">
+                    {visibleModelCount}/{models!.length}
+                  </span>
+                )}
+              </FilterBarItem>
+            </FilterBar>
+
+            <div className="relative ml-auto w-44 shrink-0">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/60" />
               <Input
                 type="text"
                 placeholder={searchPlaceholder}
                 autoComplete="off"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                className="h-8 rounded-lg border-border/40 bg-muted/20 pl-7 pr-2.5 text-xs shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
               />
             </div>
+          </div>
+        )}
+
+        {/* Body */}
+        <div className="min-h-0 overflow-y-auto border-t border-border/40">
+          {/* Catalog: ConnectProviderContent stays mounted so its sub-flow
+              state survives tab switches. Hidden when another tab is active. */}
+          <div className={cn(activeTab !== 'catalog' && 'hidden')}>
+            <ConnectProviderContent
+              providers={providers}
+              searchValue={search}
+              onSubviewChange={setCatalogSubview}
+              onProviderConnected={onProviderConnected}
+            />
+          </div>
+
+          {activeTab === 'connected' && (
+            <ConnectedTabBody
+              connectedProviders={connectedProviders}
+              search={search}
+              onDisconnected={onProviderConnected}
+              onAddProvider={() => switchTab('catalog')}
+            />
           )}
 
-          <div className="flex min-h-0 flex-1 border-t border-border/40">
-            {!inSubflow && (
-              <aside className="w-[150px] shrink-0 space-y-0.5 overflow-y-auto border-r border-border/40 px-2 py-3">
-                <SidebarTab
-                  label="Connected"
-                  active={activeTab === 'connected'}
-                  onClick={() => switchTab('connected')}
-                  badge={connectedProviders.length || ''}
-                />
-                <SidebarTab
-                  label="Add provider"
-                  active={activeTab === 'catalog'}
-                  onClick={() => switchTab('catalog')}
-                />
-                <SidebarTab
-                  label="Models"
-                  active={activeTab === 'models'}
-                  onClick={() => switchTab('models')}
-                  badge={
-                    hasModels ? `${visibleModelCount}/${models!.length}` : ''
-                  }
-                />
-              </aside>
-            )}
+          {activeTab === 'models' && hasModels && (
+            <ModelsTabBody
+              models={models!}
+              modelStore={modelStore}
+              search={search}
+            />
+          )}
 
-            <main className="min-w-0 flex-1 overflow-y-auto">
-              {/* Catalog: ConnectProviderContent stays mounted so its connect/
-                  custom subview state survives. We render it whenever the
-                  catalog tab is active; for other tabs it's hidden. */}
-              <div className={cn(activeTab !== 'catalog' && 'hidden')}>
-                <ConnectProviderContent
-                  providers={providers}
-                  searchValue={search}
-                  onSubviewChange={setCatalogSubview}
-                  onProviderConnected={onProviderConnected}
-                />
-              </div>
-
-              {activeTab === 'connected' && (
-                <ConnectedTabBody
-                  connectedProviders={connectedProviders}
-                  search={search}
-                  onDisconnected={onProviderConnected}
-                  onAddProvider={() => switchTab('catalog')}
-                />
-              )}
-
-              {activeTab === 'models' && hasModels && (
-                <ModelsTabBody
-                  models={models!}
-                  modelStore={modelStore}
-                  search={search}
-                />
-              )}
-
-              {activeTab === 'models' && !hasModels && (
-                <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-                  <p className="text-xs text-muted-foreground/60">
-                    Connect a provider to see its models.
-                  </p>
-                </div>
-              )}
-            </main>
-          </div>
+          {activeTab === 'models' && !hasModels && (
+            <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
+              <p className="text-xs text-muted-foreground/60">
+                Connect a provider to see its models.
+              </p>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
