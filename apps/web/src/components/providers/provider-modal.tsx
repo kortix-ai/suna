@@ -470,7 +470,7 @@ export function ProviderModal({
         )}
 
         {/* Body */}
-        <div className="min-h-0 overflow-y-auto border-t border-border/40">
+        <div className="min-h-0 overflow-y-auto">
           {/* Catalog: ConnectProviderContent stays mounted so its sub-flow
               state survives tab switches. Hidden when another tab is active. */}
           <div className={cn(activeTab !== 'catalog' && 'hidden')}>
