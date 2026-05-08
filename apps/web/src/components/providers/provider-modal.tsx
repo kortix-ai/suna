@@ -417,9 +417,10 @@ export function ProviderModal({
         </DialogHeader>
 
         {/* Tab bar — pills on the left, search input on the right, same row.
-            Hidden in connect/custom sub-flow so the form takes over cleanly. */}
+            Both at h-9 so they line up. Hidden in connect/custom sub-flow so
+            the form takes over cleanly. */}
         {!inSubflow && (
-          <div className="flex items-center gap-3 px-5 pb-3">
+          <div className="flex h-9 items-center gap-3 px-5 pb-3 box-content">
             <FilterBar>
               <FilterBarItem
                 data-state={activeTab === 'connected' ? 'active' : 'inactive'}
@@ -454,7 +455,7 @@ export function ProviderModal({
               </FilterBarItem>
             </FilterBar>
 
-            <div className="relative ml-auto w-48 shrink-0">
+            <div className="relative ml-auto h-9 w-60 shrink-0">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
               <Input
                 type="text"
