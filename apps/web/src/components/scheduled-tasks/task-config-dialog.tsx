@@ -210,15 +210,13 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col">
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary/10">
-              <Calendar className="h-4 w-4 text-primary" />
-            </div>
-            Create Trigger
+      <DialogContent className="sm:max-w-[540px] max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0 space-y-0.5">
+          <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+            Create trigger
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs text-muted-foreground/60">
             {step === 'source' && 'Choose when this trigger should fire.'}
             {step === 'action' && 'Choose what happens when the trigger fires.'}
             {step === 'config' && 'Configure the details.'}
@@ -229,45 +227,63 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
           {/* ─── Step 1: Source Type ──────────────────────────────── */}
           {step === 'source' && (
             <div className="space-y-4">
-              <Label>Trigger Source</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  type="button"
-                  onClick={() => setSourceType('cron')}
-                  variant="outline"
-                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", sourceType === 'cron'
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30"
-                 )}
-                >
-                  <Timer className="h-6 w-6" />
-                  <div className="text-sm font-medium">Cron Schedule</div>
-                  <div className="text-xs text-muted-foreground text-center">Runs on a time-based schedule</div>
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setSourceType('webhook')}
-                  variant="outline"
-                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", sourceType === 'webhook'
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30"
-                 )}
-                >
-                  <Webhook className="h-6 w-6" />
-                  <div className="text-sm font-medium">Webhook</div>
-                  <div className="text-xs text-muted-foreground text-center">Fires when an HTTP request is received</div>
-                </Button>
+              <div className="space-y-1.5">
+                <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                  Trigger source
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSourceType('cron')}
+                    className={cn(
+                      'group flex h-auto w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                      sourceType === 'cron'
+                        ? 'border-primary/50 bg-primary/[0.04]'
+                        : 'border-border/50 bg-muted/20 hover:bg-muted/35',
+                    )}
+                  >
+                    <Timer className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-foreground">Cron</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground/60">
+                        Time-based schedule
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSourceType('webhook')}
+                    className={cn(
+                      'group flex h-auto w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                      sourceType === 'webhook'
+                        ? 'border-primary/50 bg-primary/[0.04]'
+                        : 'border-border/50 bg-muted/20 hover:bg-muted/35',
+                    )}
+                  >
+                    <Webhook className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-foreground">Webhook</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground/60">
+                        Fires on HTTP request
+                      </div>
+                    </div>
+                  </button>
+                </div>
               </div>
 
               {/* Source config */}
               {sourceType === 'cron' && (
-                <div className="space-y-3 pt-2">
-                  <div className="space-y-2">
-                    <Label>Schedule</Label>
+                <div className="space-y-4 pt-1">
+                  <div className="space-y-1.5">
+                    <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                      Schedule
+                    </div>
                     <ScheduleBuilder value={cronExpr} onChange={setCronExpr} />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Timezone</Label>
+                  <div className="space-y-1.5">
+                    <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                      Timezone
+                    </div>
                     <Select value={timezone} onValueChange={setTimezone}>
                       <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
                         <SelectValue />
