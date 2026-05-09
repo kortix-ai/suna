@@ -425,7 +425,7 @@ export function ProviderModal({
               <FilterBarItem
                 data-state={activeTab === 'connected' ? 'active' : 'inactive'}
                 onClick={() => switchTab('connected')}
-                className="text-[12px]"
+                className="text-[12px] data-[state=active]:shadow-none data-[state=active]:ring-0"
               >
                 Connected
                 {connectedProviders.length > 0 && (
@@ -437,14 +437,14 @@ export function ProviderModal({
               <FilterBarItem
                 data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
                 onClick={() => switchTab('catalog')}
-                className="text-[12px]"
+                className="text-[12px] data-[state=active]:shadow-none data-[state=active]:ring-0"
               >
                 Add provider
               </FilterBarItem>
               <FilterBarItem
                 data-state={activeTab === 'models' ? 'active' : 'inactive'}
                 onClick={() => switchTab('models')}
-                className="text-[12px]"
+                className="text-[12px] data-[state=active]:shadow-none data-[state=active]:ring-0"
               >
                 Models
                 {hasModels && (
