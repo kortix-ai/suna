@@ -318,7 +318,7 @@ export function SidebarRight() {
           <div
             data-sidebar="header"
             className={cn(
-              'flex h-[56px] md:h-[52px] items-center px-3 pt-2 gap-2 overflow-hidden flex-shrink-0',
+              'flex h-[38px] items-center px-3 pt-2 gap-2 overflow-hidden flex-shrink-0',
               state === 'expanded' ? 'justify-between' : 'justify-center',
             )}
           >

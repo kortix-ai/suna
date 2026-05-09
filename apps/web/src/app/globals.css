@@ -1784,9 +1784,12 @@ html[data-desktop-platform="macos"]
 }
 /* Right sidebar header sits in the same vertical band as the inset's
    tab bar so the expand/collapse toggle aligns visually with the
-   back/forward/home controls. macOS tab bar is 40px tall, so the
-   right sidebar header matches that. The collapsed icon stack starts
-   immediately after the header — no extra inset on macOS. */
+   back/forward/home controls. The React class is h-[38px] (web). On
+   desktop we bump to 52px to give window-control / drag-region room;
+   macOS overrides that to 40px to line up with the traffic lights. */
+html[data-desktop="true"] [data-side="right"] [data-sidebar="header"] {
+  height: 52px;
+}
 html[data-desktop-platform="macos"]
   [data-side="right"] [data-sidebar="header"] {
   height: 40px !important;
@@ -1798,11 +1801,13 @@ html[data-desktop-platform="macos"]
 html[data-desktop="true"] [data-slot="sidebar-wrapper"] {
   --sidebar-width-icon: 4.5rem;
 }
-/* The inset's title-bar row is the tab bar (`role="tablist"`). Make its
-   empty space draggable so users can grab the window from anywhere
-   along the top — interactive children below opt out so tabs/buttons
-   keep working. Also compact it on desktop so it lines up with the
-   macOS traffic lights' 28px row, with one-notch-smaller tab text. */
+/* The inset's title-bar row is the tab bar (`role="tablist"`). The React
+   class is h-[38px] for web. On desktop we bump to 52px to give the
+   window-drag region room; macOS overrides that to 40px to line up with
+   the traffic lights, and turns the bar into a drag region. */
+html[data-desktop="true"] [role="tablist"] {
+  height: 52px;
+}
 html[data-desktop-platform="macos"] [role="tablist"] {
   -webkit-app-region: drag;
   app-region: drag;

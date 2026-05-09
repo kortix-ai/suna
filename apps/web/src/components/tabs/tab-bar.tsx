@@ -1072,16 +1072,18 @@ export function TabBar() {
     window.history.pushState(null, '', toInstanceAwarePath('/dashboard', currentInstanceId));
   }, [setActiveTab, currentInstanceId]);
 
-  // Always render the bar so the bg-sidebar strip above the content curve is consistent
+  // Always render the bar so the bg-sidebar strip above the content curve is consistent.
+  // Web: 38px. Desktop (any platform) → 52px via globals.css; macOS → 40px via the existing
+  // !important override that lines up with the traffic-light row.
   if (orderedTabs.length === 0) {
-    return <div className="flex-shrink-0 bg-sidebar h-[56px] md:h-[52px]" />;
+    return <div className="flex-shrink-0 bg-sidebar h-[38px]" />;
   }
 
   return (
     <>
       <div
         ref={tabBarRef}
-        className="flex-shrink-0 flex items-stretch bg-sidebar h-[56px] md:h-[52px] relative overflow-hidden"
+        className="flex-shrink-0 flex items-stretch bg-sidebar h-[38px] relative overflow-hidden"
         role="tablist"
       >
         {/* Mobile: sidebar toggles */}
