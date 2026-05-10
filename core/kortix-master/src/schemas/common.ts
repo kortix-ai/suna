@@ -257,6 +257,9 @@ export const HealthResponse = z.object({
   opencodeSessionCount: z.number().int().nullable().describe('Live OpenCode session count from the active DB'),
   opencodeShadowSessionCount: z.number().int().nullable().describe('Shadow OpenCode session count from preserved state'),
   opencodeStateMismatch: z.boolean().describe('True when preserved shadow state is richer than the active live DB'),
+  features: z.object({
+    projectsEnabled: z.boolean().describe('When false, the project paradigm is off — no project/ticket tools, no project status hints, /kortix/projects routes return 503.'),
+  }).describe('Feature-flag advertisement so the web client can mirror sandbox-side gating without an extra round-trip.'),
 })
 
 export const PortsResponse = z.object({

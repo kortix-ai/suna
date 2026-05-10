@@ -48,6 +48,7 @@ import {
   useOpenCodeProviders,
 } from '@/hooks/opencode/use-opencode-sessions';
 import { toast } from '@/lib/toast';
+import { featureFlags } from '@/lib/feature-flags';
 import { useServerStore } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
 
@@ -375,7 +376,10 @@ export function CommandPalette() {
 
   // ── Data hooks ──
   const { data: sessions } = useOpenCodeSessions();
-  const { data: projects } = useKortixProjects();
+  // Skip the projects query when the project paradigm is off — the
+  // palette never lists projects in default mode and the sandbox-side
+  // /kortix/projects route 503s in that mode.
+  const { data: projects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const { data: agents } = useOpenCodeAgents();
   const { data: providers } = useOpenCodeProviders();
 
@@ -539,9 +543,16 @@ export function CommandPalette() {
   }, [allPaletteItems, hasQuery, query]);
 
   // ── Submenu: agents ──
+  // Project-only agents (orchestrator/project-maintainer/worker/project-manager)
+  // are hidden from the palette when the project paradigm is off —
+  // their bodies reference project tools that aren't registered in default
+  // mode. Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
   const visibleAgents = useMemo(() => {
     if (!agents) return [];
-    return agents.filter((a) => !a.hidden);
+    const projectOnlyAgents = new Set(['project-manager']);
+    return agents.filter(
+      (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name))
+    );
   }, [agents]);
 
   const filteredAgents = useMemo(() => {

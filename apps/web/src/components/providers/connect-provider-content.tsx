@@ -35,11 +35,11 @@ import {
 } from '@/components/ui/accordion';
 import {
   POPULAR_PROVIDER_IDS,
-  PROVIDER_HINTS,
   PROVIDER_LABELS,
   PROVIDER_NOTES,
   ProviderLogo,
 } from '@/components/providers/provider-branding';
+import { ProviderCard } from '@/components/providers/provider-card';
 
 import { getClient } from '@/lib/opencode-sdk';
 import { useQueryClient } from '@tanstack/react-query';
@@ -142,10 +142,24 @@ function methodDescription(method: { type: string; label: string }) {
 export function ConnectProviderContent({
   providers,
   onClose,
+  searchValue,
+  onSubviewChange,
   onProviderConnected,
 }: {
   providers: ProviderListResponse | undefined;
   onClose?: () => void;
+  /**
+   * Controlled search value, hosted by the parent (e.g. modal) so a single
+   * search input can filter multiple tabs. When provided, the internal
+   * search input is hidden and this value drives filtering.
+   */
+  searchValue?: string;
+  /**
+   * Fires whenever the internal subview switches. Lets the parent hide
+   * surrounding chrome (sidebar, search, sibling sections) when the user
+   * enters a connect/custom flow, so the form takes over the surface.
+   */
+  onSubviewChange?: (kind: 'list' | 'connect' | 'custom') => void;
   onProviderConnected?: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -161,7 +175,15 @@ export function ConnectProviderContent({
     | { type: 'connect'; providerID: string };
 
   const [view, setView] = useState<View>({ type: 'list' });
-  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    onSubviewChange?.(view.type);
+  }, [view.type, onSubviewChange]);
+
+  const [internalSearch, setInternalSearch] = useState('');
+  const search = searchValue ?? internalSearch;
+  const setSearch = setInternalSearch;
+  const isControlledSearch = searchValue !== undefined;
   const [otherOpen, setOtherOpen] = useState(false);
 
   // --- Connect flow state ---
@@ -583,11 +605,14 @@ export function ConnectProviderContent({
     return `Connect ${PROVIDER_LABELS[view.providerID] || selectedProviderData?.name || view.providerID}`;
   })();
 
+  const customMatchesSearch = !search || 'custom provider'.includes(search.toLowerCase());
+
   return (
-    <div className="px-5 py-4">
-      {/* Header */}
-      <div className="flex items-center gap-2 pb-3">
-        {view.type !== 'list' && (
+    <div className={cn(view.type !== 'list' && 'px-5 py-4')}>
+      {/* Inline header for connect/custom flows. List view has no inline
+          header — the parent renders the section heading. */}
+      {view.type !== 'list' && (
+        <div className="flex items-center gap-2 pb-3">
           <Button
             type="button"
             onClick={handleBack}
@@ -597,24 +622,16 @@ export function ConnectProviderContent({
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-        )}
-        <h3 className="flex-1 text-sm font-medium text-foreground">
-          {view.type === 'custom' && 'Add Custom'}
-          {view.type === 'connect' && connectTitle}
-          {view.type === 'list' && 'Add Provider'}
-        </h3>
-      </div>
-
-      {/* Description for list view */}
-      {view.type === 'list' && (
-        <p className="pb-4 text-sm text-muted-foreground/70">
-          Choose a provider to power model access in chat.
-        </p>
+          <h3 className="flex-1 text-sm font-medium text-foreground">
+            {view.type === 'custom' && 'Add Custom Provider'}
+            {view.type === 'connect' && connectTitle}
+          </h3>
+        </div>
       )}
 
       {/* Selected provider summary for connect view */}
       {view.type === 'connect' && selectedProviderData && (
-        <div className="mb-5 flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-4 py-3.5">
+        <div className="mb-5 flex items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-4 py-3.5">
           <ProviderLogo
             providerID={selectedProviderData.id}
             name={selectedProviderData.name}
@@ -636,169 +653,88 @@ export function ConnectProviderContent({
 
       {/* ============ PROVIDER LIST ============ */}
       {view.type === 'list' && (
-        <>
-          {/* Search */}
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/60" />
-            <Input
-              type="text"
-              placeholder="Search providers..."
-              autoComplete="off"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
-              autoFocus
+        <div className="space-y-1 px-3 pb-4 pt-3">
+          {/* Search — only when not controlled by a parent (e.g. modal). */}
+          {!isControlledSearch && (
+            <div className="relative pb-1">
+              <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <Input
+                type="text"
+                placeholder="Search providers..."
+                autoComplete="off"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+              />
+            </div>
+          )}
+
+          {/* Popular providers — rendered first, no sub-heading. The order
+              IS the heading. */}
+          {popularGroup.map((p) => (
+            <ProviderCard
+              key={p.id}
+              providerID={p.id}
+              name={PROVIDER_LABELS[p.id] || p.name}
+              description={PROVIDER_NOTES[p.id]}
+              connected={connectedIds.has(p.id)}
+              onClick={() => handleSelectProvider(p.id)}
             />
-          </div>
+          ))}
 
-          {/* Provider list */}
-          <div className="space-y-3">
-            {/* Custom provider */}
-            {(!search || 'custom'.includes(search.toLowerCase())) && (
-              <Button
-                type="button"
-                onClick={() => setView({ type: 'custom' })}
-                variant="ghost"
-                className="group mb-1 h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-4 py-3 text-left hover:bg-muted/35 justify-start"
-              >
-                <ProviderLogo
-                  providerID="custom"
-                  name="Custom"
-                  size="default"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="text-sm font-medium block text-foreground">
-                    Custom Provider
-                  </span>
-                  <span className="text-xs text-muted-foreground block mt-0.5">
-                    Add any OpenAI-compatible endpoint
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors ml-auto" />
-              </Button>
-            )}
-
-            {/* Popular providers */}
-            {popularGroup.length > 0 && (
-              <>
-                <div className="px-1 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-foreground/70">
-                  Popular
-                </div>
-                {popularGroup.map((p) => {
-                  const isConnected = connectedIds.has(p.id);
-                  return (
-                    <Button
-                      key={p.id}
-                      type="button"
-                      onClick={() => handleSelectProvider(p.id)}
-                      variant="ghost"
-                      className="group mb-1 h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-4 py-3 text-left hover:bg-muted/35 justify-start"
-                    >
-                      <ProviderLogo
-                        providerID={p.id}
-                        name={p.name}
-                        size="default"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">
-                            {PROVIDER_LABELS[p.id] || p.name}
-                          </span>
-                          {isConnected && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[0.5625rem] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
-                              <span className="w-1 h-1 rounded-full bg-emerald-500" />
-                              connected
-                            </span>
-                          )}
-                        </span>
-                        {PROVIDER_NOTES[p.id] && (
-                          <span className="text-xs text-muted-foreground block mt-0.5">
-                            {PROVIDER_NOTES[p.id]}
-                          </span>
-                        )}
-                      </span>
-                      {!isConnected && PROVIDER_HINTS[p.id] && (
-                        <span className="text-[10px] text-muted-foreground/50 font-medium whitespace-nowrap">
-                          {PROVIDER_HINTS[p.id]}
-                        </span>
+          {/* More providers — collapsible. Self-labeled in the trigger. */}
+          {otherGroup.length > 0 && (
+            <Accordion
+              type="single"
+              collapsible
+              value={otherOpen ? 'other' : undefined}
+              onValueChange={(value) => setOtherOpen(value === 'other')}
+            >
+              <AccordionItem value="other" className="border-none">
+                <AccordionTrigger className="rounded-xl px-3.5 py-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/35 hover:no-underline hover:text-foreground [&>svg]:hidden">
+                  <span className="flex w-full items-center justify-between gap-2">
+                    <span>More providers ({otherGroup.length})</span>
+                    <ChevronDown
+                      className={cn(
+                        'h-3.5 w-3.5 text-muted-foreground/50 transition-transform duration-200',
+                        otherOpen && 'rotate-180',
                       )}
-                      <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors ml-auto" />
-                    </Button>
-                  );
-                })}
-              </>
-            )}
-
-            {/* Other providers */}
-            {otherGroup.length > 0 && (
-              <Accordion
-                type="single"
-                collapsible
-                value={otherOpen ? 'other' : undefined}
-                onValueChange={(value) => setOtherOpen(value === 'other')}
-                className="mt-2"
-              >
-                <AccordionItem value="other" className="border-none">
-                  <AccordionTrigger className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-foreground/70 hover:bg-muted/35 hover:no-underline [&>svg]:hidden">
-                    <span className="flex items-center justify-between w-full gap-3">
-                      <span>Other ({otherGroup.length})</span>
-                      <ChevronDown
-                        className={cn(
-                          'h-3.5 w-3.5 text-muted-foreground/50 transition-transform duration-200',
-                          otherOpen && 'rotate-180',
-                        )}
+                    />
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="pt-1 pb-0">
+                  <div className="space-y-1">
+                    {otherGroup.map((p) => (
+                      <ProviderCard
+                        key={p.id}
+                        providerID={p.id}
+                        name={PROVIDER_LABELS[p.id] || p.name}
+                        connected={connectedIds.has(p.id)}
+                        onClick={() => handleSelectProvider(p.id)}
                       />
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="pt-1 pb-0">
-                    {otherGroup.map((p) => {
-                      const isConnected = connectedIds.has(p.id);
-                      return (
-                        <Button
-                          key={p.id}
-                          type="button"
-                          onClick={() => handleSelectProvider(p.id)}
-                          variant="ghost"
-                          className="group mb-1 h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-4 py-3 text-left hover:bg-muted/35 justify-start"
-                        >
-                          <ProviderLogo
-                            providerID={p.id}
-                            name={p.name}
-                            size="default"
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-foreground">
-                                {PROVIDER_LABELS[p.id] || p.name}
-                              </span>
-                              {isConnected && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-[0.5625rem] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
-                                  <span className="w-1 h-1 rounded-full bg-emerald-500" />
-                                  connected
-                                </span>
-                              )}
-                            </span>
-                            <span className="text-xs text-muted-foreground block mt-0.5">
-                              {p.id}
-                            </span>
-                          </span>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors ml-auto" />
-                        </Button>
-                      );
-                    })}
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            )}
+                    ))}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          )}
 
-            {filteredProviders.length === 0 &&
-              !search.toLowerCase().startsWith('custom') && (
-                <div className="text-sm text-center py-8 text-muted-foreground/60">
-                  No providers found
-                </div>
-              )}
-          </div>
-        </>
+          {/* Custom — last card, same chrome as everything else */}
+          {customMatchesSearch && (
+            <ProviderCard
+              providerID="custom"
+              name="Custom Provider"
+              description="Add any OpenAI-compatible endpoint"
+              onClick={() => setView({ type: 'custom' })}
+            />
+          )}
+
+          {filteredProviders.length === 0 && !customMatchesSearch && (
+            <div className="py-8 text-center text-sm text-muted-foreground/60">
+              No providers found
+            </div>
+          )}
+        </div>
       )}
 
       {/* ============ CUSTOM PROVIDER FORM ============ */}
@@ -815,7 +751,7 @@ export function ConnectProviderContent({
               Learn more <ExternalLink className="h-3 w-3" />
             </a>
           </p>
-          <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-4">
+          <div className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
                 Provider ID
@@ -936,7 +872,7 @@ export function ConnectProviderContent({
                   view.providerID}
                 .
               </p>
-              <div className="rounded-2xl border border-border/50 bg-muted/20 p-2 space-y-0.5">
+              <div className="rounded-xl border border-border/50 bg-muted/20 p-2 space-y-0.5">
                 {authMethods.map((method, i) => {
                   const Icon = methodIcon(method);
                   const desc = methodDescription(method);
@@ -974,7 +910,7 @@ export function ConnectProviderContent({
           {showApiKeyForm && (
             <form
               onSubmit={handleApiKeySubmit}
-              className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-4"
+              className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-4"
             >
               <p className="text-sm text-muted-foreground">
                 Enter your {selectedProviderData?.name || view.providerID} API
@@ -1029,7 +965,7 @@ export function ConnectProviderContent({
           {showOAuthCode && (
             <form
               onSubmit={handleOAuthCodeSubmit}
-              className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5"
+              className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-5"
             >
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-foreground">
@@ -1123,7 +1059,7 @@ export function ConnectProviderContent({
           )}
 
           {showOAuthAuto && (
-            <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5">
+            <div className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-5">
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p>
                   A browser tab should have opened automatically. Complete the

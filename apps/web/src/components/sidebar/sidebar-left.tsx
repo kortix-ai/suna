@@ -21,7 +21,6 @@ import {
   History,
   ArrowRightLeft,
   CheckCircle2,
-  FolderOpen,
   FolderKanban,
   AlertCircle,
   AlertTriangle,
@@ -59,11 +58,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -75,6 +69,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
+import { featureFlags } from '@/lib/feature-flags';
 import { useAdminRole } from '@/hooks/admin';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { isBillingEnabled } from '@/lib/config';
@@ -197,6 +192,21 @@ interface CollapsedIconButtonProps {
   flyoutContent?: React.ReactNode;
   disabled?: boolean;
   isActive?: boolean;
+}
+
+// Two-chip keybind hint shown on the right of sidebar nav rows. Each
+// key gets its own rounded chip with a subtle bg, like macOS's native
+// shortcut display. Visible only when the parent `group/row` is hovered
+// so the sidebar reads clean by default.
+function KbdHint({ mod, letter }: { mod: string; letter: string }) {
+  const chip =
+    'inline-flex items-center justify-center size-5 rounded-md bg-foreground/[0.06] border border-border/40 text-[10px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
+  return (
+    <span className="ml-auto flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+      <kbd className={chip}>{mod}</kbd>
+      <kbd className={chip}>{letter}</kbd>
+    </span>
+  );
 }
 
 function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, isActive }: CollapsedIconButtonProps) {
@@ -374,7 +384,10 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
 // ============================================================================
 
 function ProjectsFlyout() {
-  const { data: projects } = useKortixProjects();
+  // The collapsed-sidebar flyout is only ever rendered when the project
+  // flag is on (see CollapsedIconButton wrap below), but we still gate the
+  // query as belt-and-braces for any future non-flagged caller.
+  const { data: projects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
 
   const sorted = React.useMemo(() => {
     if (!projects || !Array.isArray(projects)) return [];
@@ -647,8 +660,11 @@ function SidebarSections() {
   const pathname = normalizeAppPathname(usePathname());
   const { isMobile, setOpenMobile } = useSidebar();
 
-  // Projects data — Kortix projects are the source of truth
-  const { data: projectsData } = useKortixProjects();
+  // Projects data — Kortix projects are the source of truth.
+  // Skip the query entirely when the project paradigm is off so the
+  // sidebar in default mode never hits /kortix/projects (which 503s when
+  // sandbox-side PROJECTS_ENABLED is also off).
+  const { data: projectsData } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const sortedProjects = React.useMemo(() => {
     if (!projectsData || !Array.isArray(projectsData)) return [];
     return [...projectsData].sort((a, b) =>
@@ -699,52 +715,21 @@ function SidebarSections() {
 
   return (
     <div className="flex flex-col min-h-0 flex-1 pt-0.5 space-y-0.5">
-      {/* Projects — collapsible list above Sessions, same UX as Sessions */}
-      {sortedProjects.length > 0 && (
-        <Collapsible defaultOpen={false} className="group/projects flex flex-col min-h-0">
-          <div className="px-3 flex-shrink-0">
-            <CollapsibleTrigger asChild>
-              <Button variant="sidebar" className="rounded-lg">
-                <FolderKanban className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-                <span className="flex-1 text-left">Projects</span>
-                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/projects:-rotate-90" />
-              </Button>
-            </CollapsibleTrigger>
-          </div>
-          <CollapsibleContent className="min-h-0 data-[state=open]:pt-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <div className="flex flex-col px-3">
-              <div className="px-2 pb-2">
-                <div className="space-y-0.5">
-                  {sortedProjects.map((project) => (
-                    <SidebarProjectRow
-                      key={project.id}
-                      project={project}
-                      active={pathname?.startsWith(`/projects/${project.id}`) ?? false}
-                      onClick={() => handleProjectClick(project)}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
+      {/* No "Projects" accordion. The sandbox IS the project (single-project
+          paradigm) — there is never a list to choose from. Project-paradigm
+          surfaces live as global entries (Board, Milestones, Team) when the
+          feature flag is on, not nested under per-project navigation. */}
 
-      {/* Sessions — always visible, takes remaining space */}
-      <Collapsible defaultOpen className="group/sessions flex flex-col min-h-0 data-[state=open]:flex-1">
-        <div className="px-3 flex-shrink-0">
-          <CollapsibleTrigger asChild>
-            <Button variant="sidebar" className="rounded-lg">
-              <ListTree className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-              <span className="flex-1 text-left">Sessions</span>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
-            </Button>
-          </CollapsibleTrigger>
+      {/* Sessions — always visible, no collapse. The list takes the
+          remaining vertical space below the static heading. */}
+      <div className="flex flex-col min-h-0 flex-1">
+        <div className="px-6 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/50 flex-shrink-0">
+          Sessions
         </div>
-        <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="min-h-0 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <SessionList projectId={null} />
-        </CollapsibleContent>
-      </Collapsible>
+        </div>
+      </div>
 
       {hasLegacy && (
         // mt-auto pins this block to the bottom of the SidebarSections column.
@@ -1528,24 +1513,10 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               );
             }}
           />
-          <CollapsedIconButton
-            icon={<FolderOpen className="h-4 w-4" />}
-            label="Files"
-            isActive={pathname === '/files'}
-            onClick={() => {
-              openTabAndNavigate({
-                id: 'page:/files',
-                title: 'Files',
-                type: 'page',
-                href: '/files',
-              });
-            }}
-          />
-          <CollapsedIconButton
-            icon={<FolderKanban className="h-4 w-4" />}
-            label="Projects"
-            flyoutContent={<ProjectsFlyout />}
-          />
+          {/* Files moved off the left sidebar — accessible from the right
+              sidebar (single source of truth, no redundant entry). */}
+          {/* Collapsed-sidebar Projects flyout removed — single-project
+              paradigm has no list to flyout to. */}
           <CollapsedIconButton
             icon={<ListTree className="h-4 w-4" />}
             label="Sessions"
@@ -1565,13 +1536,11 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               onClick={handleNewSession}
               disabled={createSession.isPending}
               variant="sidebar"
-              className="rounded-lg"
+              className="group/row rounded-lg"
             >
               <SquarePen className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
-              <kbd className="text-[10px] text-muted-foreground">
-                {isMac ? '\u2318J' : 'Ctrl J'}
-              </kbd>
+              <KbdHint mod={isMac ? '\u2318' : 'Ctrl'} letter="J" />
             </Button>
 
             {/* Search */}
@@ -1589,34 +1558,17 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
                 );
               }}
               variant="sidebar"
-              className="rounded-lg"
+              className="group/row rounded-lg"
             >
               <Search className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">Search</span>
-              <kbd className="text-[10px] text-muted-foreground">
-                {isMac ? '\u2318K' : 'Ctrl K'}
-              </kbd>
+              <KbdHint mod={isMac ? '\u2318' : 'Ctrl'} letter="K" />
             </Button>
 
-            {/* Files */}
-            <Button
-              onClick={() => {
-                openTabAndNavigate({
-                  id: 'page:/files',
-                  title: 'Files',
-                  type: 'page',
-                  href: '/files',
-                });
-              }}
-              variant="sidebar"
-              className="rounded-lg"
-            >
-              <FolderOpen className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
-              <span className="flex-1 text-left">Files</span>
-            </Button>
-
-            {/* Sessions — expandable, default open */}
-            </nav>
+            {/* Files lives exclusively on the right sidebar — no redundant
+                entry here. Board is also right-sidebar-only (see
+                menu-registry entry `board`). */}
+          </nav>
 
           <SidebarSections />
         </div>

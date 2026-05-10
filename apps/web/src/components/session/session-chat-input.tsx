@@ -5,11 +5,9 @@ import { usePathname } from 'next/navigation';
 import { normalizeAppPathname } from '@/lib/instance-routes';
 import {
   ArrowUp,
-  ArrowDown,
   ArrowUpLeft,
   ChevronDown,
   Check,
-  CornerDownLeft,
   GitFork,
   // Info,       // AutoContinue — commented out
   // Infinity,   // AutoContinue — commented out
@@ -55,6 +53,7 @@ import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
 import { searchWorkspaceFiles } from '@/features/files';
 import { getFileIcon } from '@/features/files/components/file-icon';
 import type { Session } from '@/hooks/opencode/use-opencode-sessions';
+import { featureFlags } from '@/lib/feature-flags';
 
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import {
@@ -65,8 +64,6 @@ import {
   CommandList,
   CommandGroup,
   CommandItem,
-  CommandFooter,
-  CommandKbd,
 } from '@/components/ui/command';
 
 export type { ProviderListResponse };
@@ -254,20 +251,24 @@ export function AgentSelector({
                   <CommandItem
                     key={agent.name}
                     value={`agent-${agent.name}`}
+                    className={isSelected ? 'bg-foreground/[0.06]' : undefined}
                     onSelect={() => {
                       onSelect(agent.name);
                       setOpen(false);
                     }}
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium truncate capitalize">{agent.name}</span>
+                    <div className="min-w-0 flex-1 py-0.5">
+                      <div className={cn(
+                        'truncate text-[13px] leading-tight capitalize',
+                        isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
+                      )}>
+                        {agent.name}
                       </div>
                       {agent.description && (
-                        <p className="text-[11px] text-muted-foreground/50 leading-snug mt-0.5 line-clamp-1">{agent.description}</p>
+                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
                       )}
                     </div>
-                    {isSelected && <Check className="size-3.5 text-foreground shrink-0" />}
+                    {isSelected && <Check className="text-foreground shrink-0" />}
                   </CommandItem>
                 );
               })}
@@ -283,20 +284,24 @@ export function AgentSelector({
                   <CommandItem
                     key={agent.name}
                     value={`subagent-${agent.name}`}
+                    className={isSelected ? 'bg-foreground/[0.06]' : undefined}
                     onSelect={() => {
                       onSelect(agent.name);
                       setOpen(false);
                     }}
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-medium truncate capitalize">{agent.name}</span>
+                    <div className="min-w-0 flex-1 py-0.5">
+                      <div className={cn(
+                        'truncate text-[13px] leading-tight capitalize',
+                        isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
+                      )}>
+                        {agent.name}
                       </div>
                       {agent.description && (
-                        <p className="text-[11px] text-muted-foreground/50 leading-snug mt-0.5 line-clamp-1">{agent.description}</p>
+                        <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{agent.description}</p>
                       )}
                     </div>
-                    {isSelected && <Check className="size-3.5 text-foreground shrink-0" />}
+                    {isSelected && <Check className="text-foreground shrink-0" />}
                   </CommandItem>
                 );
               })}
@@ -310,22 +315,6 @@ export function AgentSelector({
             </div>
           )}
         </CommandList>
-
-        <CommandFooter>
-          <div className="flex items-center gap-1">
-            <ArrowUp className="h-3 w-3" />
-            <ArrowDown className="h-3 w-3" />
-            <span>navigate</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CornerDownLeft className="h-3 w-3" />
-            <span>select</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CommandKbd>Tab</CommandKbd>
-            <span>cycle</span>
-          </div>
-        </CommandFooter>
       </CommandPopoverContent>
     </CommandPopover>
   );
@@ -1536,7 +1525,9 @@ export function SessionChatInput({
 
   // Sessions for @ mention search
   const { data: allSessions } = useOpenCodeSessions();
-  const { data: kortixProjects } = useKortixProjects();
+  // Skip the projects query entirely when the project paradigm is off —
+  // the @-mention popover never offers a project bucket in that mode.
+  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
 
   useEffect(() => {
     if (text.trim().length > 0) return;

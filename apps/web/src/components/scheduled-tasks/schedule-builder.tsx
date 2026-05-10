@@ -235,7 +235,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
   // ── Visual editor ──
 
   return (
-    <div className={cn("space-y-3", disabled && "opacity-60 pointer-events-none select-none")}>
+    <div className={cn("space-y-2", disabled && "opacity-60 pointer-events-none select-none")}>
       {/* Frequency tabs */}
       <FilterBar className="w-full">
         {FREQUENCY_TABS.map(({ value: freq, label }) => (
@@ -251,8 +251,9 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
         ))}
       </FilterBar>
 
-      {/* Controls card */}
-      <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
+      {/* Controls — flat layout, no extra card chrome. The frequency pills
+          above already group these visually. */}
+      <div className="space-y-2 px-1 pt-0.5">
         {/* Interval row — minutes & hourly */}
         {(state.frequency === 'minutes' || state.frequency === 'hourly') && (
           <div className="flex items-center gap-2">
@@ -386,8 +387,9 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
           </div>
         )}
 
-        {/* Summary */}
-        <p className="text-xs text-muted-foreground pt-2 border-t border-border/50">
+        {/* Summary — small caption, no card divider since the wrapping
+            card is gone. */}
+        <p className="text-[11px] text-muted-foreground/60">
           {describeSchedule(state)}
         </p>
       </div>

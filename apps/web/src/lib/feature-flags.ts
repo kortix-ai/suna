@@ -22,6 +22,23 @@ export const featureFlags = {
     process.env.NEXT_PUBLIC_ENABLE_DINO_GAME,
     false,
   ),
+  /**
+   * Multi-project paradigm.
+   *
+   * Default: false. The product ships in single-workspace mode — no Projects
+   * section, no project picker, no /projects/[id] view, no project-scoped
+   * channel/trigger UI, no @project mentions, no `Add to board` triggers.
+   *
+   * When NEXT_PUBLIC_ENABLE_PROJECTS=true, the legacy project UI
+   * (board, milestones, members, project agents/credentials/templates) is
+   * surfaced. The sandbox MUST also have KORTIX_PROJECTS_ENABLED=true for the
+   * LLM-side project/ticket tools to register; without that the UI exists but
+   * tool calls 503.
+   */
+  enableProjects: parseEnvBoolean(
+    process.env.NEXT_PUBLIC_ENABLE_PROJECTS,
+    false,
+  ),
 } as const;
 
 // Debug: uncomment to inspect feature flags during development

@@ -127,7 +127,7 @@ const WINDOW_OPEN_SHIM: &str = r#"
 "#;
 
 #[cfg(target_os = "macos")]
-use tauri::TitleBarStyle;
+use tauri::{LogicalPosition, TitleBarStyle};
 
 const DEFAULT_URL: &str = "http://localhost:3000/dashboard";
 
@@ -243,9 +243,15 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             {
+                // Push the OS traffic lights down so they sit at the vertical
+                // center of our 40px tab bar. wry's `inset_traffic_lights`
+                // treats y as extra title-bar height ABOVE the button cluster
+                // (the buttons stay anchored near the top of the title-bar
+                // view), so getting visible movement requires a chunkier y.
                 builder = builder
                     .title_bar_style(TitleBarStyle::Overlay)
-                    .hidden_title(true);
+                    .hidden_title(true)
+                    .traffic_light_position(LogicalPosition::new(20.0, 22.0));
             }
 
             let window = builder.build()?;

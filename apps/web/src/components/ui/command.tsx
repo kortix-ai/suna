@@ -68,11 +68,16 @@ function CommandDialog({
         className={cn(
           'overflow-hidden p-0 gap-0',
           // Border + depth — subtle ring highlight at top-edge catches light
-          'border border-border/60 rounded-2xl shadow-2xl shadow-black/20 ring-1 ring-inset ring-white/[0.04]',
+          'border border-border/60 rounded-2xl ring-1 ring-inset ring-white/[0.04]',
           // Solid popover background
           'bg-popover',
           // Subtle slide-in from above
           'data-[state=open]:slide-in-from-top-[2%] data-[state=closed]:slide-out-to-top-[2%]',
+          // Bump items back up inside the cmd palette — items are
+          // compact-by-default everywhere else, but this is the big
+          // Cmd+K surface so it gets the roomier spec.
+          '[&_[data-slot=command-item]]:gap-3 [&_[data-slot=command-item]]:rounded-lg [&_[data-slot=command-item]]:px-3 [&_[data-slot=command-item]]:py-2.5 [&_[data-slot=command-item]]:text-[13.5px]',
+          "[&_[data-slot=command-item]_svg:not([class*='size-'])]:size-[17px]",
           className,
         )}
         hideCloseButton
@@ -167,7 +172,27 @@ function CommandPopoverContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'w-[340px] p-0 overflow-hidden rounded-xl',
+        'w-[300px] p-0 overflow-hidden rounded-xl',
+        // Same `bg-card` token as DropdownMenuContent — every dropdown in
+        // the app sits on the same material. Hairline white inner border
+        // and a 1px top-edge highlight gradient catch light like a real
+        // slab. Always opaque (no transparency).
+        'relative bg-card text-popover-foreground',
+        'border border-border/60',
+        'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
+        // Smoother, more macOS-like entrance / exit (zoom-in-95 → 97 so the
+        // pop is gentler, cubic-bezier(0.16, 1, 0.3, 1) easing).
+        'data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
+        'data-[state=open]:zoom-in-[0.97] data-[state=closed]:zoom-out-[0.97]',
+        // CommandItem is at natural roomy spec (matching DropdownMenuItem)
+        // by default — no item overrides needed here. Just trim the
+        // surrounding chrome (input + group / heading) so popovers don't
+        // feel as cavernous as the Cmd+K palette.
+        '[&_[data-slot=command-input-wrapper]]:h-9 [&_[data-slot=command-input-wrapper]]:px-3 [&_[data-slot=command-input-wrapper]]:gap-2',
+        '[&_[data-slot=command-input]]:h-9 [&_[data-slot=command-input]]:text-[13px]',
+        '[&_[data-slot=command-list]]:py-0',
+        '[&_[data-slot=command-group]]:py-1',
+        '[&_[cmdk-group-heading]]:!pt-2 [&_[cmdk-group-heading]]:!pb-1 [&_[cmdk-group-heading]]:!px-2 [&_[cmdk-group-heading]]:!text-[10px] [&_[cmdk-group-heading]]:!tracking-[0.12em]',
         className,
       )}
     >
@@ -281,12 +306,16 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        'relative flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-[13.5px] text-foreground/80 outline-hidden select-none transition-colors duration-75',
+        // Matches the natural DropdownMenuItem spec (Billing / Settings
+        // look) — same gap-2 rounded-lg px-2 py-1.5 text-sm size-4
+        // icons. Both surfaces feel like one family. CommandDialog
+        // (Cmd+K palette) bumps these back up via descendant rules.
+        'relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground/80 outline-hidden select-none transition-colors duration-75',
         'data-[selected=true]:bg-foreground/[0.06] data-[selected=true]:text-foreground',
         "data-[selected=true]:[&_svg:not([class*='text-'])]:text-foreground/80",
         "[&_svg:not([class*='text-'])]:text-muted-foreground/65",
         'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-40',
-        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px]",
+        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       {...props}

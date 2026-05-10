@@ -70,6 +70,8 @@ const FilesPage = lazy(() =>
 	})),
 );
 
+const BoardPage = lazy(() => import('@/app/(dashboard)/board/page'));
+
 const MarketplacePage = lazy(() =>
 	import('@/features/skills/components/marketplace').then((m) => ({
 		default: m.Marketplace,
@@ -135,6 +137,7 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/channels': ChannelsPage,
 	'/connectors': IntegrationsPage,
 	'/files': FilesPage,
+	'/board': BoardPage,
 	'/tunnel': TunnelOverviewPage,
 	...(DEPLOYMENTS_ENABLED ? { '/deployments': DeploymentsPage } : {}),
 	// Admin

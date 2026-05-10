@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calendar, ArrowRight, ArrowLeft, Loader2, Timer, Webhook, MessageSquare, Terminal, Globe, Ticket as TicketIcon } from 'lucide-react';
+import { Calendar, ArrowRight, ArrowLeft, Clock, Loader2, Timer, Webhook, MessageSquare, Terminal, Globe, Ticket as TicketIcon } from 'lucide-react';
 import {
   useCreateTrigger,
   type SessionMode,
@@ -31,6 +31,7 @@ import { getSandboxUrl } from '@/lib/platform-client';
 import { toast } from 'sonner';
 import { ScheduleBuilder } from './schedule-builder';
 import { cn } from '@/lib/utils';
+import { featureFlags } from '@/lib/feature-flags';
 import { useTickets, useColumns, useProjectAgents } from '@/hooks/kortix/use-kortix-tickets';
 
 // Shared selectors from ChatInput (same as used in channels)
@@ -209,15 +210,13 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-xl max-h-[90vh] flex flex-col">
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-primary/10">
-              <Calendar className="h-4 w-4 text-primary" />
-            </div>
-            Create Trigger
+      <DialogContent className="sm:max-w-[540px] max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0 space-y-0.5">
+          <DialogTitle className="text-sm font-semibold flex items-center gap-2">
+            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+            Create trigger
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-xs text-muted-foreground/60">
             {step === 'source' && 'Choose when this trigger should fire.'}
             {step === 'action' && 'Choose what happens when the trigger fires.'}
             {step === 'config' && 'Configure the details.'}
@@ -228,56 +227,57 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
           {/* ─── Step 1: Source Type ──────────────────────────────── */}
           {step === 'source' && (
             <div className="space-y-4">
-              <Label>Trigger Source</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  type="button"
-                  onClick={() => setSourceType('cron')}
-                  variant="outline"
-                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", sourceType === 'cron'
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30"
-                 )}
-                >
-                  <Timer className="h-6 w-6" />
-                  <div className="text-sm font-medium">Cron Schedule</div>
-                  <div className="text-xs text-muted-foreground text-center">Runs on a time-based schedule</div>
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setSourceType('webhook')}
-                  variant="outline"
-                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", sourceType === 'webhook'
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30"
-                 )}
-                >
-                  <Webhook className="h-6 w-6" />
-                  <div className="text-sm font-medium">Webhook</div>
-                  <div className="text-xs text-muted-foreground text-center">Fires when an HTTP request is received</div>
-                </Button>
+              <div className="space-y-1.5">
+                <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                  Trigger source
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSourceType('cron')}
+                    className={cn(
+                      'group flex h-auto w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                      sourceType === 'cron'
+                        ? 'border-primary/50 bg-primary/[0.04]'
+                        : 'border-border/50 bg-muted/20 hover:bg-muted/35',
+                    )}
+                  >
+                    <Timer className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-foreground">Cron</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground/60">
+                        Time-based schedule
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSourceType('webhook')}
+                    className={cn(
+                      'group flex h-auto w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                      sourceType === 'webhook'
+                        ? 'border-primary/50 bg-primary/[0.04]'
+                        : 'border-border/50 bg-muted/20 hover:bg-muted/35',
+                    )}
+                  >
+                    <Webhook className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-foreground">Webhook</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground/60">
+                        Fires on HTTP request
+                      </div>
+                    </div>
+                  </button>
+                </div>
               </div>
 
-              {/* Source config */}
+              {/* Source config — timezone moved to the modal footer */}
               {sourceType === 'cron' && (
-                <div className="space-y-3 pt-2">
-                  <div className="space-y-2">
-                    <Label>Schedule</Label>
-                    <ScheduleBuilder value={cronExpr} onChange={setCronExpr} />
+                <div className="space-y-1.5 pt-1">
+                  <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                    Schedule
                   </div>
-                  <div className="space-y-2">
-                    <Label>Timezone</Label>
-                    <Select value={timezone} onValueChange={setTimezone}>
-                      <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TIMEZONES.map((tz) => (
-                          <SelectItem key={tz} value={tz} className="cursor-pointer">{tz}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <ScheduleBuilder value={cronExpr} onChange={setCronExpr} />
                 </div>
               )}
 
@@ -312,63 +312,56 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
 
           {/* ─── Step 2: Action Type ─────────────────────────────── */}
           {step === 'action' && (
-            <div className="space-y-4">
-              <Label>Action Type</Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Button
-                  type="button"
-                  onClick={() => setActionType('prompt')}
-                  variant="outline"
-                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", actionType === 'prompt'
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30"
-                 )}
-                >
-                  <MessageSquare className="h-5 w-5" />
-                  <div className="text-sm font-medium">Prompt</div>
-                  <div className="text-xs text-muted-foreground text-center">Send to AI agent</div>
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setActionType('command')}
-                  variant="outline"
-                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", actionType === 'command'
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30"
-                 )}
-                >
-                  <Terminal className="h-5 w-5" />
-                  <div className="text-sm font-medium">Command</div>
-                  <div className="text-xs text-muted-foreground text-center">Run shell command</div>
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setActionType('http')}
-                  variant="outline"
-                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", actionType === 'http'
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30"
-                 )}
-                >
-                  <Globe className="h-5 w-5" />
-                  <div className="text-sm font-medium">HTTP</div>
-                  <div className="text-xs text-muted-foreground text-center">Call external URL</div>
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => setActionType('ticket_create')}
-                  disabled={!projectId}
-                  variant="outline"
-                  title={!projectId ? 'Only available when the trigger is scoped to a project' : undefined}
-                  className={cn("flex flex-col items-center gap-2 p-4 h-auto rounded-xl border-2", actionType === 'ticket_create'
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/30",
-                    !projectId && "opacity-50 cursor-not-allowed")}
-                >
-                  <TicketIcon className="h-5 w-5" />
-                  <div className="text-sm font-medium">Create Ticket</div>
-                  <div className="text-xs text-muted-foreground text-center">Drop a new ticket on the board</div>
-                </Button>
+            <div className="space-y-1.5">
+              <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                Action type
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {[
+                  { id: 'prompt'  as ActionType, icon: MessageSquare, title: 'Prompt',  desc: 'Send to an AI agent' },
+                  { id: 'command' as ActionType, icon: Terminal,      title: 'Command', desc: 'Run a shell command' },
+                  { id: 'http'    as ActionType, icon: Globe,         title: 'HTTP',    desc: 'Call an external URL' },
+                  // "Create Ticket" — only with the multi-project paradigm
+                  // AND when scoped to a project.
+                  ...(featureFlags.enableProjects
+                    ? [{
+                        id: 'ticket_create' as ActionType,
+                        icon: TicketIcon,
+                        title: 'Create ticket',
+                        desc: 'Drop a new ticket on the board',
+                        disabled: !projectId,
+                        disabledHint: 'Only available when the trigger is scoped to a project',
+                      }]
+                    : []),
+                ].map((action) => {
+                  const Icon = action.icon;
+                  const isActive = actionType === action.id;
+                  const isDisabled = 'disabled' in action ? action.disabled : false;
+                  return (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={() => !isDisabled && setActionType(action.id)}
+                      disabled={isDisabled}
+                      title={isDisabled && 'disabledHint' in action ? action.disabledHint : undefined}
+                      className={cn(
+                        'group flex h-auto w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                        isActive
+                          ? 'border-primary/50 bg-primary/[0.04]'
+                          : 'border-border/50 bg-muted/20 hover:bg-muted/35',
+                        isDisabled && 'cursor-not-allowed opacity-50 hover:bg-muted/20',
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-medium text-foreground">{action.title}</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground/60">
+                          {action.desc}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -573,12 +566,30 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
         </div>
 
         {/* ─── Footer ────────────────────────────────────────────── */}
-        <div className="flex justify-between gap-3 pt-4 shrink-0 border-t mt-2">
-          <div>
+        <div className="flex items-center justify-between gap-3 pt-4 shrink-0 border-t mt-2">
+          <div className="flex items-center gap-2">
             {step !== 'source' && (
               <Button variant="ghost" size="sm" onClick={() => setStep(step === 'config' ? 'action' : 'source')} className="cursor-pointer rounded-xl">
                 <ArrowLeft className="h-4 w-4 mr-1" /> Back
               </Button>
+            )}
+            {step === 'source' && sourceType === 'cron' && (
+              <Select value={timezone} onValueChange={setTimezone}>
+                <SelectTrigger
+                  className="h-8 w-auto gap-1.5 rounded-full border-border/50 bg-transparent px-3 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground cursor-pointer"
+                  title="Timezone"
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONES.map((tz) => (
+                    <SelectItem key={tz} value={tz} className="cursor-pointer">
+                      {tz}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </div>
           <div className="flex gap-3">

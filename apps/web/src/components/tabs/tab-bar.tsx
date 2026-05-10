@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useRightSidebarSafe } from '@/components/ui/sidebar-right-provider';
+import { isDesktop, desktopPlatform } from '@/lib/desktop';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
@@ -568,6 +569,16 @@ export function TabBar() {
   const sidebar = useSidebar();
   const rightSidebar = useRightSidebarSafe();
 
+  // On macOS Tauri with the sidebar collapsed to its icon rail, the inset
+  // begins right where the OS traffic lights end — push the back/forward
+  // chevrons right so they're not flush against the lights. SSR-safe via
+  // useEffect (window only exists client-side under Tauri).
+  const [isMacDesktop, setIsMacDesktop] = useState(false);
+  useEffect(() => {
+    setIsMacDesktop(isDesktop() && desktopPlatform() === 'macos');
+  }, []);
+  const needsTrafficLightSpace = isMacDesktop && sidebar.state === 'collapsed';
+
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     tab: Tab;
@@ -1061,16 +1072,18 @@ export function TabBar() {
     window.history.pushState(null, '', toInstanceAwarePath('/dashboard', currentInstanceId));
   }, [setActiveTab, currentInstanceId]);
 
-  // Always render the bar so the bg-sidebar strip above the content curve is consistent
+  // Always render the bar so the bg-sidebar strip above the content curve is consistent.
+  // Web: 38px. Desktop (any platform) → 52px via globals.css; macOS → 40px via the existing
+  // !important override that lines up with the traffic-light row.
   if (orderedTabs.length === 0) {
-    return <div className="flex-shrink-0 bg-sidebar h-[44px] md:h-[38px]" />;
+    return <div className="flex-shrink-0 bg-sidebar h-[38px]" />;
   }
 
   return (
     <>
       <div
         ref={tabBarRef}
-        className="flex-shrink-0 flex items-stretch bg-sidebar h-[44px] md:h-[38px] relative overflow-hidden"
+        className="flex-shrink-0 flex items-stretch bg-sidebar h-[38px] relative overflow-hidden"
         role="tablist"
       >
         {/* Mobile: sidebar toggles */}
@@ -1091,7 +1104,12 @@ export function TabBar() {
           </button>
         </div>
         {/* Desktop: Back/Forward navigation */}
-        <div className="flex-shrink-0 flex items-center gap-0 pl-2 pr-1 hidden md:flex">
+        <div
+          className={cn(
+            'flex-shrink-0 flex items-center gap-0 pr-1 hidden md:flex',
+            needsTrafficLightSpace ? 'pl-10' : 'pl-2',
+          )}
+        >
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -1151,13 +1169,16 @@ export function TabBar() {
         <div className="flex-shrink-0 flex items-center gap-px pr-2 relative z-20 bg-sidebar pl-1 h-full">
           {/* Fade edge — hidden when scrolled fully right */}
           <div ref={scrollFadeRef} className="absolute right-full top-0 bottom-0 w-3 bg-gradient-to-r from-transparent to-sidebar pointer-events-none transition-opacity duration-150" />
-          {/* New tab button */}
+          {/* New tab + Open tab list — kept in DOM but hidden visually
+              per design feedback: the controls felt like clutter at the
+              top of the right sidebar. They're still here so we can
+              re-enable easily; they're not part of the visible chrome. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 onClick={handleNewTab}
                 className={cn(
-                  'flex items-center justify-center w-7 h-7 rounded-md cursor-pointer',
+                  'hidden items-center justify-center w-7 h-7 rounded-md cursor-pointer',
                   'text-muted-foreground/50 hover:text-muted-foreground transition-colors',
                 )}
               >
@@ -1169,7 +1190,7 @@ export function TabBar() {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <div>
+              <div className="hidden">
                 <TabListDropdown
                   tabs={orderedTabs}
                   activeTabId={activeTabId}
@@ -1182,6 +1203,7 @@ export function TabBar() {
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-xs">Open tab list</TooltipContent>
           </Tooltip>
+
         </div>
       </div>
 

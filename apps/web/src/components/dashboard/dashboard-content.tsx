@@ -27,6 +27,7 @@ import { useSelectedProjectStore } from '@/stores/selected-project-store';
 import { useKortixProjects } from '@/hooks/kortix/use-kortix-projects';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
 import { appendProjectRef } from '@/lib/project-preamble';
+import { featureFlags } from '@/lib/feature-flags';
 import { Menu } from 'lucide-react';
 import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import { playSound } from '@/lib/sounds';
@@ -79,16 +80,21 @@ export function DashboardContent() {
   // Unified model/agent/variant state
   const local = useOpenCodeLocal({ agents, providers, config });
 
-  // Project selection — persisted across reloads
-  const selectedProjectId = useSelectedProjectStore((s) => s.projectId);
+  // Project selection — persisted across reloads. Force-null when the
+  // project flag is off so no project preamble is appended on send and
+  // the LLM never sees a project context. Store reads are still wired (cheap
+  // zustand subscriptions) so flipping the flag on rehydrates the prior pick.
+  const selectedProjectIdRaw = useSelectedProjectStore((s) => s.projectId);
   const setSelectedProjectId = useSelectedProjectStore((s) => s.setProjectId);
-  const { data: kortixProjects } = useKortixProjects();
+  const selectedProjectId = featureFlags.enableProjects ? selectedProjectIdRaw : null;
+  const { data: kortixProjects } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const selectedProject = React.useMemo(
-    () => kortixProjects?.find((p) => p.id === selectedProjectId) ?? null,
+    () => (featureFlags.enableProjects ? kortixProjects?.find((p) => p.id === selectedProjectId) ?? null : null),
     [kortixProjects, selectedProjectId],
   );
   // If the persisted project id no longer exists, clear it transparently
   React.useEffect(() => {
+    if (!featureFlags.enableProjects) return;
     if (selectedProjectId && kortixProjects && !selectedProject) {
       setSelectedProjectId(null);
     }
@@ -243,13 +249,17 @@ export function DashboardContent() {
           is absolute-positioned behind. */}
       <div className="relative flex-1 min-h-0 z-10" />
 
-      {/* Project selector — sits above the chat input, pill style */}
-      <div className="relative z-10">
-        <ProjectSelector
-          selectedProjectId={selectedProjectId}
-          onSelect={setSelectedProjectId}
-        />
-      </div>
+      {/* Project selector — sits above the chat input, pill style. Hidden
+          when the project paradigm is off (default); the input then
+          sends straight to a fresh session with no project preamble. */}
+      {featureFlags.enableProjects && (
+        <div className="relative z-10">
+          <ProjectSelector
+            selectedProjectId={selectedProjectId}
+            onSelect={setSelectedProjectId}
+          />
+        </div>
+      )}
 
       {/* Chat Input — pinned to bottom, overlays the wallpaper */}
       <SessionChatInput

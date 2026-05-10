@@ -20,9 +20,11 @@ import { agentTaskTools, handleAgentTaskSessionEvent } from "./agent-tasks"
 import { ticketTools, ticketToolGateHook } from "./ticket-tools"
 import { ensureTasksTable, reconcileAllRunningTasks } from "../../../src/services/task-service"
 import { ensureTicketTables } from "../../../src/services/ticket-service"
+import { seedV2Project } from "../../../src/services/project-v2-seed"
 import { resolveKortixWorkspaceRoot, ensureKortixDir } from "./lib/paths"
 import { markStartupAbortedSession } from "./lib/startup-aborted-sessions"
 import { getBusySessionIds } from "../../../src/services/runtime-reload"
+import { config } from "../../../src/config"
 
 const STARTUP_BUSY_SESSION_CLEANUP_DELAY_MS = 750
 const STARTUP_BUSY_SESSION_CLEANUP_INTERVAL_MS = 3_000
@@ -165,21 +167,59 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 	})
 	const spendingCap = await load("spending-cap", () => import("./spending-cap").then(m => m.default(ctx)))
 	
-	console.log("[kortix-system] Plugin initialized. Tools:", Object.keys(projectTools(mgr, db)).length, "project +", Object.keys(agentTaskTools(db, mgr, client)).length, "task")
+	// Feature flag: when KORTIX_PROJECTS_ENABLED=false (default) the project
+	// paradigm is OFF — no project_*/ticket_* tools are exposed to the LLM, no
+	// project status hint is injected, and the agent never knows projects exist.
+	// Existing project rows in SQLite are preserved; flipping the flag on
+	// resurfaces them. Mirror flag in web: NEXT_PUBLIC_ENABLE_PROJECTS.
+	const projectsEnabled = config.PROJECTS_ENABLED
+	// Single-project paradigm: when enabled, ensure THE project exists in
+	// SQLite AND is fully seeded (PM agent + default kanban columns) so the
+	// board, ticket_create, and milestone routes work without a manual
+	// project_create / project_select dance. Both ensureDefaultProject and
+	// seedV2Project are idempotent — re-running on every plugin init is safe
+	// and fixes pre-paradigm sandboxes whose proj-workspace row was inserted
+	// without columns.
+	if (projectsEnabled) {
+		try {
+			const def = mgr.ensureDefaultProject()
+			await seedV2Project(db, {
+				id: def.id,
+				name: def.name,
+				path: def.path,
+				description: def.description,
+				user_handle: null,
+			})
+			console.log(`[kortix-system] Default project seeded: ${def.id} @ ${def.path}`)
+		} catch (e) {
+			console.warn("[kortix-system] default-project bootstrap failed:", (e as Error).message)
+		}
+	}
+	const projectToolMap = projectsEnabled ? projectTools(mgr, db) : {}
+	const ticketToolMap = projectsEnabled ? ticketTools(db, mgr, client) : {}
+	// agentTaskTools (task_create, task_list, task_deliver…) are runtime-coupled
+	// to a bound project — they short-circuit with "no project selected" when the
+	// session has none. With the paradigm off there is no project to bind, so the
+	// tools cannot succeed and would only confuse the model. Gate the whole
+	// surface alongside project_* and ticket_*.
+	const agentTaskToolMap = projectsEnabled ? agentTaskTools(db, mgr, client) : {}
+	console.log(
+		`[kortix-system] Plugin initialized. projects=${projectsEnabled ? "ON" : "OFF"}; tools: ${Object.keys(projectToolMap).length} project + ${Object.keys(agentTaskToolMap).length} task + ${Object.keys(ticketToolMap).length} ticket`,
+	)
 	scheduleStartupBusySessionCleanup(client, db, startupCleanupStartedAt)
 	setInterval(() => {
 		void reconcileAllRunningTasks(db, client).catch(() => {})
 	}, 5000)
- 
+
 	// ── Merge all tools ──
 	const projectGate = projectGateHook(mgr)
 	const ticketGate = ticketToolGateHook(db)
 	const projectStatus = projectStatusTransform(mgr, () => currentSessionId)
 	return {
 		tool: {
-			...projectTools(mgr, db),
-			...agentTaskTools(db, mgr, client),
-			...ticketTools(db, mgr, client),
+			...projectToolMap,
+			...agentTaskToolMap,
+			...ticketToolMap,
 			...(sessions?.tool || {}),
 			...(connectors?.tool || {}),
 			...(triggers?.tool || {}),
@@ -196,10 +236,14 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 			await ticketGate(input, output)
 		},
 
-		// System prompt transform — forwards to auth (anthropic prefix).
-		// Project-agent persona is injected by OpenCode itself from the
-		// agent file's body (real first-class agents under `.opencode/agent/`),
-		// not through this hook.
+		// System prompt transform — forwards to auth (anthropic prefix). The
+		// project-paradigm gate is enforced at file level: kortix-system.md
+		// (the shared base) and general.md (the default agent) carry zero
+		// project content; all project knowledge lives in the orchestrator
+		// agent body, and that agent file is moved out of OpenCode's discovery
+		// path when KORTIX_PROJECTS_ENABLED=false (see runtime config logic
+		// in this plugin's startup; agents/_disabled-when-no-projects/ holds
+		// the project-only bodies until the flag flips on).
 		"experimental.chat.system.transform": async (input: any, output: { system: string[] }) => {
 			if (auth?.["experimental.chat.system.transform"]) {
 				await auth["experimental.chat.system.transform"](input, output)
@@ -207,8 +251,10 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 		},
 
 		// Inject the project status / no-project gate / v2-route-only reminder
-		// into the last user message before each LLM call.
+		// into the last user message before each LLM call. Skipped entirely
+		// when projects are disabled — the LLM gets no mention of projects.
 		"experimental.chat.messages.transform": async (input: any, output: { messages: any[] }) => {
+			if (!projectsEnabled) return
 			await projectStatus(input, output).catch(() => {})
 		},
 
@@ -294,9 +340,11 @@ const KortixSystemPlugin: Plugin = async (ctx) => {
 			}
 		},
 
-		// Compaction: inject active tasks
+		// Compaction: inject active tasks (skipped when projects disabled —
+		// no project means no task list to inject).
 		"experimental.session.compacting": async (_input: any, output: { context: string[] }) => {
 			try {
+				if (!projectsEnabled) return
 				if (!currentSessionId) return
 				const project = mgr.getSessionProject(currentSessionId)
 				if (!project) return

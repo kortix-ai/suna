@@ -26,6 +26,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowUpRight,
+  Box,
   Check,
   ChevronsUpDown,
   Loader2,
@@ -34,16 +35,11 @@ import {
 } from 'lucide-react';
 
 import { useAuth } from '@/components/AuthProvider';
-import { Button } from '@/components/ui/button';
 import {
-  CommandPopover,
-  CommandPopoverTrigger,
-  CommandPopoverContent,
-  CommandInput,
-  CommandList,
-  CommandGroup,
-  CommandItem,
-} from '@/components/ui/command';
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from '@/components/ui/popover';
 import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { listSandboxes, ensureSandbox, type SandboxInfo } from '@/lib/platform-client';
@@ -198,19 +194,27 @@ export function WorkspacesFlyoutContent({
     }
   };
 
+  // Shared row styling — matches CommandItem's natural spec exactly so
+  // the collapsed-sidebar flyout reads identical to the popover dropdown.
+  const rowClass = cn(
+    'group/row relative flex items-center gap-2 w-full rounded-lg px-2 py-1.5',
+    'text-sm text-foreground/80 outline-hidden cursor-pointer transition-colors duration-75',
+    'hover:bg-foreground/[0.06] hover:text-foreground',
+    "[&_svg:not([class*='text-'])]:text-muted-foreground/65",
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  );
+  const iconColClass = 'shrink-0';
+
   return (
     <>
-      <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-        Workspaces
-      </div>
-      <div className="overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="p-1 flex flex-col">
         {isLoading && visible.length === 0 ? (
-          <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
+          <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
             Loading…
           </div>
         ) : visible.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-muted-foreground/60">
+          <div className="px-2 py-6 text-center text-xs text-muted-foreground/60">
             No workspaces yet
           </div>
         ) : (
@@ -222,17 +226,15 @@ export function WorkspacesFlyoutContent({
                 type="button"
                 onClick={() => handleSelect(s)}
                 className={cn(
-                  'group/row flex items-center gap-2 w-full px-2 py-1.5 text-[13px] cursor-pointer transition-colors duration-100',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-foreground'
-                    : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                  rowClass,
+                  isActive && 'bg-foreground/[0.06] text-foreground',
                 )}
               >
-                <WorkspaceAvatar sandbox={s} size="xs" />
+                <Box className={iconColClass} />
                 <span
                   className={cn(
-                    'flex-1 truncate text-left',
-                    isActive && 'font-semibold text-foreground',
+                    'flex-1 truncate text-left leading-tight',
+                    isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/85',
                   )}
                 >
                   {displayName(s)}
@@ -252,46 +254,41 @@ export function WorkspacesFlyoutContent({
                     setSettingsTarget(s);
                   }}
                   className={cn(
-                    'flex items-center justify-center h-6 w-6 rounded-md flex-shrink-0',
+                    'flex items-center justify-center h-5 w-5 rounded-[4px] flex-shrink-0',
                     'text-muted-foreground/60 hover:text-foreground hover:bg-muted',
                     'opacity-0 group-hover/row:opacity-100 transition-opacity duration-150',
                   )}
                 >
                   <Settings2 className="size-3" />
                 </span>
-                {isActive && <Check className="size-3.5 text-foreground shrink-0" />}
+                {isActive && <Check className="text-foreground" />}
               </button>
             );
           })
         )}
-      </div>
-      <div className="border-t border-border/50 p-1 flex flex-col">
-        <Button
-          variant="ghost"
-          size="sm"
+        <div className="border-t border-border/40 my-1" />
+        <button
+          type="button"
           onClick={handleNewInstance}
           disabled={creatingLocal}
-          className="w-full justify-start gap-2 text-[12.5px] font-normal h-8 px-2"
+          className={cn(rowClass, 'disabled:opacity-50 disabled:pointer-events-none')}
         >
-          {creatingLocal ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Plus className="h-3.5 w-3.5" />
-          )}
-          {creatingLocal ? 'Creating…' : 'New workspace'}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
+          {creatingLocal ? <Loader2 className="animate-spin" /> : <Plus />}
+          <span className="flex-1 text-left">
+            {creatingLocal ? 'Creating…' : 'New workspace'}
+          </span>
+        </button>
+        <button
+          type="button"
           onClick={() => {
             onAfterAction?.();
             router.push('/instances');
           }}
-          className="w-full justify-start gap-2 text-[12.5px] font-normal h-8 px-2"
+          className={rowClass}
         >
-          <ArrowUpRight className="h-3.5 w-3.5" />
-          All workspaces
-        </Button>
+          <ArrowUpRight />
+          <span className="flex-1 text-left">All workspaces</span>
+        </button>
       </div>
 
       <InstanceSettingsModal
@@ -308,20 +305,10 @@ export function WorkspacesFlyoutContent({
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function InstanceSwitcherPopover() {
-  const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
-  const isCloud = isBillingEnabled();
-  const openNewInstanceModal = useNewInstanceModalStore((s) => s.openNewInstanceModal);
 
   const [open, setOpen] = React.useState(false);
-  const [search, setSearch] = React.useState('');
-  const [settingsTarget, setSettingsTarget] = React.useState<SandboxInfo | null>(null);
-  const [creatingLocal, setCreatingLocal] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!open) setSearch('');
-  }, [open]);
 
   // Allow other components (e.g. the unreachable connecting screen's
   // "Switch workspace" button) to pop this switcher without a router push.
@@ -331,7 +318,7 @@ export function InstanceSwitcherPopover() {
     return () => window.removeEventListener('open-instance-switcher', handler);
   }, []);
 
-  const { data: sandboxes, isLoading, refetch } = useQuery({
+  const { data: sandboxes } = useQuery({
     queryKey: ['platform', 'sandbox', 'list'],
     queryFn: listSandboxes,
     enabled: !!user,
@@ -348,60 +335,18 @@ export function InstanceSwitcherPopover() {
     [sandboxes],
   );
 
-  const filtered = React.useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return visible;
-    return visible.filter((s) =>
-      [s.name, s.sandbox_id].filter(Boolean).join(' ').toLowerCase().includes(q),
-    );
-  }, [visible, search]);
-
   const currentInstanceId = getCurrentInstanceIdFromPath(pathname);
   const activeServer = useServerStore((s) =>
     s.servers.find((srv) => srv.id === s.activeServerId),
   );
   const activeInstanceId = currentInstanceId || activeServer?.instanceId || null;
-  const active = visible.find((s) => s.sandbox_id === activeInstanceId) ?? null;
-  // Fall back to the first known workspace ONLY for display. We never auto-pick
-  // it as "active" — that would lie about which workspace the user is in.
-  const triggerSandbox = active ?? null;
+  const triggerSandbox = visible.find((s) => s.sandbox_id === activeInstanceId) ?? null;
   const triggerLabel = triggerSandbox ? displayName(triggerSandbox) : 'Select workspace';
-
-  const handleSelect = async (sandbox: SandboxInfo) => {
-    setOpen(false);
-    if (sandbox.sandbox_id === activeInstanceId) return;
-    if (sandbox.status === 'active') {
-      const result = await activateInstanceSelection(sandbox.sandbox_id, { pathname });
-      router.push(result?.href ?? `/instances/${sandbox.sandbox_id}/dashboard`);
-      return;
-    }
-    router.push(`/instances/${sandbox.sandbox_id}`);
-  };
-
-  const handleSettings = (sandbox: SandboxInfo) => {
-    setOpen(false);
-    setSettingsTarget(sandbox);
-  };
-
-  const handleNewInstance = async () => {
-    setOpen(false);
-    if (isCloud) {
-      openNewInstanceModal();
-      return;
-    }
-    setCreatingLocal(true);
-    try {
-      await ensureSandbox();
-      await refetch();
-    } finally {
-      setCreatingLocal(false);
-    }
-  };
 
   return (
     <>
-      <CommandPopover open={open} onOpenChange={setOpen} modal={false}>
-        <CommandPopoverTrigger>
+      <Popover open={open} onOpenChange={setOpen} modal={false}>
+        <PopoverTrigger asChild>
           <button
             type="button"
             className={cn(
@@ -422,134 +367,27 @@ export function InstanceSwitcherPopover() {
             </div>
             <ChevronsUpDown className="size-3.5 opacity-50 flex-shrink-0 group-hover/switcher:opacity-100 transition-opacity" />
           </button>
-        </CommandPopoverTrigger>
+        </PopoverTrigger>
 
-        <CommandPopoverContent
+        <PopoverContent
           side="bottom"
           align="start"
           sideOffset={6}
-          className="w-[280px]"
-        >
-          {visible.length > 4 && (
-            <CommandInput
-              compact
-              placeholder="Search workspaces…"
-              value={search}
-              onValueChange={setSearch}
-            />
+          className={cn(
+            'w-[280px] p-0 overflow-hidden rounded-xl border-0',
+            // Same dark slab surface as the unified dropdown system —
+            // bg-card with hairline white inner border, soft drop, top-edge
+            // gradient highlight. Identical material to DropdownMenuContent.
+            'bg-card text-popover-foreground',
+            'border border-border/60',
+            'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
+            'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
           )}
-
-          <CommandList className="max-h-[320px]">
-            <CommandGroup heading={visible.length > 0 ? 'Workspaces' : undefined} forceMount>
-              {isLoading && visible.length === 0 ? (
-                <div className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Loading…
-                </div>
-              ) : filtered.length === 0 && search.trim() ? (
-                <div className="py-6 text-center text-xs text-muted-foreground/60">
-                  No workspaces match &ldquo;{search.trim()}&rdquo;
-                </div>
-              ) : visible.length === 0 ? (
-                <div className="py-6 text-center text-xs text-muted-foreground/60">
-                  No workspaces yet
-                </div>
-              ) : (
-                filtered.map((s) => {
-                  const isActive = s.sandbox_id === activeInstanceId;
-                  return (
-                    <CommandItem
-                      key={s.sandbox_id}
-                      value={`workspace-${s.sandbox_id}-${s.name ?? ''}`}
-                      onSelect={() => handleSelect(s)}
-                      className="group/row gap-2"
-                    >
-                      <WorkspaceAvatar sandbox={s} size="xs" />
-                      <div className="flex-1 min-w-0">
-                        <span
-                          className={cn(
-                            'truncate text-[13px] block',
-                            isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
-                          )}
-                        >
-                          {displayName(s)}
-                        </span>
-                        {s.version && (
-                          <p className="text-[10.5px] text-muted-foreground/60 leading-snug mt-0.5 truncate">
-                            v{s.version}
-                          </p>
-                        )}
-                      </div>
-                      <span
-                        role="button"
-                        tabIndex={-1}
-                        aria-label={`Settings for ${displayName(s)}`}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                        }}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleSettings(s);
-                        }}
-                        className={cn(
-                          'flex items-center justify-center h-6 w-6 rounded-md cursor-pointer flex-shrink-0',
-                          'text-muted-foreground/60 hover:text-foreground hover:bg-muted',
-                          'opacity-0 group-hover/row:opacity-100 group-data-[selected=true]:opacity-100',
-                          'transition-opacity duration-150',
-                        )}
-                      >
-                        <Settings2 className="size-3" />
-                      </span>
-                      {isActive && (
-                        <Check className="size-3.5 text-foreground shrink-0" />
-                      )}
-                    </CommandItem>
-                  );
-                })
-              )}
-            </CommandGroup>
-          </CommandList>
-
-          <div className="border-t border-border/50 p-1 flex flex-col">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleNewInstance}
-              disabled={creatingLocal}
-              className="w-full justify-start gap-2 text-[12.5px] font-normal h-8 px-2"
-            >
-              {creatingLocal ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plus className="h-3.5 w-3.5" />
-              )}
-              {creatingLocal ? 'Creating…' : 'New workspace'}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setOpen(false);
-                router.push('/instances');
-              }}
-              className="w-full justify-start gap-2 text-[12.5px] font-normal h-8 px-2"
-            >
-              <ArrowUpRight className="h-3.5 w-3.5" />
-              All workspaces
-            </Button>
-          </div>
-        </CommandPopoverContent>
-      </CommandPopover>
-
-      <InstanceSettingsModal
-        sandbox={settingsTarget}
-        open={!!settingsTarget}
-        onOpenChange={(o) => {
-          if (!o) setSettingsTarget(null);
-        }}
-      />
+        >
+          <WorkspacesFlyoutContent onAfterAction={() => setOpen(false)} />
+        </PopoverContent>
+      </Popover>
     </>
   );
 }
+

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { TelegramIcon } from '@/components/ui/icons/telegram';
 import { toast } from 'sonner';
+import { featureFlags } from '@/lib/feature-flags';
 import { useTelegramVerifyToken, useTelegramConnect } from '@/hooks/channels/use-telegram-wizard';
 import { AgentSelector, flattenModels } from '@/components/session/session-chat-input';
 import { ModelSelector } from '@/components/session/model-selector';
@@ -39,7 +40,7 @@ export function TelegramSetupWizard({ onCreated, onBack, initialProjectId = null
 
   // Project list — used to resolve the project's working directory so the
   // agent picker shows that project's per-role agents (engineer, qa, …).
-  const { data: projects = [] } = useKortixProjects();
+  const { data: projects = [] } = useKortixProjects(undefined, { enabled: featureFlags.enableProjects });
   const projectDirectory = useMemo(
     () => projects.find((p) => p.id === projectId)?.path,
     [projects, projectId],
@@ -175,15 +176,19 @@ export function TelegramSetupWizard({ onCreated, onBack, initialProjectId = null
         {/* Project & Agent & Model — shown after token is verified */}
         {botInfo && (
           <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Project</Label>
-              <ChannelProjectPicker value={projectId} onChange={setProjectId} className="bg-card" />
-              <p className="text-[11px] text-muted-foreground px-0.5">
-                {projectId
-                  ? 'Bot runs inside this project — agents pick is scoped to it.'
-                  : 'Workspace channel — uses the global agent set.'}
-              </p>
-            </div>
+            {/* Project — hidden when the project paradigm is off.
+                The bot then runs as a sandbox-wide channel (project_id=null). */}
+            {featureFlags.enableProjects && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Project</Label>
+                <ChannelProjectPicker value={projectId} onChange={setProjectId} className="bg-card" />
+                <p className="text-[11px] text-muted-foreground px-0.5">
+                  {projectId
+                    ? 'Bot runs inside this project — agents pick is scoped to it.'
+                    : 'Workspace channel — uses the global agent set.'}
+                </p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label className="text-xs">Agent</Label>

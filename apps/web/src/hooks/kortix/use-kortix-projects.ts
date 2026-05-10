@@ -58,14 +58,14 @@ interface KortixProjectQueryOptions {
 
 // ── Hooks ────────────────────────────────────────────────────────────────────
 
-export function useKortixProjects() {
+export function useKortixProjects(_args?: undefined, options: KortixProjectQueryOptions = {}) {
   const { user, isLoading: isAuthLoading } = useAuth();
   const serverVersion = useServerStore((s) => s.serverVersion);
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   return useQuery<KortixProject[]>({
     queryKey: [...kortixKeys.projects(), user?.id ?? 'anonymous', serverUrl, serverVersion],
     queryFn: () => kortixFetch<KortixProject[]>(serverUrl, ''),
-    enabled: !isAuthLoading && !!user && !!serverUrl,
+    enabled: !isAuthLoading && !!user && !!serverUrl && (options.enabled ?? true),
     staleTime: 30_000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,

@@ -36,6 +36,35 @@ export const config = {
   // Feature flag: enable or disable local deployment routes (/kortix/deploy/*)
   KORTIX_DEPLOYMENTS_ENABLED: process.env.KORTIX_DEPLOYMENTS_ENABLED === 'true',
 
+  // Feature flag: enable the project paradigm (board / tickets /
+  // milestones / project agents / per-project credentials).
+  //
+  // Default: false. With this off, the LLM has no project_*/ticket_*/
+  // milestone_* tools, the project status transform stays silent, and the
+  // sandbox advertises features.projectsEnabled=false on /kortix/health so
+  // the web UI can mirror state. Existing project rows in SQLite are
+  // preserved; flipping the flag back on resurfaces them untouched.
+  //
+  // Resolved from (in priority order):
+  //   1. process.env.KORTIX_PROJECTS_ENABLED — Docker -e flag at create time
+  //   2. /persistent/.kortix-projects-enabled — survives container respawn
+  //   3. default false
+  // Container auto-update wipes /run/s6/container_environment, so we mirror
+  // the flag to /persistent (which is volume-mounted) and re-prime the s6
+  // env file from there in lib/projects-flag.ts on plugin init.
+  get PROJECTS_ENABLED(): boolean {
+    if (process.env.KORTIX_PROJECTS_ENABLED === 'true') return true
+    if (process.env.KORTIX_PROJECTS_ENABLED === 'false') return false
+    try {
+      const persistentPath = `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/.kortix-projects-enabled`
+      const { readFileSync, existsSync } = require('fs')
+      if (existsSync(persistentPath)) {
+        return readFileSync(persistentPath, 'utf8').trim() === 'true'
+      }
+    } catch {}
+    return false
+  },
+
   // Secret storage
   SECRET_FILE_PATH: process.env.SECRET_FILE_PATH || `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/secrets/.secrets.json`,
   SALT_FILE_PATH: process.env.SALT_FILE_PATH || `${process.env.KORTIX_PERSISTENT_ROOT || '/persistent'}/secrets/.salt`,

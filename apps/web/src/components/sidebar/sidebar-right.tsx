@@ -2,10 +2,7 @@
 
 import * as React from 'react';
 import { useCallback, useState } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
+import { PanelRight } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
@@ -53,7 +50,6 @@ export function SidebarRight() {
   const {
     state,
     open,
-    setOpen,
     openMobile,
     setOpenMobile,
     toggleSidebar,
@@ -309,37 +305,35 @@ export function SidebarRight() {
           className="bg-sidebar text-sidebar-foreground flex h-full w-full flex-col"
         >
 
-          {/* ====== HEADER ====== */}
-          <div data-sidebar="header" className="flex flex-col pt-3 pb-0 overflow-visible">
-            <div className="relative flex h-[32px] items-center px-3 justify-between">
-              {state === 'collapsed' && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <button
-                    className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150"
-                    onClick={() => setOpen(true)}
-                    aria-label="Expand sidebar"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
-
-              <div className={cn(
-                'flex items-center justify-between w-full',
-                state === 'collapsed' ? 'opacity-0 pointer-events-none' : 'opacity-100',
-              )}>
-                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
-                  Quick Actions
-                </span>
-                <button
-                  className="flex items-center justify-center h-7 w-7 rounded-lg transition-colors duration-150 cursor-pointer text-sidebar-foreground hover:bg-sidebar-accent"
-                  onClick={() => setOpen(false)}
-                  aria-label="Collapse sidebar"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
+          {/* ====== HEADER ======
+              Sits in the same vertical band as the inset's tab bar so
+              the toggle button is aligned with back / forward / home.
+              Heights match the tab bar exactly:
+                base   h-[56px]  (mobile)
+                md:    h-[52px]  (desktop)
+                macOS  height:40 !important via globals.css (right's
+                       data-sidebar=header), matching the macOS tab bar.
+              Always rendered in both states; the Quick Actions label
+              fades opacity to avoid wrap/flash mid-collapse-animation. */}
+          <div
+            data-sidebar="header"
+            className={cn(
+              'flex h-[38px] items-center px-3 pt-2 gap-2 overflow-hidden flex-shrink-0',
+              state === 'expanded' ? 'justify-between' : 'justify-center',
+            )}
+          >
+            {state === 'expanded' && (
+              <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-muted-foreground uppercase tracking-wider select-none px-1">
+                Quick Actions
+              </span>
+            )}
+            <button
+              className="flex items-center justify-center h-7 w-7 rounded-lg cursor-pointer text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent transition-colors duration-150 flex-shrink-0"
+              onClick={toggleSidebar}
+              aria-label={state === 'expanded' ? 'Collapse sidebar' : 'Expand sidebar'}
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
           </div>
 
           {/* ====== CONTENT ====== */}
@@ -347,11 +341,17 @@ export function SidebarRight() {
             'flex min-h-0 flex-1 flex-col relative',
             state === 'collapsed' ? 'overflow-visible' : 'overflow-hidden',
           )}>
-            {/* --- Collapsed: icon buttons (registry-driven, clustered) --- */}
-            <div className={cn(
-              'absolute inset-0 px-2 pt-2 flex flex-col items-center overflow-visible',
-              state === 'collapsed' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
-            )}>
+            {/* --- Collapsed: icon buttons (registry-driven, clustered) ---
+                The header above contains the expand toggle; this stack
+                is purely the registry-driven icons. Starts immediately
+                under the header. */}
+            <div
+              data-sidebar="content-collapsed"
+              className={cn(
+                'absolute inset-0 px-2 pt-2 flex flex-col items-center overflow-visible',
+                state === 'collapsed' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+              )}
+            >
               {/* Quick action clusters */}
               {quickActionClusters.map((cluster, clusterIdx) => (
                 <div key={cluster[0]?.subGroup ?? clusterIdx} className="w-full">

@@ -6,9 +6,6 @@ import {
   ChevronDown,
   Plus,
   SlidersHorizontal,
-  ArrowUp,
-  ArrowDown,
-  CornerDownLeft,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -24,8 +21,6 @@ import {
   CommandList,
   CommandGroup,
   CommandItem,
-  CommandFooter,
-  CommandKbd,
 } from '@/components/ui/command';
 
 import { useModelStore } from '@/hooks/opencode/use-model-store';
@@ -194,7 +189,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
         <TooltipContent side="top" className="text-xs">Choose model</TooltipContent>
       </Tooltip>
 
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[340px]">
+      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
         <CommandInput
           compact
           placeholder="Search models..."
@@ -239,8 +234,8 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                   heading={
                     <div className="flex items-center gap-2">
                       <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
-                      <span>{PROVIDER_LABELS[group.providerID] || group.providerName}</span>
-                      <span className="ml-auto text-[10px] text-muted-foreground/30 normal-case tracking-normal">
+                      <span className="flex-1">{PROVIDER_LABELS[group.providerID] || group.providerName}</span>
+                      <span className="text-[10px] text-muted-foreground/30 normal-case tracking-normal">
                         {group.models.length}
                       </span>
                     </div>
@@ -255,14 +250,20 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                       <CommandItem
                         key={`${model.providerID}:${model.modelID}`}
                         value={`model-${model.providerID}-${model.modelID}`}
+                        className={cn('!pl-3', isSelected && 'bg-foreground/[0.06]')}
                         onSelect={() => handleSelect(model)}
                       >
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium text-[13px]">{model.modelName}</div>
-                          <div className="text-[11px] text-muted-foreground/50 truncate mt-0.5">{model.modelID}</div>
+                        <div className="min-w-0 flex-1 py-0.5">
+                          <div className={cn(
+                            'truncate text-[13px] leading-tight',
+                            isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
+                          )}>
+                            {model.modelName}
+                          </div>
+                          <p className="truncate text-[11px] text-muted-foreground/55 leading-snug mt-1">{model.modelID}</p>
                         </div>
                         {isFree && <Tag variant="free">Free</Tag>}
-                        {isSelected && <Check className="h-3.5 w-3.5 text-foreground flex-shrink-0" />}
+                        {isSelected && <Check className="text-foreground shrink-0" />}
                       </CommandItem>
                     );
                   })}
@@ -275,22 +276,6 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
             </div>
           )}
         </CommandList>
-
-        <CommandFooter>
-          <div className="flex items-center gap-1">
-            <ArrowUp className="h-3 w-3" />
-            <ArrowDown className="h-3 w-3" />
-            <span>navigate</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CornerDownLeft className="h-3 w-3" />
-            <span>select</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <CommandKbd>esc</CommandKbd>
-            <span>close</span>
-          </div>
-        </CommandFooter>
       </CommandPopoverContent>
     </CommandPopover>
   );

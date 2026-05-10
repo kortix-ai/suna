@@ -102,7 +102,7 @@ export function UserMenu({ user }: UserMenuProps) {
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className='bg-muted/40 hover:bg-muted/20 rounded-2xl border'
+                className='bg-muted/40 hover:bg-muted/20 rounded-2xl border group-data-[collapsible=icon]:!justify-center'
               >
                 <Avatar className="h-8 w-8 rounded-full flex-shrink-0">
                   <AvatarImage src={user.avatar} alt={user.name} />
@@ -116,21 +116,21 @@ export function UserMenu({ user }: UserMenuProps) {
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-64 p-1.5"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-64"
               side={isMobile ? 'bottom' : 'top'}
               align="start"
-              sideOffset={4}
+              sideOffset={6}
             >
               {/* Account-only menu. Workspace switching lives exclusively in
                   the sidebar-header switcher (Slack/Linear style) so there's
                   one obvious place for "what workspace am I in / switch". */}
               <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => openSettings('billing')} className="gap-2 p-2 cursor-pointer">
-                  <CreditCard className="size-4" />
+                <DropdownMenuItem onClick={() => openSettings('billing')} className="cursor-pointer">
+                  <CreditCard />
                   <span>Billing</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openSettings('general')} className="gap-2 p-2 cursor-pointer">
-                  <SettingsIcon className="size-4" />
+                <DropdownMenuItem onClick={() => openSettings('general')} className="cursor-pointer">
+                  <SettingsIcon />
                   <span>Settings</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
@@ -138,7 +138,7 @@ export function UserMenu({ user }: UserMenuProps) {
 
               {/* Theme toggle + Log out */}
               <div className="flex items-center justify-between px-1 py-1">
-                <div className="flex gap-0.5 p-0.5 bg-muted/50 rounded-md">
+                <div className="flex gap-0.5 p-0.5 bg-muted/50 rounded-full">
                   {themeOptions.map((mode) => {
                     const Icon = mode.icon;
                     const isActive = theme === mode.value;
@@ -147,7 +147,7 @@ export function UserMenu({ user }: UserMenuProps) {
                         key={mode.value}
                         type="button"
                         onClick={(e) => handleThemeChange(mode.value, e)}
-                        className={cn('p-1.5 rounded-sm transition-colors duration-150 cursor-pointer', 
+                        className={cn('p-1.5 rounded-full transition-colors duration-150 cursor-pointer',
                           isActive
                             ? 'bg-background text-foreground'
                             : 'text-muted-foreground hover:text-foreground'
@@ -161,7 +161,7 @@ export function UserMenu({ user }: UserMenuProps) {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2 py-1"
+                  className="text-[12px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2 py-1"
                 >
                   Log out
                 </button>

@@ -285,157 +285,67 @@ export class ProjectManager {
 			|| this.db.prepare("SELECT * FROM projects WHERE LOWER(name) LIKE LOWER($v)").get({ $v: `%${q}%` })
 		) as ProjectRow | null
 	}
+
+	/**
+	 * Single-project paradigm: a sandbox owns exactly one Kortix project,
+	 * canonically `proj-workspace` rooted at /workspace.
+	 *
+	 * This row is the implicit container for tickets, milestones, columns,
+	 * project-agents, and credentials when the project paradigm is enabled.
+	 * Sessions auto-bind to it, so the LLM never needs project_create or
+	 * project_select — those tools are gone in the new paradigm.
+	 *
+	 * Resolution order:
+	 *   1. Existing `proj-workspace` row → use as-is (the standard one).
+	 *   2. Any project at the workspace root path → adopt as THE project
+	 *      (handles sandboxes pre-dating this paradigm where the user had
+	 *      a different id at /workspace).
+	 *   3. Insert fresh `proj-workspace` row with structure_version=2.
+	 *
+	 * Always idempotent.
+	 */
+	ensureDefaultProject(): ProjectRow {
+		const canonicalId = "proj-workspace"
+		const existing = this.db.prepare("SELECT * FROM projects WHERE id=$id")
+			.get({ $id: canonicalId }) as ProjectRow | null
+		if (existing) return existing
+
+		const atRoot = this.db.prepare("SELECT * FROM projects WHERE path=$p")
+			.get({ $p: this.workspaceRoot }) as ProjectRow | null
+		if (atRoot) return atRoot
+
+		const now = new Date().toISOString()
+		this.db.prepare(
+			"INSERT INTO projects (id,name,path,description,created_at,opencode_id,structure_version) " +
+			"VALUES ($id,$n,$p,$d,$c,NULL,2)",
+		).run({
+			$id: canonicalId,
+			$n: "Workspace",
+			$p: this.workspaceRoot,
+			$d: "Default sandbox project — auto-bootstrapped. Owns the board, tickets, milestones.",
+			$c: now,
+		})
+		return {
+			id: canonicalId,
+			name: "Workspace",
+			path: this.workspaceRoot,
+			description: "Default sandbox project — auto-bootstrapped. Owns the board, tickets, milestones.",
+			created_at: now,
+			opencode_id: null,
+		}
+	}
 }
 
 // ── Tools ────────────────────────────────────────────────────────────────────
 
 export function projectTools(mgr: ProjectManager, db: Database) {
+	// Single-project paradigm: there is no `project_create` (the sandbox
+	// auto-bootstraps THE project on init via ProjectManager.ensureDefaultProject)
+	// and no `project_select` (every session auto-binds to THE project on
+	// first ticket/task tool call — see ticket-tools.ts:getProjectIdForCtx).
+	// Both tools are intentionally absent so the LLM never offers to "create
+	// a project" or "switch projects" — those concepts no longer exist.
 	return {
-		project_create: tool({
-			description: [
-				"Create a v2 project (folder + Project Manager agent + default columns + PM onboarding session).",
-				"Always seeds a real `.opencode/agent/project-manager.md` so PM is a first-class opencode agent in that project.",
-				"If user_handle is provided, a PM onboarding chat is kicked off in a fresh session and that session id is returned — direct the human there to continue setup.",
-				"WHEN TO CALL: ONLY when the user explicitly mentions the word \"project\" (e.g. \"create a project for X\", \"spin up a project to Y\", \"I want a project that Z\"). For any other \"build me X\" / \"make me Y\" request, do NOT call this tool — handle it directly as a hands-on lead.",
-				"WHAT HAPPENS AFTER: A project is its own workhouse — once created, the project's PM + team execute the work via tickets. The agent that calls this tool DOES NOT execute on the project itself (no scaffolding, no edits, no bash). Your job after this call ends with handing the user off to the PM session. Do not load skills, write files, or run commands toward the project's goal — the team does that.",
-			].join(" "),
-			args: {
-				name: tool.schema.string().describe("Project name"),
-				description: tool.schema.string().describe('Description. "" if none.'),
-				path: tool.schema.string().describe('Absolute path. "" for default.'),
-				user_handle: tool.schema.string().optional().describe('Human\'s handle for @-mentions (e.g. "vukasinkubet"). If omitted, PM onboarding is NOT auto-fired and the project just gets seeded silently.'),
-				default_model: tool.schema.string().optional().describe('Optional model override in "providerID/modelID" form to seed the PM + team with (e.g. "kortix-yolo/think", "kortix/minimax-m27"). Leave empty to auto-pick based on what the sandbox has credentials for. Pass this when the user has explicitly chosen a model for the project.'),
-			},
-			async execute(args: { name: string; description: string; path: string; user_handle?: string; default_model?: string }, toolCtx: ToolContext): Promise<string> {
-				try {
-					const p = await mgr.createProject(args.name, args.description, args.path)
-					// Force v2 + record user handle if given. createProject inserts
-					// with default structure_version=1, so flip it here.
-					db.prepare(
-						"UPDATE projects SET structure_version=2, user_handle=COALESCE($h, user_handle) WHERE id=$id"
-					).run({ $h: args.user_handle?.trim() || null, $id: p.id })
-					// Model to seed the PM + team with, in priority order:
-					//   1. explicit `default_model` arg
-					//   2. whatever model the CALLER session is using — so the
-					//      project inherits the human's current pick
-					//   3. fallback → resolveDefaultModel() in seedV2Project
-					let inheritedModel: string | null = null
-					if (!args.default_model?.trim() && toolCtx?.sessionID) {
-						try {
-							const msgsRes: any = await (mgr.client as any).session.messages({ path: { id: toolCtx.sessionID } })
-							const msgs = (msgsRes?.data ?? msgsRes ?? []) as Array<{ info?: { role?: string; providerID?: string; modelID?: string } }>
-							for (let i = msgs.length - 1; i >= 0; i--) {
-								const info = msgs[i]?.info
-								if (info?.role === 'assistant' && info.modelID) {
-									const provider = (info.providerID || '').trim()
-									const model = info.modelID.trim()
-									// kortix-yolo stores the full `provider/id` in
-									// modelID — avoid double-prefixing.
-									inheritedModel = model.includes('/') ? model : (provider ? `${provider}/${model}` : model)
-									break
-								}
-							}
-						} catch (err) {
-							console.warn('[project_create] failed to read caller session model:', (err as Error).message)
-						}
-					}
-					// Seed PM agent, default columns, CONTEXT.md team section.
-					const seededModel = args.default_model?.trim() || inheritedModel || resolveDefaultModel()
-					await seedV2Project(db, {
-						id: p.id,
-						name: p.name,
-						path: p.path,
-						description: p.description,
-						user_handle: args.user_handle || null,
-					}, { defaultModel: seededModel })
-
-					// Small/cheap models (yolo/think, low-context tiers) struggle on
-					// real engineering tickets — patchy diff edits, dropped tool
-					// calls, weak QA evidence. PM should flag this in onboarding so
-					// the human can opt up to a larger model BEFORE the team is
-					// created (changing default_model retroactively is friction).
-					const SMALL_MODELS = [
-						'kortix-yolo/think',
-						'kortix-yolo/code',
-					]
-					const isSmallSeed = SMALL_MODELS.includes(seededModel)
-					// Always spawn the PM onboarding session so the response can hand
-					// the user a clickable link. user_handle is optional — if missing,
-					// PM addresses the human generically ("hey").
-					let sessionLine = ""
-					{
-						const pm = getAgentBySlug(db, p.id, DEFAULT_PM_SLUG)
-						if (pm) {
-							const handleStr = args.user_handle ? `@${args.user_handle}` : "the human"
-							const introAddressee = args.user_handle ? `@${args.user_handle}` : "them"
-							const prompt = [
-								`Fresh project "${p.name}". Human: ${handleStr}.`,
-								p.description ? `User's description: ${p.description}` : null,
-								"",
-								"Run the onboarding interview from your persona. ONE short question at a time — no batching, no answering for the user. STOP after each turn and wait for their reply.",
-								"",
-								"Cover (in order): project · stack · role + reach-back · autonomy · starting team · columns/templates. Apply each piece only after approval, using your `project_manage` tools. Keep CONTEXT.md tight.",
-								"",
-								`Pass \`default_model: "${seededModel}"\` on every \`team_create_agent\` call. This is the model the human selected for this project (their current chat model, an explicit project_create override, or the sandbox default in that order). Do NOT substitute another model unless the human explicitly asks during onboarding — in which case use their pick verbatim.`,
-								isSmallSeed
-									? `\n**MODEL ADVISORY** — the seeded model \`${seededModel}\` is a small/cheap tier and tends to misfire on real engineering work (dropped tool calls, patchy diff edits, weak QA evidence). Inside Q2 (stack), include ONE short sentence flagging this and offer a larger option (e.g. \`kortix/minimax-m27\`, \`anthropic/claude-sonnet-4-6\` if the human's API key is loaded). If they confirm the small model anyway, ship it — don't keep asking.`
-									: null,
-								"",
-								"Copy the Communication discipline block from your persona into each agent body_md verbatim.",
-								"",
-								"Your messages follow the same rules as the team: short, decisive, no tables, no verdict banners.",
-								"",
-								`First message: brief intro + question #1, addressed to ${introAddressee}. Then STOP.`,
-							].filter(Boolean).join("\n")
-							const sid = await wakeAgentForProject({
-								db,
-								client: mgr.client as unknown as OpenCodeClientLike,
-								projectId: p.id,
-								agent: pm,
-								sessionTitle: `Onboarding · ${p.name}`,
-								prompt,
-								bindSessionToProject: (sessionId, pid) => mgr.setSessionProject(sessionId, pid),
-							}).catch((err) => {
-								console.warn("[project_create] PM onboarding wake failed:", err)
-								return null
-							})
-							if (sid) sessionLine = `\n\n→ [Open PM onboarding chat](/sessions/${sid})`
-						}
-					}
-					const handoff = [
-						"",
-						"<system-reminder>",
-						"STOP. Project scaffold is created — PM agent, default columns, dashboard ticket are in place.",
-						"Your ONLY remaining action: reply with EXACTLY the hand-off template below, replacing {pm_link} with the markdown link from the tool output. No other text, no other tools.",
-						"",
-						"Hand-off template:",
-						"```",
-						"Project **<name>** is live. I've handed you off to the **Project Manager** — a dedicated agent that owns this project's board, team, and backlog.",
-						"",
-						"👉 **{pm_link}** — open this chat to answer the PM's onboarding questions (scope, stack, team, cadence). The PM + team handle the actual build from there.",
-						"",
-						"_You can return to this default chat anytime for work outside this project._",
-						"```",
-						"",
-						"If no PM session was spawned (no markdown link in the tool output), replace the `{pm_link}` line with `Open the project from the sidebar and start a PM chat.`",
-						"DO NOT call any other tool. DO NOT load skills. DO NOT write/edit/scaffold files. DO NOT run bash.",
-						"</system-reminder>",
-					].join("\n")
-					return `Project **${p.name}** scaffolded at \`${p.path}\` (${p.id}) — PM agent + default columns + dashboard ticket ready.${sessionLine}${handoff}`
-				} catch (e) { return `Failed: ${e instanceof Error ? e.message : "unknown"}` }
-			},
-		}),
-
-		project_list: tool({
-			description: "List all projects from Kortix SQLite.",
-			args: {},
-			async execute(): Promise<string> {
-				const ps = mgr.listProjects()
-				if (!ps.length) return "No projects yet. Use `project_create` to create one."
-				const lines = ps.map(p => `| **${p.name}** | \`${p.path}\` | ${p.description || "—"} |`)
-				return `| Project | Path | Description |\n|---|---|---|\n${lines.join("\n")}\n\n${ps.length} project${ps.length !== 1 ? "s" : ""}.`
-			},
-		}),
 
 		project_get: tool({
 			description: "Get project details and session info.",
@@ -491,57 +401,6 @@ export function projectTools(mgr: ProjectManager, db: Database) {
 			},
 		}),
 
-		project_delete: tool({
-			description: "Delete a project from the registry. Does NOT delete files on disk.",
-			args: { project: tool.schema.string().describe("Project name or path") },
-			async execute(args: { project: string }): Promise<string> {
-				const p = mgr.getProject(args.project)
-				if (!p) return `Project not found: "${args.project}"`
-				db.prepare("DELETE FROM session_projects WHERE project_id=$pid").run({ $pid: p.id })
-				db.prepare("DELETE FROM projects WHERE id=$id").run({ $id: p.id })
-				return `Project **${p.name}** deleted from registry.\nDirectory \`${p.path}\` untouched.`
-			},
-		}),
-
-		project_select: tool({
-			description: [
-				"Set the active project for this session. Must be called before file/bash/edit tools.",
-				"WHEN TO CALL: only when the user explicitly asks to switch into an existing project (e.g. \"open the X project\", \"switch to Y\"). Do NOT call this just because you want to do file work — if the user only said \"build me X\", handle it directly without selecting a project.",
-				"v2 PROJECT BLOCK: v2 projects (PM + team + tickets) refuse selection from agents outside their team. The session will NOT be bound; you will get a refusal — your only follow-up is to tell the user to switch to the PM session.",
-			].join(" "),
-			args: { project: tool.schema.string().describe('Project name or path.') },
-			async execute(args: { project: string }, toolCtx: ToolContext): Promise<string> {
-				if (!toolCtx?.sessionID) return "Error: no session context."
-				const p = mgr.getProject(args.project)
-				if (!p) return `Project "${args.project}" not found. Use project_list or project_create.`
-				// Default 2 when col missing (stale image / schema). Only the
-				// virtual `proj-workspace` row is legitimate v1.
-				const sv = (p as unknown as { structure_version?: number }).structure_version
-					?? (p.id === 'proj-workspace' ? 1 : 2)
-				if (sv === 2) {
-					// v2 enforcement: only team members of this project may bind the
-					// session. Everyone else (general, orchestrator, etc.) gets refused.
-					// Session stays UNBOUND → gate continues blocking hands-on tools.
-					const isTeamMember = !!mgr.db.prepare(
-						"SELECT 1 FROM project_agents WHERE project_id=$pid AND slug=$slug"
-					).get({ $pid: p.id, $slug: toolCtx.agent })
-					if (!isTeamMember) {
-						return [
-							`REFUSED. Cannot select v2 project "${p.name}" — agent "${toolCtx.agent}" is not on this project's team.`,
-							`The session has NOT been bound. All hands-on tools (bash, edit, write, skill, etc.) will continue to be blocked.`,
-							``,
-							`<system-reminder>`,
-							`STOP. v2 projects are owned by their PM + team via tickets. You are NOT on this project's team.`,
-							`Your only remaining action: tell the user in ONE short sentence to switch to the @project-manager session for "${p.name}". That session is where the work happens.`,
-							`Do NOT call any other tool. The session is unbound by design — you cannot proceed.`,
-							`</system-reminder>`,
-						].join("\n")
-					}
-				}
-				mgr.setSessionProject(toolCtx.sessionID, p.id)
-				return `Project **${p.name}** selected for this session.\nPath: \`${p.path}\`\nYou can now use file, bash, and edit tools.`
-			},
-		}),
 	}
 }
 
