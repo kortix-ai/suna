@@ -458,8 +458,43 @@ pull_images_parallel() {
   local -a images=("$@")
   [ ${#images[@]} -gt 0 ] || return 0
 
-  printf '%s\n' "${images[@]}" | python3 -c 'import sys; print("\n".join(sorted(set(line.strip() for line in sys.stdin if line.strip()))))' \
-    | xargs -r -n1 -P "$KORTIX_PULL_PARALLELISM" docker pull
+  local max_retries="${KORTIX_PULL_RETRIES:-3}"
+  local initial_delay="${KORTIX_PULL_RETRY_DELAY:-2}"
+
+  # Each xargs slot retries transient network/registry failures with
+  # exponential backoff; permanent errors (manifest unknown / denied)
+  # short-circuit immediately so we don't burn time on bad tags.
+  if ! printf '%s\n' "${images[@]}" \
+    | python3 -c 'import sys; print("\n".join(sorted(set(line.strip() for line in sys.stdin if line.strip()))))' \
+    | xargs -r -n1 -P "$KORTIX_PULL_PARALLELISM" -I '{}' \
+        bash -c '
+          image="$1"
+          max="$2"
+          delay="$3"
+          attempt=1
+          err_log="$(mktemp)"
+          trap "rm -f \"$err_log\"" EXIT
+          while :; do
+            docker pull "$image" 2>"$err_log"
+            rc=$?
+            if [ "$rc" -eq 0 ]; then exit 0; fi
+            cat "$err_log" >&2
+            if grep -qiE "manifest unknown|repository does not exist|requested access to the resource is denied|pull access denied|not found: manifest" "$err_log"; then
+              exit "$rc"
+            fi
+            if [ "$attempt" -ge "$max" ]; then
+              printf "    \033[0;31m✗\033[0m  docker pull %s failed after %d attempts\n" "$image" "$max" >&2
+              exit "$rc"
+            fi
+            printf "    \033[1;33m!\033[0m  docker pull %s failed (attempt %d/%d); retrying in %ds...\n" "$image" "$attempt" "$max" "$delay" >&2
+            sleep "$delay"
+            delay=$((delay * 2))
+            attempt=$((attempt + 1))
+          done
+        ' _ '{}' "$max_retries" "$initial_delay"; then
+    error "Failed to pull one or more required images. Check network connectivity and retry."
+    return 1
+  fi
 }
 
 # Free ports used by Kortix (local mode)
@@ -1740,7 +1775,17 @@ pull_and_start() {
   # Free ports in local mode to avoid conflicts
   free_kortix_ports
 
-  docker compose up -d || true
+  # Capture compose output so a startup failure surfaces real diagnostics
+  # instead of silently masking the error and reporting success below.
+  local compose_log
+  compose_log="$(mktemp)"
+  if ! docker compose up -d >"$compose_log" 2>&1; then
+    cat "$compose_log" >&2
+    rm -f "$compose_log"
+    error "docker compose up -d failed."
+    fatal "Cannot start the Kortix stack. Inspect logs with: cd ${INSTALL_DIR} && docker compose logs"
+  fi
+  rm -f "$compose_log"
 
   # Wait for frontend with progress feedback
   local attempts=0 max_wait=30
