@@ -1057,3 +1057,48 @@ export async function switchToInstanceAsync(
   switchToServerEntry(serverId);
   return { serverId, alreadyActive: false };
 }
+
+/**
+ * Project-session variant of `switchToInstanceAsync`. Uses the project-
+ * scoped `/projects/:projectId/sessions/:sessionId/sandbox` endpoint instead
+ * of the legacy /platform/sandbox/list lookup so session sandboxes stay
+ * fully decoupled from the legacy `kortix.sandboxes` table.
+ */
+export async function switchToSessionSandboxAsync(
+  projectId: string,
+  sessionId: string,
+): Promise<SwitchToInstanceResult | null> {
+  // Fast path: if the active server already points at this session, no-op.
+  const sync = switchToInstance(sessionId);
+  if (sync) return sync;
+
+  const { getProjectSessionSandbox } = await import('@/lib/projects-client');
+  const sandbox = await getProjectSessionSandbox(projectId, sessionId);
+
+  if (!sandbox || sandbox.status !== 'active' || !sandbox.external_id) {
+    return null;
+  }
+
+  const provider = sandbox.provider as SandboxProvider;
+  const store = useServerStore.getState();
+  const isLocal = provider === 'local_docker';
+  const existing = store.servers.find((s) => s.instanceId === sandbox.sandbox_id);
+  const stableId = isLocal
+    ? undefined
+    : existing?.id ?? stableServerIdForInstance(sandbox.sandbox_id, provider);
+  const label = `session ${sandbox.sandbox_id.slice(0, 8)}`;
+  // Session sandboxes only run on cloud providers today; local_docker has no
+  // mapped-port metadata to forward.
+  const serverId = store.registerOrUpdateSandbox(
+    {
+      label,
+      provider,
+      sandboxId: sandbox.external_id,
+      instanceId: sandbox.sandbox_id,
+      mappedPorts: undefined,
+    },
+    { autoSwitch: false, isLocal, stableId: isLocal ? undefined : stableId },
+  );
+  switchToServerEntry(serverId);
+  return { serverId, alreadyActive: false };
+}

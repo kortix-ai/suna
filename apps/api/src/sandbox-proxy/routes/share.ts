@@ -4,34 +4,18 @@
  * Proxies to the sandbox's /kortix/share endpoints so the frontend can create,
  * list, and revoke share links without talking to the sandbox directly.
  *
- * Routes:
- * - POST   /v1/p/share        body: { sandbox_id, port, ttl?, label? }
- * - GET    /v1/p/share        query: sandbox_id
- * - DELETE /v1/p/share/:token query: sandbox_id
- *
- * Auth: combinedAuth (Supabase JWT, kortix_ token, or cookie).
+ * Provider-neutral: cloud and local_docker sessions both resolve through the
+ * session sandbox proxy table before this route talks to the sandbox daemon.
  */
 
 import { Hono } from 'hono'
-import { config } from '../../config'
 import { resolveProvider } from '../index'
 import { combinedAuth } from '../../middleware/auth'
-import { ensureLocalSandboxPublicBase } from '../../platform/services/local-public-base'
 
 const shareApp = new Hono()
 type ResolvedProvider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>
 
-function buildSharedUrl(baseUrl: string, token: string): string {
-  const base = new URL(baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
-  base.pathname = `/s/${token}/`
-  return base.toString()
-}
-
 function buildSandboxShareBaseUrl(resolved: ResolvedProvider): string | null {
-  if (resolved.provider === 'justavps' && resolved.slug && resolved.proxyToken) {
-    const domain = config.JUSTAVPS_PROXY_DOMAIN
-    return `https://8000--${resolved.slug}.${domain}/kortix/share`
-  }
   if (resolved.baseUrl) {
     return `${resolved.baseUrl}/kortix/share`
   }
@@ -42,9 +26,6 @@ function buildSandboxHeaders(resolved: ResolvedProvider): Record<string, string>
   const headers: Record<string, string> = {}
   if (resolved.serviceKey) {
     headers.Authorization = `Bearer ${resolved.serviceKey}`
-  }
-  if (resolved.proxyToken) {
-    headers['X-Proxy-Token'] = resolved.proxyToken
   }
   return headers
 }
@@ -108,31 +89,14 @@ shareApp.post('/',
     const qs = queryParams.toString() ? `?${queryParams.toString()}` : ''
     const sandboxUrl = `${target.sandboxShareBaseUrl}/${port}${qs}`
 
-    // Forward the request to the sandbox
     try {
-      let localPublicBaseUrl: string | null = null
-      if (target.resolved.provider === 'local_docker') {
-        localPublicBaseUrl = await ensureLocalSandboxPublicBase(target.resolved.baseUrl, target.resolved.serviceKey)
-      }
-
       const resp = await fetch(sandboxUrl, {
         headers: buildSandboxHeaders(target.resolved),
         signal: AbortSignal.timeout(10_000),
       })
 
       const result = await parseJsonResponse(resp)
-
-      if (!resp.ok) {
-        return c.json(result, resp.status as any)
-      }
-
-      if (target.resolved.provider === 'local_docker') {
-        if (typeof result.token === 'string' && localPublicBaseUrl) {
-          result.url = buildSharedUrl(localPublicBaseUrl, result.token)
-        }
-      }
-
-      return c.json(result)
+      return c.json(result, resp.status as any)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       return c.json({ error: 'Failed to create share link', details: msg }, 502)
@@ -152,10 +116,6 @@ shareApp.get('/', combinedAuth, async (c) => {
   }
 
   try {
-    if (target.resolved.provider === 'local_docker') {
-      await ensureLocalSandboxPublicBase(target.resolved.baseUrl, target.resolved.serviceKey)
-    }
-
     const resp = await fetch(target.sandboxShareBaseUrl, {
       headers: buildSandboxHeaders(target.resolved),
       signal: AbortSignal.timeout(10_000),

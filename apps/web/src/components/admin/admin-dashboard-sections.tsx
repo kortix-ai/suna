@@ -50,7 +50,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
+import { InstanceSettingsModal } from '@/components/instances/instance-settings-modal';
 import type { SandboxInfo } from '@/lib/platform-client';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { useAdminSandboxes, useDeleteAdminSandbox, type AdminSandbox } from '@/hooks/admin/use-admin-sandboxes';

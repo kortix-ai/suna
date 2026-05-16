@@ -1,0 +1,7 @@
+{
+  "name": "api_create_repo_starter_tests",
+  "status": "failed",
+  "command": "bun test apps/api/src/__tests__/e2e-create-repo-starter.test.ts ",
+  "exit_code": 1,
+  "log": "logs/api_create_repo_starter_tests.log"
+}

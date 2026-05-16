@@ -12,6 +12,7 @@ import {
   resolveActorFromRequest,
   type ActorContext,
 } from '../../shared/actor-context';
+import { getTraceHeaders } from '../../lib/request-context';
 
 const llm = new Hono<{ Variables: AppContext }>();
 
@@ -56,7 +57,7 @@ llm.post('/chat/completions', async (c) => {
   }
 
   const modelConfig = getModel(modelId);
-  const response = await proxyToOpenRouter(body, isStreaming);
+  const response = await proxyToOpenRouter(body, isStreaming, undefined, getTraceHeaders());
 
   if (!response.ok) {
     const errorBody = await response.text();

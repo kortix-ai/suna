@@ -263,7 +263,7 @@ describe('Billing: tier-configurations', () => {
 
     // Verify tier structure
     const freeTier = body.tiers.find((t: any) => t.name === 'free');
-    expect(freeTier.display_name).toBe('Basic');
+    expect(freeTier.display_name).toBe('Free');
     expect(freeTier.monthly_price).toBe(0);
     expect(freeTier.monthly_credits).toBe(0);
 

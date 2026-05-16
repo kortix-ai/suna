@@ -1,0 +1,7 @@
+{
+  "name": "api_image_build",
+  "status": "passed",
+  "command": "docker build --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:latest . ",
+  "exit_code": 0,
+  "log": "logs/api_image_build.log"
+}

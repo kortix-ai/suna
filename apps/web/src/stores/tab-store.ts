@@ -230,7 +230,7 @@ export const useTabStore = create<TabState>()(
 
         // Remove the closed tab from focus history
         const closedSet = new Set([tabId]);
-        let newFocusHistory = cleanFocusHistory(tabFocusHistory, closedSet);
+        const newFocusHistory = cleanFocusHistory(tabFocusHistory, closedSet);
 
         // Determine next active tab
         let nextActiveId: string | null = null;

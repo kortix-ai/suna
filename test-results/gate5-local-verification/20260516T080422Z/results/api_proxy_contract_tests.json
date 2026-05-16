@@ -1,0 +1,7 @@
+{
+  "name": "api_proxy_contract_tests",
+  "status": "passed",
+  "command": "pnpm --filter kortix-api exec bun test src/__tests__/e2e-preview-proxy.test.ts ",
+  "exit_code": 0,
+  "log": "logs/api_proxy_contract_tests.log"
+}

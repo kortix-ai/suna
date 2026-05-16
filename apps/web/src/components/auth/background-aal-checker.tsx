@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { normalizeAppPathname } from '@/lib/instance-routes';
 import { useGetAAL } from '@/hooks/auth';
 import { useAuth } from '@/components/AuthProvider';
-import { isSelfHosted } from '@/lib/config';
+import { isBillingEnabled } from '@/lib/config';
 
 interface BackgroundAALCheckerProps {
   children: React.ReactNode;
@@ -36,7 +36,9 @@ export function BackgroundAALChecker({
   const { data: aalData } = useGetAAL();
 
   useEffect(() => {
-    if (isSelfHosted()) {
+    // MFA / phone-verification flows ride on top of billing (they require
+    // SMS provider config). When billing is off, skip the check entirely.
+    if (!isBillingEnabled()) {
       return;
     }
 
@@ -46,8 +48,7 @@ export function BackgroundAALChecker({
 
       // Only redirect if the user is trying to access protected routes
       // Allow users to stay on the home page "/" even if phone verification fails
-      const isProtectedRoute = pathname.startsWith('/dashboard') || 
-                              pathname.startsWith('/agents') || 
+      const isProtectedRoute = pathname.startsWith('/agents') ||
                               pathname.startsWith('/workspace') ||
                               pathname.startsWith('/projects') ||
                               pathname.startsWith('/settings');

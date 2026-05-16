@@ -257,7 +257,7 @@ oauthApp.post('/authorize/consent', supabaseAuth, async (c) => {
     return c.json({ error: 'invalid_request', error_description: 'redirect_uri mismatch' }, 400);
   }
 
-  const userId = c.get('userId') as string;
+  const userId = (c as any).get('userId') as string;
 
   const [membership] = await db
     .select({ accountId: accountMembers.accountId })
@@ -449,8 +449,8 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
 // ─── GET /userinfo ──────────────────────────────────────────────────────────
 
 oauthApp.get('/userinfo', oauthTokenAuth, async (c) => {
-  const userId = c.get('oauthUserId') as string;
-  const accountId = c.get('oauthAccountId') as string;
+  const userId = (c as any).get('oauthUserId') as string;
+  const accountId = (c as any).get('oauthAccountId') as string;
 
   const { getSupabase } = await import('../shared/supabase');
   const supabase = getSupabase();
@@ -466,7 +466,7 @@ oauthApp.get('/userinfo', oauthTokenAuth, async (c) => {
 // ─── GET /claimable-machines ────────────────────────────────────────────────
 
 oauthApp.get('/claimable-machines', oauthTokenAuth, async (c) => {
-  const accountId = c.get('oauthAccountId') as string;
+  const accountId = (c as any).get('oauthAccountId') as string;
 
   const rows = await db
     .select({

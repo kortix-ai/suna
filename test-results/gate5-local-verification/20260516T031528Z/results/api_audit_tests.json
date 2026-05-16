@@ -1,0 +1,7 @@
+{
+  "name": "api_audit_tests",
+  "status": "passed",
+  "command": "bun test apps/api/src/__tests__/e2e-audit-events.test.ts ",
+  "exit_code": 0,
+  "log": "logs/api_audit_tests.log"
+}

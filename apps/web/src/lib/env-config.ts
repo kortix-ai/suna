@@ -25,6 +25,7 @@ function readRawEnv(): Partial<RuntimeEnv> {
     ENV_MODE: (process.env.KORTIX_PUBLIC_ENV_MODE || process.env.NEXT_PUBLIC_ENV_MODE) as 'local' | 'cloud' | undefined,
     APP_URL: process.env.KORTIX_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || process.env.PUBLIC_URL,
     SANDBOX_ID: process.env.KORTIX_PUBLIC_SANDBOX_ID || process.env.NEXT_PUBLIC_SANDBOX_ID || undefined,
+    AUTH_PROVIDERS: process.env.KORTIX_PUBLIC_AUTH_PROVIDERS || process.env.NEXT_PUBLIC_AUTH_PROVIDERS || undefined,
   }
 }
 

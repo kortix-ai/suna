@@ -53,7 +53,7 @@ beforeEach(() => {
 });
 
 // Import the REAL credits service (runs in isolated process via separate bun test invocation)
-const { calculateTokenCost, getBalance, getCreditSummary, deductCredits, grantCredits, resetExpiringCredits, refreshDailyCredits } =
+const { calculateTokenCost, getBalance, getCreditSummary, deductCredits, grantCredits, resetExpiringCredits } =
   await import('../../billing/services/credits');
 
 const { TOKEN_PRICE_MULTIPLIER } = await import('../../billing/services/tiers');
@@ -223,7 +223,9 @@ describe('grantCredits', () => {
       p_amount: 100,
       p_type: 'tier_grant',
       p_description: 'Monthly grant',
+      p_expires_at: null,
       p_is_expiring: true,
+      p_idempotency_key: 'grant:acc_test_123:evt_123',
       p_stripe_event_id: 'evt_123',
     });
   });
@@ -340,77 +342,5 @@ describe('resetExpiringCredits', () => {
 
     await resetExpiringCredits('acc_test_123', 100, 'Reset', 'evt_fail');
     expect(true).toBe(true);
-  });
-});
-
-describe('refreshDailyCredits', () => {
-  test('returns null for non-free tier', async () => {
-    const result = await refreshDailyCredits('acc_test_123', 'tier_6_50');
-    expect(result).toBeNull();
-  });
-
-  test('returns null when account not found', async () => {
-    mockRegistry.getCreditAccount = async () => null;
-    const result = await refreshDailyCredits('acc_test_123', 'free');
-    expect(result).toBeNull();
-  });
-
-  test('returns null when < 24h since last refresh', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        tier: 'free',
-        lastDailyRefresh: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-        dailyCreditsBalance: '3.00',
-        balance: '3.0000',
-      });
-
-    const result = await refreshDailyCredits('acc_test_123', 'free');
-    expect(result).toBeNull();
-  });
-
-  test('grants daily credits when >= 24h elapsed', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        tier: 'free',
-        lastDailyRefresh: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
-        dailyCreditsBalance: '3.00',
-        balance: '3.0000',
-      });
-
-    const result = await refreshDailyCredits('acc_test_123', 'free');
-    expect(result).not.toBeNull();
-    expect(result!.granted).toBe(3);
-    expect(result!.newDaily).toBe(6);
-    expect(result!.newBalance).toBe(6);
-  });
-
-  test('caps at maxAccumulation (21)', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        tier: 'free',
-        lastDailyRefresh: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
-        dailyCreditsBalance: '20.00',
-        balance: '20.0000',
-      });
-
-    const result = await refreshDailyCredits('acc_test_123', 'free');
-    expect(result).not.toBeNull();
-    expect(result!.granted).toBe(1);
-    expect(result!.newDaily).toBe(21);
-  });
-
-  test('handles first refresh (null lastDailyRefresh)', async () => {
-    mockRegistry.getCreditAccount = async () =>
-      createMockCreditAccount({
-        tier: 'free',
-        lastDailyRefresh: null,
-        dailyCreditsBalance: '0.00',
-        balance: '0.0000',
-      });
-
-    const result = await refreshDailyCredits('acc_test_123', 'free');
-    expect(result).not.toBeNull();
-    expect(result!.granted).toBe(3);
-    expect(result!.newDaily).toBe(3);
   });
 });

@@ -51,7 +51,7 @@ export default function Variant2Home() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.replace('/dashboard');
+      router.replace('/projects');
     }
   }, [user, isLoading, router]);
 
@@ -67,7 +67,7 @@ export default function Variant2Home() {
       window.location.href = '/auth';
       return;
     }
-    window.location.href = '/dashboard';
+    window.location.href = '/projects';
   }, [user]);
 
   return (

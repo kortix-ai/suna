@@ -279,7 +279,7 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
     };
 
     tick();
-  }, [fetchStatus, set, update]);
+  }, [cleanup, fetchStatus, sandboxId, set, update]);
 
   // ── SSE-first provisioning monitor ───────────────────────────────────────
 

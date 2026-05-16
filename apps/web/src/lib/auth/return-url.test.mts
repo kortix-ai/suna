@@ -4,11 +4,14 @@ import test from 'node:test'
 import { DEFAULT_AUTH_RETURN_URL, sanitizeAuthReturnUrl } from './return-url.ts'
 
 test('keeps safe relative auth return paths', () => {
-  assert.equal(sanitizeAuthReturnUrl('/agents?tab=recent'), '/agents?tab=recent')
+  assert.equal(sanitizeAuthReturnUrl('/projects?tab=recent'), '/projects?tab=recent')
 })
 
-test('keeps instance-specific deep links', () => {
-  assert.equal(sanitizeAuthReturnUrl('/instances/abc123?foo=bar'), '/instances/abc123?foo=bar')
+test('rejects legacy auth return paths', () => {
+  assert.equal(sanitizeAuthReturnUrl('/instances/abc123?foo=bar'), DEFAULT_AUTH_RETURN_URL)
+  assert.equal(sanitizeAuthReturnUrl('/dashboard?foo=bar'), DEFAULT_AUTH_RETURN_URL)
+  assert.equal(sanitizeAuthReturnUrl('/sessions/abc123'), DEFAULT_AUTH_RETURN_URL)
+  assert.equal(sanitizeAuthReturnUrl('/subscription'), DEFAULT_AUTH_RETURN_URL)
 })
 
 test('rejects javascript scheme payloads', () => {

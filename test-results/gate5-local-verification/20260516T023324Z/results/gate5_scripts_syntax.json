@@ -1,0 +1,7 @@
+{
+  "name": "gate5_scripts_syntax",
+  "status": "passed",
+  "command": "bash -n tests/e2e/scripts/run-gate5-target-rehearsal.sh tests/e2e/scripts/record-gate5-runbook-drill.sh tests/e2e/scripts/record-gate5-observability-proof.sh tests/e2e/scripts/record-gate5-api-curl-proof.sh tests/e2e/scripts/record-gate5-slo-proof.sh tests/e2e/scripts/record-gate5-concurrency-proof.sh tests/e2e/scripts/record-gate5-negative-space-proof.sh tests/e2e/scripts/record-gate5-ops-exceptions.sh tests/e2e/scripts/verify-gate5-release-evidence.sh tests/e2e/scripts/run-gate5-local-verification.sh tests/e2e/self-hosted-e2e.sh ",
+  "exit_code": 0,
+  "log": "logs/gate5_scripts_syntax.log"
+}

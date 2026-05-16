@@ -1,3 +1,0 @@
-#!/usr/bin/with-contenv bash
-echo "[chromium-persistent] Chromium exited (code $1) — s6 will restart"
-sleep 2

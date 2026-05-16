@@ -1,0 +1,7 @@
+{
+  "name": "api_typecheck",
+  "status": "passed",
+  "command": "pnpm --filter kortix-api typecheck ",
+  "exit_code": 0,
+  "log": "logs/api_typecheck.log"
+}

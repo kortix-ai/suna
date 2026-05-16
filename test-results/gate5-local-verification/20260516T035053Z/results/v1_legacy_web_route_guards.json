@@ -1,0 +1,7 @@
+{
+  "name": "v1_legacy_web_route_guards",
+  "status": "passed",
+  "command": "bash -lc $'\\n  set -euo pipefail\\n\\n  grep -q \"redirect\" apps/web/src/app/admin/instances/page.tsx\\n  grep -q \"/admin/ops\" apps/web/src/app/admin/instances/page.tsx\\n  grep -q \"redirect\" apps/web/src/app/debug/instances/page.tsx\\n  grep -q \"/projects\" apps/web/src/app/debug/instances/page.tsx\\n\\n\\t  if git grep -n -E \"admin/instances|debug/instances|/instances|justavps|InstanceSettingsModal|useAdminSandboxes\" -- \\\\\\n\\t    apps/web/src/app/admin/instances/page.tsx \\\\\\n\\t    apps/web/src/app/debug/instances/page.tsx \\\\\\n\\t    apps/web/src/app/admin/_components/admin-sidebar.tsx \\\\\\n\\t    apps/web/src/app/admin/_components/admin-shell.tsx \\\\\\n\\t    apps/web/src/app/admin/page.tsx\\n\\t  then\\n\\t    exit 1\\n\\t  fi\\n\\n\\t  if git grep -n -E \"useAdminAccountSandboxes|InstanceSettingsModal|/instances|justavps|JustAVPS|machines provisioned|restartSandbox|getSandboxById|useAdminSandboxHealth\" -- \\\\\\n\\t    apps/web/src/app/admin/accounts/page.tsx \\\\\\n\\t    apps/web/src/app/oauth/authorize/page.tsx \\\\\\n\\t    apps/web/src/components/dashboard/connecting-screen.tsx\\n\\t  then\\n\\t    exit 1\\n\\t  fi\\n\\t' ",
+  "exit_code": 0,
+  "log": "logs/v1_legacy_web_route_guards.log"
+}

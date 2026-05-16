@@ -45,9 +45,9 @@ export default function ActivateTrialPage() {
       const hasActiveSubscription = tierKey && tierKey !== 'none';
 
       if (hasActiveTrial || hasActiveSubscription) {
-        router.push('/dashboard');
+        router.push('/projects');
       } else if (hasUsedTrial) {
-        router.push('/subscription');
+        router.push('/accounts');
       }
     }
   }, [accountState, trialStatus, isLoadingSubscription, isLoadingTrial, router]);
@@ -55,7 +55,7 @@ export default function ActivateTrialPage() {
   const handleStartTrial = async () => {
     try {
       const result = await startTrialMutation.mutateAsync({
-        success_url: `${window.location.origin}/dashboard?trial=started`,
+        success_url: `${window.location.origin}/projects?trial=started`,
         cancel_url: `${window.location.origin}/activate-trial`,
       });
 

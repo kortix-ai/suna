@@ -40,7 +40,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui/popover';
-import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
+import { InstanceSettingsModal } from '@/components/instances/instance-settings-modal';
 import { isBillingEnabled } from '@/lib/config';
 import { listSandboxes, ensureSandbox, type SandboxInfo } from '@/lib/platform-client';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';

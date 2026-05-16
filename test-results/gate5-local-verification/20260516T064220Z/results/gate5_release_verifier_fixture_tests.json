@@ -1,0 +1,7 @@
+{
+  "name": "gate5_release_verifier_fixture_tests",
+  "status": "passed",
+  "command": "bash tests/e2e/scripts/test-gate5-release-verifier-fixtures.sh ",
+  "exit_code": 0,
+  "log": "logs/gate5_release_verifier_fixture_tests.log"
+}

@@ -103,10 +103,15 @@ export function useSandbox() {
     if (!query.data) return;
     const primarySandbox = query.data;
 
-    // If a specific instance route is active (URL or cookie from middleware rewrite),
-    // don't auto-switch to primary — let the layout sync handle it.
+    // If a specific instance route is active (URL or cookie from middleware
+    // rewrite), don't auto-switch to primary — let the layout sync handle it.
+    // Same rule for any project route: the project session page already
+    // registered + switched to its own sandbox via switchToSessionSandboxAsync;
+    // letting useSandbox auto-switch back to the user's primary here would
+    // strand the page on an "active-server mismatch" loading gate forever.
+    const onProjectRoute = pathname?.startsWith('/projects/') ?? false;
     const routeInstance = getCurrentInstanceIdFromPathname(pathname) || getActiveInstanceIdFromCookie();
-    const hasExplicitRoute = !!routeInstance;
+    const hasExplicitRoute = !!routeInstance || onProjectRoute;
     const autoSwitch = !hasExplicitRoute;
 
     registerSandboxServer(primarySandbox, autoSwitch, true);
@@ -115,7 +120,14 @@ export function useSandbox() {
     if (listFetchedForRef.current === primarySandbox.sandbox_id) return;
     listFetchedForRef.current = primarySandbox.sandbox_id;
 
-    // Also register other sandboxes (no auto-switch).
+    // Also register other sandboxes (no auto-switch). Skip this on project
+    // routes — session sandboxes live in `kortix.session_sandboxes`, not the
+    // legacy `kortix.sandboxes` listed here. Running the purge below would
+    // mark the active session sandbox as stale and remove it, dropping us
+    // back to the local default and stranding the page on the "reaching"
+    // loading gate.
+    if (onProjectRoute) return;
+
     listSandboxes().then((all) => {
       const activeInstanceIds = new Set<string>();
 

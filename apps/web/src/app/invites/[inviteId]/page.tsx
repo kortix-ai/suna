@@ -12,7 +12,18 @@ import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { cn } from '@/lib/utils';
-import { acceptInvite, declineInvite, getInvite } from '@/lib/platform-client';
+import {
+  acceptAccountInvite,
+  declineAccountInvite,
+  describeAccountInvite,
+  type AccountInviteDescribe,
+} from '@/lib/projects-client';
+
+type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
+
+async function getUnifiedInvite(inviteId: string): Promise<UnifiedInvite> {
+  return { kind: 'account', invite: await describeAccountInvite(inviteId) };
+}
 
 export default function InvitePage() {
   const { inviteId } = useParams<{ inviteId: string }>();
@@ -20,10 +31,9 @@ export default function InvitePage() {
   const { user, isLoading: authLoading } = useAuth();
 
   // Not logged in → send through /auth with a return-to so they come back
-  // here after sign-in/up. A brand-new user who signs up with the invite's
-  // email will have the invite auto-claimed by resolve-account.ts on first
-  // login — this page then detects `accepted_at` and redirects straight
-  // into the sandbox without showing the Accept/Decline form.
+  // here after sign-in/up. New users can have account/workspace invites
+  // auto-claimed on first authenticated account resolution, so this page also
+  // handles already-accepted invite rows by routing into the right surface.
   useEffect(() => {
     if (!authLoading && !user) {
       const returnUrl = encodeURIComponent(`/invites/${inviteId}`);
@@ -33,32 +43,41 @@ export default function InvitePage() {
 
   const inviteQuery = useQuery({
     queryKey: ['invite', inviteId],
-    queryFn: () => getInvite(inviteId!),
+    queryFn: () => getUnifiedInvite(inviteId!),
     enabled: !!user && !!inviteId,
     retry: false,
   });
 
   const acceptMutation = useMutation({
-    mutationFn: () => acceptInvite(inviteId!),
-    onSuccess: (data) => {
-      router.replace(`/instances/${data.sandbox_id}`);
+    mutationFn: async () => {
+      const current = inviteQuery.data;
+      if (!current) throw new Error('Invite is still loading');
+      return { kind: 'account' as const, data: await acceptAccountInvite(inviteId!) };
+    },
+    onSuccess: (result) => {
+      router.replace(`/accounts/${result.data.account_id}`);
     },
   });
 
   const declineMutation = useMutation({
-    mutationFn: () => declineInvite(inviteId!),
+    mutationFn: async () => {
+      const current = inviteQuery.data;
+      if (!current) throw new Error('Invite is still loading');
+      await declineAccountInvite(inviteId!);
+      return { kind: 'account' as const };
+    },
     onSuccess: () => {
-      router.replace('/dashboard');
+      router.replace('/accounts');
     },
   });
 
   useEffect(() => {
-    const inv = inviteQuery.data;
+    const item = inviteQuery.data;
+    const inv = item?.invite;
     // Only auto-redirect the actual recipient. Strangers with a link hit the
     // "wrong account" state instead.
-    if (inv && inv.email_matches_caller && inv.accepted_at) {
-      router.replace(`/instances/${inv.sandbox_id}`);
-    }
+    if (!item || !inv?.email_matches_caller || !inv.accepted_at) return;
+    router.replace(`/accounts/${item.invite.account_id}`);
   }, [inviteQuery.data, router]);
 
   if (authLoading || !user || inviteQuery.isLoading) {
@@ -82,16 +101,17 @@ export default function InvitePage() {
               ? inviteQuery.error.message
               : 'This invite link is invalid or has been revoked.'}
           </StateBody>
-          <GhostAction onClick={() => router.replace('/dashboard')}>
-            Back to dashboard
+          <GhostAction onClick={() => router.replace('/projects')}>
+            Back to projects
           </GhostAction>
         </InviteCard>
       </BrandSurface>
     );
   }
 
-  const invite = inviteQuery.data;
-  if (!invite) return null;
+  const item = inviteQuery.data;
+  if (!item) return null;
+  const invite = item.invite;
 
   // Wrong-account check first: the server redacts identifying fields in this
   // case, and checking expiry before this would leak "this invite exists and
@@ -108,8 +128,8 @@ export default function InvitePage() {
           <p className="text-[12px] text-foreground/30 mt-4">
             Sign out and sign back in with the address that received the invite.
           </p>
-          <GhostAction onClick={() => router.replace('/dashboard')}>
-            Back to dashboard
+          <GhostAction onClick={() => router.replace('/projects')}>
+            Back to projects
           </GhostAction>
         </InviteCard>
       </BrandSurface>
@@ -124,8 +144,8 @@ export default function InvitePage() {
           <StateBody>
             Expired <span className="text-foreground/60">{formatWhen(invite.expires_at)}</span>. Ask the person who invited you to send a new one.
           </StateBody>
-          <GhostAction onClick={() => router.replace('/dashboard')}>
-            Back to dashboard
+          <GhostAction onClick={() => router.replace('/projects')}>
+            Back to projects
           </GhostAction>
         </InviteCard>
       </BrandSurface>
@@ -139,25 +159,31 @@ export default function InvitePage() {
     (acceptMutation.error instanceof Error && acceptMutation.error.message) ||
     (declineMutation.error instanceof Error && declineMutation.error.message) ||
     null;
+  const targetName = item.invite.account_name || 'Account';
+  const inviterEmail = invite.inviter_email;
+  const targetLabel = 'Team account';
+  const roleLabel = item.invite.initial_role === 'admin'
+    ? 'an admin'
+    : 'a member';
 
   return (
     <BrandSurface>
       <InviteCard kicker="Invitation">
-        {invite.inviter_email ? (
+        {inviterEmail ? (
           <div className="flex items-center gap-3">
-            <UserAvatar email={invite.inviter_email} size="lg" />
+            <UserAvatar email={inviterEmail} size="lg" />
             <div className="min-w-0">
               <div className="text-foreground/85 truncate text-[14px] font-medium">
-                {invite.inviter_email}
+                {inviterEmail}
               </div>
               <div className="text-foreground/40 mt-0.5 text-[12px]">
-                invited you to collaborate
+                invited you to join a team
               </div>
             </div>
           </div>
         ) : (
           <div className="text-foreground/50 text-[14px] leading-relaxed">
-            You have been invited to collaborate.
+            You have been invited to join a team.
           </div>
         )}
 
@@ -167,18 +193,17 @@ export default function InvitePage() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-foreground/85 truncate text-[14px] font-medium">
-              {invite.sandbox_name || 'Sandbox'}
+              {targetName}
             </div>
             <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-[11px]">
               <Clock className="size-3" />
-              Expires {formatWhen(invite.expires_at)}
+              {targetLabel} · expires {formatWhen(invite.expires_at)}
             </div>
           </div>
         </div>
 
         <p className="text-foreground/35 mt-4 text-[11px] leading-relaxed">
-          You'll join as a member and see projects the owner gives you access
-          to.
+          {`You'll join this account as ${roleLabel} and see projects the owner gives you access to.`}
         </p>
 
         {errorMessage ? (

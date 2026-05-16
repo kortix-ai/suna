@@ -14,6 +14,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { BillingError } from '../errors';
+import { runWithContext } from '../lib/request-context';
 
 // ─── Mock tracking ───────────────────────────────────────────────────────────
 
@@ -28,6 +29,7 @@ let mockDeductResult: any = { success: true, cost: 0.01, newBalance: 99, transac
 let mockProxyResponse: Response | null = null;
 let mockProxyError: Error | null = null;
 let lastProxyBody: Record<string, unknown> | null = null;
+let lastProxyTraceHeaders: Record<string, string> | null = null;
 
 const TEST_ACCOUNT_ID = 'acc_test_e2e_001';
 
@@ -120,8 +122,14 @@ mock.module('../router/services/billing', () => ({
 }));
 
 mock.module('../router/services/llm', () => ({
-  proxyToOpenRouter: async (body: Record<string, unknown>, isStreaming: boolean) => {
+  proxyToOpenRouter: async (
+    body: Record<string, unknown>,
+    isStreaming: boolean,
+    _apiKey?: string,
+    traceHeaders?: Record<string, string>,
+  ) => {
     lastProxyBody = body;
+    lastProxyTraceHeaders = traceHeaders ?? null;
     if (mockProxyError) throw mockProxyError;
     if (mockProxyResponse) return mockProxyResponse;
 
@@ -170,6 +178,9 @@ const { router } = await import('../router/index');
 function createRouterTestApp() {
   const app = new Hono();
   app.use('*', cors());
+  app.use('*', async (c, next) => {
+    return runWithContext(c.req.method, new URL(c.req.url).pathname, () => next(), c.req.header('traceparent'));
+  });
 
   app.route('/v1/router', router);
 
@@ -206,6 +217,7 @@ beforeEach(() => {
   mockProxyResponse = null;
   mockProxyError = null;
   lastProxyBody = null;
+  lastProxyTraceHeaders = null;
 });
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -419,6 +431,27 @@ describe('Router: chat/completions (non-streaming)', () => {
     expect(body.usage).toBeDefined();
     expect(body.usage.prompt_tokens).toBe(100);
     expect(body.usage.completion_tokens).toBe(50);
+  });
+
+  test('propagates normalized trace headers to OpenRouter', async () => {
+    const app = createRouterTestApp();
+    const res = await app.request('/v1/router/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${TEST_ACCOUNT_ID}`,
+        traceparent: '00-99999999999999999999999999999999-8888888888888888-01',
+      },
+      body: JSON.stringify({
+        model: 'minimax/minimax-m2.7',
+        messages: [{ role: 'user', content: 'Hello' }],
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(lastProxyTraceHeaders?.traceparent).toMatch(/^00-99999999999999999999999999999999-[0-9a-f]{16}-01$/);
+    expect(lastProxyTraceHeaders?.traceparent).not.toBe('00-99999999999999999999999999999999-8888888888888888-01');
+    expect(lastProxyTraceHeaders?.['X-Request-Id']).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
   });
 
   test('returns 400 for missing model', async () => {

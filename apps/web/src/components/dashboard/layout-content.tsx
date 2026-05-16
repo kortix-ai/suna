@@ -1014,6 +1014,8 @@ export default function DashboardLayoutContent({
 			</Suspense>
 			<AppProviders
 				showSidebar={true}
+				showGlobalNewInstanceModal={true}
+				showGlobalUserSettingsModal={true}
 				defaultSidebarOpen={
 					// Prefer the server-read cookie so SSR and client match
 					// (no flicker on reload). Fall back to `!ob.active` when

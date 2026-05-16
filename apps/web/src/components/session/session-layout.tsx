@@ -227,7 +227,7 @@ export const SessionLayout = memo(function SessionLayout({
 
   // Desktop: resizable split panel
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden" data-testid="session-layout">
       <div ref={panelGroupRef} className="flex-1 min-h-0 flex overflow-hidden">
         <ResizablePanelGroup
           direction="horizontal"

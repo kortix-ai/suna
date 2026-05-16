@@ -173,6 +173,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       monthly_credits: tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
     },
+    models: [],
     auto_topup: autoTopup,
     instances,
     yolo_usage: yoloUsage,
@@ -226,6 +227,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       monthly_credits: 0,
       can_purchase_credits: false,
     },
+    models: [],
     auto_topup: {
       enabled: false,
       threshold: AUTO_TOPUP_DEFAULT_THRESHOLD,

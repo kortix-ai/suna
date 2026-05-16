@@ -1,5 +1,6 @@
 import { config } from '../../config';
 import type { ImageSearchResult } from '../../types';
+import { getTraceHeaders } from '../../lib/request-context';
 
 interface SerperResponse {
   images: Array<{
@@ -34,6 +35,7 @@ export async function imageSearchSerper(
     headers: {
       'X-API-KEY': config.SERPER_API_KEY,
       'Content-Type': 'application/json',
+      ...getTraceHeaders(),
     },
     body: JSON.stringify({
       q: query,

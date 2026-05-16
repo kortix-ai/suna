@@ -3,21 +3,21 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 describe('local docker fallback shell safety', () => {
-  test('quotes container names and env values before building docker exec commands', () => {
+  test('uses execFile argument arrays instead of shell-built docker commands', () => {
     const source = readFileSync(join(import.meta.dir, '../platform/providers/local-docker.ts'), 'utf8');
 
-    expect(source).toContain('function shellQuote(value: string)');
-    expect(source).toContain('function buildDockerEnvWriteCommand(payload: Record<string, string>, targetDir: string): string');
-    expect(source).toContain("ENV_WRITE_PAYLOAD_B64");
-    expect(source).toContain('docker exec ${shellQuote(CONTAINER_NAME)} bash -c ');
+    expect(source).toContain("import { execFile } from 'node:child_process';");
+    expect(source).toContain("await execFileAsync('docker', args");
+    expect(source).toContain("const runArgs = [");
+    expect(source).not.toContain('docker exec ${');
+    expect(source).not.toContain('execSync(`docker');
   });
 
-  test('local docker uses one canonical sandbox auth token in both directions', () => {
+  test('passes sandbox env vars directly into docker run', () => {
     const source = readFileSync(join(import.meta.dir, '../platform/providers/local-docker.ts'), 'utf8');
 
-    expect(source).toContain('const serviceKey = authToken;');
-    expect(source).toContain('INTERNAL_SERVICE_KEY: token');
-    expect(source).toContain('TUNNEL_TOKEN: token');
-    expect(source).toContain('getCanonicalServiceKey()');
+    expect(source).toContain('function flattenEnvVars(envVars: Record<string, string> | undefined): string[]');
+    expect(source).toContain("args.push('-e', `${key}=${String(value)}`);");
+    expect(source).toContain('...envArgs,');
   });
 });

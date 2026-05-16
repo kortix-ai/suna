@@ -10,7 +10,7 @@ import { usePathname } from 'next/navigation';
 import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
 import { usePromo } from '@/hooks/utils/use-promo';
 
-const BANNER_DISMISSED_KEY = 'dashboard-promo-banner-dismissed';
+const BANNER_DISMISSED_KEY = 'projects-promo-banner-dismissed';
 
 export function DashboardPromoBanner() {
   const [isDismissed, setIsDismissed] = useState(false);
@@ -23,13 +23,13 @@ export function DashboardPromoBanner() {
   
   const tierKey = accountStateSelectors.tierKey(accountState)?.toLowerCase();
   const isFreeTier = !tierKey || tierKey === 'free' || tierKey === 'none';
-  const isDashboardPage = pathname === '/dashboard';
+  const isProjectsPage = pathname === '/projects';
   
   // Show Welcome Bonus promo or KORTIX26 for free tier users
   const shouldShowPromo = promo?.isActive && (promo.promoId === 'welcome-bonus' || promo.promoCode === 'KORTIX26');
 
   // Compute whether banner should be visible
-  const shouldShow = mounted && !isDismissed && isDashboardPage && !isLoading && isFreeTier && shouldShowPromo;
+  const shouldShow = mounted && !isDismissed && isProjectsPage && !isLoading && isFreeTier && shouldShowPromo;
 
   // Update the store whenever visibility changes
   useEffect(() => {
@@ -54,7 +54,7 @@ export function DashboardPromoBanner() {
     openPricingModal();
   };
 
-  // Only show on /dashboard, for confirmed free tier users, and if not dismissed
+  // Only show on /projects, for confirmed free tier users, and if not dismissed
   if (!shouldShow || !promo) return null;
 
   return (

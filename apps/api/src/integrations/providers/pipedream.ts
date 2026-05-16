@@ -16,6 +16,7 @@ import type {
   TriggerDeployedInfo,
   TriggerListResult,
 } from './types';
+import { getTraceHeaders } from '../../lib/request-context';
 
 interface PipedreamConfig {
   clientId: string;
@@ -77,7 +78,10 @@ export class PipedreamProvider implements AuthProvider {
 
     const res = await fetch(`${this.baseUrl}/v1/oauth/token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getTraceHeaders(),
+      },
       body: JSON.stringify({
         grant_type: 'client_credentials',
         client_id: this.clientId,
@@ -108,6 +112,7 @@ export class PipedreamProvider implements AuthProvider {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         'x-pd-environment': this.environment,
+        ...getTraceHeaders(),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
@@ -157,6 +162,7 @@ export class PipedreamProvider implements AuthProvider {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         'x-pd-environment': this.environment,
+        ...getTraceHeaders(),
       },
       body: JSON.stringify(body),
     });
@@ -291,12 +297,13 @@ export class PipedreamProvider implements AuthProvider {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token}`,
       'x-pd-environment': this.environment,
+      ...getTraceHeaders(),
     };
 
     if (request.headers) {
       for (const [key, value] of Object.entries(request.headers)) {
         const lower = key.toLowerCase();
-        if (lower !== 'authorization' && lower !== 'host') {
+        if (lower !== 'authorization' && lower !== 'host' && lower !== 'traceparent' && lower !== 'x-request-id') {
           headers[`x-pd-proxy-${key}`] = value;
         }
       }

@@ -150,6 +150,15 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
   const tier = getTier(tierKey);
   const commitmentType = session.metadata?.commitment_type;
   const isYearly = commitmentType === 'yearly' || commitmentType === 'yearly_commitment';
+  const existingAccount = await getCreditAccount(accountId);
+  const previousSubscriptionId = session.metadata?.previous_subscription_id
+    ?? (
+      existingAccount?.tier === 'free' &&
+      existingAccount.stripeSubscriptionId &&
+      existingAccount.stripeSubscriptionId !== subscriptionId
+        ? existingAccount.stripeSubscriptionId
+        : null
+    );
 
   // Ensure credit account exists (for credits system — separate from instance billing).
   // Use the latest subscription ID so account-state reflects a paid tier.
@@ -191,6 +200,10 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     });
   }
 
+  if (previousSubscriptionId && previousSubscriptionId !== subscriptionId) {
+    await cancelFreeSubscriptionForUpgrade(previousSubscriptionId, accountId);
+  }
+
   // ── Provision instance (1 subscription = 1 instance) ───────────────────
   // The checkout metadata carries server_type + location for provisioning.
   const serverType = session.metadata?.server_type;
@@ -207,20 +220,11 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
       console.error(`[Webhook] Failed to grant machine bonus for ${accountId} (sub=${subscriptionId}):`, err);
     }
 
-    try {
-      const { provisionSandboxFromCheckout } = await import('../../platform/services/sandbox-provisioner');
-      await provisionSandboxFromCheckout({
-        accountId,
-        subscriptionId,
-        serverType,
-        location: location || undefined,
-        tierKey,
-      });
-      console.log(`[Webhook] Instance provisioning started for ${accountId} (type=${serverType}, loc=${location})`);
-    } catch (err) {
-      console.error(`[Webhook] Failed to provision instance for ${accountId}:`, err);
-      // Don't throw — the subscription is valid, provisioning can be retried.
-    }
+    // Legacy auto-provision of a per-account sandbox on checkout-completed
+    // has been removed — sandboxes are now per-session under /v1/projects.
+    void serverType;
+    void location;
+    void tierKey;
   }
 
   console.log(`[Webhook] Subscription checkout: ${tierKey} for ${accountId} (sub=${subscriptionId})`);
@@ -316,54 +320,34 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   const accountId = await resolveCanonicalStripeAccountId(subscription.metadata?.account_id, subscription.customer);
   if (!accountId) return;
 
+  const account = await getCreditAccount(accountId);
+  if (account?.stripeSubscriptionId && account.stripeSubscriptionId !== subscription.id) {
+    console.log(
+      `[Webhook] handleSubscriptionDeleted: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`,
+    );
+    return;
+  }
+
   await revertToFree(accountId, subscription.id);
 }
 
 async function revertToFree(accountId: string, subscriptionId?: string) {
-  // Archive the sandbox tied to this subscription (1 sub = 1 instance).
-  if (subscriptionId) {
-    try {
-      const { archiveSandboxBySubscription } = await import('../../platform/services/sandbox-provisioner');
-      await archiveSandboxBySubscription(accountId, subscriptionId);
-      console.log(`[Webhook] Archived sandbox for subscription ${subscriptionId}`);
-    } catch (err) {
-      console.error(`[Webhook] Failed to archive sandbox for sub ${subscriptionId}:`, err);
-    }
-  }
+  // Legacy sandbox archive/sub-coupling has been removed — session sandboxes
+  // are per-session and not tied to a Stripe subscription. We just revert
+  // the account's tier on cancellation.
+  void subscriptionId;
 
-  // Check if the user still has other active subscriptions.
-  // If so, keep the highest tier. Otherwise revert to free.
-  const { db } = await import('../../shared/db');
-  const { sandboxes } = await import('@kortix/db');
-  const { eq, and, inArray } = await import('drizzle-orm');
-
-  const activeSandboxes = await db
-    .select()
-    .from(sandboxes)
-    .where(
-      and(
-        eq(sandboxes.accountId, accountId),
-        inArray(sandboxes.status, ['active', 'provisioning']),
-      ),
-    )
-    .limit(1);
-
-  if (activeSandboxes.length === 0) {
-    // No more active instances — revert to free tier
-    await updateCreditAccount(accountId, {
-      tier: 'free',
-      stripeSubscriptionStatus: 'canceled',
-      scheduledTierChange: null,
-      scheduledTierChangeDate: null,
-      scheduledPriceId: null,
-      commitmentType: null,
-      commitmentEndDate: null,
-      paymentStatus: 'active',
-    });
-    console.log(`[Webhook] No active instances left, reverted to free: ${accountId}`);
-  } else {
-    console.log(`[Webhook] Subscription deleted but ${activeSandboxes.length} active instance(s) remain for ${accountId}`);
-  }
+  await updateCreditAccount(accountId, {
+    tier: 'free',
+    stripeSubscriptionStatus: 'canceled',
+    scheduledTierChange: null,
+    scheduledTierChangeDate: null,
+    scheduledPriceId: null,
+    commitmentType: null,
+    commitmentEndDate: null,
+    paymentStatus: 'active',
+  });
+  console.log(`[Webhook] Reverted to free tier: ${accountId}`);
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {

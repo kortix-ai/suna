@@ -67,6 +67,7 @@ test/
 
 # Core runtime data
 .kortix/
+apps/kortix-v0/.local/
 apps/api/.kortix-data/
 apps/api/.sandbox-auth-token.json
 core/kortix-master/opencode/.kortix/

@@ -25,7 +25,7 @@ The installer will ask where you're running:
 1. **Local machine** (laptop/desktop) — binds to `localhost`
 2. **VPS / Server** — binds to `0.0.0.0`, accessible over the network
 
-Kortix works best when it can run 24/7 — even when your laptop is closed. We recommend a server or VPS: [Kortix Cloud](https://kortix.com/) (managed), your own server, or a VPS from [Hetzner](https://hetzner.com/) or [JustAVPS](https://justavps.com/).
+Kortix works best when it can run 24/7 — even when your laptop is closed. We recommend [Kortix Cloud](https://kortix.com/) for managed hosting, or a Docker-capable server/VPS for self-hosting.
 
 On any server, just SSH in and run the same install command:
 
@@ -55,15 +55,9 @@ kortix uninstall   Remove Kortix completely
 - `pnpm dev:frontend` — alias for `pnpm dev:web`
 - `pnpm dev:api` — start API only
 - `pnpm dev:mobile` — start mobile app (Expo dev server)
-- `pnpm dev:core` — start core runtime with dev bind mounts (hot reload, from `core/`)
-- `pnpm dev:core:build` — rebuild and start the core runtime
-- `pnpm dev:sandbox` — alias for `pnpm dev:core`
-- `pnpm dev:sandbox:build` — alias for `pnpm dev:core:build`
+- `pnpm dev:sandbox` — build the local `kortix/sandbox:dev` image used by project-session sandboxes
+- `pnpm dev:sandbox:build` — alias for `pnpm dev:sandbox`
 - `pnpm build` — build all packages (`pnpm -r run build`)
-- `pnpm ship <version>` — bump versions, build + push Docker images, seed the JustAVPS image, create GitHub release
-- `pnpm ship --dry-run <version>` — validate without making changes
-- `pnpm ship --check` — show current release state
-- `pnpm image [version]` — build the JustAVPS image from a temporary JustAVPS machine
 - `pnpm nuke` — tear down local Docker environment
 - `pnpm nuke:start` — nuke + restart fresh
 

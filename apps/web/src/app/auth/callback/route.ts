@@ -218,8 +218,8 @@ export async function GET(request: NextRequest) {
               const hasSubscription = tierKey && tierKey !== 'none';
 
               if (!hasSubscription) {
-                console.log('⚠️ No subscription detected - redirecting to /subscription to choose a plan');
-                finalDestination = '/subscription';
+                console.log('No subscription detected - redirecting to /accounts');
+                finalDestination = '/accounts';
               } else {
                 console.log('✅ Account already has subscription, proceeding normally');
               }
@@ -236,7 +236,7 @@ export async function GET(request: NextRequest) {
       redirectUrl.searchParams.set('auth_method', authMethod)
       const response = NextResponse.redirect(redirectUrl)
 
-      // Clear stale instance cookie so user picks a fresh instance after login
+      // Clear stale legacy instance cookie so repo-first sessions do not inherit it after login.
       response.cookies.set(ACTIVE_INSTANCE_COOKIE, '', { maxAge: 0, path: '/' })
 
       // Clear referral cookie if it was processed

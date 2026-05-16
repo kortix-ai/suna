@@ -176,6 +176,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
           <CommandPopoverTrigger>
             <button
               type="button"
+              aria-label="Model picker"
               className={cn(
                 'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 cursor-pointer',
                 open && 'bg-muted text-foreground',

@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
+  Activity,
   BarChart2,
   Bell,
   ChevronRight,
   Database,
   MessageCircle,
-  Server,
   ShieldCheck,
   TestTube,
   Users,
@@ -32,22 +32,18 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { Badge } from '@/components/ui/badge';
-import { useAdminSandboxes } from '@/hooks/admin/use-admin-sandboxes';
-import { useAdminAccounts } from '@/hooks/admin/use-admin-accounts';
 
 interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  badge?: string;
 }
 
 const LEGACY_ITEMS: NavItem[] = [
+  { href: '/admin/accounts', label: 'Accounts', icon: Users },
   { href: '/admin/sandbox-pool', label: 'Sandbox pool', icon: Database },
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart2 },
   { href: '/admin/feedback', label: 'Feedback', icon: MessageCircle },
@@ -59,21 +55,11 @@ export function AdminSidebar() {
   const pathname = usePathname();
   const router = useRouter();
 
-  const { data: sandboxes } = useAdminSandboxes({ page: 1, limit: 1 });
-  const { data: accounts } = useAdminAccounts({ page: 1, limit: 1 });
-
   const primaryItems: NavItem[] = [
     {
-      href: '/admin/instances',
-      label: 'Instances',
-      icon: Server,
-      badge: sandboxes?.total ? formatCount(sandboxes.total) : undefined,
-    },
-    {
-      href: '/admin/accounts',
-      label: 'Accounts',
-      icon: Users,
-      badge: accounts?.total ? formatCount(accounts.total) : undefined,
+      href: '/admin/ops',
+      label: 'Operations',
+      icon: Activity,
     },
     {
       href: '/admin/utils',
@@ -139,7 +125,7 @@ export function AdminSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               tooltip="Leave admin console"
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push('/projects')}
             >
               <ArrowLeft />
               <span>Back to app</span>
@@ -161,13 +147,6 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string | null })
           <span>{item.label}</span>
         </Link>
       </SidebarMenuButton>
-      {item.badge && (
-        <SidebarMenuBadge>
-          <Badge variant="muted" size="sm">
-            {item.badge}
-          </Badge>
-        </SidebarMenuBadge>
-      )}
     </SidebarMenuItem>
   );
 }
@@ -176,10 +155,4 @@ function isActive(pathname: string | null, href: string) {
   if (!pathname) return false;
   if (href === '/admin') return pathname === '/admin';
   return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-function formatCount(n: number): string {
-  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return n.toLocaleString();
 }

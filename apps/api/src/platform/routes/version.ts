@@ -2,34 +2,19 @@ import { Hono } from 'hono';
 import { config } from '../../config';
 
 /**
- * Sandbox version + changelog endpoints.
+ * Sandbox version and changelog endpoints.
  *
  * Sources of truth:
- *   - Running version: process.env.SANDBOX_VERSION (injected at container start)
- *   - Stable releases: GitHub Releases API
- *   - Dev builds:      Docker Hub Tags API (kortix/computer:dev-*)
- *
- * Docker Hub tag convention:
- *   - Stable:  kortix/computer:0.8.29,  kortix/computer:latest
- *   - Dev:     kortix/computer:dev-{sha8},  kortix/computer:dev-latest
- *
- * Update flow (frontend):
- *   1. GET /v1/platform/sandbox/version           → running version
- *   2. GET /v1/platform/sandbox/version/latest    → latest available (by channel)
- *   3. GET /v1/platform/sandbox/version/all       → all installable versions
- *   4. POST /v1/platform/sandbox/update { version } → pull + recreate container
+ * - Running version: SANDBOX_VERSION, injected at container start.
+ * - Stable releases: GitHub Releases API.
+ * - Dev builds: Docker Hub tags for kortix/sandbox.
  */
-
-// ─── Constants ──────────────────────────────────────────────────────────────
 
 const GITHUB_REPO = 'kortix-ai/suna';
 const GITHUB_API_BASE = 'https://api.github.com';
-const DOCKERHUB_REPO = 'kortix/computer';
+const DOCKERHUB_REPO = 'kortix/sandbox';
 const DOCKERHUB_TAGS_URL = `https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags`;
-
 const CACHE_TTL_MS = 5 * 60 * 1000;
-
-// ─── Types ──────────────────────────────────────────────────────────────────
 
 export type VersionChannel = 'stable' | 'dev';
 
@@ -54,7 +39,6 @@ export interface LatestVersionResult {
 interface DockerHubTag {
   name: string;
   last_updated: string;
-  full_size: number;
 }
 
 interface GHRelease {
@@ -65,8 +49,6 @@ interface GHRelease {
   draft: boolean;
   prerelease: boolean;
 }
-
-// ─── Cache ──────────────────────────────────────────────────────────────────
 
 interface CacheEntry<T> {
   data: T;
@@ -84,34 +66,28 @@ const cache: {
 };
 
 function isCacheValid<T>(entry: CacheEntry<T> | null): entry is CacheEntry<T> {
-  return entry !== null && (Date.now() - entry.cachedAt) < CACHE_TTL_MS;
+  return entry !== null && Date.now() - entry.cachedAt < CACHE_TTL_MS;
 }
-
-// ─── Running version (injected at container start) ─────────────────────────
 
 function getRunningVersion(): string {
   return process.env.SANDBOX_VERSION || config.SANDBOX_VERSION_OVERRIDE || 'unknown';
 }
 
 function getRunningChannel(): VersionChannel {
-  const version = getRunningVersion();
-  return version.startsWith('dev-') ? 'dev' : 'stable';
+  return detectVersionChannel(getRunningVersion());
 }
-
-// ─── GitHub API ─────────────────────────────────────────────────────────────
 
 function githubHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
-    'Accept': 'application/vnd.github+json',
+    Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
   };
-  if (config.GITHUB_TOKEN) headers['Authorization'] = `Bearer ${config.GITHUB_TOKEN}`;
+  if (config.GITHUB_TOKEN) headers.Authorization = `Bearer ${config.GITHUB_TOKEN}`;
   return headers;
 }
 
 async function githubFetch<T>(path: string): Promise<T> {
-  const url = `${GITHUB_API_BASE}${path}`;
-  const res = await fetch(url, {
+  const res = await fetch(`${GITHUB_API_BASE}${path}`, {
     headers: githubHeaders(),
     signal: AbortSignal.timeout(8_000),
   });
@@ -122,14 +98,12 @@ async function githubFetch<T>(path: string): Promise<T> {
 async function fetchStableReleases(limit = 20): Promise<GHRelease[]> {
   try {
     const releases = await githubFetch<GHRelease[]>(`/repos/${GITHUB_REPO}/releases?per_page=${limit}`);
-    return releases.filter((r) => !r.draft);
+    return releases.filter((release) => !release.draft);
   } catch (err) {
     console.warn('[version] Failed to fetch GitHub releases:', err);
     return [];
   }
 }
-
-// ─── Docker Hub API ─────────────────────────────────────────────────────────
 
 async function fetchDockerHubDevTags(limit = 20): Promise<DockerHubTag[]> {
   try {
@@ -140,9 +114,6 @@ async function fetchDockerHubDevTags(limit = 20): Promise<DockerHubTag[]> {
     const data = await res.json() as { results: DockerHubTag[] };
     return (data.results || [])
       .filter((tag) => {
-        // Only user-installable dev tags (dev-{sha8}), not internal multi-arch
-        // build artifacts (dev-{sha8}-amd64, dev-{sha8}-arm64) or the moving
-        // dev-latest pointer.
         if (!tag.name.startsWith('dev-')) return false;
         if (tag.name === 'dev-latest') return false;
         if (tag.name.endsWith('-amd64') || tag.name.endsWith('-arm64')) return false;
@@ -154,8 +125,6 @@ async function fetchDockerHubDevTags(limit = 20): Promise<DockerHubTag[]> {
     return [];
   }
 }
-
-// ─── Resolvers ──────────────────────────────────────────────────────────────
 
 async function getLatestStable(): Promise<LatestVersionResult> {
   if (isCacheValid(cache.latestStable)) return cache.latestStable.data;
@@ -195,7 +164,6 @@ async function getLatestDev(): Promise<LatestVersionResult> {
     return result;
   }
 
-  // No dev tags — fall back to running version if it's a dev build
   const running = getRunningVersion();
   return {
     version: running.startsWith('dev-') ? running : 'dev-unknown',
@@ -210,7 +178,6 @@ async function getAllVersions(): Promise<VersionEntry[]> {
   const runningVersion = getRunningVersion();
   const versions: VersionEntry[] = [];
 
-  // Stable releases from GitHub Releases API
   const releases = await fetchStableReleases(20);
   for (const release of releases) {
     const version = release.tag_name.replace(/^v/, '');
@@ -224,7 +191,6 @@ async function getAllVersions(): Promise<VersionEntry[]> {
     });
   }
 
-  // Dev builds from Docker Hub Tags API
   const devTags = await fetchDockerHubDevTags(20);
   for (const tag of devTags) {
     const sha8 = tag.name.replace('dev-', '');
@@ -238,79 +204,40 @@ async function getAllVersions(): Promise<VersionEntry[]> {
     });
   }
 
-  // Sort by date descending
   versions.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
-
   cache.allVersions = { data: versions, cachedAt: Date.now() };
   return versions;
 }
 
-// ─── Routes ─────────────────────────────────────────────────────────────────
-
 const versionRouter = new Hono();
 
-/**
- * GET /v1/platform/sandbox/version
- * Returns the version of this running API container.
- */
-versionRouter.get('/', async (c) => {
-  const version = getRunningVersion();
-  const channel = getRunningChannel();
-  return c.json({ version, channel });
-});
-
-/**
- * GET /v1/platform/sandbox/version/latest
- * Query: ?channel=stable (default) | dev
- */
-versionRouter.get('/latest', async (c) => {
-  const channel = (c.req.query('channel') || 'stable') as VersionChannel;
-
-  if (channel === 'dev') {
-    const latest = await getLatestDev();
-    return c.json({
-      version: latest.version,
-      channel: 'dev' as const,
-      date: latest.date,
-      sha: latest.sha,
-      title: latest.title,
-    });
-  }
-
-  const latest = await getLatestStable();
+versionRouter.get('/', (c) => {
   return c.json({
-    version: latest.version,
-    channel: 'stable' as const,
-    date: latest.date,
-    title: latest.title,
+    version: getRunningVersion(),
+    channel: getRunningChannel(),
   });
 });
 
-/**
- * GET /v1/platform/sandbox/version/all
- * Returns all installable versions (stable from GitHub Releases + dev from Docker Hub).
- */
+versionRouter.get('/latest', async (c) => {
+  const channel = (c.req.query('channel') || 'stable') as VersionChannel;
+  const latest = channel === 'dev' ? await getLatestDev() : await getLatestStable();
+  return c.json(latest);
+});
+
 versionRouter.get('/all', async (c) => {
   const versions = await getAllVersions();
-  const runningVersion = getRunningVersion();
-  const runningChannel = getRunningChannel();
   return c.json({
     versions,
     current: {
-      version: runningVersion,
-      channel: runningChannel,
+      version: getRunningVersion(),
+      channel: getRunningChannel(),
     },
   });
 });
 
-/**
- * GET /v1/platform/sandbox/version/changelog
- * Returns a unified changelog (stable releases + dev commits merged).
- * Query: ?channel=all (default) | stable | dev
- */
 versionRouter.get('/changelog', async (c) => {
   const channel = c.req.query('channel') || 'all';
-  const entries: any[] = [];
+  const entries: Array<Record<string, unknown>> = [];
 
   if (channel === 'stable' || channel === 'all') {
     const releases = await fetchStableReleases(20);
@@ -344,28 +271,30 @@ versionRouter.get('/changelog', async (c) => {
     }
   }
 
-  // Sort by date descending
-  entries.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
-
+  entries.sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')));
   return c.json({ changelog: entries });
 });
 
 export { versionRouter };
+
 export function detectVersionChannel(version: string | null | undefined): VersionChannel {
   return version?.startsWith('dev-') ? 'dev' : 'stable';
 }
 
 export function hasNewerSandboxVersion(current: string, latest: string, channel: VersionChannel): boolean {
   if (channel === 'dev') return current !== latest;
-  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number);
-  const c = parse(current);
-  const l = parse(latest);
-  for (let i = 0; i < Math.max(c.length, l.length); i++) {
-    const cv = c[i] ?? 0;
-    const lv = l[i] ?? 0;
-    if (lv > cv) return true;
-    if (lv < cv) return false;
+
+  const parse = (value: string) => value.replace(/^v/, '').split('.').map(Number);
+  const currentParts = parse(current);
+  const latestParts = parse(latest);
+
+  for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
+    const currentPart = currentParts[i] ?? 0;
+    const latestPart = latestParts[i] ?? 0;
+    if (latestPart > currentPart) return true;
+    if (latestPart < currentPart) return false;
   }
+
   return false;
 }
 

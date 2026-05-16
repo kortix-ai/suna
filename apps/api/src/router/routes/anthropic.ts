@@ -17,6 +17,7 @@ import {
   resolveActorFromRequest,
   type ActorContext,
 } from '../../shared/actor-context';
+import { getTraceHeaders } from '../../lib/request-context';
 
 const anthropic = new Hono<{ Variables: AppContext }>();
 
@@ -92,7 +93,7 @@ anthropic.post('/messages', async (c) => {
   const modelConfig = getModel(modelId);
 
   // Proxy to Anthropic
-  const response = await proxyToAnthropic(body, isStreaming);
+  const response = await proxyToAnthropic(body, isStreaming, getTraceHeaders());
 
   // If Anthropic returned an error, pass it through
   if (!response.ok) {

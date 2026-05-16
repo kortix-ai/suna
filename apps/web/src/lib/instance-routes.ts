@@ -5,7 +5,6 @@ export const INSTANCE_SCOPED_ROUTES = [
   '/agents',
   '/marketplace',
   '/skills',
-  '/projects',
   '/p',
   '/workspace',
   '/settings',
@@ -85,6 +84,16 @@ export function getActiveInstanceIdFromCookie(): string | null {
 
 export function setActiveInstanceCookie(instanceId?: string | null): void {
   if (typeof document === 'undefined') return;
+
+  // Project routes must NEVER carry the legacy active-instance cookie.
+  // With it set, middleware redirects any instance-scoped client-side nav
+  // (/sessions/<id>, /files, /terminal/<id>, …) to /instances/<cookie>/...
+  // which is the legacy dashboard the user explicitly does not want to
+  // see. Always force-clear instead of writing the requested value.
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/projects')) {
+    document.cookie = `${ACTIVE_INSTANCE_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
+    return;
+  }
 
   if (!instanceId) {
     document.cookie = `${ACTIVE_INSTANCE_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;

@@ -1,0 +1,7 @@
+{
+  "name": "legacy_migration_tooling",
+  "status": "failed",
+  "command": "env TEST_DATABASE_URL=postgresql://postgres:998d20e58f21869a17b5049cd2feffcb@supabase-db:5432/postgres KORTIX_TEST_DB_CONFIRM=I_UNDERSTAND_THIS_DELETES_TEST_DATA INTERNAL_KORTIX_ENV=dev bun test apps/api/src/__tests__/e2e-legacy-sandbox-migration.test.ts ",
+  "exit_code": 1,
+  "log": "logs/legacy_migration_tooling.log"
+}

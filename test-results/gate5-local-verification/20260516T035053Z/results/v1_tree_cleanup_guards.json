@@ -1,0 +1,7 @@
+{
+  "name": "v1_tree_cleanup_guards",
+  "status": "passed",
+  "command": "bash -lc $'\\n  set -euo pipefail\\n\\n  [ ! -e core ]\\n  [ ! -e packages/voice ]\\n  [ ! -e packages/kortix-ocx-registry ]\\n\\n  packages=\"$(find packages -mindepth 1 -maxdepth 1 -type d -exec basename {} \\\\; | sort | tr \"\\\\n\" \" \")\"\\n  [ \"$packages\" = \"agent-tunnel db shared \" ]\\n\\n  if git grep -n -E \"core/docker|dev:core|packages/voice|packages/kortix-ocx-registry|kortix/computer\" -- \\\\\\n    package.json \\\\\\n    pnpm-workspace.yaml \\\\\\n    .github/workflows \\\\\\n    scripts\\n  then\\n    exit 1\\n  fi\\n\\n  if git grep -n -E \"justavpsOrigins|justavps\\\\\\\\.com|JustAVPS|kortix/computer\" -- \\\\\\n    apps/api/src/index.ts \\\\\\n    .github/workflows \\\\\\n    README.md \\\\\\n    docs/development-release-guide.md\\n  then\\n    exit 1\\n  fi\\n' ",
+  "exit_code": 0,
+  "log": "logs/v1_tree_cleanup_guards.log"
+}

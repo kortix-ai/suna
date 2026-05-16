@@ -297,7 +297,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
           {user ? (
             <Button asChild size="default">
-              <Link href="/dashboard">Dashboard</Link>
+              <Link href="/projects">Projects</Link>
             </Button>
           ) : (
             <Button
@@ -419,10 +419,10 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 {user ? (
                   <Button asChild size="lg" className="w-full h-14 text-lg">
                     <Link
-                      href="/dashboard"
+                      href="/projects"
                       onClick={() => setIsDrawerOpen(false)}
                     >
-                      Dashboard
+                      Projects
                     </Link>
                   </Button>
                 ) : (
@@ -452,4 +452,3 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     </header>
   );
 }
-

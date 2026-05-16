@@ -12,7 +12,8 @@ on:
     paths:
       - 'apps/api/**'
       - 'apps/web/**'
-      - 'core/**'
+      - 'apps/sandbox/**'
+      - 'apps/kortix-sandbox-agent-server/**'
       - 'packages/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -39,7 +40,7 @@ jobs:
     outputs:
       api_changed: ${{ steps.filter.outputs.api }}
       frontend_changed: ${{ steps.filter.outputs.frontend }}
-      computer_changed: ${{ steps.filter.outputs.computer }}
+      sandbox_changed: ${{ steps.filter.outputs.sandbox }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,14 +58,18 @@ jobs:
               - 'apps/web/**'
               - 'packages/shared/**'
               - 'pnpm-lock.yaml'
-            computer:
-              - 'core/**'
+            sandbox:
+              - 'apps/sandbox/**'
+              - 'apps/kortix-sandbox-agent-server/**'
+              - 'packages/shared/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
       - name: Summary
         run: |
           echo "### Changes detected" >> "$GITHUB_STEP_SUMMARY"
           echo "- API: ${{ steps.filter.outputs.api }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- Frontend: ${{ steps.filter.outputs.frontend }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Computer: ${{ steps.filter.outputs.computer }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Sandbox: ${{ steps.filter.outputs.sandbox }}" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Build API (amd64 + arm64 in parallel) ──────────────────────────────────
   build-api-amd64:
@@ -215,11 +220,11 @@ jobs:
             "kortix/kortix-frontend:dev-latest-arm64"
           docker manifest push "kortix/kortix-frontend:dev-latest"
 
-  # ── Build Computer (amd64 + arm64 in parallel) ────────────────────────────
-  build-computer-amd64:
-    name: Computer (amd64)
+  # ── Build Sandbox (amd64 + arm64 in parallel) ─────────────────────────────
+  build-sandbox-amd64:
+    name: Sandbox (amd64)
     needs: detect-changes
-    if: needs.detect-changes.outputs.computer_changed == 'true'
+    if: needs.detect-changes.outputs.sandbox_changed == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -232,17 +237,17 @@ jobs:
       - name: Build and push
         run: |
           SHA8="${GITHUB_SHA::8}"
-          docker build --file core/docker/Dockerfile \
+          docker build --file apps/sandbox/Dockerfile \
             --build-arg "SANDBOX_VERSION=dev-${SHA8}" \
-            --tag "kortix/computer:dev-${SHA8}-amd64" \
-            --tag "kortix/computer:dev-latest-amd64" .
-          docker push "kortix/computer:dev-${SHA8}-amd64"
-          docker push "kortix/computer:dev-latest-amd64"
+            --tag "kortix/sandbox:dev-${SHA8}-amd64" \
+            --tag "kortix/sandbox:dev-latest-amd64" .
+          docker push "kortix/sandbox:dev-${SHA8}-amd64"
+          docker push "kortix/sandbox:dev-latest-amd64"
 
-  build-computer-arm64:
-    name: Computer (arm64)
+  build-sandbox-arm64:
+    name: Sandbox (arm64)
     needs: detect-changes
-    if: needs.detect-changes.outputs.computer_changed == 'true'
+    if: needs.detect-changes.outputs.sandbox_changed == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -255,16 +260,16 @@ jobs:
       - name: Build and push
         run: |
           SHA8="${GITHUB_SHA::8}"
-          docker build --file core/docker/Dockerfile \
+          docker build --file apps/sandbox/Dockerfile \
             --build-arg "SANDBOX_VERSION=dev-${SHA8}" \
-            --tag "kortix/computer:dev-${SHA8}-arm64" \
-            --tag "kortix/computer:dev-latest-arm64" .
-          docker push "kortix/computer:dev-${SHA8}-arm64"
-          docker push "kortix/computer:dev-latest-arm64"
+            --tag "kortix/sandbox:dev-${SHA8}-arm64" \
+            --tag "kortix/sandbox:dev-latest-arm64" .
+          docker push "kortix/sandbox:dev-${SHA8}-arm64"
+          docker push "kortix/sandbox:dev-latest-arm64"
 
-  merge-computer:
-    name: Computer manifest
-    needs: [build-computer-amd64, build-computer-arm64]
+  merge-sandbox:
+    name: Sandbox manifest
+    needs: [build-sandbox-amd64, build-sandbox-arm64]
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
@@ -277,15 +282,15 @@ jobs:
         id: meta
         run: |
           SHA8="${GITHUB_SHA::8}"
-          docker manifest create "kortix/computer:dev-${SHA8}" \
-            "kortix/computer:dev-${SHA8}-amd64" \
-            "kortix/computer:dev-${SHA8}-arm64"
-          docker manifest push "kortix/computer:dev-${SHA8}"
+          docker manifest create "kortix/sandbox:dev-${SHA8}" \
+            "kortix/sandbox:dev-${SHA8}-amd64" \
+            "kortix/sandbox:dev-${SHA8}-arm64"
+          docker manifest push "kortix/sandbox:dev-${SHA8}"
 
-          docker manifest create "kortix/computer:dev-latest" \
-            "kortix/computer:dev-latest-amd64" \
-            "kortix/computer:dev-latest-arm64"
-          docker manifest push "kortix/computer:dev-latest"
+          docker manifest create "kortix/sandbox:dev-latest" \
+            "kortix/sandbox:dev-latest-amd64" \
+            "kortix/sandbox:dev-latest-arm64"
+          docker manifest push "kortix/sandbox:dev-latest"
 
           echo "tag=dev-${SHA8}" >> "$GITHUB_OUTPUT"
 
@@ -318,31 +323,3 @@ jobs:
         run: |
           echo "### Deployed API → **dev**" >> "$GITHUB_STEP_SUMMARY"
           echo "Image: \`${{ needs.merge-api.outputs.image }}\`" >> "$GITHUB_STEP_SUMMARY"
-
-  # ── Async: Fire off dev snapshot in a separate workflow run ─────────────
-  # Uses gh workflow run (workflow_dispatch) to trigger a standalone
-  # snapshot-build.yml run. This job completes in ~1 second — the snapshot
-  # builds independently in its own run, not blocking deploy-dev.
-  #
-  # Fires on every deploy-dev run by default. Disable by setting the repo
-  # variable AUTO_SNAPSHOT_DEV to 'false'.
-  trigger-dev-snapshot:
-    name: Trigger dev snapshot (async)
-    needs: merge-computer
-    runs-on: ubuntu-latest
-    if: vars.AUTO_SNAPSHOT_DEV != 'false'
-    steps:
-      - name: Dispatch snapshot-build workflow
-        env:
-          GH_TOKEN: ${{ secrets.GH_RELEASE_PAT || secrets.GITHUB_TOKEN }}
-        run: |
-          SHA8="${GITHUB_SHA::8}"
-          gh workflow run snapshot-build.yml \
-            --repo ${{ github.repository }} \
-            --ref main \
-            -f version="dev-${SHA8}" \
-            -f target=dev
-          echo "### Dev snapshot dispatched (async)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Version: \`dev-${SHA8}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Target: **dev**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Runs separately — deploy-dev is not blocked" >> "$GITHUB_STEP_SUMMARY"

@@ -2,14 +2,13 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { CreditsExplainedModal } from '@/components/billing/credits-explained-modal';
 import { Button } from '@/components/ui/button';
 import { ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 
 export default function PricingPage() {
   const [creditsModalOpen, setCreditsModalOpen] = useState(false);
-  const openNewInstanceModal = useNewInstanceModalStore((s) => s.openNewInstanceModal);
 
   return (
     <main className="min-h-screen bg-background">
@@ -22,10 +21,12 @@ export default function PricingPage() {
         >
           <h1 className="text-4xl font-semibold tracking-tight">Simple pricing</h1>
           <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-            One machine, one subscription. Priced by the specs you need.
+            Seats, compute, and LLM usage stay tied to your account and project sessions.
           </p>
-          <Button size="lg" className="px-10" onClick={() => openNewInstanceModal()}>
-            Get Your Kortix <ArrowRight className="ml-2 size-4" />
+          <Button asChild size="lg" className="px-10">
+            <Link href="/projects">
+              Open projects <ArrowRight className="ml-2 size-4" />
+            </Link>
           </Button>
         </motion.div>
 

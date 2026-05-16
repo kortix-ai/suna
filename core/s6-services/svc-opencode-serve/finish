@@ -1,3 +1,0 @@
-#!/bin/bash
-# Delay restart to let the port release and avoid EADDRINUSE crash-loops.
-sleep 2

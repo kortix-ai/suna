@@ -1,364 +1,350 @@
 'use client';
 
-/**
- * Project Channels tab — filtered view of /kortix/channels scoped to
- * `project_id = <projectId>`. Mirrors TriggersTab in shape: same section
- * lives on the workspace-global Channels page; this tab is just the
- * narrowed slice plus an "Add" button that pre-stamps project_id so the
- * new channel surfaces here on next load.
- */
-
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Radio, Plus, Power, PowerOff, RefreshCcw, Trash2, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { TelegramIcon } from '@/components/ui/icons/telegram';
 import { SlackIcon } from '@/components/ui/icons/slack';
-import { Plus, Power, PowerOff, Settings, Trash2, Radio, MessageSquare } from 'lucide-react';
+import { TelegramIcon } from '@/components/ui/icons/telegram';
+import { DiscordIcon } from '@/components/ui/icons/discord';
 import { toast } from '@/lib/toast';
-import { useServerStore } from '@/stores/server-store';
-import { authenticatedFetch } from '@/lib/auth-token';
-import { ChannelConfigDialog } from '@/components/channels/channel-config-dialog';
-import { ChannelSettingsDialog } from '@/components/channels/channel-settings-dialog';
+import {
+  createProjectChannel,
+  deleteProjectChannel,
+  listProjectChannels,
+  startProjectChannelOAuth,
+  updateProjectChannel,
+  type ProjectChannel,
+  type ProjectChannelPlatform,
+} from '@/lib/projects-client';
 
-interface Channel {
-  id: string;
-  platform: 'telegram' | 'slack';
+const platformLabels: Record<ProjectChannelPlatform, string> = {
+  slack: 'Slack',
+  telegram: 'Telegram',
+  msteams: 'MS Teams',
+  discord: 'Discord',
+};
+
+const platformIcons: Partial<Record<ProjectChannelPlatform, React.ComponentType<{ className?: string }>>> = {
+  slack: SlackIcon,
+  telegram: TelegramIcon,
+  discord: DiscordIcon,
+};
+
+type Draft = {
+  platform: ProjectChannelPlatform;
+  external_channel_id: string;
+  external_team_id: string;
   name: string;
-  enabled: boolean;
-  bot_username: string | null;
-  default_agent: string;
-  default_model: string;
-  instructions?: string;
-  project_id?: string | null;
-  webhook_path: string;
-  webhook_url?: string | null;
-  created_by: string | null;
-  created_at: string;
-}
+  secret: string;
+  agent_name: string;
+  prompt_template: string;
+};
 
-async function projectChannelsFetch(serverUrl: string, path: string, opts?: RequestInit): Promise<any> {
-  try {
-    const res = await authenticatedFetch(`${serverUrl}/kortix/channels${path}`, opts);
-    const text = await res.text();
-    let data: any = null;
-    try { data = JSON.parse(text); } catch { data = null; }
-    if (res.ok) return data;
-    return data || { ok: false, error: text || `Request failed (${res.status})` };
-  } catch (error: any) {
-    return { ok: false, error: error?.message || 'Request failed' };
-  }
-}
+const defaultDraft: Draft = {
+  platform: 'slack',
+  external_channel_id: '',
+  external_team_id: '',
+  name: '',
+  secret: '',
+  agent_name: 'default',
+  prompt_template: '{{ message.text }}',
+};
 
 export function ChannelsTab({ projectId }: { projectId: string }) {
-  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
-  const [channels, setChannels] = useState<Channel[]>([]);
+  const [channels, setChannels] = useState<ProjectChannel[]>([]);
   const [loading, setLoading] = useState(true);
-  const [configOpen, setConfigOpen] = useState(false);
-  const [configPlatform, setConfigPlatform] = useState<'telegram' | 'slack' | undefined>(undefined);
-  const [settingsChannel, setSettingsChannel] = useState<Channel | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<Channel | null>(null);
-  const [removing, setRemoving] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [oauthStarting, setOauthStarting] = useState<ProjectChannelPlatform | null>(null);
+  const [draft, setDraft] = useState<Draft>(defaultDraft);
 
   const load = useCallback(async () => {
-    if (!serverUrl) return;
     setLoading(true);
-    const data = await projectChannelsFetch(
-      serverUrl,
-      `?project_id=${encodeURIComponent(projectId)}`,
-    );
-    if (data?.ok && Array.isArray(data.channels)) {
-      setChannels(data.channels);
-    } else {
+    try {
+      setChannels(await listProjectChannels(projectId));
+    } catch (error) {
+      toast.error('Failed to load channels', { description: error instanceof Error ? error.message : String(error) });
       setChannels([]);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [serverUrl, projectId]);
+  }, [projectId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  const handleToggle = async (id: string, enabled: boolean) => {
-    if (!serverUrl) return;
-    setChannels((prev) => prev.map((ch) => ch.id === id ? { ...ch, enabled } : ch));
-    const data = await projectChannelsFetch(serverUrl, `/${id}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' });
-    if (!data?.ok) {
-      setChannels((prev) => prev.map((ch) => ch.id === id ? { ...ch, enabled: !enabled } : ch));
-      toast.error('Failed to update channel', { description: data?.error });
-    } else {
-      toast.success(enabled ? 'Channel enabled' : 'Channel disabled');
-    }
+  const grouped = useMemo(() => {
+    return channels.reduce<Record<ProjectChannelPlatform, ProjectChannel[]>>((acc, channel) => {
+      acc[channel.platform] = [...(acc[channel.platform] ?? []), channel];
+      return acc;
+    }, { slack: [], telegram: [], msteams: [], discord: [] });
+  }, [channels]);
+
+  const updateDraft = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+    setDraft((current) => ({ ...current, [key]: value }));
   };
 
-  const handleRemoveConfirm = async () => {
-    if (!removeTarget || !serverUrl) return;
-    setRemoving(true);
-    const ch = removeTarget;
-    setChannels((prev) => prev.filter((c) => c.id !== ch.id));
-    const data = await projectChannelsFetch(serverUrl, `/${ch.id}`, { method: 'DELETE' });
-    setRemoving(false);
-    setRemoveTarget(null);
-    if (!data?.ok) {
-      toast.error('Failed to remove channel', { description: data?.error });
-      await load();
+  const handleCreate = async () => {
+    if (!draft.external_channel_id.trim()) {
+      toast.error('External channel id is required');
       return;
     }
-    toast.success('Channel removed');
-    if (settingsChannel?.id === ch.id) {
-      setSettingsOpen(false);
-      setSettingsChannel(null);
+    if (!draft.secret.trim()) {
+      toast.error('Signing secret is required');
+      return;
     }
-    await load();
+
+    setSaving(true);
+    try {
+      await createProjectChannel(projectId, {
+        platform: draft.platform,
+        external_channel_id: draft.external_channel_id.trim(),
+        external_team_id: draft.external_team_id.trim() || null,
+        name: draft.name.trim() || null,
+        config: { secret: draft.secret.trim() },
+        agent_name: draft.agent_name.trim() || 'default',
+        prompt_template: draft.prompt_template.trim() || '{{ message.text }}',
+        enabled: true,
+      });
+      setDraft(defaultDraft);
+      toast.success('Channel added');
+      await load();
+    } catch (error) {
+      toast.error('Failed to add channel', { description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const telegram = useMemo(() => channels.filter((c) => c.platform === 'telegram'), [channels]);
-  const slack = useMemo(() => channels.filter((c) => c.platform === 'slack'), [channels]);
+  const handleToggle = async (channel: ProjectChannel) => {
+    const enabled = !channel.enabled;
+    setChannels((current) => current.map((item) => item.channel_id === channel.channel_id ? { ...item, enabled } : item));
+    try {
+      await updateProjectChannel(projectId, channel.channel_id, { enabled });
+      toast.success(enabled ? 'Channel enabled' : 'Channel disabled');
+    } catch (error) {
+      setChannels((current) => current.map((item) => item.channel_id === channel.channel_id ? { ...item, enabled: channel.enabled } : item));
+      toast.error('Failed to update channel', { description: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
+  const handleDelete = async (channel: ProjectChannel) => {
+    setChannels((current) => current.filter((item) => item.channel_id !== channel.channel_id));
+    try {
+      await deleteProjectChannel(projectId, channel.channel_id);
+      toast.success('Channel removed');
+    } catch (error) {
+      toast.error('Failed to remove channel', { description: error instanceof Error ? error.message : String(error) });
+      await load();
+    }
+  };
+
+  const handleOAuth = async (platform: ProjectChannelPlatform) => {
+    setOauthStarting(platform);
+    try {
+      const result = await startProjectChannelOAuth(projectId, { platform, app: platform });
+      window.location.href = result.authorization_url;
+    } catch (error) {
+      toast.error('OAuth is not configured for this channel', {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setOauthStarting(null);
+    }
+  };
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
       <div className="shrink-0 border-b border-border/40 px-4 py-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Radio className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Channels</span>
           <Badge variant="secondary" className="text-[10px] tabular-nums">{channels.length}</Badge>
         </div>
-        <Button
-          size="sm"
-          className="gap-1.5 h-7 text-[12px]"
-          onClick={() => { setConfigPlatform(undefined); setConfigOpen(true); }}
-          disabled={!serverUrl}
-        >
-          <Plus className="h-3 w-3" />
-          Add
+        <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[12px]" onClick={() => void load()} disabled={loading}>
+          <RefreshCcw className="h-3 w-3" />
+          Refresh
         </Button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-4">
+        <div className="rounded-lg border border-border/50 bg-card p-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold">Add channel</h3>
+              <p className="text-[12px] text-muted-foreground">Public events must be signed with this channel secret.</p>
+            </div>
+            <div className="flex items-center gap-1">
+              {(['slack', 'telegram', 'discord'] as ProjectChannelPlatform[]).map((platform) => (
+                <Button
+                  key={platform}
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 text-[12px]"
+                  onClick={() => void handleOAuth(platform)}
+                  disabled={oauthStarting !== null}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {oauthStarting === platform ? 'Opening' : platformLabels[platform]}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-muted-foreground">Platform</span>
+              <select
+                value={draft.platform}
+                onChange={(event) => updateDraft('platform', event.target.value as ProjectChannelPlatform)}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                {Object.entries(platformLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-muted-foreground">Name</span>
+              <Input value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} placeholder="engineering" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-muted-foreground">External channel id</span>
+              <Input value={draft.external_channel_id} onChange={(event) => updateDraft('external_channel_id', event.target.value)} placeholder="C0123 or chat id" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-muted-foreground">External team id</span>
+              <Input value={draft.external_team_id} onChange={(event) => updateDraft('external_team_id', event.target.value)} placeholder="T0123" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-muted-foreground">Signing secret</span>
+              <Input type="password" value={draft.secret} onChange={(event) => updateDraft('secret', event.target.value)} placeholder="Webhook signing secret" />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-muted-foreground">Agent</span>
+              <Input value={draft.agent_name} onChange={(event) => updateDraft('agent_name', event.target.value)} placeholder="default" />
+            </label>
+          </div>
+          <label className="block space-y-1">
+            <span className="text-[11px] font-medium text-muted-foreground">Prompt template</span>
+            <Textarea
+              value={draft.prompt_template}
+              onChange={(event) => updateDraft('prompt_template', event.target.value)}
+              className="min-h-20"
+              placeholder="{{ message.text }}"
+            />
+          </label>
+          <div className="flex justify-end">
+            <Button size="sm" className="h-8 gap-1.5 text-[12px]" onClick={() => void handleCreate()} disabled={saving}>
+              <Plus className="h-3 w-3" />
+              {saving ? 'Adding' : 'Add channel'}
+            </Button>
+          </div>
+        </div>
+
         {loading ? (
           <div className="space-y-2">
-            {[0, 1].map((i) => (
-              <div key={i} className="rounded-xl border bg-card p-3 flex items-center gap-3">
-                <Skeleton className="h-9 w-9 rounded-lg" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-3 w-32" />
-                  <Skeleton className="h-2.5 w-48" />
-                </div>
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="rounded-lg border border-border/50 bg-card p-3">
+                <Skeleton className="h-4 w-36 mb-2" />
+                <Skeleton className="h-3 w-64" />
               </div>
             ))}
           </div>
         ) : channels.length === 0 ? (
-          <EmptyState
-            onAdd={(p) => { setConfigPlatform(p); setConfigOpen(true); }}
-          />
+          <div className="rounded-lg border border-dashed border-border/70 p-6 text-center">
+            <p className="text-sm font-medium">No project channels</p>
+            <p className="text-[12px] text-muted-foreground mt-1">Add Slack, Telegram, MS Teams, or Discord ingress for this project.</p>
+          </div>
         ) : (
           <div className="space-y-4">
-            {telegram.length > 0 && (
-              <ChannelGroup
-                title="Telegram"
-                Icon={TelegramIcon}
-                channels={telegram}
-                onToggle={handleToggle}
-                onRemove={(c) => setRemoveTarget(c)}
-                onSettings={(c) => { setSettingsChannel(c); setSettingsOpen(true); }}
-              />
-            )}
-            {slack.length > 0 && (
-              <ChannelGroup
-                title="Slack"
-                Icon={SlackIcon}
-                channels={slack}
-                onToggle={handleToggle}
-                onRemove={(c) => setRemoveTarget(c)}
-                onSettings={(c) => { setSettingsChannel(c); setSettingsOpen(true); }}
-              />
-            )}
+            {(Object.keys(platformLabels) as ProjectChannelPlatform[])
+              .filter((platform) => grouped[platform].length > 0)
+              .map((platform) => (
+                <ChannelGroup
+                  key={platform}
+                  platform={platform}
+                  channels={grouped[platform]}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                />
+              ))}
           </div>
         )}
       </div>
-
-      <ChannelConfigDialog
-        open={configOpen}
-        onOpenChange={setConfigOpen}
-        onCreated={() => { void load(); }}
-        initialPlatform={configPlatform}
-      />
-
-      <ChannelSettingsDialog
-        channel={settingsChannel}
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        onUpdated={load}
-      />
-
-      <AlertDialog open={Boolean(removeTarget)} onOpenChange={(open) => { if (!open && !removing) setRemoveTarget(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove channel?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {removeTarget
-                ? `This disconnects ${removeTarget.name} from this project.`
-                : 'This disconnects the selected channel.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={removing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={removing}
-              onClick={(e) => { e.preventDefault(); void handleRemoveConfirm(); }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {removing ? 'Removing…' : 'Remove channel'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
-// ─── Sub-components ─────────────────────────────────────────────────────────
-
 function ChannelGroup({
-  title,
-  Icon,
+  platform,
   channels,
   onToggle,
-  onRemove,
-  onSettings,
+  onDelete,
 }: {
-  title: string;
-  Icon: React.ComponentType<{ className?: string }>;
-  channels: Channel[];
-  onToggle: (id: string, enabled: boolean) => void;
-  onRemove: (ch: Channel) => void;
-  onSettings: (ch: Channel) => void;
+  platform: ProjectChannelPlatform;
+  channels: ProjectChannel[];
+  onToggle: (channel: ProjectChannel) => void;
+  onDelete: (channel: ProjectChannel) => void;
 }) {
+  const Icon = platformIcons[platform] ?? Radio;
   return (
-    <div className="space-y-1.5">
+    <section className="space-y-2">
       <div className="flex items-center gap-2 px-1">
-        <Icon className="h-3 w-3 text-muted-foreground" />
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{title}</span>
+        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{platformLabels[platform]}</span>
         <Badge variant="secondary" className="text-[10px] tabular-nums">{channels.length}</Badge>
       </div>
       <div className="space-y-2">
-        <AnimatePresence mode="popLayout">
-          {channels.map((ch) => (
-            <motion.div
-              key={ch.id}
-              layout
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              transition={{ duration: 0.15 }}
-            >
-              <ChannelRow ch={ch} Icon={Icon} onToggle={onToggle} onRemove={onRemove} onSettings={onSettings} />
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        {channels.map((channel) => (
+          <ChannelRow key={channel.channel_id} channel={channel} Icon={Icon} onToggle={onToggle} onDelete={onDelete} />
+        ))}
       </div>
-    </div>
+    </section>
   );
 }
 
 function ChannelRow({
-  ch,
+  channel,
   Icon,
   onToggle,
-  onRemove,
-  onSettings,
+  onDelete,
 }: {
-  ch: Channel;
+  channel: ProjectChannel;
   Icon: React.ComponentType<{ className?: string }>;
-  onToggle: (id: string, enabled: boolean) => void;
-  onRemove: (ch: Channel) => void;
-  onSettings: (ch: Channel) => void;
+  onToggle: (channel: ProjectChannel) => void;
+  onDelete: (channel: ProjectChannel) => void;
 }) {
-  const modelShort = ch.default_model ? ch.default_model.split('/').pop() : null;
+  const webhookPath = `/v1/channels/${channel.platform}/${channel.channel_id}/events`;
   return (
-    <div
-      className="rounded-xl border border-border/50 bg-card p-3 flex items-start gap-3 cursor-pointer hover:bg-muted/30 transition-colors group"
-      onClick={() => onSettings(ch)}
-    >
-      <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-muted border border-border/50 shrink-0">
+    <div className="rounded-lg border border-border/50 bg-card p-3 flex items-start gap-3">
+      <div className="h-9 w-9 rounded-md border border-border/50 bg-muted flex items-center justify-center shrink-0">
         <Icon className="h-4 w-4 text-foreground" />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-          <h4 className="text-sm font-semibold text-foreground truncate">{ch.name}</h4>
-          <Badge variant={ch.enabled ? 'highlight' : 'secondary'} className="text-[10px] shrink-0">
-            {ch.enabled ? 'Live' : 'Off'}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold truncate">{channel.name || channel.external_channel_id}</p>
+          <Badge variant={channel.enabled && channel.status === 'active' ? 'highlight' : 'secondary'} className="text-[10px]">
+            {channel.enabled && channel.status === 'active' ? 'Live' : channel.status}
           </Badge>
+          {channel.config?.has_secret ? <Badge variant="secondary" className="text-[10px]">Secret set</Badge> : null}
         </div>
-        <p className="text-[11px] text-muted-foreground truncate">
-          @{ch.bot_username || '?'}
-          {modelShort ? ` · ${modelShort}` : ''}
-          {ch.default_agent && ch.default_agent !== 'kortix' ? ` · ${ch.default_agent}` : ''}
+        <p className="text-[12px] text-muted-foreground truncate">
+          {channel.external_channel_id}{channel.external_team_id ? ` / ${channel.external_team_id}` : ''} - {channel.agent_name}
         </p>
+        <code className="mt-1 block text-[11px] text-muted-foreground truncate">{webhookPath}</code>
       </div>
-      <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => onSettings(ch)}>
-          <Settings className="h-3 w-3" />
+      <div className="flex items-center gap-1 shrink-0">
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => onToggle(channel)}>
+          {channel.enabled ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
         </Button>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => onToggle(ch.id, !ch.enabled)}>
-          {ch.enabled ? <PowerOff className="h-3 w-3" /> : <Power className="h-3 w-3" />}
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => onDelete(channel)}>
+          <Trash2 className="h-3.5 w-3.5" />
         </Button>
-        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => onRemove(ch)}>
-          <Trash2 className="h-3 w-3" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ onAdd }: { onAdd: (platform: 'telegram' | 'slack') => void }) {
-  return (
-    <div className="space-y-3 py-4">
-      <div className="text-center py-4">
-        <div className="w-10 h-10 rounded-xl bg-muted border flex items-center justify-center mx-auto mb-2">
-          <MessageSquare className="h-5 w-5 text-muted-foreground" />
-        </div>
-        <h4 className="text-sm font-semibold mb-0.5">No channels in this project</h4>
-        <p className="text-[12px] text-muted-foreground max-w-sm mx-auto">
-          Connect Telegram or Slack — messages will dispatch to this project's agents.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-md mx-auto">
-        <button
-          onClick={() => onAdd('telegram')}
-          className="flex items-center gap-3 p-3 rounded-xl border border-border/50 bg-card hover:bg-muted/50 transition-colors cursor-pointer text-left group"
-        >
-          <div className="w-8 h-8 rounded-lg bg-muted border border-border/50 flex items-center justify-center shrink-0 group-hover:border-primary/30 transition-colors">
-            <TelegramIcon className="h-4 w-4 text-foreground" />
-          </div>
-          <div>
-            <p className="text-[13px] font-medium">Telegram</p>
-            <p className="text-[11px] text-muted-foreground">Connect a Telegram bot</p>
-          </div>
-        </button>
-        <button
-          onClick={() => onAdd('slack')}
-          className="flex items-center gap-3 p-3 rounded-xl border border-border/50 bg-card hover:bg-muted/50 transition-colors cursor-pointer text-left group"
-        >
-          <div className="w-8 h-8 rounded-lg bg-muted border border-border/50 flex items-center justify-center shrink-0 group-hover:border-primary/30 transition-colors">
-            <SlackIcon className="h-4 w-4 text-foreground" />
-          </div>
-          <div>
-            <p className="text-[13px] font-medium">Slack</p>
-            <p className="text-[11px] text-muted-foreground">Connect a Slack app</p>
-          </div>
-        </button>
       </div>
     </div>
   );

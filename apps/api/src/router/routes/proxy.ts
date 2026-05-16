@@ -20,6 +20,7 @@ import {
   resolveActorFromRequest,
   type ActorContext,
 } from '../../shared/actor-context';
+import { getTraceHeaders } from '../../lib/request-context';
 
 const proxy = new Hono();
 
@@ -858,9 +859,13 @@ function extractText(value: unknown): string {
 function buildForwardHeaders(c: any): Headers {
   const headers = new Headers();
   for (const [key, value] of c.req.raw.headers.entries()) {
-    if (key.toLowerCase() !== 'host') {
+    const lower = key.toLowerCase();
+    if (lower !== 'host' && lower !== 'traceparent' && lower !== 'x-request-id') {
       headers.set(key, value);
     }
+  }
+  for (const [key, value] of Object.entries(getTraceHeaders())) {
+    headers.set(key, value);
   }
   return headers;
 }

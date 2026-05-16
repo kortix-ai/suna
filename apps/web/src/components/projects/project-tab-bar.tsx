@@ -1,0 +1,207 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight, Menu, MessageCircle, PanelRight, X } from 'lucide-react';
+import { useParams, usePathname, useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+
+import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useSidebar } from '@/components/ui/sidebar';
+import { useRightSidebarSafe } from '@/components/ui/sidebar-right-provider';
+import { isDesktop, desktopPlatform } from '@/lib/desktop';
+import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
+import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+
+interface ProjectTabBarProps {
+  projectId: string;
+}
+
+/**
+ * Project shell top strip.
+ *
+ * Holds session tabs (one per open project session). Clicking a session in
+ * the left sidebar opens it as a tab here; navigating between tabs swaps
+ * the chat view without unmounting the shell. Close (×) drops the tab and,
+ * if it was active, routes back to the project sessions list.
+ *
+ * macOS-traffic-light spacing + mobile sidebar toggles mirror the legacy
+ * dashboard's TabBar so the chrome height/density matches across surfaces.
+ */
+export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
+  const sidebar = useSidebar();
+  const rightSidebar = useRightSidebarSafe();
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useParams<{ sessionId?: string }>();
+  const activeSessionId = params?.sessionId ?? null;
+
+  const tabsByProject = useProjectSessionTabsStore((s) => s.tabsByProject);
+  const openTab = useProjectSessionTabsStore((s) => s.openTab);
+  const closeTab = useProjectSessionTabsStore((s) => s.closeTab);
+  const openTabIds = useMemo(
+    () => tabsByProject[projectId] ?? [],
+    [tabsByProject, projectId],
+  );
+
+  // Auto-open the current session as a tab whenever the URL points at one.
+  useEffect(() => {
+    if (activeSessionId) openTab(projectId, activeSessionId);
+  }, [projectId, activeSessionId, openTab]);
+
+  // Load session metadata so tabs can show the real title instead of a UUID.
+  const { data: sessions } = useQuery({
+    queryKey: ['project-sessions', projectId],
+    queryFn: () => listProjectSessions(projectId),
+    enabled: !!projectId,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+  });
+  const sessionById = useMemo(() => {
+    const map = new Map<string, ProjectSession>();
+    (sessions ?? []).forEach((s) => map.set(s.session_id, s));
+    return map;
+  }, [sessions]);
+
+  // macOS desktop traffic-light spacing — mirrors tab-bar.tsx.
+  const [isMacDesktop, setIsMacDesktop] = useState(false);
+  useEffect(() => {
+    setIsMacDesktop(isDesktop() && desktopPlatform() === 'macos');
+  }, []);
+  const needsTrafficLightSpace = isMacDesktop && sidebar.state === 'collapsed';
+
+  const handleCloseTab = (sessionId: string) => {
+    const wasActive = activeSessionId === sessionId;
+    const remaining = openTabIds.filter((id) => id !== sessionId);
+    closeTab(projectId, sessionId);
+
+    if (!wasActive) return;
+    if (remaining.length > 0) {
+      // Focus the closest neighbor (the tab that took this one's slot).
+      const idx = openTabIds.indexOf(sessionId);
+      const next = remaining[Math.min(idx, remaining.length - 1)];
+      router.push(`/projects/${projectId}/sessions/${next}`);
+    } else {
+      router.push(`/projects/${projectId}/sessions`);
+    }
+  };
+
+  return (
+    <div
+      className="flex-shrink-0 flex items-stretch bg-sidebar h-[38px] relative overflow-hidden"
+      role="tablist"
+    >
+      {/* Mobile sidebar toggles */}
+      <div className="flex-shrink-0 flex items-center gap-0 pl-2 pr-1 md:hidden">
+        <button
+          onClick={() => sidebar.setOpenMobile(true)}
+          className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+          aria-label="Open menu"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => rightSidebar?.setOpenMobile(true)}
+          className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+          aria-label="Quick actions"
+        >
+          <PanelRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Desktop back/forward */}
+      <div
+        className={cn(
+          'flex-shrink-0 items-center gap-0 pr-1 hidden md:flex',
+          needsTrafficLightSpace ? 'pl-10' : 'pl-2',
+        )}
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => window.history.back()}
+              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Back
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => window.history.forward()}
+              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            Forward
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      {/* Session tabs — mirrors components/tabs/tab-bar.tsx OG styling:
+          flat row, bottom accent line on active, hover-fade close button. */}
+      <div className="flex-1 flex items-stretch overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+        {openTabIds.map((sessionId) => {
+          // Sessions don't carry a user-set name yet (API model is branch-only).
+          // Fall back to a short id slice until naming ships.
+          const label = `session ${sessionId.slice(0, 8)}`;
+          const isActive =
+            pathname?.startsWith(`/projects/${projectId}/sessions/${sessionId}`) ?? false;
+
+          return (
+            <div
+              key={sessionId}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => router.push(`/projects/${projectId}/sessions/${sessionId}`)}
+              className={cn(
+                'group relative flex items-center text-[13px] select-none cursor-pointer',
+                'transition-colors duration-150 h-full',
+                'gap-1.5 px-2 md:gap-2 md:px-3 max-w-[200px] min-w-[48px] md:min-w-[80px]',
+                isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <MessageCircle className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/60" />
+              <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{label}</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCloseTab(sessionId);
+                }}
+                className={cn(
+                  'flex-shrink-0 p-0.5 rounded-sm transition-colors duration-100 cursor-pointer',
+                  'hover:bg-foreground/10',
+                  'hidden md:block',
+                  isActive
+                    ? 'md:opacity-40 md:hover:opacity-80'
+                    : 'md:opacity-0 md:group-hover:opacity-40 md:group-hover:hover:opacity-80',
+                )}
+                aria-label={`Close ${label}`}
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+
+              {/* Active indicator — bottom accent line, same as OG */}
+              {isActive && (
+                <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-foreground/80 rounded-full" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex-shrink-0 flex items-center pr-2 relative z-20 bg-sidebar pl-1 h-full" />
+    </div>
+  );
+}

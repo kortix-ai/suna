@@ -4,13 +4,7 @@ import type { NextRequest } from 'next/server';
 import { locales, defaultLocale, type Locale } from '@/i18n/config';
 import { detectBestLocaleFromHeaders } from '@/lib/utils/geo-detection-server';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import {
-  ACTIVE_INSTANCE_COOKIE,
-  buildInstancePath,
-  extractInstanceRoute,
-  isInstanceDetailPath,
-  isInstanceScopedAppPath,
-} from '@/lib/instance-routes';
+import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
 import { getMaintenanceConfig, type MaintenanceLevel } from '@/lib/maintenance-store';
 
 // Marketing pages that support locale routing for SEO (/de, /it, etc.)
@@ -62,76 +56,25 @@ const PUBLIC_ROUTES = [
 // Routes that require authentication but are related to billing/trials/setup
 const BILLING_ROUTES = [
   '/activate-trial',
-  '/subscription',
-  '/instances',
 ];
 
 // Routes that require authentication and active subscription
 const PROTECTED_ROUTES = [
-  '/dashboard',
-  '/agents',
-  '/marketplace',
-  '/skills',
   '/projects',
-  '/p',
-  '/workspace',
-  '/settings',
-  // Tab-only routes (no dedicated page.tsx in earlier versions — now have one)
-  '/browser',
-  '/desktop',
-  '/services',
-  '/sessions',
-  '/terminal',
-  '/files',
-  '/channels',
-  '/connectors',
-  '/tunnel',
-  '/scheduled-tasks',
-  '/commands',
-  '/tools',
-  '/configuration',
-  '/deployments',
-  '/changelog',
+  '/accounts',
+  '/invites',
   '/admin',
-  '/legacy',
-  '/onboarding',
 ];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const instanceRoute = extractInstanceRoute(pathname);
-  const isInstanceDetailRoute = isInstanceDetailPath(pathname);
-  // Only treat as instance-scoped if the inner path is in INSTANCE_SCOPED_ROUTES.
-  // Routes with dedicated files under /instances/[id]/ (like /onboarding) are NOT
-  // instance-scoped — they handle their own routing via Next.js dynamic segments.
-  const isInstanceScopedRoute = !!instanceRoute && !!instanceRoute.innerPath && isInstanceScopedAppPath(instanceRoute.innerPath);
-  const effectivePathname = isInstanceScopedRoute ? instanceRoute.innerPath : pathname;
-  const activeInstanceId = request.cookies.get(ACTIVE_INSTANCE_COOKIE)?.value || null;
 
-  // Block access to WIP /thread/new. Prefer the active workspace; otherwise
-  // fall through to the dashboard so the client can resolve/register primary.
-  if (pathname.includes('/thread/new')) {
-    return NextResponse.redirect(
-      new URL(
-        activeInstanceId ? buildInstancePath(activeInstanceId, '/dashboard') : '/dashboard',
-        request.url,
-      ),
-    );
-  }
-  
   // Skip middleware for static files, API routes, and telemetry endpoints.
-  // The `pathname.includes('.')` check is a defensive catch-all for static
-  // assets served from /public — but we must NOT apply it to /instances/
-  // paths, because the file viewer URL legitimately contains dots in the
-  // encoded file path (e.g. `.../files/<encoded-path>/index.html`). Skipping
-  // middleware there would bypass the /instances/[id]/files/... → /files/...
-  // rewrite, dropping the request into the dashboard catch-all which then
-  // bounces the user back to /instances.
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/v1/') ||
-    (pathname.includes('.') && !pathname.startsWith('/instances/')) ||
+    pathname.includes('.') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/monitoring') ||    // Sentry error tracking tunnel (Better Stack)
     pathname.startsWith('/_betterstack')     // Better Stack browser telemetry proxy
@@ -286,24 +229,14 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // FAST PATH: authenticated users hitting the homepage go straight to their
-  // active workspace when known. If no active cookie exists, send them to the
-  // dashboard and let useSandbox() register the primary workspace client-side.
+  // FAST PATH: authenticated users hitting the homepage go straight to /projects.
   if (pathname === '/' && user) {
-    return NextResponse.redirect(
-      new URL(
-        activeInstanceId ? buildInstancePath(activeInstanceId, '/dashboard') : '/dashboard',
-        request.url,
-      ),
-    );
+    return NextResponse.redirect(new URL('/projects', request.url));
   }
 
-  // Desktop shell never shows the marketing homepage. The Tauri window already
-  // boots at /dashboard, but any internal nav back to / (logo click, history
-  // back, etc.) gets bounced too. Unauthenticated users hit the existing auth
-  // gate on /dashboard and land on /auth — no special-casing needed.
+  // Desktop shell never shows the marketing homepage — bounce to /projects.
   if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
+    return NextResponse.redirect(new URL('/projects', request.url));
   }
 
   // Auto-redirect based on geo-detection for marketing pages
@@ -369,40 +302,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // ── Instance-scoped routes (/instances/:id/dashboard, etc.) ──────────
-    // Rewrite to the bare app route and set the active-instance cookie.
-    // Works for both cloud and local mode.
-    if (isInstanceScopedRoute && instanceRoute?.instanceId) {
-      const rewriteUrl = request.nextUrl.clone();
-      rewriteUrl.pathname = effectivePathname;
-      const response = NextResponse.rewrite(rewriteUrl);
-      response.cookies.set(ACTIVE_INSTANCE_COOKIE, instanceRoute.instanceId, { path: '/', sameSite: 'lax' });
-      return response;
-    }
-
-    // ── Instance detail pages (/instances, /instances/:id, /instances/:id/onboarding) ──
-    if (isInstanceDetailRoute || pathname === '/instances') {
-      return supabaseResponse;
-    }
-    if (instanceRoute?.instanceId && instanceRoute.innerPath === '/onboarding') {
-      supabaseResponse.cookies.set(ACTIVE_INSTANCE_COOKIE, instanceRoute.instanceId, { path: '/', sameSite: 'lax' });
-      return supabaseResponse;
-    }
-
-    // ── Bare app routes (/dashboard, /files, ...) ────────────────────────
-    // If we already know the active instance, jump straight into the scoped
-    // route. Without a cookie, allow the dashboard to mount; useSandbox()
-    // resolves the primary workspace without showing the picker first.
-    if (isInstanceScopedAppPath(pathname)) {
-      if (activeInstanceId) {
-        return NextResponse.redirect(
-          new URL(buildInstancePath(activeInstanceId, pathname), request.url),
-        );
-      }
-      return supabaseResponse;
-    }
-
-    // ── Billing-related routes (subscription, activate-trial, etc.) ──────
+    // ── Billing-related routes (activate-trial, etc.) ────────────────────
     if (BILLING_ROUTES.some(route => pathname.startsWith(route))) {
       return supabaseResponse;
     }

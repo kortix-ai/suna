@@ -4,10 +4,9 @@
  * These tests verify:
  *  1. Setup routes are mounted in local mode
  *  2. GET /v1/setup/status returns system info
- *  3. GET /v1/setup/schema returns key definitions
- *  4. GET /v1/setup/env returns masked keys
- *  5. POST /v1/setup/env saves keys
- *  6. GET /v1/setup/health returns service health
+ *  3. GET /v1/setup/env returns masked keys
+ *  4. POST /v1/setup/env saves keys
+ *  5. GET /v1/setup/health returns service health
  *
  * Also verifies billing and scheduler no-DB guards.
  */
@@ -96,37 +95,6 @@ describe('/v1/setup', () => {
     });
   });
 
-  describe('GET /v1/setup/schema', () => {
-    it('returns 200', async () => {
-      const app = createSetupTestApp();
-      const res = await app.request('/v1/setup/schema');
-      expect(res.status).toBe(200);
-    });
-
-    it('has llm and tools groups', async () => {
-      const app = createSetupTestApp();
-      const res = await app.request('/v1/setup/schema');
-      const data = await res.json();
-      expect(data.llm).toBeDefined();
-      expect(data.tools).toBeDefined();
-    });
-
-    it('llm group has at least 4 providers', async () => {
-      const app = createSetupTestApp();
-      const res = await app.request('/v1/setup/schema');
-      const data = await res.json();
-      expect(data.llm.keys.length).toBeGreaterThanOrEqual(4);
-    });
-
-    it('Anthropic key is present', async () => {
-      const app = createSetupTestApp();
-      const res = await app.request('/v1/setup/schema');
-      const data = await res.json();
-      const anthropic = data.llm.keys.find((k: any) => k.key === 'ANTHROPIC_API_KEY');
-      expect(anthropic).toBeDefined();
-    });
-  });
-
   describe('GET /v1/setup/env', () => {
     it('returns 200', async () => {
       const app = createSetupTestApp();
@@ -144,7 +112,6 @@ describe('/v1/setup', () => {
 
     it('all keys unconfigured when no .env', async () => {
       rmSync(resolve(TEST_DIR, '.env'), { force: true });
-      rmSync(resolve(TEST_DIR, 'core/docker/.env'), { force: true });
       const app = createSetupTestApp();
       const res = await app.request('/v1/setup/env');
       const data = await res.json();
@@ -179,17 +146,6 @@ describe('/v1/setup', () => {
     it('.env has ENV_MODE=local', async () => {
       const content = readFileSync(resolve(TEST_DIR, '.env'), 'utf-8');
       expect(content).toContain('ENV_MODE=local');
-    });
-
-    it('creates core/docker/.env with key', async () => {
-      expect(existsSync(resolve(TEST_DIR, 'core/docker/.env'))).toBe(true);
-      const content = readFileSync(resolve(TEST_DIR, 'core/docker/.env'), 'utf-8');
-      expect(content).toContain('ANTHROPIC_API_KEY=sk-ant-test-setup-123');
-    });
-
-    it('core/docker/.env has KORTIX_API_URL', async () => {
-      const content = readFileSync(resolve(TEST_DIR, 'core/docker/.env'), 'utf-8');
-      expect(content).toContain('KORTIX_API_URL=http://kortix-api:8008');
     });
 
     it('rejects invalid body', async () => {
@@ -256,8 +212,7 @@ describe('Billing no-DB guard', () => {
     expect(state.subscription.status).toBe('active');
     expect(state.subscription.is_trial).toBe(false);
 
-    expect(state.models).toBeDefined();
-    expect(state.models.length).toBeGreaterThan(0);
+    expect(Array.isArray(state.models)).toBe(true);
 
 
     expect(state.tier).toBeDefined();

@@ -1,1 +1,0 @@
-export { legacyApp } from './routes';

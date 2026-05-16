@@ -3,10 +3,9 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowRight, LayoutDashboard, Server, Users } from 'lucide-react';
+import { Activity, ArrowRight, LayoutDashboard, Wrench } from 'lucide-react';
 
-import { useAdminAccounts } from '@/hooks/admin/use-admin-accounts';
-import { useAdminSandboxes } from '@/hooks/admin/use-admin-sandboxes';
+import { useOpsOverview } from '@/hooks/admin/use-ops-overview';
 
 import {
   SectionContainer,
@@ -16,7 +15,7 @@ import {
 } from './_components/section-header';
 
 const LEGACY_SECTION_REDIRECTS: Record<string, string> = {
-  instances: '/admin/instances',
+  instances: '/admin/ops',
   accounts: '/admin/accounts',
 };
 
@@ -31,55 +30,48 @@ export default function AdminOverviewPage() {
     }
   }, [legacySection, router]);
 
-  const { data: accounts } = useAdminAccounts({ page: 1, limit: 100 });
-  const { data: sandboxes } = useAdminSandboxes({ page: 1, limit: 1 });
-
-  const totalAccounts = accounts?.total ?? 0;
-  const totalSandboxes = sandboxes?.total ?? 0;
-  const paidAccounts = (accounts?.accounts ?? []).filter(
-    (a) => a.tier && a.tier !== 'free',
-  ).length;
-  const totalCredits = (accounts?.accounts ?? []).reduce(
-    (sum, a) => sum + Number(a.balance ?? 0),
-    0,
-  );
+  const { data } = useOpsOverview();
 
   return (
     <SectionContainer>
       <SectionHeader
         icon={LayoutDashboard}
         title="Admin overview"
-        description="Fleet and account signals at a glance. Legacy tools are tucked away in the sidebar."
+        description="Production support entrypoint. Operations is the source of truth for live platform health."
       />
 
       <StatRow>
-        <StatPill label="Total accounts" value={totalAccounts.toLocaleString()} />
-        <StatPill label="Total instances" value={totalSandboxes.toLocaleString()} />
         <StatPill
-          label="Paid accounts"
-          value={paidAccounts}
-          hint="On top 100 accounts"
-          tone="success"
+          label="API"
+          value={data?.api.status.toUpperCase() ?? '...'}
+          hint={data?.api.env}
+          tone={data?.api.status === 'ok' ? 'success' : 'warning'}
+        />
+        <StatPill label="Accounts" value={(data?.totals.accounts ?? 0).toLocaleString()} />
+        <StatPill
+          label="Errored sandboxes"
+          value={data?.sandboxes.errored ?? 0}
+          tone={(data?.sandboxes.errored ?? 0) > 0 ? 'danger' : 'success'}
         />
         <StatPill
-          label="Credits on ledger"
-          value={`$${totalCredits.toFixed(2)}`}
-          hint="Across top 100 accounts"
+          label="Queued work"
+          value={data?.queues.queued_total ?? 0}
+          tone={(data?.queues.queued_total ?? 0) > 0 ? 'warning' : 'success'}
         />
       </StatRow>
 
       <div className="grid gap-3 md:grid-cols-2">
         <QuickLink
-          href="/admin/instances"
-          icon={Server}
-          title="Instances"
-          description="Inspect every machine, open shared settings, and manage lifecycle actions."
+          href="/admin/ops"
+          icon={Activity}
+          title="Operations"
+          description="API, sessions, sandboxes, queues, audit events, usage, and migration status."
         />
         <QuickLink
-          href="/admin/accounts"
-          icon={Users}
-          title="Accounts"
-          description="Users, billing, credit balances, grants, debits, and ledger history."
+          href="/admin/utils"
+          icon={Wrench}
+          title="Maintenance"
+          description="Support workflows for account access, technical issues, and operational recovery."
         />
       </div>
     </SectionContainer>

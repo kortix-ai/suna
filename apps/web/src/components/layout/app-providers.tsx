@@ -10,7 +10,9 @@ import { useModelHydration } from '@/hooks/opencode/use-model-hydration';
 import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
+import { AccountSettingsModal } from '@/components/settings/account-settings-modal';
 import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
+import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
 
@@ -76,7 +78,7 @@ function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode
   return <>{children}</>;
 }
 
-/** Store-driven NewInstanceModal — mounted once globally */
+/** Store-driven NewInstanceModal — mounted by legacy dashboard surfaces only. */
 function GlobalNewInstanceModal() {
   const { isOpen, title, closeNewInstanceModal } = useNewInstanceModalStore();
   return <NewInstanceModal open={isOpen} onOpenChange={(o) => !o && closeNewInstanceModal()} title={title} />;
@@ -95,30 +97,62 @@ function GlobalUserSettingsModal() {
   );
 }
 
+/** Store-driven AccountSettingsModal — billing + transactions live here.
+ *  Mounted alongside the user settings modal so any caller (WorkspaceMenu,
+ *  402 error handler, session error banner) can open it from anywhere. */
+function GlobalAccountSettingsModal() {
+  const { isOpen, defaultTab, closeAccountSettings } = useAccountSettingsModalStore();
+  return (
+    <AccountSettingsModal
+      open={isOpen}
+      onOpenChange={(o) => !o && closeAccountSettings()}
+      defaultTab={defaultTab}
+    />
+  );
+}
+
 interface AppProvidersProps {
   children: React.ReactNode;
   showSidebar?: boolean;
+  /**
+   * Right rail control. `true` (default) mounts the legacy `<SidebarRight />`
+   * with all the dashboard nav (Files, Terminal, Secrets, Triggers, etc.).
+   * Project routes pass `false` so the session view is just the conversation
+   * inside the project's own chrome — no extra dashboard noise.
+   */
+  showRightSidebar?: boolean;
   defaultSidebarOpen?: boolean;
   sidebarContent?: React.ReactNode;
   sidebarSiblings?: React.ReactNode;
+  showGlobalNewInstanceModal?: boolean;
+  showGlobalUserSettingsModal?: boolean;
 }
 
 export function AppProviders({
   children,
   showSidebar = true,
+  showRightSidebar = true,
   defaultSidebarOpen,
   sidebarContent,
-  sidebarSiblings
+  sidebarSiblings,
+  showGlobalNewInstanceModal = false,
+  showGlobalUserSettingsModal = false,
 }: AppProvidersProps) {
-  // Hydrate global default model from server on first mount
-  useModelHydration();
+  // Legacy dashboard pages still read the sandbox-side model preference. Repo-first
+  // project pages disable the legacy right rail, so keep them off this old route.
+  useModelHydration(showRightSidebar);
 
   const content = (
     <DeleteOperationEffectsWrapper>
       <SubscriptionStoreSync>
         {children}
-        <GlobalNewInstanceModal />
-        <GlobalUserSettingsModal />
+        {showGlobalNewInstanceModal && <GlobalNewInstanceModal />}
+        {showGlobalUserSettingsModal && (
+          <>
+            <GlobalUserSettingsModal />
+            <GlobalAccountSettingsModal />
+          </>
+        )}
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>
   );
@@ -133,7 +167,7 @@ export function AppProviders({
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             {content}
           </div>
-          <SidebarRight />
+          {showRightSidebar && <SidebarRight />}
         </RightSidebarProvider>
       </SidebarInset>
       {sidebarSiblings}

@@ -83,6 +83,11 @@ export async function createCheckoutSession(params: {
   const customerId = await getOrCreateStripeCustomer(accountId, email);
   const stripe = getStripe();
   const adminCheckout = await isPlatformAdmin(accountId);
+  const account = await getCreditAccount(accountId);
+  const previousFreeSubscriptionId =
+    (account?.tier ?? 'free') === 'free' && account?.stripeSubscriptionId
+      ? account.stripeSubscriptionId
+      : undefined;
 
   const priceId = resolvePriceId(tierKey, commitmentType);
   if (!priceId) throw new BillingError('No price configured for this tier');
@@ -91,6 +96,7 @@ export async function createCheckoutSession(params: {
     account_id: accountId,
     tier_key: tierKey,
     commitment_type: commitmentType ?? 'monthly',
+    ...(previousFreeSubscriptionId ? { previous_subscription_id: previousFreeSubscriptionId } : {}),
     ...(serverType ? { server_type: serverType } : {}),
     ...(location ? { location } : {}),
   };
@@ -149,16 +155,12 @@ export async function createCheckoutSession(params: {
           active: true,
         });
 
-        if (serverType) {
-          const { provisionSandboxFromCheckout } = await import('../../platform/services/sandbox-provisioner');
-          await provisionSandboxFromCheckout({
-            accountId,
-            subscriptionId: subscription.id,
-            serverType,
-            location: location || undefined,
-            tierKey,
-          });
-        }
+        // Legacy auto-provision of a per-account sandbox at checkout time
+        // has been removed — sandboxes are now per-session, provisioned on
+        // demand under /v1/projects/:id/sessions.
+        void serverType;
+        void location;
+        void tierKey;
 
         return {
           status: 'subscription_created' as const,
@@ -215,10 +217,7 @@ export async function createCheckoutSession(params: {
       ...(computeDesc ? { description: computeDesc } : {}),
     },
     metadata: {
-      account_id: accountId,
-      tier_key: tierKey,
-      ...(serverType ? { server_type: serverType } : {}),
-      ...(location ? { location } : {}),
+      ...metadata,
       ...(adminCheckout ? { admin_checkout: 'true' } : {}),
     },
     ...(locale ? { locale: locale as any } : {}),
@@ -333,15 +332,15 @@ export async function confirmInlineCheckout(params: {
 
 export async function createPortalSession(accountId: string, returnUrl: string, email?: string) {
   let customer = await getCustomerByAccountId(accountId);
-  if (!customer) {
+  let customerId = customer?.id ?? null;
+  if (!customerId) {
     if (!email) throw new BillingError('No billing customer found');
-    const customerId = await getOrCreateStripeCustomer(accountId, email);
-    customer = { id: customerId } as typeof customer;
+    customerId = await getOrCreateStripeCustomer(accountId, email);
   }
 
   const stripe = getStripe();
   const session = await stripe.billingPortal.sessions.create({
-    customer: customer.id,
+    customer: customerId,
     return_url: returnUrl,
   });
 

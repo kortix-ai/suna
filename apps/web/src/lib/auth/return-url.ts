@@ -1,7 +1,11 @@
-// Post-auth landing goes straight to the app. Middleware/client sandbox
-// resolution will use the active instance cookie when present, or register the
-// primary workspace without forcing the full workspace picker first.
-const DEFAULT_AUTH_RETURN_URL = '/dashboard';
+// Post-auth landing goes to the projects list.
+const DEFAULT_AUTH_RETURN_URL = '/projects';
+const LEGACY_AUTH_RETURN_PREFIXES = [
+  '/dashboard',
+  '/instances',
+  '/sessions',
+  '/subscription',
+] as const;
 
 export function sanitizeAuthReturnUrl(
   value?: string | null,
@@ -11,6 +15,12 @@ export function sanitizeAuthReturnUrl(
 
   const trimmedValue = value.trim();
   if (!trimmedValue.startsWith('/') || trimmedValue.startsWith('//')) {
+    return fallback;
+  }
+
+  if (LEGACY_AUTH_RETURN_PREFIXES.some((prefix) => {
+    return trimmedValue === prefix || trimmedValue.startsWith(`${prefix}/`) || trimmedValue.startsWith(`${prefix}?`);
+  })) {
     return fallback;
   }
 

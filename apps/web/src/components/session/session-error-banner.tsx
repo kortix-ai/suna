@@ -3,7 +3,7 @@
 import { AlertCircle, Loader2, CreditCard, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
+import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 
 // ============================================================================
 // Abort detection — user-initiated stops get a lowkey treatment
@@ -46,9 +46,9 @@ function parseBalance(text: string): string | null {
 }
 
 function InsufficientCreditsCard({ errorText, className }: { errorText: string; className?: string }) {
-  const openUserSettings = useUserSettingsModalStore((s) => s.openUserSettings);
+  const openAccountSettings = useAccountSettingsModalStore((s) => s.openAccountSettings);
   const balance = parseBalance(errorText);
-  const openBilling = () => openUserSettings({ tab: 'billing', highlight: 'credits' });
+  const openBilling = () => openAccountSettings({ tab: 'billing', highlight: 'credits' });
 
   return (
     <div

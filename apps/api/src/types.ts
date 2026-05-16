@@ -197,6 +197,8 @@ export interface AccountStateResponse {
     monthly_credits: number;
     can_purchase_credits: boolean;
   };
+  /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
+  models: ModelInfo[];
   auto_topup: {
     enabled: boolean;
     threshold: number;

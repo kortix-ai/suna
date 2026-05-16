@@ -1,9 +1,0 @@
-#!/usr/bin/with-contenv bash
-# Placeholder s6 slot for OpenCode API.
-#
-# The actual OpenCode API process is now owned end-to-end by Kortix Master's
-# central ServiceManager, not by this longrun. We keep the s6 service present so
-# the bootstrap graph remains stable and legacy service references do not break.
-
-echo "[opencode-serve] Managed by Kortix Master ServiceManager — holding s6 slot"
-exec sleep infinity

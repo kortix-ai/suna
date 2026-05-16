@@ -1,0 +1,7 @@
+{
+  "name": "api_billing_tests",
+  "status": "failed",
+  "command": "bun test apps/api/src/__tests__/billing/account-deletion.test.ts apps/api/src/__tests__/billing/credits.test.ts apps/api/src/__tests__/billing/customers-repository.test.ts apps/api/src/__tests__/billing/subscriptions.test.ts apps/api/src/__tests__/billing/webhooks.test.ts apps/api/src/__tests__/billing/yearly-rotation.test.ts apps/api/src/__tests__/e2e-billing-routes.test.ts apps/api/src/__tests__/unit-stripe-webhook-canonicalization.test.ts apps/api/src/__tests__/unit-revenuecat-webhook-canonical.test.ts ",
+  "exit_code": 1,
+  "log": "logs/api_billing_tests.log"
+}

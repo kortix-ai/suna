@@ -1,7 +1,7 @@
 import { toast } from '@/lib/toast';
 import { BillingError, isBillingError, formatBillingErrorForUI } from './api/errors';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
-import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
+import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import * as Sentry from '@sentry/nextjs';
 
 export interface ApiError extends Error {
@@ -161,7 +161,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
       message.includes('insufficient');
 
     if (isCreditsExhausted) {
-      useUserSettingsModalStore.getState().openUserSettings({
+      useAccountSettingsModalStore.getState().openAccountSettings({
         tab: 'billing',
         highlight: 'credits',
       });

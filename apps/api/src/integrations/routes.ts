@@ -470,7 +470,7 @@ export function createIntegrationsRouter(): Hono<AppEnv> {
     }
 
     try {
-      const provider = await getProviderFromRequest(c, accountId);
+      const provider = await getProviderFromRequest(c, account_id);
       const row = await insertIntegration({
         accountId: account_id,
         app,

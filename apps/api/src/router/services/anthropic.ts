@@ -1,5 +1,6 @@
 import { config, KORTIX_MARKUP } from '../../config';
 import type { ModelConfig } from '../config/models';
+import { getTraceHeaders } from '../../lib/request-context';
 
 const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -23,6 +24,7 @@ export interface AnthropicUsage {
 export async function proxyToAnthropic(
   body: Record<string, unknown>,
   isStreaming: boolean,
+  traceHeaders: Record<string, string> = getTraceHeaders(),
 ): Promise<Response> {
   const apiKey = config.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -43,6 +45,7 @@ export async function proxyToAnthropic(
       'anthropic-version': ANTHROPIC_VERSION,
       'HTTP-Referer': config.FRONTEND_URL || 'https://kortix.ai',
       'X-Title': 'Kortix',
+      ...traceHeaders,
     },
     body: JSON.stringify(body),
   });

@@ -1,4 +1,0 @@
-[submodule "packages/kortix-ocx-registry"]
-	path = packages/kortix-ocx-registry
-	url = https://github.com/kortix-ai/kortix-ocx-registry.git
-	branch = master

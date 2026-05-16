@@ -49,7 +49,7 @@ jobs:
 
       - name: Re-tag all images
         run: |
-          for IMAGE in kortix/kortix-api kortix/kortix-frontend kortix/computer; do
+          for IMAGE in kortix/kortix-api kortix/kortix-frontend kortix/sandbox; do
             echo "Re-tagging $IMAGE:dev-latest → $IMAGE:${{ env.VERSION }} + $IMAGE:latest"
 
             # Use buildx imagetools to create new tags from existing multi-arch manifest
@@ -66,7 +66,7 @@ jobs:
           echo "### Re-tagged dev-latest → v${{ env.VERSION }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`kortix/kortix-api:${{ env.VERSION }}\` (multi-arch)" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`kortix/kortix-frontend:${{ env.VERSION }}\` (multi-arch)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- \`kortix/computer:${{ env.VERSION }}\` (multi-arch)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`kortix/sandbox:${{ env.VERSION }}\` (multi-arch)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "_Zero rebuilds — re-tagged from dev-latest manifests._" >> "$GITHUB_STEP_SUMMARY"
 
@@ -154,7 +154,7 @@ jobs:
             echo ""
             echo "### Docker Images"
             echo ""
-            echo "- \`kortix/computer:${{ env.VERSION }}\`"
+            echo "- \`kortix/sandbox:${{ env.VERSION }}\`"
             echo "- \`kortix/kortix-api:${{ env.VERSION }}\`"
             echo "- \`kortix/kortix-frontend:${{ env.VERSION }}\`"
           } > /tmp/release-notes.md
@@ -175,13 +175,3 @@ jobs:
             --repo kortix-ai/suna
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ── Async: Build prod JustAVPS snapshot ────────────────────────────────────
-  build-prod-snapshot:
-    name: Build prod snapshot (async)
-    needs: retag-images
-    uses: ./.github/workflows/snapshot-build.yml
-    with:
-      version: ${{ inputs.version }}
-      target: prod
-    secrets: inherit

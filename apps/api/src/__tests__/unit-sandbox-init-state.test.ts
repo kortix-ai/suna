@@ -33,12 +33,12 @@ describe('sandbox init state helpers', () => {
   test('retries provider create up to success', async () => {
     let attempts = 0;
     const provider = {
-      name: 'justavps',
+      name: 'local_docker' as const,
       provisioning: { async: true, stages: [] },
       async create() {
         attempts += 1;
         if (attempts < 3) throw new Error(`attempt-${attempts}`);
-        return { externalId: 'machine-123', baseUrl: 'https://sandbox.example', metadata: { justavpsSlug: 'abc' } };
+        return { externalId: 'machine-123', baseUrl: 'https://sandbox.example', metadata: { localDockerName: 'abc' } };
       },
       async start() {},
       async stop() {},

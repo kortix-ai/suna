@@ -9,7 +9,7 @@
  *  3. PUT /v1/providers/:id/connect — store API key(s)
  *  4. DELETE /v1/providers/:id/disconnect — remove stored key(s)
  *  5. GET /v1/providers/health — system health check
- *  6. Backward compat: old /v1/setup/env still works after provider changes
+ *  6. Legacy /v1/setup/env still works after provider changes
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, mock } from 'bun:test';
@@ -68,7 +68,6 @@ afterAll(() => {
 beforeEach(() => {
   // Clean env files between tests
   rmSync(resolve(TEST_DIR, '.env'), { force: true });
-  rmSync(resolve(TEST_DIR, 'core/docker/.env'), { force: true });
 });
 
 // ─── Tests: GET /v1/providers ───────────────────────────────────────────────
@@ -225,28 +224,6 @@ describe('PUT /v1/providers/:id/connect', () => {
     expect(content).toContain('ANTHROPIC_API_KEY=sk-ant-env-check');
   });
 
-  it('key is written to core/docker/.env', async () => {
-    const app = createTestApp();
-    await app.request('/v1/providers/anthropic/connect', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keys: { ANTHROPIC_API_KEY: 'sk-ant-sandbox-check' } }),
-    });
-    const content = readFileSync(resolve(TEST_DIR, 'core/docker/.env'), 'utf-8');
-    expect(content).toContain('ANTHROPIC_API_KEY=sk-ant-sandbox-check');
-  });
-
-  it('core/docker/.env gets KORTIX_API_URL', async () => {
-    const app = createTestApp();
-    await app.request('/v1/providers/anthropic/connect', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keys: { ANTHROPIC_API_KEY: 'sk-ant-check' } }),
-    });
-    const content = readFileSync(resolve(TEST_DIR, 'core/docker/.env'), 'utf-8');
-    expect(content).toContain('KORTIX_API_URL=http://kortix-api:8008');
-  });
-
   it('root .env gets ENV_MODE=local', async () => {
     const app = createTestApp();
     await app.request('/v1/providers/anthropic/connect', {
@@ -373,19 +350,6 @@ describe('DELETE /v1/providers/:id/disconnect', () => {
     expect(content).not.toContain('ANTHROPIC_API_KEY');
   });
 
-  it('key is removed from core/docker/.env', async () => {
-    const app = createTestApp();
-    await app.request('/v1/providers/anthropic/connect', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keys: { ANTHROPIC_API_KEY: 'sk-ant-to-remove3' } }),
-    });
-    await app.request('/v1/providers/anthropic/disconnect', { method: 'DELETE' });
-
-    const content = readFileSync(resolve(TEST_DIR, 'core/docker/.env'), 'utf-8');
-    expect(content).not.toContain('ANTHROPIC_API_KEY');
-  });
-
   it('provider shows as disconnected after disconnect', async () => {
     const app = createTestApp();
     await app.request('/v1/providers/anthropic/connect', {
@@ -455,36 +419,11 @@ describe('GET /v1/providers/health', () => {
     expect(data.api.ok).toBe(true);
   });
 
-  it('reports docker status', async () => {
-    const app = createTestApp();
-    const res = await app.request('/v1/providers/health');
-    const data = await res.json();
-    expect(data.docker).toBeDefined();
-    expect(typeof data.docker.ok).toBe('boolean');
-  });
-
-  it('reports sandbox status', async () => {
-    const app = createTestApp();
-    const res = await app.request('/v1/providers/health');
-    const data = await res.json();
-    expect(data.sandbox).toBeDefined();
-    expect(typeof data.sandbox.ok).toBe('boolean');
-  });
 });
 
-// ─── Tests: Backward Compatibility ──────────────────────────────────────────
+// ─── Tests: Legacy setup env interop ────────────────────────────────────────
 
-describe('Backward compat: /v1/setup/* still works after provider changes', () => {
-  it('GET /v1/setup/schema returns groups with keys from registry', async () => {
-    const app = createTestApp();
-    const res = await app.request('/v1/setup/schema');
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.llm).toBeDefined();
-    expect(data.tools).toBeDefined();
-    expect(data.llm.keys.length).toBeGreaterThanOrEqual(4);
-  });
-
+describe('Legacy /v1/setup/env still works after provider changes', () => {
   it('GET /v1/setup/env reflects keys set via providers API', async () => {
     const app = createTestApp();
     // Connect via new API

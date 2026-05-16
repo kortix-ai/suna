@@ -5,9 +5,16 @@
  */
 import { defineConfig, devices } from '@playwright/test';
 
+process.env.E2E_BASE_URL ||= 'http://localhost:3000';
+process.env.E2E_API_URL ||= 'http://localhost:8008/v1';
+process.env.E2E_SUPABASE_URL ||= 'http://127.0.0.1:54321';
+
 export default defineConfig({
   testDir: './e2e/specs',
-  testMatch: ['**/single-project-paradigm-ui.spec.ts', '**/_board-screenshot.spec.ts'],
+  testMatch: [
+    '**/08-accounts-project-access.spec.ts',
+    '**/09-admin-ops.spec.ts',
+  ],
   timeout: 180_000,
   expect: { timeout: 30_000 },
   fullyParallel: false,

@@ -191,7 +191,18 @@ describe('matchAllowedRoute', () => {
   describe('registry integrity', () => {
     test('proxy services registry contains expected services', () => {
       const serviceNames = Object.keys(getProxyServices()).sort();
-      expect(serviceNames).toEqual(['context7', 'firecrawl', 'replicate', 'serper', 'tavily']);
+      expect(serviceNames).toEqual([
+        'anthropic',
+        'context7',
+        'firecrawl',
+        'gemini',
+        'groq',
+        'openai',
+        'replicate',
+        'serper',
+        'tavily',
+        'xai',
+      ]);
     });
 
     test('each service has required fields', () => {

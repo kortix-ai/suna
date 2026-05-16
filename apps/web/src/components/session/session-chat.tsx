@@ -5899,7 +5899,7 @@ export function SessionChat({
     !hasChatContent || welcomeFadeActive || isTransitioningFromWelcome;
 
   return (
-    <div className="relative flex flex-col h-full bg-background">
+    <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
       {/* Full-bleed welcome wallpaper — spans the entire session (behind header,
           messages, project selector, and chat input). Input renders as frosted
           glass so the wallpaper reads through uninterrupted. */}

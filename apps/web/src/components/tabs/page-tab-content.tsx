@@ -17,27 +17,27 @@ const DashboardContent = lazy(() =>
 );
 
 const SecretsPage = lazy(() =>
-	import('@/app/(dashboard)/settings/credentials/page'),
+	import('@/components/pages/settings/credentials/page'),
 );
 
 const ApiKeysPage = lazy(() =>
-	import('@/app/(dashboard)/settings/api-keys/page'),
+	import('@/components/pages/settings/api-keys/page'),
 );
 
 const ProvidersPage = lazy(() =>
-	import('@/app/(dashboard)/settings/providers/page'),
+	import('@/components/pages/settings/providers/page'),
 );
 
 const CreditsPage = lazy(() =>
-	import('@/app/(dashboard)/credits-explained/page'),
+	import('@/components/pages/credits-explained/page'),
 );
 
 const ChangelogPage = lazy(() =>
-	import('@/app/(dashboard)/changelog/page'),
+	import('@/components/pages/changelog/page'),
 );
 
 const WorkspacePage = lazy(() =>
-	import('@/app/(dashboard)/workspace/page'),
+	import('@/components/pages/workspace/page'),
 );
 
 const TriggersPage = lazy(() =>
@@ -70,7 +70,7 @@ const FilesPage = lazy(() =>
 	})),
 );
 
-const BoardPage = lazy(() => import('@/app/(dashboard)/board/page'));
+const BoardPage = lazy(() => import('@/components/pages/board/page'));
 
 const MarketplacePage = lazy(() =>
 	import('@/features/skills/components/marketplace').then((m) => ({
@@ -86,26 +86,26 @@ const DeploymentsPage = lazy(() =>
 
 // Admin pages (currently live under the dashboard route group)
 const AdminAnalyticsPage = lazy(() =>
-	import('@/app/(dashboard)/admin/analytics/page'),
+	import('@/components/pages/admin/analytics/page'),
 );
 const AdminFeedbackPage = lazy(() =>
-	import('@/app/(dashboard)/admin/feedback/page'),
+	import('@/components/pages/admin/feedback/page'),
 );
 const AdminNotificationsPage = lazy(() =>
-	import('@/app/(dashboard)/admin/notifications/page'),
+	import('@/components/pages/admin/notifications/page'),
 );
 const AdminSandboxPoolPage = lazy(() =>
-	import('@/app/(dashboard)/admin/sandbox-pool/page'),
+	import('@/components/pages/admin/sandbox-pool/page'),
 );
 const AdminStressTestPage = lazy(() =>
-	import('@/app/(dashboard)/admin/stress-test/page'),
+	import('@/components/pages/admin/stress-test/page'),
 );
 const LegacyThreadPage = lazy(() =>
-	import('@/app/(dashboard)/legacy/[threadId]/page'),
+	import('@/components/pages/legacy/page'),
 );
 
 const TaskDetailPage = lazy(() =>
-	import('@/app/(dashboard)/tasks/[id]/page'),
+	import('@/components/pages/tasks/page'),
 );
 
 // ---------------------------------------------------------------------------

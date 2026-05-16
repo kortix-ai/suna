@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { eq, and, ne } from 'drizzle-orm';
-import { sandboxes } from '@kortix/db';
+import { eq, and, inArray, ne } from 'drizzle-orm';
+import { sessionSandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import {
@@ -12,6 +12,7 @@ import {
   encodeKortixUserContext,
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
+import { getTraceHeaders } from '../../lib/request-context';
 
 interface PreviewProxyContext {
   userId: string;
@@ -33,10 +34,27 @@ interface ServiceKeyEntry {
   expiresAt: number;
 }
 
+type SessionSandboxProxyRow = {
+  sandboxId: string;
+  status: string;
+  config: Record<string, unknown> | null;
+};
+
+type SandboxProxyAccess =
+  | { ok: true; serviceKey: string | null }
+  | { ok: false; response: Response };
+
 const previewLinkCache = new Map<string, PreviewLinkEntry>();
 const serviceKeyCache = new Map<string, ServiceKeyEntry>();
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const STRIP_FORWARD_HEADERS = new Set([
+  'host',
+  'authorization',
+  'traceparent',
+  'x-request-id',
+  'accept-encoding',
+]);
 
 function getCachedServiceKey(sandboxId: string): string | null | undefined {
   const entry = serviceKeyCache.get(sandboxId);
@@ -49,6 +67,59 @@ function getCachedServiceKey(sandboxId: string): string | null | undefined {
 
 function setCachedServiceKey(sandboxId: string, key: string | null) {
   serviceKeyCache.set(sandboxId, { key, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+function jsonProxyError(body: Record<string, unknown>, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function extractServiceKey(config: Record<string, unknown> | null | undefined): string | null {
+  return typeof config?.serviceKey === 'string' ? config.serviceKey : null;
+}
+
+async function loadSessionSandboxForProxy(sandboxId: string): Promise<SessionSandboxProxyRow | null> {
+  const [row] = await db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      status: sessionSandboxes.status,
+      config: sessionSandboxes.config,
+    })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.externalId, sandboxId))
+    .limit(1);
+
+  return row ?? null;
+}
+
+async function validateSandboxProxyAccess(
+  sandboxId: string,
+  userId: string,
+): Promise<SandboxProxyAccess> {
+  const row = await loadSessionSandboxForProxy(sandboxId);
+  if (!row) {
+    return { ok: false, response: jsonProxyError({ error: 'sandbox not found' }, 404) };
+  }
+
+  const allowed = await verifyOwnership(sandboxId, userId);
+  if (!allowed) {
+    throw new HTTPException(403, {
+      message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
+    });
+  }
+
+  if (row.status !== 'active') {
+    return {
+      ok: false,
+      response: jsonProxyError({ error: 'sandbox not ready', status: row.status }, 503),
+    };
+  }
+
+  const serviceKey = extractServiceKey(row.config);
+  setCachedServiceKey(sandboxId, serviceKey);
+  return { ok: true, serviceKey };
 }
 
 function getCachedPreviewLink(sandboxId: string, port: number): PreviewLinkEntry | null {
@@ -91,12 +162,12 @@ async function resolveServiceKey(sandboxId: string): Promise<string | null> {
 
   try {
     const [row] = await db
-      .select({ config: sandboxes.config })
-      .from(sandboxes)
-      .where(eq(sandboxes.externalId, sandboxId))
+      .select({ config: sessionSandboxes.config })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.externalId, sandboxId))
       .limit(1);
 
-    const key = (row?.config as Record<string, unknown>)?.serviceKey as string | null ?? null;
+    const key = (row?.config as Record<string, unknown> | undefined)?.serviceKey as string | null ?? null;
     setCachedServiceKey(sandboxId, key);
     return key;
   } catch {
@@ -112,6 +183,20 @@ async function resolvePreviewLink(
 ): Promise<{ url: string; token: string | null }> {
   const cached = getCachedPreviewLink(sandboxId, port);
   if (cached) return { url: cached.url, token: cached.token };
+
+  const [row] = await db
+    .select({
+      provider: sessionSandboxes.provider,
+      baseUrl: sessionSandboxes.baseUrl,
+    })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.externalId, sandboxId))
+    .limit(1);
+
+  if (row?.provider === 'local_docker' && row.baseUrl) {
+    setCachedPreviewLink(sandboxId, port, row.baseUrl, null);
+    return { url: row.baseUrl, token: null };
+  }
 
   const daytona = getDaytona();
   const sandbox = await daytona.get(sandboxId);
@@ -137,6 +222,27 @@ async function wakeSandbox(sandboxId: string): Promise<void> {
   }
 }
 
+async function markSandboxUsed(sandboxId: string): Promise<void> {
+  if (typeof db.update !== 'function') return;
+  const now = new Date();
+  try {
+    await db
+      .update(sessionSandboxes)
+      .set({ lastUsedAt: now, updatedAt: now })
+      .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')));
+
+    await db
+      .update(sessionSandboxes)
+      .set({ status: 'active', lastUsedAt: now, updatedAt: now })
+      .where(and(
+        eq(sessionSandboxes.externalId, sandboxId),
+        inArray(sessionSandboxes.status, ['error', 'stopped']),
+      ));
+  } catch (err) {
+    console.warn('[PREVIEW] Failed to mark sandbox used:', err);
+  }
+}
+
 // === Core Daytona proxy function ================================================
 //
 // Exported so index.ts can call it directly in dual-provider mode.
@@ -156,16 +262,11 @@ export async function proxyToDaytona(
   body: ArrayBuffer | undefined,
   origin: string,
 ): Promise<Response> {
-  // 1. Verify ownership + resolve service key (both cached after first check)
-  const [allowed, serviceKey] = await Promise.all([
-    verifyOwnership(sandboxId, userId),
-    resolveServiceKey(sandboxId),
-  ]);
-  if (!allowed) {
-    throw new HTTPException(403, {
-      message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
-    });
-  }
+  // 1. Enforce the v1 session-sandbox contract before touching Daytona or
+  // local Docker: only active rows in `kortix.session_sandboxes` are proxyable.
+  const access = await validateSandboxProxyAccess(sandboxId, userId);
+  if (!access.ok) return access.response;
+  const serviceKey = access.serviceKey ?? await resolveServiceKey(sandboxId);
 
   // 2. Proxy with auto-wake retry
   const MAX_RETRIES = 3;
@@ -182,7 +283,11 @@ export async function proxyToDaytona(
       const headers = new Headers();
       for (const [key, value] of incomingHeaders.entries()) {
         const lower = key.toLowerCase();
-        if (lower === 'host' || lower === 'authorization') continue;
+        if (STRIP_FORWARD_HEADERS.has(lower)) continue;
+        headers.set(key, value);
+      }
+      headers.set('Accept-Encoding', 'identity');
+      for (const [key, value] of Object.entries(getTraceHeaders())) {
         headers.set(key, value);
       }
       headers.set('X-Daytona-Skip-Preview-Warning', 'true');
@@ -242,6 +347,11 @@ export async function proxyToDaytona(
         duplex: 'half',
       });
 
+      if (upstream.status === 401 && serviceKey && userId) {
+        console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`);
+        return jsonProxyError({ error: 'sandbox proxy authentication rejected' }, 502);
+      }
+
       // Daytona returns various error codes when sandbox isn't ready:
       //   400 "no IP address found" — sandbox is stopped
       //   400 "failed to get runner info" — sandbox is archived (no runner)
@@ -249,6 +359,23 @@ export async function proxyToDaytona(
       //   503 — sandbox service temporarily unavailable
       // Detect all and retry with auto-wake so the user doesn't see errors
       // during the boot window (typically 10-30s after provisioning).
+      if (upstream.status === 503) {
+        const bodyText = await upstream.clone().text().catch(() => '');
+        if (bodyText.includes('opencode not ready')) {
+          void markSandboxUsed(sandboxId);
+          const notReadyHeaders = new Headers(upstream.headers);
+          if (origin) {
+            notReadyHeaders.set('Access-Control-Allow-Origin', origin);
+            notReadyHeaders.set('Access-Control-Allow-Credentials', 'true');
+          }
+          return new Response(bodyText, {
+            status: upstream.status,
+            statusText: upstream.statusText,
+            headers: notReadyHeaders,
+          });
+        }
+      }
+
       if ((upstream.status === 502 || upstream.status === 503) && attempt < MAX_RETRIES) {
         // Port not ready yet — sandbox is booting. Retry without wake
         // (the sandbox container is already running, just port 8000 isn't up).
@@ -296,6 +423,7 @@ export async function proxyToDaytona(
 
       // Got an HTTP response -> sandbox is alive, pass it through
       // Inject CORS headers since the raw upstream response won't have them
+      void markSandboxUsed(sandboxId);
       const respHeaders = new Headers(upstream.headers);
       if (origin) {
         respHeaders.set('Access-Control-Allow-Origin', origin);
@@ -329,29 +457,27 @@ export async function proxyToDaytona(
     }
   }
 
-  // All retries exhausted
-  // If the sandbox no longer exists on the provider (deleted externally),
-  // auto-archive the DB row so it stops appearing as active and the proxy
-  // stops hammering a dead server on every request.
+  // All retries exhausted. Auto-mark the session sandbox row as errored
+  // so the proxy stops hammering a dead Daytona instance on every request.
   try {
     const [row] = await db
-      .select({ sandboxId: sandboxes.sandboxId, status: sandboxes.status })
-      .from(sandboxes)
-      .where(and(eq(sandboxes.externalId, sandboxId), ne(sandboxes.status, 'archived')))
+      .select({ sandboxId: sessionSandboxes.sandboxId, status: sessionSandboxes.status })
+      .from(sessionSandboxes)
+      .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')))
       .limit(1);
     if (row) {
       await db
-        .update(sandboxes)
+        .update(sessionSandboxes)
         .set({ status: 'error', updatedAt: new Date() })
-        .where(eq(sandboxes.sandboxId, row.sandboxId));
-      console.warn(`[PREVIEW] Auto-marked sandbox ${row.sandboxId} (external: ${sandboxId}) as error after all retries failed`);
+        .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+      console.warn(`[PREVIEW] Auto-marked session sandbox ${row.sandboxId} (external: ${sandboxId}) as error after all retries failed`);
     }
   } catch (archiveErr) {
     console.warn('[PREVIEW] Failed to auto-mark sandbox as error:', archiveErr);
   }
 
-  throw new HTTPException(503, {
-    message: 'Sandbox is waking up. Please retry in a few seconds.',
+  throw new HTTPException(502, {
+    message: 'Sandbox upstream unreachable. Please retry in a few seconds.',
   });
 }
 

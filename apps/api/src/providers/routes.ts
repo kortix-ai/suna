@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { execSync } from 'child_process';
 import { config } from '../config';
-import { checkLocalSandboxHealth, type LocalSandboxHealthCheck } from '../platform/services/local-sandbox-health';
+type LocalSandboxHealthCheck = { ok: boolean; error?: string };
 import {
   PROVIDER_REGISTRY,
   PROVIDER_BY_ID,
@@ -224,10 +224,9 @@ providersApp.get('/', async (c) => {
   let sourceType: 'env' | 'secretstore';
 
   if (repoRoot) {
-    // Dev/repo mode: merge root .env + core/docker/.env
-    const rootEnv = parseEnvFile(resolve(repoRoot, '.env'));
-    const sandboxEnv = parseEnvFile(resolve(repoRoot, 'core/docker/.env'));
-    envMap = { ...rootEnv, ...sandboxEnv };
+    // Dev/repo mode: just read the root .env. The old sandbox-secrets
+    // file split is gone.
+    envMap = parseEnvFile(resolve(repoRoot, '.env'));
     sourceType = 'env';
   } else {
     // Docker/installed mode: read from sandbox secret store
@@ -328,41 +327,12 @@ providersApp.put('/:id/connect', async (c) => {
     }
   }
 
-  const rootData: Record<string, string> = { ...clean, ENV_MODE: 'local', ALLOWED_SANDBOX_PROVIDERS: 'local_docker' };
+  const rootData: Record<string, string> = { ...clean, ENV_MODE: 'local' };
   writeEnvFile(rootEnvPath, rootData);
 
-  // Also write to core/docker/.env for keys that should be in the sandbox
-  const sandboxData: Record<string, string> = {};
-  for (const [key, val] of Object.entries(clean)) {
-    if (ALL_SANDBOX_ENV_KEYS.has(key)) {
-      sandboxData[key] = val;
-    }
-  }
-
-  if (Object.keys(sandboxData).length > 0) {
-    const sandboxEnvPath = resolve(repoRoot, 'core/docker/.env');
-    mkdirSync(dirname(sandboxEnvPath), { recursive: true });
-    if (!existsSync(sandboxEnvPath)) {
-      const examplePath = resolve(repoRoot, 'core/docker/.env.example');
-      if (existsSync(examplePath)) {
-        writeFileSync(sandboxEnvPath, readFileSync(examplePath, 'utf-8'));
-      } else {
-        writeFileSync(sandboxEnvPath, '# Kortix Sandbox Environment\nENV_MODE=local\n');
-      }
-    }
-    sandboxData.ENV_MODE = 'local';
-    sandboxData.SANDBOX_ID = config.SANDBOX_CONTAINER_NAME;
-    sandboxData.PROJECT_ID = 'local';
-    sandboxData.KORTIX_API_URL = 'http://kortix-api:8008';
-    writeEnvFile(sandboxEnvPath, sandboxData);
-  }
-
-  // Run setup-env.sh to distribute to per-service .env files
-  try {
-    execSync('bash scripts/setup-env.sh', { cwd: repoRoot, stdio: 'pipe', timeout: 15000 });
-  } catch (e: any) {
-    console.error('[providers] setup-env.sh failed:', e.message);
-  }
+  // The old sandbox-env write + setup-env.sh distribution step is gone:
+  // sandboxes are provisioned on Daytona and read their config
+  // from the snapshot's environment.
 
   return c.json({ ok: true });
 });
@@ -393,19 +363,10 @@ providersApp.delete('/:id/disconnect', async (c) => {
     }
   }
 
-  // Dev/repo mode: remove from .env files
+  // Dev/repo mode: remove from the root .env. The old sandbox-secrets
+  // file no longer exists.
   const rootEnvPath = resolve(repoRoot, '.env');
   removeFromEnvFile(rootEnvPath, provider.envKeys);
-
-  const sandboxEnvPath = resolve(repoRoot, 'core/docker/.env');
-  removeFromEnvFile(sandboxEnvPath, provider.envKeys);
-
-  // Re-run setup-env.sh
-  try {
-    execSync('bash scripts/setup-env.sh', { cwd: repoRoot, stdio: 'pipe', timeout: 15000 });
-  } catch (e: any) {
-    console.error('[providers] setup-env.sh failed:', e.message);
-  }
 
   return c.json({ ok: true });
 });
@@ -415,31 +376,9 @@ providersApp.delete('/:id/disconnect', async (c) => {
  * Health check of local services.
  */
 providersApp.get('/health', async (c) => {
-  const repoRoot = findRepoRoot();
-  const checks: Record<string, LocalSandboxHealthCheck> = {};
-
-  checks.api = { ok: true };
-
-  if (!repoRoot) {
-    // Docker mode: check sandbox via HTTP
-    try {
-      const health = await fetchMasterJson<{ status: string; runtimeReady?: boolean }>('/kortix/health', {}, 5000);
-      checks.sandbox = { ok: true };
-      checks.docker = { ok: true };
-      if (health.status === 'starting' || health.runtimeReady === false) {
-        checks.sandbox = { ok: false, error: 'Sandbox reachable but runtime is still starting' };
-      }
-    } catch (e: any) {
-      const msg = e?.message || String(e);
-      checks.sandbox = { ok: false, error: msg };
-      checks.docker = { ok: false, error: msg };
-    }
-    return c.json(checks);
-  }
-
-  const localChecks = checkLocalSandboxHealth();
-  checks.docker = localChecks.docker;
-  checks.sandbox = localChecks.sandbox;
-
+  // The legacy "local sandbox health" probe was tightly coupled to the
+  // one-per-account docker bridge. Without that bridge, the only thing this
+  // endpoint can usefully report is that the API itself is reachable.
+  const checks: Record<string, LocalSandboxHealthCheck> = { api: { ok: true } };
   return c.json(checks);
 });

@@ -11,7 +11,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker' | 'justavps';
+export type SandboxProviderName = 'daytona' | 'local_docker';
 export type InternalKortixEnv = 'dev' | 'staging' | 'prod';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -123,33 +123,25 @@ const envSchema = z.object({
   DAYTONA_TARGET:              optStr,
   DAYTONA_SNAPSHOT:            optStr,
 
-  // ── JustAVPS — Sandbox provisioning via JustAVPS API (conditional: required if justavps provider enabled) ──
-  JUSTAVPS_API_URL:                   optStrDefault('http://localhost:3001'),
-  JUSTAVPS_API_KEY:                   optStr,
-  JUSTAVPS_IMAGE_ID:                  optStr,   // Optional pin — if unset, auto-resolves latest kortix-computer-v* image from JustAVPS
-  JUSTAVPS_DEFAULT_LOCATION:          optStrDefault('hel1'),
-  JUSTAVPS_DEFAULT_SERVER_TYPE:       optStrDefault('pro'),
-  JUSTAVPS_PROXY_DOMAIN:              optStrDefault('kortix.cloud'),  // CF Worker proxy domain ({slug}.kortix.cloud)
-  JUSTAVPS_WEBHOOK_SECRET:            optStr,   // HMAC secret for verifying JustAVPS webhook signatures
-  JUSTAVPS_WEBHOOK_URL:               optStr,   // URL where JustAVPS should send webhook events (e.g. https://api.kortix.com/v1/platform/webhooks/justavps)
-
-  // ── Sandbox Pool (optional — pre-provision sandboxes for instant claiming) ──
-  POOL_ENABLED:                optBoolFalse,
-  POOL_MAX_AGE_HOURS:          optInt(24),
+  // ── Local Docker — Sandbox provisioning via local Docker daemon ──────────
+  // The image kortix/sandbox:dev is the same one Daytona uses in cloud
+  // (built by apps/sandbox/Dockerfile). Run `docker build` once locally
+  // before turning this provider on.
+  KORTIX_LOCAL_DOCKER_IMAGE:   optStrDefault('kortix/sandbox:dev'),
 
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // KORTIX_URL is auto-derived from PORT if not explicitly set (see validateEnv).
   KORTIX_URL:                  optStr,
   KORTIX_YOLO_URL:             optUrl('https://api-yolo.kortix.com/v1'),
-  ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('local_docker'),
-  SANDBOX_IMAGE:               optStr,  // overridden below if empty
-  KORTIX_LOCAL_IMAGES:         optBoolFalse,
+  ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
   DOCKER_HOST:                 optStr,
-  SANDBOX_NETWORK:             optStr,
+  // Default port base for sandbox port mapping; kept for the queue drainer,
+  // providers/routes connectivity helper and deployments router which still
+  // reference it. Functional logic has moved off the legacy local sandbox.
   SANDBOX_PORT_BASE:           optInt(14000),
-  // Container name for the local Docker sandbox — configurable so dev and
-  // self-hosted instances can coexist on the same Docker daemon.
-  // Empty string treated as unset so env_file with missing key is safe.
+  // Container name for the local-docker dev bridge. Empty/undefined when
+  // local_docker isn't in use — codepaths that read it should treat the
+  // absence as "no local bridge configured".
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
@@ -165,6 +157,8 @@ const envSchema = z.object({
   PIPEDREAM_PROJECT_ID:        optStr,
   PIPEDREAM_ENVIRONMENT:       optStrDefault('development'),
   PIPEDREAM_WEBHOOK_SECRET:    optStr,
+  KORTIX_DIRECT_OAUTH_APPS:    optStr,
+  KORTIX_OAUTH_RELAY_ALLOWED_ORIGINS: optStr,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET:             optStr,
@@ -180,12 +174,20 @@ const envSchema = z.object({
   TUNNEL_RATE_LIMIT_PERM_GRANT:      optInt(30),
   TUNNEL_MAX_WS_MESSAGE_SIZE:        optInt(5 * 1024 * 1024),
 
+  // ── Abuse controls (optional, all have sane defaults) ────────────────────
+  KORTIX_INVITE_ACCEPT_REQS_PER_MIN:      optInt(20),
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE:    optInt(60),
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID:    optInt(600),
+  KORTIX_PROXY_REQS_PER_MIN:              optInt(600),
+  KORTIX_MAX_CONCURRENT_SESSIONS_FREE:    optInt(1),
+  KORTIX_MAX_CONCURRENT_SESSIONS_PAID:    optInt(5),
+  KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
+  KORTIX_TRIGGER_SCHEDULER_ENABLED:        optBoolTrue,
+  KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS:    optInt(60_000),
+
   // ── Version / GitHub (optional) ───────────────────────────────────────────
   SANDBOX_VERSION:             optStr,  // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN:                optStr,  // optional: authenticated GitHub API calls for changelog
-  SANDBOX_AUTO_UPDATE_ENABLED: optBoolTrue,
-  SANDBOX_AUTO_UPDATE_INTERVAL_MS: optInt(10 * 60_000),
-  SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: optInt(6 * 60 * 60_000),
 
   // ── Mailtrap (optional — provisioning email notifications) ────────────────
   MAILTRAP_API_TOKEN:          optStr,
@@ -210,17 +212,17 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 
 /** Parse comma-separated provider list (e.g. "daytona,local_docker") */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
-  if (!raw) return ['local_docker'];
+  if (!raw) return ['daytona'];
   const names = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   const valid: SandboxProviderName[] = [];
   for (const n of names) {
-    if (n === 'daytona' || n === 'local_docker' || n === 'justavps') {
+    if (n === 'daytona' || n === 'local_docker') {
       if (!valid.includes(n)) valid.push(n);
     } else {
       console.warn(`[config] Unknown sandbox provider "${n}" in ALLOWED_SANDBOX_PROVIDERS - ignored`);
     }
   }
-  return valid.length > 0 ? valid : ['local_docker'];
+  return valid.length > 0 ? valid : ['daytona'];
 }
 
 function validateEnv(): z.infer<typeof envSchema> {
@@ -247,16 +249,7 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
   }
 
-  // ── Conditional: local_docker → need DOCKER_HOST ───────────────────────
-  if (providers.includes('local_docker')) {
-    if (!raw.DOCKER_HOST) issues.push({ var: 'DOCKER_HOST', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "local_docker"', level: 'error' });
-  }
-
-  // ── Conditional: justavps → need JustAVPS keys ────────────────────────
-  if (providers.includes('justavps')) {
-    if (!raw.JUSTAVPS_API_KEY) issues.push({ var: 'JUSTAVPS_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "justavps"', level: 'error' });
-    // JUSTAVPS_IMAGE_ID is optional — if unset, the provider auto-resolves the latest kortix-computer-v* image at runtime.
-  }
+  // ── local_docker: no hard requirements — DOCKER_HOST defaults to system socket.
 
   // ── Conditional: Pipedream integration → warn if credentials missing ────
   // Not fatal — requests can provide their own creds via X-Pipedream-* headers.
@@ -281,8 +274,7 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Conditional: KORTIX_URL — required for sandbox routing ──────────────
-  // Used by every sandbox provider (local_docker, daytona, justavps),
-  // channels webhook URL generation, pool env injection, and sandbox health.
+  // Used by every sandbox provider (daytona, local_docker) and sandbox health.
   // Auto-derive from PORT in local mode if not set — fatal in cloud mode.
   if (!raw.KORTIX_URL) {
     const envMode = (raw as any).ENV_MODE || 'local';
@@ -348,15 +340,6 @@ function validateEnv(): z.infer<typeof envSchema> {
 // ─── Run Validation at Module Load ──────────────────────────────────────────
 
 const env = validateEnv();
-
-// Auto-updates are safe to default-on for managed cloud sandboxes, but local
-// development also uses a Docker container named `kortix-sandbox`. If the API
-// auto-update loop runs with the local_docker provider, it can stop/remove the
-// developer's live `pnpm dev:sandbox` container. Keep local mode opt-in while
-// preserving the existing cloud default.
-const sandboxAutoUpdateExplicitlyConfigured =
-  typeof process.env.SANDBOX_AUTO_UPDATE_ENABLED === 'string'
-  && process.env.SANDBOX_AUTO_UPDATE_ENABLED.trim() !== '';
 
 // ─── Parse Providers ────────────────────────────────────────────────────────
 
@@ -428,28 +411,12 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_SNAPSHOT: env.DAYTONA_SNAPSHOT || `kortix-sandbox-v${SANDBOX_VERSION}`,
 
-  // ─── JustAVPS (VPS Sandbox provisioning via JustAVPS) ────────────────────
-  JUSTAVPS_API_URL: env.JUSTAVPS_API_URL,
-  JUSTAVPS_API_KEY: env.JUSTAVPS_API_KEY,
-  JUSTAVPS_IMAGE_ID: env.JUSTAVPS_IMAGE_ID,
-  JUSTAVPS_DEFAULT_LOCATION: env.JUSTAVPS_DEFAULT_LOCATION,
-  JUSTAVPS_DEFAULT_SERVER_TYPE: env.JUSTAVPS_DEFAULT_SERVER_TYPE,
-  JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
-  JUSTAVPS_WEBHOOK_SECRET: env.JUSTAVPS_WEBHOOK_SECRET,
-  JUSTAVPS_WEBHOOK_URL: env.JUSTAVPS_WEBHOOK_URL,
-
-  // ─── Sandbox Pool ─────────────────────────────────────────────────────────
-  POOL_ENABLED: env.POOL_ENABLED,
-  POOL_MAX_AGE_HOURS: env.POOL_MAX_AGE_HOURS,
-
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   KORTIX_YOLO_URL: env.KORTIX_YOLO_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
-  SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/computer:latest',
-  KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
   DOCKER_HOST: env.DOCKER_HOST,
-  SANDBOX_NETWORK: env.SANDBOX_NETWORK,
+  KORTIX_LOCAL_DOCKER_IMAGE: env.KORTIX_LOCAL_DOCKER_IMAGE,
   SANDBOX_PORT_BASE: env.SANDBOX_PORT_BASE,
   SANDBOX_CONTAINER_NAME: env.SANDBOX_CONTAINER_NAME,
 
@@ -523,15 +490,21 @@ export const config = {
   TUNNEL_RATE_LIMIT_PERM_GRANT: env.TUNNEL_RATE_LIMIT_PERM_GRANT,
   TUNNEL_MAX_WS_MESSAGE_SIZE: env.TUNNEL_MAX_WS_MESSAGE_SIZE,
 
+  // ─── Abuse Controls ───────────────────────────────────────────────────────
+  KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
+  KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
+  KORTIX_MAX_CONCURRENT_SESSIONS_FREE: env.KORTIX_MAX_CONCURRENT_SESSIONS_FREE,
+  KORTIX_MAX_CONCURRENT_SESSIONS_PAID: env.KORTIX_MAX_CONCURRENT_SESSIONS_PAID,
+  KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
+  KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
+  KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: env.KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS,
+
   // ─── Version / GitHub ──────────────────────────────────────────────────────
   /** Dev override: force a specific sandbox version via env var. */
   SANDBOX_VERSION_OVERRIDE: env.SANDBOX_VERSION,
   GITHUB_TOKEN: env.GITHUB_TOKEN,
-  SANDBOX_AUTO_UPDATE_ENABLED: sandboxAutoUpdateExplicitlyConfigured
-    ? env.SANDBOX_AUTO_UPDATE_ENABLED
-    : env.ENV_MODE === 'cloud',
-  SANDBOX_AUTO_UPDATE_INTERVAL_MS: env.SANDBOX_AUTO_UPDATE_INTERVAL_MS,
-  SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS: env.SANDBOX_AUTO_UPDATE_RETRY_COOLDOWN_MS,
 
   // ─── Mailtrap (Email Notifications) ────────────────────────────────────────
   MAILTRAP_API_TOKEN: env.MAILTRAP_API_TOKEN,
@@ -562,20 +535,9 @@ export const config = {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker');
   },
 
-  isJustAVPSEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('justavps') && !!this.JUSTAVPS_API_KEY;
-  },
-
-  isPoolEnabled(): boolean {
-    return this.POOL_ENABLED;
-  },
-
-  /** Default provider, preferring managed VPS in cloud mode when available. */
+  /** Default provider. Daytona is the canonical hosted runtime. */
   getDefaultProvider(): SandboxProviderName {
-    if (this.ENV_MODE === 'cloud' && this.ALLOWED_SANDBOX_PROVIDERS.includes('justavps')) {
-      return 'justavps';
-    }
-    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'local_docker';
+    return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
   },
 
 };

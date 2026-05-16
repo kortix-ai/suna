@@ -232,10 +232,10 @@ fi
 KORTIX_VERSION="${KORTIX_VERSION:-latest}"
 
 IMAGE_TAG="$KORTIX_VERSION"
-SANDBOX_IMAGE_REPO="kortix/computer"
+SANDBOX_IMAGE_REPO="kortix/sandbox"
 if [ "$KORTIX_LOCAL_IMAGES" = "1" ]; then
   IMAGE_TAG="$KORTIX_LOCAL_TAG"
-  SANDBOX_IMAGE_REPO="kortix/computer"
+  SANDBOX_IMAGE_REPO="kortix/sandbox"
 fi
 
 FRONTEND_IMAGE="${KORTIX_FRONTEND_IMAGE:-kortix/kortix-frontend:${IMAGE_TAG}}"
@@ -302,10 +302,11 @@ open_browser() {
 prompt_read() {
   local __var_name="$1"
   if [ "$TTY_AVAILABLE" = "1" ]; then
-    IFS= read -r "$__var_name" </dev/tty
-  else
-    IFS= read -r "$__var_name"
+    if IFS= read -r "$__var_name" </dev/tty 2>/dev/null; then
+      return 0
+    fi
   fi
+  IFS= read -r "$__var_name" || printf -v "$__var_name" ''
 }
 
 warm_local_sandbox() {
@@ -1022,6 +1023,8 @@ ${frontend_supabase_env}
     image: \${API_IMAGE}
     user: "0:0"
 ${api_ports}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - PORT=8008
 ${supabase_url_env}
@@ -1029,6 +1032,7 @@ ${supabase_db_env}
       - SUPABASE_SERVICE_ROLE_KEY=\${SUPABASE_SERVICE_ROLE_KEY}
       - ALLOWED_SANDBOX_PROVIDERS=local_docker
       - KORTIX_LOCAL_IMAGES=\${KORTIX_LOCAL_IMAGES}
+      - KORTIX_LOCAL_DOCKER_HOST=host.docker.internal
       - DOCKER_HOST=unix:///var/run/docker.sock
       - KORTIX_URL=http://kortix-api:8008/v1/router
       - SANDBOX_NETWORK=${SANDBOX_NETWORK}
@@ -1101,6 +1105,18 @@ SLACK_CLIENT_ID=${SLACK_CLIENT_ID}
 SLACK_CLIENT_SECRET=${SLACK_CLIENT_SECRET}
 SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
 
+# ─── GitHub Repo Projects ───────────────────────────────────────────────────
+# GitHub App is the production path. PAT fallback is for local/self-host only.
+KORTIX_GITHUB_APP_ID=${KORTIX_GITHUB_APP_ID:-}
+KORTIX_GITHUB_APP_PRIVATE_KEY=${KORTIX_GITHUB_APP_PRIVATE_KEY:-}
+KORTIX_GITHUB_APP_SLUG=${KORTIX_GITHUB_APP_SLUG:-}
+KORTIX_GITHUB_TOKEN=${KORTIX_GITHUB_TOKEN:-}
+KORTIX_GITHUB_OWNER=${KORTIX_GITHUB_OWNER:-}
+GITHUB_APP_ID=${GITHUB_APP_ID:-}
+GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
+GITHUB_APP_SLUG=${GITHUB_APP_SLUG:-}
+GITHUB_TOKEN=${GITHUB_TOKEN:-}
+
 # ─── Sandbox ─────────────────────────────────────────────────────────────────
 KORTIX_VERSION=${KORTIX_VERSION}
 FRONTEND_IMAGE=${FRONTEND_IMAGE}
@@ -1139,6 +1155,15 @@ KORTIX_LOCAL_IMAGES=${KORTIX_LOCAL_IMAGES}
 KORTIX_URL=${API_PUBLIC_URL}/v1/router
 SANDBOX_NETWORK=${host_sandbox_network}
 INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY}
+KORTIX_GITHUB_APP_ID=${KORTIX_GITHUB_APP_ID:-}
+KORTIX_GITHUB_APP_PRIVATE_KEY=${KORTIX_GITHUB_APP_PRIVATE_KEY:-}
+KORTIX_GITHUB_APP_SLUG=${KORTIX_GITHUB_APP_SLUG:-}
+KORTIX_GITHUB_TOKEN=${KORTIX_GITHUB_TOKEN:-}
+KORTIX_GITHUB_OWNER=${KORTIX_GITHUB_OWNER:-}
+GITHUB_APP_ID=${GITHUB_APP_ID:-}
+GITHUB_APP_PRIVATE_KEY=${GITHUB_APP_PRIVATE_KEY:-}
+GITHUB_APP_SLUG=${GITHUB_APP_SLUG:-}
+GITHUB_TOKEN=${GITHUB_TOKEN:-}
 ENVEOF
 
   cat > "$INSTALL_DIR/.frontend-dev.env" << ENVEOF
@@ -1191,17 +1216,18 @@ _err()     { printf "  ${R}✗${N}  ${R}%s${N}\n" "$*" >&2; }
 prompt_read() {
   local __var_name="$1"
   if [ -r /dev/tty ] && [ -w /dev/tty ]; then
-    IFS= read -r "$__var_name" </dev/tty
-  else
-    IFS= read -r "$__var_name"
+    if IFS= read -r "$__var_name" </dev/tty 2>/dev/null; then
+      return 0
+    fi
   fi
+  IFS= read -r "$__var_name" || printf -v "$__var_name" ''
 }
 
 # Installed release metadata is persisted in .env so updates stay pinned.
 VERSION=$(grep -m1 '^KORTIX_VERSION=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "unknown")
 FRONTEND_IMAGE=$(grep -m1 '^FRONTEND_IMAGE=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "kortix/kortix-frontend:${VERSION}")
 API_IMAGE=$(grep -m1 '^API_IMAGE=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "kortix/kortix-api:${VERSION}")
-SANDBOX_IMAGE=$(grep -m1 '^SANDBOX_IMAGE=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "kortix/computer:${VERSION}")
+SANDBOX_IMAGE=$(grep -m1 '^SANDBOX_IMAGE=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "kortix/sandbox:${VERSION}")
 SANDBOX_NAME=$(grep -m1 '^SANDBOX_CONTAINER_NAME=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "kortix-hosted-sandbox")
 LOCAL_IMAGES=$(grep -m1 '^KORTIX_LOCAL_IMAGES=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "0")
 LOCAL_TAG=$(grep -m1 '^KORTIX_LOCAL_TAG=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "latest")
@@ -1243,7 +1269,7 @@ _refresh_state_from_env() {
   VERSION=$(grep -m1 '^KORTIX_VERSION=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "unknown")
   FRONTEND_IMAGE=$(grep -m1 '^FRONTEND_IMAGE=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "kortix/kortix-frontend:${VERSION}")
   API_IMAGE=$(grep -m1 '^API_IMAGE=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "kortix/kortix-api:${VERSION}")
-  SANDBOX_IMAGE=$(grep -m1 '^SANDBOX_IMAGE=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "kortix/computer:${VERSION}")
+  SANDBOX_IMAGE=$(grep -m1 '^SANDBOX_IMAGE=' "$DIR/.env" 2>/dev/null | cut -d= -f2- || echo "kortix/sandbox:${VERSION}")
 }
 
 _patch_compose_images() {
@@ -1507,7 +1533,7 @@ case "${1:-help}" in
         VERSION="$local_latest"
         FRONTEND_IMAGE="kortix/kortix-frontend:${VERSION}"
         API_IMAGE="kortix/kortix-api:${VERSION}"
-        SANDBOX_IMAGE="kortix/computer:${VERSION}"
+        SANDBOX_IMAGE="kortix/sandbox:${VERSION}"
         _env_set KORTIX_VERSION "$VERSION"
         _env_set KORTIX_SANDBOX_VERSION "$VERSION"
         _env_set FRONTEND_IMAGE "$FRONTEND_IMAGE"
@@ -1553,8 +1579,8 @@ case "${1:-help}" in
     if echo "$del_volumes" | grep -qi '^y'; then
       docker compose down -v --remove-orphans 2>/dev/null || true
       docker volume rm "${SANDBOX_NAME}-data" 2>/dev/null || true
-      docker volume rm kortix_supabase-db-data 2>/dev/null || true
-      docker volume rm supabase_db_kortix-local 2>/dev/null || true
+      docker volume rm "$(_project_name)_supabase-db-data" 2>/dev/null || true
+      docker volume rm "$(_project_name)_supabase_db_kortix-local" 2>/dev/null || true
       _ok "Volumes removed."
     else
       docker compose down 2>/dev/null || true
@@ -1694,7 +1720,7 @@ pull_and_start() {
   if [ "$DEPLOY_MODE" = "local" ]; then
     subsection "Want 24/7 uptime?"
     printf "    ${WHITE}Kortix Cloud${NC}   ${CYAN}https://kortix.com${NC}     ${FADED}managed, zero setup${NC}\n"
-    printf "    ${WHITE}Self-host${NC}      ${CYAN}hetzner.com${NC} / ${CYAN}justavps.com${NC}\n"
+    printf "    ${WHITE}Self-host${NC}      ${CYAN}Docker host${NC} with the local_docker provider\n"
   fi
 
   subsection "Next Steps"
@@ -1720,7 +1746,7 @@ main() {
   # Without this, fresh installs reuse old Postgres data with old passwords,
   # causing supabase-auth to fail with SASL auth errors.
   if [ ! -f "$INSTALL_DIR/docker-compose.yml" ]; then
-    docker volume rm kortix_supabase-db-data 2>/dev/null || true
+    docker volume rm "${COMPOSE_PROJECT_NAME}_supabase-db-data" 2>/dev/null || true
     docker rm -f "${SANDBOX_CONTAINER_NAME}" 2>/dev/null || true
     docker volume rm "${SANDBOX_CONTAINER_NAME}-data" 2>/dev/null || true
   fi
@@ -1752,8 +1778,8 @@ main() {
     docker compose down -v 2>/dev/null || true
     docker rm -f "${SANDBOX_CONTAINER_NAME}" 2>/dev/null || true
     # Also remove any leftover named volumes from previous installs
-    docker volume rm kortix_supabase-db-data 2>/dev/null || true
-    docker volume rm supabase_db_kortix-local 2>/dev/null || true
+    docker volume rm "${COMPOSE_PROJECT_NAME}_supabase-db-data" 2>/dev/null || true
+    docker volume rm "${COMPOSE_PROJECT_NAME}_supabase_db_kortix-local" 2>/dev/null || true
     docker volume rm "${SANDBOX_CONTAINER_NAME}-data" 2>/dev/null || true
     echo ""
   fi

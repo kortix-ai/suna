@@ -10,13 +10,22 @@ export const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:137
  */
 export function getAnonKey(): string {
   const fs = require('fs');
-  const envPath = `${process.env.HOME}/.kortix/.env`;
-  if (!fs.existsSync(envPath)) {
-    throw new Error(`Kortix .env not found at ${envPath} — is it installed?`);
+  const path = require('path');
+  const explicit = (process.env.E2E_ENV_FILE || '')
+    .split(path.delimiter)
+    .map((item: string) => item.trim())
+    .filter(Boolean);
+  const envPaths = [...explicit, `${process.env.HOME}/.kortix/.env`];
+
+  const envPath = envPaths.find((candidate: string) => fs.existsSync(candidate));
+  if (!envPath) {
+    throw new Error(`Kortix .env not found in ${envPaths.join(', ')} — is it installed?`);
   }
   const content = fs.readFileSync(envPath, 'utf8');
-  const match = content.match(/^SUPABASE_ANON_KEY=(.+)$/m);
-  if (!match) throw new Error('SUPABASE_ANON_KEY not found in .env');
+  const match =
+    content.match(/^SUPABASE_ANON_KEY=(.+)$/m) ||
+    content.match(/^NEXT_PUBLIC_SUPABASE_ANON_KEY=(.+)$/m);
+  if (!match) throw new Error(`SUPABASE_ANON_KEY not found in ${envPath}`);
   return match[1].trim();
 }
 
@@ -83,7 +92,7 @@ export async function loginToDashboard(
   const email = credentials.email || ownerEmail;
   const password = credentials.password || ownerPassword;
 
-  await page.goto('/auth/password?redirect=%2Finstances', {
+  await page.goto('/auth?redirect=%2Fprojects', {
     waitUntil: 'commit',
     timeout: 120_000,
   });
@@ -101,5 +110,5 @@ export async function loginToDashboard(
     await page.goto('/onboarding?skip_onboarding=1');
   }
 
-  await page.goto('/instances', { waitUntil: 'commit', timeout: 120_000 });
+  await page.goto('/projects', { waitUntil: 'commit', timeout: 120_000 });
 }

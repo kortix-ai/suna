@@ -1,7 +1,6 @@
 packages:
   - 'apps/*'
   - 'packages/*'
-  - 'core/*'
 
 catalog:
   '@tsconfig/bun': ^1.0.7

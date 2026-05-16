@@ -17,15 +17,12 @@ import {
   Loader2,
   Mail,
   RefreshCw,
-  Server,
   Shield,
   SlidersHorizontal,
   Users,
   X,
 } from 'lucide-react';
 
-import type { SandboxInfo } from '@/lib/platform-client';
-import { InstanceSettingsModal } from '@/app/instances/_components/instance-settings-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -68,13 +65,11 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import {
   useAdminAccountLedger,
-  useAdminAccountSandboxes,
   useAdminAccountUsers,
   useAdminAccounts,
   useAdminDebitCredits,
   useAdminGrantCredits,
   type AdminAccount,
-  type AdminAccountSandbox,
   type AdminAccountUser,
   type AdminAccountsFilters,
   type AdminAccountsSortBy,
@@ -992,7 +987,6 @@ function AccountDetailSheet({
 
 function AccountDetail({ account }: { account: AdminAccount }) {
   const usersQuery = useAdminAccountUsers(account.accountId);
-  const sandboxesQuery = useAdminAccountSandboxes(account.accountId);
   const ledgerQuery = useAdminAccountLedger(account.accountId, 100);
   const actions = billingActionsFor(account);
 
@@ -1059,15 +1053,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="instances" className="gap-1.5">
-              <Server className="h-3.5 w-3.5" />
-              Instances
-              {sandboxesQuery.data?.sandboxes && (
-                <Badge variant="muted" size="sm">
-                  {sandboxesQuery.data.sandboxes.length}
-                </Badge>
-              )}
-            </TabsTrigger>
             <TabsTrigger value="ledger" className="gap-1.5">
               <History className="h-3.5 w-3.5" />
               Ledger
@@ -1083,9 +1068,6 @@ function AccountDetail({ account }: { account: AdminAccount }) {
           </TabsContent>
           <TabsContent value="users" className="mt-4">
             <UsersTab usersQuery={usersQuery} />
-          </TabsContent>
-          <TabsContent value="instances" className="mt-4">
-            <InstancesTab sandboxesQuery={sandboxesQuery} />
           </TabsContent>
           <TabsContent value="ledger" className="mt-4">
             <LedgerTab ledgerQuery={ledgerQuery} />
@@ -1324,81 +1306,6 @@ function UsersTab({
   );
 }
 
-function InstancesTab({
-  sandboxesQuery,
-}: {
-  sandboxesQuery: ReturnType<typeof useAdminAccountSandboxes>;
-}) {
-  const [selected, setSelected] = useState<SandboxInfo | null>(null);
-
-  if (sandboxesQuery.isLoading) {
-    return (
-      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading instances…
-      </div>
-    );
-  }
-
-  const sandboxes = sandboxesQuery.data?.sandboxes ?? [];
-  if (sandboxes.length === 0) {
-    return (
-      <div className="rounded-xl border border-border/60 bg-card">
-        <EmptyState
-          icon={IconInbox}
-          title="No instances on this account"
-          description="Sandboxes created by this account will show up here."
-          size="sm"
-        />
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60">
-        {sandboxes.map((sb) => (
-          <button
-            key={sb.sandboxId}
-            type="button"
-            onClick={() => setSelected(toSandboxInfo(sb))}
-            className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:outline-none"
-          >
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="truncate font-medium">
-                  {sb.name || (
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {sb.sandboxId.slice(0, 8)}
-                    </span>
-                  )}
-                </span>
-                <Badge variant={sandboxStatusVariant(sb.status)} size="sm" className="capitalize">
-                  {sb.status ?? 'unknown'}
-                </Badge>
-              </div>
-              <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                <span className="capitalize">{sb.provider ?? '—'}</span>
-                <span className="mx-1.5 opacity-50">·</span>
-                <span className="font-mono">{sb.sandboxId.slice(0, 8)}</span>
-                <span className="mx-1.5 opacity-50">·</span>
-                last active {formatRelative(sb.lastUsedAt || sb.updatedAt || sb.createdAt)}
-              </div>
-            </div>
-            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 shrink-0" />
-          </button>
-        ))}
-      </div>
-
-      <InstanceSettingsModal
-        sandbox={selected}
-        open={!!selected}
-        onOpenChange={(open) => !open && setSelected(null)}
-      />
-    </>
-  );
-}
-
 function formatRelative(value: string | null) {
   if (!value) return '—';
   const diff = Date.now() - new Date(value).getTime();
@@ -1410,38 +1317,6 @@ function formatRelative(value: string | null) {
   const months = Math.floor(days / 30);
   if (months < 12) return `${months}mo ago`;
   return `${Math.floor(days / 365)}y ago`;
-}
-
-function sandboxStatusVariant(status: string | null): React.ComponentProps<typeof Badge>['variant'] {
-  if (!status) return 'muted';
-  switch (status.toLowerCase()) {
-    case 'active':
-    case 'running':
-      return 'success';
-    case 'pooled':
-      return 'info';
-    case 'provisioning':
-      return 'warning';
-    case 'error':
-    case 'failed':
-      return 'destructive';
-    default:
-      return 'secondary';
-  }
-}
-
-function toSandboxInfo(sb: AdminAccountSandbox): SandboxInfo {
-  return {
-    sandbox_id: sb.sandboxId,
-    external_id: sb.externalId || '',
-    name: sb.name || sb.sandboxId,
-    provider: (sb.provider as SandboxInfo['provider']) || 'justavps',
-    base_url: sb.baseUrl || '',
-    status: sb.status || 'unknown',
-    metadata: (sb.metadata as Record<string, unknown> | undefined) ?? undefined,
-    created_at: sb.createdAt,
-    updated_at: sb.updatedAt,
-  };
 }
 
 function LedgerTab({

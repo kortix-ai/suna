@@ -48,6 +48,58 @@ export const deploymentSourceEnum = kortixSchema.enum('deployment_source', [
   'tar',
 ]);
 
+export const projectStatusEnum = kortixSchema.enum('project_status', [
+  'active',
+  'archived',
+]);
+
+export const projectSessionStatusEnum = kortixSchema.enum('project_session_status', [
+  'queued',
+  'branching',
+  'provisioning',
+  'running',
+  'stopped',
+  'failed',
+  'completed',
+]);
+
+export const projectSnapshotStatusEnum = kortixSchema.enum('project_snapshot_status', [
+  'queued',
+  'building',
+  'ready',
+  'failed',
+]);
+
+export const projectRoleEnum = kortixSchema.enum('project_role', [
+  'manager',
+  'editor',
+  'viewer',
+]);
+
+export const projectTriggerTypeEnum = kortixSchema.enum('project_trigger_type', [
+  'cron',
+  'webhook',
+]);
+
+export const projectTriggerEventStatusEnum = kortixSchema.enum('project_trigger_event_status', [
+  'queued',
+  'fired',
+  'failed',
+]);
+
+export const projectChannelPlatformEnum = kortixSchema.enum('project_channel_platform', [
+  'slack',
+  'telegram',
+  'msteams',
+  'discord',
+]);
+
+export const projectChannelEventStatusEnum = kortixSchema.enum('project_channel_event_status', [
+  'queued',
+  'fired',
+  'failed',
+]);
+
 
 export const apiKeyStatusEnum = kortixSchema.enum('api_key_status', [
   'active',
@@ -103,6 +155,380 @@ export const accountMembers = kortixSchema.table(
     index('idx_account_members_user_id').on(table.userId),
     index('idx_account_members_account_id').on(table.accountId),
     uniqueIndex('idx_account_members_user_account').on(table.userId, table.accountId),
+  ],
+);
+
+// Pending invitations for users not yet members (or not yet signed up). On
+// signup or first /v1/accounts call we auto-claim invites matching the user's
+// email and convert them into account_members rows.
+export const accountInvitations = kortixSchema.table(
+  'account_invitations',
+  {
+    inviteId: uuid('invite_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    email: varchar('email', { length: 255 }).notNull(),
+    invitedBy: uuid('invited_by'),
+    initialRole: accountRoleEnum('initial_role').default('member').notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true })
+      .default(sql`now() + interval '14 days'`)
+      .notNull(),
+  },
+  (table) => [
+    index('idx_account_invitations_email').on(table.email),
+    index('idx_account_invitations_account').on(table.accountId),
+    index('idx_account_invitations_expires_at').on(table.expiresAt),
+    uniqueIndex('idx_account_invitations_pending').on(table.accountId, table.email),
+  ],
+);
+
+export const accountGithubInstallations = kortixSchema.table(
+  'account_github_installations',
+  {
+    accountId: uuid('account_id')
+      .primaryKey()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    installationId: text('installation_id').notNull(),
+    ownerLogin: varchar('owner_login', { length: 255 }).notNull(),
+    ownerType: varchar('owner_type', { length: 32 }).default('Organization').notNull(),
+    repositorySelection: varchar('repository_selection', { length: 32 }),
+    permissions: jsonb('permissions').default({}).$type<Record<string, unknown>>(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_account_github_installations_installation').on(table.installationId),
+    index('idx_account_github_installations_owner').on(table.ownerLogin),
+  ],
+);
+
+// ─── Projects ───────────────────────────────────────────────────────────────
+// New project-first model. A project is the Git-backed source of truth for a
+// company/repo. Legacy sandboxes remain below as compute/runtime state.
+
+export const projects = kortixSchema.table(
+  'projects',
+  {
+    projectId: uuid('project_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    repoUrl: text('repo_url').notNull(),
+    defaultBranch: varchar('default_branch', { length: 255 }).default('main').notNull(),
+    manifestPath: text('manifest_path').default('kortix.toml').notNull(),
+    status: projectStatusEnum('status').default('active').notNull(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_projects_account').on(table.accountId),
+    index('idx_projects_status').on(table.status),
+    index('idx_projects_updated').on(table.updatedAt),
+    uniqueIndex('idx_projects_account_repo').on(table.accountId, table.repoUrl),
+  ],
+);
+
+export const projectMembers = kortixSchema.table(
+  'project_members',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    projectRole: projectRoleEnum('project_role').default('viewer').notNull(),
+    grantedBy: uuid('granted_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_members_account_user').on(table.accountId, table.userId),
+    index('idx_project_members_project').on(table.projectId),
+    uniqueIndex('idx_project_members_project_user').on(table.projectId, table.userId),
+  ],
+);
+
+export const projectSecrets = kortixSchema.table(
+  'project_secrets',
+  {
+    secretId: uuid('secret_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 64 }).notNull(),
+    valueEnc: text('value_enc').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_secrets_project').on(table.projectId),
+    uniqueIndex('idx_project_secrets_project_name').on(table.projectId, table.name),
+  ],
+);
+
+export const projectConnectors = kortixSchema.table(
+  'project_connectors',
+  {
+    connectorId: uuid('connector_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    providerName: varchar('provider_name', { length: 50 }).notNull().default('pipedream'),
+    app: varchar('app', { length: 255 }).notNull(),
+    appName: varchar('app_name', { length: 255 }),
+    providerAccountId: varchar('provider_account_id', { length: 255 }).notNull(),
+    label: varchar('label', { length: 255 }),
+    status: integrationStatusEnum('status').default('active').notNull(),
+    scopes: jsonb('scopes').default([]).$type<string[]>(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdBy: uuid('created_by'),
+    connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_connectors_account').on(table.accountId),
+    index('idx_project_connectors_project').on(table.projectId),
+    index('idx_project_connectors_app').on(table.projectId, table.app),
+    index('idx_project_connectors_provider_account').on(table.providerAccountId),
+    uniqueIndex('idx_project_connectors_project_provider_account').on(
+      table.projectId,
+      table.providerName,
+      table.providerAccountId,
+    ),
+  ],
+);
+
+export const projectChannels = kortixSchema.table(
+  'project_channels',
+  {
+    channelId: uuid('channel_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    platform: projectChannelPlatformEnum('platform').notNull(),
+    externalChannelId: varchar('external_channel_id', { length: 255 }).notNull(),
+    externalTeamId: varchar('external_team_id', { length: 255 }),
+    name: varchar('name', { length: 255 }),
+    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
+    agentName: varchar('agent_name', { length: 128 }).default('default').notNull(),
+    promptTemplate: text('prompt_template').notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+    status: integrationStatusEnum('status').default('active').notNull(),
+    createdBy: uuid('created_by'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_channels_account').on(table.accountId),
+    index('idx_project_channels_project').on(table.projectId),
+    index('idx_project_channels_platform').on(table.platform),
+    uniqueIndex('idx_project_channels_project_platform_external').on(
+      table.projectId,
+      table.platform,
+      table.externalChannelId,
+    ),
+  ],
+);
+
+export const projectTriggers = kortixSchema.table(
+  'project_triggers',
+  {
+    triggerId: uuid('trigger_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    type: projectTriggerTypeEnum('type').notNull(),
+    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
+    agentName: varchar('agent_name', { length: 128 }).default('default').notNull(),
+    promptTemplate: text('prompt_template').notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+    createdBy: uuid('created_by'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    lastFiredAt: timestamp('last_fired_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_triggers_account').on(table.accountId),
+    index('idx_project_triggers_project').on(table.projectId),
+    index('idx_project_triggers_type_enabled').on(table.type, table.enabled),
+  ],
+);
+
+export const projectSessions = kortixSchema.table(
+  'project_sessions',
+  {
+    sessionId: text('session_id').primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    branchName: text('branch_name').notNull(),
+    baseRef: text('base_ref').default('main').notNull(),
+    sandboxProvider: sandboxProviderEnum('sandbox_provider').default('daytona').notNull(),
+    sandboxId: text('sandbox_id'),
+    sandboxUrl: text('sandbox_url'),
+    opencodeSessionId: text('opencode_session_id'),
+    agentName: text('agent_name').default('default').notNull(),
+    status: projectSessionStatusEnum('status').default('queued').notNull(),
+    error: text('error'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_sessions_account').on(table.accountId),
+    index('idx_project_sessions_project').on(table.projectId),
+    index('idx_project_sessions_status').on(table.status),
+    uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
+  ],
+);
+
+export const projectTriggerEvents = kortixSchema.table(
+  'project_trigger_events',
+  {
+    eventId: uuid('event_id').defaultRandom().primaryKey(),
+    triggerId: uuid('trigger_id')
+      .notNull()
+      .references(() => projectTriggers.triggerId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    status: projectTriggerEventStatusEnum('status').default('queued').notNull(),
+    payload: jsonb('payload').default({}).$type<Record<string, unknown>>(),
+    renderedPrompt: text('rendered_prompt'),
+    sessionId: text('session_id').references(() => projectSessions.sessionId, { onDelete: 'set null' }),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_trigger_events_trigger').on(table.triggerId),
+    index('idx_project_trigger_events_project_status').on(table.projectId, table.status),
+    index('idx_project_trigger_events_status_created').on(table.status, table.createdAt),
+  ],
+);
+
+export const projectChannelEvents = kortixSchema.table(
+  'project_channel_events',
+  {
+    eventId: uuid('event_id').defaultRandom().primaryKey(),
+    channelId: uuid('channel_id')
+      .notNull()
+      .references(() => projectChannels.channelId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    platform: projectChannelPlatformEnum('platform').notNull(),
+    externalMessageId: varchar('external_message_id', { length: 255 }),
+    status: projectChannelEventStatusEnum('status').default('queued').notNull(),
+    payload: jsonb('payload').default({}).$type<Record<string, unknown>>(),
+    renderedPrompt: text('rendered_prompt'),
+    sessionId: text('session_id').references(() => projectSessions.sessionId, { onDelete: 'set null' }),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_channel_events_channel').on(table.channelId),
+    index('idx_project_channel_events_project_status').on(table.projectId, table.status),
+    index('idx_project_channel_events_status_created').on(table.status, table.createdAt),
+    index('idx_project_channel_events_external').on(table.platform, table.externalMessageId),
+  ],
+);
+
+// Per-session sandbox runtime row. Decoupled from `kortix.sandboxes` (the
+// legacy /instances table) on purpose: project sessions carry no billing
+// state, no sandbox_members roster, and no team membership semantics — their
+// ACL is enforced via `project_members`.
+export const sessionSandboxStatusEnum = kortixSchema.enum('session_sandbox_status', [
+  'provisioning',
+  'active',
+  'stopped',
+  'error',
+  'archived',
+]);
+
+export const sessionSandboxes = kortixSchema.table(
+  'session_sandboxes',
+  {
+    sandboxId: uuid('sandbox_id').primaryKey(),
+    sessionId: text('session_id').notNull().unique(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    externalId: text('external_id'),
+    baseUrl: text('base_url'),
+    status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
+    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_session_sandboxes_session').on(table.sessionId),
+    index('idx_session_sandboxes_project').on(table.projectId),
+    index('idx_session_sandboxes_account').on(table.accountId),
+    index('idx_session_sandboxes_status').on(table.status),
+    index('idx_session_sandboxes_external_id').on(table.externalId),
+  ],
+);
+
+export const projectRuntimeSnapshots = kortixSchema.table(
+  'project_runtime_snapshots',
+  {
+    snapshotRowId: uuid('snapshot_row_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    commitSha: text('commit_sha').notNull(),
+    snapshotId: text('snapshot_id'),
+    status: projectSnapshotStatusEnum('status').default('queued').notNull(),
+    error: text('error'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_runtime_snapshots_project').on(table.projectId),
+    index('idx_project_runtime_snapshots_status').on(table.status),
+    uniqueIndex('idx_project_runtime_snapshots_commit_provider').on(table.projectId, table.commitSha, table.provider),
   ],
 );
 
@@ -203,6 +629,34 @@ export const sandboxInvites = kortixSchema.table(
   ],
 );
 
+export const legacySandboxMigrations = kortixSchema.table(
+  'legacy_sandbox_migrations',
+  {
+    migrationId: uuid('migration_id').defaultRandom().primaryKey(),
+    runId: text('run_id').notNull(),
+    sandboxId: uuid('sandbox_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id'),
+    sessionId: text('session_id'),
+    status: varchar('status', { length: 32 }).default('planned').notNull(),
+    mode: varchar('mode', { length: 32 }).default('dry_run').notNull(),
+    plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
+    rollback: jsonb('rollback').default({}).$type<Record<string, unknown>>().notNull(),
+    error: text('error'),
+    appliedAt: timestamp('applied_at', { withTimezone: true }),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    rolledBackAt: timestamp('rolled_back_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_legacy_sandbox_migrations_run').on(table.runId),
+    index('idx_legacy_sandbox_migrations_sandbox').on(table.sandboxId),
+    index('idx_legacy_sandbox_migrations_status').on(table.status),
+    index('idx_legacy_sandbox_migrations_account').on(table.accountId),
+  ],
+);
+
 // ─── Pool Resources ─────────────────────────────────────────────────────────
 
 export const poolResources = kortixSchema.table(
@@ -289,9 +743,10 @@ export const kortixApiKeys = kortixSchema.table(
   'api_keys',
   {
     keyId: uuid('key_id').defaultRandom().primaryKey(),
-    sandboxId: uuid('sandbox_id')
-      .notNull()
-      .references(() => sandboxes.sandboxId, { onDelete: 'cascade' }),
+    // No FK constraint: sandbox_id can point at either `sandboxes` (legacy
+    // /instances) or `session_sandboxes` (project-session sandboxes). Both
+    // tables share the UUID space so the lookup keeps working.
+    sandboxId: uuid('sandbox_id').notNull(),
     accountId: uuid('account_id').notNull(),
     publicKey: varchar('public_key', { length: 64 }).notNull(),
     secretKeyHash: varchar('secret_key_hash', { length: 128 }).notNull(),
@@ -495,6 +950,135 @@ export const sandboxesRelations = relations(sandboxes, ({ one, many }) => ({
   members: many(sandboxMembers),
 }));
 
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [projects.accountId],
+    references: [accounts.accountId],
+  }),
+  members: many(projectMembers),
+  secrets: many(projectSecrets),
+  connectors: many(projectConnectors),
+  channels: many(projectChannels),
+  channelEvents: many(projectChannelEvents),
+  triggers: many(projectTriggers),
+  triggerEvents: many(projectTriggerEvents),
+  sessions: many(projectSessions),
+  runtimeSnapshots: many(projectRuntimeSnapshots),
+}));
+
+export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
+  account: one(accounts, {
+    fields: [projectMembers.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectMembers.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
+export const projectSecretsRelations = relations(projectSecrets, ({ one }) => ({
+  project: one(projects, {
+    fields: [projectSecrets.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
+export const projectConnectorsRelations = relations(projectConnectors, ({ one }) => ({
+  account: one(accounts, {
+    fields: [projectConnectors.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectConnectors.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
+export const projectChannelsRelations = relations(projectChannels, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [projectChannels.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectChannels.projectId],
+    references: [projects.projectId],
+  }),
+  events: many(projectChannelEvents),
+}));
+
+export const projectChannelEventsRelations = relations(projectChannelEvents, ({ one }) => ({
+  account: one(accounts, {
+    fields: [projectChannelEvents.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectChannelEvents.projectId],
+    references: [projects.projectId],
+  }),
+  channel: one(projectChannels, {
+    fields: [projectChannelEvents.channelId],
+    references: [projectChannels.channelId],
+  }),
+  session: one(projectSessions, {
+    fields: [projectChannelEvents.sessionId],
+    references: [projectSessions.sessionId],
+  }),
+}));
+
+export const projectTriggersRelations = relations(projectTriggers, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [projectTriggers.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectTriggers.projectId],
+    references: [projects.projectId],
+  }),
+  events: many(projectTriggerEvents),
+}));
+
+export const projectTriggerEventsRelations = relations(projectTriggerEvents, ({ one }) => ({
+  account: one(accounts, {
+    fields: [projectTriggerEvents.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectTriggerEvents.projectId],
+    references: [projects.projectId],
+  }),
+  trigger: one(projectTriggers, {
+    fields: [projectTriggerEvents.triggerId],
+    references: [projectTriggers.triggerId],
+  }),
+  session: one(projectSessions, {
+    fields: [projectTriggerEvents.sessionId],
+    references: [projectSessions.sessionId],
+  }),
+}));
+
+export const projectSessionsRelations = relations(projectSessions, ({ one }) => ({
+  account: one(accounts, {
+    fields: [projectSessions.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectSessions.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
+export const projectRuntimeSnapshotsRelations = relations(projectRuntimeSnapshots, ({ one }) => ({
+  account: one(accounts, {
+    fields: [projectRuntimeSnapshots.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectRuntimeSnapshots.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
 export const sandboxMembersRelations = relations(sandboxMembers, ({ one }) => ({
   sandbox: one(sandboxes, {
     fields: [sandboxMembers.sandboxId],
@@ -542,6 +1126,16 @@ export const sandboxIntegrationsRelations = relations(sandboxIntegrations, ({ on
 
 export const accountsRelations = relations(accounts, ({ many }) => ({
   members: many(accountMembers),
+  githubInstallations: many(accountGithubInstallations),
+  projectMembers: many(projectMembers),
+  projects: many(projects),
+  projectConnectors: many(projectConnectors),
+  projectChannels: many(projectChannels),
+  projectChannelEvents: many(projectChannelEvents),
+  projectTriggers: many(projectTriggers),
+  projectTriggerEvents: many(projectTriggerEvents),
+  projectSessions: many(projectSessions),
+  projectRuntimeSnapshots: many(projectRuntimeSnapshots),
   sandboxes: many(sandboxes),
 }));
 
@@ -551,6 +1145,69 @@ export const accountMembersRelations = relations(accountMembers, ({ one }) => ({
     references: [accounts.accountId],
   }),
 }));
+
+export const accountGithubInstallationsRelations = relations(accountGithubInstallations, ({ one }) => ({
+  account: one(accounts, {
+    fields: [accountGithubInstallations.accountId],
+    references: [accounts.accountId],
+  }),
+}));
+
+export const auditEvents = kortixSchema.table(
+  'audit_events',
+  {
+    eventId: uuid('event_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .references(() => accounts.accountId, { onDelete: 'set null' }),
+    actorUserId: uuid('actor_user_id'),
+    action: text('action').notNull(),
+    resourceType: text('resource_type').notNull(),
+    resourceId: text('resource_id'),
+    before: jsonb('before').$type<Record<string, unknown> | null>(),
+    after: jsonb('after').$type<Record<string, unknown> | null>(),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_audit_events_account_time').on(table.accountId, table.occurredAt),
+    index('idx_audit_events_actor_time').on(table.actorUserId, table.occurredAt),
+    index('idx_audit_events_resource').on(table.resourceType, table.resourceId),
+  ],
+);
+
+export const usageEvents = kortixSchema.table(
+  'usage_events',
+  {
+    eventId: uuid('event_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .references(() => projects.projectId, { onDelete: 'set null' }),
+    sessionId: text('session_id'),
+    actorUserId: uuid('actor_user_id'),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    route: text('route').notNull(),
+    inputTokens: integer('input_tokens').default(0).notNull(),
+    outputTokens: integer('output_tokens').default(0).notNull(),
+    cachedTokens: integer('cached_tokens').default(0).notNull(),
+    cacheWriteTokens: integer('cache_write_tokens').default(0).notNull(),
+    costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+    streaming: boolean('streaming').default(false).notNull(),
+    upstreamStatus: integer('upstream_status'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_usage_events_account_time').on(table.accountId, table.createdAt),
+    index('idx_usage_events_project_time').on(table.projectId, table.createdAt),
+    index('idx_usage_events_session').on(table.sessionId),
+    index('idx_usage_events_model').on(table.provider, table.model),
+  ],
+);
 
 // ─── Billing / Credits ─────────────────────────────────────────────────────
 
@@ -993,4 +1650,3 @@ export const accessRequests = kortixSchema.table(
     index('idx_access_requests_status').on(table.status),
   ],
 );
-

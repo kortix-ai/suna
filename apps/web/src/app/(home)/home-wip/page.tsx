@@ -249,7 +249,7 @@ export default function HomeWip() {
       window.location.href = '/auth';
       return;
     }
-    window.location.href = '/dashboard';
+    window.location.href = '/projects';
   }, [user]);
 
   return (
@@ -557,7 +557,7 @@ export default function HomeWip() {
               <Reveal delay={0.1} className="lg:col-span-7">
                 <MediaPlaceholder
                   label="SCREENSHOT: parallel tasks dashboard"
-                  hint="Capture of /instances or task list with 6–10 tasks running concurrently — different statuses, progress bars, deliverable thumbnails."
+                  hint="Capture of the /projects task list with 6-10 tasks running concurrently, including statuses, progress bars, and deliverable thumbnails."
                   aspect="aspect-[4/3]"
                   kind="image"
                 />

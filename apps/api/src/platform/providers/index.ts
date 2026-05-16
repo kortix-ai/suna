@@ -1,9 +1,20 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
 import { LocalDockerProvider } from './local-docker';
-import { JustAVPSProvider } from './justavps';
 
-export type ProviderName = 'daytona' | 'local_docker' | 'justavps';
+/**
+ * Sandbox provider lineup.
+ *
+ *   - daytona       — managed cloud (Daytona). Default for hosted deployments.
+ *   - local_docker  — self-host. Spins the same image as cloud (apps/sandbox/
+ *                     Dockerfile) as a local container, one per session.
+ *
+ * Reserved (not yet implemented):
+ *   - docker_sbx    — Docker Inc.'s managed Sandboxes product
+ *                     (https://docs.docker.com/ai/sandboxes/). Adding it here
+ *                     in the future is a non-breaking widening of the union.
+ */
+export type ProviderName = 'daytona' | 'local_docker';
 export type { SandboxProviderName } from '../../config';
 
 export interface CreateSandboxOpts {
@@ -68,17 +79,13 @@ export function getProvider(name: ProviderName): SandboxProvider {
   const existing = providers.get(name);
   if (existing) return existing;
 
-  if (!config.ALLOWED_SANDBOX_PROVIDERS.includes(name) && name !== 'local_docker') {
+  if (!config.ALLOWED_SANDBOX_PROVIDERS.includes(name)) {
     throw new Error(
       `Sandbox provider '${name}' is not allowed. ` +
       `Allowed: ${config.ALLOWED_SANDBOX_PROVIDERS.join(', ')}. ` +
       `Set ALLOWED_SANDBOX_PROVIDERS in your .env.`
     );
   }
-
-  // Local Docker may still exist as a discovered runtime even when sandbox
-  // creation is disabled in ALLOWED_SANDBOX_PROVIDERS. Existing local instances
-  // must remain operable (status/restart/ssh/preview) once surfaced in the UI.
 
   let provider: SandboxProvider;
 
@@ -91,12 +98,6 @@ export function getProvider(name: ProviderName): SandboxProvider {
       break;
     case 'local_docker':
       provider = new LocalDockerProvider();
-      break;
-    case 'justavps':
-      if (!config.JUSTAVPS_API_KEY) {
-        throw new Error('JustAVPS provider is allowed but not configured. Set JUSTAVPS_API_KEY.');
-      }
-      provider = new JustAVPSProvider();
       break;
     default:
       throw new Error(`Unknown sandbox provider: ${name}`);
@@ -114,6 +115,5 @@ export function getAvailableProviders(): ProviderName[] {
   const available: ProviderName[] = [];
   if (config.isDaytonaEnabled()) available.push('daytona');
   if (config.isLocalDockerEnabled()) available.push('local_docker');
-  if (config.isJustAVPSEnabled()) available.push('justavps');
   return available;
 }

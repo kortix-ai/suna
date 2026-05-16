@@ -69,7 +69,7 @@ export async function getProviderFromRequest(c: Context, accountId?: string): Pr
         clientId: creds.client_id,
         clientSecret: creds.client_secret,
         projectId: creds.project_id,
-        environment: creds.environment,
+        environment: creds.environment ?? 'production',
       });
     }
   }

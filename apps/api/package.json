@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "bun run --hot src/index.ts",
     "start": "bun run src/index.ts",
+    "migration:legacy-sandboxes": "bun run src/scripts/migrate-legacy-sandboxes.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test src/__tests__/billing/credits.test.ts && bun test src/__tests__/billing/webhooks.test.ts src/__tests__/billing/subscriptions.test.ts src/__tests__/billing/yearly-rotation.test.ts src/__tests__/billing/account-deletion.test.ts && bun test src/__tests__/e2e-router.test.ts && bun test src/__tests__/e2e-billing-routes.test.ts && bun test src/__tests__/e2e-preview-proxy.test.ts && bun test src/__tests__/e2e-health.test.ts src/__tests__/e2e-version.test.ts src/__tests__/e2e-setup.test.ts src/__tests__/e2e-providers.test.ts src/__tests__/e2e-platform.test.ts src/__tests__/e2e-api-keys.test.ts src/__tests__/e2e-deployment.test.ts src/__tests__/e2e-deployments.test.ts src/__tests__/e2e-channels.test.ts src/__tests__/e2e-cron.test.ts src/__tests__/unit-*.test.ts",
+    "test": "for f in src/__tests__/billing/*.test.ts src/__tests__/e2e-*.test.ts src/__tests__/unit-*.test.ts; do bun test \"$f\" || exit 1; done",
     "test:all": "bun run test"
   },
   "dependencies": {

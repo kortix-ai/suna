@@ -1,4 +1,0 @@
-#!/bin/bash
-# Kill any stale bun process holding port 9224 before restart
-pkill -f "agent-browser-viewer.js" 2>/dev/null || true
-sleep 1

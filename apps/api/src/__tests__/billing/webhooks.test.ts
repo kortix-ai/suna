@@ -115,7 +115,8 @@ describe('processStripeWebhook', () => {
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
 
     const result = await processStripeWebhook(JSON.stringify(event), 'valid_sig');
-    expect(result.received).toBe(true);
+    expect(result).toBeDefined();
+    expect(result!.received).toBe(true);
     expect((result as any).event_type).toBe('some.unknown.event');
   });
 
@@ -124,7 +125,8 @@ describe('processStripeWebhook', () => {
     mockRegistry.stripeClient.webhooks.constructEvent = () => event;
 
     const result = await processStripeWebhook(JSON.stringify(event), 'sig');
-    expect(result.received).toBe(true);
+    expect(result).toBeDefined();
+    expect(result!.received).toBe(true);
   });
 });
 
@@ -271,7 +273,7 @@ describe('subscription changes', () => {
     const sub = createMockStripeSubscription({
       metadata: { account_id: 'acc_test_123' },
       items: {
-        data: [{ id: 'si_123', price: { id: 'price_1RIGvuG6l1KZGqIrvjlz5p5V' } }],
+        data: [{ id: 'si_123', price: { id: 'price_1T7yiuG6CaZppiKc7VsgnlKI' } }],
       },
     });
     const event = createMockStripeEvent('customer.subscription.updated', sub);
@@ -279,7 +281,7 @@ describe('subscription changes', () => {
 
     await processStripeWebhook(JSON.stringify(event), 'sig');
 
-    expect(updateCreditAccountCalls[0].data.tier).toBe('tier_6_50');
+    expect(updateCreditAccountCalls[0].data.tier).toBe('pro');
   });
 });
 

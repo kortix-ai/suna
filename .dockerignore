@@ -12,6 +12,8 @@
 **/.vercel
 .buildx-cache
 **/.buildx-cache
+.local
+**/.local
 
 # ── Env files ──
 **/.env
@@ -57,3 +59,5 @@ node_modules
 !apps/web/.next/standalone/**
 !apps/web/.next/static
 !apps/web/.next/static/**
+apps/web/.next/cache
+apps/web/.next/cache/**

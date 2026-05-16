@@ -287,7 +287,7 @@ docker logs -f justavps-workload
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/start-sandbox.sh -o /usr/local/bin/kortix-start-sandbox.sh
 chmod +x /usr/local/bin/kortix-start-sandbox.sh
-/usr/local/bin/kortix-start-sandbox.sh kortix/computer:0.8.42
+/usr/local/bin/kortix-start-sandbox.sh kortix/sandbox:0.8.42
 ```
 
 ---

@@ -13,11 +13,11 @@ import { AdminSidebar } from './admin-sidebar';
 
 const BREADCRUMBS: Record<string, string> = {
   '/admin': 'Overview',
-  '/admin/instances': 'Instances',
   '/admin/accounts': 'Accounts',
   '/admin/analytics': 'Analytics',
   '/admin/feedback': 'Feedback',
   '/admin/notifications': 'Notifications',
+  '/admin/ops': 'Operations',
   '/admin/sandbox-pool': 'Sandbox pool',
   '/admin/stress-test': 'Stress test',
   '/admin/utils': 'Maintenance',
@@ -59,10 +59,10 @@ export function AdminShell({
             </p>
           </div>
           <Link
-            href="/dashboard"
+            href="/projects"
             className="inline-flex text-sm font-medium text-foreground underline-offset-4 hover:underline"
           >
-            Back to dashboard
+            Back to projects
           </Link>
         </div>
       </div>

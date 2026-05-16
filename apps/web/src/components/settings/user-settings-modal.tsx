@@ -104,13 +104,12 @@ import { previewSound } from '@/lib/sounds';
 import { AppearanceTab } from './appearance-tab';
 import {
     getPreferenceTabs,
-    getAccountTabs,
     getInstanceTabs,
     type SettingsTabId,
 } from '@/lib/menu-registry';
 import { getCurrentInstanceIdFromPathname } from '@/lib/instance-routes';
 import { listSandboxes, type SandboxInfo } from '@/lib/platform-client';
-import { InstanceMembersPanel } from '@/app/instances/_components/instance-members-panel';
+import { InstanceMembersPanel } from '@/components/instances/instance-members-panel';
 
 type TabId = SettingsTabId;
 
@@ -136,7 +135,6 @@ export function UserSettingsModal({
 }: UserSettingsModalProps) {
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
-    const billingActive = isBillingEnabled();
     const pathname = usePathname();
 
     // Scope Instance-level tabs to `/instances/:id/...` so
@@ -155,14 +153,12 @@ export function UserSettingsModal({
     const instanceSandbox = instanceSandboxQuery.data ?? null;
     const hasInstance = !!instanceSandbox;
 
-    // Tab definitions from the central menu registry (single source of truth)
+    // Tab definitions from the central menu registry (single source of truth).
+    // Account-level tabs (Billing, Transactions) now live in AccountSettingsModal —
+    // this modal is for user preferences and the currently-scoped instance.
     const preferenceTabs: Tab[] = getPreferenceTabs();
-    const accountTabs: Tab[] = getAccountTabs(billingActive);
     const instanceTabs: Tab[] = hasInstance ? getInstanceTabs() : [];
 
-    // Skeleton window: the URL is scoped to an instance but the sandbox fetch
-    // hasn't resolved yet. Render a placeholder group so the sidebar doesn't
-    // pop a new section in a second later.
     const instanceLoading =
         open && !!currentInstanceId && !hasInstance && instanceSandboxQuery.isLoading;
 
@@ -174,10 +170,9 @@ export function UserSettingsModal({
             : instanceLoading
               ? [{ label: '', tabs: [], skeleton: true }]
               : []),
-        { label: 'Account', tabs: accountTabs },
     ];
 
-    const allTabs = [...preferenceTabs, ...instanceTabs, ...accountTabs];
+    const allTabs = [...preferenceTabs, ...instanceTabs];
 
     useEffect(() => {
         setActiveTab(defaultTab);
@@ -266,12 +261,9 @@ export function UserSettingsModal({
                                 {activeTab === 'sounds' && <SoundsTab />}
                                 {activeTab === 'notifications' && <NotificationsTab />}
                                 {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
-                                {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} isActive={activeTab === 'billing'} />}
-                                {activeTab === 'transactions' && <TransactionsTab />}
                                 {activeTab === 'instance-members' && instanceSandbox && (
                                     <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                                 )}
-                                {/* {activeTab === 'referrals' && <ReferralsTab isActive={open && activeTab === 'referrals'} />} */}
                             </div>
                         </div>
                     </div>
@@ -345,12 +337,9 @@ export function UserSettingsModal({
                             {activeTab === 'sounds' && <SoundsTab />}
                             {activeTab === 'notifications' && <NotificationsTab />}
                             {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
-                            {activeTab === 'billing' && <BillingTab returnUrl={returnUrl} isActive={activeTab === 'billing'} />}
-                            {activeTab === 'transactions' && <TransactionsTab />}
                             {activeTab === 'instance-members' && instanceSandbox && (
                                 <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                             )}
-                            {/* {activeTab === 'referrals' && <ReferralsTab isActive={open && activeTab === 'referrals'} />} */}
                         </div>
                     </div>
                 )}
@@ -1341,7 +1330,7 @@ const CREDIT_PACKAGES: { credits: number; price: number }[] = [
     { credits: 50000, price: 500 },
 ];
 
-function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: boolean }) {
+export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: boolean }) {
     const { session, isLoading: authLoading } = useAuth();
     const highlight = useUserSettingsModalStore((s) => s.highlight);
     const [selectedPackage, setSelectedPackage] = useState<(typeof CREDIT_PACKAGES)[number] | null>(null);
@@ -1537,22 +1526,6 @@ function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: bool
                     <Skeleton className="h-32 w-full" />
                     <Skeleton className="h-32 w-full" />
                 </div>
-            </div>
-        );
-    }
-
-    if (!billingActive) {
-        return (
-            <div className="p-4 sm:p-6 min-w-0 max-w-full overflow-x-hidden">
-                <Alert className="border-blue-500/50 bg-blue-500/10">
-                    <Shield className="h-4 w-4 text-blue-500" />
-                    <AlertDescription>
-                        <div className="font-medium mb-1">Self-Hosted</div>
-                        <div className="text-sm text-muted-foreground">
-                            Billing is disabled in this environment.
-                        </div>
-                    </AlertDescription>
-                </Alert>
             </div>
         );
     }
@@ -1757,7 +1730,7 @@ function CreditsHelpAlert() {
   );
 }
 
-function TransactionsTab() {
+export function TransactionsTab() {
     return (
         <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-4 min-w-0 max-w-full overflow-x-hidden">
             <div>

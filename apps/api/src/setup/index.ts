@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { execSync } from 'child_process';
 import { config } from '../config';
-import { ALL_SANDBOX_ENV_KEYS, buildProviderKeySchema } from '../providers/registry';
+import { buildProviderKeySchema } from '../providers/registry';
 import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';
 import { accounts } from '@kortix/db';
@@ -57,10 +57,9 @@ function findRepoRoot(): string | null {
   for (const dir of candidates) {
     const hasFrontend = existsSync(resolve(dir, 'apps/web'));
     const hasApi = existsSync(resolve(dir, 'apps/api'));
-    const hasSandboxCompose = existsSync(resolve(dir, 'core/docker/docker-compose.yml'));
     const hasComposeScripts = existsSync(resolve(dir, 'scripts/compose/docker-compose.yml'));
 
-    if ((hasFrontend && hasApi) || hasSandboxCompose || hasComposeScripts) {
+    if ((hasFrontend && hasApi) || hasComposeScripts) {
       return dir;
     }
   }
@@ -254,18 +253,16 @@ setupApp.get('/sandbox-providers', async (c) => {
   const available: string[] = [];
   if (config.isLocalDockerEnabled()) available.push('local_docker');
   if (config.isDaytonaEnabled()) available.push('daytona');
-  if (config.isJustAVPSEnabled()) available.push('justavps');
 
   // Provider capabilities — tells the frontend how to handle provisioning UI
   const capabilities: Record<string, { async: boolean; events: boolean; polling: boolean }> = {
     local_docker: { async: false, events: false, polling: false },
     daytona: { async: false, events: false, polling: false },
-    justavps: { async: true, events: true, polling: false },
   };
 
   return c.json({
     providers: available,
-    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'local_docker'),
+    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'daytona'),
     capabilities: Object.fromEntries(available.map((p) => [p, capabilities[p] || { async: false, events: false, polling: false }])),
   });
 });
@@ -357,7 +354,6 @@ setupApp.post('/bootstrap-owner', async (c) => {
 setupApp.get('/status', async (c) => {
   const root = getProjectRoot();
   const envExists = existsSync(resolve(root, '.env'));
-  const sandboxEnvExists = existsSync(resolve(root, 'core/docker/.env'));
 
   let dockerRunning = false;
   try {
@@ -369,7 +365,8 @@ setupApp.get('/status', async (c) => {
     envMode: config.ENV_MODE,
     dockerRunning,
     envExists,
-    sandboxEnvExists,
+    // The old sandbox-secrets file is gone.
+    sandboxEnvExists: false,
     projectRoot: root,
   });
 });
@@ -384,7 +381,6 @@ setupApp.get('/env', async (c) => {
   // Repo/dev mode: reads and writes actual .env files in the repo.
   if (repoRoot) {
     const rootEnv = parseEnvFile(resolve(repoRoot, '.env'));
-    const sandboxEnv = parseEnvFile(resolve(repoRoot, 'core/docker/.env'));
 
     const masked: Record<string, string> = {};
     const configured: Record<string, boolean> = {};
@@ -392,14 +388,14 @@ setupApp.get('/env', async (c) => {
     const providerSchema = buildProviderKeySchema();
     for (const group of Object.values(providerSchema)) {
       for (const k of group.keys) {
-        const val = rootEnv[k.key] || sandboxEnv[k.key] || '';
+        const val = rootEnv[k.key] || '';
         masked[k.key] = maskKey(val);
         configured[k.key] = !!val;
       }
     }
 
     for (const key of SYSTEM_KEYS) {
-      const val = rootEnv[key] || sandboxEnv[key] || '';
+      const val = rootEnv[key] || '';
       configured[key] = val === 'true';
     }
 
@@ -463,17 +459,14 @@ setupApp.post('/env', async (c) => {
     }
   }
 
-  // Repo/dev mode: write keys into repo .env + core/docker/.env and generate per-service env files.
+  // Repo/dev mode: root .env is the only source of truth. Session sandbox
+  // env is injected when the API provisions a project session.
   const root = repoRoot;
   const rootData: Record<string, string> = {};
-  const sandboxData: Record<string, string> = {};
 
   for (const [key, val] of Object.entries(keys)) {
     if (typeof val !== 'string') continue;
     rootData[key] = val;
-    if (ALL_SANDBOX_ENV_KEYS.has(key)) {
-      sandboxData[key] = val;
-    }
   }
 
   // Ensure root .env exists
@@ -490,23 +483,6 @@ setupApp.post('/env', async (c) => {
   rootData.ENV_MODE = 'local';
   rootData.ALLOWED_SANDBOX_PROVIDERS = 'local_docker';
   writeEnvFile(rootEnvPath, rootData);
-
-  // Sandbox .env
-  const sandboxEnvPath = resolve(root, 'core/docker/.env');
-  mkdirSync(dirname(sandboxEnvPath), { recursive: true });
-  if (!existsSync(sandboxEnvPath)) {
-    const examplePath = resolve(root, 'core/docker/.env.example');
-    if (existsSync(examplePath)) {
-      writeFileSync(sandboxEnvPath, readFileSync(examplePath, 'utf-8'));
-    } else {
-      writeFileSync(sandboxEnvPath, '# Kortix Sandbox Environment\nENV_MODE=local\n');
-    }
-  }
-  sandboxData.ENV_MODE = 'local';
-  sandboxData.SANDBOX_ID = config.SANDBOX_CONTAINER_NAME;
-  sandboxData.PROJECT_ID = 'local';
-  sandboxData.KORTIX_API_URL = 'http://kortix-api:8008';
-  writeEnvFile(sandboxEnvPath, sandboxData);
 
   // Run setup-env.sh
   try {

@@ -17,10 +17,11 @@ import { hydrateGlobalDefaultFromServer } from './use-model-store';
 
 let hydrated = false;
 
-export function useModelHydration() {
+export function useModelHydration(enabled = true) {
   const didRun = useRef(false);
 
   useEffect(() => {
+    if (!enabled) return;
     if (didRun.current || hydrated) return;
     didRun.current = true;
     hydrated = true;
@@ -48,5 +49,5 @@ export function useModelHydration() {
       .catch(() => {
         // Non-fatal — app works fine without server-side default
       });
-  }, []);
+  }, [enabled]);
 }

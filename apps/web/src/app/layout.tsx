@@ -181,10 +181,10 @@ export default async function RootLayout({
                   context = { master_group: 'General', content_group: 'Other', page_type: 'home', language: lang };
                 } else if (pathname.indexOf('/auth') === 0) {
                   context = { master_group: 'General', content_group: 'User', page_type: 'auth', language: lang };
-                } else if (pathname === '/dashboard') {
-                  context = { master_group: 'Platform', content_group: 'Dashboard', page_type: 'home', language: lang };
+                } else if (pathname === '/projects') {
+                  context = { master_group: 'Platform', content_group: 'Projects', page_type: 'home', language: lang };
                 } else if (pathname.indexOf('/workspace') === 0 || pathname.indexOf('/projects') === 0 || pathname.indexOf('/thread') === 0) {
-                  context = { master_group: 'Platform', content_group: 'Dashboard', page_type: 'thread', language: lang };
+                  context = { master_group: 'Platform', content_group: 'Projects', page_type: 'thread', language: lang };
                 } else if (pathname.indexOf('/settings') === 0) {
                   context = { master_group: 'Platform', content_group: 'User', page_type: 'settings', language: lang };
                 }

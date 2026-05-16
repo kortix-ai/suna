@@ -1,0 +1,7 @@
+{
+  "name": "sandbox_daemon_auth",
+  "status": "passed",
+  "command": "bun test apps/kortix-sandbox-agent-server/src/__tests__/proxy-auth.test.ts ",
+  "exit_code": 0,
+  "log": "logs/sandbox_daemon_auth.log"
+}

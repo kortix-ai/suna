@@ -1,0 +1,7 @@
+{
+  "name": "git_diff_check",
+  "status": "passed",
+  "command": "git diff --check ",
+  "exit_code": 0,
+  "log": "logs/git_diff_check.log"
+}

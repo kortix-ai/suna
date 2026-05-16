@@ -57,7 +57,6 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
   const pathname = normalizeAppPathname(usePathname());
 
   const isDashboardPage =
-    pathname?.startsWith('/dashboard') ||
     pathname?.startsWith('/agents') ||
     pathname?.startsWith('/workspace') ||
     pathname?.startsWith('/projects') ||
