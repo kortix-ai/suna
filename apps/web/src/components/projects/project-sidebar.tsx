@@ -51,9 +51,9 @@ const modSymbol = isMac ? '⌘' : 'Ctrl';
 /** Hover-only keyboard hint chip used on the primary nav row. */
 function KbdHint({ mod, letter }: { mod: string; letter: string }) {
   const chip =
-    'inline-flex items-center justify-center size-5 rounded-md bg-foreground/[0.06] border border-border/40 text-[10px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
+    'inline-flex items-center justify-center h-4 min-w-4 px-1 rounded bg-foreground/[0.05] border border-border/40 text-[9.5px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
   return (
-    <span className="ml-auto flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover/menu-button:opacity-100 group-data-[collapsible=icon]:hidden">
+    <span className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/menu-button:opacity-100 group-data-[collapsible=icon]:hidden">
       <kbd className={chip}>{mod}</kbd>
       <kbd className={chip}>{letter}</kbd>
     </span>
@@ -130,7 +130,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
   const filesActive = pathname?.startsWith(`/projects/${projectId}/files`) ?? false;
   // Customize covers the whole route group: agents, skills, secrets, triggers,
-  // channels, connectors, settings. Any of those should light up the sidebar
+  // channels, settings. Any of those should light up the sidebar
   // button so the user knows where they are.
   const CUSTOMIZE_SECTIONS = [
     'agents',
@@ -140,7 +140,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     'schedules',
     'webhooks',
     'channels',
-    'connectors',
     'settings',
   ];
   const customizeActive = CUSTOMIZE_SECTIONS.some((slug) =>
@@ -222,7 +221,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 onClick={handleNewSession}
                 disabled={createSession.isPending}
                 tooltip={`New session  ${modSymbol}J`}
-                className="group/menu-button"
+                className="group/menu-button !text-[12.5px] font-normal [&_svg]:!size-3.5"
               >
                 {createSession.isPending ? (
                   <Loader2 className="animate-spin" />
@@ -247,9 +246,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             className="group/sessions flex min-h-0 flex-col data-[state=open]:flex-1"
           >
             <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className="group/label flex h-7 cursor-pointer items-center gap-2 px-2 mt-1 text-[11px] font-medium text-muted-foreground/60 hover:text-sidebar-foreground">
+              <SidebarGroupLabel className="group/label flex h-6 cursor-pointer items-center gap-2 px-2 mt-1 text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-sidebar-foreground">
                 <span className="flex-1 text-left">Sessions</span>
-                <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
+                <ChevronDown className="size-3 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
               </SidebarGroupLabel>
             </CollapsibleTrigger>
             <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -267,6 +266,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 onClick={goFiles}
                 isActive={filesActive}
                 tooltip="Files"
+                className="!text-[12.5px] font-normal [&_svg]:!size-3.5"
               >
                 <FileText />
                 <span>Files</span>
@@ -277,6 +277,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 onClick={goCustomize}
                 isActive={customizeActive}
                 tooltip="Customize"
+                className="!text-[12.5px] font-normal [&_svg]:!size-3.5"
               >
                 <SlidersHorizontal />
                 <span>Customize</span>

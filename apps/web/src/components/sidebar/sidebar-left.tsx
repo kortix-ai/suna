@@ -196,9 +196,9 @@ interface CollapsedIconButtonProps {
 // so the sidebar reads clean by default.
 function KbdHint({ mod, letter }: { mod: string; letter: string }) {
   const chip =
-    'inline-flex items-center justify-center size-5 rounded-md bg-foreground/[0.06] border border-border/40 text-[10px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
+    'inline-flex items-center justify-center h-4 min-w-4 px-1 rounded bg-foreground/[0.05] border border-border/40 text-[9.5px] font-medium text-muted-foreground/70 leading-none font-sans select-none';
   return (
-    <span className="ml-auto flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+    <span className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
       <kbd className={chip}>{mod}</kbd>
       <kbd className={chip}>{letter}</kbd>
     </span>
@@ -354,16 +354,16 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
                 });
               }}
               className={cn(
-                'flex items-center gap-2.5 w-full px-3 py-1.5 text-[13px] cursor-pointer transition-colors duration-100',
+                'flex items-center gap-2 w-full px-3 py-1 text-[12px] cursor-pointer transition-colors duration-100',
                 active
                   ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                   : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
               )}
             >
-              {!collapsed && <ThreadIcon iconName={(session as any).icon} className="flex-shrink-0" size={14} />}
+              {!collapsed && <ThreadIcon iconName={(session as any).icon} className="flex-shrink-0" size={12} />}
               <span className="flex-1 truncate text-left">{session.title || 'Untitled'}</span>
               {pending > 0 && (
-                <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-semibold flex items-center justify-center">
+                <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-[9.5px] font-semibold flex items-center justify-center">
                   {pending}
                 </span>
               )}
@@ -650,9 +650,9 @@ function SidebarSections() {
         <div className="px-3 flex-shrink-0">
           <CollapsibleTrigger asChild>
             <Button variant="sidebar" className="rounded-lg">
-              <ListTree className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
+              <ListTree className="flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">Sessions</span>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
+              <ChevronDown className="size-3 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
             </Button>
           </CollapsibleTrigger>
         </div>
@@ -672,15 +672,15 @@ function SidebarSections() {
           <div className="px-3 flex items-center">
             <button
               onClick={() => setLegacyOpen((o) => !o)}
-              className="flex items-center gap-3 flex-1 px-3 py-2 rounded-lg text-[13px] text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer"
+              className="flex items-center gap-2.5 flex-1 px-2.5 py-1.5 rounded-lg text-[12.5px] text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer"
             >
-              <History className="h-4 w-4 flex-shrink-0" />
+              <History className="h-3.5 w-3.5 flex-shrink-0" />
               <span className="flex-1 text-left">Previous Chats</span>
-              <span className="text-[10px] tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+              <span className="text-[9.5px] tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
                 {legacyData!.total}
               </span>
               <ChevronDown className={cn(
-                'h-3.5 w-3.5 text-muted-foreground transition-transform duration-200',
+                'size-3 text-muted-foreground transition-transform duration-200',
                 !legacyOpen && '-rotate-90',
               )} />
             </button>
@@ -752,7 +752,7 @@ function SidebarSections() {
                         key={thread.thread_id}
                         onClick={() => handleLegacyClick(thread.thread_id, thread.name)}
                         className={cn(
-                          'flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[13px] cursor-pointer',
+                          'flex items-center gap-2 w-full px-3 py-1 rounded-lg text-[12px] cursor-pointer',
                           'transition-colors duration-150',
                           isActive
                             ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
@@ -1392,7 +1392,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               variant="sidebar"
               className="group/row rounded-lg"
             >
-              <SquarePen className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
+              <SquarePen className="flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
               <KbdHint mod={isMac ? '\u2318' : 'Ctrl'} letter="J" />
             </Button>
@@ -1414,7 +1414,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               variant="sidebar"
               className="group/row rounded-lg"
             >
-              <Search className="h-4 w-4 flex-shrink-0 text-sidebar-foreground" />
+              <Search className="flex-shrink-0 text-sidebar-foreground" />
               <span className="flex-1 text-left">Search</span>
               <KbdHint mod={isMac ? '\u2318' : 'Ctrl'} letter="K" />
             </Button>

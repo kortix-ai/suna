@@ -3,7 +3,7 @@
 import { useState, memo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Loader2, MoreHorizontal, Trash2 } from 'lucide-react';
+import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 
@@ -33,6 +33,7 @@ import { toast } from '@/lib/toast';
 import {
   deleteProjectSession,
   listProjectSessions,
+  restartProjectSession,
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@/lib/projects-client';
@@ -60,6 +61,17 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : 'Failed to delete session');
+    },
+  });
+
+  const restartMutation = useMutation({
+    mutationFn: (sessionId: string) => restartProjectSession(projectId, sessionId),
+    onSuccess: () => {
+      toast.success('Restarting session…');
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : 'Failed to restart session');
     },
   });
 
@@ -106,6 +118,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               href={href}
               isActive={!!isActive}
               onDelete={(id, label) => setSessionToDelete({ id, label })}
+              onRestart={(id) => restartMutation.mutate(id)}
+              isRestarting={
+                restartMutation.isPending &&
+                restartMutation.variables === session.session_id
+              }
             />
           );
         })}
@@ -148,6 +165,8 @@ interface ProjectSessionRowProps {
   href: string;
   isActive: boolean;
   onDelete: (sessionId: string, label: string) => void;
+  onRestart: (sessionId: string) => void;
+  isRestarting: boolean;
 }
 
 const ProjectSessionRow = memo(function ProjectSessionRow({
@@ -155,6 +174,8 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   href,
   isActive,
   onDelete,
+  onRestart,
+  isRestarting,
 }: ProjectSessionRowProps) {
   const [isHovering, setIsHovering] = useState(false);
 
@@ -182,7 +203,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
     >
       <div
         className={cn(
-          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors duration-150',
+          'flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors duration-150',
           isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
@@ -192,7 +213,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
 
         <span
           className={cn(
-            'flex-1 truncate text-[13px]',
+            'flex-1 truncate text-[12.5px]',
             isActive && 'font-medium',
           )}
         >
@@ -200,7 +221,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
         </span>
 
         {relative && (
-          <span className="flex-shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
+          <span className="flex-shrink-0 text-[9.5px] tabular-nums text-muted-foreground/60">
             {shortRelative(relative)}
           </span>
         )}
@@ -223,6 +244,22 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40 p-1">
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={isRestarting}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onRestart(session.session_id);
+                }}
+              >
+                {isRestarting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCcw className="h-4 w-4" />
+                )}
+                Restart
+              </DropdownMenuItem>
               <DropdownMenuItem
                 className="cursor-pointer"
                 onClick={(e) => {

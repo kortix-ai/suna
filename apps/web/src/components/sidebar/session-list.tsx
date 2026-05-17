@@ -126,7 +126,7 @@ const SessionRow = memo(function SessionRow({
         className={cn(
           'flex items-center gap-2 rounded-lg cursor-pointer transition-colors duration-150',
           'pr-1.5',
-          isChild ? 'py-1 pl-3' : 'py-1.5 pl-3',
+          isChild ? 'py-0.5 pl-2.5' : 'py-1 pl-2.5',
           isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
@@ -161,7 +161,7 @@ const SessionRow = memo(function SessionRow({
         <span
           className={cn(
             'flex-1 truncate',
-            isChild ? 'text-xs' : 'text-[13px]',
+            isChild ? 'text-[11.5px]' : 'text-[12.5px]',
             isActive && 'font-medium',
           )}
         >
@@ -200,7 +200,7 @@ const SessionRow = memo(function SessionRow({
         {pendingCount > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-[10px] font-medium flex items-center justify-center">
+              <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-[9.5px] font-medium flex items-center justify-center">
                 {pendingCount}
               </span>
             </TooltipTrigger>

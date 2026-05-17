@@ -350,7 +350,7 @@ export function InstanceSwitcherPopover() {
           <button
             type="button"
             className={cn(
-              'group/switcher flex items-center gap-2 w-full h-10 px-1.5 rounded-lg text-left',
+              'group/switcher flex items-center gap-2 w-full h-9 px-1.5 rounded-lg text-left',
               'text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer',
               open && 'bg-sidebar-accent',
             )}
@@ -358,14 +358,14 @@ export function InstanceSwitcherPopover() {
           >
             <WorkspaceAvatar sandbox={triggerSandbox} size="sm" />
             <div className="flex-1 min-w-0">
-              <p className="truncate text-[12.5px] font-semibold leading-tight text-foreground">
+              <p className="truncate text-[12px] font-semibold leading-tight text-foreground">
                 {triggerLabel}
               </p>
-              <p className="truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60 leading-tight mt-0.5">
+              <p className="truncate text-[9.5px] font-medium uppercase tracking-wider text-muted-foreground/60 leading-tight mt-0.5">
                 Workspace
               </p>
             </div>
-            <ChevronsUpDown className="size-3.5 opacity-50 flex-shrink-0 group-hover/switcher:opacity-100 transition-opacity" />
+            <ChevronsUpDown className="size-3 opacity-50 flex-shrink-0 group-hover/switcher:opacity-100 transition-opacity" />
           </button>
         </PopoverTrigger>
 

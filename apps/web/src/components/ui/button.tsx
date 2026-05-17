@@ -24,7 +24,7 @@ const buttonVariants = cva(
         subtle:
           "bg-primary/10 text-primary hover:bg-primary/15",
         sidebar:
-          "font-medium text-sidebar-foreground hover:bg-sidebar-accent/80 flex items-center justify-start gap-3 w-full transition-colors duration-150",
+          "text-sidebar-foreground hover:bg-sidebar-accent/80 flex items-center justify-start gap-2.5 w-full transition-colors duration-150 font-normal !h-8 !text-[12.5px] !px-2.5 !py-1.5 [&_svg]:!size-3.5",
         // Muted ghost — neutral background on hover
         muted:
           "text-muted-foreground hover:bg-muted hover:text-foreground",

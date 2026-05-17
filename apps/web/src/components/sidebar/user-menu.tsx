@@ -1,22 +1,33 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+/**
+ * UserMenu — sidebar-footer identity widget.
+ *
+ * Vercel-style design language:
+ *  - Ghost trigger: no permanent border; subtle bg appears on hover / open.
+ *  - Tight identity row inside the dropdown (name + email, no fake avatar).
+ *  - Action rows with right-aligned kbd hints — discoverable shortcuts.
+ *  - Theme as a segmented control on its own row, sized like the actions.
+ *  - Log out lives below a divider, low-contrast destructive accent.
+ */
+
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ChevronsUpDown,
+  Command as CommandIcon,
   CreditCard,
+  LogOut,
   Settings as SettingsIcon,
+  User as UserIcon,
 } from 'lucide-react';
+import { useTheme } from 'next-themes';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -25,25 +36,17 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
-import { useTheme } from 'next-themes';
+import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { isBillingEnabled } from '@/lib/config';
 import { transitionFromElement } from '@/lib/view-transition';
-
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
-
-import { useTranslations } from 'next-intl';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
-import {
-  themeOptions,
-  type SettingsTabId,
-} from '@/lib/menu-registry';
+import { themeOptions, type SettingsTabId } from '@/lib/menu-registry';
 
-// ============================================================================
-// Types
-// ============================================================================
+/* ─── Types ───────────────────────────────────────────────────────────────── */
 
 interface UserMenuProps {
   user: {
@@ -56,43 +59,90 @@ interface UserMenuProps {
 
 type SettingsTab = SettingsTabId;
 
-// ============================================================================
-// Component
-// ============================================================================
+/* ─── Helpers ─────────────────────────────────────────────────────────────── */
+
+function initials(name: string) {
+  return (
+    name
+      .split(' ')
+      .filter(Boolean)
+      .map((part) => part.charAt(0))
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || '?'
+  );
+}
+
+const isMacUA =
+  typeof navigator !== 'undefined' &&
+  /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const MOD = isMacUA ? '⌘' : 'Ctrl';
+
+/* ─── Component ───────────────────────────────────────────────────────────── */
 
 export function UserMenu({ user }: UserMenuProps) {
-  const t = useTranslations('sidebar');
   const router = useRouter();
   const { isMobile } = useSidebar();
   const billingActive = isBillingEnabled();
+  const { theme, setTheme } = useTheme();
+  const {
+    isOpen: isReferralDialogOpen,
+    closeDialog: closeReferralDialog,
+  } = useReferralDialog();
+
+  const [menuOpen, setMenuOpen] = React.useState(false);
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [settingsTab, setSettingsTab] = React.useState<SettingsTab>('general');
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const { isOpen: isReferralDialogOpen, openDialog: openReferralDialog, closeDialog: closeReferralDialog } = useReferralDialog();
-  const { theme, setTheme } = useTheme();
 
-  const handleThemeChange = React.useCallback((newTheme: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (newTheme === theme) return;
-    transitionFromElement(e.currentTarget as HTMLElement, () => setTheme(newTheme));
-  }, [theme, setTheme]);
-
+  // Defer modal/route side-effects to the next frame so Radix can finish its
+  // dropdown close + focus-return choreography first. Without this you get a
+  // brief flicker because the trigger reclaims focus right as the modal grabs
+  // focus, then the modal grabs focus back. One frame of separation kills it.
+  const deferAfterClose = (fn: () => void) => {
+    setMenuOpen(false);
+    requestAnimationFrame(() => fn());
+  };
 
   const openSettings = (tab: SettingsTab) => {
-    setSettingsTab(tab);
-    setShowSettingsModal(true);
+    deferAfterClose(() => {
+      setSettingsTab(tab);
+      setShowSettingsModal(true);
+    });
   };
 
-  const handleLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    clearUserLocalStorage();
-    router.push('/auth');
+  const handleThemeChange = React.useCallback(
+    (next: string, event: React.MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (next === theme) return;
+      transitionFromElement(event.currentTarget as HTMLElement, () => setTheme(next));
+    },
+    [theme, setTheme],
+  );
+
+  const handleLogout = () => {
+    deferAfterClose(async () => {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      clearUserLocalStorage();
+      router.push('/auth');
+    });
   };
 
-  const getInitials = (name: string) =>
-    name.split(' ').map((p) => p.charAt(0)).join('').toUpperCase().substring(0, 2);
+  const handleCommandPalette = () => {
+    deferAfterClose(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'k',
+          code: 'KeyK',
+          metaKey: isMacUA,
+          ctrlKey: !isMacUA,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+  };
 
   return (
     <>
@@ -102,74 +152,157 @@ export function UserMenu({ user }: UserMenuProps) {
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className='bg-muted/40 hover:bg-muted/20 rounded-2xl border group-data-[collapsible=icon]:!justify-center'
+                className={cn(
+                  'group/user relative h-auto gap-2 rounded-lg px-1.5 py-1',
+                  'border border-transparent bg-transparent',
+                  'hover:bg-sidebar-accent/60',
+                  'data-[state=open]:bg-sidebar-accent',
+                  'group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!px-0',
+                )}
               >
-                <Avatar className="h-8 w-8 rounded-full flex-shrink-0">
+                <Avatar className="h-6 w-6 shrink-0 rounded-full ring-1 ring-border/40">
                   <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-full text-xs">{getInitials(user.name)}</AvatarFallback>
+                  <AvatarFallback className="rounded-full bg-muted text-[9.5px] font-semibold text-muted-foreground">
+                    {initials(user.name)}
+                  </AvatarFallback>
                 </Avatar>
-                <div className="flex flex-col justify-center flex-1 min-w-0 gap-0.5 group-data-[collapsible=icon]:hidden">
-                  <span className="truncate font-medium text-[13px] leading-tight">{user.name}</span>
-                  <span className="truncate text-[11px] text-muted-foreground leading-tight">{user.email}</span>
+                <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+                  <span className="truncate text-[12px] font-medium text-foreground tracking-tight">
+                    {user.name}
+                  </span>
+                  <span className="truncate text-[10.5px] text-muted-foreground/80 mt-0.5">
+                    {user.email}
+                  </span>
                 </div>
-                <ChevronsUpDown className="ml-auto size-3.5 flex-shrink-0 group-data-[collapsible=icon]:hidden" />
+                <ChevronsUpDown
+                  className={cn(
+                    'ml-auto size-3 shrink-0 text-muted-foreground/30',
+                    'transition-colors duration-150',
+                    'group-hover/user:text-muted-foreground/70 group-data-[state=open]/user:text-muted-foreground/70',
+                    'group-data-[collapsible=icon]:hidden',
+                  )}
+                />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-64"
-              side={isMobile ? 'bottom' : 'top'}
-              align="start"
-              sideOffset={6}
-            >
-              {/* Account-only menu. Workspace switching lives exclusively in
-                  the sidebar-header switcher (Slack/Linear style) so there's
-                  one obvious place for "what workspace am I in / switch". */}
-              <DropdownMenuGroup>
-                <DropdownMenuItem onClick={() => openSettings('billing')} className="cursor-pointer">
-                  <CreditCard />
-                  <span>Billing</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => openSettings('general')} className="cursor-pointer">
-                  <SettingsIcon />
-                  <span>Settings</span>
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-              <DropdownMenuSeparator className="my-1" />
 
-              {/* Theme toggle + Log out */}
-              <div className="flex items-center justify-between px-1 py-1">
-                <div className="flex gap-0.5 p-0.5 bg-muted/50 rounded-full">
-                  {themeOptions.map((mode) => {
-                    const Icon = mode.icon;
-                    const isActive = theme === mode.value;
-                    return (
-                      <button
-                        key={mode.value}
-                        type="button"
-                        onClick={(e) => handleThemeChange(mode.value, e)}
-                        className={cn('p-1.5 rounded-full transition-colors duration-150 cursor-pointer',
-                          isActive
-                            ? 'bg-background text-foreground'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        <Icon className="size-3.5" />
-                      </button>
-                    );
-                  })}
+            <DropdownMenuContent
+              align="start"
+              side={isMobile ? 'bottom' : 'top'}
+              sideOffset={6}
+              className={cn(
+                // Same width as the trigger; no custom shadow so it sits flush
+                // with the sidebar and mirrors the ProjectSelector dropdown.
+                'w-(--radix-dropdown-menu-trigger-width) overflow-hidden rounded-xl border-border/60 p-0 shadow-none',
+              )}
+            >
+              {/* ─── Identity ─────────────────────────────────────────── */}
+              <div className="flex items-center gap-2.5 px-3 pt-3 pb-2.5">
+                <Avatar className="h-8 w-8 shrink-0 rounded-full ring-1 ring-border/40">
+                  <AvatarImage src={user.avatar} alt={user.name} />
+                  <AvatarFallback className="rounded-full bg-muted text-[11px] font-semibold text-muted-foreground">
+                    {initials(user.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1 leading-tight">
+                  <div className="truncate text-[13px] font-medium text-foreground">
+                    {user.name}
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
+                    {user.email}
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="text-[12px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2 py-1"
-                >
-                  Log out
-                </button>
+                {user.planName && (
+                  <span className="shrink-0 rounded-md border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/80">
+                    {user.planName}
+                  </span>
+                )}
+              </div>
+
+              <Divider />
+
+              {/* ─── Account actions ──────────────────────────────────── */}
+              <div className="px-1 py-1">
+                <ActionRow
+                  icon={<UserIcon className="size-3.5" />}
+                  label="Account"
+                  onSelect={() => openSettings('general')}
+                />
+                {billingActive && (
+                  <ActionRow
+                    icon={<CreditCard className="size-3.5" />}
+                    label="Billing"
+                    onSelect={() => openSettings('billing')}
+                  />
+                )}
+                <ActionRow
+                  icon={<SettingsIcon className="size-3.5" />}
+                  label="Settings"
+                  shortcut={`${MOD},`}
+                  onSelect={() => openSettings('general')}
+                />
+                <ActionRow
+                  icon={<CommandIcon className="size-3.5" />}
+                  label="Command menu"
+                  shortcut={`${MOD}K`}
+                  onSelect={handleCommandPalette}
+                />
+              </div>
+
+              <Divider />
+
+              {/* ─── Theme switcher ───────────────────────────────────── */}
+              <div className="px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11.5px] font-medium text-foreground/85">
+                    Theme
+                  </span>
+                  <div
+                    role="radiogroup"
+                    aria-label="Theme"
+                    className="flex items-center gap-0.5 rounded-md border border-border/40 bg-muted/30 p-0.5"
+                  >
+                    {themeOptions.map((mode) => {
+                      const Icon = mode.icon;
+                      const isActive = theme === mode.value;
+                      return (
+                        <button
+                          key={mode.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={isActive}
+                          aria-label={`Theme: ${mode.value}`}
+                          onClick={(event) => handleThemeChange(mode.value, event)}
+                          className={cn(
+                            'flex h-6 w-7 cursor-pointer items-center justify-center rounded-[5px] transition-all duration-150',
+                            isActive
+                              ? 'bg-background text-foreground shadow-[0_1px_0_rgba(0,0,0,0.04)]'
+                              : 'text-muted-foreground/70 hover:text-foreground',
+                          )}
+                        >
+                          <Icon className="size-3.5" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <Divider />
+
+              {/* ─── Log out ──────────────────────────────────────────── */}
+              <div className="px-1 py-1">
+                <ActionRow
+                  icon={<LogOut className="size-3.5" />}
+                  label="Log out"
+                  onSelect={handleLogout}
+                  destructive
+                />
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarMenuItem>
       </SidebarMenu>
+
       <UserSettingsModal
         open={showSettingsModal}
         onOpenChange={setShowSettingsModal}
@@ -177,10 +310,59 @@ export function UserMenu({ user }: UserMenuProps) {
         returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
       />
 
-      <ReferralDialog
-        open={isReferralDialogOpen}
-        onOpenChange={closeReferralDialog}
-      />
+      <ReferralDialog open={isReferralDialogOpen} onOpenChange={closeReferralDialog} />
     </>
+  );
+}
+
+/* ─── Primitives ──────────────────────────────────────────────────────────── */
+
+function Divider() {
+  return <div className="h-px bg-border/40" />;
+}
+
+function ActionRow({
+  icon,
+  label,
+  shortcut,
+  destructive,
+  onSelect,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  shortcut?: string;
+  destructive?: boolean;
+  onSelect: () => void;
+}) {
+  // Render as a Radix DropdownMenuItem so Radix owns the close-on-select
+  // and focus-return choreography — this is what kills the post-click
+  // flicker we got from rolling our own <button>.
+  return (
+    <DropdownMenuItem
+      variant={destructive ? 'destructive' : 'default'}
+      onSelect={onSelect}
+      className={cn(
+        'flex h-8 cursor-pointer items-center gap-2.5 rounded-md px-2 py-0 text-left',
+        '[&_svg:not([class*=size-])]:size-3.5',
+        destructive
+          ? '[&_svg]:!text-red-500/70 dark:[&_svg]:!text-red-400/70'
+          : '[&_svg]:!text-muted-foreground/70',
+      )}
+    >
+      {icon}
+      <span className="flex-1 truncate text-[12.5px] font-medium leading-tight">
+        {label}
+      </span>
+      {shortcut && (
+        <kbd
+          className={cn(
+            'rounded bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums',
+            destructive ? 'text-red-500/70' : 'text-muted-foreground/70',
+          )}
+        >
+          {shortcut}
+        </kbd>
+      )}
+    </DropdownMenuItem>
   );
 }
