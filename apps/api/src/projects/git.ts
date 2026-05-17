@@ -30,7 +30,8 @@ export interface ProjectConfigSummary {
   open_code_raw: string | null;
   open_code_default_agent: string | null;
   agents: Array<{ name: string; path: string; description: string | null; mode: string | null }>;
-  skills: Array<{ name: string; path: string }>;
+  skills: Array<{ name: string; path: string; description: string | null }>;
+  commands: Array<{ name: string; path: string; description: string | null }>;
 }
 
 const refreshLocks = new Map<string, Promise<string>>();
@@ -115,6 +116,16 @@ async function refreshMirror(project: GitBackedProject, force = false) {
   const next = doRefreshMirror(project, force).finally(() => refreshLocks.delete(project.projectId));
   refreshLocks.set(project.projectId, next);
   return next;
+}
+
+/**
+ * Drop the "recently refreshed" marker for this project so the next mirror
+ * read forces a fresh `git fetch`. Call this after committing/deleting a
+ * file via the GitHub Contents API so the local cache lines up with the
+ * upstream change.
+ */
+export function invalidateProjectMirror(projectId: string): void {
+  lastRefreshAt.delete(projectId);
 }
 
 function normalizeTreePath(input?: string | null) {
@@ -316,7 +327,7 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
   }));
 
   const seenSkills = new Set<string>();
-  const skills = repoFiles
+  const skillPaths = repoFiles
     .map((file) => file.path.match(/^\.opencode\/skills\/(.+)\/SKILL\.md$/))
     .filter((match): match is RegExpMatchArray => Boolean(match))
     .filter((match) => {
@@ -324,8 +335,36 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
       seenSkills.add(match[1]);
       return true;
     })
-    .map((match) => ({ name: match[1], path: `.opencode/skills/${match[1]}/SKILL.md` }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .map((match) => ({ slug: match[1], path: `.opencode/skills/${match[1]}/SKILL.md` }))
+    .sort((a, b) => a.slug.localeCompare(b.slug));
+  const skills = await Promise.all(skillPaths.map(async ({ slug, path }) => {
+    const raw = await optionalFile(project, path);
+    const meta = parseFrontmatter(raw);
+    return {
+      name: meta.name || slug,
+      path,
+      description: meta.description || null,
+    };
+  }));
+
+  // OpenCode slash commands — `.opencode/command/<slug>.md` or
+  // `.opencode/commands/<slug>.md` (both forms accepted by the runtime; we
+  // include either if present). Frontmatter `description:` is what gets
+  // surfaced in the command picker.
+  const commandPaths = repoFiles
+    .map((file) => file.path.match(/^\.opencode\/commands?\/([^/]+)\.md$/))
+    .filter((match): match is RegExpMatchArray => Boolean(match))
+    .map((match) => ({ slug: match[1], path: match.input as string }))
+    .sort((a, b) => a.slug.localeCompare(b.slug));
+  const commands = await Promise.all(commandPaths.map(async ({ slug, path }) => {
+    const raw = await optionalFile(project, path);
+    const meta = parseFrontmatter(raw);
+    return {
+      name: meta.name || slug,
+      path,
+      description: meta.description || null,
+    };
+  }));
 
   const manifest = parseManifest(manifestRaw);
   const signals = {
@@ -344,6 +383,7 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     open_code_default_agent: parseJsonCString(openCodeRaw, 'default_agent'),
     agents,
     skills,
+    commands,
   };
 }
 

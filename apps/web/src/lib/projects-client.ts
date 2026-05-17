@@ -137,7 +137,8 @@ export interface ProjectConfigSummary {
   open_code_raw: string | null;
   open_code_default_agent: string | null;
   agents: Array<{ name: string; path: string; description: string | null; mode: string | null }>;
-  skills: Array<{ name: string; path: string }>;
+  skills: Array<{ name: string; path: string; description: string | null }>;
+  commands: Array<{ name: string; path: string; description: string | null }>;
   env: { required: string[]; optional: string[] };
 }
 
@@ -176,73 +177,6 @@ export interface GitHubInstallationStatus {
   repository_selection: string | null;
   permissions: Record<string, unknown>;
   updated_at: string | null;
-}
-
-export type ProjectChannelPlatform = 'slack' | 'telegram' | 'msteams' | 'discord';
-export type IntegrationStatus = 'active' | 'revoked' | 'expired' | 'error';
-
-export interface ProjectChannel {
-  channel_id: string;
-  account_id: string;
-  project_id: string;
-  platform: ProjectChannelPlatform;
-  external_channel_id: string;
-  external_team_id: string | null;
-  name: string | null;
-  config: Record<string, unknown>;
-  agent_name: string;
-  prompt_template: string;
-  enabled: boolean;
-  status: IntegrationStatus;
-  metadata: Record<string, unknown>;
-  last_message_at: string | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProjectChannelEvent {
-  event_id: string;
-  channel_id: string;
-  account_id: string;
-  project_id: string;
-  platform: ProjectChannelPlatform;
-  external_message_id: string | null;
-  status: 'queued' | 'fired' | 'failed';
-  payload: Record<string, unknown>;
-  rendered_prompt: string | null;
-  session_id: string | null;
-  error: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProjectConnector {
-  connector_id: string;
-  account_id: string;
-  project_id: string;
-  provider: string;
-  app: string;
-  app_name: string | null;
-  label: string | null;
-  status: IntegrationStatus;
-  scopes: string[];
-  metadata: Record<string, unknown>;
-  provider_account_id?: string;
-  connected_at: string;
-  last_used_at: string | null;
-  created_by: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface ProjectOAuthStart {
-  provider: string;
-  app: string;
-  surface: 'connector' | 'channel';
-  authorization_url: string;
-  redirect_uri: string;
-  expires_at: string;
 }
 
 export interface ProjectSecret {
@@ -403,8 +337,28 @@ export async function revokeProjectAccess(projectId: string, userId: string) {
   );
 }
 
+export interface ProjectSecretsResponse {
+  items: ProjectSecret[];
+  /** Env keys declared as required in the project's kortix.toml manifest. */
+  required: string[];
+  /** Env keys declared as optional in the project's kortix.toml manifest. */
+  optional: string[];
+  /**
+   * 'loaded'  → kortix.toml read successfully (env lists are authoritative).
+   * 'missing' → manifest file not present in the repo.
+   * 'error'   → couldn't fetch/parse the repo (private repo, network, etc.).
+   */
+  manifest_status?: 'loaded' | 'missing' | 'error';
+  /** Path the API tried (defaults to "kortix.toml" but configurable per project). */
+  manifest_path?: string;
+  /** Error string when manifest_status === 'error'. */
+  manifest_error?: string;
+}
+
 export async function listProjectSecrets(projectId: string) {
-  return unwrap(await backendApi.get<ProjectSecret[]>(`/projects/${projectId}/secrets`));
+  return unwrap(
+    await backendApi.get<ProjectSecretsResponse>(`/projects/${projectId}/secrets`),
+  );
 }
 
 export async function upsertProjectSecret(
@@ -622,6 +576,144 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
   );
 }
 
+export async function restartProjectSession(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
+      `/projects/${projectId}/sessions/${sessionId}/restart`,
+      {},
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Triggers — file-defined in the project repo at `.opencode/triggers/<slug>.md`
+// (YAML frontmatter + markdown prompt body). The cloud API parses these on
+// every read; CRUD endpoints commit/delete the files via the GitHub Contents
+// API. The repo is the source of truth; runtime state (last_fired_at) lives
+// in `project_trigger_runtime` so a fire doesn't amplify into a git commit.
+// ---------------------------------------------------------------------------
+
+export type ProjectTriggerType = 'cron' | 'webhook';
+
+/** Parsed trigger spec — what the listing endpoint returns. */
+export interface ProjectTrigger {
+  /** URL-safe slug (the filename minus `.md`). */
+  slug: string;
+  /** Repo path of the source file, e.g. `.opencode/triggers/daily.md`. */
+  path: string;
+  name: string;
+  type: ProjectTriggerType;
+  agent: string;
+  enabled: boolean;
+  cron: string | null;
+  timezone: string;
+  /** project_secrets key holding the webhook HMAC secret. */
+  secret_env: string | null;
+  prompt_template: string;
+  last_fired_at: string | null;
+  /** Public fire URL for webhook triggers; null for cron. */
+  webhook_url: string | null;
+}
+
+/** Parse error surfaced by the listing endpoint so the UI can render
+ * broken triggers next to green ones. */
+export interface ProjectTriggerParseError {
+  slug: string;
+  path: string;
+  error: string;
+}
+
+export interface ProjectTriggerListing {
+  triggers: ProjectTrigger[];
+  errors: ProjectTriggerParseError[];
+}
+
+export interface CreateProjectTriggerInput {
+  /** Required — used as the title and shown in the UI. */
+  name: string;
+  /**
+   * Optional slug override. When omitted, derived from `name`. Once
+   * created, the slug is immutable (changing it would orphan runtime state).
+   */
+  slug?: string;
+  type: ProjectTriggerType;
+  prompt_template: string;
+  /** Defaults to 'default'. */
+  agent?: string;
+  enabled?: boolean;
+  /** For type='cron'. 6-field croner expression. */
+  cron?: string;
+  /** For type='cron'. IANA timezone. Defaults to 'UTC'. */
+  timezone?: string;
+  /** For type='webhook'. Name of a project_secrets entry. */
+  secret_env?: string;
+}
+
+export interface UpdateProjectTriggerInput {
+  name?: string;
+  prompt_template?: string;
+  agent?: string;
+  enabled?: boolean;
+  cron?: string;
+  timezone?: string;
+  secret_env?: string;
+}
+
+export async function listProjectTriggers(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectTriggerListing>(`/projects/${projectId}/triggers`),
+  );
+}
+
+export async function createProjectTrigger(
+  projectId: string,
+  input: CreateProjectTriggerInput,
+) {
+  return unwrap(
+    await backendApi.post<ProjectTriggerListing>(
+      `/projects/${projectId}/triggers`,
+      input,
+    ),
+  );
+}
+
+export async function updateProjectTrigger(
+  projectId: string,
+  slug: string,
+  input: UpdateProjectTriggerInput,
+) {
+  return unwrap(
+    await backendApi.patch<ProjectTriggerListing>(
+      `/projects/${projectId}/triggers/${slug}`,
+      input,
+    ),
+  );
+}
+
+export async function deleteProjectTrigger(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/triggers/${slug}`,
+    ),
+  );
+}
+
+export interface FireProjectTriggerResponse {
+  status: 'fired' | 'queued' | 'failed';
+  session_id?: string | null;
+  reason?: string;
+  error?: string;
+}
+
+export async function fireProjectTrigger(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.post<FireProjectTriggerResponse>(
+      `/projects/${projectId}/triggers/${slug}/fire`,
+      {},
+    ),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Session sandbox — runtime row in `kortix.session_sandboxes`. Separate from
 // the legacy /instances sandbox table (`kortix.sandboxes`); no billing or
@@ -708,106 +800,4 @@ export async function updateProject(projectId: string, input: Partial<ProjectInp
 
 export async function archiveProject(projectId: string) {
   return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
-}
-
-export async function listProjectChannels(projectId: string) {
-  return unwrap(await backendApi.get<ProjectChannel[]>(`/projects/${projectId}/channels`));
-}
-
-export async function createProjectChannel(
-  projectId: string,
-  input: {
-    platform: ProjectChannelPlatform;
-    external_channel_id: string;
-    external_team_id?: string | null;
-    name?: string | null;
-    config?: Record<string, unknown>;
-    agent_name?: string;
-    prompt_template?: string;
-    enabled?: boolean;
-    status?: IntegrationStatus;
-    metadata?: Record<string, unknown>;
-  },
-) {
-  return unwrap(await backendApi.post<ProjectChannel>(`/projects/${projectId}/channels`, input));
-}
-
-export async function updateProjectChannel(
-  projectId: string,
-  channelId: string,
-  input: Partial<{
-    external_team_id: string | null;
-    name: string | null;
-    config: Record<string, unknown>;
-    agent_name: string;
-    prompt_template: string;
-    enabled: boolean;
-    status: IntegrationStatus;
-    metadata: Record<string, unknown>;
-  }>,
-) {
-  return unwrap(await backendApi.patch<ProjectChannel>(`/projects/${projectId}/channels/${channelId}`, input));
-}
-
-export async function deleteProjectChannel(projectId: string, channelId: string) {
-  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/channels/${channelId}`));
-}
-
-export async function listProjectChannelEvents(projectId: string, channelId: string) {
-  return unwrap(await backendApi.get<ProjectChannelEvent[]>(`/projects/${projectId}/channels/${channelId}/events`));
-}
-
-export async function startProjectChannelOAuth(
-  projectId: string,
-  input: {
-    platform: ProjectChannelPlatform;
-    app?: string;
-    scopes?: string[];
-    success_redirect_uri?: string;
-    error_redirect_uri?: string;
-  },
-) {
-  return unwrap(await backendApi.post<ProjectOAuthStart>(`/projects/${projectId}/channels/oauth/start`, input));
-}
-
-export async function listProjectConnectors(projectId: string) {
-  return unwrap(await backendApi.get<ProjectConnector[]>(`/projects/${projectId}/connectors`));
-}
-
-export async function syncProjectConnectors(projectId: string, input?: { app?: string }) {
-  return unwrap(
-    await backendApi.post<{ connectors: ProjectConnector[]; synced: number }>(
-      `/projects/${projectId}/connectors/sync`,
-      input ?? {},
-    ),
-  );
-}
-
-export async function updateProjectConnector(
-  projectId: string,
-  connectorId: string,
-  input: Partial<{
-    label: string | null;
-    status: IntegrationStatus;
-    scopes: string[];
-    metadata: Record<string, unknown>;
-  }>,
-) {
-  return unwrap(await backendApi.patch<ProjectConnector>(`/projects/${projectId}/connectors/${connectorId}`, input));
-}
-
-export async function deleteProjectConnector(projectId: string, connectorId: string) {
-  return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/connectors/${connectorId}`));
-}
-
-export async function startProjectConnectorOAuth(
-  projectId: string,
-  input: {
-    app: string;
-    scopes?: string[];
-    success_redirect_uri?: string;
-    error_redirect_uri?: string;
-  },
-) {
-  return unwrap(await backendApi.post<ProjectOAuthStart>(`/projects/${projectId}/connectors/oauth/start`, input));
 }

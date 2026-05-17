@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import {
@@ -9,14 +9,14 @@ import {
   ChevronDown,
   SquarePen,
   FileText,
-  KeyRound,
-  Settings,
   Loader2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { WorkspaceMenu } from '@/components/sidebar/workspace-menu';
+import { UserMenu } from '@/components/sidebar/user-menu';
+import { ProjectSelector } from '@/components/projects/project-selector';
 import { ProjectSessionList } from '@/components/projects/project-session-list';
 import {
   Sidebar,
@@ -39,7 +39,7 @@ import {
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import { useAdminRole } from '@/hooks/admin';
-import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/components/AuthProvider';
 import { createProjectSession } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 
@@ -73,33 +73,26 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
 
-  const [user, setUser] = useState<{
-    name: string;
-    email: string;
-    avatar: string;
-    isAdmin?: boolean;
-  }>({ name: 'Loading...', email: '', avatar: '', isAdmin: false });
-
-  useEffect(() => {
-    (async () => {
-      const supabase = createClient();
-      const { data } = await supabase.auth.getUser();
-      if (data.user) {
-        setUser({
-          name:
-            data.user.user_metadata?.name ||
-            data.user.email?.split('@')[0] ||
-            'User',
-          email: data.user.email || '',
-          avatar:
-            data.user.user_metadata?.avatar_url ||
-            data.user.user_metadata?.picture ||
-            '',
-          isAdmin,
-        });
-      }
-    })();
-  }, [isAdmin]);
+  // Pull identity from the AuthProvider (mounted once, well above this tree)
+  // so navigating between project pages doesn't remount the sidebar onto a
+  // "Loading…" placeholder while supabase.auth.getUser() resolves a second
+  // time. That round-trip was the visible flicker on the footer widget.
+  const { user: authUser } = useAuth();
+  const user = useMemo(
+    () => ({
+      name:
+        authUser?.user_metadata?.name ||
+        authUser?.email?.split('@')[0] ||
+        'User',
+      email: authUser?.email ?? '',
+      avatar:
+        authUser?.user_metadata?.avatar_url ||
+        authUser?.user_metadata?.picture ||
+        '',
+      isAdmin,
+    }),
+    [authUser, isAdmin],
+  );
 
   const createSession = useMutation({
     mutationFn: () => createProjectSession(projectId),
@@ -136,21 +129,34 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   }, [handleNewSession]);
 
   const filesActive = pathname?.startsWith(`/projects/${projectId}/files`) ?? false;
-  const secretsActive = pathname?.startsWith(`/projects/${projectId}/secrets`) ?? false;
-  const settingsActive = pathname?.startsWith(`/projects/${projectId}/settings`) ?? false;
+  // Customize covers the whole route group: agents, skills, secrets, triggers,
+  // channels, connectors, settings. Any of those should light up the sidebar
+  // button so the user knows where they are.
+  const CUSTOMIZE_SECTIONS = [
+    'agents',
+    'skills',
+    'commands',
+    'secrets',
+    'schedules',
+    'webhooks',
+    'channels',
+    'connectors',
+    'settings',
+  ];
+  const customizeActive = CUSTOMIZE_SECTIONS.some((slug) =>
+    pathname?.startsWith(`/projects/${projectId}/${slug}`),
+  );
 
   const goFiles = useCallback(() => {
     router.push(`/projects/${projectId}/files`);
     if (isMobile) setOpenMobile(false);
   }, [router, projectId, isMobile, setOpenMobile]);
 
-  const goSecrets = useCallback(() => {
-    router.push(`/projects/${projectId}/secrets`);
-    if (isMobile) setOpenMobile(false);
-  }, [router, projectId, isMobile, setOpenMobile]);
-
-  const goSettings = useCallback(() => {
-    router.push(`/projects/${projectId}/settings`);
+  // Customize defaults to /agents — that's the first section in the
+  // secondary nav. Last-visited memory could come later; for now a stable
+  // default beats route surprise.
+  const goCustomize = useCallback(() => {
+    router.push(`/projects/${projectId}/agents`);
     if (isMobile) setOpenMobile(false);
   }, [router, projectId, isMobile, setOpenMobile]);
 
@@ -160,9 +166,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       className="bg-sidebar [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
     >
       {/* ====================================================================
-          HEADER — logo + collapse toggle only. Workspace context (account,
-          project, identity, settings) is consolidated in the footer's
-          WorkspaceMenu (Cursor/Notion-style single widget).
+          HEADER — logo + collapse toggle, with the ProjectSelector
+          (account / project switcher only) pinned directly below.
+          User identity + settings live in the footer (see UserMenu).
          ==================================================================== */}
       <SidebarHeader className="pb-1 pt-3">
         <div className="flex h-7 shrink-0 items-center justify-between px-2 group-data-[collapsible=icon]:justify-center">
@@ -191,6 +197,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
+        </div>
+        <div className="pt-2 group-data-[collapsible=icon]:px-0">
+          <ProjectSelector />
         </div>
       </SidebarHeader>
 
@@ -265,22 +274,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             </SidebarMenuItem>
             <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
               <SidebarMenuButton
-                onClick={goSecrets}
-                isActive={secretsActive}
-                tooltip="Secrets"
+                onClick={goCustomize}
+                isActive={customizeActive}
+                tooltip="Customize"
               >
-                <KeyRound />
-                <span>Secrets</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
-              <SidebarMenuButton
-                onClick={goSettings}
-                isActive={settingsActive}
-                tooltip="Settings"
-              >
-                <Settings />
-                <span>Settings</span>
+                <SlidersHorizontal />
+                <span>Customize</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -288,15 +287,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       </SidebarContent>
 
       {/* ====================================================================
-          FOOTER — single WorkspaceMenu carries identity + workspace context
-          (account + project) + settings + theme + log out.
-
-          In the icon rail (collapsed) we drop horizontal padding so the
-          avatar centers cleanly against the 52px rail — matches the legacy
-          /instances sidebar.
+          FOOTER — user identity + settings + theme + log out. Kept
+          separate from the ProjectSelector at the top so the two concerns
+          (which project am I in vs. who am I) don't share one widget.
          ==================================================================== */}
       <SidebarFooter className="pb-2 pt-1 group-data-[collapsible=icon]:px-0">
-        <WorkspaceMenu user={user} variant="sidebar" />
+        <UserMenu user={user} />
       </SidebarFooter>
 
       <SidebarRail />

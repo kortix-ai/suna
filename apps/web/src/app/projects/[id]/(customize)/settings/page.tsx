@@ -5,9 +5,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Github, Loader2, Settings, Shield, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { ProjectShell } from '@/components/projects/project-shell';
-import { ChannelsTab } from '@/components/kortix/channels-tab';
-import { ConnectorsTab } from '@/components/kortix/connectors-tab';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -58,15 +55,13 @@ export default function ProjectSettingsPage({
   const { id: projectId } = use(params);
 
   return (
-    <ProjectShell projectId={projectId}>
-      <div className="flex h-full min-h-0 flex-col bg-background">
-        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
-          <Settings className="h-4 w-4 text-muted-foreground" />
-          <h1 className="text-sm font-semibold text-foreground">Settings</h1>
-        </div>
-        <ProjectSettingsBody projectId={projectId} />
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
+        <Settings className="h-4 w-4 text-muted-foreground" />
+        <h1 className="text-sm font-semibold text-foreground">Settings</h1>
       </div>
-    </ProjectShell>
+      <ProjectSettingsBody projectId={projectId} />
+    </div>
   );
 }
 
@@ -134,12 +129,6 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
               error={accessQuery.error as Error | null}
               onRetry={() => accessQuery.refetch()}
             />
-            <div className="h-[620px] overflow-hidden rounded-xl border border-border/70 bg-card">
-              <ChannelsTab projectId={projectId} />
-            </div>
-            <div className="h-[560px] overflow-hidden rounded-xl border border-border/70 bg-card">
-              <ConnectorsTab projectId={projectId} />
-            </div>
             {canManage && (
               <section className="rounded-xl border border-destructive/30 bg-destructive/5">
                 <header className="border-b border-destructive/20 px-6 py-4">
