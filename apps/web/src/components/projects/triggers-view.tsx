@@ -476,10 +476,6 @@ function TriggerRow({
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40',
       )}
     >
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/30 text-muted-foreground">
-        {isCron ? <Timer className="h-4 w-4" /> : <Webhook className="h-4 w-4" />}
-      </div>
-
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-foreground">{name}</span>

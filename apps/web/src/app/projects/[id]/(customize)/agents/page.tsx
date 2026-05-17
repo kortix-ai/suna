@@ -191,12 +191,6 @@ function AgentRow({
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
       )}
     >
-      <Bot
-        className={cn(
-          'h-3.5 w-3.5 shrink-0',
-          active ? 'text-foreground' : 'text-muted-foreground/60',
-        )}
-      />
       <span className="truncate text-[12.5px] font-medium">{agent.name}</span>
       {isDefault && (
         <Star
