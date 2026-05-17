@@ -1,15 +1,19 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Layers, CheckCircle, AlertCircle, Check, X, Loader2 } from 'lucide-react';
+import { Layers, AlertCircle, Check, X, Loader2 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
-import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
+import { formatTimestamp } from '../utils';
 import { cn } from '@/lib/utils';
+import {
+  Status,
+  StatusDot,
+  ToolViewBody,
+  ToolViewFoot,
+  ToolViewHead,
+  ToolViewShell,
+} from '../shared/primitives';
 
 interface BatchDetail {
   tool: string;
@@ -21,7 +25,6 @@ export function OcBatchToolView({
   toolResult,
   assistantTimestamp,
   toolTimestamp,
-  isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
   const args = toolCall?.arguments || {};
@@ -32,7 +35,6 @@ export function OcBatchToolView({
   const successful = (metadata.successful as number) || 0;
   const failed = (metadata.failed as number) || 0;
 
-  // Fall back to input tool_calls if metadata not yet available
   const toolCalls = useMemo(() => {
     const details = (metadata.details as BatchDetail[]) || [];
     const tools = (metadata.tools as string[]) || [];
@@ -49,98 +51,92 @@ export function OcBatchToolView({
   const isRunning = isStreaming && !toolResult;
 
   if (isRunning) {
-    const toolNames = toolCalls.map((c) => c.tool).join(', ');
-    return <LoadingState title="Batch Execution" subtitle={toolNames || `${toolCalls.length} tools`} />;
+    return (
+      <LoadingState
+        title="Batch execution"
+        subtitle={toolCalls.length > 0 ? `${toolCalls.length} tools` : undefined}
+      />
+    );
   }
 
-  const subtitle = totalCalls > 0
-    ? `${successful}/${totalCalls} succeeded`
-    : `${toolCalls.length} tool${toolCalls.length !== 1 ? 's' : ''}`;
+  const ts = toolTimestamp && !isStreaming
+    ? formatTimestamp(toolTimestamp)
+    : assistantTimestamp ? formatTimestamp(assistantTimestamp) : undefined;
 
   return (
-    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
-        <div className="flex flex-row items-center justify-between">
-          <ToolViewIconTitle
-            icon={Layers}
-            title="Batch Execution"
-            subtitle={subtitle}
-          />
-          {totalCalls > 0 && (
-            <div className="flex items-center gap-1.5 flex-shrink-0">
+    <ToolViewShell>
+      <ToolViewHead
+        icon={Layers}
+        title="Batch"
+        detail={
+          totalCalls > 0
+            ? `${successful}/${totalCalls} succeeded`
+            : `${toolCalls.length} ${toolCalls.length === 1 ? 'tool' : 'tools'}`
+        }
+        actions={
+          totalCalls > 0 ? (
+            <>
               {successful > 0 && (
-                <Badge variant="outline" className="h-5 py-0 text-[10px] bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300">
-                  {successful} passed
-                </Badge>
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/80 tracking-tight">
+                  <StatusDot tone="success" />
+                  {successful}
+                </span>
               )}
               {failed > 0 && (
-                <Badge variant="outline" className="h-5 py-0 text-[10px] bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-300">
-                  {failed} failed
-                </Badge>
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-red-500/90 tracking-tight">
+                  <StatusDot tone="error" />
+                  {failed}
+                </span>
               )}
-            </div>
-          )}
-        </div>
-      </CardHeader>
+            </>
+          ) : null
+        }
+      />
 
-      <CardContent className="p-0 h-full flex-1 overflow-hidden">
-        <ScrollArea className="h-full w-full">
-          <div className="p-3 space-y-1.5">
-            {toolCalls.length > 0 ? (
-              toolCalls.map((call, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    'flex items-center gap-2.5 px-3 py-2 rounded-lg border',
-                    call.success
-                      ? 'border-border/40 bg-card'
-                      : 'border-red-200 dark:border-red-900/50 bg-red-50/30 dark:bg-red-950/10',
-                  )}
-                >
-                  {/* Status icon */}
-                  {!toolResult ? (
-                    <Loader2 className="size-3.5 text-muted-foreground animate-spin shrink-0" />
-                  ) : call.success ? (
-                    <Check className="size-3.5 text-emerald-500 shrink-0" />
-                  ) : (
-                    <X className="size-3.5 text-red-500 shrink-0" />
-                  )}
-
-                  {/* Tool name */}
-                  <span className="text-xs font-mono flex-1 truncate">{call.tool}</span>
-
-                  {/* Index badge */}
-                  <span className="text-[10px] text-muted-foreground/50 shrink-0">#{i + 1}</span>
-                </div>
-              ))
-            ) : (
-              <div className="text-sm text-muted-foreground py-4 text-center">
-                No tool calls recorded.
-              </div>
-            )}
+      <ToolViewBody padded={false}>
+        {toolCalls.length === 0 ? (
+          <div className="px-4 py-6 text-[12px] text-muted-foreground/70 tracking-tight text-center">
+            No tool calls.
           </div>
-        </ScrollArea>
-      </CardContent>
-
-      <ToolViewFooter
-        assistantTimestamp={assistantTimestamp}
-        toolTimestamp={toolTimestamp}
-        isStreaming={isStreaming}
-      >
-        {!isStreaming && (
-          isError || hasFailed ? (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted text-muted-foreground">
-              <AlertCircle className="h-3 w-3" />
-              {isError ? 'Failed' : `${failed} failed`}
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
-              All passed
-            </Badge>
-          )
+        ) : (
+          <ul className="divide-y divide-border/40">
+            {toolCalls.map((call, i) => (
+              <li
+                key={i}
+                className={cn(
+                  'flex items-center gap-2.5 px-4 py-2',
+                  !call.success && 'bg-red-500/[0.025]',
+                )}
+              >
+                {!toolResult ? (
+                  <Loader2 className="w-3 h-3 text-muted-foreground/60 animate-spin flex-shrink-0" />
+                ) : call.success ? (
+                  <Check className="w-3 h-3 text-foreground/70 flex-shrink-0" />
+                ) : (
+                  <X className="w-3 h-3 text-red-500/90 flex-shrink-0" />
+                )}
+                <span className="text-[12.5px] font-mono text-foreground/90 flex-1 truncate">
+                  {call.tool}
+                </span>
+                <span className="text-[10.5px] text-muted-foreground/50 tabular-nums flex-shrink-0">
+                  {i + 1}
+                </span>
+              </li>
+            ))}
+          </ul>
         )}
-      </ToolViewFooter>
-    </Card>
+      </ToolViewBody>
+
+      <ToolViewFoot timestamp={ts}>
+        {isError || hasFailed ? (
+          <Status tone="error">
+            <AlertCircle className="w-3 h-3" />
+            {isError ? 'Failed' : `${failed} failed`}
+          </Status>
+        ) : (
+          <Status tone="success">All passed</Status>
+        )}
+      </ToolViewFoot>
+    </ToolViewShell>
   );
 }

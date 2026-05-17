@@ -132,16 +132,14 @@ export function PdfExportToolView({
         {isSuccess ? (
           <div className="space-y-3">
             {/* File info */}
-            <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-red-50 dark:bg-red-950/50 rounded-lg">
-                  <FileText className="h-5 w-5 text-red-600 dark:text-red-400" />
-                </div>
+            <div className="bg-foreground/[0.02] border border-border/50 rounded-md p-2.5">
+              <div className="flex items-center gap-2.5">
+                <FileText className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                  <p className="text-[12.5px] font-medium text-foreground tracking-tight truncate">
                     {fileName}
                   </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  <p className="text-[11.5px] text-muted-foreground/70">
                     PDF Document
                   </p>
                 </div>

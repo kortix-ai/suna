@@ -39,7 +39,7 @@ export function OcConnectorGetToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Plug}
@@ -69,7 +69,6 @@ export function OcConnectorGetToolView({
                   variant="outline" 
                   className={cn(
                     "h-6 py-0 capitalize",
-                    data.source === 'pipedream' && 'border-indigo-500 text-indigo-600 dark:text-indigo-400',
                     data.source === 'api-key' && 'border-amber-500 text-amber-600 dark:text-amber-400',
                     data.source === 'cli' && 'border-gray-500 text-gray-600 dark:text-gray-400',
                     data.source === 'channel' && 'border-emerald-500 text-emerald-600 dark:text-emerald-400',
@@ -80,16 +79,6 @@ export function OcConnectorGetToolView({
                   {data.source}
                 </Badge>
               </div>
-
-              {/* Pipedream slug */}
-              {data.pipedream_slug && (
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">Pipedream:</span>
-                  <code className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">
-                    {data.pipedream_slug}
-                  </code>
-                </div>
-              )}
 
               {/* Env keys */}
               {data.env && (

@@ -9,9 +9,11 @@ import {
   Presentation,
   Pencil,
   FileDiff,
-  Minus,
   Plus,
+  Minus,
 } from 'lucide-react';
+import { createTwoFilesPatch } from 'diff';
+import { DiffView } from '@/components/diff/diff-view';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   formatTimestamp,
@@ -78,112 +80,6 @@ import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useSmoothStream } from '@/lib/streaming';
 
-const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[]; fileName?: string }> = ({ lineDiff, fileName }) => (
-  <div className="font-mono text-[13px] leading-relaxed">
-    {lineDiff.map((line, i) => (
-      <div
-        key={i}
-        className={cn(
-          "flex border-l-2 transition-colors",
-          line.type === 'removed' && "bg-red-50/80 dark:bg-red-950/40 border-l-red-400 dark:border-l-red-500",
-          line.type === 'added' && "bg-zinc-50/80 dark:bg-zinc-900/40 border-l-zinc-400 dark:border-l-zinc-500",
-          line.type === 'unchanged' && "bg-transparent border-l-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900/50",
-        )}
-      >
-        <div className="w-12 text-right select-none py-1 pr-3 text-[11px] text-zinc-400 dark:text-zinc-500 flex-shrink-0 tabular-nums">
-          {line.lineNumber}
-        </div>
-        <div className={cn(
-          "w-6 flex items-center justify-center flex-shrink-0",
-          line.type === 'removed' && "text-red-500 dark:text-red-400",
-          line.type === 'added' && "text-zinc-500 dark:text-zinc-400",
-        )}>
-          {line.type === 'removed' && <span className="font-semibold">−</span>}
-          {line.type === 'added' && <span className="font-semibold">+</span>}
-        </div>
-        <div className="flex-1 py-1 pr-4 min-w-0">
-          <code className={cn(
-            "whitespace-pre-wrap break-words",
-            line.type === 'removed' && "text-red-800 dark:text-red-300",
-            line.type === 'added' && "text-zinc-700 dark:text-zinc-300",
-            line.type === 'unchanged' && "text-zinc-600 dark:text-zinc-400",
-          )}>
-            {line.type === 'removed' ? line.oldLine : line.type === 'added' ? line.newLine : line.oldLine}
-          </code>
-        </div>
-      </div>
-    ))}
-  </div>
-);
-
-const SplitDiffView: React.FC<{ lineDiff: LineDiff[] }> = ({ lineDiff }) => (
-  <div className="font-mono text-[13px] leading-relaxed grid grid-cols-2 divide-x divide-zinc-200 dark:divide-zinc-800">
-    {/* Left side - Removed */}
-    <div>
-      <div className="px-3 py-2 bg-red-50/50 dark:bg-red-950/20 border-b border-zinc-200 dark:border-zinc-800">
-        <span className="text-[11px] font-medium text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1.5">
-          <Minus className="h-3 w-3" />
-          Before
-        </span>
-      </div>
-      {lineDiff.map((line, i) => (
-        <div
-          key={i}
-          className={cn(
-            "flex border-l-2 transition-colors",
-            line.type === 'removed' && "bg-red-50/80 dark:bg-red-950/40 border-l-red-400",
-            line.type !== 'removed' && "border-l-transparent",
-            line.oldLine === null && "opacity-40"
-          )}
-        >
-          <div className="w-10 text-right select-none py-1 pr-2 text-[11px] text-zinc-400 dark:text-zinc-500 flex-shrink-0 tabular-nums">
-            {line.oldLine !== null ? line.lineNumber : ''}
-          </div>
-          <div className="flex-1 py-1 px-2 min-w-0">
-            <code className={cn(
-              "whitespace-pre-wrap break-words text-xs",
-              line.type === 'removed' ? "text-red-800 dark:text-red-300" : "text-zinc-500 dark:text-zinc-500",
-            )}>
-              {line.oldLine || ''}
-            </code>
-          </div>
-        </div>
-      ))}
-    </div>
-    {/* Right side - Added */}
-    <div>
-      <div className="px-3 py-2 bg-zinc-50/50 dark:bg-zinc-900/20 border-b border-zinc-200 dark:border-zinc-800">
-        <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400 uppercase tracking-wide flex items-center gap-1.5">
-          <Plus className="h-3 w-3" />
-          After
-        </span>
-      </div>
-      {lineDiff.map((line, i) => (
-        <div
-          key={i}
-          className={cn(
-            "flex border-l-2 transition-colors",
-            line.type === 'added' && "bg-zinc-50/80 dark:bg-zinc-900/40 border-l-zinc-400",
-            line.type !== 'added' && "border-l-transparent",
-            line.newLine === null && "opacity-40"
-          )}
-        >
-          <div className="w-10 text-right select-none py-1 pr-2 text-[11px] text-zinc-400 dark:text-zinc-500 flex-shrink-0 tabular-nums">
-            {line.newLine !== null ? line.lineNumber : ''}
-          </div>
-          <div className="flex-1 py-1 px-2 min-w-0">
-            <code className={cn(
-              "whitespace-pre-wrap break-words text-xs",
-              line.type === 'added' ? "text-zinc-700 dark:text-zinc-300" : "text-zinc-500 dark:text-zinc-500",
-            )}>
-              {line.newLine || ''}
-            </code>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-);
 
 function isPresentationSlideFile(filepath: string): boolean {
   const presentationPattern = /presentations\/([^\/]+)\/slide_\d+\.html$/i;
@@ -682,6 +578,13 @@ export function FileOperationToolView({
   const diffStats: DiffStats = React.useMemo(() => {
     return calculateDiffStats(lineDiff);
   }, [lineDiff]);
+
+  // Unified patch for Pierre's PatchDiff renderer
+  const diffPatch = React.useMemo(() => {
+    if (!oldStr || !newStr) return '';
+    const name = filePath || 'file';
+    return createTwoFilesPatch(name, name, oldStr, newStr, '', '');
+  }, [oldStr, newStr, filePath]);
 
   const toolTitle = getToolTitle(name || `file-${operation}`);
   const processedFilePath = processFilePath(filePath);
@@ -1257,13 +1160,11 @@ export function FileOperationToolView({
                     </div>
                   </div>
                   <ScrollArea className="flex-1 min-h-0">
-                    <div className="bg-white dark:bg-zinc-950">
-                      {diffViewMode === 'unified' ? (
-                        <UnifiedDiffView lineDiff={lineDiff} fileName={fileName} />
-                      ) : (
-                        <SplitDiffView lineDiff={lineDiff} />
-                      )}
-                    </div>
+                    <DiffView
+                      patch={diffPatch}
+                      layout={diffViewMode === 'split' ? 'split' : 'unified'}
+                      hideFileHeader
+                    />
                   </ScrollArea>
                   {isStreaming && oldStr && newStr && (
                     <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-950/30 border-t border-zinc-200 dark:border-zinc-700 flex items-center gap-2">

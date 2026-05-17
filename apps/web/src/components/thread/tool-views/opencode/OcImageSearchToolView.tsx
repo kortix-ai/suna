@@ -171,7 +171,7 @@ export function OcImageSearchToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle icon={ImageIcon} title="Image Search" subtitle={headerSubtitle} />
           {totalImages > 0 && (
@@ -199,27 +199,24 @@ export function OcImageSearchToolView({
                       type="button"
                       onClick={() => setCurrentQueryIndex(idx)}
                       className={`
-                        inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+                        inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11.5px] font-medium tracking-tight transition-colors
                         ${isActive
-                          ? 'bg-violet-500/10 text-violet-700 dark:text-violet-300 border border-violet-500/20'
-                          : 'bg-muted/40 text-muted-foreground hover:bg-muted/70 border border-transparent'
+                          ? 'bg-foreground/[0.06] text-foreground border border-border/50'
+                          : 'bg-transparent text-muted-foreground/80 hover:text-foreground hover:bg-foreground/[0.03] border border-transparent'
                         }
                       `}
                     >
-                      <Search className="size-3 flex-shrink-0" />
+                      <Search className="w-3 h-3 flex-shrink-0" />
                       <span className="truncate max-w-[180px]">{bi.query}</span>
                       {bi.images.length > 0 && (
-                        <span className={`
-                          text-[10px] px-1.5 py-0.5 rounded-full font-medium
-                          ${isActive ? 'bg-violet-500/15 text-violet-700 dark:text-violet-300' : 'bg-muted text-muted-foreground'}
-                        `}>
+                        <span className="text-[10px] text-muted-foreground/60">
                           {bi.images.length}
                         </span>
                       )}
                       {bi.success ? (
-                        <CheckCircle className="size-3 text-emerald-500/70" />
+                        <CheckCircle className="w-3 h-3 text-foreground/60" />
                       ) : (
-                        <AlertTriangle className="size-3 text-amber-500/70" />
+                        <AlertTriangle className="w-3 h-3 text-foreground/60" />
                       )}
                     </button>
                   );
@@ -230,14 +227,14 @@ export function OcImageSearchToolView({
             {/* Single batch header */}
             {isBatch && batchItems.length === 1 && currentBatch && (
               <div className="flex items-center gap-2 mb-3 px-1">
-                <ImageIcon className="size-3.5 text-violet-500 dark:text-violet-400 flex-shrink-0" />
+                <ImageIcon className="size-3.5 text-muted-foreground/80 flex-shrink-0" />
                 <span className="text-xs text-muted-foreground truncate">
                   &quot;{currentBatch.query}&quot;
                 </span>
                 {currentBatch.success ? (
-                  <CheckCircle className="size-3.5 text-emerald-500/70" />
+                  <CheckCircle className="size-3.5 text-foreground/60" />
                 ) : (
-                  <AlertTriangle className="size-3.5 text-amber-500/70" />
+                  <AlertTriangle className="size-3.5 text-foreground/60" />
                 )}
               </div>
             )}
@@ -245,7 +242,7 @@ export function OcImageSearchToolView({
             {/* Single query info (non-batch) */}
             {!isBatch && query && (
               <div className="flex items-center gap-2 mb-3 px-1">
-                <ImageIcon className="size-3.5 text-violet-500 dark:text-violet-400 flex-shrink-0" />
+                <ImageIcon className="size-3.5 text-muted-foreground/80 flex-shrink-0" />
                 <span className="text-xs text-muted-foreground truncate">
                   &quot;{query}&quot;
                 </span>
@@ -259,9 +256,9 @@ export function OcImageSearchToolView({
 
             {/* Error state */}
             {isError && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-                <AlertCircle className="size-3.5 text-red-500 flex-shrink-0" />
-                <span className="text-xs text-red-700 dark:text-red-400">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-red-500/30 bg-red-500/[0.04]">
+                <AlertCircle className="w-3.5 h-3.5 text-red-500/90 flex-shrink-0" />
+                <span className="text-[12px] text-foreground/85 tracking-tight">
                   {typeof rawOutput === 'string' ? rawOutput : 'Image search failed'}
                 </span>
               </div>

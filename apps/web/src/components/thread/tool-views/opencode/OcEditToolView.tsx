@@ -20,7 +20,7 @@ import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { useOcFileOpen } from './useOcFileOpen';
 import { createTwoFilesPatch } from 'diff';
-import { useDiffHighlight, renderHighlightedLine } from '@/hooks/use-diff-highlight';
+import { DiffView } from '@/components/diff/diff-view';
 
 function getFilename(path: string | undefined): string {
   if (!path) return '';
@@ -33,247 +33,6 @@ function getDirectory(path: string | undefined): string {
   const idx = path.lastIndexOf('/');
   if (idx < 0) return '';
   return path.substring(0, idx);
-}
-
-// ============================================================================
-// Unified diff line renderer
-// ============================================================================
-
-function DiffLinesView({ patch, filename }: { patch: string; filename: string }) {
-  const diffLines = useMemo(() => patch.split('\n').slice(4), [patch]);
-
-  // Extract code content (without +/-/space prefix) for highlighting
-  const codeLines = useMemo(
-    () =>
-      diffLines.map((line) => {
-        if (line.startsWith('@@') || line === '') return '';
-        return line.length > 0 ? line.substring(1) : '';
-      }),
-    [diffLines],
-  );
-
-  const highlighted = useDiffHighlight(codeLines, filename);
-
-  return (
-    <pre className="p-3 font-mono text-[11px] leading-[1.6] select-text whitespace-pre-wrap break-all">
-      {diffLines.map((line, i) => {
-        const isAdd = line.startsWith('+');
-        const isDel = line.startsWith('-');
-        const isHunk = line.startsWith('@@');
-
-        let cls = 'text-muted-foreground/60';
-        if (isAdd) cls = 'bg-emerald-500/8';
-        else if (isDel) cls = 'bg-red-500/8';
-        else if (isHunk) cls = 'text-blue-500/60 text-[10px]';
-
-        if (isHunk || line === '') {
-          return (
-            <div key={i} className={cls}>
-              {line || ' '}
-            </div>
-          );
-        }
-
-        const prefix = line[0] || ' ';
-        const highlightedTokens = highlighted?.[i];
-
-        if (highlightedTokens) {
-          const html = renderHighlightedLine(highlightedTokens, codeLines[i]);
-          return (
-            <div key={i} className={cls}>
-              <span
-                className={cn(
-                  isAdd && 'text-emerald-600 dark:text-emerald-400',
-                  isDel && 'text-red-600 dark:text-red-400',
-                )}
-              >
-                {prefix}
-              </span>
-              <span dangerouslySetInnerHTML={{ __html: html }} />
-            </div>
-          );
-        }
-
-        return (
-          <div
-            key={i}
-            className={cn(
-              cls,
-              isAdd && 'text-emerald-600 dark:text-emerald-400',
-              isDel && 'text-red-600 dark:text-red-400',
-            )}
-          >
-            {line || ' '}
-          </div>
-        );
-      })}
-    </pre>
-  );
-}
-
-// ============================================================================
-// Side-by-side diff renderer
-// ============================================================================
-
-interface SideBySideLine {
-  left: { num: number | null; content: string; type: 'unchanged' | 'deleted' | 'empty' };
-  right: { num: number | null; content: string; type: 'unchanged' | 'added' | 'empty' };
-}
-
-function parsePatchToSideBySide(patch: string): SideBySideLine[] {
-  const lines = patch.split('\n').slice(4); // skip header
-  const result: SideBySideLine[] = [];
-  let leftNum = 0;
-  let rightNum = 0;
-
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (line.startsWith('@@')) {
-      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      if (match) {
-        leftNum = parseInt(match[1], 10) - 1;
-        rightNum = parseInt(match[2], 10) - 1;
-      }
-      result.push({
-        left: { num: null, content: line, type: 'unchanged' },
-        right: { num: null, content: '', type: 'empty' },
-      });
-      i++;
-      continue;
-    }
-
-    if (line.startsWith('-')) {
-      const deletions: string[] = [];
-      while (i < lines.length && lines[i].startsWith('-')) {
-        deletions.push(lines[i].substring(1));
-        i++;
-      }
-      const additions: string[] = [];
-      while (i < lines.length && lines[i].startsWith('+')) {
-        additions.push(lines[i].substring(1));
-        i++;
-      }
-      const maxLen = Math.max(deletions.length, additions.length);
-      for (let j = 0; j < maxLen; j++) {
-        const hasLeft = j < deletions.length;
-        const hasRight = j < additions.length;
-        result.push({
-          left: {
-            num: hasLeft ? ++leftNum : null,
-            content: hasLeft ? deletions[j] : '',
-            type: hasLeft ? 'deleted' : 'empty',
-          },
-          right: {
-            num: hasRight ? ++rightNum : null,
-            content: hasRight ? additions[j] : '',
-            type: hasRight ? 'added' : 'empty',
-          },
-        });
-      }
-      continue;
-    }
-
-    if (line.startsWith('+')) {
-      rightNum++;
-      result.push({
-        left: { num: null, content: '', type: 'empty' },
-        right: { num: rightNum, content: line.substring(1), type: 'added' },
-      });
-      i++;
-      continue;
-    }
-
-    // Context line
-    leftNum++;
-    rightNum++;
-    result.push({
-      left: { num: leftNum, content: line.startsWith(' ') ? line.substring(1) : line, type: 'unchanged' },
-      right: { num: rightNum, content: line.startsWith(' ') ? line.substring(1) : line, type: 'unchanged' },
-    });
-    i++;
-  }
-
-  return result;
-}
-
-function SideBySideDiffView({ patch, filename }: { patch: string; filename: string }) {
-  const rows = useMemo(() => parsePatchToSideBySide(patch), [patch]);
-
-  const { leftLines, rightLines } = useMemo(() => {
-    const left: string[] = [];
-    const right: string[] = [];
-    for (const row of rows) {
-      left.push(row.left.content || '');
-      right.push(row.right.content || '');
-    }
-    return { leftLines: left, rightLines: right };
-  }, [rows]);
-
-  const leftHighlighted = useDiffHighlight(leftLines, filename);
-  const rightHighlighted = useDiffHighlight(rightLines, filename);
-
-  return (
-    <div className="select-text overflow-hidden">
-      <table className="w-full font-mono text-[11px] leading-[1.6] border-collapse table-fixed">
-        <tbody>
-          {rows.map((row, i) => {
-            const leftTokens = leftHighlighted?.[i];
-            const rightTokens = rightHighlighted?.[i];
-            const isLeftHunk = row.left.content.startsWith('@@');
-
-            return (
-              <tr key={i}>
-                {/* Left side (old) */}
-                <td className="w-8 min-w-8 text-right pr-2 select-none text-muted-foreground/30 align-top border-r border-border/20">
-                  {row.left.num ?? ''}
-                </td>
-                <td
-                  className={cn(
-                    'px-2 whitespace-pre-wrap break-all border-r border-border/30 w-[calc(50%-2rem)]',
-                    row.left.type === 'deleted' && 'bg-red-500/10',
-                    row.left.type === 'empty' && 'bg-muted/5',
-                    row.left.type === 'unchanged' && 'text-muted-foreground/60',
-                  )}
-                >
-                  {isLeftHunk ? (
-                    <span className="text-blue-500/60 text-[10px]">{row.left.content}</span>
-                  ) : leftTokens && row.left.content ? (
-                    <span dangerouslySetInnerHTML={{ __html: renderHighlightedLine(leftTokens, row.left.content) }} />
-                  ) : (
-                    <span className={cn(row.left.type === 'deleted' && 'text-red-600 dark:text-red-400')}>
-                      {row.left.content || ' '}
-                    </span>
-                  )}
-                </td>
-                {/* Right side (new) */}
-                <td className="w-8 min-w-8 text-right pr-2 select-none text-muted-foreground/30 align-top border-r border-border/20">
-                  {row.right.num ?? ''}
-                </td>
-                <td
-                  className={cn(
-                    'px-2 whitespace-pre-wrap break-all w-[calc(50%-2rem)]',
-                    row.right.type === 'added' && 'bg-emerald-500/10',
-                    row.right.type === 'empty' && 'bg-muted/5',
-                    row.right.type === 'unchanged' && 'text-muted-foreground/60',
-                  )}
-                >
-                  {rightTokens && row.right.content ? (
-                    <span dangerouslySetInnerHTML={{ __html: renderHighlightedLine(rightTokens, row.right.content) }} />
-                  ) : (
-                    <span className={cn(row.right.type === 'added' && 'text-emerald-600 dark:text-emerald-400')}>
-                      {row.right.content || ' '}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
 }
 
 // ============================================================================
@@ -340,7 +99,7 @@ export function OcEditToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={FileCode2}
@@ -401,13 +160,11 @@ export function OcEditToolView({
       <CardContent className="p-0 h-full flex-1 overflow-hidden">
         <ScrollArea className="h-full w-full">
           {hasDiff ? (
-            <div className="bg-muted/30">
-              {viewMode === 'split' ? (
-                <SideBySideDiffView patch={patch} filename={displayPath || 'file'} />
-              ) : (
-                <DiffLinesView patch={patch} filename={displayPath || 'file'} />
-              )}
-            </div>
+            <DiffView
+              patch={patch}
+              layout={viewMode === 'split' ? 'split' : 'unified'}
+              hideFileHeader
+            />
           ) : (
             <div className="p-3">
               <div className="text-sm text-muted-foreground">

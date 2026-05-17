@@ -194,8 +194,16 @@ async function resolvePreviewLink(
     .limit(1);
 
   if (row?.provider === 'local_docker' && row.baseUrl) {
-    setCachedPreviewLink(sandboxId, port, row.baseUrl, null);
-    return { url: row.baseUrl, token: null };
+    // local_docker exposes ONE port: the sandbox-agent-server's service port,
+    // captured as `baseUrl`. To reach any other port inside the container we
+    // route through the agent server's `/proxy/{port}/*` handler (see
+    // apps/kortix-sandbox-agent-server/src/routes/port-proxy.ts). proxyToDaytona
+    // appends `remainingPath` verbatim, so the upstream URL we return must
+    // already include the `/proxy/{port}` prefix.
+    const base = row.baseUrl.replace(/\/$/, '');
+    const upstreamUrl = `${base}/proxy/${port}`;
+    setCachedPreviewLink(sandboxId, port, upstreamUrl, null);
+    return { url: upstreamUrl, token: null };
   }
 
   const daytona = getDaytona();

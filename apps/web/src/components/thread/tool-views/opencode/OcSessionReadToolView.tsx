@@ -82,7 +82,7 @@ export function OcSessionReadToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={ModeIcon}

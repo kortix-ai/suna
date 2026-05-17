@@ -140,7 +140,7 @@ export function OcPresentationGenToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={ActionIcon}
@@ -175,8 +175,8 @@ export function OcPresentationGenToolView({
             {/* Success: Create Slide */}
             {parsed?.success && action === 'create_slide' && (
               <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/50">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 font-semibold text-lg flex-shrink-0">
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02]">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] text-foreground/80 border border-border/50 font-semibold text-lg flex-shrink-0">
                     {parsed.slide_number || '?'}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -192,7 +192,7 @@ export function OcPresentationGenToolView({
                       )}
                     </p>
                   </div>
-                  <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                  <CheckCircle className="w-4 h-4 text-foreground/70 flex-shrink-0" />
                 </div>
 
                 {parsed.slide_file && (
@@ -211,10 +211,10 @@ export function OcPresentationGenToolView({
                     href={viewerUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors"
+                    className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02] hover:bg-muted transition-colors"
                   >
-                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex-shrink-0">
-                      <Eye className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] border border-border/50 flex-shrink-0">
+                      <Eye className="w-5 h-5 text-foreground/80" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">Open Presentation Viewer</p>
@@ -233,9 +233,9 @@ export function OcPresentationGenToolView({
 
             {/* Success: Export */}
             {parsed?.success && (action === 'export_pdf' || action === 'export_pptx') && (
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/50">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex-shrink-0">
-                  <Download className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02]">
+                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] border border-border/50 flex-shrink-0">
+                  <Download className="w-5 h-5 text-foreground/80" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">
@@ -245,15 +245,15 @@ export function OcPresentationGenToolView({
                     {parsed.presentation_name || presentationName}
                   </p>
                 </div>
-                <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                <CheckCircle className="w-4 h-4 text-foreground/70 flex-shrink-0" />
               </div>
             )}
 
             {/* Success: Validate Slide */}
             {parsed?.success && action === 'validate_slide' && (
               <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/50">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 font-semibold text-lg flex-shrink-0">
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02]">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] border border-border/50 text-foreground/80 font-semibold text-lg flex-shrink-0">
                     {parsed.slide_number || slideNumber || '?'}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -271,15 +271,15 @@ export function OcPresentationGenToolView({
                       </p>
                     )}
                   </div>
-                  <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                  <CheckCircle className="w-4 h-4 text-foreground/70 flex-shrink-0" />
                 </div>
               </div>
             )}
 
             {/* Success: Generic (list, delete, etc.) */}
             {parsed?.success && !['create_slide', 'validate_slide', 'preview', 'serve', 'export_pdf', 'export_pptx'].includes(action) && (
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/50">
-                <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02]">
+                <CheckCircle className="w-4 h-4 text-foreground/70 flex-shrink-0" />
                 <p className="text-sm text-foreground">
                   {parsed.message || `${actionLabel} completed`}
                 </p>
@@ -309,7 +309,7 @@ export function OcPresentationGenToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className="h-3 w-3 text-foreground/70" />
               {actionLabel}
             </Badge>
           )

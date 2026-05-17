@@ -40,7 +40,7 @@ export function OcConnectorListToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Plug}
@@ -70,7 +70,6 @@ export function OcConnectorListToolView({
                       variant="outline" 
                       className={cn(
                         "h-4 py-0 text-[0.5625rem] font-normal capitalize",
-                        conn.source === 'pipedream' && 'border-indigo-500/50 text-indigo-600 dark:text-indigo-400',
                         conn.source === 'api-key' && 'border-amber-500/50 text-amber-600 dark:text-amber-400',
                         conn.source === 'cli' && 'border-gray-500/50 text-gray-600 dark:text-gray-400',
                         conn.source === 'channel' && 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400',

@@ -317,21 +317,18 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
     return addressValue || (port ? `localhost:${port}` : rawPreviewUrl);
   }, [isAddressEditing, addressValue, port, rawPreviewUrl, isExternalBrowsing, originalUrl]);
 
-  if (!tab) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-        <Globe className="h-12 w-12 mb-4 opacity-30" />
-        <p className="text-sm">No preview URL available</p>
-      </div>
-    );
-  }
+  // No "no preview URL available" empty state — when the tab doesn't exist
+  // yet, the landing/no-previewUrl branch below renders the full browser
+  // chrome (address bar + helper copy) so the user can navigate immediately.
+  // Submitting from the address bar calls `updateTabMetadata` which creates
+  // the tab on the fly.
 
   // Show a landing page when there's no URL yet (browser tab opened fresh)
   if (!previewUrl) {
     return (
       <div className="flex flex-col h-full bg-background">
         {/* Toolbar */}
-        <div className="flex items-center gap-1.5 h-10 px-2 border-b bg-muted/30 shrink-0">
+        <div className="flex items-center gap-1 h-10 px-2 border-b border-border/40 bg-background shrink-0">
           <Button variant="ghost" size="icon" className="h-7 w-7" disabled>
             <ArrowLeft className="h-3.5 w-3.5" />
           </Button>
@@ -344,7 +341,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
 
           {/* Address bar */}
           <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
-            <div className="w-full flex items-center h-7 px-3 bg-background border rounded-md text-xs font-mono">
+            <div className="w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-md text-[12px] tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors">
               <Globe className="h-3 w-3 mr-2 shrink-0 opacity-50" />
               <input
                 ref={addressInputRef}
@@ -385,7 +382,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Toolbar */}
-      <div className="flex items-center gap-1.5 h-10 px-2 border-b bg-muted/30 shrink-0">
+      <div className="flex items-center gap-1 h-10 px-2 border-b border-border/40 bg-background shrink-0">
         {/* Back */}
         <Button
           variant="ghost"
@@ -455,7 +452,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
               className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground truncate"
             />
             {port > 0 && !isAddressEditing && !isExternalBrowsing && (
-              <span className="ml-2 shrink-0 px-1.5 py-0.5 bg-muted rounded text-[10px] font-medium">
+              <span className="ml-2 shrink-0 text-[11px] text-muted-foreground/70">
                 :{port}
               </span>
             )}

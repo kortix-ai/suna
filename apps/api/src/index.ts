@@ -27,7 +27,6 @@ import { canAccessPreviewSandbox } from './shared/preview-ownership';
 import { setupApp } from './setup';
 import { providersApp } from './providers/routes';
 import { secretsApp } from './secrets/routes';
-import { integrationsApp } from './integrations';
 import { queueApp, startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
 // WoA is now mounted under the router at /v1/router/woa (see router/index.ts)
@@ -37,11 +36,10 @@ import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
+import { cloudGatewayApp } from './cloud-gateway/routes';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { oauthApp } from './oauth';
 import {
-  projectChannelsApp,
-  projectConnectorOAuthApp,
   projectWebhooksApp,
   projectsApp,
   startProjectTriggerScheduler,
@@ -278,19 +276,13 @@ app.route('/v1/account', accountDeletionApp); // account deletion status/request
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
-app.route('/v1/channels', projectChannelsApp); // /v1/channels/:platform/:channelId/events — signed channel events
-app.route('/v1/connectors/oauth', projectConnectorOAuthApp); // /v1/connectors/oauth/callback|relay — direct provider OAuth
 if (config.KORTIX_DEPLOYMENTS_ENABLED) {
   const { deploymentsApp } = await import('./deployments');
   app.route('/v1/deployments', deploymentsApp); // /v1/deployments/*
 }
-app.route('/v1/pipedream', integrationsApp);
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
-
-// [channels v2] Old sandbox-owned webhook forwarding was removed.
-// Channels are cloud-owned project installs and fire sessions through /v1/channels.
 
 // Setup — local/self-hosted only. Disabled in cloud mode (not needed, exposes admin surface).
 if (config.isLocal()) {
@@ -307,6 +299,11 @@ app.route('/v1/providers', providersApp);   // /v1/providers, /v1/providers/sche
 
 app.use('/v1/secrets/*', combinedAuth);
 app.route('/v1/secrets', secretsApp);       // /v1/secrets, /v1/secrets/:key (PUT/DELETE)
+
+app.use('/v1/executor/*', combinedAuth);
+app.route('/v1/executor', cloudGatewayApp); // /v1/executor/vault-items, connector-sources, policies, approvals
+app.use('/v1/cloud-gateway/*', combinedAuth);
+app.route('/v1/cloud-gateway', cloudGatewayApp); // Back-compat alias while the Executor UI/runtime lands.
 
 app.use('/v1/servers/*', combinedAuth);
 app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
@@ -443,7 +440,8 @@ console.log(`
 ║    /v1/router     (search, LLM, proxy)                    ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (sandbox lifecycle)                      ║
-${config.KORTIX_DEPLOYMENTS_ENABLED ? '║    /v1/deployments (deploy lifecycle)                      ║\n' : ''}║    /v1/pipedream   (Pipedream OAuth integrations)           ║
+${config.KORTIX_DEPLOYMENTS_ENABLED ? '║    /v1/deployments (deploy lifecycle)                      ║\n' : ''}║    /v1/projects   (Git-backed projects)                    ║
+${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
 ║    /v1/setup      (setup & env management)                 ║
 ║    /v1/queue      (persistent message queue)               ║
 ║    /v1/tunnel     (reverse-tunnel to local machines)         ║
@@ -506,8 +504,10 @@ async function shutdown(signal: string) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-// Provider subdomain routing and path-based WebSocket proxying were removed.
-// The tunnel-agent WS upgrade is still handled here at the Bun server level.
+// Subdomain preview routing — `p{port}-{sandboxId}.localhost:{apiPort}/...`
+// Handled at the Bun.serve level so the proxied app sees itself at root `/`
+// (Hono can't match on the Host header). See `sandbox-proxy/subdomain.ts`.
+import { handleSubdomainRequest, parsePreviewSubdomain } from './sandbox-proxy/subdomain';
 
 export default {
   port: config.PORT,
@@ -521,6 +521,25 @@ export default {
     // socket early with an empty reply.
     if (url.pathname.includes('/v1/p/')) {
       server.timeout(req, 0);
+    }
+
+    // ── Subdomain preview routing ──────────────────────────────────────
+    // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
+    // Same per-request long-poll/SSE timeout posture as /v1/p/.
+    const host = req.headers.get('host') || '';
+    if (parsePreviewSubdomain(host)) {
+      server.timeout(req, 0);
+      // WS-on-subdomain isn't wired yet (agent server's port-proxy is
+      // HTTP-only). Reject the upgrade cleanly so the client falls back
+      // gracefully instead of timing out.
+      if (isWsUpgrade) {
+        return new Response(
+          JSON.stringify({ error: 'WebSocket upgrade on preview subdomain not implemented' }),
+          { status: 501, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      const res = await handleSubdomainRequest(req, url);
+      if (res) return res;
     }
 
     // ── Tunnel Agent WebSocket ──────────────────────────────────────────

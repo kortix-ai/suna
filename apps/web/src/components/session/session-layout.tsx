@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
 import { KortixComputer } from '@/components/thread/kortix-computer';
+import { PreviewTabContent } from '@/components/tabs/preview-tab-content';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import {
@@ -10,6 +11,11 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from '@/components/ui/resizable';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
@@ -19,6 +25,10 @@ import {
 } from '@/hooks/opencode/use-opencode-sessions';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useTabStore } from '@/stores/tab-store';
+import {
+  sessionPreviewTabId,
+  useSessionBrowserStore,
+} from '@/stores/session-browser-store';
 import {
   adaptMessagesToToolCalls,
   adaptAgentStatus,
@@ -78,6 +88,12 @@ export const SessionLayout = memo(function SessionLayout({
 
   const hasToolCalls = toolCalls.length > 0;
 
+  // Right-side panel view — actions (tool calls) or internal browser.
+  // Per-session, so each session remembers which view the user prefers.
+  const panelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
+  const setPanelView = useSessionBrowserStore((s) => s.setView);
+  const showBrowser = panelView === 'browser';
+
   useEffect(() => {
     if (shouldOpenPanel && !isSidePanelOpen) {
       setIsSidePanelOpen(true);
@@ -104,8 +120,12 @@ export const SessionLayout = memo(function SessionLayout({
   const panelGroupRef = useRef<HTMLDivElement>(null);
   const prevExpandedRef = useRef(isExpanded);
 
-  // Side panel shows for tool calls only now (terminal/desktop moved to right sidebar)
-  const shouldShowPanel = isSidePanelOpen && hasToolCalls;
+  // Side panel is visible when the user has explicitly opened it AND there's
+  // something to show. The "something to show" rule used to be just "we have
+  // tool calls"; with the browser view it also includes "browser is the
+  // active view" — so the user can pop the panel open just to use the
+  // internal browser even before the agent has run any tools.
+  const shouldShowPanel = isSidePanelOpen && (hasToolCalls || showBrowser);
 
   // Track whether we're mid-animation so we can use relaxed constraints
   // that allow intermediate sizes (e.g. 75%) during the transition.
@@ -227,11 +247,11 @@ export const SessionLayout = memo(function SessionLayout({
 
   // Desktop: resizable split panel
   return (
-    <div className="flex flex-col h-full overflow-hidden" data-testid="session-layout">
-      <div ref={panelGroupRef} className="flex-1 min-h-0 flex overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden bg-background" data-testid="session-layout">
+      <div ref={panelGroupRef} className="flex-1 min-h-0 flex overflow-hidden bg-background">
         <ResizablePanelGroup
           direction="horizontal"
-          className="h-full"
+          className="h-full bg-background"
           style={{ transition: 'none' }}
         >
           {/* Main content panel (SessionChat) */}
@@ -262,7 +282,10 @@ export const SessionLayout = memo(function SessionLayout({
             )}
           />
 
-          {/* Side panel (KortixComputer — Actions only) */}
+          {/* Side panel — dual purpose:
+                • view='actions' → KortixComputer (tool calls timeline)
+                • view='browser' → internal browser (PreviewTabContent)
+              The user toggles between them via the header switcher. */}
           <ResizablePanel
             ref={sidePanelRef}
             defaultSize={shouldShowPanel ? 50 : 0}
@@ -270,42 +293,54 @@ export const SessionLayout = memo(function SessionLayout({
             maxSize={shouldShowPanel ? (isAnimating ? 100 : isExpanded ? 100 : 70) : 0}
             collapsible={!isExpanded || isAnimating}
             className={cn(
-              'relative overflow-hidden',
+              'relative overflow-hidden bg-background',
               !shouldShowPanel && 'hidden',
             )}
           >
             <div className={cn(
-              "h-full transition-[padding] duration-300 ease-out",
+              "h-full transition-[padding] duration-300 ease-out bg-background",
               isExpanded ? "p-0" : "pt-3 pb-6 pr-3 sm:pr-4 pl-1.5"
             )}>
-              <KortixComputer
-                isOpen={isSidePanelOpen && hasToolCalls}
-                onClose={handleSidePanelClose}
-                toolCalls={toolCalls}
-                messages={[]}
-                agentStatus={agentStatus}
-                currentIndex={currentToolIndex}
-                onNavigate={handleSidePanelNavigate}
-                externalNavigateToIndex={externalNavIndex}
-                renderAssistantMessage={renderAssistantMessage}
-                renderToolResult={renderToolResult}
-                isLoading={false}
-                agentName={agentName}
-                disableInitialAnimation={true}
-                sidePanelRef={sidePanelRef}
-                hideTopBar={true}
-                headerSlot={
-                  <div className="flex-shrink-0 flex items-center justify-between pl-4 pr-1.5 pt-1.5">
-                    <span className="text-xs font-medium text-muted-foreground tracking-wide uppercase select-none">Actions</span>
-                    <button
-                      onClick={handleSidePanelClose}
-                      className="inline-flex items-center justify-center h-8 w-8 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                }
-              />
+              {/* The header switcher is rendered once and shared across views;
+                  the body swaps between KortixComputer and the browser iframe. */}
+              {showBrowser ? (
+                <SidePanelFrame
+                  header={
+                    <PanelHeaderSwitcher
+                      view={panelView}
+                      onChangeView={(v) => setPanelView(sessionId, v)}
+                      onClose={handleSidePanelClose}
+                    />
+                  }
+                >
+                  <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
+                </SidePanelFrame>
+              ) : (
+                <KortixComputer
+                  isOpen={isSidePanelOpen && hasToolCalls}
+                  onClose={handleSidePanelClose}
+                  toolCalls={toolCalls}
+                  messages={[]}
+                  agentStatus={agentStatus}
+                  currentIndex={currentToolIndex}
+                  onNavigate={handleSidePanelNavigate}
+                  externalNavigateToIndex={externalNavIndex}
+                  renderAssistantMessage={renderAssistantMessage}
+                  renderToolResult={renderToolResult}
+                  isLoading={false}
+                  agentName={agentName}
+                  disableInitialAnimation={true}
+                  sidePanelRef={sidePanelRef}
+                  hideTopBar={true}
+                  headerSlot={
+                    <PanelHeaderSwitcher
+                      view={panelView}
+                      onChangeView={(v) => setPanelView(sessionId, v)}
+                      onClose={handleSidePanelClose}
+                    />
+                  }
+                />
+              )}
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -313,3 +348,97 @@ export const SessionLayout = memo(function SessionLayout({
     </div>
   );
 });
+
+// ============================================================================
+// Side-panel header switcher
+// ============================================================================
+//
+// Sits where the old "Actions" label + close button used to be. Adds a
+// two-icon toggle: Actions | Browser. Clicking flips `panelView` in the
+// session-browser store, which the parent uses to swap the body content.
+function PanelHeaderSwitcher({
+  view,
+  onChangeView,
+  onClose,
+}: {
+  view: 'actions' | 'browser';
+  onChangeView: (next: 'actions' | 'browser') => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex-shrink-0 flex items-center justify-between h-10 pl-4 pr-2 border-b border-border/40">
+      {/* Plain text tabs with an underline on active — no chip, no fill. */}
+      <div role="tablist" aria-label="Side panel view" className="flex items-center gap-5">
+        <PanelTabButton
+          active={view === 'actions'}
+          onClick={() => onChangeView('actions')}
+          label="Actions"
+        />
+        <PanelTabButton
+          active={view === 'browser'}
+          onClick={() => onChangeView('browser')}
+          label="Browser"
+        />
+      </div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={onClose}
+            className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer"
+            aria-label="Close panel"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">Close panel</TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
+function PanelTabButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        'relative inline-flex items-center h-10 text-[12px] tracking-tight transition-colors cursor-pointer',
+        active
+          ? 'text-foreground font-medium'
+          : 'text-muted-foreground/70 hover:text-foreground/90',
+      )}
+    >
+      {label}
+      {active && (
+        <span aria-hidden className="absolute -bottom-px left-0 right-0 h-px bg-foreground" />
+      )}
+    </button>
+  );
+}
+
+// Lightweight frame for the browser view so it has the same outer shape
+// (header + bordered card) that KortixComputer renders for the actions view.
+function SidePanelFrame({
+  header,
+  children,
+}: {
+  header: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="h-full w-full flex flex-col bg-card overflow-hidden min-w-0 min-h-0 border rounded-[24px]">
+      {header}
+      <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
+    </div>
+  );
+}

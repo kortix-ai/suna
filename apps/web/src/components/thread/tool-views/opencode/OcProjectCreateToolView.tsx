@@ -75,7 +75,7 @@ export function OcProjectCreateToolView({
   if (!data || isError) {
     return (
       <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-        <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+        <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
           <div className="flex flex-row items-center justify-between">
             <ToolViewIconTitle
               icon={Folder}
@@ -106,7 +106,7 @@ export function OcProjectCreateToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Plus}
@@ -124,13 +124,11 @@ export function OcProjectCreateToolView({
       <CardContent className="p-0 h-full flex-1 overflow-hidden">
         <div className="p-4 space-y-4">
           {/* Success indicator */}
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-muted">
-              <CheckCircle className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-foreground">{data.name}</p>
-              <p className="text-xs text-muted-foreground">Global workspace is ready</p>
+          <div className="flex items-center gap-2.5">
+            <CheckCircle className="w-3.5 h-3.5 text-foreground/70 flex-shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[12.5px] font-medium text-foreground tracking-tight truncate">{data.name}</p>
+              <p className="text-[11.5px] text-muted-foreground/70">Global workspace is ready</p>
             </div>
           </div>
 

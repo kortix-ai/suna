@@ -48,56 +48,50 @@ export function KortixComputerHeader({
   actions,
 }: KortixComputerHeaderProps) {
   return (
-    <div className="h-12 sm:h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-1.5 sm:p-2 px-3 sm:px-4 flex items-center justify-between flex-shrink-0 max-w-full min-w-0">
-      {/* Left section: Icon + Title/Breadcrumbs/FileName */}
-      <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto min-w-0 scrollbar-hide max-w-full">
-        {/* Icon Button - compact on mobile */}
+    <div className="h-10 bg-background border-b border-border/50 px-3 flex items-center justify-between flex-shrink-0 max-w-full min-w-0">
+      {/* Left: Icon + Title/Breadcrumbs/FileName */}
+      <div className="flex items-center gap-2 overflow-x-auto min-w-0 scrollbar-hide max-w-full">
         {onIconClick ? (
           <button
             onClick={onIconClick}
-            className="relative p-1.5 sm:p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-300/60 dark:hover:bg-zinc-800 active:bg-zinc-300 transition-colors touch-manipulation"
+            className="flex-shrink-0 p-1 rounded-md text-muted-foreground/80 hover:text-foreground hover:bg-foreground/[0.04] transition-colors cursor-pointer touch-manipulation"
             title={iconTitle}
           >
-            <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-zinc-600 dark:text-zinc-400" />
+            <Icon className="w-3.5 h-3.5" />
           </button>
         ) : (
-          <div className="relative p-1.5 sm:p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
-            <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-zinc-600 dark:text-zinc-400" />
-          </div>
+          <Icon className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
         )}
 
-        {/* Simple Title */}
         {title && (
-          <span className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100">
+          <span className="text-[12.5px] font-medium text-foreground tracking-tight">
             {title}
           </span>
         )}
 
-        {/* File Name with Chevron (for file viewer) */}
         {fileName && (
           <>
-            <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-            <span className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100 truncate max-w-[140px] sm:max-w-[200px]">
+            <ChevronRight className="h-3 w-3 text-muted-foreground/40 flex-shrink-0" />
+            <span className="text-[12.5px] font-medium text-foreground tracking-tight truncate max-w-[140px] sm:max-w-[200px]">
               {fileName}
             </span>
           </>
         )}
 
-        {/* Breadcrumbs */}
         {breadcrumbs && breadcrumbs.length > 0 && (
-          <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+          <div className="flex items-center gap-1 min-w-0">
             {breadcrumbs.map((segment, index) => (
               <Fragment key={segment.path}>
                 {index > 0 && (
-                  <span className="text-zinc-400 dark:text-zinc-600">/</span>
+                  <span className="text-muted-foreground/40">/</span>
                 )}
                 <button
                   onClick={() => onBreadcrumbClick?.(segment.path)}
                   className={cn(
-                    "text-sm sm:text-base transition-colors truncate max-w-[100px] sm:max-w-[150px] touch-manipulation",
-                    segment.isLast 
-                      ? "text-zinc-900 dark:text-zinc-100 font-medium" 
-                      : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                    "text-[12.5px] tracking-tight transition-colors truncate max-w-[100px] sm:max-w-[150px] touch-manipulation cursor-pointer",
+                    segment.isLast
+                      ? "text-foreground font-medium"
+                      : "text-muted-foreground/70 hover:text-foreground"
                   )}
                 >
                   {segment.name}
@@ -108,8 +102,8 @@ export function KortixComputerHeader({
         )}
       </div>
 
-      {/* Right section: Actions */}
-      <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0 ml-1.5 sm:ml-2">
+      {/* Right: Actions */}
+      <div className="flex items-center gap-1 flex-shrink-0 ml-2">
         {actions}
       </div>
     </div>

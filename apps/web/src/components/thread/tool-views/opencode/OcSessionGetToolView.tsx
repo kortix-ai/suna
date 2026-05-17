@@ -188,7 +188,7 @@ export function OcSessionGetToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={BookOpen}
@@ -197,16 +197,16 @@ export function OcSessionGetToolView({
           />
           <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
             {data?.compression && (
-              <Badge variant="outline" className="h-5 py-0 text-[10px] bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300">
-                <Minimize2 className="h-3 w-3 mr-0.5" />
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 tracking-tight">
+                <Minimize2 className="w-3 h-3" />
                 Compressed
-              </Badge>
+              </span>
             )}
             {data?.hasConversation && (
-              <Badge variant="outline" className="h-5 py-0 text-[10px]">
-                <MessageSquare className="h-3 w-3 mr-0.5" />
+              <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 tracking-tight">
+                <MessageSquare className="w-3 h-3" />
                 {data.messageCount} msgs
-              </Badge>
+              </span>
             )}
           </div>
         </div>
@@ -236,16 +236,16 @@ export function OcSessionGetToolView({
                     {data.todos.map((todo, i) => (
                       <div key={i} className="flex items-start gap-2 text-xs">
                         <div className={cn(
-                          'w-3.5 h-3.5 rounded border flex-shrink-0 mt-[1px] flex items-center justify-center',
-                          todo.status === 'completed' && 'bg-emerald-100 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-600',
-                          todo.status === 'in_progress' && 'border-blue-400 dark:border-blue-500',
+                          'w-3.5 h-3.5 rounded-sm border flex-shrink-0 mt-[1px] flex items-center justify-center',
+                          todo.status === 'completed' && 'bg-foreground/[0.06] border-foreground/40',
+                          todo.status === 'in_progress' && 'border-foreground/60',
                           todo.status === 'pending' && 'border-border',
                         )}>
                           {todo.status === 'completed' && (
-                            <CheckCircle className="size-2.5 text-emerald-600 dark:text-emerald-400" />
+                            <CheckCircle className="w-2.5 h-2.5 text-foreground/80" />
                           )}
                           {todo.status === 'in_progress' && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-foreground animate-pulse" />
                           )}
                         </div>
                         <span className={cn(

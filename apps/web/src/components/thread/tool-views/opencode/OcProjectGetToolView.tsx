@@ -113,7 +113,7 @@ export function OcProjectGetToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Folder}
@@ -156,19 +156,22 @@ export function OcProjectGetToolView({
                   </div>
                   <div className="p-3 flex flex-wrap gap-2">
                     {data.sessions.map((s) => (
-                      <Badge
+                      <span
                         key={s.status}
-                        variant="outline"
-                        className={cn(
-                          'h-6 py-0',
-                          s.status === 'running' && 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/50 text-blue-700 dark:text-blue-300',
-                          s.status === 'completed' && 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300',
-                          s.status === 'failed' && 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-300',
-                          s.status === 'pending' && 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800/50 text-yellow-700 dark:text-yellow-300',
-                        )}
+                        className="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-foreground/[0.04] text-[11px] text-foreground/85 tracking-tight"
                       >
-                        {s.status}: {s.count}
-                      </Badge>
+                        <span
+                          aria-hidden
+                          className={cn(
+                            'w-1.5 h-1.5 rounded-full',
+                            s.status === 'running' && 'bg-foreground animate-pulse',
+                            s.status === 'completed' && 'bg-foreground',
+                            s.status === 'failed' && 'bg-red-500/80',
+                            s.status === 'pending' && 'bg-foreground/40',
+                          )}
+                        />
+                        {s.status} <span className="text-muted-foreground/60">· {s.count}</span>
+                      </span>
                     ))}
                   </div>
                 </div>

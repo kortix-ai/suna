@@ -68,19 +68,16 @@ export function OcSkillToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={BookOpen}
             title={skillName || 'Skill'}
             subtitle={skillDir || undefined}
           />
-          <Badge
-            variant="outline"
-            className="h-5 py-0 text-[10px] bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800/50 text-purple-700 dark:text-purple-300 flex-shrink-0"
-          >
+          <span className="inline-flex items-center text-[11px] text-muted-foreground/80 tracking-tight flex-shrink-0 font-mono">
             SKILL.md
-          </Badge>
+          </span>
         </div>
       </CardHeader>
 

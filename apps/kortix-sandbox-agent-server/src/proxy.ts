@@ -5,6 +5,8 @@ import { logger } from './logger'
 import type { Opencode } from './opencode'
 import { createHealthRouter } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
+import { createPortProxyRouter } from './routes/port-proxy'
+import webProxyRouter from './routes/web-proxy'
 import {
   KORTIX_USER_CONTEXT_HEADER,
   verifyKortixUserContext,
@@ -60,6 +62,21 @@ export function buildOpencodeApp(cfg: Config, opencode: Opencode, bootTime: numb
 
     return next()
   })
+
+  // /proxy/{port}/* — per-port reverse proxy to anything bound on localhost
+  // inside the sandbox (the "internal browser" backend). Carried over from
+  // legacy kortix-master so any process the agent starts (e.g. `python -m
+  // http.server 8080`) is reachable via /v1/p/{sandboxId}/{port}/* on the API.
+  // The agent server's own port is blocked to prevent recursion; opencode's
+  // internal port is reachable via the catch-all below, not /proxy.
+  const portProxyRouter = createPortProxyRouter({
+    blockedPorts: new Set([cfg.servicePort]),
+  })
+  app.route('/proxy', portProxyRouter)
+
+  // /web-proxy/{scheme}/{host}/{path} — forward proxy that rewrites HTML/CSS
+  // so external sites embed cleanly inside the internal browser iframe.
+  app.route('/web-proxy', webProxyRouter)
 
   // Reverse-proxy catch-all → OpenCode. Stream both directions so SSE works.
   // If opencode hasn't bound its port yet (state !== 'ok') we 503 instead of

@@ -96,16 +96,13 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium',
-        isRunning && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-        isError && 'bg-red-500/10 text-red-600 dark:text-red-400',
-        isCompleted && 'bg-muted text-muted-foreground',
-        !isRunning && !isError && !isCompleted && 'bg-muted text-muted-foreground',
+        'inline-flex items-center gap-1.5 text-[10.5px] font-medium tracking-tight',
+        isError ? 'text-red-500/90' : 'text-muted-foreground/80',
       )}
     >
-      {isRunning && <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-      {isError && <AlertCircle className="size-2.5" />}
-      {isCompleted && <CheckCircle className="size-2.5" />}
+      {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-foreground animate-pulse" />}
+      {isError && <AlertCircle className="w-2.5 h-2.5" />}
+      {isCompleted && <CheckCircle className="w-2.5 h-2.5 text-foreground/70" />}
       {status}
     </span>
   );
@@ -210,7 +207,7 @@ export function OcPtySpawnToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Terminal}
@@ -225,8 +222,8 @@ export function OcPtySpawnToolView({
           <div className="p-3 space-y-3">
             {/* Error banner */}
             {isError && errorMessage && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/5 overflow-hidden">
-                <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/10">
+              <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
+                <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/15">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                   <span className="text-xs font-medium text-red-400">Error</span>
                 </div>
@@ -298,7 +295,7 @@ export function OcPtySpawnToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className="h-3 w-3 text-foreground/70" />
               Spawned
             </Badge>
           )
@@ -345,7 +342,7 @@ export function OcPtyReadToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Terminal}
@@ -362,7 +359,7 @@ export function OcPtyReadToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-3">
             {isError && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/5 overflow-hidden">
+              <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                   <span className="text-xs font-medium text-red-400">
@@ -408,7 +405,7 @@ export function OcPtyReadToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className="h-3 w-3 text-foreground/70" />
               Read
             </Badge>
           )
@@ -449,7 +446,7 @@ export function OcPtyWriteToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Keyboard}
@@ -463,7 +460,7 @@ export function OcPtyWriteToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-3">
             {isError && errorMessage && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/5 overflow-hidden">
+              <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                   <span className="text-xs font-medium text-red-400">{errorMessage}</span>
@@ -510,7 +507,7 @@ export function OcPtyWriteToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className="h-3 w-3 text-foreground/70" />
               Sent
             </Badge>
           )
@@ -559,7 +556,7 @@ export function OcPtyKillToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={XCircle}
@@ -573,7 +570,7 @@ export function OcPtyKillToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-3">
             {isError && errorMessage && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/5 overflow-hidden">
+              <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                   <span className="text-xs font-medium text-red-400">{errorMessage}</span>

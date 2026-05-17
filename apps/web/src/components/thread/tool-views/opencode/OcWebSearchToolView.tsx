@@ -3,7 +3,6 @@
 import React, { useState, useMemo } from 'react';
 import {
   Search,
-  CheckCircle,
   AlertCircle,
   Globe,
   ChevronRight,
@@ -11,16 +10,19 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
-import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { WebSearchLoadingState } from '../shared/WebSearchLoadingState';
+import { formatTimestamp } from '../utils';
+import {
+  Counter,
+  Status,
+  ToolViewBody,
+  ToolViewFoot,
+  ToolViewHead,
+  ToolViewLabel,
+  ToolViewShell,
+} from '../shared/primitives';
 
-// ============================================================================
-// Types & Parsing
-// ============================================================================
+// ── Types & parsing ─────────────────────────────────────────────────────────
 
 interface WebSearchSource {
   title: string;
@@ -29,7 +31,6 @@ interface WebSearchSource {
   author?: string;
   publishedDate?: string;
 }
-
 interface WebSearchQueryResult {
   query: string;
   answer?: string;
@@ -39,7 +40,6 @@ interface WebSearchQueryResult {
 function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
   if (!output) return [];
 
-  // Handle both string and already-parsed object (+ double-encoded)
   let parsed: any = null;
   if (typeof output === 'object' && output !== null) {
     parsed = output;
@@ -47,11 +47,11 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
     try {
       let result = JSON.parse(output);
       if (typeof result === 'string') {
-        try { result = JSON.parse(result); } catch { /* keep as-is */ }
+        try { result = JSON.parse(result); } catch { /* keep */ }
       }
       parsed = typeof result === 'object' ? result : null;
     } catch {
-      const trimmed = output.trim().replace(/^\uFEFF/, '');
+      const trimmed = output.trim().replace(/^﻿/, '');
       if (trimmed !== output) {
         try { parsed = JSON.parse(trimmed); } catch { /* not JSON */ }
       }
@@ -59,11 +59,9 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
   }
 
   if (parsed) {
-    // Batch: { results: [{ query, answer, results: [...] }] }
     if (parsed.results && Array.isArray(parsed.results) && parsed.results.length > 0) {
       const firstItem = parsed.results[0];
       if (firstItem && typeof firstItem.query === 'string') {
-        // Batch query results
         const qrs: WebSearchQueryResult[] = [];
         for (const r of parsed.results) {
           if (typeof r.query !== 'string') continue;
@@ -85,7 +83,6 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
         }
         if (qrs.length > 0) return qrs;
       } else if (firstItem && (firstItem.title || firstItem.url)) {
-        // Direct results array: { results: [{title, url, content}, ...] }
         const sources: WebSearchSource[] = [];
         for (const s of parsed.results) {
           if (s.title && s.url) {
@@ -104,7 +101,6 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
       }
     }
 
-    // Single: { query, answer, results: [...] }
     if (parsed.query && typeof parsed.query === 'string') {
       const sources: WebSearchSource[] = [];
       if (Array.isArray(parsed.results)) {
@@ -121,7 +117,6 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
       return [{ query: parsed.query, answer: parsed.answer || undefined, sources }];
     }
 
-    // Flat array: [{title, url, content}, ...]
     if (Array.isArray(parsed) && parsed.length > 0 && parsed[0] && (parsed[0].title || parsed[0].url)) {
       const sources: WebSearchSource[] = [];
       for (const s of parsed) {
@@ -139,7 +134,6 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
     }
   }
 
-  // --- Plain text ---
   if (typeof output === 'string') {
     const blocks = output.split(/(?=^Title: )/m).filter(Boolean);
     const sources: WebSearchSource[] = [];
@@ -167,229 +161,208 @@ function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
 function getDomain(url: string): string {
   try { return new URL(url).hostname.replace('www.', ''); } catch { return url; }
 }
-
 function getFaviconUrl(url: string): string | null {
   try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=128`; } catch { return null; }
 }
 
-// ============================================================================
-// Component
-// ============================================================================
+// ── Component ───────────────────────────────────────────────────────────────
 
 export function OcWebSearchToolView({
   toolCall,
   toolResult,
   assistantTimestamp,
   toolTimestamp,
-  isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
   const args = toolCall?.arguments || {};
   const ocState = args._oc_state as any;
   const query = (args.query as string) || (ocState?.input?.query as string) || '';
   const rawOutput = toolResult?.output || ocState?.output || '';
-  const output = typeof rawOutput === 'string' ? rawOutput : (typeof rawOutput === 'object' ? JSON.stringify(rawOutput, null, 2) : String(rawOutput));
+  const output =
+    typeof rawOutput === 'string'
+      ? rawOutput
+      : typeof rawOutput === 'object'
+        ? JSON.stringify(rawOutput, null, 2)
+        : String(rawOutput);
 
   const isError = toolResult?.success === false || !!toolResult?.error;
-  // Pass raw value to parser so it handles objects directly
   const queryResults = useMemo(() => parseWebSearchOutput(rawOutput), [rawOutput]);
-  const totalSources = useMemo(() => queryResults.reduce((n, q) => n + q.sources.length, 0), [queryResults]);
+  const totalSources = useMemo(
+    () => queryResults.reduce((n, q) => n + q.sources.length, 0),
+    [queryResults],
+  );
 
   const [expandedQuery, setExpandedQuery] = useState<number | null>(
     queryResults.length === 1 ? 0 : null,
   );
 
-  // --- Loading ---
   if (isStreaming && !toolResult) {
     return (
-      <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-        <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
-          <div className="flex flex-row items-center justify-between">
-            <ToolViewIconTitle icon={Search} title="Web Search" subtitle={query} />
-          </div>
-        </CardHeader>
-        <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
-          <WebSearchLoadingState
-            queries={query ? [query] : ['Searching...']}
-            title="Searching the web"
-          />
-        </CardContent>
-      </Card>
+      <ToolViewShell>
+        <ToolViewHead icon={Search} title="Web Search" detail={query} />
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          <WebSearchLoadingState queries={query ? [query] : ['Searching…']} title="Searching the web" />
+        </div>
+      </ToolViewShell>
     );
   }
 
+  const ts = toolTimestamp && !isStreaming
+    ? formatTimestamp(toolTimestamp)
+    : assistantTimestamp ? formatTimestamp(assistantTimestamp) : undefined;
+
   return (
-    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
-        <div className="flex flex-row items-center justify-between">
-          <ToolViewIconTitle icon={Search} title="Web Search" subtitle={query} />
-          {queryResults.length > 0 && (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted flex-shrink-0 ml-2">
-              <Globe className="h-3 w-3 mr-1 opacity-70" />
-              {queryResults.length > 1
-                ? `${queryResults.length} queries`
-                : `${totalSources} ${totalSources === 1 ? 'source' : 'sources'}`}
-            </Badge>
-          )}
-        </div>
-      </CardHeader>
+    <ToolViewShell>
+      <ToolViewHead
+        icon={Search}
+        title="Web Search"
+        detail={query}
+        actions={
+          queryResults.length > 0 ? (
+            <Counter
+              value={queryResults.length > 1 ? queryResults.length : totalSources}
+              label={
+                queryResults.length > 1
+                  ? queryResults.length === 1 ? 'query' : 'queries'
+                  : totalSources === 1 ? 'source' : 'sources'
+              }
+            />
+          ) : null
+        }
+      />
 
-      <CardContent className="p-0 h-full flex-1 overflow-hidden">
+      <ToolViewBody padded={false}>
         {queryResults.length > 0 ? (
-          <ScrollArea className="h-full w-full">
-            <div className="p-3 space-y-3">
-              {queryResults.map((qr, qi) => {
-                const isMulti = queryResults.length > 1;
-                const isExpanded = expandedQuery === qi;
-
-                return (
-                  <div
-                    key={qi}
-                    className="rounded-lg border border-border/60 bg-card overflow-hidden"
-                  >
-                    {/* Query header */}
-                    {isMulti && (
-                      <button
-                        type="button"
-                        className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer text-left border-b border-border/30"
-                        onClick={() => setExpandedQuery(isExpanded ? null : qi)}
-                      >
-                        <Search className="size-3.5 text-primary/60 flex-shrink-0" />
-                        <span className="text-sm font-medium text-foreground truncate flex-1">
-                          {qr.query}
+          <div className="divide-y divide-border/40">
+            {queryResults.map((qr, qi) => {
+              const isMulti = queryResults.length > 1;
+              const isExpanded = expandedQuery === qi;
+              return (
+                <div key={qi}>
+                  {isMulti && (
+                    <button
+                      type="button"
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 hover:bg-foreground/[0.025] transition-colors cursor-pointer text-left"
+                      onClick={() => setExpandedQuery(isExpanded ? null : qi)}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="w-3 h-3 text-muted-foreground/70 flex-shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-3 h-3 text-muted-foreground/70 flex-shrink-0" />
+                      )}
+                      <Search className="w-3.5 h-3.5 text-muted-foreground/60 flex-shrink-0" />
+                      <span className="text-[12.5px] font-medium text-foreground/90 tracking-tight flex-1 truncate">
+                        {qr.query}
+                      </span>
+                      {qr.sources.length > 0 && (
+                        <span className="text-[11px] text-muted-foreground/70 tabular-nums flex-shrink-0">
+                          {qr.sources.length}
                         </span>
-                        {qr.sources.length > 0 && (
-                          <Badge variant="outline" className="h-5 text-[10px] px-1.5 font-normal flex-shrink-0">
-                            {qr.sources.length} {qr.sources.length === 1 ? 'source' : 'sources'}
-                          </Badge>
-                        )}
-                        {isExpanded
-                          ? <ChevronDown className="size-3.5 text-muted-foreground/50 flex-shrink-0" />
-                          : <ChevronRight className="size-3.5 text-muted-foreground/50 flex-shrink-0" />
-                        }
-                      </button>
-                    )}
+                      )}
+                    </button>
+                  )}
 
-                    {/* Answer + Sources */}
-                    {(!isMulti || isExpanded) && (
-                      <div className="p-3">
-                        {/* AI Answer */}
-                        {qr.answer && (
-                          <div className="mb-4">
-                            <p className="text-sm leading-relaxed text-foreground/85">
-                              {qr.answer}
-                            </p>
-                          </div>
-                        )}
+                  {(!isMulti || isExpanded) && (
+                    <div className="px-4 py-3 space-y-3">
+                      {qr.answer && (
+                        <div className="space-y-1.5">
+                          <ToolViewLabel>Answer</ToolViewLabel>
+                          <p className="text-[13px] leading-relaxed text-foreground/85 tracking-tight">
+                            {qr.answer}
+                          </p>
+                        </div>
+                      )}
 
-                        {/* Sources */}
-                        {qr.sources.length > 0 && (
-                          <div className="space-y-1.5">
-                            {qr.answer && (
-                              <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/40 mb-2">
-                                Sources
-                              </div>
-                            )}
+                      {qr.sources.length > 0 && (
+                        <div className="space-y-1">
+                          {qr.answer && <ToolViewLabel>Sources</ToolViewLabel>}
+                          <ul className="divide-y divide-border/40 -mx-1">
                             {qr.sources.map((src, si) => {
                               const favicon = getFaviconUrl(src.url);
                               const domain = getDomain(src.url);
                               return (
-                                <a
-                                  key={si}
-                                  href={src.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="group flex items-start gap-3 p-3 -mx-1 rounded-lg hover:bg-muted/40 transition-colors"
-                                >
-                                  <div className="size-6 rounded-md bg-muted/60 flex items-center justify-center flex-shrink-0 mt-0.5 overflow-hidden">
-                                    {favicon ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img
-                                        src={favicon}
-                                        alt=""
-                                        className="size-4 rounded"
-                                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                      />
-                                    ) : (
-                                      <Globe className="size-3.5 text-muted-foreground/50" />
-                                    )}
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">
-                                      {src.title}
-                                    </div>
-                                    <div className="flex items-center gap-2 mt-0.5">
-                                      <span className="text-xs text-muted-foreground/50 font-mono truncate">
-                                        {domain}
-                                      </span>
-                                      {src.author && (
-                                        <span className="text-xs text-muted-foreground/40 truncate">
-                                          {src.author}
-                                        </span>
-                                      )}
-                                      {src.publishedDate && (
-                                        <span className="text-[10px] text-muted-foreground/40">
-                                          {src.publishedDate.split('T')[0]}
-                                        </span>
+                                <li key={si}>
+                                  <a
+                                    href={src.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="group flex items-start gap-2.5 px-1 py-2 hover:bg-foreground/[0.025] transition-colors"
+                                  >
+                                    <div className="w-4 h-4 rounded-sm bg-foreground/[0.04] border border-border/40 flex items-center justify-center flex-shrink-0 mt-0.5 overflow-hidden">
+                                      {favicon ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                          src={favicon}
+                                          alt=""
+                                          className="w-3 h-3 rounded-sm"
+                                          onError={(e) => {
+                                            (e.target as HTMLImageElement).style.display = 'none';
+                                          }}
+                                        />
+                                      ) : (
+                                        <Globe className="w-2.5 h-2.5 text-muted-foreground/60" />
                                       )}
                                     </div>
-                                    {src.snippet && (
-                                      <p className="text-xs text-muted-foreground/60 leading-relaxed line-clamp-2 mt-1.5">
-                                        {src.snippet.slice(0, 300)}
-                                      </p>
-                                    )}
-                                  </div>
-                                  <ExternalLink className="size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/50 flex-shrink-0 mt-1 transition-colors" />
-                                </a>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-[13px] font-medium tracking-tight text-foreground/90 group-hover:text-foreground/70 line-clamp-1 transition-colors">
+                                        {src.title}
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-0.5 text-[11px] text-muted-foreground/60 tracking-tight">
+                                        <span className="font-mono truncate">{domain}</span>
+                                        {src.author && <span className="truncate">· {src.author}</span>}
+                                        {src.publishedDate && (
+                                          <span className="tabular-nums">· {src.publishedDate.split('T')[0]}</span>
+                                        )}
+                                      </div>
+                                      {src.snippet && (
+                                        <p className="text-[12px] text-muted-foreground/70 leading-relaxed line-clamp-2 mt-1 tracking-tight">
+                                          {src.snippet.slice(0, 300)}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <ExternalLink className="w-3 h-3 text-muted-foreground/0 group-hover:text-muted-foreground/60 flex-shrink-0 mt-1 transition-colors" />
+                                  </a>
+                                </li>
                               );
                             })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         ) : output && !isError ? (
-          <ScrollArea className="h-full w-full">
-            <div className="p-3 text-sm text-muted-foreground whitespace-pre-wrap">
-              {output.slice(0, 2000)}
-            </div>
-          </ScrollArea>
+          <div className="px-4 py-3 text-[12px] text-muted-foreground/80 whitespace-pre-wrap tracking-tight">
+            {output.slice(0, 2000)}
+          </div>
         ) : isError ? (
-          <div className="flex items-start gap-2.5 px-4 py-6 text-muted-foreground">
-            <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
-            <p className="text-sm">{output || 'Search failed'}</p>
+          <div className="flex items-start gap-2.5 px-4 py-6 text-[12px] text-muted-foreground/80 tracking-tight">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <p>{output || 'Search failed'}</p>
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full py-12 px-6">
-            <Search className="h-8 w-8 text-muted-foreground/30 mb-3" />
-            <p className="text-sm text-muted-foreground">No results found</p>
+          <div className="flex flex-col items-center justify-center py-10 text-muted-foreground/60">
+            <Search className="w-5 h-5 mb-2 opacity-50" />
+            <p className="text-[12px] tracking-tight">No results</p>
           </div>
         )}
-      </CardContent>
+      </ToolViewBody>
 
-      <ToolViewFooter
-        assistantTimestamp={assistantTimestamp}
-        toolTimestamp={toolTimestamp}
-        isStreaming={isStreaming}
-      >
-        {!isStreaming && (
-          isError ? (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted text-muted-foreground">
-              <AlertCircle className="h-3 w-3" />
-              Failed
-            </Badge>
-          ) : totalSources > 0 ? (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-muted-foreground" />
-              {totalSources} {totalSources === 1 ? 'source' : 'sources'}
-            </Badge>
-          ) : null
-        )}
-      </ToolViewFooter>
-    </Card>
+      <ToolViewFoot timestamp={ts}>
+        {isError ? (
+          <Status tone="error">
+            <AlertCircle className="w-3 h-3" />
+            Failed
+          </Status>
+        ) : totalSources > 0 ? (
+          <Status tone="success">
+            {totalSources} {totalSources === 1 ? 'source' : 'sources'}
+          </Status>
+        ) : null}
+      </ToolViewFoot>
+    </ToolViewShell>
   );
 }

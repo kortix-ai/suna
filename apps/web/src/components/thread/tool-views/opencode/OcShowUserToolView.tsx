@@ -360,7 +360,7 @@ export function OcShowUserToolView({
   if (hasLocalhostUrl) {
     return (
       <Card className={cn("gap-0 flex shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card border-0", borderStyle)}>
-        <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+        <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
           <div className="flex flex-row items-center justify-between">
             <ToolViewIconTitle icon={Globe} title={displayTitle} subtitle={resolvedUrl || undefined} />
             <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
@@ -384,7 +384,7 @@ export function OcShowUserToolView({
   if (type === 'url' && url && !hasLocalhostUrl) {
     return (
       <Card className={cn("gap-0 flex shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card border-0", borderStyle)}>
-        <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+        <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
           <div className="flex flex-row items-center justify-between">
             <ToolViewIconTitle icon={Globe} title={displayTitle} subtitle={url} />
             <a href={url} target="_blank" rel="noopener noreferrer" className="p-1 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
@@ -521,10 +521,10 @@ export function OcShowUserToolView({
             )}
             {type && (
               <span className={cn(
-                'text-[10px] px-2 py-0.5 rounded-full font-medium uppercase tracking-wider',
+                'text-[10px] px-2 py-0.5 rounded-md font-medium uppercase tracking-wider',
                 type === 'error'
-                  ? 'bg-red-500/10 text-red-500'
-                  : 'bg-muted/40 text-muted-foreground/60',
+                  ? 'bg-red-500/[0.08] text-red-500/85'
+                  : 'bg-foreground/[0.04] text-muted-foreground/70',
               )}>
                 {type}
               </span>

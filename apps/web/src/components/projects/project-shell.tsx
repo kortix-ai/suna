@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { Suspense, lazy, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +13,14 @@ import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-sho
 import { createProjectSession } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { useIsSwitchingProject } from '@/stores/project-switch-store';
+
+// CommandPalette is mounted here (not in AppProviders) so it loads lazily and
+// owns the global Cmd+K / Cmd+` listeners while a project shell is on screen.
+const CommandPalette = lazy(() =>
+  import('@/components/command-palette').then((mod) => ({
+    default: mod.CommandPalette,
+  })),
+);
 
 interface ProjectShellProps {
   projectId: string;
@@ -76,6 +84,10 @@ export function ProjectShell({
       sidebarContent={<ProjectSidebar projectId={projectId} />}
     >
       <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+        <Suspense fallback={null}>
+          <CommandPalette />
+        </Suspense>
+
         {/* Top progress hairline — shown while a project switch is in
             flight. Pinned over both the tab bar and the rounded content,
             so it reads as "the whole shell is loading", not just one panel. */}
@@ -110,6 +122,9 @@ export function ProjectShell({
         </AnimatePresence>
 
         <div className="flex-1 min-h-0 flex flex-col md:border md:border-b-0 md:border-border/50 overflow-hidden md:rounded-t-xl relative">
+          {/* Session-internal layout (chat + actions/browser side panel) is
+              owned by `apps/web/src/components/session/session-layout.tsx`.
+              The project shell just hosts the chrome. */}
           {children}
         </div>
       </div>

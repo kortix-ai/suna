@@ -18,6 +18,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   FileDown,
+  Globe,
   MoreHorizontal,
   GitCompareArrows,
   Layers,
@@ -26,6 +27,8 @@ import {
 import { ExportTranscriptDialog } from '@/components/session/export-transcript-dialog';
 import { DiffDialog } from '@/components/session/diff-dialog';
 import { CompactDialog } from '@/components/session/compact-dialog';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 
 
 import { DiagnosticsDialog } from '@/components/session/diagnostics-panel';
@@ -57,6 +60,14 @@ export function SessionSiteHeader({
   const [compactOpen, setCompactOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
 
+  // Direct shortcut: open the side panel straight into the Browser view.
+  // Mirrors the kebab → panel toggle, but skips the "Actions" step.
+  const setIsSidePanelOpen = useKortixComputerStore((s) => s.setIsSidePanelOpen);
+  const setPanelView = useSessionBrowserStore((s) => s.setView);
+  const handleOpenBrowser = () => {
+    setPanelView(sessionId, 'browser');
+    setIsSidePanelOpen(true);
+  };
 
   // Worktree detection — disabled for now
   const worktreeInfo = null;
@@ -133,6 +144,26 @@ export function SessionSiteHeader({
                 </Button>
               </SharePopover> */}
 
+              {/* Browser shortcut — pops the side panel straight to the
+                  internal browser, skipping the Actions step. */}
+              {canOpenSidePanel && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleOpenBrowser}
+                      className="h-8 w-8 cursor-pointer text-muted-foreground hover:text-foreground"
+                    >
+                      <Globe className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" sideOffset={4}>
+                    <p>Open browser</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
               {/* Panel toggle */}
               {canOpenSidePanel && (
                 <Tooltip>
@@ -151,7 +182,7 @@ export function SessionSiteHeader({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" sideOffset={4}>
-                    <p>{isSidePanelOpen ? 'Close' : 'Open'} Actions</p>
+                    <p>{isSidePanelOpen ? 'Close' : 'Open'} panel</p>
                   </TooltipContent>
                 </Tooltip>
               )}

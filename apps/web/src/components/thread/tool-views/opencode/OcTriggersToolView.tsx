@@ -23,6 +23,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
+import { cn } from '@/lib/utils';
 
 // ── Parsing utilities ────────────────────────────────────────────────────────
 
@@ -113,34 +114,30 @@ const actionMeta: Record<TriggerAction, { icon: typeof Zap; label: string; loadi
 function TriggerCard({ t }: { t: ParsedTrigger }) {
   const SourceIcon = t.sourceType === 'webhook' ? Webhook : Calendar;
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card">
-      <div className="p-2 rounded-lg bg-muted">
-        <SourceIcon className="size-4 text-muted-foreground" />
-      </div>
+    <div className="flex items-center gap-2.5 px-3 py-2 rounded-md border border-border/50 bg-foreground/[0.02]">
+      <SourceIcon className="w-3.5 h-3.5 text-muted-foreground/70 flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-foreground truncate">{t.name}</div>
-        <div className="text-xs text-muted-foreground truncate">
+        <div className="text-[12.5px] font-medium text-foreground truncate tracking-tight">{t.name}</div>
+        <div className="text-[11.5px] text-muted-foreground/70 truncate">
           {t.sourceType === 'webhook' ? t.sourceDetail : `cron: ${t.sourceDetail}`}
         </div>
       </div>
       <div className="flex items-center gap-2 flex-shrink-0">
         {t.lastRun !== 'never' && (
-          <span className="text-[10px] text-muted-foreground/70 hidden sm:inline">
+          <span className="text-[10.5px] text-muted-foreground/60 hidden sm:inline">
             Last: {formatLastRun(t.lastRun)}
           </span>
         )}
-        <Badge
-          variant="outline"
-          className={`h-5 text-[10px] py-0 ${
-            t.status === 'active'
-              ? 'border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
-              : t.status === 'paused'
-                ? 'border-amber-500/40 text-amber-600 dark:text-amber-400'
-                : ''
-          }`}
-        >
+        <span className="inline-flex items-center gap-1.5 text-[10.5px] text-muted-foreground/70 tracking-tight">
+          <span
+            className={cn(
+              'w-1.5 h-1.5 rounded-full',
+              t.status === 'active' ? 'bg-foreground' : 'bg-foreground/40',
+            )}
+            aria-hidden
+          />
           {t.status}
-        </Badge>
+        </span>
       </div>
     </div>
   );
@@ -179,17 +176,15 @@ function CreateContent({ output, args }: { output: string; args: Record<string, 
     <ScrollArea className="h-full w-full">
       <div className="p-4 space-y-4">
         {/* Header card */}
-        <div className="flex items-center gap-3 p-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
-          <div className="p-2.5 rounded-lg bg-emerald-500/10">
-            <SourceIcon className="size-5 text-emerald-600 dark:text-emerald-400" />
-          </div>
+        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-md border border-border/50 bg-foreground/[0.02]">
+          <SourceIcon className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-foreground">{name}</div>
+            <div className="text-[12.5px] font-medium text-foreground tracking-tight truncate">{name}</div>
             {id && (
-              <div className="text-[10px] text-muted-foreground font-mono truncate">{id}</div>
+              <div className="text-[10.5px] text-muted-foreground/60 font-mono truncate">{id}</div>
             )}
           </div>
-          <CheckCircle className="size-5 flex-shrink-0 text-emerald-500" />
+          <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 text-foreground/70" />
         </div>
 
         {/* Config details */}
@@ -308,7 +303,7 @@ export function OcTriggersToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={isError ? AlertCircle : ActionIcon}

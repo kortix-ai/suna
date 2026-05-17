@@ -27,17 +27,17 @@ const TYPE_CONFIG: Record<string, { icon: typeof Brain; label: string; color: st
   episodic: {
     icon: BookOpen,
     label: 'Episodic',
-    color: 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/50',
+    color: 'bg-foreground/[0.04] text-foreground/85 border-border/50',
   },
   semantic: {
     icon: Brain,
     label: 'Semantic',
-    color: 'bg-violet-100 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800/50',
+    color: 'bg-foreground/[0.04] text-foreground/85 border-border/50',
   },
   procedural: {
     icon: Wrench,
     label: 'Procedural',
-    color: 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/50',
+    color: 'bg-foreground/[0.04] text-foreground/85 border-border/50',
   },
 };
 
@@ -83,7 +83,7 @@ export function OcMemSaveToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle icon={Save} title="Save Memory" subtitle={config.label} />
           <Badge

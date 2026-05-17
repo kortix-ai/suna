@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Menu, MessageCircle, PanelRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, PanelRight, X } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
@@ -165,13 +165,12 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
               aria-selected={isActive}
               onClick={() => router.push(`/projects/${projectId}/sessions/${sessionId}`)}
               className={cn(
-                'group relative flex items-center text-[13px] select-none cursor-pointer',
+                'group relative flex items-center text-[12.5px] select-none cursor-pointer',
                 'transition-colors duration-150 h-full',
-                'gap-1.5 px-2 md:gap-2 md:px-3 max-w-[200px] min-w-[48px] md:min-w-[80px]',
+                'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[48px] md:min-w-[80px]',
                 isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              <MessageCircle className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/60" />
               <span className={cn('flex-1 truncate', isActive && 'font-medium')}>{label}</span>
               <button
                 type="button"

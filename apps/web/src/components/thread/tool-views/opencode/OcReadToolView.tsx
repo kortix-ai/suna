@@ -1,34 +1,38 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Eye, CheckCircle, AlertCircle, FileText, ChevronRight, ChevronDown, Hash } from 'lucide-react';
+import { Eye, AlertCircle, FileText, ChevronRight, ChevronDown } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
-import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { CodeHighlight } from '@/components/markdown/unified-markdown';
 import { useOcFileOpen } from './useOcFileOpen';
+import { formatTimestamp } from '../utils';
+import { cn } from '@/lib/utils';
+import {
+  Counter,
+  Status,
+  ToolViewBody,
+  ToolViewFoot,
+  ToolViewHead,
+  ToolViewLabel,
+  ToolViewShell,
+} from '../shared/primitives';
 
-function getFilename(path: string | undefined): string {
+function getFilename(path?: string): string {
   if (!path) return '';
   const parts = path.split('/');
   return parts[parts.length - 1] || path;
 }
 
-function getDirectory(path: string | undefined): string {
+function getDirectory(path?: string): string {
   if (!path) return '';
   const idx = path.lastIndexOf('/');
-  if (idx < 0) return '';
-  return path.substring(0, idx);
+  return idx < 0 ? '' : path.substring(0, idx);
 }
 
 function getExtension(filename: string): string {
   const idx = filename.lastIndexOf('.');
-  if (idx < 0) return '';
-  return filename.substring(idx + 1);
+  return idx < 0 ? '' : filename.substring(idx + 1);
 }
 
 function cleanReadOutput(raw: string): string {
@@ -43,122 +47,93 @@ export function OcReadToolView({
   toolResult,
   assistantTimestamp,
   toolTimestamp,
-  isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
   const args = toolCall?.arguments || {};
   const filePath = (args.filePath as string) || '';
   const ocState = args._oc_state as any;
-
   const filename = getFilename(filePath);
   const ext = getExtension(filename);
 
-  // Extract loaded files from metadata
   const metadata = ocState?.metadata || {};
   const loaded: string[] = Array.isArray(metadata?.loaded) ? metadata.loaded : [];
-
-  // Extract file content from output if available
-  const rawOutput = toolResult?.output || (ocState?.output) || '';
+  const rawOutput = toolResult?.output || ocState?.output || '';
   const output = rawOutput ? cleanReadOutput(String(rawOutput)) : '';
-
   const lineCount = output ? output.split('\n').length : null;
-
   const isError = toolResult?.success === false || !!toolResult?.error;
 
-  // For multiple files, track which ones are expanded
   const allPaths = loaded.length > 0 ? loaded : filePath ? [filePath] : [];
   const isSingleFile = allPaths.length <= 1;
 
   const { openFile, openFileWithList, toDisplayPath } = useOcFileOpen();
-
   const displayPath = toDisplayPath(filePath);
   const displayDir = getDirectory(displayPath);
-
   const [expanded, setExpanded] = useState(false);
 
   if (isStreaming && !toolResult) {
-    return (
-      <LoadingState
-        title="Reading File"
-        subtitle={filename || filePath}
-      />
-    );
+    return <LoadingState title="Reading file" subtitle={filename || filePath} />;
   }
 
+  const ts = toolTimestamp && !isStreaming
+    ? formatTimestamp(toolTimestamp)
+    : assistantTimestamp ? formatTimestamp(assistantTimestamp) : undefined;
+
   return (
-    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
-        <div className="flex flex-row items-center justify-between">
-          <ToolViewIconTitle
-            icon={Eye}
-            title={filename || 'Read File'}
-            subtitle={displayDir}
-            onTitleClick={filePath ? () => openFile(filePath) : undefined}
-          />
-          <div className="flex items-center gap-2 text-xs flex-shrink-0">
+    <ToolViewShell>
+      <ToolViewHead
+        icon={Eye}
+        title={filename || 'Read File'}
+        detail={displayDir}
+        onTitleClick={filePath ? () => openFile(filePath) : undefined}
+        actions={
+          <>
             {allPaths.length > 1 && (
-              <span className="text-muted-foreground">
-                {allPaths.length} files
-              </span>
+              <Counter value={allPaths.length} label={allPaths.length === 1 ? 'file' : 'files'} />
             )}
             {lineCount != null && lineCount > 0 && (
-              <span className="flex items-center gap-0.5 text-muted-foreground">
-                <Hash className="h-3 w-3" />
-                {lineCount} lines
-              </span>
+              <Counter value={lineCount} label={lineCount === 1 ? 'line' : 'lines'} />
             )}
-          </div>
-        </div>
-      </CardHeader>
+          </>
+        }
+      />
 
-      <CardContent className="p-0 h-full flex-1 overflow-hidden">
-        <ScrollArea className="h-full w-full">
-          <div className="p-3 space-y-1.5">
-            {isSingleFile ? (
-              <SingleFileRow
-                filePath={filePath}
-                displayPath={displayPath}
-                ext={ext}
-                output={output}
-                expanded={expanded}
-                onToggle={() => setExpanded(!expanded)}
-                onOpenFile={() => openFileWithList(filePath, allPaths)}
-              />
-            ) : (
-              <MultiFileList
-                paths={allPaths}
-                toDisplayPath={toDisplayPath}
-                onFileClick={(fp) => openFileWithList(fp, allPaths)}
-              />
-            )}
+      <ToolViewBody padded={false}>
+        {isSingleFile ? (
+          <div className="px-4 py-3">
+            <SingleFile
+              filePath={filePath}
+              displayPath={displayPath}
+              ext={ext}
+              output={output}
+              expanded={expanded}
+              onToggle={() => setExpanded(!expanded)}
+              onOpenFile={() => openFileWithList(filePath, allPaths)}
+            />
           </div>
-        </ScrollArea>
-      </CardContent>
-
-      <ToolViewFooter
-        assistantTimestamp={assistantTimestamp}
-        toolTimestamp={toolTimestamp}
-        isStreaming={isStreaming}
-      >
-        {!isStreaming && (
-          isError ? (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted text-muted-foreground">
-              <AlertCircle className="h-3 w-3" />
-              Failed
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
-              Read
-            </Badge>
-          )
+        ) : (
+          <MultiFileList
+            paths={allPaths}
+            toDisplayPath={toDisplayPath}
+            onFileClick={(fp) => openFileWithList(fp, allPaths)}
+          />
         )}
-      </ToolViewFooter>
-    </Card>
+      </ToolViewBody>
+
+      <ToolViewFoot timestamp={ts}>
+        {isError ? (
+          <Status tone="error">
+            <AlertCircle className="w-3 h-3" />
+            Failed
+          </Status>
+        ) : (
+          <Status tone="success">Read</Status>
+        )}
+      </ToolViewFoot>
+    </ToolViewShell>
   );
 }
 
-function SingleFileRow({
+function SingleFile({
   filePath,
   displayPath,
   ext,
@@ -180,42 +155,50 @@ function SingleFileRow({
   const dir = getDirectory(displayPath);
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden bg-card">
+    <div className="rounded-md border border-border/50 overflow-hidden bg-foreground/[0.02]">
       <div
-        className={`flex items-center gap-2.5 px-3 py-2.5 ${hasContent ? 'cursor-pointer hover:bg-muted' : ''} transition-colors`}
+        role={hasContent ? 'button' : undefined}
         onClick={hasContent ? onToggle : undefined}
+        className={cn(
+          'flex items-center gap-2.5 px-3 py-2 transition-colors',
+          hasContent && 'cursor-pointer hover:bg-foreground/[0.04]',
+        )}
       >
         {hasContent ? (
           expanded ? (
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            <ChevronDown className="w-3 h-3 text-muted-foreground/70 flex-shrink-0" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            <ChevronRight className="w-3 h-3 text-muted-foreground/70 flex-shrink-0" />
           )
         ) : (
-          <FileText className="h-3.5 w-3.5 text-sky-500 dark:text-sky-400 flex-shrink-0" />
+          <FileText className="w-3.5 h-3.5 text-muted-foreground/70 flex-shrink-0" />
         )}
-        <span className="text-xs min-w-0 flex items-baseline gap-1.5 overflow-hidden flex-1">
-          <span
-            className="text-foreground font-medium font-mono whitespace-nowrap flex-shrink-0 cursor-pointer hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
-            onClick={(e) => { e.stopPropagation(); onOpenFile(); }}
-            title={displayPath}
-          >
-            {filename}
-          </span>
-          {dir && <span className="text-muted-foreground/40 truncate text-[11px]">{dir}</span>}
-        </span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenFile();
+          }}
+          className="text-[12.5px] font-mono font-medium text-foreground/90 hover:text-foreground/70 transition-colors flex-shrink-0 cursor-pointer"
+          title={displayPath}
+        >
+          {filename}
+        </button>
+        {dir && (
+          <span className="text-[11px] font-mono text-muted-foreground/50 truncate flex-1">{dir}</span>
+        )}
         {hasContent && (
-          <span className="text-[10px] text-muted-foreground flex-shrink-0 uppercase tracking-wider">
-            {expanded ? 'collapse' : 'expand'}
+          <span className="text-[10.5px] text-muted-foreground/60 uppercase tracking-wider flex-shrink-0">
+            {expanded ? 'hide' : 'show'}
           </span>
         )}
       </div>
       {expanded && hasContent && (
-        <div className="border-t border-border">
+        <div className="border-t border-border/50">
           <CodeHighlight
             code={output}
             language={ext || 'text'}
-            className="[&>pre]:rounded-none [&>pre]:border-0"
+            className="[&>pre]:rounded-none [&>pre]:border-0 [&>pre]:bg-transparent"
           />
         </div>
       )}
@@ -233,25 +216,28 @@ function MultiFileList({
   onFileClick: (path: string) => void;
 }) {
   return (
-    <div className="py-1">
+    <div className="divide-y divide-border/40">
       {paths.map((fp, i) => {
         const dp = toDisplayPath(fp);
         const fname = getFilename(dp);
         const dir = getDirectory(dp);
-
         return (
-          <div
+          <button
             key={i}
-            className="flex items-center gap-2.5 px-4 py-1.5 cursor-pointer hover:bg-muted transition-colors group"
             onClick={() => onFileClick(fp)}
             title={dp}
+            className="group w-full flex items-center gap-2.5 px-4 py-2 hover:bg-foreground/[0.025] transition-colors cursor-pointer text-left"
           >
-            <FileText className="h-3.5 w-3.5 text-sky-500/70 dark:text-sky-400/70 flex-shrink-0 group-hover:text-sky-500 dark:group-hover:text-sky-400 transition-colors" />
-            <span className="text-xs min-w-0 flex items-baseline gap-1.5 overflow-hidden">
-              <span className="text-foreground font-medium font-mono whitespace-nowrap flex-shrink-0">{fname}</span>
-              {dir && <span className="text-muted-foreground/40 truncate text-[11px]">{dir}</span>}
+            <FileText className="w-3.5 h-3.5 text-muted-foreground/60 group-hover:text-foreground/80 flex-shrink-0 transition-colors" />
+            <span className="text-[12.5px] font-mono font-medium text-foreground/90 flex-shrink-0">
+              {fname}
             </span>
-          </div>
+            {dir && (
+              <span className="text-[11px] font-mono text-muted-foreground/50 truncate flex-1">
+                {dir}
+              </span>
+            )}
+          </button>
         );
       })}
     </div>

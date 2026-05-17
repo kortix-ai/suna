@@ -37,7 +37,7 @@ export function OcConnectorSetupToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={data?.success ? CheckCircle : Plug}
@@ -57,16 +57,14 @@ export function OcConnectorSetupToolView({
           <ScrollArea className="h-full w-full">
             <div className="p-4 space-y-3">
               {data.connectors.map((conn, i) => (
-                <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-card">
-                  <div className="p-2 rounded-lg bg-muted">
-                    <Plug className="size-4 text-muted-foreground" />
-                  </div>
+                <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-md border border-border/50 bg-foreground/[0.02]">
+                  <Plug className="w-3.5 h-3.5 text-muted-foreground/70 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground truncate">
+                    <div className="text-[12.5px] font-medium text-foreground truncate tracking-tight">
                       {conn}
                     </div>
                   </div>
-                  <CheckCircle className="size-4 flex-shrink-0 text-emerald-500" />
+                  <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 text-foreground/70" />
                 </div>
               ))}
             </div>

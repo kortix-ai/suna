@@ -43,7 +43,7 @@ export function OcGetMemToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle icon={Brain} title="Get Memory" subtitle={memoryId ? `#${memoryId}` : undefined} />
           {(source || memoryId) && (
@@ -88,14 +88,14 @@ export function OcGetMemToolView({
 
             {report ? (
               report.kind === 'observation' ? (
-              <div className="rounded-2xl border border-border/70 overflow-hidden bg-gradient-to-b from-background via-background to-amber-50/20 dark:to-amber-950/10 shadow-sm">
-                <div className="px-4 py-3 border-b border-border/60 bg-gradient-to-r from-amber-50/70 to-background dark:from-amber-950/20">
+              <div className="rounded-2xl border border-border/70 overflow-hidden bg-background">
+                <div className="px-4 py-3 border-b border-border/60 bg-foreground/[0.02]">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="h-6 bg-background/90 border-amber-200/80 dark:border-amber-800/60">
+                    <Badge variant="outline" className="h-6 bg-background border-border/60">
                       <Fingerprint className="h-3.5 w-3.5" />
                       Observation #{report.id}
                     </Badge>
-                    <Badge variant="outline" className="h-6 bg-amber-100/70 text-amber-900 border-amber-200/80 dark:bg-amber-900/30 dark:text-amber-100 dark:border-amber-800/60 uppercase tracking-wide text-[10px]">
+                    <Badge variant="outline" className="h-6 bg-foreground/[0.04] text-foreground/85 border-border/50 uppercase tracking-wide text-[10px]">
                       {report.type}
                     </Badge>
                     {report.created && (
@@ -110,7 +110,7 @@ export function OcGetMemToolView({
 
                 <div className="px-4 py-3 space-y-3">
                   {report.narrative && (
-                    <div className="rounded-xl border border-border/60 bg-gradient-to-b from-background to-muted/10 p-3">
+                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                         <FileText className="h-3.5 w-3.5" />
                         Narrative
@@ -120,7 +120,7 @@ export function OcGetMemToolView({
                   )}
 
                   {report.facts.length > 0 && (
-                    <div className="rounded-xl border border-border/60 bg-gradient-to-b from-background to-muted/10 p-3">
+                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                           <ClipboardList className="h-3.5 w-3.5" />
@@ -131,7 +131,7 @@ export function OcGetMemToolView({
                       <ul className="space-y-1.5">
                         {report.facts.map((fact, idx) => (
                           <li key={`${report.id}-${idx}`} className="flex items-start gap-2 text-sm text-foreground/90 leading-relaxed">
-                            <span className="mt-[8px] h-1.5 w-1.5 rounded-full bg-emerald-500/90 flex-shrink-0" />
+                            <span className="mt-[8px] h-1.5 w-1.5 rounded-full bg-foreground/60 flex-shrink-0" />
                             <span>{fact}</span>
                           </li>
                         ))}
@@ -140,13 +140,13 @@ export function OcGetMemToolView({
                   )}
 
                   {report.concepts.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/60 bg-gradient-to-r from-background to-muted/20 p-2.5">
+                    <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/60 bg-foreground/[0.02] p-2.5">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mr-1">
                         <Tags className="h-3.5 w-3.5" />
                         Concepts
                       </span>
                       {report.concepts.map((concept) => (
-                        <Badge key={concept} variant="secondary" className="h-6 px-2 text-[11px] font-medium bg-emerald-100/60 text-emerald-800 border-emerald-200/70 dark:bg-emerald-900/25 dark:text-emerald-100 dark:border-emerald-800/60">
+                        <Badge key={concept} variant="secondary" className="h-6 px-2 text-[11px] font-medium bg-foreground/[0.04] text-foreground/85 border-border/50">
                           <Tags className="h-3 w-3" />
                           {concept}
                         </Badge>
@@ -155,7 +155,7 @@ export function OcGetMemToolView({
                   )}
 
                   {(report.tool || report.prompt || report.session || report.filesRead.length > 0) && (
-                    <div className="rounded-xl border border-border/60 bg-gradient-to-b from-muted/10 to-background p-3 space-y-2">
+                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                         {report.tool && <Badge variant="outline" className="h-5 px-1.5 font-medium bg-background/80">Tool: {report.tool}</Badge>}
                         {report.prompt && <Badge variant="outline" className="h-5 px-1.5 font-medium bg-background/80">Prompt #{report.prompt}</Badge>}
@@ -181,14 +181,14 @@ export function OcGetMemToolView({
                 </div>
               </div>
               ) : (
-              <div className="rounded-2xl border border-border/70 overflow-hidden bg-gradient-to-b from-background via-background to-amber-50/20 dark:to-amber-950/10 shadow-sm">
-                <div className="px-4 py-3 border-b border-border/60 bg-gradient-to-r from-amber-50/70 to-background dark:from-amber-950/20">
+              <div className="rounded-2xl border border-border/70 overflow-hidden bg-background">
+                <div className="px-4 py-3 border-b border-border/60 bg-foreground/[0.02]">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="h-6 bg-background/90 border-amber-200/80 dark:border-amber-800/60">
+                    <Badge variant="outline" className="h-6 bg-background border-border/60">
                       <Fingerprint className="h-3.5 w-3.5" />
                       LTM #{report.id}
                     </Badge>
-                    <Badge variant="outline" className="h-6 bg-amber-100/70 text-amber-900 border-amber-200/80 dark:bg-amber-900/30 dark:text-amber-100 dark:border-amber-800/60 uppercase tracking-wide text-[10px]">
+                    <Badge variant="outline" className="h-6 bg-foreground/[0.04] text-foreground/85 border-border/50 uppercase tracking-wide text-[10px]">
                       {report.type}
                     </Badge>
                     {report.created && (
@@ -202,7 +202,7 @@ export function OcGetMemToolView({
 
                 <div className="px-4 py-3 space-y-3">
                   {report.caption && (
-                    <div className="rounded-xl border border-border/60 bg-gradient-to-b from-background to-muted/10 p-3">
+                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                         <FileText className="h-3.5 w-3.5" />
                         Caption
@@ -212,7 +212,7 @@ export function OcGetMemToolView({
                   )}
 
                   {report.content && (
-                    <div className="rounded-xl border border-border/60 bg-gradient-to-b from-background to-muted/10 p-3">
+                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                         <ClipboardList className="h-3.5 w-3.5" />
                         Content
@@ -222,13 +222,13 @@ export function OcGetMemToolView({
                   )}
 
                   {report.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/60 bg-gradient-to-r from-background to-muted/20 p-2.5">
+                    <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/60 bg-foreground/[0.02] p-2.5">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mr-1">
                         <Tags className="h-3.5 w-3.5" />
                         Tags
                       </span>
                       {report.tags.map((tag) => (
-                        <Badge key={tag} variant="secondary" className="h-6 px-2 text-[11px] font-medium bg-emerald-100/60 text-emerald-800 border-emerald-200/70 dark:bg-emerald-900/25 dark:text-emerald-100 dark:border-emerald-800/60">
+                        <Badge key={tag} variant="secondary" className="h-6 px-2 text-[11px] font-medium bg-foreground/[0.04] text-foreground/85 border-border/50">
                           {tag}
                         </Badge>
                       ))}
@@ -236,7 +236,7 @@ export function OcGetMemToolView({
                   )}
 
                   {(report.session || report.updated) && (
-                    <div className="rounded-xl border border-border/60 bg-gradient-to-b from-muted/10 to-background p-3 space-y-2">
+                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                         {report.session && <Badge variant="outline" className="h-5 px-1.5 font-medium font-mono bg-background/80">{report.session}</Badge>}
                         {report.updated && <Badge variant="outline" className="h-5 px-1.5 font-medium bg-background/80">Updated: {report.updated}</Badge>}

@@ -211,8 +211,8 @@ export function GenericToolView({
     console.warn('GenericToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
     return (
       <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-        <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4">
-          <CardTitle className="text-base font-medium text-foreground">
+        <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
+          <CardTitle className="text-[12.5px] font-medium text-foreground tracking-tight">
             Tool View Error
           </CardTitle>
         </CardHeader>
@@ -235,7 +235,7 @@ export function GenericToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Wrench}
@@ -365,10 +365,10 @@ export function GenericToolView({
       >
         {!isStreaming && (formattedAssistantContent || formattedToolContent || isError) && (
           isError ? (
-            <Badge variant="outline" className="h-6 py-0.5 bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-300">
-              <AlertCircle className="h-3 w-3" />
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-red-500/90 tracking-tight">
+              <AlertCircle className="w-3 h-3" />
               Failed
-            </Badge>
+            </span>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
               <CheckCircle className="h-3 w-3 text-emerald-500" />
@@ -469,10 +469,10 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
             return (
               <div
                 key={i}
-                className="flex items-start gap-2.5 px-3 py-2 rounded-lg bg-yellow-500/5 border border-yellow-500/15"
+                className="flex items-start gap-2.5 px-3 py-2 rounded-md bg-foreground/[0.03] border border-border/50"
               >
-                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-yellow-500" />
-                <p className="text-xs leading-relaxed text-yellow-700 dark:text-yellow-400 font-mono break-words">
+                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-muted-foreground/70" />
+                <p className="text-[12px] leading-relaxed text-foreground/80 font-mono break-words">
                   {section.text}
                 </p>
               </div>
@@ -482,16 +482,16 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
             return (
               <div
                 key={i}
-                className="flex items-start gap-2.5 px-3 py-2 rounded-lg bg-red-500/5 border border-red-500/15"
+                className="flex items-start gap-2.5 px-3 py-2 rounded-md bg-red-500/[0.04] border border-red-500/25"
               >
-                <Ban className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-red-400" />
+                <Ban className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-red-500/90" />
                 <div className="min-w-0 flex-1">
                   {section.errorType && (
-                    <span className="text-[10px] font-semibold text-red-400 uppercase tracking-wider">
+                    <span className="text-[10px] font-semibold text-red-500/80 uppercase tracking-wider">
                       {section.errorType}
                     </span>
                   )}
-                  <p className="text-xs leading-relaxed text-red-600 dark:text-red-400 font-mono break-words">
+                  <p className="text-[12px] leading-relaxed text-foreground/80 font-mono break-words">
                     {section.summary}
                   </p>
                 </div>
@@ -545,10 +545,10 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
             return (
               <div
                 key={i}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-emerald-500/5 border border-emerald-500/15"
+                className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-foreground/[0.03] border border-border/50"
               >
-                <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
-                <span className="text-xs text-emerald-700 dark:text-emerald-400 font-mono">
+                <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-foreground/70" />
+                <span className="text-[12px] text-foreground/80 font-mono">
                   {section.text}
                 </span>
               </div>
@@ -673,7 +673,7 @@ function GenericToolErrorDisplay({
   // Render validation issues with structured layout
   if (validationIssues && validationIssues.length > 0) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/5 overflow-hidden">
+      <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/10">
           <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
           <span className="text-xs font-medium text-red-400">{displayType}</span>
@@ -685,7 +685,7 @@ function GenericToolErrorDisplay({
                 <AlertCircle className="h-3 w-3 flex-shrink-0 text-red-400/70 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   {issue.path.length > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-300 font-mono mr-1.5">
+                    <span className="text-[10.5px] px-1.5 py-0.5 rounded bg-red-500/[0.08] text-red-500/85 font-mono mr-1.5">
                       {issue.path.join('.')}
                     </span>
                   )}
@@ -719,7 +719,7 @@ function GenericToolErrorDisplay({
   // If the content is structured JSON, show it with SmartJsonViewer
   if (typeof parsedToolContent === 'object' && parsedToolContent !== null) {
     return (
-      <div className="rounded-lg border border-red-500/20 bg-red-500/5 overflow-hidden">
+      <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/10">
           <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
           <span className="text-xs font-medium text-red-400">Error</span>
@@ -732,7 +732,7 @@ function GenericToolErrorDisplay({
   }
 
   return (
-    <div className="rounded-lg border border-red-500/20 bg-red-500/5 overflow-hidden">
+    <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/10">
         <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />

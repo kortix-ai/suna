@@ -1,28 +1,30 @@
 'use client';
 
 import React from 'react';
-import { FilePlus2, CheckCircle, AlertCircle } from 'lucide-react';
+import { FilePlus2, AlertCircle } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
-import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { CodeHighlight } from '@/components/markdown/unified-markdown';
 import { useOcFileOpen } from './useOcFileOpen';
+import { formatTimestamp } from '../utils';
+import {
+  Counter,
+  Status,
+  ToolViewBody,
+  ToolViewFoot,
+  ToolViewHead,
+  ToolViewShell,
+} from '../shared/primitives';
 
-function getFilename(path: string | undefined): string {
+function getFilename(path?: string): string {
   if (!path) return '';
   const parts = path.split('/');
   return parts[parts.length - 1] || path;
 }
-
-function getDirectory(path: string | undefined): string {
+function getDirectory(path?: string): string {
   if (!path) return '';
   const idx = path.lastIndexOf('/');
-  if (idx < 0) return '';
-  return path.substring(0, idx);
+  return idx < 0 ? '' : path.substring(0, idx);
 }
 
 export function OcWriteToolView({
@@ -30,7 +32,6 @@ export function OcWriteToolView({
   toolResult,
   assistantTimestamp,
   toolTimestamp,
-  isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
   const args = toolCall?.arguments || {};
@@ -38,77 +39,61 @@ export function OcWriteToolView({
   const content = (args.content as string) || '';
 
   const { openFile, toDisplayPath } = useOcFileOpen();
-
   const displayPath = toDisplayPath(filePath);
   const filename = getFilename(displayPath);
   const dir = getDirectory(displayPath);
   const ext = filename.split('.').pop() || '';
+  const lineCount = content ? content.split('\n').length : 0;
 
   const isError = toolResult?.success === false || !!toolResult?.error;
 
   if (isStreaming && !toolResult) {
-    return (
-      <LoadingState
-        title="Writing File"
-        subtitle={filename}
-      />
-    );
+    return <LoadingState title="Writing file" subtitle={filename} />;
   }
 
-  return (
-    <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
-        <div className="flex flex-row items-center justify-between">
-          <ToolViewIconTitle
-            icon={FilePlus2}
-            title={filename || 'Write File'}
-            subtitle={dir}
-            onTitleClick={filePath ? () => openFile(filePath) : undefined}
-          />
-          {content && (
-            <div className="text-xs text-muted-foreground flex-shrink-0">
-              {content.split('\n').length} lines
-            </div>
-          )}
-        </div>
-      </CardHeader>
+  const ts = toolTimestamp && !isStreaming
+    ? formatTimestamp(toolTimestamp)
+    : assistantTimestamp ? formatTimestamp(assistantTimestamp) : undefined;
 
-      <CardContent className="p-0 h-full flex-1 overflow-hidden">
-        <ScrollArea className="h-full w-full">
-          <div className="p-3">
-            {content ? (
+  return (
+    <ToolViewShell>
+      <ToolViewHead
+        icon={FilePlus2}
+        title={filename || 'Write File'}
+        detail={dir}
+        onTitleClick={filePath ? () => openFile(filePath) : undefined}
+        actions={lineCount > 0 && <Counter value={lineCount} label={lineCount === 1 ? 'line' : 'lines'} />}
+      />
+
+      <ToolViewBody padded={false}>
+        {content ? (
+          <div className="px-4 py-3">
+            <div className="rounded-md border border-border/50 overflow-hidden bg-foreground/[0.02]">
               <CodeHighlight
                 code={content}
                 language={ext || 'text'}
+                className="[&>pre]:rounded-none [&>pre]:border-0 [&>pre]:bg-transparent"
               />
-            ) : (
-              <div className="text-sm text-muted-foreground">
-                File written: <span className="font-mono text-foreground">{displayPath}</span>
-              </div>
-            )}
+            </div>
           </div>
-        </ScrollArea>
-      </CardContent>
-
-      <ToolViewFooter
-        assistantTimestamp={assistantTimestamp}
-        toolTimestamp={toolTimestamp}
-        isStreaming={isStreaming}
-      >
-        {!isStreaming && (
-          isError ? (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted text-muted-foreground">
-              <AlertCircle className="h-3 w-3" />
-              Failed
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
-              Created
-            </Badge>
-          )
+        ) : (
+          <div className="px-4 py-3 text-[12px] text-muted-foreground/80 tracking-tight">
+            File written:&nbsp;
+            <span className="font-mono text-foreground/90">{displayPath}</span>
+          </div>
         )}
-      </ToolViewFooter>
-    </Card>
+      </ToolViewBody>
+
+      <ToolViewFoot timestamp={ts}>
+        {isError ? (
+          <Status tone="error">
+            <AlertCircle className="w-3 h-3" />
+            Failed
+          </Status>
+        ) : (
+          <Status tone="success">Created</Status>
+        )}
+      </ToolViewFoot>
+    </ToolViewShell>
   );
 }

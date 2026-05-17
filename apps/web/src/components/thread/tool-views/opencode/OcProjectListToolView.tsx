@@ -46,7 +46,7 @@ export function OcProjectListToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={Folder}
@@ -73,10 +73,10 @@ export function OcProjectListToolView({
                       {project.name}
                     </span>
                     {project.sessions > 0 && (
-                      <Badge variant="outline" className="h-4 py-0 text-[0.5625rem] font-normal bg-emerald-50/50 dark:bg-emerald-950/30 border-emerald-200/50 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300">
-                        <Users className="size-3 mr-0.5" />
+                      <span className="inline-flex items-center gap-1 text-[10.5px] text-muted-foreground/70 tracking-tight">
+                        <Users className="w-2.5 h-2.5" />
                         {project.sessions}
-                      </Badge>
+                      </span>
                     )}
                   </div>
                   <div className="text-[11px] text-muted-foreground/60 space-y-0.5">

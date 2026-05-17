@@ -31,27 +31,27 @@ export function ToolViewHeader({
 }: ToolViewHeaderProps) {
   return (
     <CardHeader className={cn(
-      "h-14 bg-muted/50 backdrop-blur-sm border-b border-border p-2 px-4 space-y-2",
+      // Minimal header: bare row with a hairline bottom border, no muted fill,
+      // no chunky icon wrapper. Icon sits inline with the title text.
+      "h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center",
       className
     )}>
-      <div className="flex flex-row items-center justify-between">
+      <div className="flex flex-row items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <div className="relative p-2 rounded-lg border bg-muted border-border flex-shrink-0">
-            <Icon className="w-5 h-5 text-muted-foreground" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <CardTitle className="text-base font-medium text-foreground truncate">
+          <Icon className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
+          <div className="min-w-0 flex-1 flex items-baseline gap-2">
+            <CardTitle className="text-[12.5px] font-medium text-foreground tracking-tight truncate">
               {title}
             </CardTitle>
             {subtitle && (
-              <p className="text-xs text-muted-foreground truncate">
+              <p className="text-[11.5px] text-muted-foreground/70 truncate">
                 {subtitle}
               </p>
             )}
           </div>
         </div>
         {children && (
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             {children}
           </div>
         )}

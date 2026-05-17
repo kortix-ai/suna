@@ -38,20 +38,17 @@ export function OcPlanToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={SquareKanban}
             title={title}
             subtitle={subtitle}
           />
-          <Badge
-            variant="outline"
-            className="h-5 py-0 text-[10px] bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800/50 text-blue-700 dark:text-blue-300 flex-shrink-0"
-          >
-            <ArrowRightLeft className="size-2.5 mr-1" />
+          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground/80 tracking-tight flex-shrink-0">
+            <ArrowRightLeft className="w-2.5 h-2.5" />
             {isExit ? 'Build' : 'Plan'}
-          </Badge>
+          </span>
         </div>
       </CardHeader>
 

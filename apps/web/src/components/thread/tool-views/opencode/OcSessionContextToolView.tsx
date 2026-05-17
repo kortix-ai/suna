@@ -56,16 +56,16 @@ export function OcSessionContextToolView({
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-muted/50 backdrop-blur-sm border-b p-2 px-4 space-y-2">
+      <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle
             icon={BookOpen}
             title={sessionTitle || 'Session Context'}
             subtitle={modeLabel}
           />
-          <Badge variant="outline" className="h-5 py-0 text-[10px] bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300 flex-shrink-0">
+          <span className="inline-flex items-center text-[11px] text-muted-foreground/80 tracking-tight flex-shrink-0">
             {modeLabel}
-          </Badge>
+          </span>
         </div>
       </CardHeader>
 
