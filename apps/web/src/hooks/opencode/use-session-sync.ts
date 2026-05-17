@@ -181,12 +181,17 @@ export function useSessionSync(sessionId: string) {
 				};
 			}
 
-			const fetchWithRetry = async (attempt = 0) => {
+			// IMPORTANT: do NOT short-circuit hydrate on `cancelled`. The
+			// store is keyed by sessionID — writing into it is always safe
+			// even if this effect's component has unmounted. Strict Mode
+			// fires effect → cleanup (cancelled=true) → effect, and the
+			// in-flight dedup map below would otherwise drop the only fetch
+			// because the cancelled first run bails before hydrating.
+			const fetchWithRetry = async (attempt = 0): Promise<void> => {
 				try {
 					const res = await getClient().session.messages({
 					sessionID: sessionId,
 				});
-				if (cancelled) return;
 				const data = (res.data ?? []) as any[];
 
 				if (data.length === 0) {
@@ -213,6 +218,10 @@ export function useSessionSync(sessionId: string) {
 					}
 				}
 			} catch {
+				// Stop retrying ONLY if the effect has been torn down
+				// (no live consumer wants this data anymore). Don't gate
+				// the success-path hydrate on `cancelled` — see comment
+				// above the function.
 				if (cancelled) return;
 				if (attempt < 3) {
 					const delay = 500 * 2 ** attempt;
@@ -230,17 +239,33 @@ export function useSessionSync(sessionId: string) {
 				}
 			}
 		};
+		const startFetch = (): Promise<void> => {
+			const loadPromise = fetchWithRetry().finally(() => {
+				markNetworkLoadAttempt(sessionId);
+				inFlightInitialLoads.delete(sessionId);
+			});
+			inFlightInitialLoads.set(sessionId, loadPromise);
+			return loadPromise;
+		};
 		const existingLoad = inFlightInitialLoads.get(sessionId);
 		if (existingLoad) {
-			existingLoad.catch(() => {
-				// Error handling is already performed by the owner.
-			});
-			} else {
-				const loadPromise = fetchWithRetry().finally(() => {
-					markNetworkLoadAttempt(sessionId);
-					inFlightInitialLoads.delete(sessionId);
+			// A prior mount fired the fetch. In Strict Mode that prior run
+			// may have been cancelled mid-flight and skipped hydrate.
+			// Await it, then verify the store actually has data — re-fire
+			// if it doesn't.
+			existingLoad
+				.catch(() => {
+					// Error handling is already performed by the owner.
+				})
+				.then(() => {
+					if (cancelled) return;
+					const after = useSyncStore.getState().messages[sessionId];
+					if (after === undefined && !inFlightInitialLoads.has(sessionId)) {
+						startFetch();
+					}
 				});
-				inFlightInitialLoads.set(sessionId, loadPromise);
+			} else {
+				startFetch();
 			}
 
 		return () => {
