@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
-import { vscodeDark } from '@uiw/codemirror-theme-vscode';
-import { xcodeLight } from '@uiw/codemirror-theme-xcode';
+import { pierreDarkCm, pierreLightCm } from '@/lib/codemirror-pierre-theme';
 import { langs } from '@uiw/codemirror-extensions-langs';
 import { EditorView, keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
@@ -559,7 +558,7 @@ export function CodeEditor({
   }, [handleKeyDown]);
 
   // Theme selection
-  const theme = mounted && resolvedTheme === 'dark' ? vscodeDark : xcodeLight;
+  const theme = mounted && resolvedTheme === 'dark' ? pierreDarkCm : pierreLightCm;
 
   // Build the diagnostics CodeMirror extension from the diagnostics prop
   const diagExt = useMemo(() => {
@@ -663,14 +662,14 @@ export function CodeEditor({
   };
 
   return (
-    <div 
+    <div
       className={cn(
         'flex flex-col max-w-full',
-        readOnly 
-          ? '' // For read-only, let height be auto and content flow naturally
+        readOnly
+          ? 'min-h-full' // For read-only, fill at least one viewport so the editor background doesn't end at the last line
           : 'h-full max-h-full overflow-hidden',
         className
-      )} 
+      )}
       style={readOnly ? undefined : { contain: 'strict' }}
     >
       {/* Header with save controls and language */}
@@ -716,12 +715,12 @@ export function CodeEditor({
       )}
 
       {/* Editor */}
-      <div 
-        ref={editorContainerRef} 
+      <div
+        ref={editorContainerRef}
         className={cn(
           "w-full max-w-full bg-white dark:bg-zinc-900",
-          readOnly 
-            ? "overflow-visible" // Let parent ScrollArea handle scrolling for read-only
+          readOnly
+            ? "flex-1 min-h-full overflow-visible" // Stretch to fill parent so short files still fill the viewport
             : "flex-1 overflow-hidden min-h-0 max-h-full"
         )}
         style={readOnly ? undefined : { contain: 'strict' }}
@@ -754,11 +753,12 @@ export function CodeEditor({
             className={cn(
               "w-full max-w-full",
               fontSize || "text-sm",
-              readOnly 
-                ? "[&_.cm-scroller]:!overflow-visible" // No scroll in read-only, parent handles it
+              readOnly
+                ? "[&_.cm-scroller]:!overflow-visible [&_.cm-editor]:!min-h-full [&_.cm-gutters]:!min-h-full" // No scroll in read-only; gutter + editor stretch to fill viewport
                 : "[&_.cm-editor]:max-h-full [&_.cm-scroller]:overflow-auto"
             )}
             height={editorHeight}
+            minHeight={readOnly ? '100%' : undefined}
           />
         )}
       </div>

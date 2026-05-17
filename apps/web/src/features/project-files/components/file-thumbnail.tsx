@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { Loader2 } from 'lucide-react';
 import { codeToHtml } from 'shiki';
 import { cn } from '@/lib/utils';
+import { SHIKI_THEMES } from '@/lib/shiki-theme';
 import { useFileContent } from '../hooks';
 import { getFileCategory, getLanguageFromExt } from './file-content-renderer';
 import { getFileIcon } from './file-icon';
@@ -87,8 +88,8 @@ function CodeThumbnail({ filePath, fileName }: { filePath: string; fileName: str
     codeToHtml(preview, {
       lang,
       themes: {
-        light: 'github-light',
-        dark: 'github-dark',
+        light: SHIKI_THEMES.light as never,
+        dark: SHIKI_THEMES.dark as never,
       },
     }).then((html) => {
       if (!cancelled) setHighlightedHtml(html);
@@ -215,8 +216,8 @@ function JsonThumbnail({ filePath, fileName }: { filePath: string; fileName: str
     codeToHtml(preview, {
       lang: 'json',
       themes: {
-        light: 'github-light',
-        dark: 'github-dark',
+        light: SHIKI_THEMES.light as never,
+        dark: SHIKI_THEMES.dark as never,
       },
     }).then((html) => {
       if (!cancelled) setHighlightedHtml(html);

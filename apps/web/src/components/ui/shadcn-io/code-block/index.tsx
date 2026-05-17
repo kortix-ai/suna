@@ -555,9 +555,13 @@ export const CodeBlockItem = ({
 };
 
 export type CodeBlockContentProps = HTMLAttributes<HTMLDivElement> & {
+  /**
+   * Optional theme override — accepts Shiki theme names or theme JSON objects.
+   * Defaults to the project-wide Pierre theme.
+   */
   themes?: {
-    light: string;
-    dark: string;
+    light: unknown;
+    dark: unknown;
   };
   language?: BundledLanguage;
   syntaxHighlighting?: boolean;
@@ -566,10 +570,7 @@ export type CodeBlockContentProps = HTMLAttributes<HTMLDivElement> & {
 
 export const CodeBlockContent = ({
   children,
-  themes = {
-    light: 'vitesse-light',
-    dark: 'vitesse-dark',
-  },
+  themes,
   language = 'typescript',
   syntaxHighlighting = true,
   ...props
@@ -586,12 +587,17 @@ export const CodeBlockContent = ({
     const loadHighlightedCode = async () => {
       try {
         const { codeToHtml } = await import('shiki');
-        
+        const { SHIKI_THEMES } = await import('@/lib/shiki-theme');
+        const resolvedThemes = themes ?? {
+          light: SHIKI_THEMES.light,
+          dark: SHIKI_THEMES.dark,
+        };
+
         const html = await codeToHtml(children, {
           lang: language,
           themes: {
-            light: themes.light,
-            dark: themes.dark,
+            light: resolvedThemes.light as never,
+            dark: resolvedThemes.dark as never,
           },
         });
 

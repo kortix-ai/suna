@@ -11,6 +11,7 @@ import {
   type CodeOptionsMultipleThemes,
   codeToHtml,
 } from 'shiki';
+import { SHIKI_THEMES } from '@/lib/shiki-theme';
 
 export type CodeBlockContentProps = HTMLAttributes<HTMLDivElement> & {
   themes?: CodeOptionsMultipleThemes['themes'];
@@ -30,8 +31,8 @@ export const CodeBlockContent = async ({
     ? await codeToHtml(children as string, {
         lang: language ?? 'typescript',
         themes: themes ?? {
-          light: 'vitesse-light',
-          dark: 'vitesse-dark',
+          light: SHIKI_THEMES.light as never,
+          dark: SHIKI_THEMES.dark as never,
         },
         transformers: [
           transformerNotationDiff({

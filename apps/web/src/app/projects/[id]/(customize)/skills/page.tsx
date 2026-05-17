@@ -13,7 +13,7 @@
  * editing.
  */
 
-import { use, useEffect, useMemo, useState } from 'react';
+import { use, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -43,6 +43,8 @@ import {
   type ProjectConfigSummary,
   type ProjectFileEntry,
 } from '@/lib/projects-client';
+import { FileTree, useFileTree } from '@pierre/trees/react';
+import { FILE_TREE_DEFAULT_ITEM_HEIGHT, type FileTreeSortComparator } from '@pierre/trees';
 
 type Skill = ProjectConfigSummary['skills'][number];
 
@@ -234,6 +236,15 @@ function SkillListItem({
   );
 }
 
+// SKILL.md pinned to the top of its directory level; otherwise fall through
+// to Pierre's default ordering (directories first, then files alphabetically).
+const skillSort: FileTreeSortComparator = (a, b) => {
+  if (!a.isDirectory && a.basename === 'SKILL.md') return -1;
+  if (!b.isDirectory && b.basename === 'SKILL.md') return 1;
+  if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+  return a.basename.localeCompare(b.basename);
+};
+
 function InlineSkillTree({
   projectId,
   skill,
@@ -256,15 +267,107 @@ function InlineSkillTree({
     staleTime: 30_000,
   });
 
-  const tree = useMemo(
-    () => buildTree(filesQuery.data ?? [], skillDir, skill.path),
-    [filesQuery.data, skillDir, skill.path],
+  // Paths fed to Pierre are skill-dir relative — that way the tree renders
+  // with the skill folder as the (implicit) root, matching the previous UI.
+  const relativePaths = useMemo<readonly string[]>(() => {
+    const fromApi = (filesQuery.data ?? [])
+      .map((f: ProjectFileEntry) => f.path)
+      .filter((p) => p === skill.path || p.startsWith(skillDir + '/'));
+    // Always keep SKILL.md in the tree, even before the file listing lands.
+    const ensured = fromApi.length > 0 ? fromApi : [skill.path];
+    const seen = new Set<string>();
+    const rels: string[] = [];
+    for (const full of ensured) {
+      const rel = full === skillDir ? '' : full.slice(skillDir.length + 1);
+      if (rel && !seen.has(rel)) {
+        seen.add(rel);
+        rels.push(rel);
+      }
+    }
+    return rels;
+  }, [filesQuery.data, skillDir, skill.path]);
+
+  // Pierre's FileTree virtualizes, so the host must have an explicit height
+  // for any row to actually paint. Skill folders are usually small (1–20
+  // entries) — size to content, with a soft cap so a huge skill folder still
+  // scrolls instead of pushing the rest of the page off-screen.
+  const visibleRowEstimate = relativePaths.length + countParentDirs(relativePaths);
+  const treeHeightPx = Math.min(
+    Math.max(visibleRowEstimate, 1) * FILE_TREE_DEFAULT_ITEM_HEIGHT,
+    320,
   );
 
-  // Indent so the tree's rows line up just below the skill row's text;
-  // the border-left gives a subtle "this belongs to the row above" cue.
+  // `relativePaths` is captured in a ref so `onSelectionChange` (created once
+  // when the model is created) can read the current list — otherwise it
+  // closes over the empty initial array and rejects every click.
+  const relativePathsRef = useRef<readonly string[]>(relativePaths);
+  relativePathsRef.current = relativePaths;
+
+  const { model } = useFileTree({
+    paths: relativePaths,
+    initialExpansion: 'open',
+    sort: skillSort,
+    onSelectionChange: (paths) => {
+      const rel = paths[0];
+      if (!rel) return;
+      if (!relativePathsRef.current.includes(rel)) return;
+      onPickFile(`${skillDir}/${rel}`);
+    },
+  });
+
+  // CRITICAL: `useFileTree` creates the FileTree model ONCE on mount and
+  // ignores options after that (verified in @pierre/trees source). When the
+  // file listing resolves async, those new paths never reach the model —
+  // `getItem(rel)` returns null and selection silently no-ops. Imperatively
+  // syncing paths via `resetPaths()` is the only way to keep the model in
+  // step with the React state.
+  useEffect(() => {
+    model.resetPaths(relativePaths);
+  }, [relativePaths, model]);
+
+  // Drive Pierre's selection from the parent's `selectedFilePath`. Runs after
+  // the resetPaths effect above so the target path is guaranteed to exist
+  // in the model before we ask it to select.
+  useEffect(() => {
+    const rel = selectedFilePath && selectedFilePath.startsWith(skillDir + '/')
+      ? selectedFilePath.slice(skillDir.length + 1)
+      : null;
+    const current = model.getSelectedPaths()[0] ?? null;
+    if (rel === current) return;
+    if (current) model.getItem(current)?.deselect();
+    if (rel && relativePaths.includes(rel)) {
+      // `selectOnlyPath` is single-call select-and-replace, more robust than
+      // deselect-then-select against intermediate render races.
+      const handle = model.getItem(rel);
+      if (handle) handle.select();
+    }
+  }, [selectedFilePath, skillDir, relativePaths, model]);
+
+  // Pierre's tree reads `--trees-*-override` CSS vars to theme its shadow
+  // root. Map them to our Tailwind tokens so the tree blends into the
+  // customize panel: transparent background, muted text for idle rows, a
+  // crisp `bg-muted` highlight on the selected row, and a beefier per-level
+  // indent so nested files actually read as nested.
+  const pierreBlendStyle: React.CSSProperties = {
+    height: treeHeightPx,
+    '--trees-bg-override': 'transparent',
+    '--trees-bg-muted-override': 'transparent',
+    '--trees-fg-override': 'hsl(var(--foreground))',
+    '--trees-fg-muted-override': 'hsl(var(--muted-foreground))',
+    '--trees-border-color-override': 'transparent',
+    '--trees-selected-bg-override': 'hsl(var(--muted))',
+    '--trees-selected-fg-override': 'hsl(var(--foreground))',
+    '--trees-selected-focused-border-color-override': 'transparent',
+    '--trees-accent-override': 'hsl(var(--primary))',
+    // Layout — bump outer padding back to ~0 (we control it via wrapper) and
+    // push per-level indent so children of a folder are visibly inset.
+    '--trees-padding-inline-override': '0px',
+    '--trees-level-gap-override': '14px',
+    '--trees-item-padding-x-override': '8px',
+  } as React.CSSProperties;
+
   return (
-    <div className="ml-3 mt-0.5 border-l border-border/50 pl-1.5">
+    <div className="mt-0.5 pl-3">
       {filesQuery.isLoading && !filesQuery.data ? (
         <div className="space-y-1 py-1">
           {Array.from({ length: 2 }).map((_, i) => (
@@ -276,184 +379,22 @@ function InlineSkillTree({
           Couldn&apos;t load files.
         </p>
       ) : (
-        <FileTreeNode
-          node={tree}
-          depth={0}
-          selectedPath={selectedFilePath}
-          onSelect={onPickFile}
-        />
+        <FileTree model={model} style={pierreBlendStyle} />
       )}
     </div>
   );
 }
 
-/* ─── File tree primitives ─────────────────────────────────────────────── */
-
-interface TreeNode {
-  /** Display name — file's basename or directory's segment. */
-  name: string;
-  /** Full repo-relative path (only set for files). */
-  path: string | null;
-  /** Children sorted: directories first then files, both alphabetical. */
-  children: TreeNode[];
-}
-
-function buildTree(
-  files: ProjectFileEntry[],
-  rootDir: string,
-  fallbackSkillPath?: string,
-): TreeNode {
-  const root: TreeNode = { name: '', path: null, children: [] };
-
-  // The API can return paths from the whole repo if `path` is empty; filter
-  // defensively to the skill dir even though we scope the fetch.
-  const filtered = files
-    .map((f) => f.path)
-    .filter((p) => p === rootDir || p.startsWith(rootDir + '/'));
-
-  // If the file fetch hasn't returned yet (or returned nothing), keep at
-  // least the SKILL.md entry so the user always sees a clickable row.
-  if (filtered.length === 0 && fallbackSkillPath) {
-    filtered.push(fallbackSkillPath);
+/** Count unique ancestor directories implied by a set of relative file paths. */
+function countParentDirs(paths: readonly string[]): number {
+  const dirs = new Set<string>();
+  for (const p of paths) {
+    const parts = p.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      dirs.add(parts.slice(0, i).join('/'));
+    }
   }
-
-  for (const fullPath of filtered) {
-    const rel = fullPath.slice(rootDir.length + 1);
-    if (!rel) continue;
-    const segments = rel.split('/');
-    let cursor = root;
-    segments.forEach((seg, i) => {
-      const isLeaf = i === segments.length - 1;
-      let child = cursor.children.find((c) => c.name === seg);
-      if (!child) {
-        child = {
-          name: seg,
-          path: isLeaf ? fullPath : null,
-          children: [],
-        };
-        cursor.children.push(child);
-      }
-      cursor = child;
-    });
-  }
-
-  sortNode(root);
-  return root;
-}
-
-function sortNode(node: TreeNode) {
-  node.children.sort((a, b) => {
-    const aIsDir = a.path === null;
-    const bIsDir = b.path === null;
-    // SKILL.md pinned to top of its level.
-    if (!aIsDir && a.name === 'SKILL.md') return -1;
-    if (!bIsDir && b.name === 'SKILL.md') return 1;
-    if (aIsDir !== bIsDir) return aIsDir ? -1 : 1; // dirs first
-    return a.name.localeCompare(b.name);
-  });
-  for (const c of node.children) sortNode(c);
-}
-
-function FileTreeNode({
-  node,
-  depth,
-  selectedPath,
-  onSelect,
-}: {
-  node: TreeNode;
-  depth: number;
-  selectedPath: string | null;
-  onSelect: (path: string) => void;
-}) {
-  // Render only children — the root node is a virtual container with
-  // empty name.
-  return (
-    <ul className="space-y-0.5">
-      {node.children.map((child) => (
-        <li key={child.name + (child.path ?? '')}>
-          {child.path ? (
-            <FileLeaf
-              node={child}
-              depth={depth}
-              active={selectedPath === child.path}
-              onSelect={() => onSelect(child.path!)}
-            />
-          ) : (
-            <DirNode
-              node={child}
-              depth={depth}
-              selectedPath={selectedPath}
-              onSelect={onSelect}
-            />
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function DirNode({
-  node,
-  depth,
-  selectedPath,
-  onSelect,
-}: {
-  node: TreeNode;
-  depth: number;
-  selectedPath: string | null;
-  onSelect: (path: string) => void;
-}) {
-  const [open, setOpen] = useState(true);
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="group flex w-full items-center rounded-md py-1 pr-2 text-left text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-        style={{ paddingLeft: 8 + depth * 12 }}
-      >
-        {/* Trailing slash is the only signal this is a directory — keeps the
-            row aligned with file rows at the same depth. */}
-        <span className="truncate text-[12px] font-medium">{node.name}/</span>
-      </button>
-      {open && (
-        <FileTreeNode
-          node={node}
-          depth={depth + 1}
-          selectedPath={selectedPath}
-          onSelect={onSelect}
-        />
-      )}
-    </>
-  );
-}
-
-function FileLeaf({
-  node,
-  depth,
-  active,
-  onSelect,
-}: {
-  node: TreeNode;
-  depth: number;
-  active: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        'group flex w-full items-center rounded-md py-1 pr-2 text-left transition-colors',
-        active
-          ? 'bg-muted/70 text-foreground'
-          : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
-      )}
-      style={{ paddingLeft: 8 + depth * 12 }}
-    >
-      <span className="truncate text-[12px]">{node.name}</span>
-    </button>
-  );
+  return dirs.size;
 }
 
 /* ─── File viewer (right pane) ─────────────────────────────────────────── */

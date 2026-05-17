@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { codeToHtml } from 'shiki';
 import { useTheme } from 'next-themes';
 import { MermaidRenderer } from './mermaid-renderer';
+import { SHIKI_THEMES, resolveShikiThemeName } from '@/lib/shiki-theme';
 
 export type CodeBlockProps = {
   children?: React.ReactNode;
@@ -37,9 +38,11 @@ function CodeBlockCode({
   const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
   const [mermaidFailed, setMermaidFailed] = useState(false);
 
-  // Use github-dark when in dark mode, github-light when in light mode
-  const theme =
-    propTheme || (resolvedTheme === 'dark' ? 'github-dark' : 'github-light');
+  // Project-wide Pierre theme (overridable via `theme` prop).
+  const themeName = propTheme || resolveShikiThemeName(resolvedTheme);
+  const themeInput = propTheme
+    ? propTheme
+    : (resolvedTheme === 'dark' ? SHIKI_THEMES.dark : SHIKI_THEMES.light);
 
   // Regular syntax highlighting effect
   useEffect(() => {
@@ -55,7 +58,7 @@ function CodeBlockCode({
       }
       const html = await codeToHtml(code, {
         lang: language,
-        theme,
+        theme: themeInput as never,
         transformers: [
           {
             pre(node) {
@@ -70,7 +73,7 @@ function CodeBlockCode({
       setHighlightedHtml(html);
     }
     highlight();
-  }, [code, language, theme, mermaidFailed]);
+  }, [code, language, themeInput, themeName, mermaidFailed]);
 
   const classNames = cn('[&_pre]:!bg-background/95 [&_pre]:rounded-2xl [&_pre]:p-4 [&_pre]:!overflow-x-auto [&_pre]:!w-px [&_pre]:!flex-grow [&_pre]:!min-w-0 [&_pre]:!box-border [&_.shiki]:!overflow-x-auto [&_.shiki]:!w-px [&_.shiki]:!flex-grow [&_.shiki]:!min-w-0 [&_code]:!min-w-0 [&_code]:!whitespace-pre', 'w-px flex-grow min-w-0 overflow-hidden flex w-full', className);
 
