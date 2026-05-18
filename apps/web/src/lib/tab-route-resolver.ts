@@ -73,18 +73,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     type: 'page',
     href: '/configuration',
   },
-  '/marketplace': {
-    id: 'page:/marketplace',
-    title: 'Marketplace',
-    type: 'page',
-    href: '/marketplace',
-  },
-  '/skills': {
-    id: 'page:/skills',
-    title: 'Skills',
-    type: 'page',
-    href: '/skills',
-  },
   '/tools': {
     id: 'page:/tools',
     title: 'Tools',

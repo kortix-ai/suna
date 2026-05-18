@@ -77,7 +77,6 @@ import type { FilesPageRef } from '@/components/pages/FilesPage';
 import { SecretsPage } from '@/components/pages/SecretsPage';
 import { MemoryPage } from '@/components/pages/MemoryPage';
 import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
-import { MarketplacePage } from '@/components/pages/MarketplacePage';
 import { TerminalPage } from '@/components/pages/TerminalPage';
 import { SetupWizard } from '@/components/setup/SetupWizard';
 import { InstanceOnboarding } from '@/components/setup/InstanceOnboarding';
@@ -1655,17 +1654,6 @@ export default function HomeScreen() {
           /* Active page tab — Terminal */
           ) : activePageId === 'page:terminal' && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <TerminalPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Marketplace */
-          ) : activePageId === 'page:marketplace' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <MarketplacePage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
