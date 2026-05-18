@@ -122,6 +122,7 @@ mock.module('../middleware/auth', () => ({
 
 mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => {},
+  archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
   readRepoFile: async (_p: any, path: string) => {
     const content = repoFiles.get(path);

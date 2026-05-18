@@ -1,4 +1,4 @@
-import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, accountSecrets, auditEvents, usageEvents, projects, projectMembers, projectSecrets, projectConnections, projectConnectionTools, projectTriggers, projectTriggerEvents, projectSessions, projectRuntimeSnapshots, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs } from './schema/kortix';
+import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, projects, projectMembers, projectSecrets, projectConnections, projectConnectionTools, projectTriggers, projectTriggerEvents, projectSessions, projectRuntimeSnapshots, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs } from './schema/kortix';
 import { apiKeys, accountUser } from './schema/public';
 
 // Select types (what you get back from queries)
@@ -6,8 +6,6 @@ export type Account = typeof accounts.$inferSelect;
 export type AccountMember = typeof accountMembers.$inferSelect;
 export type AccountInvitation = typeof accountInvitations.$inferSelect;
 export type AccountGithubInstallation = typeof accountGithubInstallations.$inferSelect;
-export type AccountSecret = typeof accountSecrets.$inferSelect;
-export type NewAccountSecret = typeof accountSecrets.$inferInsert;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;

@@ -75,14 +75,6 @@ import {
   listProjectSecrets,
 } from './secrets';
 import {
-  decodeOAuthSubscription,
-  listAccountSecrets,
-} from '../accounts/secrets';
-import {
-  chatgptSubscriptionEnv,
-  refreshChatgptSubscriptionIfNeeded,
-} from '../accounts/oauth-chatgpt';
-import {
   effectiveProjectRole,
   isAccountManager,
   parseProjectRole,
@@ -672,34 +664,6 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
   };
 }
 
-// Env vars consumed by the Daytona/local sandbox entrypoint. Used at both
-// session-create and session-restart time so the restart picks up the
-// latest project secrets and rotated tokens.
-async function resolveAccountSecretEnv(accountId: string): Promise<Record<string, string>> {
-  const rows = await listAccountSecrets(accountId);
-  const env: Record<string, string> = {};
-  for (const row of rows) {
-    if (row.kind === 'api_key') {
-      env[row.name] = row.value;
-      continue;
-    }
-    if (row.kind === 'oauth_subscription' && row.provider === 'chatgpt') {
-      try {
-        const current = decodeOAuthSubscription(row.value);
-        const fresh = await refreshChatgptSubscriptionIfNeeded({ accountId, current });
-        Object.assign(env, chatgptSubscriptionEnv(fresh));
-      } catch (err) {
-        console.warn('[accounts] failed to materialize oauth_subscription', {
-          accountId,
-          secretName: row.name,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    }
-  }
-  return env;
-}
-
 async function buildSessionSandboxEnvVars(input: {
   accountId: string;
   projectId: string;
@@ -711,7 +675,6 @@ async function buildSessionSandboxEnvVars(input: {
   initialPrompt?: string | null;
   githubToken?: string | null;
 }): Promise<Record<string, string>> {
-  const accountSecretsEnv = await resolveAccountSecretEnv(input.accountId);
   const runtimeSecrets = await listProjectSecrets(input.projectId);
   const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
   const llmToken = encodeSessionLlmToken({
@@ -736,8 +699,6 @@ async function buildSessionSandboxEnvVars(input: {
     || process.env.GITHUB_TOKEN
     || '';
   return {
-    // Account-level secrets first; project secrets win on name conflict.
-    ...accountSecretsEnv,
     ...runtimeSecrets,
     KORTIX_PROJECT_AUTO_CLONE: '1',
     KORTIX_REPO_URL: input.repoUrl,

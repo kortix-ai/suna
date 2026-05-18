@@ -50,6 +50,7 @@ mock.module('../sandbox-proxy', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async (_project: unknown, branchName: string) => {
     branchDeletes.push(branchName);
     return true;

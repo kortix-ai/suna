@@ -90,6 +90,7 @@ mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
   },
+  archiveRepoSubtree: async () => undefined,
   listRepoFiles: async (_project: any, _ref: string, path?: string) => {
     const prefix = (path ?? '').replace(/\/$/, '');
     const entries = Array.from(repoFiles.keys())

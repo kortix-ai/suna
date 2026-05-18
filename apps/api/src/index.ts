@@ -47,7 +47,6 @@ import {
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { accountsRouter } from './accounts';
 import { accountInvitesRouter } from './accounts/invites';
-import { oauthChatgptRouter } from './accounts/oauth-chatgpt';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
 
@@ -254,10 +253,6 @@ app.route('/v1/accounts', accountsRouter);
 
 // /v1/account-invites/* — accept/decline/describe pending team invitations.
 app.route('/v1/account-invites', accountInvitesRouter);
-
-// /v1/oauth/chatgpt/* — consumer-side OAuth for binding a user's ChatGPT
-// subscription to a Kortix account (stored as account_secrets row).
-app.route('/v1/oauth/chatgpt', oauthChatgptRouter);
 
 app.route('/v1/ops', opsApp);
 

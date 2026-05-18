@@ -1,16 +1,11 @@
 import { Context, Hono } from 'hono';
-import { and, count, desc, eq, gt, isNull, sql } from 'drizzle-orm';
-import { accountInvitations, accountMembers, accounts, accountSecrets, accountUser, projectMembers, projects } from '@kortix/db';
+import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
+import { accountInvitations, accountMembers, accounts, accountUser, projectMembers, projects } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import { sendAccountInviteEmail } from './email';
-import {
-  encryptAccountSecret,
-  isValidSecretName,
-  type AccountSecretKind,
-} from './secrets';
 
 export const accountsRouter = new Hono<AppEnv>();
 
@@ -713,118 +708,6 @@ accountsRouter.post('/:accountId/leave', async (c) => {
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
-
-  return c.json({ ok: true });
-});
-
-function serializeAccountSecret(row: typeof accountSecrets.$inferSelect) {
-  return {
-    secret_id: row.secretId,
-    account_id: row.accountId,
-    name: row.name,
-    kind: row.kind,
-    provider: row.provider,
-    created_by: row.createdBy,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  };
-}
-
-function isAccountManager(role: 'owner' | 'admin' | 'member'): boolean {
-  return role === 'owner' || role === 'admin';
-}
-
-// GET /v1/accounts/:accountId/secrets — list account secrets (names only).
-accountsRouter.get('/:accountId/secrets', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-
-  const membership = await getMembership(userId, accountId);
-  if (!membership) return c.json({ error: 'Forbidden' }, 403);
-
-  const rows = await db
-    .select()
-    .from(accountSecrets)
-    .where(eq(accountSecrets.accountId, accountId))
-    .orderBy(desc(accountSecrets.updatedAt));
-
-  return c.json({ items: rows.map(serializeAccountSecret) });
-});
-
-// POST /v1/accounts/:accountId/secrets — upsert an api_key secret.
-// OAuth subscription rows are written by the /v1/oauth/<provider>/callback
-// route, not here, so this endpoint intentionally only accepts kind=api_key.
-accountsRouter.post('/:accountId/secrets', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-
-  const membership = await getMembership(userId, accountId);
-  if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (!isAccountManager(membership.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-
-  const body = await readBody(c);
-  const name = normalizeString(body.name)?.toUpperCase();
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (!isValidSecretName(name)) {
-    return c.json({ error: 'name must be a valid env var name (A-Z, 0-9, _; max 64 chars)' }, 400);
-  }
-  if (name.startsWith('KORTIX_')) {
-    return c.json({ error: 'KORTIX_* names are reserved for platform runtime variables' }, 400);
-  }
-
-  const value = typeof body.value === 'string' ? body.value : null;
-  if (value === null) return c.json({ error: 'value is required' }, 400);
-
-  const kind: AccountSecretKind = 'api_key';
-  const now = new Date();
-  const [row] = await db
-    .insert(accountSecrets)
-    .values({
-      accountId,
-      name,
-      valueEnc: encryptAccountSecret(accountId, value),
-      kind,
-      provider: null,
-      createdBy: userId,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [accountSecrets.accountId, accountSecrets.name],
-      set: {
-        valueEnc: encryptAccountSecret(accountId, value),
-        kind,
-        provider: null,
-        updatedAt: now,
-      },
-    })
-    .returning();
-
-  return c.json(serializeAccountSecret(row), 200);
-});
-
-// DELETE /v1/accounts/:accountId/secrets/:name
-accountsRouter.delete('/:accountId/secrets/:name', async (c) => {
-  const userId = c.get('userId') as string;
-  const accountId = c.req.param('accountId');
-  const name = c.req.param('name')?.trim().toUpperCase();
-
-  const membership = await getMembership(userId, accountId);
-  if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (!isAccountManager(membership.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!name || !isValidSecretName(name)) {
-    return c.json({ error: 'Invalid secret name' }, 400);
-  }
-
-  await db
-    .delete(accountSecrets)
-    .where(and(
-      eq(accountSecrets.accountId, accountId),
-      eq(accountSecrets.name, name),
-    ));
 
   return c.json({ ok: true });
 });

@@ -57,6 +57,7 @@ mock.module('../middleware/auth', () => ({
 
 mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => {},
+  archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
   readRepoFile: async () => 'kortix_version = 1\n[project]\nname = "x"\n',
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),

@@ -99,11 +99,6 @@ export const apiKeyTypeEnum = kortixSchema.enum('api_key_type', [
   'sandbox',
 ]);
 
-export const accountSecretKindEnum = kortixSchema.enum('account_secret_kind', [
-  'api_key',
-  'oauth_subscription',
-]);
-
 // ─── Accounts & Members ─────────────────────────────────────────────────────
 // Replaces basejump.account_user. Fully kortix-native.
 
@@ -167,28 +162,6 @@ export const accountInvitations = kortixSchema.table(
     index('idx_account_invitations_account').on(table.accountId),
     index('idx_account_invitations_expires_at').on(table.expiresAt),
     uniqueIndex('idx_account_invitations_pending').on(table.accountId, table.email),
-  ],
-);
-
-export const accountSecrets = kortixSchema.table(
-  'account_secrets',
-  {
-    secretId: uuid('secret_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    name: varchar('name', { length: 64 }).notNull(),
-    valueEnc: text('value_enc').notNull(),
-    kind: accountSecretKindEnum('kind').default('api_key').notNull(),
-    provider: varchar('provider', { length: 32 }),
-    createdBy: uuid('created_by'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_account_secrets_account').on(table.accountId),
-    index('idx_account_secrets_kind').on(table.kind),
-    uniqueIndex('idx_account_secrets_account_name').on(table.accountId, table.name),
   ],
 );
 
@@ -900,13 +873,6 @@ export const projectSecretsRelations = relations(projectSecrets, ({ one }) => ({
   project: one(projects, {
     fields: [projectSecrets.projectId],
     references: [projects.projectId],
-  }),
-}));
-
-export const accountSecretsRelations = relations(accountSecrets, ({ one }) => ({
-  account: one(accounts, {
-    fields: [accountSecrets.accountId],
-    references: [accounts.accountId],
   }),
 }));
 

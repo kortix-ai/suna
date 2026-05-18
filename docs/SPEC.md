@@ -308,7 +308,7 @@ Target model:
 **Single-token router model, with auth profiles.** The sandbox carries **one** Kortix LLM token and a base URL. The cloud router resolves the selected LLM authentication profile server-side.
 
 - Today, the session LLM router resolves `OPENROUTER_API_KEY` from project secrets and proxies OpenRouter-compatible chat completions.
-- Target: Cloud Vault stores account/project/user LLM auth profiles for API keys, OpenRouter keys, ChatGPT/Codex OAuth-style profiles, Copilot-style profiles, Bedrock/Vertex/Azure credentials, and future providers.
+- Target: Cloud Vault stores account/project/user LLM auth profiles for API keys, OpenRouter keys, Copilot-style profiles, Bedrock/Vertex/Azure credentials, and future providers.
 - At sandbox-create, the API generates a short-lived `KORTIX_LLM_TOKEN` (HMAC-signed JWT scoped to that session) and injects it + `KORTIX_LLM_BASE_URL=https://<api>/v1/router/llm`.
 - The chat/model selector chooses `model_provider + model + auth_profile`, so the same model can run against a personal profile, project profile, or account profile.
 - The starter `opencode.jsonc` declares:
@@ -325,7 +325,6 @@ Target model:
   }
   ```
 - The router (`apps/api/src/router/llm/*`) authenticates the token → resolves the user/account/project → looks up the real upstream key → proxies the call → bills usage.
-- ChatGPT/Codex and other OAuth-backed profiles are provider-specific auth profiles, not regular env vars. Their refresh material stays server-side and can be shared as `use` without revealing tokens.
 
 **Why:** sandbox holds zero real provider secrets. Sandbox tools (bash, web) can't exfiltrate keys. One token to rotate. Centralized usage tracking. Provider abstraction — agents say "claude-sonnet"; we pick the upstream.
 

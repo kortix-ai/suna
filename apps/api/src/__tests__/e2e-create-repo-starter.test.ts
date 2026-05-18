@@ -74,6 +74,7 @@ mock.module('../middleware/auth', () => ({
 
 mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => undefined,
+  archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',

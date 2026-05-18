@@ -74,6 +74,7 @@ mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
   },
+  archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
