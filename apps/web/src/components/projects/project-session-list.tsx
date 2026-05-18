@@ -178,6 +178,10 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   isRestarting,
 }: ProjectSessionRowProps) {
   const [isHovering, setIsHovering] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Keep menu trigger mounted while open so the dropdown stays anchored
+  // when the cursor leaves the row.
+  const showActions = isHovering || menuOpen;
 
   const metadataName =
     typeof session.metadata?.session_name === 'string'
@@ -220,20 +224,28 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
           {displayTitle}
         </span>
 
-        {relative && (
-          <span className="flex-shrink-0 text-[9.5px] tabular-nums text-muted-foreground/60">
-            {shortRelative(relative)}
-          </span>
-        )}
+        {/* Right slot — timestamp flush-right by default; 3-dots overlay
+            in the exact same spot on hover. */}
+        <div className="relative ml-auto flex h-4 min-w-[28px] flex-shrink-0 items-center justify-end">
+          {relative && (
+            <span
+              className={cn(
+                'text-[9.5px] tabular-nums text-muted-foreground/60 transition-opacity duration-150',
+                showActions && 'opacity-0',
+              )}
+            >
+              {shortRelative(relative)}
+            </span>
+          )}
 
-        <div className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
-          <DropdownMenu>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
+                aria-label="Session actions"
                 className={cn(
-                  'rounded-md p-0.5 text-muted-foreground transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer',
-                  isHovering ? 'opacity-100' : 'opacity-0 pointer-events-none',
+                  'absolute right-0 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded-md text-muted-foreground transition-opacity duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground cursor-pointer',
+                  showActions ? 'opacity-100' : 'opacity-0 pointer-events-none',
                 )}
                 onClick={(e) => {
                   e.preventDefault();

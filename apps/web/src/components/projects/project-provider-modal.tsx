@@ -152,7 +152,7 @@ export function ProjectProviderModal({
         </DialogHeader>
 
         {!inSubflow && (
-          <div className="flex h-9 items-center gap-3 px-5 pb-3 box-content">
+          <div className="flex items-center gap-3 px-5 pb-3">
             <FilterBar>
               <FilterBarItem
                 data-state={activeTab === 'connected' ? 'active' : 'inactive'}
@@ -182,7 +182,7 @@ export function ProjectProviderModal({
               </FilterBarItem>
             </FilterBar>
 
-            <div className="relative ml-auto h-9 w-72 shrink-0">
+            <div className="relative ml-auto h-9 min-w-0 flex-1 max-w-[260px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
               <Input
                 type="text"
@@ -190,7 +190,7 @@ export function ProjectProviderModal({
                 autoComplete="off"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                className="h-9 w-full rounded-full border-border/50 bg-foreground/[0.05] pl-9 text-xs shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
               />
             </div>
           </div>
@@ -314,7 +314,7 @@ function ConnectedTab({
   const confirmProvider = confirmId ? LLM_PROVIDER_BY_ID.get(confirmId) : null;
 
   return (
-    <div className="space-y-1 px-3 pb-4 pt-3">
+    <div className="space-y-1 px-5 pb-4 pt-3">
       {filtered.map((provider) => (
         <div
           key={provider.id}
@@ -470,7 +470,7 @@ function CatalogTab({
   }
 
   return (
-    <div className="space-y-1 px-3 pb-4 pt-3">
+    <div className="space-y-1 px-5 pb-4 pt-3">
       {/* Custom provider always pinned to the top — same affordance the legacy
           modal had. Wires an OpenAI-compatible endpoint without needing it to
           be on the models.dev catalog. */}
@@ -796,7 +796,7 @@ function ConnectForm({
             href={provider.helpUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            className="flex w-fit items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
           >
             <ExternalLink className="h-3 w-3" />
             Get credentials from {helpHostname}
@@ -1247,7 +1247,7 @@ function ModelsTab({
   }
 
   return (
-    <div className="space-y-3 px-3 pb-4 pt-3">
+    <div className="space-y-3 px-5 pb-4 pt-3">
       {grouped.map(({ provider, models }) => (
         <div key={provider.id}>
           <div className="flex items-center gap-2 px-1 pb-1">
