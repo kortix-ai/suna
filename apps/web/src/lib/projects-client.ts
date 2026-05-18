@@ -380,6 +380,83 @@ export async function deleteProjectSecret(projectId: string, name: string) {
   );
 }
 
+// ─── OAuth credentials (ChatGPT Pro/Plus headless + GitHub Copilot) ─────
+
+export type OauthProviderId = 'openai' | 'github-copilot';
+
+export interface ProjectOauthCredential {
+  provider_id: OauthProviderId;
+  account_id: string | null;
+  enterprise_url: string | null;
+  expires: number;
+  expires_in_ms: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OauthCredentialsResponse {
+  items: ProjectOauthCredential[];
+  supported: OauthProviderId[];
+}
+
+export interface OauthStartResponse {
+  flow_id: string;
+  provider_id: OauthProviderId;
+  verification_url: string;
+  user_code: string;
+  interval_ms: number;
+  expires_at: number;
+}
+
+export type OauthPollResponse =
+  | { status: 'pending'; next_poll_ms: number }
+  | { status: 'success'; credential: ProjectOauthCredential }
+  | { status: 'expired' }
+  | { status: 'failed'; error: string };
+
+export async function listProjectOauthCredentials(projectId: string) {
+  return unwrap(
+    await backendApi.get<OauthCredentialsResponse>(`/projects/${projectId}/oauth`),
+  );
+}
+
+export async function startProjectOauthFlow(
+  projectId: string,
+  provider: OauthProviderId,
+  input?: { enterprise_url?: string },
+) {
+  return unwrap(
+    await backendApi.post<OauthStartResponse>(
+      `/projects/${projectId}/oauth/${provider}/start`,
+      input ?? {},
+    ),
+  );
+}
+
+export async function pollProjectOauthFlow(
+  projectId: string,
+  provider: OauthProviderId,
+  flowId: string,
+) {
+  return unwrap(
+    await backendApi.post<OauthPollResponse>(
+      `/projects/${projectId}/oauth/${provider}/poll`,
+      { flow_id: flowId },
+    ),
+  );
+}
+
+export async function deleteProjectOauthCredential(
+  projectId: string,
+  provider: OauthProviderId,
+) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/oauth/${encodeURIComponent(provider)}`,
+    ),
+  );
+}
+
 export async function listProjectFiles(
   projectId: string,
   options?: { ref?: string; path?: string },
@@ -580,6 +657,11 @@ export interface ProjectSession {
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
+  /**
+   * Session title, mirrored from opencode's session.title via
+   * /v1/projects/sync-opencode-titles. Backed by metadata.name in the DB.
+   */
+  name: string | null;
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
@@ -613,6 +695,18 @@ export async function restartProjectSession(projectId: string, sessionId: string
       `/projects/${projectId}/sessions/${sessionId}/restart`,
       {},
     ),
+  );
+}
+
+export interface SyncOpencodeTitleEntry {
+  opencode_session_id: string;
+  title: string | null;
+}
+
+export async function syncOpencodeSessionTitles(entries: SyncOpencodeTitleEntry[]) {
+  if (entries.length === 0) return { updated: 0 };
+  return unwrap(
+    await backendApi.post<{ updated: number }>(`/projects/sync-opencode-titles`, { entries }),
   );
 }
 
