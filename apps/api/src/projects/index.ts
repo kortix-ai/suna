@@ -16,8 +16,6 @@ import {
   accountMembers,
   kortixApiKeys,
   projects,
-  projectConnectionTools,
-  projectConnections,
   projectMembers,
   projectSecrets,
   projectTriggerEvents,
@@ -61,11 +59,6 @@ import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import { getProvider } from '../platform/providers';
 import { config } from '../config';
 import { encodeSessionLlmToken } from '../shared/session-llm-token';
-import {
-  buildExecutorMcpSessionEnv,
-  encodeExecutorMcpSessionToken,
-  normalizeExecutorToolName,
-} from '@kortix/executor-bridge';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
 import { recordAuditEvent } from '../shared/audit';
 import {
@@ -119,39 +112,6 @@ export const projectWebhooksApp = new Hono<AppEnv>();
 projectsApp.use('/*', supabaseAuth);
 
 type ProjectRow = typeof projects.$inferSelect;
-type ProjectConnectionRow = typeof projectConnections.$inferSelect;
-type ProjectConnectionToolRow = typeof projectConnectionTools.$inferSelect;
-
-type ExecutorPipedreamApp = {
-  slug: string;
-  name: string;
-  description?: string;
-  imgSrc?: string;
-  authType?: string;
-  categories: string[];
-  featuredWeight?: number;
-};
-
-type ExecutorPipedreamAppList = {
-  apps: ExecutorPipedreamApp[];
-  pageInfo: {
-    totalCount: number;
-    count: number;
-    endCursor?: string;
-    hasMore: boolean;
-  };
-};
-
-type ExecutorPipedreamAccount = {
-  id: string;
-  app: string;
-  appName: string;
-  externalUserId: string;
-  createdAt: string;
-};
-
-let pipedreamAccessToken: string | null = null;
-let pipedreamTokenExpiresAt = 0;
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type ProjectTriggerRow = typeof projectTriggers.$inferSelect;
 type ProjectTriggerEventRow = typeof projectTriggerEvents.$inferSelect;
@@ -329,41 +289,6 @@ function serializeProjectSecret(row: typeof projectSecrets.$inferSelect) {
   };
 }
 
-function serializeProjectConnectionTool(row: ProjectConnectionToolRow) {
-  return {
-    tool_id: row.toolId,
-    connection_id: row.connectionId,
-    account_id: row.accountId,
-    project_id: row.projectId,
-    name: row.name,
-    description: row.description,
-    input_schema: row.inputSchema ?? {},
-    implementation: row.implementation ?? {},
-    enabled: row.enabled,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  };
-}
-
-function serializeProjectConnection(
-  row: ProjectConnectionRow,
-  tools: ProjectConnectionToolRow[] = [],
-) {
-  return {
-    connection_id: row.connectionId,
-    account_id: row.accountId,
-    project_id: row.projectId,
-    name: row.name,
-    source_type: row.sourceType,
-    config: row.config ?? {},
-    enabled: row.enabled,
-    created_by: row.createdBy,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-    tools: tools.map(serializeProjectConnectionTool),
-  };
-}
-
 function serializeProjectTrigger(row: ProjectTriggerRow) {
   const publicConfig = { ...normalizeJsonObject(row.config) };
   const hasSecret = Boolean(publicConfig.secret || publicConfig.webhook_secret || publicConfig.webhookSecret);
@@ -473,13 +398,6 @@ export function buildProjectLlmBaseUrl(kortixUrl: string): string {
   if (base.endsWith('/v1/router')) return `${base}/llm`;
   if (base.endsWith('/v1')) return `${base}/router/llm`;
   return `${base}/v1/router/llm`;
-}
-
-export function buildProjectExecutorMcpBaseUrl(kortixUrl: string): string {
-  const base = kortixUrl.replace(/\/+$/, '');
-  if (base.endsWith('/v1/router')) return `${base}/mcp`;
-  if (base.endsWith('/v1')) return `${base}/router/mcp`;
-  return `${base}/v1/router/mcp`;
 }
 
 function deriveProjectName(repoUrl: string): string {
@@ -683,16 +601,6 @@ async function buildSessionSandboxEnvVars(input: {
     sessionId: input.sessionId,
     userId: input.userId,
   });
-  const executorMcpEnv = buildExecutorMcpSessionEnv({
-    gatewayUrl: buildProjectExecutorMcpBaseUrl(config.KORTIX_URL),
-    token: encodeExecutorMcpSessionToken({
-      accountId: input.accountId,
-      projectId: input.projectId,
-      sessionId: input.sessionId,
-      userId: input.userId,
-    }, config.API_KEY_SECRET),
-    sessionId: input.sessionId,
-  });
   const githubToken =
     input.githubToken
     || process.env.KORTIX_GITHUB_TOKEN
@@ -709,7 +617,6 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_LLM_BASE_URL: llmBaseUrl,
     KORTIX_LLM_TOKEN: llmToken,
-    ...executorMcpEnv,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
@@ -844,6 +751,14 @@ async function createProjectSession(input: {
         provider: providerName,
         metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
         extraEnvVars,
+        gitProject: {
+          projectId,
+          repoUrl: project.repoUrl,
+          defaultBranch: project.defaultBranch,
+          manifestPath: project.manifestPath,
+          gitAuthToken: gitAuth.auth?.token ?? null,
+        },
+        baseRef,
       });
     } catch (err) {
       const message = (err as Error)?.message || 'Sandbox provisioning failed';
@@ -1902,571 +1817,6 @@ projectsApp.delete('/:projectId/secrets/:name', async (c) => {
     .where(and(
       eq(projectSecrets.projectId, projectId),
       eq(projectSecrets.name, name),
-    ));
-
-  return c.json({ ok: true });
-});
-
-function parseConnectionSourceType(value: unknown): 'static' | 'mcp' | 'openapi' | 'graphql' | 'pipedream' {
-  const sourceType = normalizeString(value)?.toLowerCase() ?? 'static';
-  if (
-    sourceType === 'static'
-    || sourceType === 'mcp'
-    || sourceType === 'openapi'
-    || sourceType === 'graphql'
-    || sourceType === 'pipedream'
-  ) {
-    return sourceType;
-  }
-  throw new HTTPException(400, { message: 'source_type must be static, mcp, openapi, graphql, or pipedream' });
-}
-
-function getPipedreamConfig() {
-  const clientId = process.env.PIPEDREAM_CLIENT_ID;
-  const clientSecret = process.env.PIPEDREAM_CLIENT_SECRET;
-  const projectId = process.env.PIPEDREAM_PROJECT_ID;
-  const environment = process.env.PIPEDREAM_ENVIRONMENT || 'production';
-  if (!clientId || !clientSecret || !projectId) {
-    throw new HTTPException(500, { message: 'Pipedream is not configured' });
-  }
-  return { clientId, clientSecret, projectId, environment };
-}
-
-async function getPipedreamApiToken(): Promise<string> {
-  if (pipedreamAccessToken && Date.now() < pipedreamTokenExpiresAt - 60_000) {
-    return pipedreamAccessToken;
-  }
-
-  const cfg = getPipedreamConfig();
-  const res = await fetch('https://api.pipedream.com/v1/oauth/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      grant_type: 'client_credentials',
-      client_id: cfg.clientId,
-      client_secret: cfg.clientSecret,
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`Pipedream auth failed (${res.status}): ${await res.text()}`);
-  }
-
-  const data = await res.json() as { access_token: string; expires_in?: number };
-  pipedreamAccessToken = data.access_token;
-  pipedreamTokenExpiresAt = Date.now() + (data.expires_in ?? 3600) * 1000;
-  return pipedreamAccessToken;
-}
-
-async function pipedreamRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const cfg = getPipedreamConfig();
-  const token = await getPipedreamApiToken();
-  const res = await fetch(`https://api.pipedream.com${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'x-pd-environment': cfg.environment,
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  if (!res.ok) {
-    throw new Error(`Pipedream API ${method} ${path} failed (${res.status}): ${await res.text()}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-async function listPipedreamApps(query?: string, limit = 48, cursor?: string): Promise<ExecutorPipedreamAppList> {
-  const cfg = getPipedreamConfig();
-  const params = new URLSearchParams();
-  const trimmed = query?.trim();
-  if (trimmed) params.set('q', trimmed);
-  params.set('limit', String(Math.min(Math.max(limit, 1), 96)));
-  if (cursor) params.set('after', cursor);
-  if (!trimmed) {
-    params.set('sort_key', 'featured_weight');
-    params.set('sort_direction', 'desc');
-  }
-
-  const data = await pipedreamRequest<{
-    page_info?: {
-      total_count?: number;
-      count?: number;
-      end_cursor?: string;
-    };
-    data?: Array<{
-      name_slug: string;
-      name: string;
-      description?: string;
-      img_src?: string;
-      auth_type?: string;
-      categories?: string[];
-      featured_weight?: number;
-    }>;
-  }>('GET', `/v1/connect/${cfg.projectId}/apps?${params.toString()}`);
-
-  const apps = (data.data ?? []).map((app) => ({
-    slug: app.name_slug,
-    name: app.name,
-    description: app.description,
-    imgSrc: app.img_src,
-    authType: app.auth_type,
-    categories: app.categories ?? [],
-    featuredWeight: app.featured_weight,
-  }));
-  return {
-    apps,
-    pageInfo: {
-      totalCount: data.page_info?.total_count ?? apps.length,
-      count: data.page_info?.count ?? apps.length,
-      endCursor: data.page_info?.end_cursor,
-      hasMore: Boolean(data.page_info?.end_cursor) || apps.length >= limit,
-    },
-  };
-}
-
-async function createPipedreamConnectToken(input: {
-  accountId: string;
-  projectId: string;
-  app?: string;
-}) {
-  const cfg = getPipedreamConfig();
-  const frontendBase = (() => {
-    try {
-      return new URL(config.FRONTEND_URL || 'http://localhost:3000').origin;
-    } catch {
-      return 'http://localhost:3000';
-    }
-  })();
-  const success = new URL(`/projects/${input.projectId}/executor`, frontendBase);
-  success.searchParams.set('executor_connect', 'success');
-  success.searchParams.set('provider', 'pipedream');
-  if (input.app) success.searchParams.set('app', input.app);
-  const error = new URL(`/projects/${input.projectId}/executor`, frontendBase);
-  error.searchParams.set('executor_connect', 'error');
-  error.searchParams.set('provider', 'pipedream');
-  if (input.app) error.searchParams.set('app', input.app);
-
-  const body: Record<string, unknown> = {
-    external_user_id: input.accountId,
-    allowed_origins: [frontendBase],
-    success_redirect_uri: success.toString(),
-    error_redirect_uri: error.toString(),
-  };
-  if (input.app) body.app_slug = input.app;
-
-  const token = await getPipedreamApiToken();
-  const res = await fetch(`https://api.pipedream.com/v1/connect/${cfg.projectId}/tokens`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'x-pd-environment': cfg.environment,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw new Error(`Pipedream connect token failed (${res.status}): ${await res.text()}`);
-  }
-
-  const data = await res.json() as {
-    token: string;
-    expires_at: string;
-    connect_link_url?: string;
-  };
-  const connectUrl = (() => {
-    if (!data.connect_link_url) return undefined;
-    if (!input.app) return data.connect_link_url;
-    try {
-      const url = new URL(data.connect_link_url);
-      url.searchParams.set('app', input.app);
-      url.searchParams.set('connectLink', url.searchParams.get('connectLink') || 'true');
-      return url.toString();
-    } catch {
-      const separator = data.connect_link_url.includes('?') ? '&' : '?';
-      return `${data.connect_link_url}${separator}app=${encodeURIComponent(input.app)}`;
-    }
-  })();
-  return {
-    token: data.token,
-    expiresAt: data.expires_at,
-    connectUrl,
-  };
-}
-
-async function listPipedreamAccounts(accountId: string): Promise<ExecutorPipedreamAccount[]> {
-  const cfg = getPipedreamConfig();
-  const data = await pipedreamRequest<{
-    data?: Array<{
-      id: string;
-      external_user_id: string;
-      app: { name_slug: string; name: string };
-      created_at: string;
-    }>;
-  }>(
-    'GET',
-    `/v1/connect/${cfg.projectId}/accounts?external_user_id=${encodeURIComponent(accountId)}&include_credentials=0`,
-  );
-  return (data.data ?? []).map((account) => ({
-    id: account.id,
-    app: account.app.name_slug,
-    appName: account.app.name,
-    externalUserId: account.external_user_id,
-    createdAt: account.created_at,
-  }));
-}
-
-async function syncPipedreamAccountsToProject(input: {
-  accountId: string;
-  projectId: string;
-  userId: string;
-}) {
-  const accounts = await listPipedreamAccounts(input.accountId);
-  const synced: ProjectConnectionRow[] = [];
-  for (const account of accounts) {
-    const baseName = account.appName || account.app;
-    const name = `${baseName} (${account.id.slice(-6)})`.slice(0, 128);
-    const now = new Date();
-    const [existing] = await db
-      .select()
-      .from(projectConnections)
-      .where(and(
-        eq(projectConnections.projectId, input.projectId),
-        eq(projectConnections.name, name),
-      ))
-      .limit(1);
-
-    const configValue = {
-      provider: 'pipedream',
-      app: account.app,
-      app_name: account.appName,
-      provider_account_id: account.id,
-      external_user_id: account.externalUserId,
-      connected_at: account.createdAt,
-    };
-
-    const [source] = existing
-      ? await db
-        .update(projectConnections)
-        .set({
-          sourceType: 'pipedream',
-          config: configValue,
-          enabled: true,
-          updatedAt: now,
-        })
-        .where(eq(projectConnections.connectionId, existing.connectionId))
-        .returning()
-      : await db
-        .insert(projectConnections)
-        .values({
-          accountId: input.accountId,
-          projectId: input.projectId,
-          name,
-          sourceType: 'pipedream',
-          config: configValue,
-          enabled: true,
-          createdBy: input.userId,
-          updatedAt: now,
-        })
-        .returning();
-
-    const toolName = normalizeExecutorToolName(`${account.app}.request`);
-    const [tool] = await db
-      .select()
-      .from(projectConnectionTools)
-      .where(and(
-        eq(projectConnectionTools.projectId, input.projectId),
-        eq(projectConnectionTools.connectionId, source.connectionId),
-        eq(projectConnectionTools.name, toolName),
-      ))
-      .limit(1);
-    if (!tool) {
-      await db.insert(projectConnectionTools).values({
-        connectionId: source.connectionId,
-        accountId: input.accountId,
-        projectId: input.projectId,
-        name: toolName,
-        description: `Call ${account.appName} through the connected Pipedream account.`,
-        inputSchema: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            url: {
-              type: 'string',
-              description: `Absolute ${account.appName} API URL to call through Pipedream auth.`,
-            },
-            method: {
-              type: 'string',
-              enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-              default: 'GET',
-            },
-            headers: {
-              type: 'object',
-              additionalProperties: { type: 'string' },
-            },
-            body: {
-              type: ['object', 'array', 'string', 'number', 'boolean', 'null'],
-            },
-          },
-          required: ['url'],
-        },
-        implementation: {
-          kind: 'pipedream_proxy',
-          provider: 'pipedream',
-          app: account.app,
-          provider_account_id: account.id,
-        },
-        enabled: true,
-        updatedAt: now,
-      });
-    }
-    synced.push(source);
-  }
-  return synced;
-}
-
-function parseToolImplementation(value: unknown): Record<string, unknown> {
-  const implementation = normalizeJsonObject(value);
-  return Object.keys(implementation).length > 0 ? implementation : { kind: 'echo' };
-}
-
-async function listProjectConnectionRows(projectId: string) {
-  const connections = await db
-    .select()
-    .from(projectConnections)
-    .where(eq(projectConnections.projectId, projectId))
-    .orderBy(desc(projectConnections.updatedAt));
-
-  const tools = await db
-    .select()
-    .from(projectConnectionTools)
-    .where(eq(projectConnectionTools.projectId, projectId))
-    .orderBy(desc(projectConnectionTools.updatedAt));
-
-  return connections.map((connection) =>
-    serializeProjectConnection(
-      connection,
-      tools.filter((tool) => tool.connectionId === connection.connectionId),
-    ),
-  );
-}
-
-// GET /v1/projects/:projectId/executor/apps
-projectsApp.get('/:projectId/executor/apps', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const query = c.req.query('q');
-  const cursor = c.req.query('cursor');
-  const limit = Number.parseInt(c.req.query('limit') || '48', 10);
-  try {
-    return c.json(await listPipedreamApps(query, Number.isFinite(limit) ? limit : 48, cursor));
-  } catch (err) {
-    console.error('[projects] executor apps: failed to list Pipedream apps', err);
-    return c.json({ error: 'Failed to list Pipedream apps' }, 500);
-  }
-});
-
-// POST /v1/projects/:projectId/executor/apps/:app/connect-token
-projectsApp.post('/:projectId/executor/apps/:app/connect-token', async (c) => {
-  const projectId = c.req.param('projectId');
-  const app = c.req.param('app');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!app) return c.json({ error: 'app is required' }, 400);
-
-  try {
-    return c.json(await createPipedreamConnectToken({
-      accountId: loaded.row.accountId,
-      projectId,
-      app,
-    }));
-  } catch (err) {
-    console.error('[projects] executor apps: failed to create Pipedream connect token', err);
-    return c.json({ error: 'Failed to create Pipedream connect token' }, 500);
-  }
-});
-
-// POST /v1/projects/:projectId/executor/pipedream/sync
-projectsApp.post('/:projectId/executor/pipedream/sync', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  try {
-    const synced = await syncPipedreamAccountsToProject({
-      accountId: loaded.row.accountId,
-      projectId,
-      userId: loaded.userId,
-    });
-    return c.json({
-      synced: synced.length,
-      items: await listProjectConnectionRows(projectId),
-    });
-  } catch (err) {
-    console.error('[projects] executor pipedream sync failed', err);
-    return c.json({ error: 'Failed to sync Pipedream accounts' }, 500);
-  }
-});
-
-// GET /v1/projects/:projectId/executor/sources
-projectsApp.get('/:projectId/executor/sources', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  return c.json({ items: await listProjectConnectionRows(projectId) });
-});
-
-// POST /v1/projects/:projectId/executor/sources
-// Creates a project-scoped Executor source. v1 stores static MCP tools only;
-// later source types will hydrate tools through Executor plugins.
-projectsApp.post('/:projectId/executor/sources', async (c) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const name = normalizeString(body.name);
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (name.length > 128) return c.json({ error: 'name must be 128 characters or fewer' }, 400);
-
-  const sourceType = parseConnectionSourceType(body.source_type ?? body.sourceType);
-  const now = new Date();
-  const [connection] = await db
-    .insert(projectConnections)
-    .values({
-      accountId: loaded.row.accountId,
-      projectId,
-      name,
-      sourceType,
-      config: normalizeJsonObject(body.config),
-      enabled: normalizeBoolean(body.enabled) ?? true,
-      createdBy: loaded.userId,
-      updatedAt: now,
-    })
-    .returning();
-
-  const requestedToolName =
-    normalizeString(body.tool_name ?? body.toolName)
-    ?? `${name}.echo`;
-  const toolName = normalizeExecutorToolName(requestedToolName);
-  const tools: ProjectConnectionToolRow[] = [];
-
-  if (toolName) {
-    const [tool] = await db
-      .insert(projectConnectionTools)
-      .values({
-        connectionId: connection.connectionId,
-        accountId: loaded.row.accountId,
-        projectId,
-        name: toolName,
-        description: normalizeString(body.tool_description ?? body.toolDescription)
-          ?? `Echo tool for ${name}`,
-        inputSchema: normalizeJsonObject(body.input_schema ?? body.inputSchema),
-        implementation: parseToolImplementation(body.implementation),
-        enabled: true,
-        updatedAt: now,
-      })
-      .returning();
-    tools.push(tool);
-  }
-
-  return c.json(serializeProjectConnection(connection, tools), 201);
-});
-
-// POST /v1/projects/:projectId/executor/sources/:sourceId/tools
-projectsApp.post('/:projectId/executor/sources/:sourceId/tools', async (c) => {
-  const projectId = c.req.param('projectId');
-  const connectionId = c.req.param('sourceId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const [connection] = await db
-    .select()
-    .from(projectConnections)
-    .where(and(
-      eq(projectConnections.projectId, projectId),
-      eq(projectConnections.connectionId, connectionId),
-    ))
-    .limit(1);
-  if (!connection) return c.json({ error: 'Source not found' }, 404);
-
-  const toolName = normalizeExecutorToolName(normalizeString(body.name) ?? '');
-  if (!toolName) return c.json({ error: 'name is required' }, 400);
-
-  const now = new Date();
-  const [tool] = await db
-    .insert(projectConnectionTools)
-    .values({
-      connectionId,
-      accountId: loaded.row.accountId,
-      projectId,
-      name: toolName,
-      description: normalizeString(body.description),
-      inputSchema: normalizeJsonObject(body.input_schema ?? body.inputSchema),
-      implementation: parseToolImplementation(body.implementation),
-      enabled: normalizeBoolean(body.enabled) ?? true,
-      updatedAt: now,
-    })
-    .returning();
-
-  return c.json(serializeProjectConnectionTool(tool), 201);
-});
-
-// PATCH /v1/projects/:projectId/executor/sources/:sourceId
-projectsApp.patch('/:projectId/executor/sources/:sourceId', async (c) => {
-  const projectId = c.req.param('projectId');
-  const connectionId = c.req.param('sourceId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const updates: Partial<typeof projectConnections.$inferInsert> = { updatedAt: new Date() };
-  if (hasOwn(body, 'name')) {
-    const name = normalizeString(body.name);
-    if (!name) return c.json({ error: 'name cannot be empty' }, 400);
-    updates.name = name;
-  }
-  if (hasOwn(body, 'enabled')) {
-    const enabled = normalizeBoolean(body.enabled);
-    if (enabled === null) return c.json({ error: 'enabled must be boolean' }, 400);
-    updates.enabled = enabled;
-  }
-  if (hasOwn(body, 'config')) {
-    updates.config = normalizeJsonObject(body.config);
-  }
-
-  const [row] = await db
-    .update(projectConnections)
-    .set(updates)
-    .where(and(
-      eq(projectConnections.projectId, projectId),
-      eq(projectConnections.connectionId, connectionId),
-    ))
-    .returning();
-  if (!row) return c.json({ error: 'Source not found' }, 404);
-
-  const tools = await db
-    .select()
-    .from(projectConnectionTools)
-    .where(eq(projectConnectionTools.connectionId, connectionId));
-  return c.json(serializeProjectConnection(row, tools));
-});
-
-// DELETE /v1/projects/:projectId/executor/sources/:sourceId
-projectsApp.delete('/:projectId/executor/sources/:sourceId', async (c) => {
-  const projectId = c.req.param('projectId');
-  const connectionId = c.req.param('sourceId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  await db
-    .delete(projectConnections)
-    .where(and(
-      eq(projectConnections.projectId, projectId),
-      eq(projectConnections.connectionId, connectionId),
     ));
 
   return c.json({ ok: true });
@@ -4019,6 +3369,14 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
           restarted_at: new Date().toISOString(),
         },
         extraEnvVars,
+        gitProject: {
+          projectId,
+          repoUrl: loaded.row.repoUrl,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+          gitAuthToken: gitAuth.auth?.token ?? null,
+        },
+        baseRef: session.baseRef ?? loaded.row.defaultBranch,
       });
     } catch (err) {
       const message = (err as Error)?.message || 'Sandbox restart failed';

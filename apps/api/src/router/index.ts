@@ -5,7 +5,6 @@ import { webSearch } from './routes/search-web';
 import { imageSearch } from './routes/search-image';
 import { llm } from './routes/llm';
 import { sessionLlm } from './routes/session-llm';
-import { sessionMcp } from './routes/session-mcp';
 import { proxy } from './routes/proxy';
 import { anthropic } from './routes/anthropic';
 
@@ -29,7 +28,6 @@ router.route('/image-search', imageSearch);
 
 // LLM routes (apiKeyAuth)
 router.route('/llm', sessionLlm);
-router.route('/mcp', sessionMcp);
 router.use('/chat/*', apiKeyAuth);
 router.use('/messages', apiKeyAuth);
 router.use('/models', apiKeyAuth);

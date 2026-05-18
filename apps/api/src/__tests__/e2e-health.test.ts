@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'bun:test';
 import { createTestApp, jsonGet } from './helpers';
 
-const app = createTestApp({ mountPlatform: false });
+const app = createTestApp();
 
 describe('Health & System endpoints', () => {
   // ─── GET /health ────────────────────────────────────────────────────────

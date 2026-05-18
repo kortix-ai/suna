@@ -256,59 +256,6 @@ export const projectSecrets = kortixSchema.table(
   ],
 );
 
-export const projectConnections = kortixSchema.table(
-  'project_connections',
-  {
-    connectionId: uuid('connection_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    name: varchar('name', { length: 128 }).notNull(),
-    sourceType: varchar('source_type', { length: 32 }).default('static').notNull(),
-    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
-    enabled: boolean('enabled').default(true).notNull(),
-    createdBy: uuid('created_by'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_project_connections_account').on(table.accountId),
-    index('idx_project_connections_project').on(table.projectId),
-    uniqueIndex('idx_project_connections_project_name').on(table.projectId, table.name),
-  ],
-);
-
-export const projectConnectionTools = kortixSchema.table(
-  'project_connection_tools',
-  {
-    toolId: uuid('tool_id').defaultRandom().primaryKey(),
-    connectionId: uuid('connection_id')
-      .notNull()
-      .references(() => projectConnections.connectionId, { onDelete: 'cascade' }),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    name: varchar('name', { length: 192 }).notNull(),
-    description: text('description'),
-    inputSchema: jsonb('input_schema').default({}).$type<Record<string, unknown>>(),
-    implementation: jsonb('implementation').default({}).$type<Record<string, unknown>>(),
-    enabled: boolean('enabled').default(true).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_project_connection_tools_connection').on(table.connectionId),
-    index('idx_project_connection_tools_project').on(table.projectId),
-    uniqueIndex('idx_project_connection_tools_project_name').on(table.projectId, table.name),
-  ],
-);
-
 export const projectTriggers = kortixSchema.table(
   'project_triggers',
   {
@@ -850,8 +797,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   members: many(projectMembers),
   secrets: many(projectSecrets),
-  connections: many(projectConnections),
-  connectionTools: many(projectConnectionTools),
   triggers: many(projectTriggers),
   triggerEvents: many(projectTriggerEvents),
   sessions: many(projectSessions),
@@ -873,33 +818,6 @@ export const projectSecretsRelations = relations(projectSecrets, ({ one }) => ({
   project: one(projects, {
     fields: [projectSecrets.projectId],
     references: [projects.projectId],
-  }),
-}));
-
-export const projectConnectionsRelations = relations(projectConnections, ({ one, many }) => ({
-  account: one(accounts, {
-    fields: [projectConnections.accountId],
-    references: [accounts.accountId],
-  }),
-  project: one(projects, {
-    fields: [projectConnections.projectId],
-    references: [projects.projectId],
-  }),
-  tools: many(projectConnectionTools),
-}));
-
-export const projectConnectionToolsRelations = relations(projectConnectionTools, ({ one }) => ({
-  account: one(accounts, {
-    fields: [projectConnectionTools.accountId],
-    references: [accounts.accountId],
-  }),
-  project: one(projects, {
-    fields: [projectConnectionTools.projectId],
-    references: [projects.projectId],
-  }),
-  connection: one(projectConnections, {
-    fields: [projectConnectionTools.connectionId],
-    references: [projectConnections.connectionId],
   }),
 }));
 
@@ -991,8 +909,6 @@ export const accountsRelations = relations(accounts, ({ many }) => ({
   githubInstallations: many(accountGithubInstallations),
   projectMembers: many(projectMembers),
   projects: many(projects),
-  projectConnections: many(projectConnections),
-  projectConnectionTools: many(projectConnectionTools),
   projectTriggers: many(projectTriggers),
   projectTriggerEvents: many(projectTriggerEvents),
   projectSessions: many(projectSessions),

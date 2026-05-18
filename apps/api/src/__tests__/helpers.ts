@@ -202,23 +202,12 @@ export function createMockProvider(
 export interface TestAppOptions {
   userId?: string;
   userEmail?: string;
-  /** Single mock provider (used for both daytona & docker if not separately provided) */
-  provider?: ReturnType<typeof createMockProvider>;
-  daytonaProvider?: ReturnType<typeof createMockProvider>;
-  dockerProvider?: ReturnType<typeof createMockProvider>;
-  /** Override default provider name */
-  defaultProvider?: ProviderName;
-  /** Override available providers list */
-  availableProviders?: ProviderName[];
-  /** Whether to mount platform routes (requires DATABASE_URL). Default: true if DATABASE_URL set */
-  mountPlatform?: boolean;
   /** Whether to mount deployment routes (requires DATABASE_URL). Default: false */
   mountDeployments?: boolean;
 }
 
 /**
  * Build the Hono app shell with health, system-status, version, 404, and error handlers.
- * Platform routes are mounted only when TEST_DATABASE_URL is explicitly configured.
  */
 export function createTestApp(opts: TestAppOptions = {}) {
   const userId = opts.userId || TEST_USER_ID;
@@ -265,69 +254,6 @@ export function createTestApp(opts: TestAppOptions = {}) {
     c.set('userEmail', userEmail);
     await next();
   });
-
-  // ─── Platform routes (DI — mock providers, test DB) ────────────────────
-  const shouldMountPlatform = opts.mountPlatform !== false && hasDb;
-  if (shouldMountPlatform) {
-    try {
-      const { createAccountRouter } = require('../platform/routes/account');
-      const db = getTestDb();
-
-      const providerMap = new Map<ProviderName, SandboxProvider>();
-      if (opts.provider) {
-        providerMap.set(opts.provider.name, opts.provider);
-      }
-      if (opts.daytonaProvider) {
-        providerMap.set('daytona', opts.daytonaProvider);
-      }
-      if (opts.dockerProvider) {
-        providerMap.set('local_docker', opts.dockerProvider);
-      }
-      if (providerMap.size === 0) {
-        providerMap.set('daytona', createMockProvider('daytona'));
-        providerMap.set('local_docker', createMockProvider('local_docker'));
-      }
-
-      const deps = {
-        db,
-        getProvider: (name: ProviderName) => {
-          const p = providerMap.get(name);
-          if (!p) throw new Error(`Mock provider not configured for: ${name}`);
-          return p;
-        },
-        getDefaultProviderName: () => opts.defaultProvider || 'local_docker',
-        getAvailableProviders: () =>
-          opts.availableProviders || Array.from(providerMap.keys()),
-        resolveAccountId: async (uid: string) => uid,
-        useAuth: false,
-      };
-
-      const accountRouter = createAccountRouter(deps);
-      app.route('/v1/platform', accountRouter);
-
-      // Also mount the cloud sandbox router at /v1/platform/sandbox
-      const { createCloudSandboxRouter } = require('../platform/routes/sandbox-cloud');
-      const sandboxRouter = createCloudSandboxRouter({
-        db,
-        getProvider: deps.getProvider,
-        getDefaultProviderName: deps.getDefaultProviderName,
-        resolveAccountId: deps.resolveAccountId,
-        useAuth: false,
-      });
-      app.route('/v1/platform/sandbox', sandboxRouter);
-
-      // API key management routes
-      const { createApiKeysRouter } = require('../platform/routes/api-keys');
-      const apiKeysRouter = createApiKeysRouter({
-        db,
-        resolveAccountId: deps.resolveAccountId,
-        useAuth: false,
-      });
-      app.route('/v1/platform/api-keys', apiKeysRouter);
-    } catch (e) {
-      console.warn('[test] Failed to mount platform routes:', e);
-    }
-  }
 
   // ─── Deployment routes (module-level db — requires DATABASE_URL) ───────
   if (opts.mountDeployments && hasDb) {

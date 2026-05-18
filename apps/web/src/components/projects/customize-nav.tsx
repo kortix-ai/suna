@@ -6,7 +6,7 @@
  * The outer project sidebar (`ProjectSidebar`) keeps just the high-level
  * shape — sessions + files + customize — and this nav owns the long tail
  * of per-project config surfaces (agents, skills, secrets, triggers,
- * channels, executor, settings). Same idea as Vercel's settings page:
+ * channels, settings). Same idea as Vercel's settings page:
  * one umbrella button in the chrome, a focused sub-nav inside.
  */
 
@@ -14,7 +14,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Bot,
-  Boxes,
   KeyRound,
   MessageSquare,
   Settings,
@@ -44,7 +43,6 @@ const NAV_ITEMS: readonly NavItem[] = [
   { slug: 'schedules',  label: 'Schedules',  icon: Timer,          hint: 'Cron-driven triggers' },
   { slug: 'webhooks',   label: 'Webhooks',   icon: Webhook,        hint: 'Signed HTTP triggers' },
   { slug: 'channels',   label: 'Channels',   icon: MessageSquare,  hint: 'Inbound message routes' },
-  { slug: 'executor',   label: 'Executor',   icon: Boxes,          hint: 'Sources, accounts, tools, secrets, policies' },
 ];
 
 const FOOTER_ITEMS: readonly NavItem[] = [

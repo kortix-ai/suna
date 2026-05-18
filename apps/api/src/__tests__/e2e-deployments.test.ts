@@ -10,7 +10,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import {
   createTestApp,
-  createMockProvider,
   cleanupTestData,
   HAS_SAFE_TEST_DB,
   jsonPost,
@@ -24,19 +23,13 @@ import {
 const HAS_DB = HAS_SAFE_TEST_DB;
 
 describe.skipIf(!HAS_DB)('Deployments — CRUD & Lifecycle (Freestyle-backed)', () => {
-  const dockerProvider = createMockProvider('local_docker');
-
   const app = createTestApp({
-    dockerProvider,
-    defaultProvider: 'local_docker',
     mountDeployments: true,
   });
 
   const otherApp = createTestApp({
     userId: OTHER_USER_ID,
     userEmail: OTHER_USER_EMAIL,
-    dockerProvider: createMockProvider('local_docker'),
-    defaultProvider: 'local_docker',
     mountDeployments: true,
   });
 

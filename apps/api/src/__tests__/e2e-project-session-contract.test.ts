@@ -237,7 +237,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { projectsApp, buildProjectLlmBaseUrl, buildProjectExecutorMcpBaseUrl } = await import('../projects/index');
+const { projectsApp, buildProjectLlmBaseUrl } = await import('../projects/index');
 
 function createApp() {
   const app = new Hono();
@@ -259,13 +259,6 @@ describe('project session API contract', () => {
     expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1')).toBe('https://api.kortix.com/v1/router/llm');
     expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1/router')).toBe('https://api.kortix.com/v1/router/llm');
     expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1/router/')).toBe('https://api.kortix.com/v1/router/llm');
-  });
-
-  test('builds the session Executor MCP URL from common API URL shapes', () => {
-    expect(buildProjectExecutorMcpBaseUrl('https://api.kortix.com')).toBe('https://api.kortix.com/v1/router/mcp');
-    expect(buildProjectExecutorMcpBaseUrl('https://api.kortix.com/v1')).toBe('https://api.kortix.com/v1/router/mcp');
-    expect(buildProjectExecutorMcpBaseUrl('https://api.kortix.com/v1/router')).toBe('https://api.kortix.com/v1/router/mcp');
-    expect(buildProjectExecutorMcpBaseUrl('https://api.kortix.com/v1/router/')).toBe('https://api.kortix.com/v1/router/mcp');
   });
 
   test('upserts and lists project secrets without exposing secret values', async () => {
@@ -471,9 +464,6 @@ describe('project session API contract', () => {
     expect(env.KORTIX_BASE_REF).toBe('main');
     expect(env.KORTIX_LLM_TOKEN).toBeTruthy();
     expect(env.KORTIX_LLM_BASE_URL).toContain('/v1/router/llm');
-    expect(env.KORTIX_EXECUTOR_MCP_TOKEN).toBeTruthy();
-    expect(env.KORTIX_EXECUTOR_MCP_URL).toContain('/v1/router/mcp');
-    expect(env.KORTIX_EXECUTOR_MCP_SESSION_ID).toBe(env.KORTIX_SESSION_ID);
 
     // 6. User can't shadow a platform var — POST /secrets rejects KORTIX_*.
     // This protects the env-var precedence: user secrets are merged before

@@ -1,4 +1,4 @@
-import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, projects, projectMembers, projectSecrets, projectConnections, projectConnectionTools, projectTriggers, projectTriggerEvents, projectSessions, projectRuntimeSnapshots, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs } from './schema/kortix';
+import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, projects, projectMembers, projectSecrets, projectTriggers, projectTriggerEvents, projectSessions, projectRuntimeSnapshots, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs } from './schema/kortix';
 import { apiKeys, accountUser } from './schema/public';
 
 // Select types (what you get back from queries)
@@ -20,10 +20,6 @@ export type ProjectMember = typeof projectMembers.$inferSelect;
 export type NewProjectMember = typeof projectMembers.$inferInsert;
 export type ProjectSecret = typeof projectSecrets.$inferSelect;
 export type NewProjectSecret = typeof projectSecrets.$inferInsert;
-export type ProjectConnection = typeof projectConnections.$inferSelect;
-export type NewProjectConnection = typeof projectConnections.$inferInsert;
-export type ProjectConnectionTool = typeof projectConnectionTools.$inferSelect;
-export type NewProjectConnectionTool = typeof projectConnectionTools.$inferInsert;
 export type ProjectTrigger = typeof projectTriggers.$inferSelect;
 export type NewProjectTrigger = typeof projectTriggers.$inferInsert;
 export type ProjectTriggerEvent = typeof projectTriggerEvents.$inferSelect;
