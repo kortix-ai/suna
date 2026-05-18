@@ -1,0 +1,104 @@
+---
+title: Sandbox image
+description: How the layered Docker image works, what's injected, and what's off-limits.
+---
+
+Every session boots inside a Docker container. The image is built in two
+parts: **your Dockerfile** defines the workspace (whatever languages,
+tools, system packages you want), and the **Kortix runtime layer** is
+auto-injected on top so the dashboard can connect to the session.
+
+```
+┌─────────────────────────────────────────┐
+│  Kortix runtime layer (auto-injected)   │  ← opencode + kortix-agent + ENTRYPOINT
+├─────────────────────────────────────────┤
+│  Your Dockerfile                        │  ← .kortix/Dockerfile
+└─────────────────────────────────────────┘
+```
+
+The build is referenced from `kortix.toml`:
+
+```toml
+[sandbox]
+dockerfile = ".kortix/Dockerfile"
+context    = "."
+```
+
+Both paths must be repo-relative. Absolute paths and `..` traversal are
+rejected.
+
+## What the Kortix layer injects
+
+On top of whatever final stage your Dockerfile ends in, the snapshot
+builder appends:
+
+1. `USER root` (the layer needs to install things).
+2. `apt-get install -y ca-certificates curl git nodejs npm`.
+3. `npm install -g opencode-ai@<pinned-version>`.
+4. `COPY` the `kortix-agent` and `kortix-entrypoint` binaries to
+   `/usr/local/bin/`.
+5. `ENV KORTIX_WORKSPACE=/workspace`, `WORKDIR /workspace`, `EXPOSE 8000`.
+6. `ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]`.
+
+Everything you installed in your stage stays on `PATH`. The Kortix
+layer doesn't relocate or remove anything you set up.
+
+## Constraints
+
+These rules are how a sandbox stays connectable. They aren't enforced
+statically — your build will succeed even if you violate them — but
+the session won't behave correctly.
+
+| Rule                                          | Why                                                                        |
+| --------------------------------------------- | -------------------------------------------------------------------------- |
+| Don't set `ENTRYPOINT`.                       | Kortix overrides it. Your `CMD` is also ignored.                           |
+| Don't claim port `8000`.                      | Reserved for the daemon's reverse proxy. Run your dev servers on other ports. |
+| `FROM` a Debian/Ubuntu-family base.           | The layer assumes `apt-get`. Alpine, Fedora, Arch will fail at layer build. |
+| Don't `RUN apt-get clean` without `rm -rf /var/lib/apt/lists/*`. | The Kortix layer re-runs `apt-get update`; a broken lists cache breaks it. |
+| Don't bake credentials into the image.        | Use `[env]` + Secrets Manager — values are injected at session start.     |
+
+Everything else is fair game. You can `RUN curl … | sh` to install
+language toolchains, COPY in seed data, set `ENV` for non-secret
+config, install whatever apt or npm packages you need.
+
+## Example
+
+The starter ships a minimal Ubuntu base:
+
+```dockerfile
+# syntax=docker/dockerfile:1.7
+FROM ubuntu:24.04
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl git build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+```
+
+A heavier example with Python + Bun:
+
+```dockerfile
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl git python3.12 python3.12-venv unzip \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://bun.sh/install | bash
+
+ENV PATH="/root/.bun/bin:${PATH}"
+WORKDIR /workspace
+```
+
+## Snapshot rebuilds
+
+Snapshots are content-addressed: the platform hashes your Dockerfile +
+the build context tree + the pinned opencode version + the kortix-agent
+binary digest. If nothing relevant changed, the same snapshot is reused;
+otherwise a new one is built. In practice that means rebuilds happen on
+every push that touches your Dockerfile (or anything `COPY`'d into it).
+
+When you edit the Dockerfile inside a session, the change takes effect
+on the **next** session — current ones keep running the snapshot they
+booted from.

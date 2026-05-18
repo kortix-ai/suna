@@ -1,0 +1,106 @@
+---
+title: Triggers
+description: Cron + signed webhook entries that spawn fresh sessions.
+---
+
+A trigger fires and spawns a **new session** that runs the rendered
+prompt as its initial message. Sessions land on the project's default
+branch (the platform creates a session branch the same way an
+interactive session would), the agent does its work, commits, pushes.
+You review and merge via the dashboard or GitHub.
+
+Triggers live in `kortix.toml` as `[[triggers]]` array entries. The
+manifest is the source of truth for *config*; runtime state
+(`last_fired_at`, fire count) lives in the platform's database so a
+fire doesn't amplify into a git commit on every tick.
+
+## Cron triggers
+
+```toml
+[[triggers]]
+slug     = "daily-digest"
+name     = "Daily digest"
+type     = "cron"
+agent    = "kortix"
+enabled  = true
+cron     = "0 0 9 * * 1-5"
+timezone = "America/Los_Angeles"
+prompt   = """
+Summarize yesterday's commits across the repo. Save the result to
+notes/digest-{{ fired_at }}.md and open a PR against main.
+"""
+```
+
+`cron` is a **6-field croner expression**: `second minute hour day month
+weekday`. `timezone` is an IANA name (defaults to `UTC`). The scheduler
+polls roughly every minute by default, so sub-minute precision is
+best-effort.
+
+## Webhook triggers
+
+```toml
+[[triggers]]
+slug       = "slack-hook"
+name       = "Slack handler"
+type       = "webhook"
+agent      = "kortix"
+enabled    = true
+secret_env = "WEBHOOK_SLACK_SECRET"
+prompt     = "Slack event: {{ body.text }}"
+```
+
+Fires on signed `POST` requests to:
+
+```
+POST /v1/webhooks/projects/<project_id>/<slug>
+```
+
+Signature header is `X-Kortix-Signature: sha256=<hmac>` over the raw
+body, using HMAC-SHA256 with the secret named by `secret_env`. GitHub's
+`X-Hub-Signature-256` header is also accepted — GitHub webhooks point
+straight at this URL with no adapter.
+
+The actual secret value lives in `project_secrets`; the manifest only
+references it by name. Declare the secret in `[env].optional` so it
+shows up in the Secrets Manager.
+
+## Field reference
+
+| Field        | Required          | Type      | Notes                                                        |
+| ------------ | ----------------- | --------- | ------------------------------------------------------------ |
+| `slug`       | yes               | string    | URL-safe `[a-z0-9][a-z0-9_-]{0,127}`, unique per project.    |
+| `type`       | yes               | string    | `"cron"` or `"webhook"`.                                     |
+| `prompt`     | yes               | string    | Mustache-templated body. May be multi-line via `"""…"""`.    |
+| `name`       | no                | string    | Human label. Defaults to the slug.                           |
+| `agent`      | no (`"default"`)  | string    | Agent name from `<config_dir>/agents/<name>.md`.             |
+| `enabled`    | no (`true`)       | bool      | When `false`, the scheduler / receiver skip the entry.       |
+| `cron`       | cron only         | string    | 6-field croner expression.                                   |
+| `timezone`   | cron only (`UTC`) | string    | IANA tz, e.g. `"America/Los_Angeles"`.                       |
+| `secret_env` | webhook only      | string    | Name of a `project_secrets` entry holding the HMAC secret.   |
+
+## Template variables
+
+`prompt` is rendered with a small mustache-style engine. Tokens look
+like `{{ token.dotted.path }}` and flatten to strings:
+
+| Variable             | Source                                                         |
+| -------------------- | -------------------------------------------------------------- |
+| `{{ fired_at }}`     | ISO-8601 timestamp of the fire.                                |
+| `{{ trigger.slug }}` | The trigger's slug.                                            |
+| `{{ trigger.type }}` | `"cron"` or `"webhook"`.                                       |
+| `{{ body.* }}`       | Webhook only. JSON-parsed request body. Dotted access works.   |
+| `{{ headers.* }}`    | Webhook only. `content_type`, `user_agent`, `forwarded_for`.   |
+
+Missing values render as empty strings — no error, no `{{ x }}` left
+in the output. Objects and arrays render as JSON.
+
+## Common gotchas
+
+- `[triggers]` (single brackets) is wrong — must be `[[triggers]]` (array
+  of tables). The parser surfaces a clear error.
+- Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
+- A webhook trigger without `secret_env` is rejected. There is no
+  unauthenticated webhook surface — by design.
+- A cron trigger without a `cron` expression is rejected.
+- Bad entries surface in the listing's `errors` array next to the good
+  ones — they don't break the whole manifest.

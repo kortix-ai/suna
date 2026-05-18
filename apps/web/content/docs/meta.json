@@ -1,0 +1,11 @@
+{
+  "title": "Docs",
+  "pages": [
+    "index",
+    "manifest",
+    "dockerfile",
+    "triggers",
+    "sessions",
+    "secrets"
+  ]
+}
