@@ -32,11 +32,11 @@ describe('applyScaffold', () => {
 
     expect(result.written.sort()).toEqual([
       '.gitignore',
-      '.opencode/agents/kortix.md',
-      '.opencode/opencode.jsonc',
-      '.opencode/skills/kortix-system/SKILL.md',
-      '.opencode/tools/show.ts',
-      'Dockerfile',
+      '.kortix/Dockerfile',
+      '.kortix/opencode/agents/kortix.md',
+      '.kortix/opencode/opencode.jsonc',
+      '.kortix/opencode/skills/kortix-system/SKILL.md',
+      '.kortix/opencode/tools/show.ts',
       'README.md',
       'kortix.toml',
     ]);
@@ -50,18 +50,22 @@ describe('applyScaffold', () => {
     expect(manifest).toContain('name = "Hello World"');
     expect(manifest).not.toContain('{{projectName}}');
 
+    // Manifest declares the .kortix/ paths explicitly — never implicit.
+    expect(manifest).toContain('dockerfile = ".kortix/Dockerfile"');
+    expect(manifest).toContain('config_dir = ".kortix/opencode"');
+
     // Sanity-check a couple of the other content files.
-    expect(readFileSync(join(dir, '.opencode/agents/kortix.md'), 'utf8'))
+    expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8'))
       .toContain('You are a **Kortix general knowledge worker** for **Hello World**.');
-    expect(readFileSync(join(dir, '.opencode/tools/show.ts'), 'utf8'))
+    expect(readFileSync(join(dir, '.kortix/opencode/tools/show.ts'), 'utf8'))
       .toContain('import { tool } from "@opencode-ai/plugin"');
   });
 
   test('preserveExisting leaves prior files alone, fills in the rest', () => {
     // Pre-seed a file we expect to be preserved + a folder we expect
     // to be untouched.
-    mkdirSync(join(dir, '.opencode/agents'), { recursive: true });
-    writeFileSync(join(dir, '.opencode/agents/kortix.md'), 'CUSTOM PERSONA', 'utf8');
+    mkdirSync(join(dir, '.kortix/opencode/agents'), { recursive: true });
+    writeFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'CUSTOM PERSONA', 'utf8');
     writeFileSync(join(dir, 'README.md'), 'CUSTOM README', 'utf8');
 
     const result = applyScaffold({
@@ -70,11 +74,11 @@ describe('applyScaffold', () => {
       preserveExisting: true,
     });
 
-    expect(result.skipped.sort()).toEqual(['.opencode/agents/kortix.md', 'README.md']);
+    expect(result.skipped.sort()).toEqual(['.kortix/opencode/agents/kortix.md', 'README.md']);
     expect(result.written).toContain('kortix.toml');
-    expect(result.written).toContain('.opencode/tools/show.ts');
+    expect(result.written).toContain('.kortix/opencode/tools/show.ts');
 
-    expect(readFileSync(join(dir, '.opencode/agents/kortix.md'), 'utf8')).toBe('CUSTOM PERSONA');
+    expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toBe('CUSTOM PERSONA');
     expect(readFileSync(join(dir, 'README.md'), 'utf8')).toBe('CUSTOM README');
   });
 

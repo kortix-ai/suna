@@ -9,12 +9,12 @@
  * Example manifest:
  *
  *   [sandbox]
- *   dockerfile = "Dockerfile"
+ *   dockerfile = ".kortix/Dockerfile"
  *   context    = "."
  *
  * Defaults (when `[sandbox]` is absent OR fields are missing):
- *   - dockerfile = "Dockerfile"   — path inside the repo
- *   - context    = "."            — build context root inside the repo
+ *   - dockerfile = ".kortix/Dockerfile"   — path inside the repo
+ *   - context    = "."                    — build context root inside the repo
  *
  * The build always appends a final stage that:
  *   1. Copies in the Kortix agent daemon binary (`kortix-agent`).
@@ -41,7 +41,7 @@ export interface SandboxParseError {
 }
 
 export const DEFAULT_SANDBOX: ProjectSandboxSpec = {
-  dockerfile: 'Dockerfile',
+  dockerfile: '.kortix/Dockerfile',
   context: '.',
 };
 
@@ -69,8 +69,8 @@ export function extractSandbox(
   const row = raw as Record<string, unknown>;
   const errors: SandboxParseError[] = [];
 
-  const dockerfile = pickString(row.dockerfile, 'Dockerfile', 'dockerfile', errors);
-  const context = pickString(row.context ?? row.context_dir, '.', 'context', errors);
+  const dockerfile = pickString(row.dockerfile, DEFAULT_SANDBOX.dockerfile, 'dockerfile', errors);
+  const context = pickString(row.context ?? row.context_dir, DEFAULT_SANDBOX.context, 'context', errors);
 
   // Refuse paths that escape the repo. The build runs in a sandbox of
   // its own, but accepting `../`/absolute makes the intent ambiguous.

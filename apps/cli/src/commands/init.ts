@@ -7,14 +7,15 @@ import { prompt, confirm } from '../prompts.ts';
 
 const HELP = `Usage: kortix init [options]
 
-Scaffold a Kortix project in the current directory. Drops kortix.toml +
-Dockerfile + .opencode/ (kortix agent, kortix-system skill, show tool)
-+ README + .gitignore.
+Scaffold a Kortix project in the current directory. Drops kortix.toml at
+the repo root + a .kortix/ folder containing the Dockerfile and the
+opencode config dir (kortix agent, kortix-system skill, show tool),
+plus README + .gitignore.
 
 Behavior:
   * If kortix.toml already exists, init refuses unless you pass --force.
-  * Any other existing file (README.md, Dockerfile, .opencode/<stuff>)
-    is preserved by default. Pass --overwrite to clobber.
+  * Any other existing file (README.md, .kortix/<stuff>) is preserved by
+    default. Pass --overwrite to clobber.
   * If the directory isn't a git repo, init runs \`git init -b main\`
     (skip with --no-git).
 
@@ -134,15 +135,15 @@ export async function runInit(argv: string[]): Promise<number> {
     projectName = normalizeProjectName(answer);
   }
 
-  // ── Detect existing .opencode/ ───────────────────────────────────────
-  const opencodeExists = existsSync(resolve(cwd, '.opencode'));
-  if (opencodeExists && !flags.overwrite && !flags.yes) {
+  // ── Detect existing .kortix/ ─────────────────────────────────────────
+  const kortixExists = existsSync(resolve(cwd, '.kortix'));
+  if (kortixExists && !flags.overwrite && !flags.yes) {
     const reuse = await confirm(
-      `Detected an existing .opencode/ folder. Keep your files and only add what's missing?`,
+      `Detected an existing .kortix/ folder. Keep your files and only add what's missing?`,
       true,
     );
     if (!reuse) {
-      const ok = await confirm(`Overwrite existing OpenCode files?`, false);
+      const ok = await confirm(`Overwrite existing Kortix files?`, false);
       if (ok) flags.overwrite = true;
     }
   }
@@ -177,9 +178,9 @@ export async function runInit(argv: string[]): Promise<number> {
   if (gitNote) lines.push(gitNote);
   lines.push('');
   lines.push('Next:');
-  lines.push(`  edit kortix.toml          # project manifest`);
-  lines.push(`  edit .opencode/agents/kortix.md  # default agent persona`);
-  lines.push(`  opencode                  # start a local session`);
+  lines.push(`  edit kortix.toml                          # project manifest`);
+  lines.push(`  edit .kortix/opencode/agents/kortix.md    # default agent persona`);
+  lines.push(`  opencode                                  # start a local session`);
   lines.push('');
   process.stdout.write(`${lines.join('\n')}\n`);
   return 0;

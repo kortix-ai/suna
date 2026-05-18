@@ -362,14 +362,24 @@ function agentNameFromPath(path: string) {
 
 export async function loadProjectConfig(project: GitBackedProject, files?: ProjectFileEntry[]): Promise<ProjectConfigSummary> {
   const repoFiles = files ?? await listRepoFiles(project, project.defaultBranch);
-  const [manifestRaw, openCodeRaw] = await Promise.all([
-    optionalFile(project, project.manifestPath),
-    optionalFile(project, '.opencode/opencode.jsonc'),
-  ]);
+  const manifestRaw = await optionalFile(project, project.manifestPath);
+  const manifest = parseManifest(manifestRaw);
+  const opencodeDir = resolveOpencodeDir(manifest);
+  // Where opencode.jsonc lives. Path comes from the manifest's
+  // [opencode] config_dir, defaulting to `.kortix/opencode`.
+  const openCodeRaw = await optionalFile(project, `${opencodeDir}/opencode.jsonc`);
+
+  // Build matchers off the configured opencode dir. The trailing
+  // `s?` on agents/commands is opencode's own historical quirk (it
+  // accepts both `agent/` and `agents/`); we follow suit.
+  const escapedDir = escapeRegExp(opencodeDir);
+  const agentRe = new RegExp(`^${escapedDir}/agents?/[^/]+\\.md$`);
+  const skillRe = new RegExp(`^${escapedDir}/skills/(.+)/SKILL\\.md$`);
+  const commandRe = new RegExp(`^${escapedDir}/commands?/([^/]+)\\.md$`);
 
   const agentPaths = repoFiles
     .map((file) => file.path)
-    .filter((path) => /^\.opencode\/agents?\/[^/]+\.md$/.test(path))
+    .filter((path) => agentRe.test(path))
     .sort();
   const agents = await Promise.all(agentPaths.map(async (path) => {
     const raw = await optionalFile(project, path);
@@ -384,14 +394,14 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
 
   const seenSkills = new Set<string>();
   const skillPaths = repoFiles
-    .map((file) => file.path.match(/^\.opencode\/skills\/(.+)\/SKILL\.md$/))
+    .map((file) => file.path.match(skillRe))
     .filter((match): match is RegExpMatchArray => Boolean(match))
     .filter((match) => {
       if (seenSkills.has(match[1])) return false;
       seenSkills.add(match[1]);
       return true;
     })
-    .map((match) => ({ slug: match[1], path: `.opencode/skills/${match[1]}/SKILL.md` }))
+    .map((match) => ({ slug: match[1], path: `${opencodeDir}/skills/${match[1]}/SKILL.md` }))
     .sort((a, b) => a.slug.localeCompare(b.slug));
   const skills = await Promise.all(skillPaths.map(async ({ slug, path }) => {
     const raw = await optionalFile(project, path);
@@ -403,12 +413,12 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     };
   }));
 
-  // OpenCode slash commands — `.opencode/command/<slug>.md` or
-  // `.opencode/commands/<slug>.md` (both forms accepted by the runtime; we
+  // OpenCode slash commands — `<opencode>/command/<slug>.md` or
+  // `<opencode>/commands/<slug>.md` (both forms accepted by the runtime; we
   // include either if present). Frontmatter `description:` is what gets
   // surfaced in the command picker.
   const commandPaths = repoFiles
-    .map((file) => file.path.match(/^\.opencode\/commands?\/([^/]+)\.md$/))
+    .map((file) => file.path.match(commandRe))
     .filter((match): match is RegExpMatchArray => Boolean(match))
     .map((match) => ({ slug: match[1], path: match.input as string }))
     .sort((a, b) => a.slug.localeCompare(b.slug));
@@ -422,7 +432,6 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     };
   }));
 
-  const manifest = parseManifest(manifestRaw);
   const signals = {
     manifest: Boolean(manifestRaw),
     openCodeConfig: Boolean(openCodeRaw),
@@ -441,6 +450,32 @@ export async function loadProjectConfig(project: GitBackedProject, files?: Proje
     skills,
     commands,
   };
+}
+
+/**
+ * Resolve `[opencode] config_dir` from the parsed manifest. Mirrors the
+ * default from triggers.ts (DEFAULT_OPENCODE_CONFIG_DIR) but kept local
+ * to avoid a circular import — git.ts is depended on by triggers.ts.
+ */
+function resolveOpencodeDir(manifest: Record<string, unknown>): string {
+  const opencode = manifest.opencode;
+  if (opencode && typeof opencode === 'object' && !Array.isArray(opencode)) {
+    const raw = (opencode as Record<string, unknown>).config_dir;
+    if (typeof raw === 'string' && raw.trim()) {
+      const trimmed = raw.trim();
+      // Reject absolute paths + `..` segments here too. parseManifestString
+      // already validates the same on the trigger path; this is a
+      // belt-and-suspenders since loadProjectConfig uses its own parser.
+      if (!trimmed.startsWith('/') && !trimmed.split('/').includes('..')) {
+        return trimmed.replace(/\/+$/, '');
+      }
+    }
+  }
+  return '.kortix/opencode';
+}
+
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ---------------------------------------------------------------------------

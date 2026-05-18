@@ -18,14 +18,75 @@ optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 # daemon + opencode CLI on top automatically. Define whatever workspace
 # tooling you want in the Dockerfile; the Kortix runtime slots in on top.
 [sandbox]
-dockerfile = "Dockerfile"
+dockerfile = ".kortix/Dockerfile"
 context = "."
 
-# Triggers (cron + webhook) live here as `[[triggers]]` entries.
-# Add one from the Kortix UI, or uncomment the example below.
+# OpenCode runtime config dir. The agent daemon launches opencode with
+# OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live
+# under this folder. Defaults to `.kortix/opencode` — relocate if you
+# want to share a single opencode config across multiple Kortix repos.
+[opencode]
+config_dir = ".kortix/opencode"
+
+# ─── Triggers ────────────────────────────────────────────────────────────
+# Each `[[triggers]]` entry spawns a fresh session that runs `prompt` as
+# its initial message. Add from the Kortix UI or uncomment one below.
+# Slugs must be lowercase URL-safe and unique per project.
+#
+# Cron trigger — fires on a 6-field croner expression
+# (second minute hour day month weekday).
 #
 # [[triggers]]
 # slug = "daily-digest"
+# name = "Daily digest"
 # type = "cron"
-# cron = "0 0 9 * * 1-5"
-# prompt = "Summarize yesterday's commits."
+# agent = "kortix"                # any agent under [opencode] config_dir
+# enabled = true
+# cron = "0 0 9 * * 1-5"          # 09:00 Mon–Fri
+# timezone = "America/Los_Angeles"
+# prompt = """
+# Summarize yesterday's commits across the repo. Save the result to
+# notes/digest-{{ fired_at }}.md and open a PR against main.
+# """
+#
+# Webhook trigger — fires on signed POSTs to
+#   /v1/webhooks/projects/<project_id>/<slug>
+# Signature header: `X-Kortix-Signature: sha256=<hmac>` (HMAC-SHA256 over
+# the raw body using the secret named by `secret_env`).
+# GitHub's `X-Hub-Signature-256` is also accepted.
+#
+# [[triggers]]
+# slug = "slack-hook"
+# name = "Slack handler"
+# type = "webhook"
+# agent = "kortix"
+# enabled = true
+# secret_env = "WEBHOOK_SLACK_SECRET"  # add the value via Secrets Manager
+# prompt = """
+# Slack event from {{ headers.user_agent }}.
+# User said: {{ body.text }}
+# """
+
+# ─── Apps (experimental) ─────────────────────────────────────────────────
+# Gated by the platform flag KORTIX_APPS_EXPERIMENTAL. When off, entries
+# are parsed but never acted on. One `[[apps]]` entry per deployable.
+#
+# [[apps]]
+# slug = "marketing-site"
+# name = "Marketing site"
+# enabled = true
+# framework = "next"
+# domains = ["marketing.example.com"]
+#
+#   [apps.source]
+#   type = "git"                  # or "tar"
+#   repo = "https://github.com/me/site"
+#   branch = "main"
+#   root_path = "apps/site"       # path inside the repo to deploy from
+#
+#   [apps.build]
+#   command = "pnpm build"
+#   out_dir = "dist"
+#
+#   [apps.env]
+#   NEXT_PUBLIC_API_URL = "https://api.example.com"

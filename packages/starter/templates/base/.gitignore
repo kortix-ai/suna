@@ -1,8 +1,8 @@
 # Local OpenCode / Kortix runtime state — never commit.
 .kortix/state/
-.opencode/sessions/
-.opencode/log/
-.opencode/cache/
+.kortix/opencode/sessions/
+.kortix/opencode/log/
+.kortix/opencode/cache/
 node_modules/
 .env
 .env.local

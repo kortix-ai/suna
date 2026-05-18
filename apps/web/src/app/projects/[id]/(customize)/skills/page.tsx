@@ -7,10 +7,11 @@
  *   • Left  — list column with search + group headers + selectable rows
  *   • Right — selected SKILL.md rendered as markdown (description + body)
  *
- * The repo at `.opencode/skills/<slug>/SKILL.md` is the source of truth.
- * Editing happens by committing the file (or via the file viewer for now);
- * the Edit button in the detail toolbar is the future hook for inline
- * editing.
+ * The repo at `<opencode_config_dir>/skills/<slug>/SKILL.md` is the
+ * source of truth — `opencode_config_dir` comes from `[opencode]
+ * config_dir` in kortix.toml and defaults to `.kortix/opencode`. Editing
+ * happens by committing the file (or via the file viewer for now); the
+ * Edit button in the detail toolbar is the future hook for inline editing.
  */
 
 import { use, useEffect, useMemo, useRef, useState } from 'react';
@@ -560,7 +561,7 @@ function EmptyList({
       <p className="mt-1 text-[11px] text-muted-foreground">
         Commit a{' '}
         <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-          .opencode/skills/&lt;slug&gt;/SKILL.md
+          .kortix/opencode/skills/&lt;slug&gt;/SKILL.md
         </code>{' '}
         and it&apos;ll show up here.
       </p>

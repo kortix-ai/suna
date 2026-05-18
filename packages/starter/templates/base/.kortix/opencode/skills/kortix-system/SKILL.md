@@ -38,19 +38,21 @@ to OpenCode the same way you would on a laptop.
 
 Two configuration surfaces, with strict ownership:
 
-| Surface           | Owned by  | Lives in                                                |
-| ----------------- | --------- | ------------------------------------------------------- |
-| Kortix config     | Kortix    | `kortix.toml` at the repo root                          |
-| OpenCode config   | OpenCode  | `.opencode/` (agents, skills, commands, opencode.jsonc) |
+| Surface           | Owned by  | Lives in                                                          |
+| ----------------- | --------- | ----------------------------------------------------------------- |
+| Kortix config     | Kortix    | `kortix.toml` at the repo root + the `.kortix/` folder beside it  |
+| OpenCode config   | OpenCode  | `.kortix/opencode/` (agents, skills, commands, opencode.jsonc)    |
 
 The rule: **Kortix stuff (triggers, env spec, sandbox image, deployable
 apps, project metadata) lives in `kortix.toml`. OpenCode stuff (agents,
 skills, commands, tools, plugins, providers) stays as files under
-`.opencode/`.**
+`.kortix/opencode/`.** Where opencode's config dir actually lives is
+declared in `kortix.toml` under `[opencode] config_dir` — the default is
+`.kortix/opencode` but you can relocate it.
 
 Any repo with a valid `kortix.toml` at the root is a Kortix project —
-that's the universal contract. The platform never reads `.opencode/`;
-OpenCode never reads `kortix.toml`. Each side owns its half.
+that's the universal contract. The platform never reads opencode's
+config dir; OpenCode never reads `kortix.toml`. Each side owns its half.
 
 When the user edits triggers / env / apps from the Kortix dashboard,
 those edits are read-modify-writes on `kortix.toml` — they round-trip
@@ -63,8 +65,8 @@ Inside the sandbox, the layout is fixed:
 
 | Path                          | What                                                     |
 | ----------------------------- | -------------------------------------------------------- |
-| `/workspace`                  | Working root. `WORKDIR` for opencode.                    |
-| `/workspace/.kortix`          | The project repo, cloned on the session branch.          |
+| `/workspace`                  | Working root + cloned repo, on the session branch. `WORKDIR` and `HOME` both point here, so tool caches (`.npm`, `.cache`, `.bun`) land alongside repo files — that's expected. |
+| `/workspace/.kortix/`         | Repo-internal Kortix folder — `Dockerfile` + `opencode/` dir. |
 | `/usr/local/bin/kortix-agent` | The sandbox daemon binary (supervisor + reverse proxy).  |
 | `/usr/local/bin/kortix-entrypoint` | Boot script the container `ENTRYPOINT` points at.   |
 
@@ -80,7 +82,7 @@ project's `[env]` secrets):
 | `KORTIX_BASE_REF`              | The ref the session branched off of.                          |
 | `KORTIX_BRANCH_NAME`           | Same value as `KORTIX_SESSION_ID` — what your work pushes to. |
 | `KORTIX_WORKSPACE`             | `/workspace` by default.                                      |
-| `KORTIX_PROJECT_TARGET`        | `/workspace/.kortix` — where the repo is cloned.              |
+| `KORTIX_PROJECT_TARGET`        | `/workspace` — where the repo is cloned. Same as `KORTIX_WORKSPACE` by default; override only if you need them split. |
 | `KORTIX_SERVICE_PORT`          | `8000` — the daemon's external port (proxies opencode).       |
 | `KORTIX_AGENT_NAME`            | The OpenCode agent the session was created with.              |
 | `KORTIX_INITIAL_PROMPT`        | Set when the session was spawned by a trigger.                |
@@ -96,7 +98,7 @@ rejects it.
 Each session is an isolated, ephemeral compute leaf:
 
 - Fresh sandbox VM (Daytona by default; `local_docker` in dev).
-- The project repo is cloned to `/workspace/.kortix` and checked out
+- The project repo is cloned to `/workspace` and checked out
   on a branch named after the session UUID.
 - OpenCode runs inside on an internal port; the Kortix daemon reverse-
   proxies it on `8000`. The dashboard tunnels in over HTTPS.
@@ -108,8 +110,8 @@ Each session is an isolated, ephemeral compute leaf:
 **Implication: you can do whatever you want in the sandbox.** `rm -rf`,
 install whatever, run unsafe scripts. It's isolated and disposable. But
 **only what you commit + push survives** — the rest is gone the moment
-the session ends. Treat the filesystem outside `/workspace/.kortix` as
-scratch.
+the session ends. Treat anything outside the repo (HOME caches, system
+state) as scratch.
 
 ### Session lifecycle in the dashboard
 
@@ -137,11 +139,14 @@ description = "What this project is."
 required = ["DATABASE_URL"]   # session refuses to start without these
 optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 
-[sandbox]                     # base image for session sandboxes
-dockerfile = "Dockerfile"     # repo-relative
-context = "."                 # build context
+[sandbox]                            # base image for session sandboxes
+dockerfile = ".kortix/Dockerfile"    # repo-relative
+context = "."                        # build context
 
-[[triggers]]                  # cron + webhook triggers — array of tables
+[opencode]                           # where opencode's config dir lives
+config_dir = ".kortix/opencode"      # repo-relative; opencode reads OPENCODE_CONFIG_DIR
+
+[[triggers]]                         # cron + webhook triggers — array of tables
 slug = "daily-digest"
 name = "Daily digest"
 type = "cron"
@@ -181,6 +186,7 @@ The manifest is parsed at every relevant boundary:
 | ---------------------- | ------------------------------------------------------ |
 | Trigger sweep          | `[[triggers]]`                                         |
 | Sandbox builder        | `[sandbox]`                                            |
+| Sandbox runtime        | `[opencode]` (where to launch opencode with its config) |
 | Session bootstrap      | `[env]` (validates required against project_secrets)   |
 | Apps deploy sweep      | `[[apps]]` (when `KORTIX_APPS_EXPERIMENTAL=true`)      |
 | Dashboard UI           | All of the above + `[project]`                         |
@@ -316,8 +322,8 @@ Sessions run inside a Docker container built from the project's own
 
 ```toml
 [sandbox]
-dockerfile = "Dockerfile"     # repo-relative path
-context = "."                 # build context
+dockerfile = ".kortix/Dockerfile"   # repo-relative path
+context = "."                       # build context
 ```
 
 Both paths must be repo-relative. Absolute paths and `..` traversal
@@ -797,13 +803,13 @@ opencode + the daemon — don't put your own dev server there.
 1. **Read `kortix.toml` first if the question touches platform
    config** — it's the source of truth.
 2. **For OpenCode customization** (new agent, new skill, new slash
-   command), create the file under `.opencode/` and commit it.
+   command), create the file under `.kortix/opencode/` and commit it.
    Sessions read it on next clone (or call `/kortix/refresh` for an
    in-place reload).
 3. **For Kortix customization** (new trigger, new env requirement,
-   new sandbox dep), edit `kortix.toml` (and `Dockerfile` if needed)
-   and commit it. Use the dashboard if the user prefers — both paths
-   write the same files.
+   new sandbox dep), edit `kortix.toml` (and `.kortix/Dockerfile` if
+   needed) and commit it. Use the dashboard if the user prefers —
+   both paths write the same files.
 4. **Run the project's own test command** before declaring a change
    done. Whatever it is — `pnpm test`, `pytest`, `go test` — figure
    it out from the repo, don't guess.
@@ -823,9 +829,15 @@ opencode + the daemon — don't put your own dev server there.
 - **The session branch is named after the session UUID.** That's not
   a coincidence — the branch name *is* the session id by construction.
   Use `KORTIX_SESSION_ID` and `KORTIX_BRANCH_NAME` interchangeably.
-- **The repo lives at `/workspace/.kortix`, not `/workspace`.**
-  `WORKDIR` is `/workspace` but the cloned repo is the `.kortix`
-  subdirectory. Use absolute paths.
+- **The repo is cloned directly into `/workspace`.** `WORKDIR` and
+  the cloned repo root are the same path. Tool caches (`.npm`,
+  `.cache`, `.bun`) land beside repo files because `HOME=/workspace`
+  by default. Use absolute paths.
+- **Kortix-owned files live in `.kortix/` at the repo root.** The
+  `Dockerfile` and `opencode/` config dir sit under there to keep
+  the root clean. Both paths are declared in `kortix.toml`
+  (`[sandbox] dockerfile` and `[opencode] config_dir`) — relocate
+  if you want.
 - **OpenCode primitives (agents, skills, commands, opencode.jsonc)
   are never platform-special.** The platform doesn't read them —
   OpenCode does. The platform only reads `kortix.toml`.
@@ -856,8 +868,9 @@ Load `kortix-system` when the user asks:
 - "Can I delete `.opencode/triggers/`?" (yes — triggers are in the
   manifest now)
 - "How do I customize the sandbox image / install extra system tools?"
-  (edit `Dockerfile` — Kortix layers its runtime on top automatically)
-- "Where does my agent's code run?" / "What's `/workspace/.kortix`?"
+  (edit `.kortix/Dockerfile` — Kortix layers its runtime on top
+  automatically)
+- "Where does my agent's code run?" / "What's `/workspace`?"
 - "How do I deploy a frontend from this project?" (`[[apps]]`, if
   enabled)
 - "What env vars does the platform inject?" / "What is

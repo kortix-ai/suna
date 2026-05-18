@@ -19,7 +19,10 @@ const Schema = z.object({
   KORTIX_SERVICE_PORT: z.coerce.number().int().positive().default(8000),
   KORTIX_OPENCODE_INTERNAL_PORT: z.coerce.number().int().positive().default(4096),
   KORTIX_WORKSPACE: z.string().default('/workspace'),
-  KORTIX_PROJECT_TARGET: z.string().default('/workspace/.kortix'),
+  // Project repo is cloned directly into the workspace. The repo's
+  // Kortix-owned files live under <workspace>/.kortix/ (Dockerfile +
+  // opencode config dir) — no intermediate clone-target directory.
+  KORTIX_PROJECT_TARGET: z.string().default('/workspace'),
   KORTIX_DEFAULT_BRANCH: z.string().default('main'),
   KORTIX_BRANCH_FETCH_ATTEMPTS: z.coerce.number().int().positive().default(60),
   KORTIX_BRANCH_FETCH_DELAY: z.coerce.number().positive().default(0.25),
@@ -84,20 +87,51 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 }
 
 /**
- * Project overlay wins: prefer <projectTarget>/.opencode if it has a config
- * file, then KORTIX_DEFAULT_OPENCODE_CONFIG_DIR. Same precedence as the legacy
- * kortix-daemon `resolve_opencode_config_dir`.
+ * Pick the opencode config dir for this sandbox. Honors `[opencode] config_dir`
+ * in the project's kortix.toml when present (defaulting to `.kortix/opencode`
+ * relative to the cloned repo) and falls back to KORTIX_DEFAULT_OPENCODE_CONFIG_DIR
+ * if the project doesn't have an opencode.jsonc — that's what keeps a freshly
+ * provisioned sandbox bootable before a project has been cloned.
  */
 export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
-  const candidate = `${cfg.projectTarget}/.opencode`
   const fs = await import('node:fs/promises')
-  try {
-    const stat = await fs.stat(`${candidate}/opencode.jsonc`)
-    if (stat.isFile()) return candidate
-  } catch {}
-  try {
-    const stat = await fs.stat(`${candidate}/opencode.json`)
-    if (stat.isFile()) return candidate
-  } catch {}
+  const manifestPath = `${cfg.projectTarget}/kortix.toml`
+  const relConfigDir = await readOpencodeConfigDirFromManifest(fs, manifestPath)
+  const candidate = `${cfg.projectTarget}/${relConfigDir}`
+  for (const filename of ['opencode.jsonc', 'opencode.json']) {
+    try {
+      const stat = await fs.stat(`${candidate}/${filename}`)
+      if (stat.isFile()) return candidate
+    } catch {}
+  }
   return cfg.defaultOpencodeConfigDir
+}
+
+/**
+ * Pluck `[opencode] config_dir` out of a kortix.toml without dragging in a
+ * full TOML parser. The field has one canonical shape; we look for it
+ * explicitly and fall back to the default if anything's off.
+ */
+async function readOpencodeConfigDirFromManifest(
+  fs: typeof import('node:fs/promises'),
+  manifestPath: string,
+): Promise<string> {
+  const fallback = '.kortix/opencode'
+  let body: string
+  try {
+    body = await fs.readFile(manifestPath, 'utf8')
+  } catch {
+    return fallback
+  }
+  // Match the `[opencode]` table body up to the next `[section]` line.
+  const sectionMatch = body.match(/^\[opencode\]\s*$([\s\S]*?)(?=^\s*\[|\Z)/m)
+  const sectionBody = sectionMatch?.[1]
+  if (!sectionBody) return fallback
+  const keyMatch = sectionBody.match(/^\s*config_dir\s*=\s*['"]([^'"]+)['"]/m)
+  const rawValue = keyMatch?.[1]
+  if (!rawValue) return fallback
+  const raw = rawValue.trim().replace(/\/+$/, '')
+  // Reject absolute paths and parent traversal — matches the API's validator.
+  if (!raw || raw.startsWith('/') || raw.split('/').includes('..')) return fallback
+  return raw
 }

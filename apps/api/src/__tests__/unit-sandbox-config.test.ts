@@ -98,7 +98,7 @@ context = "/tmp"
 dockerfile = 42
 `));
     const { spec, errors } = extractSandbox(parsed);
-    expect(spec.dockerfile).toBe('Dockerfile'); // fell back
+    expect(spec.dockerfile).toBe(DEFAULT_SANDBOX.dockerfile); // fell back
     expect(errors[0]!.error).toMatch(/must be a string/);
   });
 

@@ -19,11 +19,11 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // "every project ships with these, in this order."
 const SPEC_STARTER_PATHS = [
   '.gitignore',
-  '.opencode/agents/kortix.md',
-  '.opencode/opencode.jsonc',
-  '.opencode/skills/kortix-system/SKILL.md',
-  '.opencode/tools/show.ts',
-  'Dockerfile',
+  '.kortix/Dockerfile',
+  '.kortix/opencode/agents/kortix.md',
+  '.kortix/opencode/opencode.jsonc',
+  '.kortix/opencode/skills/kortix-system/SKILL.md',
+  '.kortix/opencode/tools/show.ts',
   'kortix.toml',
   'README.md',
 ];

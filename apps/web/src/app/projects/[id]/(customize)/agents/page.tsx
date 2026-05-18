@@ -7,8 +7,10 @@
  *   • Left  — agent list with search + selectable rows
  *   • Right — selected agent file rendered as markdown
  *
- * The repo at `.opencode/agents/<name>.md` is the source of truth. The
- * Edit button is the future hook for inline editing.
+ * The repo at `<opencode_config_dir>/agents/<name>.md` is the source of
+ * truth — `opencode_config_dir` comes from `[opencode] config_dir` in
+ * kortix.toml and defaults to `.kortix/opencode`. The Edit button is the
+ * future hook for inline editing.
  */
 
 import { use, useEffect, useMemo, useState } from 'react';
@@ -456,7 +458,7 @@ function EmptyList() {
       <p className="mt-1 text-[11px] text-muted-foreground">
         Commit a{' '}
         <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-          .opencode/agents/&lt;name&gt;.md
+          .kortix/opencode/agents/&lt;name&gt;.md
         </code>{' '}
         and it&apos;ll show up here.
       </p>

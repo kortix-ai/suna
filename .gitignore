@@ -67,8 +67,12 @@ dump.rdb
 .cwc/
 test/
 
-# Core runtime data
+# Core runtime data — local Kortix state in real projects.
+# Carve-out: the starter template legitimately ships a .kortix/ folder
+# (Dockerfile + opencode config dir); don't ignore that one.
 .kortix/
+!packages/starter/templates/base/.kortix/
+!packages/starter/templates/base/.kortix/**
 apps/kortix-v0/.local/
 apps/api/.kortix-data/
 apps/api/.sandbox-auth-token.json

@@ -789,7 +789,8 @@ export type ProjectTriggerType = 'cron' | 'webhook';
 export interface ProjectTrigger {
   /** URL-safe slug (the filename minus `.md`). */
   slug: string;
-  /** Repo path of the source file, e.g. `.opencode/triggers/daily.md`. */
+  /** Where the entry is sourced from. Always `kortix.toml#triggers.<slug>`
+   *  now that triggers are centralized in the manifest. */
   path: string;
   name: string;
   type: ProjectTriggerType;

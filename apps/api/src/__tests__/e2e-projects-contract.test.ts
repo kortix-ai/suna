@@ -50,8 +50,8 @@ const baseDate = new Date('2026-01-01T00:00:00Z');
 const repoFiles = [
   { path: 'README.md', type: 'file', size: 18 },
   { path: 'kortix.toml', type: 'file', size: 42 },
-  { path: '.opencode/opencode.jsonc', type: 'file', size: 90 },
-  { path: '.opencode/agents/default.md', type: 'file', size: 120 },
+  { path: '.kortix/opencode/opencode.jsonc', type: 'file', size: 90 },
+  { path: '.kortix/opencode/agents/default.md', type: 'file', size: 120 },
 ];
 
 let currentUserId: string;
@@ -525,16 +525,16 @@ describe('projects API contract', () => {
 
     // ref + subtree path → archives just that subtree, filename derived from path.
     const subtree = await app.request(
-      `/v1/projects/${PROJECT_ID}/files/archive?ref=dev&path=.opencode/agents`,
+      `/v1/projects/${PROJECT_ID}/files/archive?ref=dev&path=.kortix/opencode/agents`,
     );
     expect(subtree.status).toBe(200);
     expect(subtree.headers.get('content-type')).toBe('application/zip');
     expect(subtree.headers.get('content-disposition')).toBe('attachment; filename="agents.zip"');
-    expect(await subtree.text()).toBe(`zip:${PROJECT_ID}:dev:.opencode/agents`);
+    expect(await subtree.text()).toBe(`zip:${PROJECT_ID}:dev:.kortix/opencode/agents`);
     expect(archiveCalls.at(-1)).toEqual({
       projectId: PROJECT_ID,
       ref: 'dev',
-      path: '.opencode/agents',
+      path: '.kortix/opencode/agents',
     });
 
     // Absolute / workspace-prefixed paths are rejected (the UI must strip them).

@@ -27,7 +27,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     servicePort: 8000,
     opencodeInternalPort: 4096,
     workspace: '/workspace',
-    projectTarget: '/workspace/.kortix',
+    projectTarget: '/workspace',
     defaultBranch: 'main',
     branchFetchAttempts: 60,
     branchFetchDelaySec: 0.25,
