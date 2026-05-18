@@ -1,7 +1,0 @@
-{
-  "name": "v1_legacy_script_guards",
-  "status": "passed",
-  "command": "bash -lc $'\\n  set -euo pipefail\\n\\n  bash -n scripts/start-sandbox.sh scripts/start-local.sh\\n\\n  start_sandbox_output=\"$(mktemp)\"\\n  build_snapshot_output=\"$(mktemp)\"\\n  ssh_bridge_output=\"$(mktemp)\"\\n  trap \"rm -f \\\\\"$start_sandbox_output\\\\\" \\\\\"$build_snapshot_output\\\\\" \\\\\"$ssh_bridge_output\\\\\"\" EXIT\\n\\n  if scripts/start-sandbox.sh >\"$start_sandbox_output\" 2>&1; then\\n    cat \"$start_sandbox_output\"\\n    exit 1\\n  fi\\n  grep -q \"legacy JustAVPS snapshot bootstrapper\" \"$start_sandbox_output\"\\n\\n  if bun apps/api/scripts/build-snapshot.ts >\"$build_snapshot_output\" 2>&1; then\\n    cat \"$build_snapshot_output\"\\n    exit 1\\n  fi\\n  grep -q \"disabled for repo-first Kortix v1\" \"$build_snapshot_output\"\\n\\n  if bun apps/api/scripts/apply-justavps-ssh-bridge.ts >\"$ssh_bridge_output\" 2>&1; then\\n    cat \"$ssh_bridge_output\"\\n    exit 1\\n  fi\\n  grep -q \"disabled for repo-first Kortix v1\" \"$ssh_bridge_output\"\\n\\n  if git grep -n -E \"core/startup|core/docker|raw.githubusercontent.com/kortix-ai/suna/main/core\" -- scripts apps/api; then\\n    exit 1\\n  fi\\n' ",
-  "exit_code": 0,
-  "log": "logs/v1_legacy_script_guards.log"
-}

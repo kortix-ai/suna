@@ -1,7 +1,0 @@
-{
-  "name": "legacy_migration_tooling",
-  "status": "failed",
-  "command": "TEST_DATABASE_URL=<required> KORTIX_TEST_DB_CONFIRM=I_UNDERSTAND_THIS_DELETES_TEST_DATA INTERNAL_KORTIX_ENV=dev bun test apps/api/src/__tests__/e2e-legacy-sandbox-migration.test.ts",
-  "exit_code": 1,
-  "log": "logs/legacy_migration_tooling.log"
-}

@@ -1,7 +1,0 @@
-{
-  "name": "api_create_repo_starter_tests",
-  "status": "passed",
-  "command": "pnpm --filter kortix-api exec bun test src/__tests__/e2e-create-repo-starter.test.ts ",
-  "exit_code": 0,
-  "log": "logs/api_create_repo_starter_tests.log"
-}

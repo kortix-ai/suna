@@ -1,7 +1,0 @@
-{
-  "name": "web_auth_return_url_tests",
-  "status": "passed",
-  "command": "node --experimental-strip-types --test apps/web/src/lib/auth/return-url.test.mts ",
-  "exit_code": 0,
-  "log": "logs/web_auth_return_url_tests.log"
-}

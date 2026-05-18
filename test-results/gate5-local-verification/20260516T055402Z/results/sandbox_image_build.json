@@ -1,7 +1,0 @@
-{
-  "name": "sandbox_image_build",
-  "status": "passed",
-  "command": "docker build -f apps/sandbox/Dockerfile -t kortix/sandbox:dev . ",
-  "exit_code": 0,
-  "log": "logs/sandbox_image_build.log"
-}

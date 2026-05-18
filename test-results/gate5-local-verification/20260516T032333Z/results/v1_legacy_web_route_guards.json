@@ -1,7 +1,0 @@
-{
-  "name": "v1_legacy_web_route_guards",
-  "status": "passed",
-  "command": "bash -lc $'\\n  set -euo pipefail\\n\\n  grep -q \"redirect\" apps/web/src/app/admin/instances/page.tsx\\n  grep -q \"/admin/ops\" apps/web/src/app/admin/instances/page.tsx\\n  grep -q \"redirect\" apps/web/src/app/debug/instances/page.tsx\\n  grep -q \"/projects\" apps/web/src/app/debug/instances/page.tsx\\n\\n  if git grep -n -E \"admin/instances|debug/instances|/instances|justavps|InstanceSettingsModal|useAdminSandboxes\" -- \\\\\\n    apps/web/src/app/admin/instances/page.tsx \\\\\\n    apps/web/src/app/debug/instances/page.tsx \\\\\\n    apps/web/src/app/admin/_components/admin-sidebar.tsx \\\\\\n    apps/web/src/app/admin/_components/admin-shell.tsx \\\\\\n    apps/web/src/app/admin/page.tsx\\n  then\\n    exit 1\\n  fi\\n' ",
-  "exit_code": 0,
-  "log": "logs/v1_legacy_web_route_guards.log"
-}

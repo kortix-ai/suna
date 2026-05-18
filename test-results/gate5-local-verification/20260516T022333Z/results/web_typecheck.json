@@ -1,7 +1,0 @@
-{
-  "name": "web_typecheck",
-  "status": "passed",
-  "command": "pnpm --filter Kortix-Computer-Frontend exec tsc --noEmit ",
-  "exit_code": 0,
-  "log": "logs/web_typecheck.log"
-}

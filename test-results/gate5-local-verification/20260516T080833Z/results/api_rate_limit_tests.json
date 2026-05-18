@@ -1,7 +1,0 @@
-{
-  "name": "api_rate_limit_tests",
-  "status": "passed",
-  "command": "bun test apps/api/src/__tests__/e2e-rate-limits.test.ts ",
-  "exit_code": 0,
-  "log": "logs/api_rate_limit_tests.log"
-}

@@ -1,7 +1,0 @@
-{
-  "name": "api_session_connectors_router_tests",
-  "status": "passed",
-  "command": "pnpm --filter kortix-api exec bun test src/__tests__/e2e-session-connectors-router.test.ts ",
-  "exit_code": 0,
-  "log": "logs/api_session_connectors_router_tests.log"
-}

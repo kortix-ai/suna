@@ -1,7 +1,0 @@
-{
-  "name": "api_tests",
-  "status": "passed",
-  "command": "pnpm --filter kortix-api test ",
-  "exit_code": 0,
-  "log": "logs/api_tests.log"
-}

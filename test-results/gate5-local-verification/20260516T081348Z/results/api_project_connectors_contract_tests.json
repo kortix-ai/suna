@@ -1,7 +1,0 @@
-{
-  "name": "api_project_connectors_contract_tests",
-  "status": "passed",
-  "command": "pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-connectors.test.ts ",
-  "exit_code": 0,
-  "log": "logs/api_project_connectors_contract_tests.log"
-}
