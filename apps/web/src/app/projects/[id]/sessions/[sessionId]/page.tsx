@@ -197,10 +197,7 @@ function ActiveSessionChat() {
 
   // Once OpenCode is reachable and we've confirmed there are zero sessions,
   // kick off a single create — guarded so React-strict-mode + refocus
-  // re-renders never race two creates. The mutation itself retries on
-  // "opencode not ready" 503s (see useCreateOpenCodeSession); if it fails for
-  // any other reason we release the ref so the next runtime-ready transition
-  // can try again instead of leaving the user on a permanent skeleton.
+  // re-renders never race two creates.
   useEffect(() => {
     if (!runtimeReady) return;
     if (sessionsQuery.isLoading) return;
@@ -208,11 +205,7 @@ function ActiveSessionChat() {
     const sessions = sessionsQuery.data ?? [];
     if (sessions.length > 0) return;
     createdRef.current = true;
-    createMutation.mutate(undefined, {
-      onError: () => {
-        createdRef.current = false;
-      },
-    });
+    createMutation.mutate();
   }, [runtimeReady, sessionsQuery.isLoading, sessionsQuery.data, createMutation]);
 
   const chatSessionId =

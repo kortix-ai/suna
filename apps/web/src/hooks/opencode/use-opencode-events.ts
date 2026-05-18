@@ -31,6 +31,7 @@ import { ptyKeys } from "./use-opencode-pty";
 import { opencodeKeys, type Session, type MessageWithParts } from "./use-opencode-sessions";
 import { saveSessionToIDB, deleteSessionFromIDB } from "@/lib/idb-sync-cache";
 import { resetPrefetchState } from "./use-session-prefetch";
+import { syncOpencodeSessionTitles } from "@/lib/projects-client";
 
 const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
 const PROJECT_METADATA_REFETCH_COOLDOWN_MS = 5_000;
@@ -660,6 +661,9 @@ export function useOpenCodeEventStream() {
 						return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
 					});
 					queryClient.setQueryData(opencodeKeys.session(info.id), info);
+					void syncOpencodeSessionTitles([
+						{ opencode_session_id: info.id, title: info.title || null },
+					]).catch(() => {});
 				}
 				break;
 			}
@@ -680,6 +684,9 @@ export function useOpenCodeEventStream() {
 						next[idx] = info;
 						return next.sort((a, b) => b.time.updated - a.time.updated);
 					});
+					void syncOpencodeSessionTitles([
+						{ opencode_session_id: info.id, title: info.title || null },
+					]).catch(() => {});
 				}
 				break;
 			}

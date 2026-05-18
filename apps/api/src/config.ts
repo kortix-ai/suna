@@ -138,6 +138,11 @@ const envSchema = z.object({
   KORTIX_URL:                  optStr,
   KORTIX_YOLO_URL:             optUrl('https://api-yolo.kortix.com/v1'),
   ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
+  // Single-env override that pins the DEFAULT sandbox provider for new
+  // sessions. When set, takes precedence over the head-of-ALLOWED rule
+  // used by `getDefaultProvider()`. Values: 'daytona' | 'local_docker'.
+  // Leave unset to let ALLOWED_SANDBOX_PROVIDERS[0] win.
+  SANDBOX_PROVIDER:            optStr,
   DOCKER_HOST:                 optStr,
   // Default port base for sandbox port mapping; kept for the queue drainer
   // and deployments router which still reference it. Functional logic has
@@ -401,6 +406,7 @@ export const config = {
   KORTIX_URL: env.KORTIX_URL,
   KORTIX_YOLO_URL: env.KORTIX_YOLO_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
+  SANDBOX_PROVIDER: env.SANDBOX_PROVIDER,
   DOCKER_HOST: env.DOCKER_HOST,
   KORTIX_LOCAL_DOCKER_IMAGE: env.KORTIX_LOCAL_DOCKER_IMAGE,
   SANDBOX_PORT_BASE: env.SANDBOX_PORT_BASE,
@@ -513,8 +519,24 @@ export const config = {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker');
   },
 
-  /** Default provider. Daytona is the canonical hosted runtime. */
+  /**
+   * Default sandbox provider for new sessions.
+   *
+   * Resolution order:
+   *   1. SANDBOX_PROVIDER env (single-value override) — must be in the
+   *      ALLOWED_SANDBOX_PROVIDERS list, otherwise we fall back to (2)
+   *      to avoid handing out a provider the operator hasn't opted in to.
+   *   2. First entry of ALLOWED_SANDBOX_PROVIDERS.
+   *   3. 'daytona' as the final safety belt.
+   *
+   * This lets a self-host operator flip every new session to local docker
+   * with just `SANDBOX_PROVIDER=local_docker` in apps/api/.env.
+   */
   getDefaultProvider(): SandboxProviderName {
+    const explicit = (this.SANDBOX_PROVIDER || '').trim().toLowerCase();
+    if (explicit === 'daytona' || explicit === 'local_docker') {
+      if (this.ALLOWED_SANDBOX_PROVIDERS.includes(explicit)) return explicit;
+    }
     return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
   },
 

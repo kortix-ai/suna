@@ -6,14 +6,14 @@ mkdir -p dist
 if [ -n "${BUN_COMPILE_TARGET:-}" ]; then
   target="$BUN_COMPILE_TARGET"
 else
-  case "$(uname -m)" in
-    x86_64|amd64) target="bun-linux-x64" ;;
-    arm64|aarch64) target="bun-linux-arm64" ;;
-    *)
-      echo "Unsupported build architecture: $(uname -m)" >&2
-      exit 1
-      ;;
-  esac
+  # Default to bun-linux-x64. Daytona's standard runners are x86_64 and the
+  # snapshot builder COPYs this binary verbatim into the per-project image —
+  # using the host architecture (e.g. arm64 on Apple Silicon dev machines)
+  # ships an ELF the sandbox runner can't execute, the daemon never binds
+  # port 8000, and every proxied request 502s. Override with
+  # BUN_COMPILE_TARGET if you genuinely need a different arch (e.g. local
+  # docker on Apple Silicon).
+  target="bun-linux-x64"
 fi
 
 case "$target" in

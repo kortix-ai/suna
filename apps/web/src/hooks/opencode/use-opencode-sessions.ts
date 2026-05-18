@@ -205,13 +205,28 @@ export function useCreateOpenCodeSession() {
 
   return useMutation({
     mutationFn: async (options: { directory?: string; title?: string } | void) => {
-      const client = getClient();
       const opts = options || {};
-      const result = await client.session.create({
-        directory: opts.directory,
-        title: opts.title,
-      });
-      return unwrap(result);
+      // Opencode-inside-sandbox can be still booting when this fires (auto-
+      // create on session page mount). The sandbox proxy returns 503 with
+      // "opencode not ready" until the binary binds its port. Retry that
+      // specific transient inline — anything else propagates immediately.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const client = getClient();
+          const result = await client.session.create({
+            directory: opts.directory,
+            title: opts.title,
+          });
+          return unwrap(result);
+        } catch (e) {
+          const msg = (e as { message?: string })?.message ?? '';
+          if (attempt < 6 && /opencode not ready/i.test(msg)) {
+            await new Promise((r) => setTimeout(r, Math.min(500 * 2 ** attempt, 4_000)));
+            continue;
+          }
+          throw e;
+        }
+      }
     },
     onSuccess: (newSession) => {
       // Surgically insert into cache — SSE session.created will also fire

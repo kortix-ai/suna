@@ -51,7 +51,17 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
     'RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint',
     '',
+    // Pre-seed /workspace with a sentinel file. Daytona\'s runtime appears
+    // to clean up *empty* /workspace directories shortly after the
+    // container starts (likely overlayfs init), leaving the daemon\'s CWD
+    // pointing at a deleted inode and every subsequent fs op silently
+    // failing. The working default snapshot survives this because its
+    // /workspace is non-empty at image build time (XDG dirs, .bun, etc.);
+    // we replicate the property with a deliberate marker.
     'ENV KORTIX_WORKSPACE=/workspace',
+    'RUN mkdir -p /workspace \\',
+    '    && echo "kortix-snapshot" > /workspace/.kortix-workspace-marker \\',
+    '    && chmod -R a+rwX /workspace',
     'WORKDIR /workspace',
     'EXPOSE 8000',
     'ENTRYPOINT ["/usr/local/bin/kortix-entrypoint"]',
