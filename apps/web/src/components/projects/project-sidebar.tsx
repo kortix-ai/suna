@@ -530,7 +530,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={goFiles}
                   isActive={filesActive}
-                  className="!text-[12.5px] font-normal [&_svg]:!size-4"
+                  className="!text-[12.5px] font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
                 >
                   <FolderOpen />
                   <span>Files</span>
@@ -540,7 +540,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={goCustomize}
                   isActive={customizeActive}
-                  className="!text-[12.5px] font-normal [&_svg]:!size-4"
+                  className="!text-[12.5px] font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
                 >
                   <SlidersHorizontal />
                   <span>Customize</span>
