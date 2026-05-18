@@ -102,7 +102,6 @@ describe('Cloud Scan: Unauthenticated Route Probing', () => {
       '/v1/user-roles',
       '/v1/billing/account-state',
       '/v1/legacy/threads',
-      '/v1/setup/env',
       '/v1/setup/supabase-status',
       '/v1/billing/setup/plans',
       '/v1/billing/credits/packages',
@@ -117,8 +116,6 @@ describe('Cloud Scan: Unauthenticated Route Probing', () => {
 
   describe('Combined-auth protected endpoints return 401', () => {
     const routes = [
-      '/v1/providers',
-      '/v1/secrets',
       '/v1/servers',
       '/v1/queue/all',
       '/v1/tunnel/connections',

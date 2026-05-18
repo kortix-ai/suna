@@ -139,9 +139,9 @@ const envSchema = z.object({
   KORTIX_YOLO_URL:             optUrl('https://api-yolo.kortix.com/v1'),
   ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
   DOCKER_HOST:                 optStr,
-  // Default port base for sandbox port mapping; kept for the queue drainer,
-  // providers/routes connectivity helper and deployments router which still
-  // reference it. Functional logic has moved off the legacy local sandbox.
+  // Default port base for sandbox port mapping; kept for the queue drainer
+  // and deployments router which still reference it. Functional logic has
+  // moved off the legacy local sandbox.
   SANDBOX_PORT_BASE:           optInt(14000),
   // Container name for the local-docker dev bridge. Empty/undefined when
   // local_docker isn't in use — codepaths that read it should treat the

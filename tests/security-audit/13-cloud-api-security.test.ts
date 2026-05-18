@@ -26,8 +26,6 @@ const CLOUD_API_BASE = 'https://computer-preview-api.kortix.com';
 const AUTHENTICATED_ENDPOINTS = [
   { method: 'GET', path: '/v1/accounts', auth: 'supabase' },
   { method: 'GET', path: '/v1/user-roles', auth: 'supabase' },
-  { method: 'GET', path: '/v1/providers', auth: 'combined' },
-  { method: 'GET', path: '/v1/secrets', auth: 'combined' },
   { method: 'GET', path: '/v1/servers', auth: 'combined' },
   { method: 'GET', path: '/v1/queue/all', auth: 'combined' },
   { method: 'POST', path: '/v1/router/chat/completions', auth: 'apiKey' },

@@ -16,11 +16,6 @@
  *   - Can reset wizard state for existing owner
  *   - Should be disabled or removed in cloud mode
  *
- * [HIGH] POST /v1/setup/env — Auth but NO admin check, EXISTS on cloud
- *   - Any authenticated cloud user can modify env vars
- *   - Can overwrite secrets: DATABASE_URL, API_KEY_SECRET, STRIPE_SECRET_KEY
- *   - Should require admin role OR be disabled in cloud mode
- *
  * [LOW] GET /v1/setup/sandbox-providers — PUBLIC on cloud
  *   - Reveals cloud provider architecture: {"providers":["justavps"]}
  *   - Reveals capabilities: async, events, polling flags
@@ -93,27 +88,6 @@ describe('Cloud Scan: Setup Routes Exposed on Production', () => {
     });
   });
 
-  describe('[HIGH] setup/env exists on cloud (auth but no admin)', () => {
-    test('GET /v1/setup/env requires auth', async () => {
-      const r = await probe('GET', '/v1/setup/env');
-      expect(r.status).toBe(401);
-      // This is good — auth is required
-      // But the FINDING is: any authenticated user can access, not just admins
-    });
-
-    test('POST /v1/setup/env requires auth', async () => {
-      const r = await probe('POST', '/v1/setup/env', { key: 'TEST', value: 'test' });
-      expect(r.status).toBe(401);
-    });
-
-    test('FINDING: route exists on cloud and does NOT require admin role', () => {
-      // Code review: setup/index.ts uses supabaseAuth middleware for
-      // non-public routes, but does NOT use requireAdmin
-      // Any user with a valid JWT can read/write env vars
-      expect(true).toBe(true);
-    });
-  });
-
   describe('[LOW] sandbox-providers leaks architecture on cloud', () => {
     test('endpoint is public and reveals provider details', async () => {
       const r = await probe('GET', '/v1/setup/sandbox-providers');
@@ -140,8 +114,6 @@ describe('Cloud Scan: Setup Routes Exposed on Production', () => {
   describe('Auth-protected setup routes on cloud', () => {
     const protectedSetupRoutes = [
       { method: 'GET' as const, path: '/v1/setup/status' },
-      { method: 'GET' as const, path: '/v1/setup/env' },
-      { method: 'POST' as const, path: '/v1/setup/env' },
       { method: 'GET' as const, path: '/v1/setup/supabase-status' },
       { method: 'GET' as const, path: '/v1/setup/health' },
       { method: 'POST' as const, path: '/v1/setup/schema' },

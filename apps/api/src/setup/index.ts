@@ -9,11 +9,10 @@
 
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
 import { execSync } from 'child_process';
 import { config } from '../config';
-import { buildProviderKeySchema } from '../providers/registry';
 import { supabaseAuth } from '../middleware/auth';
 import { eq, sql } from 'drizzle-orm';
 import { accounts } from '@kortix/db';
@@ -127,83 +126,6 @@ async function fetchMasterJson<T>(path: string, init: RequestInit = {}, timeoutM
   throw lastErr instanceof Error ? lastErr : new Error('Failed to reach sandbox master');
 }
 
-async function getSandboxEnv(): Promise<Record<string, string>> {
-  try {
-    return await fetchMasterJson<Record<string, string>>('/env');
-  } catch {
-    return {};
-  }
-}
-
-async function setSandboxEnv(keys: Record<string, string>): Promise<void> {
-  await fetchMasterJson('/env', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ keys }),
-  }, 15000);
-}
-
-function parseEnvFile(path: string): Record<string, string> {
-  if (!existsSync(path)) return {};
-  const lines = readFileSync(path, 'utf-8').split('\n');
-  const env: Record<string, string> = {};
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const idx = line.indexOf('=');
-    if (idx === -1) continue;
-    const key = line.slice(0, idx).trim();
-    let val = line.slice(idx + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'")))
-      val = val.slice(1, -1);
-    env[key] = val;
-  }
-  return env;
-}
-
-function maskKey(val: string): string {
-  if (!val || val.length < 8) return val ? '****' : '';
-  return val.slice(0, 4) + '...' + val.slice(-4);
-}
-
-function writeEnvFile(path: string, data: Record<string, string>): void {
-  const existing = existsSync(path) ? readFileSync(path, 'utf-8') : '';
-  const lines = existing.split('\n');
-  const written = new Set<string>();
-  const out: string[] = [];
-
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) {
-      out.push(raw);
-      continue;
-    }
-    const idx = line.indexOf('=');
-    if (idx === -1) { out.push(raw); continue; }
-    const key = line.slice(0, idx).trim();
-    if (key in data) {
-      out.push(`${key}=${data[key]}`);
-      written.add(key);
-    } else {
-      out.push(raw);
-    }
-  }
-
-  for (const [key, val] of Object.entries(data)) {
-    if (!written.has(key)) {
-      out.push(`${key}=${val}`);
-    }
-  }
-
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, out.join('\n') + '\n');
-}
-
-// Use the shared provider registry instead of local constants.
-
-// Keys to check for onboarding status (not part of the UI schema)
-const SYSTEM_KEYS = ['ONBOARDING_COMPLETE'];
-
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 /**
@@ -306,7 +228,6 @@ setupApp.post('/bootstrap-owner', async (c) => {
             .update(accounts)
             .set({ setupCompleteAt: null, setupWizardStep: 2, updatedAt: new Date() })
             .where(eq(accounts.accountId, accountId));
-          await setSandboxEnv({ ONBOARDING_COMPLETE: 'false', ONBOARDING_SESSION_ID: '', ONBOARDING_COMMAND_FIRED: 'false' }).catch(() => {});
         } catch {
           // best effort reset
         }
@@ -334,7 +255,6 @@ setupApp.post('/bootstrap-owner', async (c) => {
           .update(accounts)
           .set({ setupCompleteAt: null, setupWizardStep: 2, updatedAt: new Date() })
           .where(eq(accounts.accountId, accountId));
-        await setSandboxEnv({ ONBOARDING_COMPLETE: 'false', ONBOARDING_SESSION_ID: '', ONBOARDING_COMMAND_FIRED: 'false' }).catch(() => {});
       } catch {
         // best effort
       }
@@ -369,129 +289,6 @@ setupApp.get('/status', async (c) => {
     sandboxEnvExists: false,
     projectRoot: root,
   });
-});
-
-/**
- * GET /v1/setup/env
- * Read current .env values (masked)
- */
-setupApp.get('/env', async (c) => {
-  const repoRoot = findRepoRoot();
-
-  // Repo/dev mode: reads and writes actual .env files in the repo.
-  if (repoRoot) {
-    const rootEnv = parseEnvFile(resolve(repoRoot, '.env'));
-
-    const masked: Record<string, string> = {};
-    const configured: Record<string, boolean> = {};
-
-    const providerSchema = buildProviderKeySchema();
-    for (const group of Object.values(providerSchema)) {
-      for (const k of group.keys) {
-        const val = rootEnv[k.key] || '';
-        masked[k.key] = maskKey(val);
-        configured[k.key] = !!val;
-      }
-    }
-
-    for (const key of SYSTEM_KEYS) {
-      const val = rootEnv[key] || '';
-      configured[key] = val === 'true';
-    }
-
-    return c.json({ masked, configured });
-  }
-
-  // Installed/local Docker mode: proxy to sandbox secret store.
-  const env = await getSandboxEnv();
-  const masked: Record<string, string> = {};
-  const configured: Record<string, boolean> = {};
-
-    const providerSchema = buildProviderKeySchema();
-    for (const group of Object.values(providerSchema)) {
-    for (const k of group.keys) {
-      const val = env[k.key] || '';
-      masked[k.key] = maskKey(val);
-      configured[k.key] = !!val;
-    }
-  }
-
-  for (const key of SYSTEM_KEYS) {
-    const val = env[key] || '';
-    configured[key] = val === 'true';
-  }
-
-  return c.json({ masked, configured });
-});
-
-/**
- * POST /v1/setup/env
- * Save/update API keys
- */
-setupApp.post('/env', async (c) => {
-  const body = await c.req.json();
-  const keys = body?.keys;
-  if (!keys || typeof keys !== 'object') {
-    return c.json({ error: 'Invalid keys' }, 400);
-  }
-
-  const repoRoot = findRepoRoot();
-
-  // Installed/local Docker mode: persist keys in the sandbox secret store.
-    // Tools pick up new values instantly via s6 env dir (no restart needed).
-  if (!repoRoot) {
-    const clean: Record<string, string> = {};
-    for (const [k, v] of Object.entries(keys)) {
-      if (typeof v !== 'string') continue;
-      const trimmed = v.trim();
-      if (!trimmed) continue;
-      clean[k] = trimmed;
-    }
-
-    try {
-      await setSandboxEnv(clean);
-      return c.json({ ok: true });
-    } catch (e: any) {
-      return c.json(
-        { ok: false, error: 'Failed to save configuration', details: e?.message || String(e) },
-        500,
-      );
-    }
-  }
-
-  // Repo/dev mode: root .env is the only source of truth. Session sandbox
-  // env is injected when the API provisions a project session.
-  const root = repoRoot;
-  const rootData: Record<string, string> = {};
-
-  for (const [key, val] of Object.entries(keys)) {
-    if (typeof val !== 'string') continue;
-    rootData[key] = val;
-  }
-
-  // Ensure root .env exists
-  const rootEnvPath = resolve(root, '.env');
-  if (!existsSync(rootEnvPath)) {
-    const examplePath = resolve(root, '.env.example');
-    if (existsSync(examplePath)) {
-      writeFileSync(rootEnvPath, readFileSync(examplePath, 'utf-8'));
-    } else {
-      writeFileSync(rootEnvPath, '# Kortix Environment Configuration\nENV_MODE=local\n');
-    }
-  }
-
-  rootData.ENV_MODE = 'local';
-  rootData.ALLOWED_SANDBOX_PROVIDERS = 'local_docker';
-  writeEnvFile(rootEnvPath, rootData);
-
-  // Run setup-env.sh
-  try {
-    execSync('bash scripts/setup-env.sh', { cwd: root, stdio: 'pipe', timeout: 15000 });
-  } catch (e: any) {
-    console.error('[setup] setup-env.sh failed:', e.message);
-  }
-
-  return c.json({ ok: true });
 });
 
 /**

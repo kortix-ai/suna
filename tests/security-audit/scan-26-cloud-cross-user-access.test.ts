@@ -127,16 +127,6 @@ describe('Cloud Scan: Cross-User Access & Billing Protection', () => {
   });
 
   describe('Secret/provider/queue/tunnel require auth', () => {
-    test('GET secrets — 401', async () => {
-      const r = await probe('GET', '/v1/secrets');
-      expect(r.status).toBe(401);
-    });
-
-    test('GET providers — 401', async () => {
-      const r = await probe('GET', '/v1/providers');
-      expect(r.status).toBe(401);
-    });
-
     test('GET queue — 401', async () => {
       const r = await probe('GET', '/v1/queue/all');
       expect(r.status).toBe(401);

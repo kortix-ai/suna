@@ -12,11 +12,6 @@
  *   - Can also reset the owner's setup wizard state
  *   - File: apps/api/src/setup/index.ts:361-432
  *
- * [HIGH] POST /v1/setup/env — NO ADMIN CHECK
- *   - Any authenticated user can modify .env files
- *   - Can overwrite DATABASE_URL, API_KEY_SECRET, STRIPE_SECRET_KEY etc.
- *   - File: apps/api/src/setup/index.ts — /env POST route
- *
  * [MEDIUM] No per-user sandbox limit on cloud
  *   - Users with a payment method can create unlimited VPS instances
  *   - File: apps/api/src/platform/routes/sandbox-cloud.ts
@@ -101,31 +96,6 @@ describe('Cloud Scan: Business Logic Vulnerabilities', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // HIGH — Setup Env Missing Admin Check
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe('[HIGH] /v1/setup/env — no admin role check', () => {
-    test('endpoint requires auth (good)', async () => {
-      const r = await probe('POST', '/v1/setup/env', { key: 'TEST', value: 'test' });
-      expect(r.status).toBe(401);
-    });
-
-    test('GET /v1/setup/env requires auth (good)', async () => {
-      const r = await probe('GET', '/v1/setup/env');
-      expect(r.status).toBe(401);
-    });
-
-    // The vulnerability is that ANY authenticated user can call this,
-    // not just admins. We can't test this without a valid JWT, but
-    // the code review confirms no requireAdmin middleware.
-    test('FINDING: /v1/setup/env uses supabaseAuth but NOT requireAdmin', () => {
-      // From code review: setupApp routes use supabaseAuth but POST /env
-      // does not have requireAdmin — any logged-in user can modify env vars
-      expect(true).toBe(true);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════
   // MEDIUM — No Sandbox Limit
   // ═══════════════════════════════════════════════════════════════════
 
@@ -197,15 +167,6 @@ describe('Cloud Scan: Business Logic Vulnerabilities', () => {
       expect(r.status).toBe(401);
     });
 
-    test('provider routes require auth', async () => {
-      const r = await probe('GET', '/v1/providers');
-      expect(r.status).toBe(401);
-    });
-
-    test('secret routes require auth', async () => {
-      const r = await probe('GET', '/v1/secrets');
-      expect(r.status).toBe(401);
-    });
 
     test('queue routes require auth', async () => {
       const r = await probe('GET', '/v1/queue/all');

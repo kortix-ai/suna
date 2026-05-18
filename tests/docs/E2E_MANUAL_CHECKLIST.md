@@ -90,12 +90,6 @@ curl -s http://localhost:13738/v1/accounts | jq .
 ```
 - [ ] Returns array with one "Local User" account
 
-### Step 13 — Providers list
-```bash
-curl -s http://localhost:13738/v1/providers | jq .
-```
-- [ ] Returns providers data
-
 ### Step 14 — Setup status
 ```bash
 curl -s http://localhost:13738/v1/setup/status | jq .
@@ -171,12 +165,6 @@ Open browser at `http://localhost:13737`.
 - Add at least one LLM provider key (Anthropic, OpenAI, etc.)
 - [ ] Key saves successfully
 - [ ] Provider shows "connected" status
-
-### Step 31 — Verify provider health
-```bash
-curl -s http://localhost:13738/v1/providers/health | jq .
-```
-- [ ] Shows configured provider(s) as healthy
 
 ---
 

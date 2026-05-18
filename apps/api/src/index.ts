@@ -25,8 +25,6 @@ import { getSupabase } from './shared/supabase';
 import { verifySupabaseJwt } from './shared/jwt-verify';
 import { canAccessPreviewSandbox } from './shared/preview-ownership';
 import { setupApp } from './setup';
-import { providersApp } from './providers/routes';
-import { secretsApp } from './secrets/routes';
 import { queueApp, startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
 // WoA is now mounted under the router at /v1/router/woa (see router/index.ts)
@@ -294,12 +292,6 @@ if (config.isLocal()) {
 app.route('/v1/oauth', oauthApp);
 
 // All remaining routes require authentication (JWT or kortix_ token).
-app.use('/v1/providers/*', combinedAuth);
-app.route('/v1/providers', providersApp);   // /v1/providers, /v1/providers/schema, /v1/providers/:id/connect, /v1/providers/:id/disconnect, /v1/providers/health
-
-app.use('/v1/secrets/*', combinedAuth);
-app.route('/v1/secrets', secretsApp);       // /v1/secrets, /v1/secrets/:key (PUT/DELETE)
-
 app.use('/v1/servers/*', combinedAuth);
 app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
 

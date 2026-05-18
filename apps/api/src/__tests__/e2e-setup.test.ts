@@ -4,16 +4,14 @@
  * These tests verify:
  *  1. Setup routes are mounted in local mode
  *  2. GET /v1/setup/status returns system info
- *  3. GET /v1/setup/env returns masked keys
- *  4. POST /v1/setup/env saves keys
- *  5. GET /v1/setup/health returns service health
+ *  3. GET /v1/setup/health returns service health
  *
  * Also verifies billing and scheduler no-DB guards.
  */
 
 import { describe, it, expect, beforeAll, afterAll, mock } from 'bun:test';
 import { Hono } from 'hono';
-import { mkdirSync, writeFileSync, existsSync, rmSync, readFileSync } from 'fs';
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 
 mock.module('../middleware/auth', () => ({
@@ -92,82 +90,6 @@ describe('/v1/setup', () => {
       const res = await app.request('/v1/setup/status');
       const data = await res.json();
       expect(data.envExists).toBe(false);
-    });
-  });
-
-  describe('GET /v1/setup/env', () => {
-    it('returns 200', async () => {
-      const app = createSetupTestApp();
-      const res = await app.request('/v1/setup/env');
-      expect(res.status).toBe(200);
-    });
-
-    it('returns masked and configured fields', async () => {
-      const app = createSetupTestApp();
-      const res = await app.request('/v1/setup/env');
-      const data = await res.json();
-      expect(data.masked).toBeDefined();
-      expect(data.configured).toBeDefined();
-    });
-
-    it('all keys unconfigured when no .env', async () => {
-      rmSync(resolve(TEST_DIR, '.env'), { force: true });
-      const app = createSetupTestApp();
-      const res = await app.request('/v1/setup/env');
-      const data = await res.json();
-      for (const val of Object.values(data.configured)) {
-        expect(val).toBe(false);
-      }
-    });
-  });
-
-  describe('POST /v1/setup/env', () => {
-    it('saves keys and creates .env', async () => {
-      rmSync(resolve(TEST_DIR, '.env'), { force: true });
-      const app = createSetupTestApp();
-      const res = await app.request('/v1/setup/env', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          keys: { ANTHROPIC_API_KEY: 'sk-ant-test-setup-123' },
-        }),
-      });
-      expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(data.ok).toBe(true);
-      expect(existsSync(resolve(TEST_DIR, '.env'))).toBe(true);
-    });
-
-    it('.env contains saved key', async () => {
-      const content = readFileSync(resolve(TEST_DIR, '.env'), 'utf-8');
-      expect(content).toContain('ANTHROPIC_API_KEY=sk-ant-test-setup-123');
-    });
-
-    it('.env has ENV_MODE=local', async () => {
-      const content = readFileSync(resolve(TEST_DIR, '.env'), 'utf-8');
-      expect(content).toContain('ENV_MODE=local');
-    });
-
-    it('rejects invalid body', async () => {
-      const app = createSetupTestApp();
-      const res = await app.request('/v1/setup/env', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keys: 'not-an-object' }),
-      });
-      expect(res.status).toBe(400);
-    });
-
-    it('preserves existing keys when adding new ones', async () => {
-      const app = createSetupTestApp();
-      await app.request('/v1/setup/env', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keys: { OPENAI_API_KEY: 'sk-proj-test-openai' } }),
-      });
-      const content = readFileSync(resolve(TEST_DIR, '.env'), 'utf-8');
-      expect(content).toContain('ANTHROPIC_API_KEY=sk-ant-test-setup-123');
-      expect(content).toContain('OPENAI_API_KEY=sk-proj-test-openai');
     });
   });
 
