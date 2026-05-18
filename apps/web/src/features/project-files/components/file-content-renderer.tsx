@@ -24,7 +24,7 @@ import { useBinaryBlob } from '../hooks/use-binary-blob';
 import { useProjectContext } from '../context';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { UnifiedMarkdown } from '@/components/markdown';
+import { MarkdownWithFrontmatter } from '@/components/markdown/markdown-frontmatter';
 import { CodeEditor } from '@/components/file-editors/code-editor';
 import { useDiagnosticsStore, findDiagnosticsForFile } from '@/stores/diagnostics-store';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -117,25 +117,38 @@ export function getFileCategory(filename: string, mimeType?: string): FileCatego
 export function getLanguageFromExt(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
   const fileNameLower = filename.toLowerCase();
-  
+  const baseName = (fileNameLower.split('/').pop() ?? fileNameLower).split('.')[0];
+
   // .env files (e.g., .env, .env.local, .env.production)
   if (fileNameLower.includes('.env') || fileNameLower.startsWith('.env')) {
     return 'properties';
   }
-  
+
+  // Files without a useful extension — detect by base name
+  if (baseName === 'dockerfile' || fileNameLower.startsWith('dockerfile.')) return 'dockerfile';
+  if (baseName === 'makefile' || baseName === 'gnumakefile') return 'makefile';
+
   const map: Record<string, string> = {
     ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
+    mjs: 'javascript', cjs: 'javascript',
     py: 'python', rb: 'ruby', go: 'go', rs: 'rust',
     java: 'java', c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
     cs: 'csharp', swift: 'swift', kt: 'kotlin', php: 'php',
     html: 'html', css: 'css', scss: 'scss', less: 'less',
-    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
-    xml: 'xml', sql: 'sql', sh: 'bash', bash: 'bash', zsh: 'bash',
+    json: 'json', jsonc: 'json', json5: 'json',
+    yaml: 'yaml', yml: 'yaml', toml: 'toml',
+    xml: 'xml', sql: 'sql', sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash',
     md: 'markdown', mdx: 'markdown', txt: 'plaintext',
     dockerfile: 'dockerfile', makefile: 'makefile',
     vue: 'vue', svelte: 'svelte',
     env: 'properties', ini: 'properties', conf: 'properties',
     cfg: 'properties', properties: 'properties',
+    graphql: 'graphql', gql: 'graphql',
+    prisma: 'prisma', proto: 'proto',
+    nix: 'nix', lua: 'lua', r: 'r', dart: 'dart',
+    tf: 'hcl', hcl: 'hcl', tfvars: 'hcl',
+    diff: 'diff', patch: 'diff',
+    vim: 'vim',
   };
   return map[ext] || 'plaintext';
 }
@@ -214,6 +227,11 @@ export interface FileContentRendererProps {
   targetLine?: number | null;
   /** When true, the file is displayed in view-only mode — no editing, no save. */
   readOnly?: boolean;
+  /** Controlled markdown preview state — when provided, overrides internal state.
+   *  Lets a parent (e.g. file-preview-modal with showHeader=false) put the
+   *  preview/source toggle into its own chrome. */
+  markdownPreview?: boolean;
+  onMarkdownPreviewChange?: (preview: boolean) => void;
 }
 
 export function FileContentRenderer({
@@ -226,6 +244,8 @@ export function FileContentRenderer({
   errorFallback,
   targetLine,
   readOnly = false,
+  markdownPreview,
+  onMarkdownPreviewChange,
 }: FileContentRendererProps) {
   const fileName = filePath.split('/').pop() || '';
   const isHeicImage = isHeicFile(fileName);
@@ -252,8 +272,18 @@ export function FileContentRenderer({
   const isJsonFile = language === 'json';
   const isHtmlFile = fileCategory === 'html';
   // Markdown defaults to rendered preview (UnifiedMarkdown). Users can flip to
-  // source/edit via the eye/code toggle in the header.
-  const [isMarkdownPreview, setIsMarkdownPreview] = useState(true);
+  // source/edit via the eye/code toggle in the header. The state is optionally
+  // controlled by the caller (file-preview-modal lifts it into its own chrome).
+  const [internalMarkdownPreview, setInternalMarkdownPreview] = useState(true);
+  const isMarkdownPreview = markdownPreview ?? internalMarkdownPreview;
+  const setIsMarkdownPreview = useCallback(
+    (next: boolean | ((prev: boolean) => boolean)) => {
+      const resolved = typeof next === 'function' ? next(isMarkdownPreview) : next;
+      if (onMarkdownPreviewChange) onMarkdownPreviewChange(resolved);
+      if (markdownPreview === undefined) setInternalMarkdownPreview(resolved);
+    },
+    [isMarkdownPreview, markdownPreview, onMarkdownPreviewChange],
+  );
   const [isJsonTreeView, setIsJsonTreeView] = useState(false);
   // HTML files default to rendered preview mode
   const [isHtmlPreview, setIsHtmlPreview] = useState(true);
@@ -841,7 +871,9 @@ export function FileContentRenderer({
                 </div>
               ) : isMarkdownPreview && isMarkdownFile ? (
                 <div key={filePath} className="w-full h-full overflow-auto p-6">
-                  <UnifiedMarkdown content={hasUnsavedChanges ? latestContentRef.current : displayContent} />
+                  <MarkdownWithFrontmatter
+                    content={hasUnsavedChanges ? latestContentRef.current : displayContent}
+                  />
                 </div>
               ) : (
                 <CodeEditor

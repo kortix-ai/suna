@@ -36,7 +36,6 @@ import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
-import { cloudGatewayApp } from './cloud-gateway/routes';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { oauthApp } from './oauth';
 import {
@@ -48,6 +47,7 @@ import {
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { accountsRouter } from './accounts';
 import { accountInvitesRouter } from './accounts/invites';
+import { oauthChatgptRouter } from './accounts/oauth-chatgpt';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
 
@@ -254,6 +254,11 @@ app.route('/v1/accounts', accountsRouter);
 
 // /v1/account-invites/* — accept/decline/describe pending team invitations.
 app.route('/v1/account-invites', accountInvitesRouter);
+
+// /v1/oauth/chatgpt/* — consumer-side OAuth for binding a user's ChatGPT
+// subscription to a Kortix account (stored as account_secrets row).
+app.route('/v1/oauth/chatgpt', oauthChatgptRouter);
+
 app.route('/v1/ops', opsApp);
 
 
@@ -299,11 +304,6 @@ app.route('/v1/providers', providersApp);   // /v1/providers, /v1/providers/sche
 
 app.use('/v1/secrets/*', combinedAuth);
 app.route('/v1/secrets', secretsApp);       // /v1/secrets, /v1/secrets/:key (PUT/DELETE)
-
-app.use('/v1/executor/*', combinedAuth);
-app.route('/v1/executor', cloudGatewayApp); // /v1/executor/vault-items, connector-sources, policies, approvals
-app.use('/v1/cloud-gateway/*', combinedAuth);
-app.route('/v1/cloud-gateway', cloudGatewayApp); // Back-compat alias while the Executor UI/runtime lands.
 
 app.use('/v1/servers/*', combinedAuth);
 app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync

@@ -816,7 +816,7 @@ skills = ["kortix/account-research", "kortix/web-research"]
 
 [[connectors]]
 name = "hubspot"
-type = "pipedream"
+type = "custom"
 app = "hubspot"
 required = true
 
@@ -1014,7 +1014,6 @@ Examples:
 V1 connector types:
 
 - `native_oauth`,
-- `pipedream`,
 - `api_key`,
 - `mcp`,
 - `custom`.
@@ -1294,7 +1293,6 @@ Secrets values never print by default.
 ```bash
 kortix integrations list
 kortix integrations add slack
-kortix integrations add hubspot --provider pipedream
 kortix integrations test hubspot
 kortix integrations remove hubspot
 ```
@@ -1635,25 +1633,18 @@ Teams matters for enterprise. WhatsApp matters for personal/mobile workflows.
 
 ### 15.1 Pipedream Strategy
 
-Use Pipedream for breadth.
-
-- OAuth account linking,
-- event sources,
-- app actions,
-- 3,000+ integrations.
-
-Kortix should wrap Pipedream into a simple concept: connector bindings.
+Connector breadth is reserved for the rebuild. The previous provider-specific connector plan has been removed from the current API contract.
 
 ```toml
 [[connectors]]
 name = "github"
-type = "pipedream"
+type = "custom"
 app = "github"
 required = true
 
 [[connectors]]
 name = "linear"
-type = "pipedream"
+type = "custom"
 app = "linear"
 required = false
 ```
@@ -1700,7 +1691,7 @@ prompt = "Run /daily-brief."
 
 [[triggers]]
 name = "stripe-failed-payment"
-type = "pipedream"
+type = "webhook"
 connector = "stripe"
 event = "charge.failed"
 session_key = "customer:{{ event.customer }}"
@@ -1954,14 +1945,6 @@ DELETE /v1/deployments/:id
 POST   /v1/builds
 GET    /v1/builds/:id
 GET    /v1/builds/:id/logs
-
-GET    /v1/connectors
-POST   /v1/connectors/:type/oauth/start
-POST   /v1/connectors/:id/test
-
-GET    /v1/channels
-POST   /v1/channels/:type/connect
-POST   /v1/channels/:id/test
 
 GET    /v1/triggers
 POST   /v1/triggers/:id/fire

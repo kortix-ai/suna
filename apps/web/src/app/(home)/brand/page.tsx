@@ -2050,9 +2050,7 @@ export default function BrandPage() {
               <p className="text-base text-muted-foreground leading-relaxed mb-8">
                 How Kortix list / management pages are built. These are the
                 shared chrome pieces used by <code className="text-[11px] font-mono">/scheduled-tasks</code>,{' '}
-                <code className="text-[11px] font-mono">/channels</code>,{' '}
-                <code className="text-[11px] font-mono">/tunnel</code>,{' '}
-                <code className="text-[11px] font-mono">/connectors</code>. New
+                <code className="text-[11px] font-mono">/tunnel</code>. New
                 management-style pages should compose the same pieces in the
                 same order so the whole app feels like one product.
               </p>

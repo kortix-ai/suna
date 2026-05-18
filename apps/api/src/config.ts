@@ -78,6 +78,10 @@ const envSchema = z.object({
   INTERNAL_KORTIX_ENV:              z.enum(['dev', 'staging', 'prod']).optional().default('dev'),
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,  // NOTE: overridden by ENV_MODE=cloud below
   KORTIX_DEPLOYMENTS_ENABLED:       optBoolFalse,
+  // EXPERIMENTAL: turns on the [[apps]] section in kortix.toml — manifest
+  // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
+  // by default until the wire is hardened.
+  KORTIX_APPS_EXPERIMENTAL:         optBoolFalse,
 
   // ── Search Providers (optional — features degrade gracefully) ────────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),
@@ -149,16 +153,6 @@ const envSchema = z.object({
 
   // ── Frontend (optional) ──────────────────────────────────────────────────
   FRONTEND_URL:                optUrl('http://localhost:3000'),
-
-  // ── Integrations / Pipedream (optional: only validated if explicitly set to "pipedream") ──
-  INTEGRATION_AUTH_PROVIDER:   optStr,
-  PIPEDREAM_CLIENT_ID:         optStr,
-  PIPEDREAM_CLIENT_SECRET:     optStr,
-  PIPEDREAM_PROJECT_ID:        optStr,
-  PIPEDREAM_ENVIRONMENT:       optStrDefault('development'),
-  PIPEDREAM_WEBHOOK_SECRET:    optStr,
-  KORTIX_DIRECT_OAUTH_APPS:    optStr,
-  KORTIX_OAUTH_RELAY_ALLOWED_ORIGINS: optStr,
 
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET:             optStr,
@@ -251,15 +245,6 @@ function validateEnv(): z.infer<typeof envSchema> {
 
   // ── local_docker: no hard requirements — DOCKER_HOST defaults to system socket.
 
-  // ── Conditional: Pipedream integration → warn if credentials missing ────
-  // Not fatal — requests can provide their own creds via X-Pipedream-* headers.
-  const integrationProvider = (raw as any).INTEGRATION_AUTH_PROVIDER || 'pipedream';
-  if (integrationProvider === 'pipedream') {
-    if (!raw.PIPEDREAM_CLIENT_ID)     issues.push({ var: 'PIPEDREAM_CLIENT_ID',     message: 'Pipedream integrations will only work via request headers (X-Pipedream-Client-Id)', level: 'warn' });
-    if (!raw.PIPEDREAM_CLIENT_SECRET) issues.push({ var: 'PIPEDREAM_CLIENT_SECRET', message: 'Pipedream integrations will only work via request headers (X-Pipedream-Client-Secret)', level: 'warn' });
-    if (!raw.PIPEDREAM_PROJECT_ID)    issues.push({ var: 'PIPEDREAM_PROJECT_ID',    message: 'Pipedream integrations will only work via request headers (X-Pipedream-Project-Id)', level: 'warn' });
-  }
-
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
   const billingWillBeEnabled = (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === 'true' || (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === true || (raw as any).ENV_MODE === 'cloud';
   if (billingWillBeEnabled) {
@@ -280,7 +265,7 @@ function validateEnv(): z.infer<typeof envSchema> {
     const envMode = (raw as any).ENV_MODE || 'local';
     const port = (raw as any).PORT || '8008';
     if (envMode === 'cloud') {
-      issues.push({ var: 'KORTIX_URL', message: 'Required in cloud mode — sandbox routing, channels webhooks, and health checks will break', level: 'error' });
+      issues.push({ var: 'KORTIX_URL', message: 'Required in cloud mode — sandbox routing and health checks will break', level: 'error' });
     } else {
       // Auto-derive for local mode so it "just works"
       const derived = `http://localhost:${port}/v1/router`;
@@ -356,6 +341,7 @@ export const config = {
   // Billing is enabled when ENV_MODE is 'cloud' — no separate env var needed.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED || env.ENV_MODE === 'cloud',
   KORTIX_DEPLOYMENTS_ENABLED: env.KORTIX_DEPLOYMENTS_ENABLED,
+  KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,
@@ -467,14 +453,6 @@ export const config = {
 
   // ─── Frontend ────────────────────────────────────────────────────────────
   FRONTEND_URL: env.FRONTEND_URL,
-
-  // ─── Integrations (OAuth Provider) ───────────────────────────────────────
-  INTEGRATION_AUTH_PROVIDER: env.INTEGRATION_AUTH_PROVIDER,
-  PIPEDREAM_CLIENT_ID: env.PIPEDREAM_CLIENT_ID,
-  PIPEDREAM_CLIENT_SECRET: env.PIPEDREAM_CLIENT_SECRET,
-  PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
-  PIPEDREAM_ENVIRONMENT: env.PIPEDREAM_ENVIRONMENT,
-  PIPEDREAM_WEBHOOK_SECRET: env.PIPEDREAM_WEBHOOK_SECRET,
 
   // ─── Tunnel (Reverse-Tunnel to Local Machine) ──────────────────────────────
   TUNNEL_SIGNING_SECRET: env.TUNNEL_SIGNING_SECRET,

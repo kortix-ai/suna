@@ -22,10 +22,7 @@ required_local_checks=(
   api_accounts_contract_tests
   api_projects_contract_tests
   api_project_session_contract_tests
-  api_project_connectors_contract_tests
-  api_session_connectors_router_tests
   api_project_triggers_contract_tests
-  api_project_channels_contract_tests
   api_rate_limit_tests
   api_proxy_contract_tests
   api_audit_tests

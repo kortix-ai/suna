@@ -164,6 +164,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
 
   const groups = useMemo(() => groupByDate(data?.commits ?? []), [data?.commits]);
   const total = data?.commits.length ?? 0;
+  const shaList = useMemo(() => (data?.commits ?? []).map((c) => c.hash), [data?.commits]);
 
   return (
     <>
@@ -294,6 +295,8 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
 
       <CheckpointDetailDialog
         sha={selectedSha}
+        shaList={shaList}
+        onSelectSha={setSelectedSha}
         onClose={() => setSelectedSha(null)}
       />
     </>

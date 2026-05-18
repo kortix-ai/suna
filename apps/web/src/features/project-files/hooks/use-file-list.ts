@@ -1,9 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { listFiles } from '../api/opencode-files';
-import { useFilesStore } from '../store/files-store';
 import { useProjectContext } from '../context';
 import type { FileNode } from '../types';
 
@@ -26,9 +24,8 @@ export function useFileList(
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
   const ref = ctx?.ref ?? '';
-  const showHidden = useFilesStore((s) => s.showHidden);
 
-  const query = useQuery<FileNode[]>({
+  return useQuery<FileNode[]>({
     queryKey: fileListKeys.dir(projectId, ref, dirPath),
     queryFn: () => listFiles(projectId, ref, dirPath),
     enabled: !!projectId && !!ref && !!dirPath && options?.enabled !== false,
@@ -41,20 +38,6 @@ export function useFileList(
     },
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
   });
-
-  // Hidden file filter mirrors the sandbox version.
-  const data = useMemo(() => {
-    if (!query.data) return query.data;
-    if (showHidden) return query.data;
-    return query.data.filter(
-      (node) =>
-        !node.name.startsWith('.') ||
-        node.name === '.kortix' ||
-        node.name === '.opencode',
-    );
-  }, [query.data, showHidden]);
-
-  return { ...query, data };
 }
 
 export function useInvalidateFileList() {

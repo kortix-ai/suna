@@ -2,14 +2,9 @@
 
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import {
-  Search,
-  ServerOff,
-  RefreshCw,
   FolderPlus,
   FilePlus,
   Upload,
-  Clipboard,
-  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,7 +21,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useFilesStore } from '../store/files-store';
 import {
   useFileList,
-  useServerHealth,
   useFileEventInvalidation,
   useGitStatus,
   buildGitStatusMap,
@@ -49,7 +43,6 @@ import { toast } from '@/lib/toast';
 import { DriveToolbar } from './drive-toolbar';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
-import { FileSearch } from './file-search';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { CheckpointsPanel } from './checkpoints-panel';
@@ -73,10 +66,6 @@ export function FileExplorerPage() {
   const viewMode = useFilesStore((s) => s.viewMode);
   const sortBy = useFilesStore((s) => s.sortBy);
   const sortOrder = useFilesStore((s) => s.sortOrder);
-  const isSearchOpen = useFilesStore((s) => s.isSearchOpen);
-  const toggleSearch = useFilesStore((s) => s.toggleSearch);
-  const closeSearch = useFilesStore((s) => s.closeSearch);
-  const openFile = useFilesStore((s) => s.openFile);
   const openFileWithList = useFilesStore((s) => s.openFileWithList);
 
   // Clipboard
@@ -88,22 +77,20 @@ export function FileExplorerPage() {
   const projectCtx = useProjectContext();
   const projectId = projectCtx?.projectId ?? '';
   const projectRef = projectCtx?.ref ?? '';
-  const { data: health, isLoading: isHealthLoading, refetch } = useServerHealth();
 
   useFileEventInvalidation();
 
-  // File list
+  // File list — project-files API is always reachable through the backend,
+  // there's no per-sandbox health gate.
   const {
     data: files,
     isLoading,
     error,
     refetch: refetchFiles,
-  } = useFileList(currentPath, {
-    enabled: health?.healthy === true,
-  });
+  } = useFileList(currentPath);
 
   // Git status
-  const { data: gitStatuses } = useGitStatus({ enabled: health?.healthy === true });
+  const { data: gitStatuses } = useGitStatus();
   const gitStatusMap = useMemo(() => buildGitStatusMap(gitStatuses), [gitStatuses]);
 
   // Mutations
@@ -178,30 +165,7 @@ export function FileExplorerPage() {
     }
   }, [isCreatingFile]);
 
-  // Cmd+P search, Escape close
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
-
-      const isMod = e.metaKey || e.ctrlKey;
-
-      if (isMod && e.key === 'p') {
-        e.preventDefault();
-        toggleSearch();
-        return;
-      }
-
-      if (e.key === 'Escape' && isSearchOpen) {
-        e.preventDefault();
-        closeSearch();
-        return;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSearch, closeSearch, isSearchOpen]);
+  // Search has been removed — file-search backend wasn't reliable.
 
   // Elevated system directories — always pinned at the top
   const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
@@ -533,12 +497,6 @@ export function FileExplorerPage() {
 
   // ── Render ────────────────────────────────────────────────────
 
-  // Project files API is always reachable through the backend — no per-sandbox
-  // health gate. (Kept the imports to minimize diff with the original.)
-  void isHealthLoading;
-  void refetch;
-  void health;
-
   return (
     <div
       className="h-full flex flex-col bg-background relative"
@@ -564,9 +522,6 @@ export function FileExplorerPage() {
         }}
         isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
       />
-
-      {/* Search overlay */}
-      {isSearchOpen && <FileSearch />}
 
       {/* Hidden file input for uploads */}
       <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileInputChange} multiple />

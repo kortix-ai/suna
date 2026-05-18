@@ -13,6 +13,15 @@ let sandboxProvisionCalls = 0;
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
+let lastProvisionInput: {
+  sandboxId: string;
+  accountId: string;
+  projectId: string;
+  userId: string;
+  provider?: string;
+  extraEnvVars?: Record<string, string>;
+  metadata?: Record<string, unknown>;
+} | null = null;
 
 const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
@@ -32,6 +41,7 @@ function resetState() {
   branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
   activeSessionCount = 0;
+  lastProvisionInput = null;
   sessionRow = {
     sessionId: SESSION_ID,
     accountId: ACCOUNT_ID,
@@ -68,6 +78,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  invalidateProjectMirror: () => {},
   listBranches: async () => [],
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
@@ -79,6 +90,7 @@ mock.module('../projects/git', () => ({
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  deleteFile: async () => undefined,
   commitFile: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
   createRepo: async () => {
@@ -95,8 +107,9 @@ mock.module('../projects/github', () => ({
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
-  provisionSessionSandbox: async () => {
+  provisionSessionSandbox: async (input: any) => {
     sandboxProvisionCalls += 1;
+    lastProvisionInput = input;
   },
 }));
 
@@ -223,7 +236,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { projectsApp, buildProjectConnectorBaseUrl, buildProjectLlmBaseUrl } = await import('../projects/index');
+const { projectsApp, buildProjectLlmBaseUrl, buildProjectExecutorMcpBaseUrl } = await import('../projects/index');
 
 function createApp() {
   const app = new Hono();
@@ -247,11 +260,11 @@ describe('project session API contract', () => {
     expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1/router/')).toBe('https://api.kortix.com/v1/router/llm');
   });
 
-  test('builds the session connector router URL from common API URL shapes', () => {
-    expect(buildProjectConnectorBaseUrl('https://api.kortix.com')).toBe('https://api.kortix.com/v1/router/connectors');
-    expect(buildProjectConnectorBaseUrl('https://api.kortix.com/v1')).toBe('https://api.kortix.com/v1/router/connectors');
-    expect(buildProjectConnectorBaseUrl('https://api.kortix.com/v1/router')).toBe('https://api.kortix.com/v1/router/connectors');
-    expect(buildProjectConnectorBaseUrl('https://api.kortix.com/v1/router/')).toBe('https://api.kortix.com/v1/router/connectors');
+  test('builds the session Executor MCP URL from common API URL shapes', () => {
+    expect(buildProjectExecutorMcpBaseUrl('https://api.kortix.com')).toBe('https://api.kortix.com/v1/router/mcp');
+    expect(buildProjectExecutorMcpBaseUrl('https://api.kortix.com/v1')).toBe('https://api.kortix.com/v1/router/mcp');
+    expect(buildProjectExecutorMcpBaseUrl('https://api.kortix.com/v1/router')).toBe('https://api.kortix.com/v1/router/mcp');
+    expect(buildProjectExecutorMcpBaseUrl('https://api.kortix.com/v1/router/')).toBe('https://api.kortix.com/v1/router/mcp');
   });
 
   test('upserts and lists project secrets without exposing secret values', async () => {
@@ -277,10 +290,12 @@ describe('project session API contract', () => {
     const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`);
     expect(listRes.status).toBe(200);
     const listed = await listRes.json();
-    expect(listed).toHaveLength(1);
-    expect(listed[0].name).toBe('OPENAI_API_KEY');
-    expect(listed[0].value).toBeUndefined();
-    expect(listed[0].value_enc).toBeUndefined();
+    expect(listed.items).toHaveLength(1);
+    expect(listed.items[0].name).toBe('OPENAI_API_KEY');
+    expect(listed.items[0].value).toBeUndefined();
+    expect(listed.items[0].value_enc).toBeUndefined();
+    expect(Array.isArray(listed.required)).toBe(true);
+    expect(Array.isArray(listed.optional)).toBe(true);
 
     const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
       method: 'DELETE',
@@ -400,6 +415,75 @@ describe('project session API contract', () => {
     expect(res.status).toBe(400);
     expect(branchCreateCalls).toBe(0);
     expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // End-to-end: stored project secrets must land in the sandbox env at session
+  // create. This is the contract the entire Secrets Manager UX relies on —
+  // anything stored via POST /secrets is expected to be a plain env var at
+  // sandbox boot, alongside the platform-managed KORTIX_* envelope.
+  // ---------------------------------------------------------------------------
+  test('e2e: stored project secrets are injected as plaintext env vars at session create', async () => {
+    const app = createApp();
+
+    // 1. User stores two secrets via the Secrets Manager.
+    for (const [name, value] of [
+      ['OPENAI_API_KEY', 'sk-test-openai'],
+      ['STRIPE_SECRET', 'sk_test_stripe_live'],
+    ] as const) {
+      const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, value }),
+      });
+      expect(writeRes.status).toBe(200);
+    }
+    expect(secretRows).toHaveLength(2);
+    // Stored values are encrypted at rest — plaintext never appears in valueEnc.
+    for (const row of secretRows) {
+      expect(row.valueEnc).not.toContain('sk-test-openai');
+      expect(row.valueEnc).not.toContain('sk_test_stripe_live');
+    }
+
+    // 2. User creates a session — sandbox provisioning is fire-and-forget.
+    const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'local_docker', base_ref: 'main' }),
+    });
+    expect(createRes.status).toBe(201);
+
+    // 3. Flush the fire-and-forget IIFE that calls provisionSessionSandbox.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(lastProvisionInput).not.toBeNull();
+
+    // 4. User secrets are present, decrypted, in extraEnvVars.
+    const env = lastProvisionInput!.extraEnvVars ?? {};
+    expect(env.OPENAI_API_KEY).toBe('sk-test-openai');
+    expect(env.STRIPE_SECRET).toBe('sk_test_stripe_live');
+
+    // 5. Platform KORTIX_* envelope is still present alongside user secrets.
+    expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
+    expect(env.KORTIX_SESSION_ID).toBeTruthy();
+    expect(env.KORTIX_REPO_URL).toBe(projectRow.repoUrl);
+    expect(env.KORTIX_BASE_REF).toBe('main');
+    expect(env.KORTIX_LLM_TOKEN).toBeTruthy();
+    expect(env.KORTIX_LLM_BASE_URL).toContain('/v1/router/llm');
+    expect(env.KORTIX_EXECUTOR_MCP_TOKEN).toBeTruthy();
+    expect(env.KORTIX_EXECUTOR_MCP_URL).toContain('/v1/router/mcp');
+    expect(env.KORTIX_EXECUTOR_MCP_SESSION_ID).toBe(env.KORTIX_SESSION_ID);
+
+    // 6. User can't shadow a platform var — POST /secrets rejects KORTIX_*.
+    // This protects the env-var precedence: user secrets are merged before
+    // KORTIX_* in the helper, so an accepted KORTIX_TOKEN would silently
+    // poison the sandbox auth.
+    const shadowRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'KORTIX_TOKEN', value: 'phishy' }),
+    });
+    expect(shadowRes.status).toBe(400);
   });
 
   test('creates a session with the required id, branch, and sandbox invariant', async () => {

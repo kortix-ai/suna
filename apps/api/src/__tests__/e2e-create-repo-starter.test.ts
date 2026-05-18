@@ -11,18 +11,21 @@ import {
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
+const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
+// The starter is a folder under `packages/starter/templates/base/` —
+// `getStarterFiles()` walks it and returns the files sorted by path
+// (case-insensitive, via localeCompare). This list is the contract:
+// "every project ships with these, in this order."
 const SPEC_STARTER_PATHS = [
-  'README.md',
-  'kortix.toml',
-  'CONTEXT.md',
   '.gitignore',
+  '.opencode/agents/kortix.md',
   '.opencode/opencode.jsonc',
-  '.opencode/agents/default.md',
-  '.opencode/agents/reviewer.md',
-  '.opencode/commands/plan.md',
-  '.opencode/commands/test.md',
-  '.opencode/skills/git-workflow/SKILL.md',
+  '.opencode/skills/kortix-system/SKILL.md',
+  '.opencode/tools/show.ts',
+  'Dockerfile',
+  'kortix.toml',
+  'README.md',
 ];
 
 let repoCreateCalls: any[];
@@ -32,7 +35,16 @@ let insertedProject: any | null;
 let grantedProjectRole: any | null;
 let installationRow: typeof accountGithubInstallations.$inferSelect | null;
 
+function setTestAuth(userId = USER_ID, userEmail = 'starter@example.test') {
+  (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
+}
+
+function getTestAuth() {
+  return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: USER_ID, userEmail: 'starter@example.test' };
+}
+
 function resetState() {
+  setTestAuth();
   repoCreateCalls = [];
   fileShaCalls = [];
   commitCalls = [];
@@ -53,8 +65,9 @@ function resetState() {
 
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
-    c.set('userId', USER_ID);
-    c.set('userEmail', 'starter@example.test');
+    const auth = getTestAuth();
+    c.set('userId', auth.userId);
+    c.set('userEmail', auth.userEmail);
     await next();
   },
 }));
@@ -62,12 +75,19 @@ mock.module('../middleware/auth', () => ({
 mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
-  loadProjectConfig: async () => ({}),
+  loadProjectConfig: async () => ({ env: { required: [], optional: [] } }),
   readRepoFile: async () => '',
+  invalidateProjectMirror: () => {},
+  listBranches: async () => [],
+  listCommits: async () => ({ entries: [], nextCursor: null }),
+  getCommit: async () => null,
+  getCommitDiff: async () => null,
+  getFileHistory: async () => ({ entries: [], nextCursor: null }),
 }));
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  deleteFile: async () => undefined,
   commitFile: async (input: any) => {
     commitCalls.push(input);
   },
@@ -334,8 +354,11 @@ describe('create-repo starter scaffold contract', () => {
     expect(commitCalls.every((call) => call.auth?.token === 'installation-token')).toBe(true);
     expect(commitCalls.every((call) => call.branch === 'main')).toBe(true);
     expect(commitCalls.every((call) => call.message === `chore: scaffold ${call.path}`)).toBe(true);
-    expect(commitCalls[0].existingSha).toBe('existing-readme-sha');
-    expect(commitCalls.slice(1).every((call) => call.existingSha === undefined)).toBe(true);
+    // README.md is upserted via sha because `auto_init: true` creates one
+    // on repo creation. Every other file is brand-new.
+    const readmeIdx = SPEC_STARTER_PATHS.indexOf('README.md');
+    expect(commitCalls[readmeIdx]!.existingSha).toBe('existing-readme-sha');
+    expect(commitCalls.filter((_, i) => i !== readmeIdx).every((call) => call.existingSha === undefined)).toBe(true);
 
     expect(insertedProject).toMatchObject({
       accountId: ACCOUNT_ID,

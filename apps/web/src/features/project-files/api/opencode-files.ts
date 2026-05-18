@@ -11,7 +11,7 @@
  * immutable from this view; users mutate via a session sandbox + commit.
  */
 
-import { listProjectFiles, readProjectFile } from '@/lib/projects-client';
+import { fetchProjectArchive, listProjectFiles, readProjectFile } from '@/lib/projects-client';
 import type {
   FileContent,
   FileNode,
@@ -163,13 +163,31 @@ export async function downloadFile(
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-// TODO: wire to project history/search once backend supports it
+/**
+ * Download a directory zip from the backend.
+ *
+ * The server streams the result of `git archive --format=zip` for the given
+ * ref / subtree — no client-side zipping. We just fetch with auth, get the
+ * blob, and trigger a browser download.
+ */
 export async function downloadDirectory(
-  _dirPath: string,
-  _dirName?: string,
-  _onProgress?: (progress: number) => void,
+  projectId: string,
+  ref: string,
+  dirPath: string,
+  dirName?: string,
 ): Promise<void> {
-  throw new Error(READ_ONLY);
+  // The UI uses /workspace-prefixed paths; the backend expects repo-relative.
+  // Empty string → archive the whole repo.
+  const relative = toRepoRelative(dirPath);
+  const blob = await fetchProjectArchive(projectId, ref, relative || undefined);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${dirName || basename(relative) || 'workspace'}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 // ---------------------------------------------------------------------------

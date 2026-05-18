@@ -15,7 +15,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useBranches } from '../hooks/use-branches';
 import { useProjectContext } from '../context';
@@ -116,7 +115,7 @@ export function VersionSelector() {
           />
         </div>
 
-        <ScrollArea className="max-h-[380px]">
+        <div className="max-h-[380px] overflow-y-auto overscroll-contain">
           {isLoading && (
             <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -163,7 +162,7 @@ export function VersionSelector() {
               ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );

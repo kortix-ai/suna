@@ -5,6 +5,8 @@ import {
   AlertCircle,
   Calendar,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Copy,
   FileEdit,
@@ -252,10 +254,20 @@ function MainDiffColumn({
 
 interface CheckpointDetailDialogProps {
   sha: string | null;
+  /** Ordered list of all checkpoint hashes shown in the panel. Enables
+   *  left/right arrow navigation between adjacent checkpoints. */
+  shaList?: string[];
+  /** Called when navigating to a sibling checkpoint via arrow keys / buttons. */
+  onSelectSha?: (sha: string) => void;
   onClose: () => void;
 }
 
-export function CheckpointDetailDialog({ sha, onClose }: CheckpointDetailDialogProps) {
+export function CheckpointDetailDialog({
+  sha,
+  shaList = [],
+  onSelectSha,
+  onClose,
+}: CheckpointDetailDialogProps) {
   const ctx = useProjectContext();
   const activeRef = ctx?.ref ?? '';
 
@@ -278,9 +290,23 @@ export function CheckpointDetailDialog({ sha, onClose }: CheckpointDetailDialogP
     }
   }, [data?.files, selectedFile]);
 
-  // Keyboard: j/k or arrow up/down navigate between files in the rail
+  // Where this checkpoint sits in the panel's list — used for left/right
+  // arrow navigation between adjacent checkpoints. Newest is at index 0.
+  const shaIndex = sha ? shaList.indexOf(sha) : -1;
+  const hasPrevSha = shaIndex >= 0 && shaIndex < shaList.length - 1;
+  const hasNextSha = shaIndex > 0;
+  const gotoPrevSha = useCallback(() => {
+    if (hasPrevSha) onSelectSha?.(shaList[shaIndex + 1]);
+  }, [hasPrevSha, shaList, shaIndex, onSelectSha]);
+  const gotoNextSha = useCallback(() => {
+    if (hasNextSha) onSelectSha?.(shaList[shaIndex - 1]);
+  }, [hasNextSha, shaList, shaIndex, onSelectSha]);
+
+  // Keyboard:
+  //   - Up/Down or j/k → move between files in the current checkpoint
+  //   - Left/Right     → move between adjacent checkpoints in the panel
   useEffect(() => {
-    if (!sha || !data?.files.length) return;
+    if (!sha) return;
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (
@@ -291,11 +317,25 @@ export function CheckpointDetailDialog({ sha, onClose }: CheckpointDetailDialogP
       ) {
         return;
       }
-      const files = data.files;
-      const idx = Math.max(
-        0,
-        files.findIndex((f) => f.path === selectedFile),
-      );
+
+      if (e.key === 'ArrowLeft') {
+        if (hasPrevSha) {
+          e.preventDefault();
+          gotoPrevSha();
+        }
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        if (hasNextSha) {
+          e.preventDefault();
+          gotoNextSha();
+        }
+        return;
+      }
+
+      const files = data?.files ?? [];
+      if (!files.length) return;
+      const idx = Math.max(0, files.findIndex((f) => f.path === selectedFile));
       let next = idx;
       if (e.key === 'ArrowDown' || e.key === 'j') next = Math.min(files.length - 1, idx + 1);
       else if (e.key === 'ArrowUp' || e.key === 'k') next = Math.max(0, idx - 1);
@@ -305,7 +345,7 @@ export function CheckpointDetailDialog({ sha, onClose }: CheckpointDetailDialogP
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [sha, data?.files, selectedFile]);
+  }, [sha, data?.files, selectedFile, hasPrevSha, hasNextSha, gotoPrevSha, gotoNextSha]);
 
   const filteredFiles = useMemo(() => {
     if (!data) return [];
@@ -365,6 +405,37 @@ export function CheckpointDetailDialog({ sha, onClose }: CheckpointDetailDialogP
           >
             <X className="h-4 w-4" />
           </Button>
+
+          {/* Prev / next checkpoint */}
+          {shaList.length > 1 && (
+            <div className="flex items-center gap-0.5 shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                disabled={!hasPrevSha}
+                onClick={gotoPrevSha}
+                title="Previous checkpoint (←)"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                disabled={!hasNextSha}
+                onClick={gotoNextSha}
+                title="Next checkpoint (→)"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              {shaIndex >= 0 && (
+                <span className="ml-1 text-[11px] text-muted-foreground tabular-nums">
+                  {shaIndex + 1} / {shaList.length}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <GitCommitHorizontal className="h-4 w-4 text-muted-foreground shrink-0" />

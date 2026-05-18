@@ -256,6 +256,29 @@ export async function commitFile(opts: {
   }, opts.auth);
 }
 
+/** Delete a file from a repo via the Contents API. Requires the file's
+ * current sha (use `getFileSha` to look it up). 404 from upstream surfaces
+ * as a thrown error — callers should pre-check existence. */
+export async function deleteFile(opts: {
+  owner: string;
+  repo: string;
+  path: string;
+  message: string;
+  branch?: string;
+  sha: string;
+  auth?: GitHubAuthContext;
+}): Promise<void> {
+  const body: Record<string, unknown> = {
+    message: opts.message,
+    sha: opts.sha,
+  };
+  if (opts.branch) body.branch = opts.branch;
+  await ghFetch(`/repos/${opts.owner}/${opts.repo}/contents/${encodeURI(opts.path)}`, {
+    method: 'DELETE',
+    body: JSON.stringify(body),
+  }, opts.auth);
+}
+
 /** GET an existing file's blob sha so `commitFile` can upsert. Returns null
  * if the file doesn't exist. */
 export async function getFileSha(opts: {

@@ -2,7 +2,7 @@
 
 /**
  * Customize layout — wraps every per-project config surface (agents,
- * skills, secrets, triggers, channels, connectors, settings) in a
+ * skills, secrets, triggers, channels, executor, settings) in a
  * shared shell.
  *
  * Owns two pieces of chrome so the section pages stay focused on their

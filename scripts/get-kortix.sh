@@ -280,16 +280,6 @@ INTERNAL_SERVICE_KEY=""
 PUBLIC_URL=""
 API_PUBLIC_URL=""
 
-# Optional integrations
-INTEGRATION_AUTH_PROVIDER="disabled"
-PIPEDREAM_CLIENT_ID=""
-PIPEDREAM_CLIENT_SECRET=""
-PIPEDREAM_PROJECT_ID=""
-PIPEDREAM_ENVIRONMENT=""
-SLACK_CLIENT_ID=""
-SLACK_CLIENT_SECRET=""
-SLACK_SIGNING_SECRET=""
-
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 open_browser() {
   local url="$1"
@@ -591,14 +581,6 @@ prompt_database() {
   esac
 
   echo ""
-}
-
-
-
-# ─── Integrations (Pipedream) ────────────────────────────────────────────────
-# Pipedream creds are optional — the sandbox can send its own via request headers.
-prompt_integrations() {
-  INTEGRATION_AUTH_PROVIDER="pipedream"
 }
 
 
@@ -1092,18 +1074,6 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 INTERNAL_SERVICE_KEY=${INTERNAL_SERVICE_KEY}
 API_KEY_SECRET=${API_KEY_SECRET}
 TUNNEL_SIGNING_SECRET=${TUNNEL_SIGNING_SECRET}
-
-# ─── Integrations (Pipedream) ────────────────────────────────────────────────
-INTEGRATION_AUTH_PROVIDER=${INTEGRATION_AUTH_PROVIDER}
-PIPEDREAM_CLIENT_ID=${PIPEDREAM_CLIENT_ID}
-PIPEDREAM_CLIENT_SECRET=${PIPEDREAM_CLIENT_SECRET}
-PIPEDREAM_PROJECT_ID=${PIPEDREAM_PROJECT_ID}
-PIPEDREAM_ENVIRONMENT=${PIPEDREAM_ENVIRONMENT:-production}
-
-# ─── Channels (Slack) ───────────────────────────────────────────────────────
-SLACK_CLIENT_ID=${SLACK_CLIENT_ID}
-SLACK_CLIENT_SECRET=${SLACK_CLIENT_SECRET}
-SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
 
 # ─── GitHub Repo Projects ───────────────────────────────────────────────────
 # GitHub App is the production path. PAT fallback is for local/self-host only.
@@ -1822,8 +1792,6 @@ main() {
     printf "                  ${CYAN}└─────────────┘${NC}\n"
   fi
   printf "\n"
-
-  prompt_integrations
 
   section "Configuring"
 

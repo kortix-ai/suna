@@ -8,7 +8,6 @@ import {
   ChevronDown,
   Copy,
   FileText,
-  Link,
   Loader2,
   Plug,
   Plus,
@@ -53,7 +52,6 @@ import {
   type Command,
   type McpStatus,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { useKortixConnectors, type KortixConnector } from '@/hooks/kortix/use-kortix-connectors';
 import { useSkills } from '@/features/skills/hooks';
 import { getSkillSource, type Skill } from '@/features/skills/types';
 import { openTabAndNavigate } from '@/stores/tab-store';
@@ -63,7 +61,7 @@ import { useServerStore } from '@/stores/server-store';
 // Types
 // ---------------------------------------------------------------------------
 
-type ItemKind = 'agent' | 'skill' | 'command' | 'tool' | 'mcp' | 'connector';
+type ItemKind = 'agent' | 'skill' | 'command' | 'tool' | 'mcp';
 type ItemScope = 'project' | 'global' | 'external' | 'built-in';
 type KindFilter = 'all' | ItemKind;
 type ScopeFilter = 'all' | ItemScope;
@@ -76,7 +74,7 @@ interface WorkspaceItem {
   kind: ItemKind;
   scope: ItemScope;
   meta?: string;
-  raw?: Agent | Skill | Command | KortixConnector | { toolId: string; server?: string } | { serverName: string; status: McpStatus };
+  raw?: Agent | Skill | Command | { toolId: string; server?: string } | { serverName: string; status: McpStatus };
 }
 
 const COMPOSER_PRESETS: Record<WorkspaceComposerKind, { title: string; prompt: string }> = {
@@ -111,7 +109,6 @@ const KIND_CONFIG: Record<ItemKind, { icon: typeof Bot; label: string }> = {
   command:   { icon: Terminal,    label: 'Command' },
   tool:      { icon: Wrench,     label: 'Tool' },
   mcp:       { icon: Plug,       label: 'MCP' },
-  connector: { icon: Link,       label: 'Connector' },
 };
 
 const SCOPE_LABEL: Record<ItemScope, string> = {
@@ -182,21 +179,10 @@ function DetailSheet({
       rows.push({ label: 'Error', value: (m.status as { error: string }).error });
     }
   }
-  if (item?.kind === 'connector' && item.raw) {
-    const c = item.raw as unknown as KortixConnector;
-    if (c.source) rows.push({ label: 'Source', value: c.source });
-    if (c.pipedream_slug) rows.push({ label: 'Pipedream', value: c.pipedream_slug, mono: true });
-    if (c.env_keys?.length) rows.push({ label: 'Env', value: c.env_keys.join(', '), mono: true });
-    if (c.auto_generated) rows.push({ label: 'Auto', value: 'Created by Pipedream OAuth' });
-    rows.push({ label: 'Updated', value: new Date(c.updated_at).toLocaleString() });
-    if (c.notes) content = c.notes;
-  }
-
   const contentLabel =
     item?.kind === 'skill'     ? 'SKILL.md' :
     item?.kind === 'command'   ? 'template' :
     item?.kind === 'agent'     ? 'system prompt' :
-    item?.kind === 'connector' ? 'notes' :
     'content';
 
   return (
@@ -363,7 +349,7 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
       <Blocks className="h-7 w-7 text-muted-foreground/30 mb-3" />
       <p className="text-sm font-medium text-foreground mb-1">Nothing here yet</p>
       <p className="text-xs text-muted-foreground text-center max-w-xs">
-        Use the actions above to add agents, skills, commands, connectors, or MCP servers.
+        Use the actions above to add agents, skills, commands, tools, or MCP servers.
       </p>
     </div>
   );
@@ -412,9 +398,8 @@ export default function WorkspacePage() {
   const { data: commands,  isLoading: lCommands  } = useOpenCodeCommands();
   const { data: toolIds,   isLoading: lTools     } = useOpenCodeToolIds();
   const { data: mcpStatus, isLoading: lMcp       } = useOpenCodeMcpStatus();
-  const { data: connectors, isLoading: lConnectors } = useKortixConnectors();
 
-  const isLoading = lAgents || lSkills || lCommands || lTools || lMcp || lConnectors;
+  const isLoading = lAgents || lSkills || lCommands || lTools || lMcp;
 
   const allItems = useMemo<WorkspaceItem[]>(() => {
     const items: WorkspaceItem[] = [];
@@ -448,25 +433,11 @@ export default function WorkspacePage() {
       });
     }
 
-    if (connectors && Array.isArray(connectors)) {
-      for (const c of connectors) {
-        items.push({
-          id: `connector:${c.id}`,
-          name: c.name,
-          description: c.description || undefined,
-          kind: 'connector',
-          scope: 'project',
-          meta: c.source || 'custom',
-          raw: c,
-        });
-      }
-    }
-
     return items;
-  }, [agents, skills, commands, toolIds, mcpStatus, connectors]);
+  }, [agents, skills, commands, toolIds, mcpStatus]);
 
   const kindCounts = useMemo(() => {
-    const c: Record<KindFilter, number> = { all: allItems.length, agent: 0, skill: 0, command: 0, tool: 0, mcp: 0, connector: 0 };
+    const c: Record<KindFilter, number> = { all: allItems.length, agent: 0, skill: 0, command: 0, tool: 0, mcp: 0 };
     allItems.forEach((i) => c[i.kind]++);
     return c;
   }, [allItems]);
@@ -515,7 +486,6 @@ export default function WorkspacePage() {
     { value: 'command'   as KindFilter, label: 'Commands' },
     { value: 'tool'      as KindFilter, label: 'Tools' },
     { value: 'mcp'       as KindFilter, label: 'MCP' },
-    { value: 'connector' as KindFilter, label: 'Connectors' },
   ] as const;
   return (
     <>
@@ -528,7 +498,7 @@ export default function WorkspacePage() {
             <div className="min-w-0">
               <h1 className="text-lg sm:text-xl font-semibold">Workspace</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                Agents, skills, commands, tools, and connectors.
+                Agents, skills, commands, tools, and MCP servers.
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">

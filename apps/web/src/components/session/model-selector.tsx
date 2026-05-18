@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useParams } from 'next/navigation';
 import {
   Check,
   ChevronDown,
@@ -33,6 +34,7 @@ import {
 } from '@/components/providers/provider-branding';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
+import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 
 // Re-export for consumers
 export { ConnectProviderContent } from '@/components/providers/connect-provider-content';
@@ -110,6 +112,16 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const modelStore = useModelStore(models);
 
+  // When mounted under /projects/[id]/..., route the action buttons to the
+  // per-project provider modal so credentials land in `project_secrets`. On
+  // every other route (instance dashboard, /milano, /berlin, etc.) we keep
+  // the legacy GlobalProviderModal that writes to the active sandbox.
+  const params = useParams<{ id?: string }>();
+  const projectId = typeof params?.id === 'string' ? params.id : null;
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const [projectModalTab, setProjectModalTab] =
+    useState<'connected' | 'catalog' | 'models'>('catalog');
+
   const current = models.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
   );
@@ -166,10 +178,26 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
 
   const handleOpenProviderModal = useCallback((tab: ProviderModalTab) => {
     setOpen(false);
+    if (projectId) {
+      // Legacy tabs: 'providers' | 'connected' | 'models'. Map 'providers'
+      // (the "add" view in the old modal) to our 'catalog' tab.
+      setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
+      setProjectModalOpen(true);
+      return;
+    }
     openProviderModal(tab);
-  }, [openProviderModal]);
+  }, [projectId, openProviderModal]);
 
   return (
+    <>
+    {projectId && (
+      <ProjectProviderModal
+        projectId={projectId}
+        open={projectModalOpen}
+        onOpenChange={setProjectModalOpen}
+        defaultTab={projectModalTab}
+      />
+    )}
     <CommandPopover open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -279,5 +307,6 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
         </CommandList>
       </CommandPopoverContent>
     </CommandPopover>
+    </>
   );
 }

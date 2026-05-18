@@ -42,7 +42,6 @@ tests/
       09-admin-ops.spec.ts
       10-production-golden-paths.spec.ts
       11-production-boundaries.spec.ts
-    legacy-specs/         #   Quarantined pre-v1 specs, not run by configs
     helpers/              #   Shared TS utilities
       auth.ts
       wait.ts

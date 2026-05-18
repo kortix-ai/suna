@@ -12,6 +12,7 @@ import {
   index,
   uniqueIndex,
   unique,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -87,20 +88,6 @@ export const projectTriggerEventStatusEnum = kortixSchema.enum('project_trigger_
   'failed',
 ]);
 
-export const projectChannelPlatformEnum = kortixSchema.enum('project_channel_platform', [
-  'slack',
-  'telegram',
-  'msteams',
-  'discord',
-]);
-
-export const projectChannelEventStatusEnum = kortixSchema.enum('project_channel_event_status', [
-  'queued',
-  'fired',
-  'failed',
-]);
-
-
 export const apiKeyStatusEnum = kortixSchema.enum('api_key_status', [
   'active',
   'revoked',
@@ -112,11 +99,9 @@ export const apiKeyTypeEnum = kortixSchema.enum('api_key_type', [
   'sandbox',
 ]);
 
-export const integrationStatusEnum = kortixSchema.enum('integration_status', [
-  'active',
-  'revoked',
-  'expired',
-  'error',
+export const accountSecretKindEnum = kortixSchema.enum('account_secret_kind', [
+  'api_key',
+  'oauth_subscription',
 ]);
 
 // ─── Accounts & Members ─────────────────────────────────────────────────────
@@ -182,6 +167,28 @@ export const accountInvitations = kortixSchema.table(
     index('idx_account_invitations_account').on(table.accountId),
     index('idx_account_invitations_expires_at').on(table.expiresAt),
     uniqueIndex('idx_account_invitations_pending').on(table.accountId, table.email),
+  ],
+);
+
+export const accountSecrets = kortixSchema.table(
+  'account_secrets',
+  {
+    secretId: uuid('secret_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 64 }).notNull(),
+    valueEnc: text('value_enc').notNull(),
+    kind: accountSecretKindEnum('kind').default('api_key').notNull(),
+    provider: varchar('provider', { length: 32 }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_account_secrets_account').on(table.accountId),
+    index('idx_account_secrets_kind').on(table.kind),
+    uniqueIndex('idx_account_secrets_account_name').on(table.accountId, table.name),
   ],
 );
 
@@ -276,77 +283,56 @@ export const projectSecrets = kortixSchema.table(
   ],
 );
 
-export const projectConnectors = kortixSchema.table(
-  'project_connectors',
+export const projectConnections = kortixSchema.table(
+  'project_connections',
   {
-    connectorId: uuid('connector_id').defaultRandom().primaryKey(),
+    connectionId: uuid('connection_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    providerName: varchar('provider_name', { length: 50 }).notNull().default('pipedream'),
-    app: varchar('app', { length: 255 }).notNull(),
-    appName: varchar('app_name', { length: 255 }),
-    providerAccountId: varchar('provider_account_id', { length: 255 }).notNull(),
-    label: varchar('label', { length: 255 }),
-    status: integrationStatusEnum('status').default('active').notNull(),
-    scopes: jsonb('scopes').default([]).$type<string[]>(),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    name: varchar('name', { length: 128 }).notNull(),
+    sourceType: varchar('source_type', { length: 32 }).default('static').notNull(),
+    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
+    enabled: boolean('enabled').default(true).notNull(),
     createdBy: uuid('created_by'),
-    connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow().notNull(),
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_project_connectors_account').on(table.accountId),
-    index('idx_project_connectors_project').on(table.projectId),
-    index('idx_project_connectors_app').on(table.projectId, table.app),
-    index('idx_project_connectors_provider_account').on(table.providerAccountId),
-    uniqueIndex('idx_project_connectors_project_provider_account').on(
-      table.projectId,
-      table.providerName,
-      table.providerAccountId,
-    ),
+    index('idx_project_connections_account').on(table.accountId),
+    index('idx_project_connections_project').on(table.projectId),
+    uniqueIndex('idx_project_connections_project_name').on(table.projectId, table.name),
   ],
 );
 
-export const projectChannels = kortixSchema.table(
-  'project_channels',
+export const projectConnectionTools = kortixSchema.table(
+  'project_connection_tools',
   {
-    channelId: uuid('channel_id').defaultRandom().primaryKey(),
+    toolId: uuid('tool_id').defaultRandom().primaryKey(),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => projectConnections.connectionId, { onDelete: 'cascade' }),
     accountId: uuid('account_id')
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    platform: projectChannelPlatformEnum('platform').notNull(),
-    externalChannelId: varchar('external_channel_id', { length: 255 }).notNull(),
-    externalTeamId: varchar('external_team_id', { length: 255 }),
-    name: varchar('name', { length: 255 }),
-    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
-    agentName: varchar('agent_name', { length: 128 }).default('default').notNull(),
-    promptTemplate: text('prompt_template').notNull(),
+    name: varchar('name', { length: 192 }).notNull(),
+    description: text('description'),
+    inputSchema: jsonb('input_schema').default({}).$type<Record<string, unknown>>(),
+    implementation: jsonb('implementation').default({}).$type<Record<string, unknown>>(),
     enabled: boolean('enabled').default(true).notNull(),
-    status: integrationStatusEnum('status').default('active').notNull(),
-    createdBy: uuid('created_by'),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_project_channels_account').on(table.accountId),
-    index('idx_project_channels_project').on(table.projectId),
-    index('idx_project_channels_platform').on(table.platform),
-    uniqueIndex('idx_project_channels_project_platform_external').on(
-      table.projectId,
-      table.platform,
-      table.externalChannelId,
-    ),
+    index('idx_project_connection_tools_connection').on(table.connectionId),
+    index('idx_project_connection_tools_project').on(table.projectId),
+    uniqueIndex('idx_project_connection_tools_project_name').on(table.projectId, table.name),
   ],
 );
 
@@ -409,6 +395,27 @@ export const projectSessions = kortixSchema.table(
   ],
 );
 
+/**
+ * Runtime state for triggers defined in the project repo
+ * (.opencode/triggers/<slug>.md). The repo holds the trigger config; this
+ * row holds the cron scheduler's "last fired" state so we don't need to
+ * write a git commit on every fire.
+ */
+export const projectTriggerRuntime = kortixSchema.table(
+  'project_trigger_runtime',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    lastFiredAt: timestamp('last_fired_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.slug] }),
+  ],
+);
+
 export const projectTriggerEvents = kortixSchema.table(
   'project_trigger_events',
   {
@@ -434,37 +441,6 @@ export const projectTriggerEvents = kortixSchema.table(
     index('idx_project_trigger_events_trigger').on(table.triggerId),
     index('idx_project_trigger_events_project_status').on(table.projectId, table.status),
     index('idx_project_trigger_events_status_created').on(table.status, table.createdAt),
-  ],
-);
-
-export const projectChannelEvents = kortixSchema.table(
-  'project_channel_events',
-  {
-    eventId: uuid('event_id').defaultRandom().primaryKey(),
-    channelId: uuid('channel_id')
-      .notNull()
-      .references(() => projectChannels.channelId, { onDelete: 'cascade' }),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    platform: projectChannelPlatformEnum('platform').notNull(),
-    externalMessageId: varchar('external_message_id', { length: 255 }),
-    status: projectChannelEventStatusEnum('status').default('queued').notNull(),
-    payload: jsonb('payload').default({}).$type<Record<string, unknown>>(),
-    renderedPrompt: text('rendered_prompt'),
-    sessionId: text('session_id').references(() => projectSessions.sessionId, { onDelete: 'set null' }),
-    error: text('error'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_project_channel_events_channel').on(table.channelId),
-    index('idx_project_channel_events_project_status').on(table.projectId, table.status),
-    index('idx_project_channel_events_status_created').on(table.status, table.createdAt),
-    index('idx_project_channel_events_external').on(table.platform, table.externalMessageId),
   ],
 );
 
@@ -703,6 +679,15 @@ export const deployments = kortixSchema.table(
     deploymentId: uuid('deployment_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id').notNull(),
     sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
+    // Optional link back to a Git-backed project + the [[apps]] slug inside
+    // its kortix.toml. Populated by the /v1/projects/:id/apps path; nullable
+    // because the legacy /v1/deployments path doesn't carry these.
+    projectId: uuid('project_id'),
+    appSlug: varchar('app_slug', { length: 128 }),
+    // Provider that produced this deployment ("freestyle" today; future:
+    // "vercel", "cloudflare", ...). Nullable for back-compat with rows
+    // written before the provider adapter shipped.
+    provider: varchar('provider', { length: 32 }),
     freestyleId: text('freestyle_id'),
     status: deploymentStatusEnum('status').default('pending').notNull(),
 
@@ -732,6 +717,9 @@ export const deployments = kortixSchema.table(
     index('idx_deployments_status').on(table.status),
     index('idx_deployments_live_url').on(table.liveUrl),
     index('idx_deployments_created').on(table.createdAt),
+    // Drives the project-apps list view + the auto-deploy sweep lookup
+    // ("latest deployment for this (project, slug)").
+    index('idx_deployments_project_app').on(table.projectId, table.appSlug, table.createdAt),
   ],
 );
 
@@ -763,73 +751,6 @@ export const kortixApiKeys = kortixSchema.table(
     index('idx_kortix_api_keys_secret_hash').on(table.secretKeyHash),
     index('idx_kortix_api_keys_sandbox').on(table.sandboxId),
     index('idx_kortix_api_keys_account').on(table.accountId),
-  ],
-);
-
-// ─── Integration Credentials (per-account provider credentials) ─────────────
-// Stores Pipedream (or future provider) credentials per account.
-// Resolution order: request headers → account DB → API env defaults.
-
-export const integrationCredentials = kortixSchema.table(
-  'integration_credentials',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    provider: varchar('provider', { length: 50 }).notNull().default('pipedream'),
-    credentials: jsonb('credentials').notNull().default({}).$type<Record<string, string>>(),
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_integration_credentials_account_provider').on(table.accountId, table.provider),
-    index('idx_integration_credentials_account').on(table.accountId),
-  ],
-);
-
-// ─── Integrations (account-level OAuth connections) ─────────────────────────
-
-export const integrations = kortixSchema.table(
-  'integrations',
-  {
-    integrationId: uuid('integration_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    app: varchar('app', { length: 255 }).notNull(),
-    appName: varchar('app_name', { length: 255 }),
-    providerName: varchar('provider_name', { length: 50 }).notNull(),
-    providerAccountId: varchar('provider_account_id', { length: 255 }).notNull(),
-    label: varchar('label', { length: 255 }),
-    status: integrationStatusEnum('status').default('active').notNull(),
-    scopes: jsonb('scopes').default([]).$type<string[]>(),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow().notNull(),
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_integrations_account').on(table.accountId),
-    index('idx_integrations_app').on(table.app),
-    index('idx_integrations_provider_account').on(table.providerAccountId),
-    uniqueIndex('idx_integrations_account_provider_account').on(table.accountId, table.providerAccountId),
-  ],
-);
-
-export const sandboxIntegrations = kortixSchema.table(
-  'sandbox_integrations',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    sandboxId: uuid('sandbox_id')
-      .notNull()
-      .references(() => sandboxes.sandboxId, { onDelete: 'cascade' }),
-    integrationId: uuid('integration_id')
-      .notNull()
-      .references(() => integrations.integrationId, { onDelete: 'cascade' }),
-    grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_sandbox_integration_unique').on(table.sandboxId, table.integrationId),
-    index('idx_sandbox_integrations_sandbox').on(table.sandboxId),
   ],
 );
 
@@ -946,7 +867,6 @@ export const sandboxesRelations = relations(sandboxes, ({ one, many }) => ({
   }),
   deployments: many(deployments),
   apiKeys: many(kortixApiKeys),
-  sandboxIntegrationLinks: many(sandboxIntegrations),
   members: many(sandboxMembers),
 }));
 
@@ -957,9 +877,8 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   members: many(projectMembers),
   secrets: many(projectSecrets),
-  connectors: many(projectConnectors),
-  channels: many(projectChannels),
-  channelEvents: many(projectChannelEvents),
+  connections: many(projectConnections),
+  connectionTools: many(projectConnectionTools),
   triggers: many(projectTriggers),
   triggerEvents: many(projectTriggerEvents),
   sessions: many(projectSessions),
@@ -984,45 +903,37 @@ export const projectSecretsRelations = relations(projectSecrets, ({ one }) => ({
   }),
 }));
 
-export const projectConnectorsRelations = relations(projectConnectors, ({ one }) => ({
+export const accountSecretsRelations = relations(accountSecrets, ({ one }) => ({
   account: one(accounts, {
-    fields: [projectConnectors.accountId],
+    fields: [accountSecrets.accountId],
     references: [accounts.accountId],
-  }),
-  project: one(projects, {
-    fields: [projectConnectors.projectId],
-    references: [projects.projectId],
   }),
 }));
 
-export const projectChannelsRelations = relations(projectChannels, ({ one, many }) => ({
+export const projectConnectionsRelations = relations(projectConnections, ({ one, many }) => ({
   account: one(accounts, {
-    fields: [projectChannels.accountId],
+    fields: [projectConnections.accountId],
     references: [accounts.accountId],
   }),
   project: one(projects, {
-    fields: [projectChannels.projectId],
+    fields: [projectConnections.projectId],
     references: [projects.projectId],
   }),
-  events: many(projectChannelEvents),
+  tools: many(projectConnectionTools),
 }));
 
-export const projectChannelEventsRelations = relations(projectChannelEvents, ({ one }) => ({
+export const projectConnectionToolsRelations = relations(projectConnectionTools, ({ one }) => ({
   account: one(accounts, {
-    fields: [projectChannelEvents.accountId],
+    fields: [projectConnectionTools.accountId],
     references: [accounts.accountId],
   }),
   project: one(projects, {
-    fields: [projectChannelEvents.projectId],
+    fields: [projectConnectionTools.projectId],
     references: [projects.projectId],
   }),
-  channel: one(projectChannels, {
-    fields: [projectChannelEvents.channelId],
-    references: [projectChannels.channelId],
-  }),
-  session: one(projectSessions, {
-    fields: [projectChannelEvents.sessionId],
-    references: [projectSessions.sessionId],
+  connection: one(projectConnections, {
+    fields: [projectConnectionTools.connectionId],
+    references: [projectConnections.connectionId],
   }),
 }));
 
@@ -1107,21 +1018,6 @@ export const kortixApiKeysRelations = relations(kortixApiKeys, ({ one }) => ({
   }),
 }));
 
-export const integrationsRelations = relations(integrations, ({ many }) => ({
-  sandboxIntegrationLinks: many(sandboxIntegrations),
-}));
-
-export const sandboxIntegrationsRelations = relations(sandboxIntegrations, ({ one }) => ({
-  sandbox: one(sandboxes, {
-    fields: [sandboxIntegrations.sandboxId],
-    references: [sandboxes.sandboxId],
-  }),
-  integration: one(integrations, {
-    fields: [sandboxIntegrations.integrationId],
-    references: [integrations.integrationId],
-  }),
-}));
-
 // ─── Account Relations ──────────────────────────────────────────────────────
 
 export const accountsRelations = relations(accounts, ({ many }) => ({
@@ -1129,9 +1025,8 @@ export const accountsRelations = relations(accounts, ({ many }) => ({
   githubInstallations: many(accountGithubInstallations),
   projectMembers: many(projectMembers),
   projects: many(projects),
-  projectConnectors: many(projectConnectors),
-  projectChannels: many(projectChannels),
-  projectChannelEvents: many(projectChannelEvents),
+  projectConnections: many(projectConnections),
+  projectConnectionTools: many(projectConnectionTools),
   projectTriggers: many(projectTriggers),
   projectTriggerEvents: many(projectTriggerEvents),
   projectSessions: many(projectSessions),

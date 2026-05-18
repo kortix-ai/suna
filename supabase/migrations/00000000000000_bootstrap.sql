@@ -30,7 +30,6 @@ CREATE TYPE "kortix"."api_key_status" AS ENUM('active', 'revoked', 'expired');
 CREATE TYPE "kortix"."api_key_type" AS ENUM('user', 'sandbox');
 CREATE TYPE "kortix"."deployment_source" AS ENUM('git', 'code', 'files', 'tar');
 CREATE TYPE "kortix"."deployment_status" AS ENUM('pending', 'building', 'deploying', 'active', 'failed', 'stopped');
-CREATE TYPE "kortix"."integration_status" AS ENUM('active', 'revoked', 'expired', 'error');
 CREATE TYPE "kortix"."platform_role" AS ENUM('user', 'admin', 'super_admin');
 CREATE TYPE "kortix"."sandbox_provider" AS ENUM('daytona', 'local_docker', 'justavps');
 CREATE TYPE "kortix"."sandbox_status" AS ENUM('provisioning', 'active', 'stopped', 'archived', 'pooled', 'error');
@@ -211,23 +210,6 @@ CREATE TABLE "kortix"."deployments" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
-CREATE TABLE "kortix"."integrations" (
-	"integration_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"account_id" uuid NOT NULL,
-	"app" varchar(255) NOT NULL,
-	"app_name" varchar(255),
-	"provider_name" varchar(50) NOT NULL,
-	"provider_account_id" varchar(255) NOT NULL,
-	"label" varchar(255),
-	"status" "kortix"."integration_status" DEFAULT 'active' NOT NULL,
-	"scopes" jsonb DEFAULT '[]'::jsonb,
-	"metadata" jsonb DEFAULT '{}'::jsonb,
-	"connected_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"last_used_at" timestamp with time zone,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
-);
-
 CREATE TABLE "kortix"."api_keys" (
 	"key_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"sandbox_id" uuid NOT NULL,
@@ -331,13 +313,6 @@ CREATE TABLE "kortix"."pool_sandboxes" (
 	"ready_at" timestamp with time zone
 );
 
-CREATE TABLE "kortix"."sandbox_integrations" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"sandbox_id" uuid NOT NULL,
-	"integration_id" uuid NOT NULL,
-	"granted_at" timestamp with time zone DEFAULT now() NOT NULL
-);
-
 CREATE TABLE "kortix"."sandboxes" (
 	"sandbox_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"account_id" uuid NOT NULL,
@@ -429,8 +404,6 @@ ALTER TABLE "kortix"."oauth_authorization_codes" ADD CONSTRAINT "oauth_authoriza
 ALTER TABLE "kortix"."oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_access_token_id_oauth_access_tokens_id_fk" FOREIGN KEY ("access_token_id") REFERENCES "kortix"."oauth_access_tokens"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "kortix"."oauth_refresh_tokens" ADD CONSTRAINT "oauth_refresh_tokens_client_id_oauth_clients_client_id_fk" FOREIGN KEY ("client_id") REFERENCES "kortix"."oauth_clients"("client_id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "kortix"."pool_sandboxes" ADD CONSTRAINT "pool_sandboxes_resource_id_pool_resources_id_fk" FOREIGN KEY ("resource_id") REFERENCES "kortix"."pool_resources"("id") ON DELETE set null ON UPDATE no action;
-ALTER TABLE "kortix"."sandbox_integrations" ADD CONSTRAINT "sandbox_integrations_sandbox_id_sandboxes_sandbox_id_fk" FOREIGN KEY ("sandbox_id") REFERENCES "kortix"."sandboxes"("sandbox_id") ON DELETE cascade ON UPDATE no action;
-ALTER TABLE "kortix"."sandbox_integrations" ADD CONSTRAINT "sandbox_integrations_integration_id_integrations_integration_id_fk" FOREIGN KEY ("integration_id") REFERENCES "kortix"."integrations"("integration_id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "kortix"."tunnel_audit_logs" ADD CONSTRAINT "tunnel_audit_logs_tunnel_id_tunnel_connections_tunnel_id_fk" FOREIGN KEY ("tunnel_id") REFERENCES "kortix"."tunnel_connections"("tunnel_id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "kortix"."tunnel_connections" ADD CONSTRAINT "tunnel_connections_sandbox_id_sandboxes_sandbox_id_fk" FOREIGN KEY ("sandbox_id") REFERENCES "kortix"."sandboxes"("sandbox_id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "kortix"."tunnel_permission_requests" ADD CONSTRAINT "tunnel_permission_requests_tunnel_id_tunnel_connections_tunnel_id_fk" FOREIGN KEY ("tunnel_id") REFERENCES "kortix"."tunnel_connections"("tunnel_id") ON DELETE cascade ON UPDATE no action;
@@ -449,10 +422,6 @@ CREATE INDEX "idx_deployments_sandbox" ON "kortix"."deployments" USING btree ("s
 CREATE INDEX "idx_deployments_status" ON "kortix"."deployments" USING btree ("status");
 CREATE INDEX "idx_deployments_live_url" ON "kortix"."deployments" USING btree ("live_url");
 CREATE INDEX "idx_deployments_created" ON "kortix"."deployments" USING btree ("created_at");
-CREATE INDEX "idx_integrations_account" ON "kortix"."integrations" USING btree ("account_id");
-CREATE INDEX "idx_integrations_app" ON "kortix"."integrations" USING btree ("app");
-CREATE INDEX "idx_integrations_provider_account" ON "kortix"."integrations" USING btree ("provider_account_id");
-CREATE UNIQUE INDEX "idx_integrations_account_provider_account" ON "kortix"."integrations" USING btree ("account_id","provider_account_id");
 CREATE UNIQUE INDEX "idx_kortix_api_keys_public_key" ON "kortix"."api_keys" USING btree ("public_key");
 CREATE INDEX "idx_kortix_api_keys_secret_hash" ON "kortix"."api_keys" USING btree ("secret_key_hash");
 CREATE INDEX "idx_kortix_api_keys_sandbox" ON "kortix"."api_keys" USING btree ("sandbox_id");
@@ -470,8 +439,6 @@ CREATE INDEX "idx_platform_user_roles_role" ON "kortix"."platform_user_roles" US
 CREATE UNIQUE INDEX "idx_pool_resources_unique" ON "kortix"."pool_resources" USING btree ("provider","server_type","location");
 CREATE INDEX "idx_pool_sandboxes_claim" ON "kortix"."pool_sandboxes" USING btree ("status","created_at");
 CREATE UNIQUE INDEX "idx_pool_sandboxes_external_id_active" ON "kortix"."pool_sandboxes" USING btree ("external_id");
-CREATE UNIQUE INDEX "idx_sandbox_integration_unique" ON "kortix"."sandbox_integrations" USING btree ("sandbox_id","integration_id");
-CREATE INDEX "idx_sandbox_integrations_sandbox" ON "kortix"."sandbox_integrations" USING btree ("sandbox_id");
 CREATE INDEX "idx_sandboxes_account" ON "kortix"."sandboxes" USING btree ("account_id");
 CREATE INDEX "idx_sandboxes_external_id" ON "kortix"."sandboxes" USING btree ("external_id");
 CREATE INDEX "idx_sandboxes_status" ON "kortix"."sandboxes" USING btree ("status");

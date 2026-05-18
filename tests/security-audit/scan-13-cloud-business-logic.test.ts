@@ -6,14 +6,6 @@
  *
  * CRITICAL FINDINGS:
  *
- * [CRITICAL] POST /v1/integrations/webhook — NO AUTHENTICATION
- *   - The webhook endpoint is not covered by any auth middleware
- *   - An attacker can inject arbitrary OAuth integrations into ANY account
- *   - The endpoint accepts account_id in the body and inserts integration records
- *   - It also auto-links the integration to all active sandboxes for that account
- *   - File: apps/api/src/integrations/index.ts — /webhook not in auth middleware list
- *   - File: apps/api/src/integrations/routes.ts:364-406
- *
  * [HIGH] POST /v1/setup/bootstrap-owner — LEAKS OWNER EMAIL
  *   - This public endpoint reveals the platform owner's email address
  *   - Error response: "Owner already exists (email@example.com)"
@@ -63,50 +55,6 @@ async function probe(method: string, path: string, body?: any, headers?: Record<
 }
 
 describe('Cloud Scan: Business Logic Vulnerabilities', () => {
-
-  // ═══════════════════════════════════════════════════════════════════
-  // CRITICAL — Integration Webhook Missing Auth
-  // ═══════════════════════════════════════════════════════════════════
-
-  describe('[CRITICAL] /v1/integrations/webhook — missing authentication', () => {
-    test('webhook endpoint is reachable WITHOUT any auth token', async () => {
-      const r = await probe('POST', '/v1/integrations/webhook', {
-        account_id: 'probe-nonexistent-account',
-        app: 'security-audit-probe',
-        app_name: 'Security Audit',
-        provider_account_id: 'probe',
-        scopes: ['read'],
-        status: 'active',
-      });
-      // The handler was reached (it tried to process the webhook)
-      // Returns 500 because the account doesn't exist, but the code EXECUTED
-      // A valid account_id would succeed and inject integrations
-      expect([200, 500]).toContain(r.status);
-      // It did NOT return 401 — auth was not checked
-      expect(r.status).not.toBe(401);
-    });
-
-    test('webhook endpoint does not require Authorization header', async () => {
-      const r = await probe('POST', '/v1/integrations/webhook', {
-        account_id: 'x',
-        app: 'test',
-        app_name: 'Test',
-        provider_account_id: 'x',
-      });
-      // Should return 401 if auth was enforced, but it doesn't
-      expect(r.status).not.toBe(401);
-    });
-
-    test('compare: /v1/integrations/connections DOES require auth', async () => {
-      const r = await probe('GET', '/v1/integrations/connections');
-      expect(r.status).toBe(401);
-    });
-
-    test('compare: /v1/integrations/apps DOES require auth', async () => {
-      const r = await probe('GET', '/v1/integrations/apps');
-      expect(r.status).toBe(401);
-    });
-  });
 
   // ═══════════════════════════════════════════════════════════════════
   // HIGH — Bootstrap Owner Leaks Email

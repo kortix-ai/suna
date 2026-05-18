@@ -7,10 +7,12 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
+  Code,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFilesStore } from '../store/files-store';
-import { FileContentRenderer } from './file-content-renderer';
+import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { getFileIcon } from './file-icon';
 import { downloadFile } from '../api/opencode-files';
@@ -45,9 +47,13 @@ export function FilePreviewModal() {
   const hasPrev = currentFileIndex > 0;
 
   const [historyPath, setHistoryPath] = useState<string | null>(null);
+  // Markdown view toggle — default to rendered preview, allow switching to source.
+  const [markdownPreview, setMarkdownPreview] = useState(true);
+  const isMarkdownFile = getLanguageFromExt(fileName) === 'markdown';
 
   useEffect(() => {
     setHistoryPath(null);
+    setMarkdownPreview(true);
   }, [selectedFilePath]);
 
   // Keyboard navigation
@@ -148,6 +154,20 @@ export function FilePreviewModal() {
           </div>
 
           <div className="flex items-center gap-0.5 shrink-0">
+            {isMarkdownFile && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'h-8 w-8 transition-colors',
+                  markdownPreview ? 'text-muted-foreground hover:text-foreground' : 'text-foreground bg-muted',
+                )}
+                onClick={() => setMarkdownPreview((v) => !v)}
+                title={markdownPreview ? 'View source' : 'Preview'}
+              >
+                {markdownPreview ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -217,7 +237,13 @@ export function FilePreviewModal() {
           )}
 
           <div className="h-full w-full">
-            <FileContentRenderer filePath={selectedFilePath} showHeader={false} readOnly />
+            <FileContentRenderer
+              filePath={selectedFilePath}
+              showHeader={false}
+              readOnly
+              markdownPreview={markdownPreview}
+              onMarkdownPreviewChange={setMarkdownPreview}
+            />
           </div>
 
           {/* History popover */}

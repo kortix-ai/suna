@@ -9,7 +9,7 @@
  * - Request helpers (jsonPost, jsonGet, jsonPatch, jsonDelete)
  *
  * IMPORTANT: This file must be importable WITHOUT TEST_DATABASE_URL being set.
- * DB-dependent modules (routes/platform, routes/channels, etc.) are loaded dynamically
+ * DB-dependent modules (routes/platform, projects, etc.) are loaded dynamically
  * in createTestApp() only when TEST_DATABASE_URL is available.
  */
 import { Hono } from 'hono';
@@ -23,7 +23,6 @@ import {
   kortixApiKeys,
   accounts,
   accountMembers,
-  integrationCredentials,
 } from '@kortix/db';
 import { sql, inArray } from 'drizzle-orm';
 import { BillingError } from '../errors';
@@ -389,7 +388,6 @@ export async function cleanupTestData(): Promise<void> {
   await db.delete(kortixApiKeys).where(inArray(kortixApiKeys.accountId, accountIds));
   await db.delete(deployments).where(inArray(deployments.accountId, accountIds));
   await db.delete(sandboxes).where(inArray(sandboxes.accountId, accountIds));
-  await db.delete(integrationCredentials).where(inArray(integrationCredentials.accountId, accountIds));
   await db.delete(accountMembers).where(inArray(accountMembers.userId, [TEST_USER_ID, OTHER_USER_ID]));
   await db.delete(accounts).where(inArray(accounts.accountId, accountIds));
 }

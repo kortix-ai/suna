@@ -39,6 +39,9 @@ importers:
       '@kortix/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@kortix/executor-bridge':
+        specifier: workspace:*
+        version: link:../../packages/executor-bridge
       '@kortix/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -1318,6 +1321,9 @@ importers:
 
   packages/executor-bridge:
     devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.13
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
@@ -14905,6 +14911,7 @@ packages:
     resolution: {integrity: sha512-Rs1bVAIdBs5gbTIKza/tgpMuG1k3U/UMJLWecIMxNdJFDMzcM5LOiLVRYh3PilWEYDIeUDv7bpiHPLPsbydGcw==}
     dependencies:
       undici-types: 6.21.0
+    dev: true
 
   /@types/node@22.19.13:
     resolution: {integrity: sha512-akNQMv0wW5uyRpD2v2IEyRSZiR+BeGuoB6L310EgGObO44HSMNT8z1xzio28V8qOrgYaopIDNA18YgdXd+qTiw==}
@@ -23256,7 +23263,7 @@ packages:
     resolution: {integrity: sha512-7vuh85V5cdDofPyxn58nrPjBktZo0u9x1g8WtjQol+jZDaE+fhN+cIvTj11GndBnMnyfrUOG1sZQxCdjKh+DKg==}
     engines: {node: '>= 10.13.0'}
     dependencies:
-      '@types/node': 20.19.33
+      '@types/node': 22.19.13
       merge-stream: 2.0.0
       supports-color: 8.1.1
     dev: false

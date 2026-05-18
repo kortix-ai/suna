@@ -8,7 +8,6 @@
  * - LLM Providers
  * - Default Model — pick which model to use by default
  * - Tool API Keys (opt-in configure modal, cloud pre-configured)
- * - Pipedream Integrations (opt-in configure modal, cloud pre-configured)
  * - Get Started — launches the onboarding chat session
  */
 
@@ -26,7 +25,6 @@ import {
   BookOpen,
   ExternalLink,
   Loader2,
-  Link,
   ChevronRight,
   ArrowLeft,
   Zap,
@@ -782,164 +780,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
   );
 }
 
-// ─── Step 4: Pipedream ──────────────────────────────────────────────────────
-
-const PD_KEYS = [
-  { key: 'PIPEDREAM_CLIENT_ID', label: 'Client ID', placeholder: 'e.g. z8PKSGuQdorPj4UErE…', secret: false },
-  { key: 'PIPEDREAM_CLIENT_SECRET', label: 'Client Secret', placeholder: 'e.g. UeZCz2PeNdOeHJfw…', secret: true },
-  { key: 'PIPEDREAM_PROJECT_ID', label: 'Project ID', placeholder: 'e.g. proj_x9s97z5', secret: false },
-] as const;
-
-function PipedreamPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
-  const isCloud = isBillingEnabled();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-
-  const allFilled = PD_KEYS.every((k) => (values[k.key] || '').trim());
-
-  const handleSave = useCallback(async () => {
-    if (!allFilled) { setModalOpen(false); return; }
-
-    setSaving(true);
-    const base = getActiveOpenCodeUrl();
-    try {
-      const entries = [
-        ...PD_KEYS.map((k) => [k.key, (values[k.key] || '').trim()] as const),
-        ['PIPEDREAM_ENVIRONMENT', 'production'] as const,
-      ];
-      for (const [key, value] of entries) {
-        if (!value) continue;
-        await authenticatedFetch(`${base}/env/${encodeURIComponent(key)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ value }),
-        }).catch(() => {});
-      }
-    } catch { /* continue */ }
-    setSaving(false);
-    setSaved(true);
-    setModalOpen(false);
-  }, [values, allFilled]);
-
-  return (
-    <>
-      <div className="w-full max-w-sm space-y-5 mx-auto">
-        {/* Header */}
-        <div className="text-center space-y-3">
-          <div className="flex items-center justify-center">
-            <div className="h-12 w-12 rounded-full flex items-center justify-center bg-muted/60">
-              <Link className="h-5 w-5 text-muted-foreground/50" />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <h2 className="text-lg font-medium text-foreground/90">Third-Party Integrations</h2>
-            <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
-              Connect your agent to Gmail, Slack, Notion, and 3,000+ other apps via{' '}
-              <a href="https://pipedream.com/connect" target="_blank" rel="noopener noreferrer" className="underline hover:text-muted-foreground/70">
-                Pipedream Connect
-              </a>.
-            </p>
-          </div>
-          {isCloud && <CloudBadge text="Included with your Kortix credits" />}
-        </div>
-
-        {/* Info box */}
-        <div className="rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-[12.5px] text-muted-foreground/60 leading-relaxed">
-          {isCloud ? (
-            <>
-              Pipedream integrations are <span className="text-foreground/80 font-medium">pre-configured</span> on
-              your plan. You can optionally bring your own Pipedream project credentials if you prefer full control.
-            </>
-          ) : (
-            <>
-              Add your Pipedream Connect credentials to enable 3,000+ app integrations.
-              This is optional — you can set it up later in Settings.
-            </>
-          )}
-        </div>
-
-        {/* Saved confirmation */}
-        {saved && (
-          <div className="flex items-center justify-center gap-2 text-[12.5px] text-emerald-600 dark:text-emerald-400 font-medium">
-            <Check className="h-3.5 w-3.5" />
-            Pipedream configured
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="space-y-2">
-          <Button
-            variant="ghost"
-            size="lg"
-            onClick={() => setModalOpen(true)}
-            className="w-full shadow-none"
-          >
-            <Settings2 className="h-4 w-4" />
-            {isCloud ? 'Use my own Pipedream credentials' : 'Configure Pipedream'}
-          </Button>
-
-          <Button
-            onClick={onNext}
-            size="lg" className="w-full shadow-none"
-          >
-            Continue <ChevronRight className="h-4 w-4" />
-          </Button>
-
-          <div className="flex justify-center pt-1">
-            <Button onClick={onBack} variant="muted" size="xs" className="mx-auto">
-              <ArrowLeft className="h-3 w-3" /> Back
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Configure modal */}
-      <ConfigureModal open={modalOpen} onClose={() => setModalOpen(false)} title="Pipedream Credentials">
-        <div className="space-y-4">
-          <p className="text-xs text-muted-foreground/50 leading-relaxed">
-            Enter your Pipedream Connect project credentials. Get them at{' '}
-            <a href="https://pipedream.com/connect" target="_blank" rel="noopener noreferrer" className="underline hover:text-muted-foreground/70">
-              pipedream.com/connect
-            </a>.
-          </p>
-          <div className="space-y-3">
-            {PD_KEYS.map((f) => (
-              <div key={f.key} className="space-y-1">
-                <label className="text-xs font-medium text-foreground/60">{f.label}</label>
-                <Input
-                  type={f.secret ? 'password' : 'text'}
-                  placeholder={f.placeholder}
-                  value={values[f.key] || ''}
-                  onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
-                  className="h-9 text-xs font-mono shadow-none bg-foreground/[0.04] border-foreground/[0.08] rounded-lg"
-                  autoComplete="off"
-                />
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-2 pt-1">
-            <Button variant="ghost" onClick={() => setModalOpen(false)} className="flex-1 h-10 text-sm shadow-none">
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={saving} className="flex-1 h-10 text-sm shadow-none">
-              {saving ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>
-              ) : allFilled ? (
-                'Save credentials'
-              ) : (
-                'Done'
-              )}
-            </Button>
-          </div>
-        </div>
-      </ConfigureModal>
-    </>
-  );
-}
-
-// ─── Step 5: Get Started ────────────────────────────────────────────────────
+// ─── Step 4: Get Started ────────────────────────────────────────────────────
 
 function GetStartedPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   return (
@@ -988,7 +829,6 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
     ...(showBilling ? [{ label: 'Kortix Credits', icon: CreditCard }] : []),
     { label: 'Default Model', icon: Bot },
     { label: 'Tools', icon: Wrench },
-    { label: 'Integrations', icon: Link },
     { label: 'Get Started', icon: MessageSquare },
   ], [showBilling]);
 
@@ -1024,8 +864,6 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
     if (configStep === idx) return <DefaultModelPane onNext={next} onBack={back} />;
     idx++;
     if (configStep === idx) return <ToolKeysPane onNext={next} onBack={back} />;
-    idx++;
-    if (configStep === idx) return <PipedreamPane onNext={next} onBack={back} />;
     idx++;
     if (configStep === idx) return <GetStartedPane onNext={next} onBack={back} />;
     return null;

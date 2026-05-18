@@ -167,24 +167,39 @@ const languageMap: Record<string, () => any> = {
   vue: () => getLangExtension('vue'),
   svelte: () => getLangExtension('svelte'),
   nix: () => getLangExtension('nix'),
+  dockerfile: () => getLangExtension('dockerfile') ?? getLangExtension('shell'),
+  graphql: () => getLangExtension('graphql'),
+  gql: () => getLangExtension('graphql'),
+  proto: () => getLangExtension('protobuf') ?? getLangExtension('proto'),
+  diff: () => getLangExtension('diff'),
+  hcl: () => getLangExtension('hcl'),
+  dart: () => getLangExtension('dart'),
 };
 
 // Get language from file extension
 export function getLanguageFromExtension(fileName: string): string {
   const extension = fileName.split('.').pop()?.toLowerCase() || '';
   const fileNameLower = fileName.toLowerCase();
-  
+  const baseName = (fileNameLower.split('/').pop() ?? fileNameLower).split('.')[0];
+
   // .env files use properties syntax (KEY=value with # comments)
   if (fileNameLower.includes('.env') || fileNameLower.startsWith('.env')) {
     return 'properties';
   }
-  if (fileNameLower.includes('gitignore') || 
+  if (fileNameLower.includes('gitignore') ||
       fileNameLower.includes('editorconfig') ||
       fileNameLower.includes('dockerignore') ||
       fileNameLower.includes('npmignore') ||
       fileNameLower.includes('prettierignore') ||
       fileNameLower.includes('eslintignore')) {
     return 'text';
+  }
+  // Filename-based detection (no extension)
+  if (baseName === 'dockerfile' || fileNameLower.startsWith('dockerfile.')) {
+    return 'dockerfile';
+  }
+  if (baseName === 'makefile' || baseName === 'gnumakefile') {
+    return 'shell'; // Closest available — CodeMirror has no native Makefile
   }
   
   const extensionToLanguage: Record<string, string> = {
@@ -267,7 +282,16 @@ export function getLanguageFromExtension(fileName: string): string {
     vue: 'vue',
     svelte: 'svelte',
     nix: 'nix',
-    
+    dart: 'dart',
+    graphql: 'graphql',
+    gql: 'graphql',
+    proto: 'proto',
+    diff: 'diff',
+    patch: 'diff',
+    tf: 'hcl',
+    hcl: 'hcl',
+    tfvars: 'hcl',
+
     // Properties / config (KEY=value with # comments)
     env: 'properties',
     ini: 'properties',

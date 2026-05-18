@@ -8,6 +8,20 @@
       "when": 1775165129478,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779012271259,
+      "tag": "0001_add_deployments_project_app",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779032391373,
+      "tag": "0002_executor_bridge_connections",
+      "breakpoints": true
     }
   ]
 }

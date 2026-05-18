@@ -114,7 +114,6 @@ opsApp.get('/overview', async (c) => {
     sandboxStatus,
     sandboxProviders,
     triggerEventStatus,
-    channelEventStatus,
     audit24h,
     migrationStatus,
     usage,
@@ -147,11 +146,6 @@ opsApp.get('/overview', async (c) => {
       FROM kortix.project_trigger_events
       GROUP BY status
     `),
-    groupCounts(sql`
-      SELECT status AS key, count(*)::int AS count
-      FROM kortix.project_channel_events
-      GROUP BY status
-    `),
     oneCount(sql`
       SELECT count(*)::int AS count
       FROM kortix.audit_events
@@ -167,7 +161,6 @@ opsApp.get('/overview', async (c) => {
   ]);
 
   const queuedTriggerEvents = triggerEventStatus.queued ?? 0;
-  const queuedChannelEvents = channelEventStatus.queued ?? 0;
   const erroredSessions = sessionStatus.failed ?? 0;
   const erroredSandboxes = sandboxStatus.error ?? 0;
 
@@ -194,8 +187,7 @@ opsApp.get('/overview', async (c) => {
     },
     queues: {
       trigger_events_by_status: triggerEventStatus,
-      channel_events_by_status: channelEventStatus,
-      queued_total: queuedTriggerEvents + queuedChannelEvents,
+      queued_total: queuedTriggerEvents,
     },
     audit: {
       events_24h: audit24h,

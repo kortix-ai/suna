@@ -3,13 +3,14 @@
 import { use, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { GitBranch, Loader2, MoreHorizontal, Play, Plus, Trash2 } from 'lucide-react';
+import { GitBranch, Loader2, MoreHorizontal, Play, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
   createProjectSession,
   deleteProjectSession,
   listProjectSessions,
+  restartProjectSession,
   type ProjectSession,
   type ProjectSessionStatus,
 } from '@/lib/projects-client';
@@ -50,13 +51,17 @@ const STATUS_TONE: Record<ProjectSessionStatus, string> = {
 function SessionRow({
   session,
   onOpen,
+  onRestart,
   onDelete,
   deleting,
+  restarting,
 }: {
   session: ProjectSession;
   onOpen: () => void;
+  onRestart: () => void;
   onDelete: () => void;
   deleting: boolean;
+  restarting: boolean;
 }) {
   const shortId = session.session_id.slice(0, 8);
   return (
@@ -97,6 +102,14 @@ function SessionRow({
             <Play className="h-3.5 w-3.5" />
             Open
           </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={onRestart}
+            disabled={restarting}
+            className="gap-2"
+          >
+            {restarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+            Restart
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={onDelete}
@@ -121,6 +134,7 @@ export default function ProjectSessionsPage({
   const router = useRouter();
   const queryClient = useQueryClient();
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [restartingId, setRestartingId] = useState<string | null>(null);
 
   const sessionsQuery = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -151,6 +165,19 @@ export default function ProjectSessionsPage({
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to delete session');
+    },
+  });
+
+  const restartMutation = useMutation({
+    mutationFn: (sessionId: string) => restartProjectSession(projectId, sessionId),
+    onMutate: (sessionId) => setRestartingId(sessionId),
+    onSettled: () => setRestartingId(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      toast.success('Restarting session…');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to restart session');
     },
   });
 
@@ -232,8 +259,10 @@ export default function ProjectSessionsPage({
               key={session.session_id}
               session={session}
               onOpen={() => router.push(`/projects/${projectId}/sessions/${session.session_id}`)}
+              onRestart={() => restartMutation.mutate(session.session_id)}
               onDelete={() => deleteMutation.mutate(session.session_id)}
               deleting={deletingId === session.session_id}
+              restarting={restartingId === session.session_id}
             />
           ))}
         </div>

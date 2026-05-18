@@ -100,10 +100,7 @@ run_check api_billing_tests bash -lc '
 run_check api_accounts_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-accounts-contract.test.ts
 run_check api_projects_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-projects-contract.test.ts
 run_check api_project_session_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-session-contract.test.ts
-run_check api_project_connectors_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-connectors.test.ts
-run_check api_session_connectors_router_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-session-connectors-router.test.ts
 run_check api_project_triggers_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-triggers.test.ts
-run_check api_project_channels_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-channels.test.ts
 run_check api_rate_limit_tests bun test apps/api/src/__tests__/e2e-rate-limits.test.ts
 run_check api_proxy_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-preview-proxy.test.ts
 run_check api_audit_tests bun test apps/api/src/__tests__/e2e-audit-events.test.ts
@@ -164,7 +161,13 @@ run_check v1_playwright_spec_guards bash -lc '
     tests/e2e/specs/07-account-deletion-flow.spec.ts \
     tests/e2e/specs/07-account-deletion-unsupported.spec.ts \
     tests/e2e/specs/single-project-paradigm-ui.spec.ts \
-    tests/e2e/specs/_board-screenshot.spec.ts
+    tests/e2e/specs/_board-screenshot.spec.ts \
+    tests/e2e/legacy-specs/05-onboarding-to-dashboard.legacy.ts \
+    tests/e2e/legacy-specs/06-files-scope.legacy.ts \
+    tests/e2e/legacy-specs/07-account-deletion-flow.legacy.ts \
+    tests/e2e/legacy-specs/07-account-deletion-unsupported.legacy.ts \
+    tests/e2e/legacy-specs/single-project-paradigm-ui.legacy.ts \
+    tests/e2e/legacy-specs/_board-screenshot.legacy.ts
   do
     [ ! -e "$legacy_spec" ]
   done
@@ -262,14 +265,10 @@ run_check v1_tree_cleanup_guards bash -lc '
 run_check v1_legacy_web_route_guards bash -lc '
   set -euo pipefail
 
-  grep -q "redirect" apps/web/src/app/admin/instances/page.tsx
-  grep -q "/admin/ops" apps/web/src/app/admin/instances/page.tsx
-  grep -q "redirect" apps/web/src/app/debug/instances/page.tsx
-  grep -q "/projects" apps/web/src/app/debug/instances/page.tsx
+  [ ! -e apps/web/src/app/admin/instances/page.tsx ]
+  [ ! -e apps/web/src/app/debug/instances/page.tsx ]
 
 	  if git grep -n -E "admin/instances|debug/instances|/instances|justavps|InstanceSettingsModal|useAdminSandboxes" -- \
-	    apps/web/src/app/admin/instances/page.tsx \
-	    apps/web/src/app/debug/instances/page.tsx \
 	    apps/web/src/app/admin/_components/admin-sidebar.tsx \
 	    apps/web/src/app/admin/_components/admin-shell.tsx \
 	    apps/web/src/app/admin/page.tsx

@@ -26,9 +26,6 @@ const AnnouncementDialog = lazy(() => import('@/components/announcements/announc
 const RouteChangeTracker = lazy(() => import('@/components/analytics/route-change-tracker').then(mod => ({ default: mod.RouteChangeTracker })));
 const AuthEventTracker = lazy(() => import('@/components/analytics/auth-event-tracker').then(mod => ({ default: mod.AuthEventTracker })));
 const LocalhostLinkInterceptor = lazy(() => import('@/components/localhost-link-interceptor').then(mod => ({ default: mod.LocalhostLinkInterceptor })));
-// Not lazy — wraps {children} so it must be available for SSR to avoid hydration mismatch
-import { IntegrationConnectProvider } from '@/components/integrations/integration-connect-provider';
-
 
 export const viewport: Viewport = {
   themeColor: [
@@ -278,9 +275,7 @@ export default async function RootLayout({
           <AuthProvider>
             <I18nProvider>
               <ReactQueryProvider>
-                <IntegrationConnectProvider>
-                  {children}
-                </IntegrationConnectProvider>
+                {children}
                 <Toaster />
               </ReactQueryProvider>
             </I18nProvider>

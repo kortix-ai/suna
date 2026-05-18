@@ -1,4 +1,6 @@
 import { backendApi } from '@/lib/api-client';
+import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
+import { getEnv } from '@/lib/env-config';
 
 export interface KortixProject {
   project_id: string;
@@ -186,6 +188,64 @@ export interface ProjectSecret {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProjectExecutorTool {
+  tool_id: string;
+  connection_id: string;
+  account_id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  input_schema: Record<string, unknown>;
+  implementation: Record<string, unknown>;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectExecutorSource {
+  connection_id: string;
+  account_id: string;
+  project_id: string;
+  name: string;
+  source_type: 'static' | 'mcp' | 'openapi' | 'graphql' | 'pipedream' | string;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  tools: ProjectExecutorTool[];
+}
+
+export interface ProjectExecutorCatalogApp {
+  slug: string;
+  name: string;
+  description?: string;
+  imgSrc?: string;
+  authType?: string;
+  categories: string[];
+  featuredWeight?: number;
+}
+
+export interface ProjectExecutorAppsResponse {
+  apps: ProjectExecutorCatalogApp[];
+  pageInfo: {
+    totalCount: number;
+    count: number;
+    endCursor?: string;
+    hasMore: boolean;
+  };
+}
+
+export interface ProjectExecutorConnectToken {
+  token: string;
+  expiresAt: string;
+  connectUrl?: string;
+}
+
+export interface ProjectExecutorSourcesResponse {
+  items: ProjectExecutorSource[];
 }
 
 function unwrap<T>(response: { data?: T; success: boolean; error?: Error }) {
@@ -378,6 +438,107 @@ export async function deleteProjectSecret(projectId: string, name: string) {
   );
 }
 
+export async function listProjectExecutorApps(
+  projectId: string,
+  options?: { q?: string; cursor?: string; limit?: number },
+) {
+  const params = new URLSearchParams();
+  if (options?.q) params.set('q', options.q);
+  if (options?.cursor) params.set('cursor', options.cursor);
+  if (options?.limit) params.set('limit', String(options.limit));
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return unwrap(
+    await backendApi.get<ProjectExecutorAppsResponse>(
+      `/projects/${projectId}/executor/apps${query}`,
+    ),
+  );
+}
+
+export async function createProjectExecutorConnectToken(projectId: string, app: string) {
+  return unwrap(
+    await backendApi.post<ProjectExecutorConnectToken>(
+      `/projects/${projectId}/executor/apps/${encodeURIComponent(app)}/connect-token`,
+      {},
+    ),
+  );
+}
+
+export async function syncProjectExecutorPipedream(projectId: string) {
+  return unwrap(
+    await backendApi.post<{ synced: number; items: ProjectExecutorSource[] }>(
+      `/projects/${projectId}/executor/pipedream/sync`,
+      {},
+    ),
+  );
+}
+
+export async function listProjectExecutorSources(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectExecutorSourcesResponse>(`/projects/${projectId}/executor/sources`),
+  );
+}
+
+export async function createProjectExecutorSource(
+  projectId: string,
+  input: {
+    name: string;
+    source_type?: 'static' | 'mcp' | 'openapi' | 'graphql' | 'pipedream';
+    config?: Record<string, unknown>;
+    tool_name?: string;
+    tool_description?: string;
+    input_schema?: Record<string, unknown>;
+    implementation?: Record<string, unknown>;
+  },
+) {
+  return unwrap(
+    await backendApi.post<ProjectExecutorSource>(`/projects/${projectId}/executor/sources`, input),
+  );
+}
+
+export async function createProjectExecutorTool(
+  projectId: string,
+  sourceId: string,
+  input: {
+    name: string;
+    description?: string;
+    input_schema?: Record<string, unknown>;
+    implementation?: Record<string, unknown>;
+    enabled?: boolean;
+  },
+) {
+  return unwrap(
+    await backendApi.post<ProjectExecutorTool>(
+      `/projects/${projectId}/executor/sources/${sourceId}/tools`,
+      input,
+    ),
+  );
+}
+
+export async function updateProjectExecutorSource(
+  projectId: string,
+  sourceId: string,
+  input: {
+    name?: string;
+    config?: Record<string, unknown>;
+    enabled?: boolean;
+  },
+) {
+  return unwrap(
+    await backendApi.patch<ProjectExecutorSource>(
+      `/projects/${projectId}/executor/sources/${sourceId}`,
+      input,
+    ),
+  );
+}
+
+export async function deleteProjectExecutorSource(projectId: string, sourceId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/projects/${projectId}/executor/sources/${sourceId}`,
+    ),
+  );
+}
+
 export async function listProjectFiles(
   projectId: string,
   options?: { ref?: string; path?: string },
@@ -399,6 +560,35 @@ export async function readProjectFile(
   return unwrap(await backendApi.get<{ path: string; ref: string; content: string }>(
     `/projects/${projectId}/files/content?${params.toString()}`,
   ));
+}
+
+/**
+ * Fetch a binary zip archive of a project repo (or subtree) as a Blob.
+ *
+ * Uses the same auth as `backendApi` but bypasses its JSON-only unwrap so we
+ * can stream `application/zip` directly.
+ */
+export async function fetchProjectArchive(
+  projectId: string,
+  ref: string,
+  path?: string,
+): Promise<Blob> {
+  const params = new URLSearchParams();
+  if (ref) params.set('ref', ref);
+  if (path) params.set('path', path);
+  const query = params.toString() ? `?${params.toString()}` : '';
+
+  const token = await getSupabaseAccessTokenWithRetry();
+  const url = `${getEnv().BACKEND_URL || ''}/projects/${projectId}/files/archive${query}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Failed to download (HTTP ${res.status})`);
+  }
+  return await res.blob();
 }
 
 // ---------------------------------------------------------------------------

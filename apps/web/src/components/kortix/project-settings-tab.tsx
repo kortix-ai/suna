@@ -15,16 +15,14 @@
  */
 
 import { type ComponentType } from 'react';
-import { Users, KeyRound, Zap, LayoutGrid, Radio, Plug } from 'lucide-react';
+import { Users, KeyRound, Zap, LayoutGrid } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TeamTab } from './team-tab';
 import { CredentialsTab } from './credentials-tab';
 import { TriggersTab } from './triggers-tab';
-import { ChannelsTab } from './channels-tab';
-import { ConnectorsTab } from './connectors-tab';
 import { TicketSettingsTab } from './ticket-settings-tab';
 
-export type SettingsSection = 'team' | 'credentials' | 'triggers' | 'channels' | 'connectors' | 'board';
+export type SettingsSection = 'team' | 'credentials' | 'triggers' | 'board';
 
 /**
  * Controlled component: parent owns the section state so it survives
@@ -53,8 +51,6 @@ export function ProjectSettingsTab({
           <SectionPill active={section === 'team'} onClick={() => setSection('team')} icon={Users} label="Team" />
           <SectionPill active={section === 'credentials'} onClick={() => setSection('credentials')} icon={KeyRound} label="Credentials" />
           <SectionPill active={section === 'triggers'} onClick={() => setSection('triggers')} icon={Zap} label="Triggers" />
-          <SectionPill active={section === 'channels'} onClick={() => setSection('channels')} icon={Radio} label="Channels" />
-          <SectionPill active={section === 'connectors'} onClick={() => setSection('connectors')} icon={Plug} label="Connectors" />
           <SectionPill active={section === 'board'} onClick={() => setSection('board')} icon={LayoutGrid} label="Board" />
         </div>
       </div>
@@ -65,8 +61,6 @@ export function ProjectSettingsTab({
         {section === 'triggers' && (
           <TriggersTab projectId={projectId} projectPath={projectPath ?? ''} />
         )}
-        {section === 'channels' && <ChannelsTab projectId={projectId} />}
-        {section === 'connectors' && <ConnectorsTab projectId={projectId} />}
         {section === 'board' && <TicketSettingsTab projectId={projectId} />}
       </div>
     </div>

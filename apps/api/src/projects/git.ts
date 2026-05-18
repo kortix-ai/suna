@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
@@ -159,6 +159,62 @@ export async function readRepoFile(project: GitBackedProject, filePath: string, 
   const treeRef = ref || project.defaultBranch;
   const result = await runGit(['show', `${treeRef}:${normalized}`], repoPath, false);
   return result.stdout;
+}
+
+/**
+ * Stream a zip archive of the repo (or a subtree) at the given ref.
+ *
+ * Uses `git archive --format=zip` so the work happens server-side and the
+ * client just downloads the bytes — no client-side zipping required.
+ * When `path` is null, archives the whole tree; otherwise archives the
+ * subtree at that path with the subtree as the zip root.
+ */
+export async function archiveRepoSubtree(
+  project: GitBackedProject,
+  ref: string | undefined,
+  path?: string | null,
+): Promise<ReadableStream<Uint8Array>> {
+  const repoPath = await refreshMirror(project);
+  const treeRef = ref || project.defaultBranch;
+  const normalized = path ? normalizeTreePath(path) : null;
+  const treeish = normalized ? `${treeRef}:${normalized}` : treeRef;
+
+  const proc = spawn('git', ['archive', '--format=zip', treeish], {
+    cwd: repoPath,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  });
+
+  let stderr = '';
+  proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      proc.stdout.on('data', (chunk: Buffer) => {
+        controller.enqueue(new Uint8Array(chunk));
+      });
+      proc.stdout.on('end', () => {
+        // Wait for process exit before closing so we can surface non-zero exits.
+        if (proc.exitCode === null) {
+          proc.once('close', (code) => {
+            if (code !== 0) {
+              controller.error(new Error(stderr.trim() || `git archive exited ${code}`));
+            } else {
+              controller.close();
+            }
+          });
+        } else if (proc.exitCode !== 0) {
+          controller.error(new Error(stderr.trim() || `git archive exited ${proc.exitCode}`));
+        } else {
+          controller.close();
+        }
+      });
+      proc.stdout.on('error', (err) => controller.error(err));
+      proc.on('error', (err) => controller.error(err));
+    },
+    cancel() {
+      try { proc.kill(); } catch { /* ignore */ }
+    },
+  });
 }
 
 export async function createRemoteSessionBranch(

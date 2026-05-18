@@ -4,10 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Clock,
-  ExternalLink,
-  GitBranch,
-  Github,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -38,11 +34,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
-function repoSlug(repoUrl: string) {
-  const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
-  return cleaned.split(/[/:]/).filter(Boolean).slice(-2).join('/');
-}
-
 function relativeTime(input: string) {
   const date = new Date(input);
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -58,10 +49,13 @@ function relativeTime(input: string) {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-function repoAvatar(repoUrl: string) {
-  const slug = repoSlug(repoUrl);
-  const ch = slug.split('/').pop()?.[0]?.toUpperCase() || 'K';
-  return ch;
+function projectInitial(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return 'K';
+  // First letter of each of the first two words, or first two letters.
+  const words = trimmed.split(/[\s_\-./]+/).filter(Boolean);
+  if (words.length >= 2) return (words[0]![0]! + words[1]![0]!).toUpperCase();
+  return trimmed.slice(0, 2).toUpperCase();
 }
 
 function ProjectCard({
@@ -75,85 +69,62 @@ function ProjectCard({
   onArchive: () => void;
   archiving: boolean;
 }) {
-  const slug = repoSlug(project.repo_url);
   const updatedLabel = relativeTime(project.updated_at);
   const canManageProject = project.effective_project_role === 'manager' || !project.effective_project_role;
 
   return (
     <div
       className={cn(
-        'group relative flex flex-col rounded-xl border border-border/70 bg-card transition-all',
-        'hover:border-foreground/30 hover:shadow-sm',
+        'group relative flex flex-col rounded-2xl border border-border/60 bg-card',
+        'transition-all duration-150 hover:border-foreground/20 hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.12)]',
       )}
     >
       <button
         type="button"
         onClick={onOpen}
-        className="flex flex-1 flex-col items-start gap-3 p-5 text-left focus-visible:outline-none"
+        className="flex flex-1 flex-col items-start gap-4 p-5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-2xl"
       >
-        <div className="flex w-full items-start gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background text-sm font-semibold text-foreground">
-            {repoAvatar(project.repo_url)}
+        <div className="flex w-full items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-muted/40 text-sm font-semibold text-foreground">
+            {projectInitial(project.name)}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <h3 className="truncate text-sm font-semibold text-foreground">{project.name}</h3>
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Github className="h-3 w-3" />
-              <span className="truncate font-mono">{slug}</span>
-            </div>
+            <h3 className="truncate text-[15px] font-semibold leading-tight text-foreground">
+              {project.name}
+            </h3>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              Updated {updatedLabel}
+            </p>
           </div>
         </div>
       </button>
 
-      <div className="flex items-center justify-between gap-2 border-t border-border/60 px-5 py-2.5 text-xs text-muted-foreground">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="flex items-center gap-1">
-            <GitBranch className="h-3 w-3" />
-            <span className="font-mono truncate">{project.default_branch}</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            {updatedLabel}
-          </span>
-        </div>
+      <div className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+              className="h-7 w-7 rounded-md bg-background/80 backdrop-blur text-muted-foreground hover:bg-background hover:text-foreground"
               onClick={(e) => e.stopPropagation()}
+              aria-label="Project actions"
             >
               <MoreHorizontal className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onSelect={onOpen}>
-              Open project
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => {
-                if (typeof window !== 'undefined') {
-                  const url = project.repo_url
-                    .replace(/\.git$/, '')
-                    .replace(/^git@github\.com:/, 'https://github.com/');
-                  window.open(url, '_blank', 'noopener,noreferrer');
-                }
-              }}
-              className="gap-2"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              View on GitHub
-            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onOpen}>Open project</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={onArchive}
               disabled={archiving || !canManageProject}
               className="gap-2 text-destructive focus:text-destructive"
             >
-              {archiving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              {archiving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
               Archive
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -241,45 +212,49 @@ export default function ProjectsPage() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <AppHeader user={user} />
-      <main className="flex-1 px-4 py-8">
-        <div className="mx-auto w-full max-w-6xl space-y-6">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Projects</h1>
-            <p className="text-sm text-muted-foreground">
-              Every project is one Git repo. Sessions branch off it.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search projects..."
-                className="pl-9"
-              />
+      <main className="flex-1 px-4 py-10 sm:py-12">
+        <div className="mx-auto w-full max-w-6xl space-y-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-1">
+              <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
+                Projects
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Your workspaces, one place. Pick up where you left off.
+              </p>
             </div>
-            <Button
-              onClick={() => setModalOpen(true)}
-              disabled={!selectedAccountId || !canCreateProjects}
-              className="gap-1.5"
-            >
-              <Plus className="h-4 w-4" />
-              Add new
-            </Button>
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <div className="relative flex-1 sm:w-72">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search projects..."
+                  className="h-9 pl-9 text-sm"
+                />
+              </div>
+              <Button
+                onClick={() => setModalOpen(true)}
+                disabled={!selectedAccountId || !canCreateProjects}
+                size="sm"
+                className="h-9 gap-1.5"
+              >
+                <Plus className="h-4 w-4" />
+                New project
+              </Button>
+            </div>
           </div>
 
           {projectsQuery.isLoading && (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-36 rounded-xl" />
+                <Skeleton key={i} className="h-[92px] rounded-2xl" />
               ))}
             </div>
           )}
 
           {projectsQuery.isError && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
               <p className="text-sm font-medium text-destructive">Failed to load projects</p>
               <p className="mt-1 text-xs text-destructive/80">
                 {(projectsQuery.error as Error).message}
@@ -291,28 +266,31 @@ export default function ProjectsPage() {
           )}
 
           {showEmptyState && (
-            <div className="rounded-xl border border-dashed border-border/70 bg-card/40 p-12 text-center">
-              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-border/70 bg-card">
-                <Github className="h-5 w-5 text-muted-foreground" />
+            <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 px-6 py-16 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-muted/40 text-base font-semibold text-foreground">
+                K
               </div>
-              <h2 className="mt-4 text-base font-semibold text-foreground">No projects yet</h2>
+              <h2 className="mt-5 text-base font-semibold text-foreground">
+                Create your first project
+              </h2>
               <p className="mx-auto mt-1.5 max-w-md text-sm text-muted-foreground">
-                Connect any Git repo as a Kortix project. The repo becomes the source of truth for
-                agents, skills, triggers, and persistent files.
+                A project is a workspace for one company or idea. We&apos;ll set it up in seconds — no
+                Git account required.
               </p>
               <Button
                 onClick={() => setModalOpen(true)}
                 disabled={!selectedAccountId || !canCreateProjects}
-                className="mt-5 gap-1.5"
+                size="sm"
+                className="mt-6 h-9 gap-1.5"
               >
                 <Plus className="h-4 w-4" />
-                Add new project
+                New project
               </Button>
             </div>
           )}
 
           {showNoResults && (
-            <div className="rounded-xl border border-dashed border-border/70 bg-card/40 p-10 text-center">
+            <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-10 text-center">
               <Search className="mx-auto h-5 w-5 text-muted-foreground" />
               <h2 className="mt-3 text-sm font-medium text-foreground">No matches for &ldquo;{query}&rdquo;</h2>
               <p className="mt-1 text-xs text-muted-foreground">Try a different search term.</p>

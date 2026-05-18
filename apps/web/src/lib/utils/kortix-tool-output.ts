@@ -159,7 +159,6 @@ export interface ConnectorGetData {
 	name: string;
 	description: string;
 	source: string;
-	pipedream_slug?: string;
 	env?: string;
 	notes?: string;
 }
@@ -170,7 +169,6 @@ export function parseConnectorGetOutput(output: string): ConnectorGetData | null
 	const nameMatch = output.match(/^name:\s*(.+)$/m);
 	const descriptionMatch = output.match(/^description:\s*(.+)$/m);
 	const sourceMatch = output.match(/^source:\s*(.+)$/m);
-	const pipedreamSlugMatch = output.match(/^pipedream_slug:\s*(.+)$/m);
 	const envMatch = output.match(/^env:\s*(.+)$/m);
 	const notesMatch = output.match(/^notes:\s*\n([\s\S]*?)$/);
 
@@ -180,7 +178,6 @@ export function parseConnectorGetOutput(output: string): ConnectorGetData | null
 		name: nameMatch[1].trim(),
 		description: descriptionMatch?.[1].trim() || '',
 		source: sourceMatch?.[1].trim() || 'unknown',
-		pipedream_slug: pipedreamSlugMatch?.[1].trim(),
 		env: envMatch?.[1].trim(),
 		notes: notesMatch?.[1].trim(),
 	};

@@ -11,7 +11,6 @@
  *  - Endpoint enumeration
  *  - Rate limiting on sensitive endpoints
  *  - Response header security
- *  - Integration endpoint auth bypass
  *  - Webhook signature verification bypass
  */
 
@@ -27,8 +26,6 @@ const CLOUD_API_BASE = 'https://computer-preview-api.kortix.com';
 const AUTHENTICATED_ENDPOINTS = [
   { method: 'GET', path: '/v1/accounts', auth: 'supabase' },
   { method: 'GET', path: '/v1/user-roles', auth: 'supabase' },
-  { method: 'GET', path: '/v1/integrations/connections', auth: 'supabase' },
-  { method: 'GET', path: '/v1/integrations/apps', auth: 'supabase' },
   { method: 'GET', path: '/v1/providers', auth: 'combined' },
   { method: 'GET', path: '/v1/secrets', auth: 'combined' },
   { method: 'GET', path: '/v1/servers', auth: 'combined' },
@@ -77,33 +74,6 @@ describe('Security Audit: Cloud API Security', () => {
       expect(adminEndpoints.length).toBeGreaterThan(0);
       for (const ep of adminEndpoints) {
         expect(ep.path).toContain('/admin');
-      }
-    });
-
-    test('integration browser endpoints use supabase auth', () => {
-      const integrationEndpoints = AUTHENTICATED_ENDPOINTS.filter(
-        e => e.path.startsWith('/v1/integrations/connections') || e.path.startsWith('/v1/integrations/apps')
-      );
-      for (const ep of integrationEndpoints) {
-        expect(ep.auth).toBe('supabase');
-      }
-    });
-
-    test('integration agent endpoints use apiKey auth', () => {
-      // Token, proxy, list, actions, run-action, connect, search-apps, triggers
-      const agentEndpoints = [
-        '/v1/integrations/token',
-        '/v1/integrations/proxy',
-        '/v1/integrations/list',
-        '/v1/integrations/actions',
-        '/v1/integrations/run-action',
-        '/v1/integrations/connect',
-        '/v1/integrations/search-apps',
-        '/v1/integrations/triggers',
-      ];
-      for (const path of agentEndpoints) {
-        // These should use apiKeyAuth per integrations/index.ts
-        expect(path.startsWith('/v1/integrations/')).toBe(true);
       }
     });
 

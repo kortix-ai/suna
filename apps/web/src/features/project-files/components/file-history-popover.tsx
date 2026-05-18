@@ -120,11 +120,20 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
     setTimeout(() => setCopied(false), 2000);
   }, [commit.hash]);
 
+  const toggle = () => setExpanded((v) => !v);
   return (
     <div className={cn('rounded-lg border overflow-hidden transition-colors', expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60')}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-start gap-2 w-full px-2.5 py-2 text-left cursor-pointer hover:bg-muted/20"
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggle();
+          }
+        }}
+        className="flex items-start gap-2 w-full px-2.5 py-2 text-left cursor-pointer hover:bg-muted/20 outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         <div className="flex items-center gap-1 mt-0.5 shrink-0">
           {expanded ? <ChevronDown className="size-3 text-muted-foreground/50" /> : <ChevronRight className="size-3 text-muted-foreground/50" />}
@@ -153,7 +162,7 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
           {copied ? <Check className="size-2.5 text-emerald-500" /> : <Copy className="size-2.5" />}
           {commit.shortHash}
         </Button>
-      </button>
+      </div>
       {expanded && <CompactCommitDiff filePath={filePath} commitHash={commit.hash} />}
     </div>
   );

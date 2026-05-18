@@ -23,8 +23,6 @@ import {
   LayoutDashboard,
   Blocks,
   FolderOpen,
-  Plug,
-  MessageSquare,
   Calendar,
   ScrollText,
   Brain,
@@ -396,16 +394,6 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/scheduled-tasks',
   },
   {
-    id: 'channels',
-    label: 'Channels',
-    icon: MessageSquare,
-    group: 'navigation',
-    subGroup: 'services',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/channels',
-  },
-  {
     id: 'tunnel',
     label: 'Tunnel',
     icon: Cable,
@@ -414,16 +402,6 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['rightSidebar'],
     kind: 'navigate',
     href: '/tunnel',
-  },
-  {
-    id: 'connectors',
-    label: 'Connectors',
-    icon: Plug,
-    group: 'navigation',
-    subGroup: 'services',
-    showIn: ['commandPalette', 'rightSidebar'],
-    kind: 'navigate',
-    href: '/connectors',
   },
   ...(DEPLOYMENTS_ENABLED
     ? [{

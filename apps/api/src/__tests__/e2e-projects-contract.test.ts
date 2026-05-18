@@ -10,6 +10,7 @@ const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const OTHER_PROJECT_ID = '00000000-0000-4000-a000-000000000202';
 const NEW_PROJECT_ID = '00000000-0000-4000-a000-000000000203';
+const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
 type AccountRole = 'owner' | 'admin' | 'member';
 type ProjectRole = 'manager' | 'editor' | 'viewer';
@@ -62,6 +63,17 @@ let nextProjectId: string;
 let commitCalls: any[];
 let listRepoFileCalls: any[];
 let readRepoFileCalls: any[];
+let archiveCalls: any[];
+
+function setCurrentUser(userId: string, userEmail: string) {
+  currentUserId = userId;
+  currentUserEmail = userEmail;
+  (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
+}
+
+function getTestAuth() {
+  return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: currentUserId, userEmail: currentUserEmail };
+}
 
 function projectRow(overrides: Partial<ProjectRow> = {}): ProjectRow {
   return {
@@ -81,8 +93,7 @@ function projectRow(overrides: Partial<ProjectRow> = {}): ProjectRow {
 }
 
 function resetState() {
-  currentUserId = OWNER_ID;
-  currentUserEmail = 'owner@example.test';
+  setCurrentUser(OWNER_ID, 'owner@example.test');
   accountMemberRows = [
     { userId: OWNER_ID, accountId: ACCOUNT_ID, accountRole: 'owner', joinedAt: baseDate },
     { userId: MEMBER_ID, accountId: ACCOUNT_ID, accountRole: 'member', joinedAt: baseDate },
@@ -106,6 +117,7 @@ function resetState() {
   commitCalls = [];
   listRepoFileCalls = [];
   readRepoFileCalls = [];
+  archiveCalls = [];
 }
 
 function collectConditionValues(condition: unknown): Record<string, unknown> {
@@ -232,8 +244,9 @@ function grantProjectRole(values: any, set?: Partial<ProjectMemberRow>) {
 
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
-    c.set('userId', currentUserId);
-    c.set('userEmail', currentUserEmail);
+    const auth = getTestAuth();
+    c.set('userId', auth.userId);
+    c.set('userEmail', auth.userEmail);
     await next();
   },
 }));
@@ -246,16 +259,36 @@ mock.module('../projects/git', () => ({
   },
   loadProjectConfig: async (_project: ProjectRow, files: typeof repoFiles) => ({
     manifest: { project: { name: 'Existing Project' }, env: { required: ['DATABASE_URL'] } },
+    env: { required: ['DATABASE_URL'], optional: [] },
     opencode: { agents: ['default'], skills: ['git-workflow'], files: files.map((file) => file.path) },
   }),
   readRepoFile: async (project: ProjectRow, path: string, ref: string) => {
     readRepoFileCalls.push({ projectId: project.projectId, path, ref });
     return `content:${path}@${ref}`;
   },
+  archiveRepoSubtree: async (project: ProjectRow, ref: string, path?: string | null) => {
+    archiveCalls.push({ projectId: project.projectId, ref, path: path ?? null });
+    // git archive --format=zip outputs binary; emit a tiny readable stream
+    // so the route can pipe a real Response back to the test.
+    const body = new TextEncoder().encode(`zip:${project.projectId}:${ref}:${path ?? ''}`);
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(body);
+        controller.close();
+      },
+    });
+  },
+  listBranches: async () => [],
+  listCommits: async () => ({ entries: [], nextCursor: null }),
+  getCommit: async () => null,
+  getCommitDiff: async () => null,
+  getFileHistory: async () => ({ entries: [], nextCursor: null }),
+  invalidateProjectMirror: () => {},
 }));
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  deleteFile: async () => undefined,
   commitFile: async (input: any) => {
     commitCalls.push(input);
   },
@@ -429,8 +462,7 @@ describe('projects API contract', () => {
       createdAt: baseDate,
       updatedAt: baseDate,
     });
-    currentUserId = MEMBER_ID;
-    currentUserEmail = 'member@example.test';
+    setCurrentUser(MEMBER_ID, 'member@example.test');
 
     res = await app.request(`/v1/projects?account_id=${ACCOUNT_ID}`);
     expect(res.status).toBe(200);
@@ -478,6 +510,68 @@ describe('projects API contract', () => {
     const read = await app.request(`/v1/projects/${PROJECT_ID}`);
     expect(read.status).toBe(200);
     expect(projectRows.find((project) => project.projectId === PROJECT_ID)?.lastOpenedAt).toBeInstanceOf(Date);
+  });
+
+  test('streams a zip archive of the repo / subtree', async () => {
+    const app = createApp();
+
+    // No path → archives the whole tree at the default branch.
+    const root = await app.request(`/v1/projects/${PROJECT_ID}/files/archive`);
+    expect(root.status).toBe(200);
+    expect(root.headers.get('content-type')).toBe('application/zip');
+    expect(root.headers.get('content-disposition')).toBe('attachment; filename="workspace.zip"');
+    expect(await root.text()).toBe(`zip:${PROJECT_ID}:main:`);
+    expect(archiveCalls.at(-1)).toEqual({ projectId: PROJECT_ID, ref: 'main', path: null });
+
+    // ref + subtree path → archives just that subtree, filename derived from path.
+    const subtree = await app.request(
+      `/v1/projects/${PROJECT_ID}/files/archive?ref=dev&path=.opencode/agents`,
+    );
+    expect(subtree.status).toBe(200);
+    expect(subtree.headers.get('content-type')).toBe('application/zip');
+    expect(subtree.headers.get('content-disposition')).toBe('attachment; filename="agents.zip"');
+    expect(await subtree.text()).toBe(`zip:${PROJECT_ID}:dev:.opencode/agents`);
+    expect(archiveCalls.at(-1)).toEqual({
+      projectId: PROJECT_ID,
+      ref: 'dev',
+      path: '.opencode/agents',
+    });
+
+    // Absolute / workspace-prefixed paths are rejected (the UI must strip them).
+    // archiveRepoSubtree throws via normalizeTreePath; route surfaces a 400.
+    mock.module('../projects/git', () => ({
+      createRemoteSessionBranch: async () => undefined,
+      listRepoFiles: async () => repoFiles,
+      loadProjectConfig: async () => ({ manifest: {}, env: { required: [], optional: [] }, opencode: {} }),
+      readRepoFile: async () => '',
+      archiveRepoSubtree: async (_p: any, _r: string, path?: string | null) => {
+        if (path && path.startsWith('/')) throw new Error('Invalid path');
+        const body = new TextEncoder().encode('ok');
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(body);
+            controller.close();
+          },
+        });
+      },
+      listBranches: async () => [],
+      listCommits: async () => ({ entries: [], nextCursor: null }),
+      getCommit: async () => null,
+      getCommitDiff: async () => null,
+      getFileHistory: async () => ({ entries: [], nextCursor: null }),
+      invalidateProjectMirror: () => {},
+    }));
+
+    const bad = await app.request(`/v1/projects/${PROJECT_ID}/files/archive?path=%2Fworkspace`);
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: 'Invalid path' });
+  });
+
+  test('archive endpoint denies users without read access', async () => {
+    const app = createApp();
+    setCurrentUser(OUTSIDER_ID, 'outsider@example.test');
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/files/archive`);
+    expect(res.status).toBe(403);
   });
 
   test('patches only project config fields and archives projects', async () => {
@@ -603,13 +697,11 @@ describe('projects API contract', () => {
 
   test('denies non-members and project viewers from manager-only operations', async () => {
     const app = createApp();
-    currentUserId = OUTSIDER_ID;
-    currentUserEmail = 'outsider@example.test';
+    setCurrentUser(OUTSIDER_ID, 'outsider@example.test');
     const outsider = await app.request(`/v1/projects/${PROJECT_ID}/files`);
     expect(outsider.status).toBe(403);
 
-    currentUserId = MEMBER_ID;
-    currentUserEmail = 'member@example.test';
+    setCurrentUser(MEMBER_ID, 'member@example.test');
     projectMemberRows.push({
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,

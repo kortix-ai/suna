@@ -67,8 +67,6 @@ const PROTECTED_ROUTES = [
   '/sessions',
   '/terminal',
   '/files',
-  '/channels',
-  '/integrations',
   '/tunnel',
   '/scheduled-tasks',
   '/commands',
@@ -126,10 +124,6 @@ describe('Security Audit: Frontend Middleware', () => {
 
     test('terminal is protected', () => {
       expect(isProtectedRoute('/terminal')).toBe(true);
-    });
-
-    test('integrations is protected', () => {
-      expect(isProtectedRoute('/integrations')).toBe(true);
     });
 
     test('auth pages are public', () => {

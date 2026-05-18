@@ -29,7 +29,7 @@ The target is production-ready Kortix. The steps below are dependency gates towa
 | **4. Secure cloud operation** | Production secrets and provider ownership are not hacks. | Project secrets, LLM router, GitHub App install/token flow, branch GC, idle hibernation, no human PAT dependency for repo creation. |
 | **5. Production hardening** | The system can be handed to unknown users without manual babysitting. | Billing correctness, audit events, usage events, rate limits, observability dashboards, migration dry-run/apply, provider failure recovery, support/admin tooling. |
 
-Triggers, project connectors, and channels are now part of Gate 5 because webhook-fired sessions, external-tool execution, and chat ingress are production surfaces. Memory v2, egress proxy, and groups stay outside the first production-ready core unless the launch offer explicitly includes them; if promoted, they need tests and operational ownership before launch.
+Triggers, project connectors, channels, Cloud Vault, and the cloud authorization gateway are now part of Gate 5 because webhook-fired sessions, external-tool execution, chat ingress, LLM profiles, and third-party account access are production surfaces. Memory v2 and full network egress proxying stay outside the first production-ready core unless the launch offer explicitly includes them; if promoted, they need tests and operational ownership before launch.
 
 ---
 
@@ -43,8 +43,8 @@ Account
 Project
   ├── name, repo_url, default_branch
   ├── members (User × ProjectRole)  roles: manager | editor | viewer
-  ├── secrets         (scope: runtime | llm_provider | connector)
-  ├── connectors      (per-provider OAuth state)
+  ├── vault bindings  (env vars, LLM profiles, OAuth/API credentials)
+  ├── connectors      (MCP/OpenAPI/GraphQL/Pipedream/native sources)
   ├── triggers        (cron + webhook)
   ├── channels        (slack / telegram / msteams app installations)
   └── sessions (1..N)
@@ -68,7 +68,7 @@ SessionSandbox
 - **`external_id` is separate** — it's the provider's identifier for the underlying compute (Daytona's workspace UUID, a Docker container id, etc.). The sandbox proxy at `/v1/p/<external_id>/8000/*` uses `external_id`, NOT `sandbox_id`. Don't conflate them.
 - A session has exactly one sandbox at a time. Re-running creates a new session (with a new UUID and new branch).
 - A project has exactly one default branch (usually `main`); session branches fork from `default_branch`.
-- Secrets never appear in git. Connectors never appear in git. Both live in the cloud DB, encrypted at rest, injected as env vars (or proxied via the cloud router) at sandbox-create time.
+- Secrets never appear in git. Connectors never appear in git. Secret material, OAuth refresh tokens, LLM auth profiles, connector accounts, and Cloudflare credentials live in Cloud Vault or an external credential backend. The sandbox receives only explicitly scoped env vars and short-lived capability tokens for the LLM router and MCP integration gateway.
 
 ---
 
@@ -129,9 +129,9 @@ packages/agent-tunnel            HMAC-signed tunnel relay (cloud ↔ local).
 **Parked / experimental** — present in the tree but not on the v1 critical path:
 - `apps/desktop` — Tauri shell. Not a separate product architecture. It may wrap the web app later.
 - `apps/mobile` — Expo shell. Not source of truth. It currently has legacy `/instances` and provider assumptions; rewrite against the web/API contract before parity.
-- `apps/kortix-v0` — exploratory web rebuild. Not the shipped surface.
 
 Deleted from the v1 workspace path:
+- `apps/kortix-v0` — exploratory web rebuild. It was not the shipped surface and was removed from the workspace.
 - `packages/voice` — Python + Vapi config. It did not belong in the JS workspace release line.
 - `packages/kortix-ocx-registry` — empty directory.
 
@@ -273,16 +273,15 @@ Provider selection happens in `POST /v1/projects/:projectId/sessions { provider 
 
 ### 3.7 Secrets
 
-**Decision: cloud-stored, env-var-injected at create-time.** No mid-session rotation in v1. No git storage even encrypted (we keep secrets out of the repo entirely).
+**Decision: Cloud Vault is the target. `project_secrets` is the current runtime-env compatibility layer.** No git storage even encrypted. No OAuth refresh tokens or connector credentials in sandbox env by default.
 
-DB (new):
+Current DB:
 ```sql
 kortix.project_secrets (
   secret_id    uuid PK,
-  project_id   uuid FK → projects,
+  project_id   uuid FK -> projects,
   name         varchar(64),    -- env var name
-  value_enc    bytea,           -- AES-256-GCM with project-scoped DEK
-  scope        enum('runtime', 'llm_provider', 'connector'),
+  value_enc    text,           -- AES-256-GCM envelope via API_KEY_SECRET HKDF
   created_by   uuid,
   created_at   timestamptz,
   updated_at   timestamptz,
@@ -292,19 +291,26 @@ kortix.project_secrets (
 
 API:
 - `GET /v1/projects/:id/secrets` — list (names only, values never returned in plaintext).
-- `POST /v1/projects/:id/secrets { name, value, scope }` — upsert. Owner/admin only.
+- `POST /v1/projects/:id/secrets { name, value }` — upsert. Account owner/admin only.
 - `DELETE /v1/projects/:id/secrets/:name`.
 
-Sandbox-create flow injects all `scope='runtime'` secrets as env vars alongside `KORTIX_*`. The daemon does not read or expose them.
+Sandbox-create flow currently injects project secrets as env vars alongside `KORTIX_*`. `KORTIX_*` names are reserved and rejected so users cannot shadow platform runtime variables. The daemon does not read or expose secret values.
 
-**Egress concern (future):** an egress proxy that intercepts outbound HTTPS, validates the destination, and substitutes a real secret value at the network layer — so the agent never holds the secret in process memory. Out of scope v1.
+Target model:
+- All API keys, OAuth token sets, LLM auth profiles, connector accounts, Pipedream refs, Cloudflare tokens, webhook secrets, and env vars live in Cloud Vault.
+- A vault item can be private, project-shared, account-shared, group-shared, or custom-granted.
+- `use` never implies `reveal`.
+- A session receives only the vault items selected and authorized at launch.
+- Connector/OAuth/Cloudflare/LLM credentials are normally used through the cloud router or a future Executor-backed MCP bridge, not injected as raw env vars.
 
 ### 3.8 LLM providers
 
-**Single-token model, with eyes open about the tradeoffs.** The sandbox carries **one** Kortix token and a base URL. The cloud router does provider key lookup + upstream proxying.
+**Single-token router model, with auth profiles.** The sandbox carries **one** Kortix LLM token and a base URL. The cloud router resolves the selected LLM authentication profile server-side.
 
-- Cloud stores per-account/per-project provider keys (Anthropic, OpenAI, etc.) in `project_secrets` with `scope='llm_provider'`.
+- Today, the session LLM router resolves `OPENROUTER_API_KEY` from project secrets and proxies OpenRouter-compatible chat completions.
+- Target: Cloud Vault stores account/project/user LLM auth profiles for API keys, OpenRouter keys, ChatGPT/Codex OAuth-style profiles, Copilot-style profiles, Bedrock/Vertex/Azure credentials, and future providers.
 - At sandbox-create, the API generates a short-lived `KORTIX_LLM_TOKEN` (HMAC-signed JWT scoped to that session) and injects it + `KORTIX_LLM_BASE_URL=https://<api>/v1/router/llm`.
+- The chat/model selector chooses `model_provider + model + auth_profile`, so the same model can run against a personal profile, project profile, or account profile.
 - The starter `opencode.jsonc` declares:
   ```json
   {
@@ -319,6 +325,7 @@ Sandbox-create flow injects all `scope='runtime'` secrets as env vars alongside 
   }
   ```
 - The router (`apps/api/src/router/llm/*`) authenticates the token → resolves the user/account/project → looks up the real upstream key → proxies the call → bills usage.
+- ChatGPT/Codex and other OAuth-backed profiles are provider-specific auth profiles, not regular env vars. Their refresh material stays server-side and can be shared as `use` without revealing tokens.
 
 **Why:** sandbox holds zero real provider secrets. Sandbox tools (bash, web) can't exfiltrate keys. One token to rotate. Centralized usage tracking. Provider abstraction — agents say "claude-sonnet"; we pick the upstream.
 
@@ -340,28 +347,16 @@ But the alternative has a real argument and may come back if router latency beco
 
 ### 3.9 Connectors / Integrations
 
-Same model as LLM providers — **single-token, cloud-router-proxied**:
+Reserved for rebuild behind `@kortix/executor-bridge`. The previous project connector and Pipedream Connect implementation has been removed from the API, database schema, setup scripts, and web settings flow because it was the wrong abstraction to keep carrying through the refactor.
 
-- DB: `kortix.project_connectors (connector_id, account_id, project_id, provider_name, app, provider_account_id, status, metadata, created_at, updated_at)`. Provider = `slack`, `notion`, `linear`, `gmail`, `pipedream`, etc. The row binds a project to a provider account; it is not per-sandbox state.
-- Managed Pipedream Connect flow creates provider accounts, then `POST /v1/projects/:id/connectors/sync` or `POST /v1/projects/:id/connectors` binds those accounts to a project. Direct provider OAuth callbacks can use the same table and store token envelopes in `project_secrets` with `scope='connector'`.
-- Sandbox gets `KORTIX_CONNECTOR_TOKEN` + `KORTIX_CONNECTOR_BASE_URL`.
-- One MCP server inside the sandbox image — `kortix-connectors` — that exposes every connected integration as MCP tools, routed through the cloud connector proxy. Agents see "Notion / Linear / Slack" tools; the daemon doesn't know which integrations are wired.
-- One connector token unlocks the full connected integration suite for that session. The cloud connector router resolves which tools are actually available based on account/project policy before executing anything.
-- The MCP server is a thin executor surface, not a token store. It calls the cloud connector router with the session-scoped connector token; raw OAuth tokens never enter the sandbox.
-- Policies: per-account provider allowlist, per-project enable/disable, and session-scope filtering at session create time. Per-user/per-group policy comes later with groups.
+Replacement model:
+- Connector sources are `mcp | openapi | graphql | pipedream | native | cloudflare`.
+- Connector accounts are Vault-backed OAuth/API-key profiles with user/group/project/account grants.
+- Sessions will receive an Executor MCP bridge URL/token only after the bridge is implemented and proven end-to-end.
+- The future bridge authorizes every tool call, resolves credentials server-side, applies policies, creates approval requests when required, and writes audit events.
+- Pipedream is a backend for managed auth, API proxy, and hosted MCP, not the Kortix permission source of truth.
 
-Implemented API surface:
-- Project management: `GET/POST/PATCH/DELETE /v1/projects/:id/connectors`, `POST /v1/projects/:id/connectors/connect-token`, `POST /v1/projects/:id/connectors/oauth/start`, `POST /v1/projects/:id/connectors/sync`, `GET /v1/projects/:id/connectors/apps`.
-- Direct OAuth: `GET /v1/connectors/oauth/callback` exchanges configured provider OAuth codes into encrypted `project_secrets` token envelopes and binds `project_connectors`; `GET /v1/connectors/oauth/relay` only redirects to explicitly allowlisted self-host origins.
-- Sandbox router: `GET /v1/router/connectors/list`, `GET /v1/router/connectors/search-apps`, `GET /v1/router/connectors/actions`, `POST /v1/router/connectors/proxy`, `POST /v1/router/connectors/run-action`.
-
-Pipedream stays as one of many provider impls behind the connector layer; it's not a special case in the architecture.
-
-**Self-host OAuth caveat (not glossed over)**: Slack/Notion/etc. limit redirect URLs per app to a small number (Slack: 5). The "self-host = same code" story doesn't survive every customer pointing the same OAuth app at their own callback. Two paths:
-- **Cloud OAuth proxy**: self-hosts route OAuth callbacks through `kortix.com/v1/connectors/oauth/relay` even when the rest of their stack is on-prem. Pro: every customer uses one app registration. Con: self-host requires cloud reachability for OAuth flows, which violates the "air-gapped self-host" promise.
-- **Customer-registered apps**: each self-host customer registers their own OAuth apps with Slack/Notion/etc. Pro: truly self-contained. Con: meaningful onboarding friction; we'd ship a setup wizard.
-
-Current implementation ships both the managed Pipedream Connect path and a configured direct OAuth path. Direct non-Pipedream OAuth uses **cloud OAuth proxy / callback** first; air-gapped customers still get the customer-registered-app wizard later.
+There is intentionally no active connector/gateway API surface until the replacement connector model lands behind `@kortix/executor-bridge`.
 
 ### 3.10 Triggers
 
@@ -408,23 +403,7 @@ API surface:
 
 ### 3.11 Channels
 
-A **channel** is a special-case trigger that installs a chat app (Slack/Telegram/MS Teams) which feeds messages into Kortix sessions.
-
-Anatomy of a Slack channel installation:
-1. User clicks "Connect Slack" → OAuth dance on cloud → app installed in their workspace.
-2. Cloud stores Slack tokens in `project_secrets`. Webhook URL is registered with Slack to point at `https://<api>/v1/channels/slack/<channel_id>/events`.
-3. When a message comes in: cloud receives webhook → looks up the channel's project + agent → `POST /v1/projects/:id/sessions { agent_name, initial_prompt: "<the slack message>" }`.
-4. The session boots; the agent has a `kslack` CLI tool in the sandbox image that posts replies back to the same Slack channel using the stored tokens (proxied via the connector layer — does NOT see raw tokens).
-
-Same shape for Telegram (`ktelegram`), MS Teams, Discord, future.
-
-DB: `kortix.project_channels` — same project-scoped ownership model as connectors, but purpose-built for chat ingress.
-
-Implemented shape:
-- DB: `kortix.project_channels` stores the project-owned channel install, platform, external chat channel id, agent, prompt template, status, and non-public config. `kortix.project_channel_events` records every accepted event, rendered prompt, session id, queue/fail state, and payload.
-- Project API: `GET/POST/PATCH/DELETE /v1/projects/:id/channels`, `GET /v1/projects/:id/channels/:channel_id/events`, `POST /v1/projects/:id/channels/connect-token` for managed provider OAuth links, and `POST /v1/projects/:id/channels/oauth/start` for direct OAuth-backed chat apps.
-- Public event API: `POST /v1/channels/:platform/:channel_id/events`, with fail-closed secret enforcement, Slack signature support, Telegram secret-token support, and generic `X-Kortix-Signature` / `X-Hub-Signature-256` HMAC fallback.
-- Event fire path reuses the normal session creation helper. Backpressure queues channel events instead of spawning unbounded sessions. Channel secrets are never echoed in CRUD responses.
+Reserved for rebuild under the same authorization gateway. A channel installation is a connector account plus an ingress policy. A channel event is an external actor that may start a session only with the resources granted to that channel or trigger. The previous channel implementation has been removed from the API and schema. The left sidebar keeps a Channels entry as a product placeholder, but there is intentionally no active `/v1/projects/:id/channels` or public `/v1/channels/:platform/:channel_id/events` surface until channel ingress is redesigned.
 
 ### 3.12 Agents / Skills / Commands / Tools
 
@@ -454,19 +433,22 @@ The boundary: anything that's *content* (skills, knowledge, examples) lives in g
 
 ### 3.14 Permissions, Groups, Scopes
 
-**Decision: in v1, account roles + project roles are enough. Groups + per-resource scoping come later when a real customer asks.**
+**Decision: account/project roles are the baseline; groups, resource grants, policies, and session launch scopes are now the target enterprise authorization layer.**
 
 Today:
 - Account-level: `owner | admin | member`.
 - Project-level: `manager | editor | viewer`. Account managers get implicit `manager` on every project.
 - Sandbox-level scoping: the user who owns the session can interact with that sandbox. Other project members can list/view sessions but can't run prompts in someone else's session.
-- Secret/connector scope in v1 is project-level. A session can receive the project's enabled runtime secrets and connector token if the actor has `editor`+ access. Anything more granular requires the future group/policy model.
+- Secret scope today is project-level and account owner/admin managed. A session currently receives project env secrets at create-time.
 
-Future (`v2`):
+Target:
 - Groups inside an account.
-- Per-agent/per-skill/per-trigger scoping by group.
-- Per-connector scoping (group X can use Slack, group Y can't).
-- Network egress policies per group (block / allow domains).
+- Resource grants for users, groups, account roles, project roles, agents, skills, triggers, channels, sessions, and API clients.
+- Per-agent/per-skill/per-trigger/per-channel scoping.
+- Per-secret, per-auth-profile, per-connector, per-Cloudflare-resource scoping.
+- Session launch scoping for which secrets/connectors/auth profiles/cloud resources enter the session capability token.
+- Human approval policies for sensitive agent actions.
+- Network egress policies after the integration gateway exists.
 
 ### 3.15 Network egress
 
@@ -637,16 +619,14 @@ Already implemented:
 - `GET/POST/DELETE /v1/projects/:id/secrets` (§3.7).
 - `GET/POST/PATCH/DELETE /v1/projects/:id/sessions`, `GET /v1/projects/:id/sessions/:sid/sandbox`.
 - `GET/POST/PATCH/DELETE /v1/projects/:id/triggers`, `POST /v1/webhooks/:trigger_id`, cron trigger sweeps, and `kortix.project_trigger_events` queue/fired/failed tracking (§3.10, §3.17).
-- `GET/POST/PATCH/DELETE /v1/projects/:id/channels`, `POST /v1/projects/:id/channels/oauth/start`, `GET /v1/projects/:id/channels/:channel_id/events`, `POST /v1/channels/:platform/:channel_id/events`, and `kortix.project_channel_events` queue/fired/failed tracking (§3.11, §3.17).
 - `/v1/p/<external_id>/8000/*` — sandbox proxy.
 - `/v1/router/*` — search + legacy router proxies.
 - `/v1/router/llm/*` — session-scoped LLM router (§3.8).
-- `GET/POST/PATCH/DELETE /v1/projects/:id/connectors/*` + `/v1/router/connectors/*` + `/v1/connectors/oauth/*` — project-scoped connector management, direct OAuth callback/relay, and session-scoped cloud connector execution (§3.9).
 - `kortix.audit_events` and `kortix.usage_events` tables. State-changing `/v1/*` requests write audit rows; `/v1/router/llm/chat/completions` writes usage rows for streaming and non-streaming calls.
 - Rate/abuse controls for account session caps, session LLM router buckets, invite acceptance throttles, and sandbox proxy caps (§3.17).
 
 To add (in order):
-1. None in this SPEC section. Add new items only when implementation exposes a production blocker, and ship them with tests.
+1. Executor bridge runtime behind `@kortix/executor-bridge`: source registration, scoped credential resolution, session MCP issuance, approval policy evaluation, and audit logs. Ship each slice with API contract tests and cross-account denial tests.
 
 ---
 
@@ -657,8 +637,8 @@ To add (in order):
 | Identity | Supabase managed | Self-deployed Supabase |
 | Billing | Stripe | Disabled |
 | Sandbox provider | `daytona` default | `local_docker` default |
-| LLM router | `/v1/router/llm` with cloud-stored provider keys | Same router code, points at the user's own provider keys in their cloud secrets |
-| Connectors | Cloud-side OAuth | Same — self-host runs the full API including OAuth callbacks |
+| LLM router | `/v1/router/llm` with Cloud Vault auth profiles | Same router code, points at the user's own Vault items |
+| Connectors | Cloud-side authorization gateway + OAuth/Vault/Pipedream backends | Same API and gateway, backed by self-host credential storage |
 | Triggers cron | Cloud-side scheduler | Same — `SCHEDULER_ENABLED=true` in the user's deployment |
 | Egress proxy | Cloud-side | Optional |
 
@@ -701,8 +681,7 @@ Migration is not a standing compatibility mode:
 - Mobile + desktop parity beyond the current webview shell.
 - Marketplace / templates ("Shadcn-style add files to existing projects").
 - Memory engine (§3.13 v2).
-- Groups, per-resource scoping, advanced policies (§3.14 v2).
-- Egress proxy + network policies (§3.15).
+- Full network egress proxying (§3.15). Gateway-level connector authorization lands first.
 - Multiple sandbox templates per project (one Dockerfile per project for now).
 - Apps concept (Fly.io-style persistent services declared in `kortix.toml`).
 - Sandbox engine pluggability beyond Docker — WASM, Firecracker, microVMs (`docker_sbx` is the first non-Docker path).
@@ -719,7 +698,9 @@ Migration is not a standing compatibility mode:
 - **Sandbox Agent Server** — the daemon (`apps/kortix-sandbox-agent-server`) that runs inside every sandbox. Wraps opencode.
 - **Sandbox Image** — the Docker image (`apps/sandbox`) that bundles the daemon + opencode + git.
 - **Daemon health** — `GET /kortix/health` on port 8000. The only Kortix-specific endpoint inside the sandbox.
-- **Cloud router** — `/v1/router/*` on the API. Proxies LLM calls + connector calls so secrets never reach the sandbox.
+- **Cloud router** — `/v1/router/*` on the API. Proxies LLM calls so provider secrets do not need to reach the sandbox.
+- **Cloud Vault** — encrypted resource store for env vars, API keys, OAuth token sets, LLM auth profiles, connector accounts, webhook secrets, and Cloudflare tokens.
+- **Integration gateway** — cloud-side MCP gateway that exposes only authorized tools/connectors to a session and resolves credentials server-side.
 - **Trigger** — cron or webhook event that fires a session.
 - **Channel** — chat-app installation (Slack/Telegram/MS Teams) that pipes messages to sessions. Special-case of trigger + connector.
 - **Connector** — third-party integration (Notion/Linear/Gmail/…) the agent can call. Cloud-managed, proxied via the connector layer.

@@ -46,6 +46,7 @@ test-results/
 *.tmp
 *.temp
 .cache/
+example-project/
 
 # Next.js
 .vercel/

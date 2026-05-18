@@ -89,14 +89,6 @@ write_env "apps/api/.env" \
   "$(kv DAYTONA_SERVER_URL)" \
   "$(kv DAYTONA_TARGET)" \
   "" \
-  "# Integrations / Pipedream" \
-  "$(kv INTEGRATION_AUTH_PROVIDER pipedream)" \
-  "$(kv PIPEDREAM_CLIENT_ID)" \
-  "$(kv PIPEDREAM_CLIENT_SECRET)" \
-  "$(kv PIPEDREAM_PROJECT_ID)" \
-  "$(kv PIPEDREAM_ENVIRONMENT development)" \
-  "$(kv PIPEDREAM_WEBHOOK_SECRET)" \
-  "" \
   "# Scheduler / Cron" \
   "$(kv SCHEDULER_ENABLED true)" \
   "$(kv CRON_TICK_SECRET)" \

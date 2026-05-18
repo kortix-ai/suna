@@ -4,17 +4,13 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   LayoutGrid,
   List,
-  Search,
   Upload,
   FolderPlus,
   FilePlus,
   Plus,
   ArrowUpDown,
-  Eye,
-  EyeOff,
   RefreshCw,
   ChevronRight,
-  ChevronDown,
   Home,
   Download,
   GitCommitHorizontal,
@@ -31,8 +27,7 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import { useFilesStore } from '../store/files-store';
-import { useCurrentProject } from '../hooks';
-import { useInvalidateFileList } from '../hooks/use-file-list';
+import { useFileList } from '../hooks/use-file-list';
 import { cn } from '@/lib/utils';
 import type { SortField } from '../store/files-store';
 import { VersionSelector } from './version-selector';
@@ -80,12 +75,9 @@ export function DriveToolbar({
   const sortOrder = useFilesStore((s) => s.sortOrder);
   const setSortBy = useFilesStore((s) => s.setSortBy);
   const toggleSortOrder = useFilesStore((s) => s.toggleSortOrder);
-  const showHidden = useFilesStore((s) => s.showHidden);
-  const toggleHidden = useFilesStore((s) => s.toggleHidden);
-  const toggleSearch = useFilesStore((s) => s.toggleSearch);
   const rootPath = useFilesStore((s) => s.rootPath);
 
-  const invalidateFileList = useInvalidateFileList();
+  const { refetch: refetchFiles, isFetching } = useFileList(currentPath);
 
   // Home destination: rootPath when sandboxed, otherwise /workspace
   const homePath = rootPath || '/workspace';
@@ -259,8 +251,6 @@ export function DriveToolbar({
             <DropdownMenuLabel className="text-xs text-muted-foreground">Sort by</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as SortField)}>
               <DropdownMenuRadioItem value="name">Name</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="modified">Last modified</DropdownMenuRadioItem>
-              <DropdownMenuRadioItem value="size">File size</DropdownMenuRadioItem>
               <DropdownMenuRadioItem value="type">Type</DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
@@ -271,40 +261,17 @@ export function DriveToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            'h-8 w-8 hover:text-foreground',
-            showHidden ? 'text-foreground' : 'text-muted-foreground',
-          )}
-          onClick={toggleHidden}
-          title={showHidden ? 'Hide dotfiles' : 'Show dotfiles'}
-        >
-          {showHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-        </Button>
-
         <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
 
-        {/* Search / refresh group */}
         <Button
           variant="ghost"
           size="icon"
           className="h-8 w-8 text-muted-foreground hover:text-foreground"
-          onClick={toggleSearch}
-          title="Search files (Ctrl+P)"
-        >
-          <Search className="h-4 w-4" />
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
-          onClick={() => invalidateFileList()}
+          onClick={() => refetchFiles()}
+          disabled={isFetching}
           title="Refresh"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className={cn('h-4 w-4', isFetching && 'animate-spin')} />
         </Button>
 
         {/* Download dir */}

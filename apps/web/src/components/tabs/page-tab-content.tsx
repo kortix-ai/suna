@@ -46,18 +46,6 @@ const TriggersPage = lazy(() =>
 	})),
 );
 
-const ChannelsPage = lazy(() =>
-	import('@/components/channels/channels-page').then((m) => ({
-		default: m.ChannelsPage,
-	})),
-);
-
-const IntegrationsPage = lazy(() =>
-	import('@/components/integrations/integrations-page').then((m) => ({
-		default: m.IntegrationsPage,
-	})),
-);
-
 const TunnelOverviewPage = lazy(() =>
 	import('@/components/tunnel/tunnel-overview').then((m) => ({
 		default: m.TunnelOverview,
@@ -129,8 +117,6 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/agents': WorkspacePage,
 	// Extra pages not in original ROUTE_MAP but exist as routes
 	'/scheduled-tasks': TriggersPage,
-	'/channels': ChannelsPage,
-	'/connectors': IntegrationsPage,
 	'/files': FilesPage,
 	'/board': BoardPage,
 	'/tunnel': TunnelOverviewPage,

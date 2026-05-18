@@ -103,18 +103,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     type: 'page',
     href: '/scheduled-tasks',
   },
-  '/channels': {
-    id: 'page:/channels',
-    title: 'Channels',
-    type: 'page',
-    href: '/channels',
-  },
-  '/connectors': {
-    id: 'page:/connectors',
-    title: 'Connectors',
-    type: 'page',
-    href: '/connectors',
-  },
   '/files': {
     id: 'page:/files',
     title: 'Files',

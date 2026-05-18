@@ -4,7 +4,7 @@
  * Kortix <PageShell> — the one layout wrapper every management page uses.
  *
  * Standardises max-width, horizontal padding, and scroll behavior so the
- * /triggers, /channels, /tunnel, /connectors, project About tab, etc. all
+ * /triggers, /tunnel, project About tab, etc. all
  * inherit the exact same rhythm.
  *
  * Pick a width via the `width` prop:
@@ -24,7 +24,7 @@ type Width = 'reading' | 'default' | 'wide' | 'full';
 
 // Widths align with the canonical Kortix container. The
 // `default` width matches the `container mx-auto max-w-7xl` used across
-// /scheduled-tasks, /channels, /tunnel, /connectors so PageShell-based
+// /scheduled-tasks and /tunnel so PageShell-based
 // surfaces stack under the same rhythm as the rest of the app.
 const WIDTH_CLASS: Record<Width, string> = {
   reading: 'max-w-[720px]',
