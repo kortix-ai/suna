@@ -18,6 +18,7 @@ import { db } from '../../shared/db';
 import { createApiKey } from '../../repositories/api-keys';
 import {
   getProvider,
+  type CreateSandboxOpts,
   type ProviderName,
 } from '../providers';
 import {
@@ -27,6 +28,8 @@ import {
   retrySandboxProvisionCreate,
   SANDBOX_INIT_MAX_ATTEMPTS,
 } from './sandbox-init-state';
+import { getOrBuildSnapshot, SnapshotBuildError } from '../../snapshots/builder';
+import type { GitBackedProject } from '../../projects/git';
 
 export interface ProvisionSessionSandboxResult {
   row: typeof sessionSandboxes.$inferSelect;
@@ -48,6 +51,18 @@ export async function provisionSessionSandbox(opts: {
    * them (e.g. `KORTIX_PROJECT_REPO_URL`, `KORTIX_PROJECT_BRANCH`).
    */
   extraEnvVars?: Record<string, string>;
+  /**
+   * When present, the per-project snapshot builder runs before provider
+   * create so the session boots from a Dockerfile-built image instead of
+   * the shared platform default. Caller supplies the GitBackedProject
+   * (cheap — just the fields already loaded for the session); the
+   * builder handles caching + lazy build.
+   *
+   * `baseRef` pins the build to a commit; when omitted, defaults to
+   * `gitProject.defaultBranch`.
+   */
+  gitProject?: GitBackedProject;
+  baseRef?: string;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   // Sessions intentionally bypass the legacy "default provider" — they
@@ -88,7 +103,7 @@ export async function provisionSessionSandbox(opts: {
   });
 
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const providerCreateInput = {
+  const providerCreateInput: CreateSandboxOpts = {
     accountId,
     userId,
     name: sandboxName,
@@ -105,6 +120,37 @@ export async function provisionSessionSandbox(opts: {
   void (async () => {
     let bgExternalId: string | null = null;
     try {
+      // Per-project snapshot resolution. Daytona-only for v1 — local
+      // docker still uses the shared platform image. When the builder
+      // throws (build failed, project mis-configured), we surface a
+      // clear error on the session row and abort.
+      if (opts.gitProject && providerName === 'daytona') {
+        try {
+          const resolution = await getOrBuildSnapshot(opts.gitProject, {
+            ref: opts.baseRef,
+            accountId,
+          });
+          providerCreateInput.snapshot = resolution.daytonaName;
+          console.log(
+            `[session-sandbox] Resolved snapshot for ${sandbox.sandboxId}: ` +
+            `${resolution.daytonaName} (commit ${resolution.commitSha.slice(0, 8)}, ` +
+            `${resolution.built ? 'built' : 'cached'})`,
+          );
+        } catch (snapErr) {
+          if (snapErr instanceof SnapshotBuildError) {
+            throw snapErr;
+          }
+          // Anything else — log + fall through to the shared default.
+          // This keeps a transient builder bug from making every session
+          // unbootable until we can patch it.
+          console.warn(
+            `[session-sandbox] Snapshot resolution errored for ${sandbox.sandboxId}, ` +
+            `falling back to shared snapshot:`,
+            snapErr,
+          );
+        }
+      }
+
       const firstStage = provider.provisioning.stages[0];
       const { result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
         onAttemptStart: async (attempt) => {

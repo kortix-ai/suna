@@ -162,6 +162,97 @@ export async function readRepoFile(project: GitBackedProject, filePath: string, 
 }
 
 /**
+ * Resolve a ref (branch name, tag, "HEAD") to a full 40-char commit SHA.
+ * Used by the snapshot builder to pin a build to a specific commit even
+ * when the default branch moves underneath it.
+ */
+export async function resolveCommitSha(project: GitBackedProject, ref?: string): Promise<string> {
+  const repoPath = await refreshMirror(project);
+  const treeRef = ref || project.defaultBranch;
+  const result = await runGit(['rev-parse', '--verify', `${treeRef}^{commit}`], repoPath, false);
+  const sha = result.stdout.trim();
+  if (!/^[0-9a-f]{40}$/.test(sha)) {
+    throw new Error(`Unexpected git rev-parse output for ${treeRef}: ${sha}`);
+  }
+  return sha;
+}
+
+/**
+ * Get the tree OID for a subtree at a given commit. This is git's own
+ * content-addressed hash of every file under that path — perfect input
+ * for snapshot cache invalidation: same files → same tree OID → same
+ * snapshot. When `contextPath` is null/`.`/empty, returns the commit's
+ * root tree OID.
+ */
+export async function resolveTreeOid(
+  project: GitBackedProject,
+  ref: string,
+  contextPath?: string | null,
+): Promise<string> {
+  const repoPath = await refreshMirror(project);
+  const normalized = normalizeTreePath(contextPath);
+  if (!normalized) {
+    // Root tree of the commit.
+    const result = await runGit(['rev-parse', `${ref}^{tree}`], repoPath, false);
+    const oid = result.stdout.trim();
+    if (!/^[0-9a-f]{40}$/.test(oid)) {
+      throw new Error(`Unexpected tree OID for ${ref}: ${oid}`);
+    }
+    return oid;
+  }
+  // ls-tree of the parent, parse the entry for normalized's basename.
+  const result = await runGit(['ls-tree', ref, '--', normalized], repoPath, false);
+  const line = result.stdout.split('\n').find((l) => l.trim());
+  if (!line) throw new Error(`Path "${normalized}" not found at ${ref}`);
+  const match = line.match(/^\d+\s+(tree|blob)\s+([0-9a-f]{40})\t/);
+  if (!match) throw new Error(`Unparseable ls-tree line: ${line}`);
+  return match[2]!;
+}
+
+/**
+ * Materialize a subtree of the repo at a commit into a fresh local
+ * directory — the snapshot builder feeds this to Daytona's Image API
+ * which expects a local Dockerfile + context. Streams via `git archive`
+ * piped into `tar -x` so it's fast and doesn't litter intermediate
+ * working trees on the mirror.
+ *
+ * Returns the absolute path where the context was extracted. Caller is
+ * responsible for `rm -rf`ing it when done.
+ */
+export async function materializeRepoContext(
+  project: GitBackedProject,
+  ref: string,
+  contextPath?: string | null,
+): Promise<string> {
+  const repoPath = await refreshMirror(project);
+  const normalized = normalizeTreePath(contextPath);
+  const treeish = normalized ? `${ref}:${normalized}` : ref;
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const target = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-snap-'));
+
+  await new Promise<void>((resolve, reject) => {
+    const archive = spawn('git', ['archive', '--format=tar', treeish], {
+      cwd: repoPath,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    });
+    const extract = spawn('tar', ['-x', '-C', target], { stdio: ['pipe', 'inherit', 'inherit'] });
+    let archiveErr = '';
+    archive.stderr.on('data', (b: Buffer) => { archiveErr += b.toString(); });
+    archive.stdout.pipe(extract.stdin);
+    archive.on('error', reject);
+    extract.on('error', reject);
+    extract.on('close', (code) => {
+      if (code === 0 && archive.exitCode === 0) resolve();
+      else reject(new Error(archiveErr.trim() || `archive/extract exit code ${code}`));
+    });
+  });
+
+  return target;
+}
+
+/**
  * Stream a zip archive of the repo (or a subtree) at the given ref.
  *
  * Uses `git archive --format=zip` so the work happens server-side and the

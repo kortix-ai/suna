@@ -24,6 +24,14 @@ export interface CreateSandboxOpts {
   envVars?: Record<string, string>;
   serverType?: string;
   location?: string;
+  /**
+   * Override the provider's default snapshot/image with one built
+   * specifically for this project. The snapshot builder
+   * (apps/api/src/snapshots/builder.ts) populates this when a session
+   * boots; falls back to the provider-wide default when absent (e.g.
+   * for legacy sessions that pre-date per-project builds).
+   */
+  snapshot?: string;
 }
 
 export interface ProvisionResult {

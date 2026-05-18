@@ -36,7 +36,10 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
-    const snapshot = config.DAYTONA_SNAPSHOT;
+    // Per-project snapshot wins; fall back to the shared default for
+    // legacy callers + early-boot sessions that pre-date the per-project
+    // builder.
+    const snapshot = opts.snapshot || config.DAYTONA_SNAPSHOT;
     if (!snapshot) {
       throw new Error('DAYTONA_SNAPSHOT is not configured — set it to the snapshot name (e.g. kortix-sandbox-v0.4.1)');
     }

@@ -94,10 +94,17 @@ WORKDIR /workspace
 ## Snapshot rebuilds
 
 Snapshots are content-addressed: the platform hashes your Dockerfile +
-the build context tree + the pinned opencode version + the kortix-agent
-binary digest. If nothing relevant changed, the same snapshot is reused;
-otherwise a new one is built. In practice that means rebuilds happen on
-every push that touches your Dockerfile (or anything `COPY`'d into it).
+the git tree OID of the build context + a platform runtime fingerprint
+(opencode version + `kortix-agent` binary). If nothing relevant changed,
+the same snapshot is reused; otherwise a new one is built. In practice
+that means rebuilds happen on every push that touches your Dockerfile
+or anything `COPY`'d into it — pure code commits reuse the same snapshot
+for free.
+
+Builds happen Daytona-side via `Image.fromDockerfile`. The first session
+on a brand-new content hash triggers an inline build (a few minutes,
+visible in the dashboard as "preparing image"); subsequent sessions on
+the same content hit the cache instantly.
 
 When you edit the Dockerfile inside a session, the change takes effect
 on the **next** session — current ones keep running the snapshot they
