@@ -1,0 +1,24 @@
+{
+  // OpenCode runtime config. Docs: https://opencode.ai/docs/
+  "$schema": "https://opencode.ai/config.json",
+  "theme": "system",
+  // The default agent is `kortix` — a generic general-knowledge worker.
+  // Edit `.opencode/agents/kortix.md` (or add more agents in that folder).
+  "default_agent": "kortix",
+  // Kortix sessions are already sandboxed (isolated VM, ephemeral branch),
+  // so the agent has full access by default. Tighten per-tool here if you
+  // want a stricter policy. Docs: https://opencode.ai/docs/permissions/
+  "permission": "allow",
+  "provider": {
+    "anthropic": {
+      "npm": "@ai-sdk/anthropic",
+      "env": ["ANTHROPIC_API_KEY"],
+      "options": { "apiKey": "{env:ANTHROPIC_API_KEY}" }
+    },
+    "openai": {
+      "npm": "@ai-sdk/openai",
+      "env": ["OPENAI_API_KEY"],
+      "options": { "apiKey": "{env:OPENAI_API_KEY}" }
+    }
+  }
+}

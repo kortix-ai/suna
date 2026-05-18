@@ -1,21 +1,25 @@
 #!/usr/bin/env bun
+import { runApps } from './commands/apps.ts';
 import { runCreate } from './commands/create.ts';
+import { runInit } from './commands/init.ts';
 
-const HELP = `kortix — create a new Kortix project.
+const HELP = `kortix — scaffold + manage Kortix projects.
 
 Usage:
-  kortix                  Prompt for a project name, then create.
-  kortix <project-name>   Create a project directory with that name.
-  kortix --help           Show this help.
-  kortix --version        Print the CLI version.
+  kortix init [options]            Scaffold the current directory.
+  kortix <project-name> [options]  Create a new directory and scaffold it.
+  kortix apps <subcommand>         List or deploy [[apps]] from kortix.toml.
+  kortix --help                    Show this help.
+  kortix --version                 Print the CLI version.
 
-What it does:
-  1. mkdir <project-name>
-  2. git init -b main
-  3. write kortix.toml, CONTEXT.md, README.md, and .opencode/ (agents, commands, skills)
-  4. git add . && git commit -m "chore: init kortix project"
+Run \`kortix init --help\`, \`kortix apps --help\`, or \`kortix <name> --help\`
+for command-specific options.
 
-Pass --no-commit to skip the initial commit, --no-git to skip git entirely.
+What 'init' does:
+  Drops kortix.toml + Dockerfile + .opencode/ (kortix agent,
+  kortix-system skill, show tool) + README + .gitignore into the
+  current directory. Preserves any existing files (use --overwrite to
+  replace) and runs \`git init\` if the directory isn't already a repo.
 `;
 
 function printVersion(): void {
@@ -29,14 +33,17 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
   }
-  if (argv[0] === 'help') {
+  if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
     process.stdout.write(HELP);
     return 0;
   }
-  if (argv.length === 1 && (argv[0] === '--help' || argv[0] === '-h')) {
-    process.stdout.write(HELP);
-    return 0;
+  if (argv[0] === 'init') {
+    return runInit(argv.slice(1));
   }
+  if (argv[0] === 'apps') {
+    return runApps(argv.slice(1));
+  }
+  // Anything else is the legacy "create new directory" form.
   return runCreate(argv);
 }
 

@@ -1,0 +1,31 @@
+# Kortix project manifest. Source of truth for project-wide config that
+# lives in git alongside the code. `kortix_version` pins the schema so
+# the platform can evolve safely.
+kortix_version = 1
+
+[project]
+name = "{{projectName}}"
+description = "A Kortix project."
+
+# Env vars the runtime needs. Required values must be set in the Kortix
+# Secrets Manager before a session can start.
+[env]
+required = []
+optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
+
+# Sandbox base image. Sessions run from a snapshot built off this
+# Dockerfile — the Kortix snapshot builder always layers the agent
+# daemon + opencode CLI on top automatically. Define whatever workspace
+# tooling you want in the Dockerfile; the Kortix runtime slots in on top.
+[sandbox]
+dockerfile = "Dockerfile"
+context = "."
+
+# Triggers (cron + webhook) live here as `[[triggers]]` entries.
+# Add one from the Kortix UI, or uncomment the example below.
+#
+# [[triggers]]
+# slug = "daily-digest"
+# type = "cron"
+# cron = "0 0 9 * * 1-5"
+# prompt = "Summarize yesterday's commits."
