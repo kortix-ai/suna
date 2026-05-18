@@ -257,6 +257,9 @@ describe('create-repo starter scaffold contract', () => {
     expect(files.map((file) => file.path)).toEqual(SPEC_STARTER_PATHS);
     expect(new Set(files.map((file) => file.path)).size).toBe(SPEC_STARTER_PATHS.length);
     expect(files.every((file) => file.content.trim().length > 0)).toBe(true);
+
+    const agent = files.find((file) => file.path === '.kortix/opencode/agents/kortix.md');
+    expect(agent?.content).not.toContain('permission: allow');
   });
 
   test('manages account GitHub App installation metadata through the project API', async () => {
