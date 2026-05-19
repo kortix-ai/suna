@@ -1,0 +1,314 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@source '../../**/*.{ts,tsx}';
+
+:root {
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.2 0 0);
+
+  --card: oklch(0.97 0 0);
+  --card-foreground: oklch(0.2 0 0);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0 0);
+
+  --primary: oklch(0.2 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.945 0 0);
+  --secondary-foreground: oklch(0.25 0 0);
+
+  --muted: oklch(0.945 0 0);
+  --muted-foreground: oklch(0.48 0 0);
+
+  --accent: oklch(0.92 0 0);
+  --accent-foreground: oklch(0.32 0 0);
+
+  --brand: oklch(0.2 0 0);
+  --brand-foreground: oklch(0.985 0 0);
+  --brand-soft: oklch(0.92 0 0);
+  --brand-soft-foreground: oklch(0.32 0 0);
+
+  --ink: oklch(0.2 0 0);
+  --ink-foreground: oklch(0.985 0 0);
+
+  --destructive: oklch(0.58 0.2 27);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --border: oklch(0 0 0 / 0.1);
+  --input: oklch(0 0 0 / 0.12);
+  --ring: oklch(0.2 0 0 / 0.4);
+
+  --surface: oklch(0.96 0 0);
+  --surface-foreground: oklch(0.2 0 0);
+
+  --sidebar: oklch(0.965 0 0);
+  --sidebar-foreground: oklch(0.3 0 0);
+  --sidebar-primary: oklch(0.2 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.92 0 0);
+  --sidebar-accent-foreground: oklch(0.3 0 0);
+  --sidebar-border: oklch(0 0 0 / 0.06);
+  --sidebar-ring: oklch(0.2 0 0 / 0.4);
+
+  --radius: 1rem;
+
+  --font-sans:
+    var(--font-roobert), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Motion vocabulary — companion to packages/design-system/src/lib/motion.ts.
+     Used by Radix overlays that animate via CSS (can't be wrapped in motion.div). */
+  --motion-duration-fast: 80ms;
+  --motion-duration-moderate: 160ms;
+  --motion-duration-slow: 240ms;
+  --motion-ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+.dark {
+  --background: oklch(0.165 0 0);
+  --foreground: oklch(0.965 0 0);
+
+  --card: oklch(0.2 0 0);
+  --card-foreground: oklch(0.965 0 0);
+
+  --popover: oklch(0.235 0 0);
+  --popover-foreground: oklch(0.965 0 0);
+
+  --primary: oklch(0.965 0 0);
+  --primary-foreground: oklch(0.165 0 0);
+
+  --secondary: oklch(0.245 0 0);
+  --secondary-foreground: oklch(0.965 0 0);
+
+  --muted: oklch(0.225 0 0);
+  --muted-foreground: oklch(0.66 0 0);
+
+  --accent: oklch(0.28 0 0);
+  --accent-foreground: oklch(0.82 0 0);
+
+  --brand: oklch(0.965 0 0);
+  --brand-foreground: oklch(0.165 0 0);
+  --brand-soft: oklch(0.28 0 0);
+  --brand-soft-foreground: oklch(0.82 0 0);
+
+  --ink: oklch(0.965 0 0);
+  --ink-foreground: oklch(0.165 0 0);
+
+  --destructive: oklch(0.66 0.2 27);
+  --destructive-foreground: oklch(0.965 0 0);
+
+  --border: oklch(1 0 0 / 0.07);
+  --input: oklch(1 0 0 / 0.09);
+  --ring: oklch(0.965 0 0 / 0.4);
+
+  --surface: oklch(0.19 0 0);
+  --surface-foreground: oklch(0.965 0 0);
+
+  --sidebar: oklch(0.18 0 0);
+  --sidebar-foreground: oklch(0.78 0 0);
+  --sidebar-primary: oklch(0.965 0 0);
+  --sidebar-primary-foreground: oklch(0.165 0 0);
+  --sidebar-accent: oklch(0.28 0 0);
+  --sidebar-accent-foreground: oklch(0.82 0 0);
+  --sidebar-border: oklch(1 0 0 / 0.06);
+  --sidebar-ring: oklch(0.965 0 0 / 0.4);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-foreground: var(--brand-soft-foreground);
+
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-xs: calc(var(--radius) * 0.375);
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.625);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.25);
+  --radius-2xl: calc(var(--radius) * 1.5);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1,
+      'ss01' 1,
+      'cv11' 1;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-sans;
+    font-feature-settings:
+      'liga' 1,
+      'dlig' 1;
+    letter-spacing: -0.018em;
+  }
+
+  input:focus,
+  input:focus-visible,
+  textarea:focus,
+  textarea:focus-visible,
+  [contenteditable]:focus,
+  [contenteditable]:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+
+  ::selection {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+  }
+}
+
+/* Spring-tune all tw-animate-css enter/exit transitions used by Radix overlays
+   (dropdown, popover, hover-card, tooltip, dialog, sheet, drawer, etc).
+   Enter has a slight overshoot (spring bounce 0.15), exit is critically damped. */
+.animate-in {
+  animation-duration: var(--motion-duration-moderate);
+  animation-timing-function: var(--motion-ease-spring);
+}
+.animate-out {
+  animation-duration: var(--motion-duration-fast);
+  animation-timing-function: var(--motion-ease-in);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-out {
+    animation-duration: 0ms !important;
+  }
+}
+
+@keyframes globe-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes btn-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
+/* Shiki dual-theme: swap token colors with the active theme via CSS vars */
+.shiki-host .shiki,
+.shiki-host .shiki span {
+  color: var(--shiki-light);
+  font-style: var(--shiki-light-font-style);
+  font-weight: var(--shiki-light-font-weight);
+  text-decoration: var(--shiki-light-text-decoration);
+  background-color: transparent !important;
+}
+
+.dark .shiki-host .shiki,
+.dark .shiki-host .shiki span {
+  color: var(--shiki-dark);
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+  text-decoration: var(--shiki-dark-text-decoration);
+  background-color: transparent !important;
+}
+
+/* Sileo inverts toast bg vs app theme — dark-app gets a light toast and vice versa.
+   Force readable contrast at the description root so children inherit a sane color. */
+[data-sileo-viewport][data-theme='dark'] [data-sileo-description] {
+  color: oklch(0.35 0 0) !important; /* dark gray on light toast */
+}
+[data-sileo-viewport][data-theme='light'] [data-sileo-description] {
+  color: oklch(0.85 0 0) !important; /* light gray on dark toast */
+}
+
+/* Theme switch — smooth crossfade between old and new root snapshots. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.45s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  mix-blend-mode: normal;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.01s !important;
+  }
+}
+
+.shiki-host pre.shiki {
+  background-color: transparent !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.shiki-host code {
+  font-family: inherit;
+  font-size: inherit;
+}
