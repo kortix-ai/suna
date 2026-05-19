@@ -1,10 +1,13 @@
 #!/usr/bin/env bun
-import { runApps } from './commands/apps.ts';
 import { runCreate } from './commands/create.ts';
+import { runEnv } from './commands/env.ts';
 import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runProjects } from './commands/projects.ts';
+import { runSecrets } from './commands/secrets.ts';
+import { runSessions } from './commands/sessions.ts';
+import { runTriggers } from './commands/triggers.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { C, header, pad, rule } from './style.ts';
 
@@ -23,7 +26,10 @@ const COMMANDS: readonly Command[] = [
   { name: 'logout', blurb: 'Remove the stored auth token' },
   { name: 'whoami', blurb: 'Show the currently authenticated user' },
   { name: 'projects', args: '<subcommand>', blurb: 'List, link, open Kortix cloud projects' },
-  { name: 'apps', args: '<subcommand>', blurb: 'List or deploy [[apps]] from kortix.toml' },
+  { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
+  { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
+  { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
+  { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
   { name: 'help', blurb: 'Show this help' },
   { name: 'version', blurb: 'Print the CLI version' },
 ] as const;
@@ -43,7 +49,7 @@ function renderHelp(): string {
   }
   lines.push('');
   lines.push(
-    `  ${C.dim}Run${C.reset} ${C.cyan}kortix init --help${C.reset} ${C.dim}or${C.reset} ${C.cyan}kortix apps --help${C.reset} ${C.dim}for command-specific options.${C.reset}`,
+    `  ${C.dim}Run${C.reset} ${C.cyan}kortix <subcommand> --help${C.reset} ${C.dim}for command-specific options.${C.reset}`,
   );
   lines.push('');
   return lines.join('\n');
@@ -71,9 +77,6 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'init') {
     return runInit(argv.slice(1));
   }
-  if (argv[0] === 'apps') {
-    return runApps(argv.slice(1));
-  }
   if (argv[0] === 'login') {
     return runLogin(argv.slice(1));
   }
@@ -85,6 +88,18 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'projects') {
     return runProjects(argv.slice(1));
+  }
+  if (argv[0] === 'secrets') {
+    return runSecrets(argv.slice(1));
+  }
+  if (argv[0] === 'env') {
+    return runEnv(argv.slice(1));
+  }
+  if (argv[0] === 'sessions') {
+    return runSessions(argv.slice(1));
+  }
+  if (argv[0] === 'triggers') {
+    return runTriggers(argv.slice(1));
   }
   // Anything else is the legacy "create new directory" form.
   return runCreate(argv);
