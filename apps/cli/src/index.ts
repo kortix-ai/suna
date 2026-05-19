@@ -8,6 +8,8 @@ import { runProjects } from './commands/projects.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runTriggers } from './commands/triggers.ts';
+import { runUninstall } from './commands/uninstall.ts';
+import { runUpdate } from './commands/update.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { C, header, pad, rule } from './style.ts';
 
@@ -30,6 +32,8 @@ const COMMANDS: readonly Command[] = [
   { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
   { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
   { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
+  { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
+  { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
   { name: 'help', blurb: 'Show this help' },
   { name: 'version', blurb: 'Print the CLI version' },
 ] as const;
@@ -100,6 +104,12 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));
+  }
+  if (argv[0] === 'update') {
+    return runUpdate(argv.slice(1));
+  }
+  if (argv[0] === 'uninstall') {
+    return runUninstall(argv.slice(1));
   }
   // Anything else is the legacy "create new directory" form.
   return runCreate(argv);

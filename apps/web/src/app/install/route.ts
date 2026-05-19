@@ -2,13 +2,23 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
 
+// Serves the Kortix CLI installer. Hit via:
+//   curl -fsSL https://kortix.com/install | bash
+//
+// Looks for `scripts/install.sh` locally first (so dev environments
+// serve the in-tree version), then falls back to fetching it from the
+// `main` branch on GitHub.
+//
+// Browsers hitting this URL (Accept: text/html) get a 302 redirect to
+// the script's GitHub page so a human can review it before running.
+
 const REPO_URL = 'https://github.com/kortix-ai/suna';
-const REPO_SCRIPT_URL = `${REPO_URL}/blob/main/scripts/get-kortix.sh`;
-const RAW_SCRIPT_URL = 'https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/get-kortix.sh';
+const REPO_SCRIPT_URL = `${REPO_URL}/blob/main/scripts/install.sh`;
+const RAW_SCRIPT_URL = 'https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/install.sh';
 const LOCAL_SCRIPT_CANDIDATES = [
-  path.join(process.cwd(), '../../scripts/get-kortix.sh'),
-  path.join(process.cwd(), '../scripts/get-kortix.sh'),
-  path.join(process.cwd(), 'scripts/get-kortix.sh'),
+  path.join(process.cwd(), '../../scripts/install.sh'),
+  path.join(process.cwd(), '../scripts/install.sh'),
+  path.join(process.cwd(), 'scripts/install.sh'),
 ];
 
 function prefersHtml(request: NextRequest): boolean {
