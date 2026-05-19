@@ -36,6 +36,43 @@ Load this skill when the user asks any of:
 If the question is purely about *operating* code (running tests, opening a PR, choosing between `edit` and `write`), you don't need this skill — the agent's own instructions cover that. This skill is the **configuration** reference.
 </when-to-load>
 
+<cli>
+You are running inside a Kortix session sandbox. The **`kortix` CLI**
+is on `$PATH` and pre-authenticated against this exact project — a
+project-scoped token is already injected as `$KORTIX_TOKEN` (also
+`$KORTIX_CLI_TOKEN`) with `$KORTIX_API_URL` pointed at the right host.
+You can run `kortix …` from any shell with zero setup.
+
+**Reach for the CLI** whenever the user asks for something that touches
+Kortix cloud state — not just files in the repo. Examples:
+
+| The user says… | Use… |
+| --- | --- |
+| "list / read project secrets" | `kortix secrets ls` |
+| "set / unset a secret" | `kortix secrets set NAME=VALUE`, `kortix secrets unset NAME` |
+| "pull / push my `.env`" | `kortix env pull`, `kortix env push --from .env` |
+| "what sessions are running right now?" | `kortix sessions ls` |
+| "spawn another session to do X" | `kortix sessions new --prompt "X"` |
+| "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
+| "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
+| "show open change requests" | `kortix cr ls` |
+| "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
+| "deploy the marketing app" | `kortix apps deploy marketing-site` (when `[[apps]]` is enabled) |
+
+**Don't use the CLI for** things `git`, `edit`, `read`, `bash` already
+do (commits, file edits, running tests, local search). The CLI is the
+cloud-state surface; everything else is local.
+
+**Token scope reminder.** `$KORTIX_TOKEN` is project-scoped — it
+cannot enumerate other projects or hit account-level routes. Trying
+`kortix projects ls` from inside the sandbox returns 403; that's
+intentional. Use `kortix projects info` to inspect **this** project.
+
+**Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
+— every command, every flag, every env var, common workflows. Load it
+when you need exact syntax.
+</cli>
+
 <contract>
 The boundary between the two halves of the project:
 
@@ -51,7 +88,7 @@ The platform never reads opencode's config dir; OpenCode never reads `kortix.tom
 
 <references>
 
-<reference path=".kortix/kortix-cli.md">
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md">
   In-depth `kortix` CLI reference. Every subcommand (login, hosts,
   projects, secrets, env, sessions, triggers, cr, init, update,
   uninstall), every flag, every env var the CLI reads. Includes the
@@ -62,7 +99,7 @@ The platform never reads opencode's config dir; OpenCode never reads `kortix.tom
   drive the Kortix cloud from a terminal or agent.
 </reference>
 
-<reference path=".kortix/opencode/skills/kortix-system/references/kortix-toml.md">
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md">
   In-depth `kortix.toml` reference. Every top-level table (`[project]`,
   `[env]`, `[sandbox]`, `[opencode]`), every `[[triggers]]` field (cron +
   webhook), the prompt template variables, the secrets contract, the

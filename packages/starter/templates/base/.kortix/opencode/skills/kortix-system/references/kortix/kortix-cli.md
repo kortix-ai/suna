@@ -11,8 +11,10 @@ sandbox. It is **always available** inside a Kortix session sandbox:
 So you can run `kortix sessions ls` or `kortix secrets set FOO=bar`
 from any shell in the sandbox with no setup.
 
-This document is in-tree under `.kortix/kortix-cli.md`; it travels with
-your repo and is referenced by the `kortix-system` skill.
+This document lives under the `kortix-system` skill at
+`.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
+— it travels with your repo and is loaded on-demand whenever an agent
+needs CLI specifics.
 
 ## Quickstart inside a session
 
