@@ -28,7 +28,7 @@ import {
   retrySandboxProvisionCreate,
   SANDBOX_INIT_MAX_ATTEMPTS,
 } from './sandbox-init-state';
-import { getOrBuildSnapshot, SnapshotBuildError } from '../../snapshots/builder';
+import { getOrBuildSnapshot } from '../../snapshots/builder';
 import type { GitBackedProject } from '../../projects/git';
 
 export interface ProvisionSessionSandboxResult {
@@ -137,12 +137,10 @@ export async function provisionSessionSandbox(opts: {
             `${resolution.built ? 'built' : 'cached'})`,
           );
         } catch (snapErr) {
-          if (snapErr instanceof SnapshotBuildError) {
-            throw snapErr;
-          }
-          // Anything else — log + fall through to the shared default.
-          // This keeps a transient builder bug from making every session
-          // unbootable until we can patch it.
+          // Per-project snapshot building is incomplete (kortix-agent /
+          // kortix-entrypoint binaries aren't injected into the build context
+          // yet — see snapshots/builder.ts). Fall back to the shared
+          // DAYTONA_SNAPSHOT so sessions still boot locally.
           console.warn(
             `[session-sandbox] Snapshot resolution errored for ${sandbox.sandboxId}, ` +
             `falling back to shared snapshot:`,

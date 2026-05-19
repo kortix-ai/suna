@@ -72,6 +72,13 @@ export class DaytonaProvider implements SandboxProvider {
           REPLICATE_API_URL: `${routerBase}/replicate`,
           SERPER_API_URL: `${routerBase}/serper`,
           FIRECRAWL_API_URL: `${routerBase}/firecrawl`,
+          // Forward host LLM provider keys so opencode in the sandbox can talk
+          // to model APIs directly. Only set ones present on the host.
+          ...Object.fromEntries(
+            (['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'XAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GROQ_API_KEY'] as const)
+              .map((k) => [k, process.env[k]])
+              .filter(([, v]) => Boolean(v)),
+          ),
           ...opts.envVars,
         },
         autoStopInterval: 15,
