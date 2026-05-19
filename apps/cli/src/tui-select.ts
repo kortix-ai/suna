@@ -94,7 +94,7 @@ export async function selectFromList<T>(opts: SelectOpts<T>): Promise<T | null> 
       lines.push('');
       const frame = lines.join('\n') + '\n';
       stdout.write(frame);
-      lastFrameLines = countLines(frame);
+      lastFrameLines = countPhysicalRows(frame, stdout.columns);
     }
 
     function cleanup() {
@@ -199,8 +199,23 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.min(Math.max(n, lo), hi);
 }
 
-function countLines(s: string): number {
-  return s.split('\n').length - 1;
+/**
+ * How many physical terminal rows the frame occupies, accounting for
+ * line-wrapping when a logical line is wider than `cols`. Without this
+ * the cursor-up CSI in render() undercounts and leaves the wrapped
+ * portion of previous frames on screen.
+ */
+function countPhysicalRows(s: string, cols: number | undefined): number {
+  const parts = s.split('\n');
+  // Trailing '\n' yields an empty final part — drop it.
+  if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop();
+  if (!cols || cols <= 0) return parts.length;
+  let rows = 0;
+  for (const line of parts) {
+    const w = visibleWidth(line);
+    rows += Math.max(1, Math.ceil(w / cols));
+  }
+  return rows;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,7 +298,7 @@ export async function selectMultiFromList<T>(
       lines.push('');
       const frame = lines.join('\n') + '\n';
       stdout.write(frame);
-      lastFrameLines = countLines(frame);
+      lastFrameLines = countPhysicalRows(frame, stdout.columns);
     }
 
     function cleanup() {
