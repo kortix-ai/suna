@@ -1,8 +1,11 @@
 import { spawnSync } from 'node:child_process';
 import { loadAuth } from '../api/auth.ts';
+import { activeHostName } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
+import { confirm } from '../prompts.ts';
 import {
   clearLink,
+  isKortixProject,
   loadLink,
   resolveProjectId,
   saveLink,
@@ -124,6 +127,20 @@ async function projectsInfo(arg?: string): Promise<number> {
 async function projectsLink(arg?: string): Promise<number> {
   const auth = requireAuth();
   if (!auth) return 1;
+
+  // Refuse to scatter `.kortix/link.json` into random directories. A
+  // project is only "Kortix-linkable" if it already has a `.kortix/`
+  // dir (from `kortix init`) or a `kortix.toml` at the root.
+  if (!isKortixProject()) {
+    process.stderr.write(
+      `${status.err(`Not a Kortix project — no .kortix/ or kortix.toml in ${process.cwd()}.`)}\n`,
+    );
+    process.stderr.write(
+      `  ${C.dim}Run ${C.reset}${C.cyan}kortix init${C.reset}${C.dim} here first to scaffold one.${C.reset}\n`,
+    );
+    return 1;
+  }
+
   const client = clientFromAuth(auth);
 
   let target: ProjectSummary | null = null;
@@ -164,16 +181,26 @@ async function projectsLink(arg?: string): Promise<number> {
     return 1;
   }
 
+  const hostName = activeHostName() ?? 'default';
   saveLink({
     project_id: target.project_id,
     account_id: target.account_id,
+    host: hostName,
+    host_url: auth.api_base,
     linked_at: new Date().toISOString(),
   });
   process.stdout.write(
     `${status.ok(`Linked ${C.bold}${target.name}${C.reset}${C.dim} → .kortix/link.json${C.reset}`)}\n`,
   );
+  process.stdout.write(
+    `  ${C.dim}host:       ${C.reset}${hostName} ${C.faded}(${auth.api_base})${C.reset}\n`,
+  );
+  process.stdout.write(`  ${C.dim}project_id: ${C.reset}${target.project_id}\n`);
   return 0;
 }
+
+// Silence unused if confirm gets reused later.
+void confirm;
 
 async function projectsUnlink(): Promise<number> {
   const existing = loadLink();

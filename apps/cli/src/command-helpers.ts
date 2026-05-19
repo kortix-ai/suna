@@ -1,6 +1,6 @@
 import { loadAuth, loadAuthForHost } from './api/auth.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
-import { resolveProjectId } from './project-link.ts';
+import { loadLink, resolveProjectId } from './project-link.ts';
 import { C, status } from './style.ts';
 
 interface ProjectContextOpts {
@@ -15,6 +15,11 @@ interface ProjectContextOpts {
  * project id, build an API client. Prints a friendly error and returns
  * null if either piece is missing.
  *
+ * Host resolution order:
+ *   1. --host flag (per-invocation override)
+ *   2. .kortix/link.json's `host` field (per-repo binding)
+ *   3. globally active host (~/.config/kortix/config.json)
+ *
  * Backward-compat: callers that pass a string get the legacy
  * `(projectArg)` shape; callers that need --host pass an object.
  */
@@ -26,12 +31,20 @@ export function resolveProjectContext(
       ? { projectArg: optsOrProjectArg }
       : optsOrProjectArg ?? {};
 
-  const auth = opts.hostArg ? loadAuthForHost(opts.hostArg) : loadAuth();
+  // Resolve the host: explicit flag → link.json's host → active.
+  let hostFromLink: string | undefined;
+  if (!opts.hostArg) {
+    hostFromLink = loadLink()?.host ?? undefined;
+  }
+  const hostName = opts.hostArg ?? hostFromLink;
+
+  const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   if (!auth?.token) {
-    if (opts.hostArg) {
+    if (hostName) {
+      const source = opts.hostArg ? '(--host)' : '(from .kortix/link.json)';
       process.stderr.write(
-        `${status.err(`Host "${opts.hostArg}" is not logged in.`)} Run ` +
-          `${C.cyan}kortix login --host ${opts.hostArg}${C.reset}.\n`,
+        `${status.err(`Host "${hostName}" ${source} is not logged in.`)} Run ` +
+          `${C.cyan}kortix login --host ${hostName}${C.reset}.\n`,
       );
     } else {
       process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);
