@@ -104,3 +104,81 @@ export interface TriggerFireResponse {
   reason?: string | null;
   session_id?: string | null;
 }
+
+// ── Change Requests ───────────────────────────────────────────────────────
+
+export type ChangeRequestStatus = 'open' | 'merged' | 'closed';
+
+export interface ChangeRequest {
+  cr_id: string;
+  account_id: string;
+  project_id: string;
+  number: number;
+  title: string;
+  description: string;
+  base_ref: string;
+  head_ref: string;
+  status: ChangeRequestStatus;
+  head_commit_sha: string | null;
+  base_commit_sha: string | null;
+  origin_session_id: string | null;
+  created_by: string;
+  merged_at: string | null;
+  merged_by: string | null;
+  merge_commit_sha: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChangeRequestsListResponse {
+  change_requests: ChangeRequest[];
+}
+
+export interface ChangeRequestDetailResponse {
+  change_request: ChangeRequest;
+}
+
+export interface ChangeRequestFile {
+  path: string;
+  old_path: string | null;
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange';
+  additions: number;
+  deletions: number;
+}
+
+export interface ChangeRequestDiffResponse {
+  cr_id: string;
+  base_ref: string;
+  head_ref: string;
+  base_sha: string;
+  head_sha: string;
+  merge_base: string | null;
+  files: ChangeRequestFile[];
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  patch: string;
+}
+
+export interface ChangeRequestMergePreview {
+  base_sha: string;
+  head_sha: string;
+  merge_base: string | null;
+  can_fast_forward: boolean;
+  can_merge: boolean;
+  conflicts: string[];
+  is_up_to_date: boolean;
+}
+
+export interface ChangeRequestMergeResponse {
+  change_request: ChangeRequest;
+  merge: {
+    merge_commit_sha: string;
+    fast_forward: boolean;
+    base_sha_before: string;
+    base_sha_after: string;
+  };
+}
