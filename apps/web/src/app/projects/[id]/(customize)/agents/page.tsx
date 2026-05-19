@@ -58,7 +58,7 @@ export default function ProjectAgentsPage({
   return <AgentsView projectId={projectId} />;
 }
 
-function AgentsView({ projectId }: { projectId: string }) {
+export function AgentsView({ projectId }: { projectId: string }) {
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),

@@ -3,6 +3,10 @@
 import { MessageSquare } from 'lucide-react';
 
 export default function ProjectChannelsPage() {
+  return <ChannelsView />;
+}
+
+export function ChannelsView() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
