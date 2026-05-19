@@ -58,7 +58,7 @@ describe('applyScaffold', () => {
     const agent = readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8');
     expect(agent)
       .toContain('You are a **Kortix general knowledge worker** for **Hello World**.');
-    expect(agent).not.toContain('permission: allow');
+    expect(agent).toContain('permission:\n  "*": allow');
     expect(readFileSync(join(dir, '.kortix/opencode/tools/show.ts'), 'utf8'))
       .toContain('import { tool } from "@opencode-ai/plugin"');
   });

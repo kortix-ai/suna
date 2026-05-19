@@ -1,17 +1,24 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useParams } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Loader2, RotateCcw } from 'lucide-react';
 
 import { useAuth } from '@/components/AuthProvider';
 import { SessionChat } from '@/components/session/session-chat';
 import { SessionLayout } from '@/components/session/session-layout';
 import { SessionLoadingSkeleton } from '@/components/session/session-loading-skeleton';
 import { ProjectShell } from '@/components/projects/project-shell';
+import { Button } from '@/components/ui/button';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
-import { getProjectSessionSandbox, syncOpencodeSessionTitles } from '@/lib/projects-client';
+import {
+  getProjectSessionSandbox,
+  restartProjectSession,
+  syncOpencodeSessionTitles,
+} from '@/lib/projects-client';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
+import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
 import {
   markProvisioningVerified,
   useSandboxConnectionStore,
@@ -46,11 +53,6 @@ export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
-  // Drives the sandbox-connection-store so `useOpenCodeRuntimeReady()` inside
-  // ActiveSessionChat can transition to `connected + healthy`. Without this
-  // the chat-creator never fires and we sit forever on "Reaching workspace".
-  // (Legacy dashboard mounted this from layout-content.tsx; we mount it here.)
-  useSandboxConnection();
 
   // session_id == sandbox_id by construction (see session-sandbox.ts).
   const { data: sandbox, isLoading } = useQuery({
@@ -156,26 +158,51 @@ export default function ProjectSessionPage() {
     }
 
     return (
-      <>
+      <ProjectSessionRuntimeConnection>
         <OpenCodeEventStreamProvider />
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          <ActiveSessionChat />
+          <ActiveSessionChat projectId={projectId} sessionId={sessionId} />
         </div>
-      </>
+      </ProjectSessionRuntimeConnection>
     );
   })();
 
   return <ProjectShell projectId={projectId}>{inner}</ProjectShell>;
 }
 
+function ProjectSessionRuntimeConnection({ children }: { children: ReactNode }) {
+  // Drives the sandbox-connection-store so `useOpenCodeRuntimeReady()` inside
+  // ActiveSessionChat can transition to `connected + healthy`. Mount this only
+  // after the server store has switched to the project session sandbox, so we
+  // do not briefly probe the stale default sandbox on first paint.
+  useSandboxConnection();
+  return <>{children}</>;
+}
+
 /* ─── Inline error card (used inside the project shell) ────────────────── */
 
-function InlineSessionError({ title, message }: { title: string; message: string }) {
+function InlineSessionError({
+  title,
+  message,
+  detail,
+  action,
+}: {
+  title: string;
+  message: string;
+  detail?: string;
+  action?: ReactNode;
+}) {
   return (
     <div className="flex-1 min-h-0 flex items-center justify-center px-6">
       <div className="max-w-md text-center flex flex-col items-center gap-3">
         <h2 className="text-[14px] font-medium text-foreground/90">{title}</h2>
         <p className="text-[12px] leading-relaxed text-muted-foreground/70">{message}</p>
+        {detail ? (
+          <p className="max-w-full rounded-md border border-border/60 bg-muted/40 px-2 py-1 font-mono text-[11px] leading-relaxed text-muted-foreground">
+            {detail}
+          </p>
+        ) : null}
+        {action}
       </div>
     </div>
   );
@@ -187,13 +214,31 @@ function InlineSessionError({ title, message }: { title: string; message: string
  * first runtime-ready render so the user lands inside the conversation UI
  * immediately.
  */
-function ActiveSessionChat() {
+function ActiveSessionChat({
+  projectId,
+  sessionId,
+}: {
+  projectId: string;
+  sessionId: string;
+}) {
   const runtimeReady = useSandboxConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
   );
   const sessionsQuery = useOpenCodeSessions();
   const createMutation = useCreateOpenCodeSession();
+  const queryClient = useQueryClient();
   const createdRef = useRef(false);
+  const restartMutation = useMutation({
+    mutationFn: () => restartProjectSession(projectId, sessionId),
+    onSuccess: () => {
+      createdRef.current = false;
+      queryClient.removeQueries({ queryKey: ['opencode'] });
+      queryClient.invalidateQueries({
+        queryKey: ['project', 'session-sandbox', projectId, sessionId],
+      });
+      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+    },
+  });
 
   // Once OpenCode is reachable and we've confirmed there are zero sessions,
   // kick off a single create — guarded so React-strict-mode + refocus
@@ -201,15 +246,52 @@ function ActiveSessionChat() {
   useEffect(() => {
     if (!runtimeReady) return;
     if (sessionsQuery.isLoading) return;
+    if (sessionsQuery.isError) return;
     if (createdRef.current) return;
     const sessions = sessionsQuery.data ?? [];
     if (sessions.length > 0) return;
     createdRef.current = true;
     createMutation.mutate();
-  }, [runtimeReady, sessionsQuery.isLoading, sessionsQuery.data, createMutation]);
+  }, [
+    runtimeReady,
+    sessionsQuery.isLoading,
+    sessionsQuery.isError,
+    sessionsQuery.data,
+    createMutation,
+  ]);
 
   const chatSessionId =
     (sessionsQuery.data ?? [])[0]?.id ?? createMutation.data?.id ?? null;
+
+  const runtimeError = sessionsQuery.error ?? createMutation.error;
+  if (runtimeError) {
+    const formatted = formatOpenCodeRuntimeError(runtimeError);
+    const restartError = restartMutation.error
+      ? formatOpenCodeRuntimeError(restartMutation.error)
+      : null;
+    return (
+      <InlineSessionError
+        title={formatted.title}
+        message={formatted.message}
+        detail={restartError?.message ?? formatted.detail}
+        action={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => restartMutation.mutate()}
+            disabled={restartMutation.isPending}
+          >
+            {restartMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5" />
+            )}
+            Restart session
+          </Button>
+        }
+      />
+    );
+  }
 
   // Mirror the viewed session's title into our cloud DB so the name shows
   // even when the sandbox isn't running. Fires on mount and whenever opencode

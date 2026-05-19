@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '@/lib/opencode-sdk';
+import { isOpenCodeConfigInvalidError } from '@/lib/opencode-errors';
 import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
 import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
@@ -176,7 +177,8 @@ export function useOpenCodeSessions() {
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
-    retry: 3,
+    retry: (failureCount, error) =>
+      !isOpenCodeConfigInvalidError(error) && failureCount < 3,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
   });
 }
