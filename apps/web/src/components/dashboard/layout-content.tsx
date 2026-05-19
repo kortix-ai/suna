@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { resolveTabFromPathname } from "@/lib/tab-route-resolver";
 import { useSandboxConnectionStore } from "@/stores/sandbox-connection-store";
 import { useOnboardingModeStore } from "@/stores/onboarding-mode-store";
+import { useUserPreferencesStore } from "@/stores/user-preferences-store";
 import { getActiveOpenCodeUrl, useServerStore, switchToInstance, switchToInstanceAsync } from "@/stores/server-store";
 import { useTabStore, isTabRecentlyClosed } from "@/stores/tab-store";
 import { AnnouncementDialog } from "../announcements/announcement-dialog";
@@ -978,6 +979,7 @@ export default function DashboardLayoutContent({
 		!isAdmin;
 
 	const hideChrome = ob.active && !ob.morphing;
+	const disableTabSelector = useUserPreferencesStore((s) => s.preferences.disableTabSelector ?? false);
 
 	// ConnectingScreen is mounted once at the top level and persists across
 	// the gate→dashboard transition. Same DOM position in every branch, so
@@ -1060,9 +1062,14 @@ export default function DashboardLayoutContent({
 						<CommandPalette />
 					</Suspense>
 
-					{/* Tab bar — hidden during onboarding, morphs in */}
+					{/* Tab bar — hidden during onboarding, morphs in.
+					    Also hidden when the user has disabled the tab selector
+					    in Appearance preferences. We still leave a small
+					    sidebar-colored strip above the content so the rounded
+					    top curvature reads as a "floating panel" instead of
+					    bleeding flush against the window chrome. */}
 					<AnimatePresence initial={false}>
-						{!hideChrome && (
+						{!hideChrome && !disableTabSelector && (
 							<motion.div
 								key="tab-bar"
 								initial={{ height: 0, opacity: 0 }}
@@ -1075,8 +1082,16 @@ export default function DashboardLayoutContent({
 							</motion.div>
 						)}
 					</AnimatePresence>
+					{!hideChrome && disableTabSelector && (
+						<div className="flex-shrink-0 bg-sidebar h-3" />
+					)}
 
-					<div className="flex-1 min-h-0 flex flex-col md:border md:border-b-0 md:border-border/50 overflow-hidden md:rounded-t-xl relative">
+					<div
+						className={cn(
+							"flex-1 min-h-0 flex flex-col overflow-hidden relative",
+							"md:border md:border-b-0 md:border-border/50 md:rounded-t-xl",
+						)}
+					>
 						<SessionTabsContainer>{children}</SessionTabsContainer>
 
 						{/* Floating skip button during onboarding chat session */}
