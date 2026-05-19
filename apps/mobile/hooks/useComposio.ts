@@ -74,6 +74,19 @@ const composioKeys = {
   toolkitTools: (slug: string) => [...composioKeys.all, 'toolkit-tools', slug] as const,
 };
 
+const SENSITIVE_LOG_KEY_RE = /secret|token|password|key|auth_config|mcp_url|config/i;
+
+function redactForLog(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactForLog);
+  if (!value || typeof value !== 'object') return value;
+
+  const result: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    result[key] = SENSITIVE_LOG_KEY_RE.test(key) ? '[redacted]' : redactForLog(entry);
+  }
+  return result;
+}
+
 const useComposioApps = () => {
   return useQuery({
     queryKey: composioKeys.apps(),
@@ -291,7 +304,7 @@ const useCreateComposioProfile = () => {
       } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      log.log('🔄 Creating Composio profile:', request);
+      log.log('🔄 Creating Composio profile:', redactForLog(request));
 
       const response = await fetch(`${API_URL}/composio/profiles`, {
         method: 'POST',
@@ -315,7 +328,7 @@ const useCreateComposioProfile = () => {
       }
 
       const result = await response.json();
-      log.log('✅ Profile created:', result);
+      log.log('✅ Profile created:', redactForLog(result));
       return result;
     },
     onSuccess: (data) => {
@@ -428,7 +441,7 @@ const useUpdateComposioTools = () => {
       }
 
       const mcpConfig = await mcpConfigResponse.json();
-      log.log('📋 MCP Config received:', mcpConfig);
+      log.log('📋 MCP Config received:', redactForLog(mcpConfig));
 
       // Structure the request body to match backend expectations
       const mcpConfigData = mcpConfig.mcp_config;
@@ -444,7 +457,7 @@ const useUpdateComposioTools = () => {
           },
         ],
       };
-      log.log('📤 Sending request to update tools:', JSON.stringify(requestBody, null, 2));
+      log.log('📤 Sending request to update tools:', redactForLog(requestBody));
 
       // Update agent tools
       const response = await fetch(`${API_URL}/agents/${agentId}/custom-mcp-tools`, {

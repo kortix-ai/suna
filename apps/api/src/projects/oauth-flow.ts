@@ -184,8 +184,36 @@ function extractOpenAiAccountId(token: string): string | null {
 
 const GITHUB_COPILOT_CLIENT_ID = 'Ov23li8tweQw6odWQebz';
 
+function allowedEnterpriseHosts(): Set<string> {
+  const hosts = (process.env.KORTIX_GITHUB_ENTERPRISE_HOSTS || process.env.GITHUB_ENTERPRISE_HOSTS || '')
+    .split(',')
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+  return new Set(hosts);
+}
+
 function normalizeDomain(value: string): string {
-  return value.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const candidate = value.includes('://') ? value : `https://${value}`;
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    throw new Error('Invalid GitHub Enterprise URL');
+  }
+
+  if (url.protocol !== 'https:') {
+    throw new Error('GitHub Enterprise URL must use HTTPS');
+  }
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new Error('GitHub Enterprise URL must be an origin only');
+  }
+
+  const host = url.hostname.toLowerCase();
+  if (host === 'github.com') return host;
+  if (!allowedEnterpriseHosts().has(host)) {
+    throw new Error('GitHub Enterprise host is not allowed');
+  }
+  return host;
 }
 
 function githubUrls(domain: string) {

@@ -100,7 +100,7 @@ export const usePushNotifications = (): PushNotificationState => {
         if (Notifications.getExpoPushTokenAsync) {
           try {
             token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-            log.log('[PUSH] ✅ Expo Push Token retrieved:', token);
+            log.log('[PUSH] ✅ Expo Push Token retrieved');
           } catch (e) {
             log.log('[PUSH] ❌ Error getting push token:', e);
           }
@@ -133,7 +133,7 @@ export const usePushNotifications = (): PushNotificationState => {
     log.log('[PUSH] Starting push notification registration...');
     registerForPushNotificationsAsync().then(token => {
       if (token) {
-        log.log('[PUSH] ✅ Setting expoPushToken:', token);
+        log.log('[PUSH] ✅ Setting expoPushToken');
         setExpoPushToken(token);
       } else {
         log.log('[PUSH] ⚠️ No token received, expoPushToken will remain undefined');
@@ -148,7 +148,10 @@ export const usePushNotifications = (): PushNotificationState => {
 
     if (Notifications.addNotificationResponseReceivedListener) {
       responseListener.current = Notifications.addNotificationResponseReceivedListener((response: any) => {
-        log.log('Notification response:', response);
+        log.log('Notification response received', {
+          hasData: Boolean(response?.notification?.request?.content?.data),
+          actionIdentifier: response?.actionIdentifier,
+        });
       });
     }
 

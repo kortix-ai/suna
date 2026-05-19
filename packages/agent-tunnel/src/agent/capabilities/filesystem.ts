@@ -8,7 +8,7 @@
 import { readFile, writeFile, readdir, stat, unlink, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import type { Capability, RpcHandler } from './index';
-import { validatePath } from '../security/path-validator';
+import { validatePath, validateWritePath } from '../security/path-validator';
 import type { TunnelConfig } from '../config';
 
 export function createFilesystemCapability(config: TunnelConfig): Capability {
@@ -40,15 +40,17 @@ export function createFilesystemCapability(config: TunnelConfig): Capability {
     const content = params.content as string;
     const encoding = (params.encoding as BufferEncoding) || 'utf-8';
 
-    validatePath(path, config.allowedPaths, config.blockedPaths);
+    validateWritePath(path, config.allowedPaths, config.blockedPaths);
 
     if (content.length > config.maxFileSize) {
       throw new Error(`Content exceeds max size (${content.length} > ${config.maxFileSize})`);
     }
 
     await mkdir(dirname(path), { recursive: true });
+    validateWritePath(path, config.allowedPaths, config.blockedPaths);
 
     await writeFile(path, content, { encoding });
+    validatePath(path, config.allowedPaths, config.blockedPaths);
     const stats = await stat(path);
 
     return {

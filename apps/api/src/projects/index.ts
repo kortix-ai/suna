@@ -13,6 +13,7 @@ import { HTTPException } from 'hono/http-exception';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   accountGithubInstallations,
+  accountGithubInstallationStates,
   accountMembers,
   kortixApiKeys,
   projects,
@@ -62,9 +63,11 @@ import {
   deleteFile,
   getFileSha,
   getGitHubAppInstallation,
+  getGitHubPatAuthContext,
   isGithubAppConfigured,
   isGithubPatConfigured,
   type GitHubAuthContext,
+  verifyGitHubAppInstallStatePayload,
 } from './github';
 import { buildStarterFiles } from './starter';
 import {
@@ -421,7 +424,11 @@ function serializeProjectTriggerEvent(row: ProjectTriggerEventRow) {
   };
 }
 
-function serializeGitHubInstallation(row: typeof accountGithubInstallations.$inferSelect | null, accountId: string) {
+function serializeGitHubInstallation(
+  row: typeof accountGithubInstallations.$inferSelect | null,
+  accountId: string,
+  installUrl: string | null,
+) {
   const installed = Boolean(row);
   const kortixDefaultAvailable = isGithubPatConfigured();
   // requires_installation is now only true when neither a per-account
@@ -436,7 +443,7 @@ function serializeGitHubInstallation(row: typeof accountGithubInstallations.$inf
     requires_installation: requiresInstallation,
     kortix_default_available: kortixDefaultAvailable,
     pat_fallback_available: !isGithubAppConfigured() && kortixDefaultAvailable,
-    install_url: installed ? null : buildGitHubAppInstallUrl(accountId),
+    install_url: installed ? null : installUrl,
     installation_id: row?.installationId ?? null,
     owner_login: row?.ownerLogin ?? null,
     owner_type: row?.ownerType ?? null,
@@ -477,7 +484,14 @@ function parseProjectTriggerType(value: unknown): 'cron' | 'webhook' | null {
 function normalizeRepoUrl(value: unknown): string | null {
   const repoUrl = normalizeString(value);
   if (!repoUrl) return null;
-  return repoUrl.replace(/\/+$/, '');
+  const normalized = repoUrl.replace(/\/+$/, '');
+  if (/^http:\/\//i.test(normalized)) {
+    throw new Error('repo_url must use HTTPS or git@github.com SSH');
+  }
+  if (!parseGitHubRepoUrl(normalized)) {
+    throw new Error('repo_url must be a GitHub repository URL');
+  }
+  return normalized;
 }
 
 function hasOwn(body: Record<string, unknown>, key: string): boolean {
@@ -526,6 +540,45 @@ async function getAccountGitHubInstallation(accountId: string) {
   return row ?? null;
 }
 
+async function createGitHubInstallationInstallUrl(accountId: string, userId: string): Promise<string | null> {
+  if (!isGithubAppConfigured()) return null;
+  const nonce = randomUUID();
+  const installUrl = buildGitHubAppInstallUrl(accountId, nonce);
+  if (!installUrl) return null;
+  await db.insert(accountGithubInstallationStates).values({
+    stateNonce: nonce,
+    accountId,
+    userId,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+  });
+  return installUrl;
+}
+
+async function consumeGitHubInstallationState(input: {
+  accountId: string;
+  userId: string;
+  nonce: string;
+  installationId: string;
+}): Promise<boolean> {
+  const now = new Date();
+  const updated = await db
+    .update(accountGithubInstallationStates)
+    .set({
+      installationId: input.installationId,
+      consumedAt: now,
+    })
+    .where(and(
+      eq(accountGithubInstallationStates.stateNonce, input.nonce),
+      eq(accountGithubInstallationStates.accountId, input.accountId),
+      eq(accountGithubInstallationStates.userId, input.userId),
+      sql`${accountGithubInstallationStates.consumedAt} is null`,
+      sql`${accountGithubInstallationStates.expiresAt} > ${now}`,
+    ))
+    .returning({ stateNonce: accountGithubInstallationStates.stateNonce });
+
+  return updated.length === 1;
+}
+
 class GitHubInstallationRequiredError extends Error {
   constructor(public readonly accountId: string) {
     super('GitHub App installation required for this account');
@@ -563,6 +616,54 @@ async function resolveGitHubRepoAuth(accountId: string): Promise<{
   }
 
   throw new Error('GitHub is not configured on the server');
+}
+
+function projectCreatedWithServerPat(project: ProjectRow): boolean {
+  const metadata = normalizeJsonObject(project.metadata);
+  const github = normalizeJsonObject(metadata.github);
+  if (github.auth_source !== 'pat') return false;
+
+  const repo = parseGitHubRepoUrl(project.repoUrl);
+  if (!repo) return false;
+
+  const fullName = normalizeString(github.full_name);
+  if (fullName && fullName.toLowerCase() !== `${repo.owner}/${repo.repo}`.toLowerCase()) {
+    return false;
+  }
+
+  const configuredOwner = process.env.KORTIX_GITHUB_OWNER?.trim();
+  if (configuredOwner && repo.owner.toLowerCase() !== configuredOwner.toLowerCase()) {
+    return false;
+  }
+
+  return true;
+}
+
+async function resolveProjectGitAuth(project: ProjectRow): Promise<{
+  auth?: GitHubAuthContext;
+  authSource: 'app_installation' | 'pat' | 'none';
+}> {
+  const installation = await getAccountGitHubInstallation(project.accountId);
+  if (installation) {
+    const token = await createInstallationToken(installation.installationId);
+    return {
+      auth: {
+        token: token.token,
+        source: 'app_installation',
+        owner: installation.ownerLogin,
+        ownerType: installation.ownerType,
+        installationId: installation.installationId,
+      },
+      authSource: 'app_installation',
+    };
+  }
+
+  if (projectCreatedWithServerPat(project)) {
+    const auth = getGitHubPatAuthContext();
+    if (auth) return { auth, authSource: 'pat' };
+  }
+
+  return { authSource: 'none' };
 }
 
 async function getProjectMemberRole(projectId: string, userId: string): Promise<ProjectRole | null> {
@@ -682,7 +783,6 @@ async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
-  githubToken?: string | null;
 }): Promise<Record<string, string>> {
   // Project secrets + OAuth credentials + project-scoped CLI token all
   // funnel into the sandbox env. Run them in parallel — the CLI token
@@ -700,11 +800,6 @@ async function buildSessionSandboxEnvVars(input: {
     sessionId: input.sessionId,
     userId: input.userId,
   });
-  const githubToken =
-    input.githubToken
-    || process.env.KORTIX_GITHUB_TOKEN
-    || process.env.GITHUB_TOKEN
-    || '';
   return {
     ...runtimeSecrets,
     KORTIX_PROJECT_AUTO_CLONE: '1',
@@ -725,7 +820,6 @@ async function buildSessionSandboxEnvVars(input: {
     ...(cliToken ? { KORTIX_TOKEN: cliToken, KORTIX_CLI_TOKEN: cliToken } : {}),
     KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    ...(githubToken ? { KORTIX_GITHUB_TOKEN: githubToken } : {}),
     ...(opencodeAuthContent ? { OPENCODE_AUTH_CONTENT: opencodeAuthContent } : {}),
   };
 }
@@ -797,25 +891,7 @@ export async function createProjectSession(input: {
   }
 
   const sessionId = randomUUID();
-  let gitAuth: Awaited<ReturnType<typeof resolveGitHubRepoAuth>>;
-
-  try {
-    gitAuth = await resolveGitHubRepoAuth(accountId);
-  } catch (error) {
-    if (error instanceof GitHubInstallationRequiredError) {
-      return {
-        error: {
-          status: 409,
-          body: {
-            error: error.message,
-            install_url: buildGitHubAppInstallUrl(error.accountId),
-          },
-        },
-      };
-    }
-    const message = (error as Error).message || 'GitHub is not configured on the server';
-    return { error: { status: 503, body: { error: message } } };
-  }
+  const gitAuth = await resolveProjectGitAuth(project);
 
   const projectWithGitAuth = {
     ...project,
@@ -878,7 +954,6 @@ export async function createProjectSession(input: {
         baseRef,
         agentName,
         initialPrompt,
-        githubToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
@@ -1592,7 +1667,12 @@ projectsApp.post('/', async (c) => {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
-  const repoUrl = normalizeRepoUrl(body.repo_url ?? body.repoUrl);
+  let repoUrl: string | null;
+  try {
+    repoUrl = normalizeRepoUrl(body.repo_url ?? body.repoUrl);
+  } catch (error) {
+    return c.json({ error: (error as Error).message || 'Invalid repo_url' }, 400);
+  }
   if (!repoUrl) {
     return c.json({ error: 'repo_url is required' }, 400);
   }
@@ -1652,16 +1732,24 @@ projectsApp.get('/github/installation', async (c) => {
   }
 
   const row = await getAccountGitHubInstallation(scope.accountId);
-  return c.json(serializeGitHubInstallation(row, scope.accountId));
+  const installUrl = row ? null : await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
+  return c.json(serializeGitHubInstallation(row, scope.accountId, installUrl));
 });
 
 // POST /v1/projects/github/installation
-// Called after GitHub redirects back with installation_id + state=account_id.
+// Called after GitHub redirects back with installation_id + signed state.
 // We fetch installation metadata with the app JWT instead of trusting client
 // supplied owner information.
 projectsApp.post('/github/installation', async (c) => {
   const body = await readBody(c);
-  const scope = await resolveProjectAccount(c, body);
+  const state = normalizeString(body.state);
+  if (!state) return c.json({ error: 'state is required' }, 400);
+  const statePayload = verifyGitHubAppInstallStatePayload(state);
+  if (!statePayload?.accountId || !statePayload.nonce) {
+    return c.json({ error: 'invalid GitHub installation state' }, 400);
+  }
+
+  const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
   if (!isAccountManager(scope.accountRole)) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
@@ -1670,6 +1758,16 @@ projectsApp.post('/github/installation', async (c) => {
   if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
   if (!/^[0-9]+$/.test(installationId)) {
     return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
+  }
+
+  const stateConsumed = await consumeGitHubInstallationState({
+    accountId: scope.accountId,
+    userId: scope.userId,
+    nonce: statePayload.nonce,
+    installationId,
+  });
+  if (!stateConsumed) {
+    return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
   }
 
   let installation;
@@ -1716,7 +1814,7 @@ projectsApp.post('/github/installation', async (c) => {
     })
     .returning();
 
-  return c.json(serializeGitHubInstallation(row, scope.accountId), 200);
+  return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
 });
 
 // DELETE /v1/projects/github/installation?account_id=...
@@ -1751,7 +1849,6 @@ projectsApp.post('/create-repo', async (c) => {
 
   const isPrivate = typeof body.private === 'boolean' ? body.private : true;
   const description = normalizeString(body.description);
-  const owner = normalizeString(body.owner);
 
   let githubAuth: Awaited<ReturnType<typeof resolveGitHubRepoAuth>>;
   try {
@@ -1773,7 +1870,6 @@ projectsApp.post('/create-repo', async (c) => {
       name,
       isPrivate,
       description: description ?? undefined,
-      owner: githubAuth.auth ? undefined : owner ?? undefined,
       autoInit: true,
       auth: githubAuth.auth,
     });
@@ -1858,7 +1954,7 @@ projectsApp.post('/create-repo', async (c) => {
   // plain POST /v1/projects path above). The starter is already committed
   // to the new repo, so .kortix/Dockerfile exists at this point.
   void kickInitialSnapshotBuild(row, scope.accountId, {
-    gitAuthToken: githubAuth.auth?.token ?? null,
+    gitAuthToken: githubAuth.auth?.token ?? (githubAuth.authSource === 'pat' ? getGitHubPatAuthContext()?.token ?? null : null),
   });
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
@@ -1923,7 +2019,7 @@ projectsApp.get('/:projectId/snapshots', async (c) => {
   let headCommitSha: string | null = null;
   let headResolveError: string | null = null;
   try {
-    const gitAuth = await resolveGitHubRepoAuth(loaded.row.accountId);
+    const gitAuth = await resolveProjectGitAuth(loaded.row);
     headCommitSha = await resolveCommitSha(
       {
         projectId,
@@ -2040,22 +2136,7 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
-  let gitAuth: Awaited<ReturnType<typeof resolveGitHubRepoAuth>>;
-  try {
-    gitAuth = await resolveGitHubRepoAuth(loaded.row.accountId);
-  } catch (error) {
-    if (error instanceof GitHubInstallationRequiredError) {
-      return c.json(
-        {
-          error: error.message,
-          install_url: buildGitHubAppInstallUrl(error.accountId),
-        },
-        409,
-      );
-    }
-    const message = (error as Error).message || 'GitHub is not configured on the server';
-    return c.json({ error: message }, 503);
-  }
+  const gitAuth = await resolveProjectGitAuth(loaded.row);
 
   const result = await ensureBuildForLatestCommit(
     {
@@ -2522,8 +2603,8 @@ function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | 
   return { owner: m[1]!, repo: m[2]! };
 }
 
-async function resolveTriggerCommitAuth(accountId: string) {
-  const auth = await resolveGitHubRepoAuth(accountId);
+async function resolveTriggerCommitAuth(project: ProjectRow) {
+  const auth = await resolveProjectGitAuth(project);
   return auth.auth ?? undefined;
 }
 
@@ -2610,7 +2691,7 @@ async function commitManifest(
 
   let auth: GitHubAuthContext | undefined;
   try {
-    auth = await resolveTriggerCommitAuth(project.accountId);
+    auth = await resolveTriggerCommitAuth(project);
   } catch (err) {
     return {
       error: `GitHub auth unavailable: ${(err as Error).message || String(err)}`,
@@ -4113,18 +4194,30 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
   if (rows.length === 0) return c.json({ updated: 0 });
 
   const accountIds = Array.from(new Set(rows.map((r) => r.accountId)));
+  const projectIds = Array.from(new Set(rows.map((r) => r.projectId)));
   const memberships = await db
-    .select({ accountId: accountMembers.accountId })
+    .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
     .from(accountMembers)
     .where(and(
       eq(accountMembers.userId, userId),
       inArray(accountMembers.accountId, accountIds),
     ));
-  const allowedAccounts = new Set(memberships.map((m) => m.accountId));
+  const accountRoleById = new Map(memberships.map((m) => [m.accountId, m.accountRole as AccountRole]));
+  const grants = await db
+    .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
+    .from(projectMembers)
+    .where(and(
+      eq(projectMembers.userId, userId),
+      inArray(projectMembers.projectId, projectIds),
+    ));
+  const projectRoleById = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
 
   let updated = 0;
   for (const row of rows) {
-    if (!allowedAccounts.has(row.accountId)) continue;
+    const accountRole = accountRoleById.get(row.accountId);
+    if (!accountRole) continue;
+    const projectRole = projectRoleById.get(row.projectId) ?? null;
+    if (!roleAllows(effectiveProjectRole(accountRole, projectRole), 'write')) continue;
     const ocId = row.opencodeSessionId;
     if (!ocId) continue;
     const desired = desiredByOcId.get(ocId) ?? null;
@@ -4238,18 +4331,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
   }
 
   // Resolve git auth fresh — installation tokens rotate.
-  let gitAuth: Awaited<ReturnType<typeof resolveGitHubRepoAuth>>;
-  try {
-    gitAuth = await resolveGitHubRepoAuth(loaded.row.accountId);
-  } catch (error) {
-    if (error instanceof GitHubInstallationRequiredError) {
-      return c.json({
-        error: error.message,
-        install_url: buildGitHubAppInstallUrl(error.accountId),
-      }, 409);
-    }
-    return c.json({ error: (error as Error).message || 'GitHub is not configured' }, 503);
-  }
+  const gitAuth = await resolveProjectGitAuth(loaded.row);
 
   const initialPrompt = typeof session.metadata?.initial_prompt === 'string'
     ? session.metadata.initial_prompt as string
@@ -4318,7 +4400,6 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         initialPrompt,
-        githubToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
@@ -4760,4 +4841,3 @@ projectsApp.post('/:projectId/change-requests/:crId/reopen', async (c) => {
     .returning();
   return c.json(serializeChangeRequest(row));
 });
-

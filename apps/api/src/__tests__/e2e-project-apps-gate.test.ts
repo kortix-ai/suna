@@ -70,6 +70,7 @@ mock.module('../projects/git', () => ({
   resolveCommitSha: async () => 'a'.repeat(40),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
+  getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
 }));
@@ -84,6 +85,13 @@ mock.module('../snapshots/builder', () => ({
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => '',
+  verifyGitHubAppInstallState: (state: string) => state,
+  verifyGitHubAppInstallStatePayload: (state: string) => ({
+    accountId: state,
+    nonce: 'test-nonce',
+    issuedAt: Math.floor(Date.now() / 1000),
+  }),
+  getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
   commitFile: async () => {},
   createInstallationToken: async () => ({ token: 't' }),
   createRepo: async () => { throw new Error('not used'); },

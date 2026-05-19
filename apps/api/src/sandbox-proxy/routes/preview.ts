@@ -148,10 +148,27 @@ function setCachedPreviewLink(sandboxId: string, port: number, url: string, toke
 // a previous user would lock everyone else out with 403.
 
 async function verifyOwnership(sandboxId: string, userId: string): Promise<boolean> {
-  // If no userId is set, skip ownership check.
-  // The proxy auth already validated the token — the user has access.
-  if (!userId) return true;
+  if (!userId) return false;
   return canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId });
+}
+
+function sanitizeRedirectLocation(
+  previewUrl: string,
+  location: string | null,
+  sandboxId: string,
+  port: number,
+): string | null {
+  if (!location) return null;
+  if (location.startsWith('/') && !location.startsWith('//')) return location;
+
+  try {
+    const target = new URL(location, previewUrl);
+    const preview = new URL(previewUrl);
+    if (target.origin !== preview.origin) return null;
+    return `/v1/p/${sandboxId}/${port}${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return null;
+  }
 }
 
 // === Service key resolution (for authenticating proxy → sandbox) ===
@@ -328,10 +345,34 @@ export async function proxyToDaytona(
         method,
         headers,
         body,
+        redirect: 'manual',
         // @ts-ignore — Bun extensions: no decompression (raw byte passthrough), duplex streaming
         decompress: false,
         duplex: 'half',
       });
+
+      if (upstream.status >= 300 && upstream.status < 400) {
+        const respHeaders = new Headers(upstream.headers);
+        const safeLocation = sanitizeRedirectLocation(
+          previewUrl,
+          upstream.headers.get('location'),
+          sandboxId,
+          port,
+        );
+        if (!safeLocation) {
+          return jsonProxyError({ error: 'blocked unsafe upstream redirect' }, 502);
+        }
+        respHeaders.set('Location', safeLocation);
+        if (origin) {
+          respHeaders.set('Access-Control-Allow-Origin', origin);
+          respHeaders.set('Access-Control-Allow-Credentials', 'true');
+        }
+        return new Response(null, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: respHeaders,
+        });
+      }
 
       if (upstream.status === 401 && serviceKey && userId) {
         console.warn(`[PREVIEW] Sandbox ${sandboxId}:${port} rejected signed user context`);

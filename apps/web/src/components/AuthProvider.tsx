@@ -14,6 +14,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { setBootstrapAuthToken, setCachedAuthToken } from '@/lib/auth-token';
+import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 // Auth tracking moved to AuthEventTracker component (handles OAuth redirects)
 
 type AuthContextType = {
@@ -68,6 +69,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (prevUserId && prevUserId !== currentSession.user.id) {
             console.log('[Auth] Initial session: user changed, clearing stale local storage');
             clearUserLocalStorage();
+            await clearSessionIDBCache();
           }
           localStorage.setItem('kortix-last-user-id', currentSession.user.id);
         }
@@ -98,6 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (newUserId && prevUserId && prevUserId !== newUserId) {
               console.log('[Auth] User changed, clearing stale local storage');
               clearUserLocalStorage();
+              await clearSessionIDBCache();
             }
             if (newUserId) {
               localStorage.setItem('kortix-last-user-id', newUserId);
@@ -108,6 +111,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setBootstrapAuthToken(null);
             setCachedAuthToken(null);
             clearUserLocalStorage();
+            await clearSessionIDBCache();
             localStorage.removeItem('kortix-last-user-id');
             break;
           case 'TOKEN_REFRESHED':
@@ -137,6 +141,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       await supabase.auth.signOut();
       clearUserLocalStorage();
+      await clearSessionIDBCache();
     } catch (error) {
       console.error('Error signing out:', error);
     }

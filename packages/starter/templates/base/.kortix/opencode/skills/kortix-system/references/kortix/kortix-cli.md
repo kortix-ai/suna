@@ -24,6 +24,7 @@ kortix projects info                # the project you're running inside
 kortix secrets ls                   # encrypted env vars + manifest [env] spec
 kortix sessions ls                  # every session on this project (incl. you)
 kortix cr ls                        # open change requests
+kortix cr open --title "..."        # propose merging your branch into main
 ```
 
 The token in the sandbox is **project-scoped**: it can read + write
@@ -151,12 +152,80 @@ the same state.
 
 ### Change requests (`cr`)
 
-Kortix-native PR layer for session work landing on `main`.
+Kortix-native PR layer for session work landing on `main`. A change
+request proposes merging one branch (`head_ref`) into another
+(`base_ref`) inside a project. The CR layer is **Kortix-native** —
+it works on top of any git host (GitHub, GitLab, Freestyle, plain
+git) without per-host integration. A CR is the **only sanctioned
+way** for an agent to land session-branch work on `main`; see
+`change-requests.md` (alongside this file) for the full mandate and
+lifecycle.
 
 | Command | Effect |
 | --- | --- |
-| `kortix cr ls` | Open change requests on the project. |
-| `kortix cr ...` | Subcommand surface — see `kortix cr --help` for the live list. |
+| `kortix cr ls [--status open\|merged\|closed\|all] [--project <id>]` | List CRs on the project. Default: `--status open`. |
+| `kortix cr show <cr> [--project <id>]` | Show one CR's metadata. Alias: `kortix cr info`. Includes the merge-preview (clean / fast-forward / conflicts) for open CRs. |
+| `kortix cr diff <cr> [--no-color] [--project <id>]` | Unified diff of the CR. Three-dot diff for open / closed CRs; for merged CRs it uses the SHAs captured at merge time so the patch still renders even though `head_ref` is now reachable from `base_ref`. |
+| `kortix cr open --title "<text>" [--description "<text>"] [--head <ref>] [--base <ref>] [--session <id>] [--project <id>]` | Open a new CR. Aliases: `kortix cr new`, `kortix cr create`. Inside a sandbox, `--head` defaults to `$KORTIX_BRANCH_NAME` and `--session` defaults to `$KORTIX_SESSION_ID`, so `kortix cr open --title "..."` Just Works. `--base` defaults to the project's default branch (usually `main`). `--title` is required. Alias for `--head`: `--from`. Alias for `--base`: `--into`. Alias for `--description`: `--body`. |
+| `kortix cr merge <cr> [--message "<text>"] [--project <id>]` | Merge an open CR into its `base_ref`. Fast-forward when possible, three-way merge otherwise. The default commit message is `Merge CR #<n>: <title>` (override with `-m / --message`). Fails with 409 if the CR is not `open` or there are conflicts. |
+| `kortix cr close <cr> [--project <id>]` | Close an open CR without merging. Cannot close a merged CR. |
+| `kortix cr reopen <cr> [--project <id>]` | Reopen a closed CR (only — merged CRs are terminal). |
+
+`<cr>` accepts either the short per-project number (`3`, `#3`) or the
+full UUID `cr_id`. Numbers are unique per project, monotonically
+increasing.
+
+#### Inside a sandbox — the typical agent flow
+
+```sh
+# 1. Commit on the session branch
+git add .
+git commit -m "Add release-notes skill"
+
+# 2. Push the branch (KORTIX_BRANCH_NAME)
+git push origin HEAD
+
+# 3. Open the CR — head and session are auto-detected
+kortix cr open \
+  --title  "Add release-notes skill" \
+  --description "Drafts release notes from merged commits. Tested against the last 5 tags."
+
+# 4. Confirm it's listed
+kortix cr ls
+
+# 5. (Optional) show the diff one more time
+kortix cr diff 3
+```
+
+The agent **does not merge its own CR** — that's the user's call,
+either in the dashboard or via `kortix cr merge <n>`.
+
+#### Conflicts
+
+`kortix cr show <cr>` prints a merge preview:
+
+- `Mergeable cleanly` — no conflicts; `kortix cr merge` will succeed.
+- `Mergeable cleanly (fast-forward)` — `head_ref` is strictly ahead of
+  `base_ref`; the merge will be a fast-forward.
+- `Conflicts in N files:` — listed; resolve on the branch first, push,
+  then re-show.
+
+#### Output format
+
+`kortix cr ls` prints `#NUM`, status badge (`● open` / `✔ merged` /
+`× closed`), `head_ref → base_ref` (truncated UUID-style branches),
+title. Sorted newest first.
+
+#### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0`  | Success. |
+| `1`  | Operation failed (CR not found, merge failed, etc.). |
+| `2`  | Bad flag / missing required arg. |
+
+> See `change-requests.md` (alongside this file) for the full
+> data model, REST API, and the "MUST open a CR" agent mandate.
 
 ### Install / update / uninstall
 
@@ -252,6 +321,38 @@ kortix env push --from .env
 kortix secrets ls                       # confirm
 ```
 
+### Land session work on `main` (the CR flow)
+
+The agent in the sandbox is responsible for opening the CR; the user
+reviews + merges. **There is no other path to `main` from inside a
+session.**
+
+```sh
+# inside a session sandbox, on branch session-<id>
+git add .
+git commit -m "Add release-notes skill"
+git push origin HEAD
+
+kortix cr open \
+  --title       "Add release-notes skill" \
+  --description "Drafts release notes from merged commits. Tested against the last 5 tags."
+
+kortix cr ls                            # confirm
+```
+
+The user can then:
+
+```sh
+kortix cr show 3                        # diff + merge-preview
+kortix cr diff 3
+kortix cr merge 3                       # merges into base (main)
+# or
+kortix cr close 3                       # close without merging
+```
+
+See `change-requests.md` next to this file for the full lifecycle,
+conflict story, and data model.
+
 ## Environment variables the CLI reads
 
 | Variable | Purpose |
@@ -293,6 +394,8 @@ warns.
 
 - `.kortix/opencode/skills/kortix-system/SKILL.md` — entry point for
   the kortix-system skill. Mention the CLI from there.
+- `change-requests.md` (alongside this file) — full CR data model,
+  lifecycle, REST API, and the "MUST open a CR" agent mandate.
 - `kortix.toml` — the manifest the dashboard + the CLI both read.
 - `.kortix/Dockerfile` — your sandbox base image.
 - `.kortix/link.json` — current dir's binding to a remote project

@@ -22,6 +22,11 @@ test('rejects protocol-relative open redirects', () => {
   assert.equal(sanitizeAuthReturnUrl('//attacker.example/pwn'), DEFAULT_AUTH_RETURN_URL)
 })
 
+test('rejects backslash network-path open redirects', () => {
+  assert.equal(sanitizeAuthReturnUrl('/\\attacker.example/pwn'), DEFAULT_AUTH_RETURN_URL)
+  assert.equal(sanitizeAuthReturnUrl('/%5Cattacker.example/pwn'), DEFAULT_AUTH_RETURN_URL)
+})
+
 test('rejects bare relative paths', () => {
   assert.equal(sanitizeAuthReturnUrl('instances'), DEFAULT_AUTH_RETURN_URL)
 })

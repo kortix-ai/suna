@@ -14,7 +14,8 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
     SUPABASE_ANON_KEY: read('SUPABASE_ANON_KEY') || process.env.SUPABASE_ANON_KEY,
     BACKEND_URL: read('BACKEND_URL') || process.env.BACKEND_URL,
     ENV_MODE: (read('ENV_MODE') || 'local') as 'local' | 'cloud',
-    APP_URL: read('APP_URL') || process.env.PUBLIC_URL,
+    APP_URL: read('APP_URL') || process.env.NEXT_PUBLIC_URL || process.env.PUBLIC_URL,
     SANDBOX_ID: read('SANDBOX_ID') || undefined,
+    AUTH_PROVIDERS: read('AUTH_PROVIDERS') || undefined,
   })
 }

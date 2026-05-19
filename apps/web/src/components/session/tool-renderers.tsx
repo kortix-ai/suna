@@ -112,6 +112,7 @@ import {
 import { parseMemorySearchOutput } from '@/lib/utils/memory-search-output';
 import { parseMemoryEntryOutput } from '@/lib/utils/memory-entry-output';
 import { Badge } from '@/components/ui/badge';
+import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 
 import {
   type ApplyPatchFile,
@@ -159,7 +160,7 @@ function useToolNavigation() {
   const openExternal = useCallback(
     (targetUrl?: string) => {
       if (!enabled || !targetUrl) return;
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      openSafeExternalUrl(targetUrl);
     },
     [enabled],
   );
@@ -219,7 +220,9 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
     openExternal,
   } = useToolNavigation();
   const proxy = useProxyUrl(url);
-  const authenticatedUrl = useAuthenticatedPreviewUrl(proxy?.proxyUrl || url);
+  const externalUrl = proxy ? null : safeHttpUrl(url);
+  const authenticatedProxyUrl = useAuthenticatedPreviewUrl(proxy?.proxyUrl || '');
+  const previewUrl = proxy ? authenticatedProxyUrl : externalUrl;
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -299,11 +302,11 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
           <TooltipTrigger asChild>
             <button
               type="button"
-              disabled={!navigationEnabled || !authenticatedUrl}
-              onClick={() => openExternal(authenticatedUrl ?? undefined)}
+              disabled={!navigationEnabled || !previewUrl}
+              onClick={() => openExternal(previewUrl ?? undefined)}
               className={cn(
                 'p-1 rounded text-muted-foreground/50 transition-colors',
-                navigationEnabled && authenticatedUrl
+                navigationEnabled && previewUrl
                   ? 'hover:bg-muted/60 hover:text-muted-foreground'
                   : 'opacity-50 cursor-not-allowed',
               )}
@@ -363,7 +366,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
         {viewportScale > 0 && (
           <iframe
             key={refreshKey}
-            src={authenticatedUrl ?? undefined}
+            src={previewUrl ?? undefined}
             title={displayLabel}
             className="border-0 bg-white"
             style={{
@@ -3642,12 +3645,14 @@ function WebSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                           </div>
                         )}
                         {qr.sources.map((src, si) => {
-                          const favicon = wsFavicon(src.url);
-                          const domain = wsDomain(src.url);
+                          const sourceUrl = safeHttpUrl(src.url);
+                          const favicon = sourceUrl ? wsFavicon(sourceUrl) : null;
+                          const domain = sourceUrl ? wsDomain(sourceUrl) : '';
+                          if (!sourceUrl) return null;
                           return (
                             <a
                               key={si}
-                              href={src.url}
+                              href={sourceUrl}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="group flex items-start gap-2 p-2 -mx-1 transition-colors hover:bg-muted/30"
@@ -3833,8 +3838,10 @@ function ScrapeWebpageTool({
         >
           <div className="space-y-0.5">
             {scrapeData.results.map((result, idx) => {
-              const favicon = result.url ? wsFavicon(result.url) : null;
-              const resultDomain = result.url ? wsDomain(result.url) : '';
+              const resultUrl = safeHttpUrl(result.url);
+              if (!resultUrl) return null;
+              const favicon = wsFavicon(resultUrl);
+              const resultDomain = wsDomain(resultUrl);
               const snippet = result.content
                 ? result.content
                     .replace(/\\n/g, ' ')
@@ -3845,7 +3852,7 @@ function ScrapeWebpageTool({
               return (
                 <a
                   key={idx}
-                  href={result.url}
+                  href={resultUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="group flex items-start gap-2 p-2 transition-colors hover:bg-muted/30"
@@ -4023,7 +4030,7 @@ function ImageSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         >
           <div className="grid grid-cols-3 gap-1.5">
             {imageResults.slice(0, 9).map((img: any, i: number) => {
-              const imgUrl = img.url || img.imageUrl || img.image_url || '';
+              const imgUrl = safeHttpUrl(img.url || img.imageUrl || img.image_url || '');
               if (!imgUrl) return null;
               const title = img.title || '';
               return (
@@ -4340,7 +4347,7 @@ function PresentationGenTool({
             )}
           {viewerProxyUrl && (
             <a
-              href={viewerProxyUrl}
+              href={safeHttpUrl(viewerProxyUrl) ?? '#'}
               target="_blank"
               rel="noopener noreferrer"
               className="ml-auto flex-shrink-0"
@@ -4518,6 +4525,7 @@ function useShowOpenInTab(props: {
   const { openTab, openExternal } = useToolNavigation();
   const proxy = useProxyUrl(url);
   const hasLocalhostUrl = !!parseLocalhostUrl(url) && !isAppRouteUrl(url);
+  const safeExternalUrl = safeHttpUrl(url);
 
   // For HTML file paths, build a static-file-server URL and proxy it
   const isHtmlFilePath =
@@ -4564,8 +4572,8 @@ function useShowOpenInTab(props: {
       });
       return;
     }
-    if (url) {
-      openExternal(url);
+    if (safeExternalUrl) {
+      openExternal(safeExternalUrl);
       return;
     }
     if (path) {
@@ -4586,6 +4594,7 @@ function useShowOpenInTab(props: {
     openTab,
     path,
     proxy,
+    safeExternalUrl,
     title,
     url,
   ]);

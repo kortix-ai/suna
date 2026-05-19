@@ -14,7 +14,28 @@ export function sanitizeAuthReturnUrl(
   if (!value) return fallback;
 
   const trimmedValue = value.trim();
-  if (!trimmedValue.startsWith('/') || trimmedValue.startsWith('//')) {
+  let decodedValue = trimmedValue;
+  try {
+    decodedValue = decodeURIComponent(trimmedValue);
+  } catch {
+    return fallback;
+  }
+
+  if (
+    !trimmedValue.startsWith('/') ||
+    trimmedValue.startsWith('//') ||
+    trimmedValue.includes('\\') ||
+    decodedValue.startsWith('//') ||
+    decodedValue.includes('\\') ||
+    /[\u0000-\u001f\u007f]/.test(trimmedValue)
+  ) {
+    return fallback;
+  }
+
+  try {
+    const resolved = new URL(trimmedValue, 'https://kortix.local');
+    if (resolved.origin !== 'https://kortix.local') return fallback;
+  } catch {
     return fallback;
   }
 

@@ -186,6 +186,25 @@ export const accountGithubInstallations = kortixSchema.table(
   ],
 );
 
+export const accountGithubInstallationStates = kortixSchema.table(
+  'account_github_installation_states',
+  {
+    stateNonce: text('state_nonce').primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    installationId: text('installation_id'),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_account_github_installation_states_account').on(table.accountId),
+    index('idx_account_github_installation_states_expires_at').on(table.expiresAt),
+  ],
+);
+
 // ─── Projects ───────────────────────────────────────────────────────────────
 // New project-first model. A project is the Git-backed source of truth for a
 // company/repo. Legacy sandboxes remain below as compute/runtime state.

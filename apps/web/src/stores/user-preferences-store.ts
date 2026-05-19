@@ -24,6 +24,8 @@ export interface UserPreferences {
   themeId: string;
   /** Selected desktop wallpaper ID */
   wallpaperId: string;
+  /** When true, the tab selector bar is hidden and content extends to the top */
+  disableTabSelector: boolean;
 }
 
 // ============================================================================
@@ -55,6 +57,9 @@ interface UserPreferencesState {
   /** Set the active desktop wallpaper by ID */
   setWallpaperId: (wallpaperId: string) => void;
 
+  /** Toggle the tab selector bar on/off */
+  setDisableTabSelector: (disabled: boolean) => void;
+
   /** Reset all preferences to defaults */
   resetPreferences: () => void;
 
@@ -69,6 +74,7 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
         keyboard: getDefaultKeyboardPreferences(),
         themeId: 'graphite',
         wallpaperId: DEFAULT_WALLPAPER_ID,
+        disableTabSelector: false,
       },
 
       setKeyboardPreferences: (prefs) => {
@@ -101,12 +107,23 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
         });
       },
 
+      setDisableTabSelector: (disabled) => {
+        const current = get().preferences;
+        set({
+          preferences: {
+            ...current,
+            disableTabSelector: disabled,
+          },
+        });
+      },
+
       resetPreferences: () => {
         set({
           preferences: {
             keyboard: getDefaultKeyboardPreferences(),
             themeId: 'graphite',
             wallpaperId: DEFAULT_WALLPAPER_ID,
+            disableTabSelector: false,
           },
         });
       },

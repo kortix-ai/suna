@@ -39,6 +39,7 @@ import {
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { isBillingEnabled } from '@/lib/config';
 import { transitionFromElement } from '@/lib/view-transition';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
@@ -125,6 +126,7 @@ export function UserMenu({ user }: UserMenuProps) {
       const supabase = createClient();
       await supabase.auth.signOut();
       clearUserLocalStorage();
+      await clearSessionIDBCache();
       router.push('/auth');
     });
   };

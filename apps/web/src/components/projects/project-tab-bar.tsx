@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Menu, PanelRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, PanelRight, SlidersHorizontal, X } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
@@ -43,15 +43,30 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   const tabsByProject = useProjectSessionTabsStore((s) => s.tabsByProject);
   const openTab = useProjectSessionTabsStore((s) => s.openTab);
   const closeTab = useProjectSessionTabsStore((s) => s.closeTab);
+  const customizeOpenByProject = useProjectSessionTabsStore(
+    (s) => s.customizeOpenByProject,
+  );
+  const openCustomizeTab = useProjectSessionTabsStore((s) => s.openCustomizeTab);
+  const closeCustomizeTab = useProjectSessionTabsStore((s) => s.closeCustomizeTab);
   const openTabIds = useMemo(
     () => tabsByProject[projectId] ?? [],
     [tabsByProject, projectId],
   );
+  const isCustomizeRoute =
+    pathname?.startsWith(`/projects/${projectId}/customize`) ?? false;
+  const isCustomizeTabOpen =
+    isCustomizeRoute || (customizeOpenByProject[projectId] ?? false);
 
   // Auto-open the current session as a tab whenever the URL points at one.
   useEffect(() => {
     if (activeSessionId) openTab(projectId, activeSessionId);
   }, [projectId, activeSessionId, openTab]);
+
+  // Auto-open the Customize tab any time the URL lands on /customize — this
+  // covers deep links (e.g. a /files redirect) and back/forward nav.
+  useEffect(() => {
+    if (isCustomizeRoute) openCustomizeTab(projectId);
+  }, [isCustomizeRoute, projectId, openCustomizeTab]);
 
   // Load session metadata so tabs can show the real title instead of a UUID.
   const { data: sessions } = useQuery({
@@ -149,8 +164,60 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
       </div>
 
       {/* Session tabs — mirrors components/tabs/tab-bar.tsx OG styling:
-          flat row, bottom accent line on active, hover-fade close button. */}
+          flat row, bottom accent line on active, hover-fade close button.
+          The Customize tab sits at the head of the list so its slot is
+          stable regardless of how many sessions are open. */}
       <div className="flex-1 flex items-stretch overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+        {isCustomizeTabOpen && (
+          <div
+            key="__customize"
+            role="tab"
+            aria-selected={isCustomizeRoute}
+            onClick={() => router.push(`/projects/${projectId}/customize`)}
+            className={cn(
+              'group relative flex items-center text-[12.5px] select-none cursor-pointer',
+              'transition-colors duration-150 h-full',
+              'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[48px] md:min-w-[80px]',
+              isCustomizeRoute
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <SlidersHorizontal className="h-3 w-3 flex-shrink-0" />
+            <span
+              className={cn(
+                'flex-1 truncate',
+                isCustomizeRoute && 'font-medium',
+              )}
+            >
+              Customize
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                closeCustomizeTab(projectId);
+                if (isCustomizeRoute) {
+                  router.push(`/projects/${projectId}/sessions`);
+                }
+              }}
+              className={cn(
+                'flex-shrink-0 p-0.5 rounded-sm transition-colors duration-100 cursor-pointer',
+                'hover:bg-foreground/10',
+                'hidden md:block',
+                isCustomizeRoute
+                  ? 'md:opacity-40 md:hover:opacity-80'
+                  : 'md:opacity-0 md:group-hover:opacity-40 md:group-hover:hover:opacity-80',
+              )}
+              aria-label="Close Customize"
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+            {isCustomizeRoute && (
+              <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-foreground/80 rounded-full" />
+            )}
+          </div>
+        )}
         {openTabIds.map((sessionId) => {
           // Sessions don't carry a user-set name yet (API model is branch-only).
           // Fall back to a short id slice until naming ships.

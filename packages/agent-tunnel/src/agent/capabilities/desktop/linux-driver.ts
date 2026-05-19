@@ -241,8 +241,12 @@ export class LinuxDriver implements DesktopDriver {
   }
 
   async appQuit(name: string): Promise<void> {
-    const out = await exec('pgrep', ['-f', name]).catch(() => '');
-    const pids = out.trim().split('\n').filter(Boolean);
+    const target = name.trim();
+    if (!target || target.length > 128) throw new Error('Invalid app name');
+    const apps = await this.appList();
+    const pids = [...new Set(apps
+      .filter(app => app.name === target || app.bundleId === target)
+      .map(app => String(app.pid)))];
 
     for (const pid of pids) {
       await exec('kill', [pid]).catch(() => {});

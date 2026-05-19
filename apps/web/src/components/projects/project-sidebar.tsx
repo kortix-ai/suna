@@ -9,7 +9,6 @@ import {
   ChevronLeft,
   ChevronDown,
   SquarePen,
-  FolderOpen,
   Loader2,
   SlidersHorizontal,
   ListTree,
@@ -351,36 +350,19 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     return () => window.removeEventListener('keydown', handler);
   }, [handleNewSession]);
 
-  const filesActive = pathname?.startsWith(`/projects/${projectId}/files`) ?? false;
-  // Customize covers the whole route group: agents, skills, secrets, triggers,
-  // channels, settings. Any of those should light up the sidebar
-  // button so the user knows where they are.
-  const CUSTOMIZE_SECTIONS = [
-    'agents',
-    'skills',
-    'commands',
-    'secrets',
-    'schedules',
-    'webhooks',
-    'channels',
-    'settings',
-  ];
-  const customizeActive = CUSTOMIZE_SECTIONS.some((slug) =>
-    pathname?.startsWith(`/projects/${projectId}/${slug}`),
-  );
+  // Customize lives as a dedicated tab next to the project sessions. We
+  // track an "open" flag in the same per-project store the session tabs
+  // use so the tab bar can render it consistently, and clicking the
+  // sidebar button both opens the tab and routes to /customize.
+  const openCustomizeTab = useProjectSessionTabsStore((s) => s.openCustomizeTab);
+  const isCustomizeRoute =
+    pathname?.startsWith(`/projects/${projectId}/customize`) ?? false;
 
-  const goFiles = useCallback(() => {
-    router.push(`/projects/${projectId}/files`);
-    if (isMobile) setOpenMobile(false);
-  }, [router, projectId, isMobile, setOpenMobile]);
-
-  // Customize defaults to /agents — that's the first section in the
-  // secondary nav. Last-visited memory could come later; for now a stable
-  // default beats route surprise.
   const goCustomize = useCallback(() => {
-    router.push(`/projects/${projectId}/agents`);
+    openCustomizeTab(projectId);
+    router.push(`/projects/${projectId}/customize`);
     if (isMobile) setOpenMobile(false);
-  }, [router, projectId, isMobile, setOpenMobile]);
+  }, [openCustomizeTab, router, projectId, isMobile, setOpenMobile]);
 
   return (
     <Sidebar
@@ -458,22 +440,15 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               flyoutContent={<ProjectSessionsFlyout projectId={projectId} />}
             />
           </div>
-          {/* Files + Customize pinned to the bottom — mirrors the expanded
-              layout, where the project nav lives just above the footer.
-              Versions + Change Requests are surfaced inside the /files page
-              chrome (toolbar pills + right-edge drawers). */}
+          {/* Customize pinned to the bottom — opens the full-screen
+              modal that houses Files, Skills, Agents, and the rest of
+              the per-project config surfaces. */}
           <div className="mt-auto w-full space-y-0.5">
-            <CollapsedIconButton
-              icon={<FolderOpen className="h-4 w-4" />}
-              label="Files"
-              onClick={goFiles}
-              isActive={filesActive}
-            />
             <CollapsedIconButton
               icon={<SlidersHorizontal className="h-4 w-4" />}
               label="Customize"
               onClick={goCustomize}
-              isActive={customizeActive}
+              isActive={isCustomizeRoute}
             />
           </div>
         </div>
@@ -525,23 +500,15 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             </Collapsible>
           </SidebarGroup>
 
-          {/* — Project nav — pinned just above the workspace footer. */}
+          {/* — Project nav — pinned just above the workspace footer. The
+              single Customize button opens a full-screen modal with Files,
+              Skills, Agents, and every other per-project config surface. */}
           <SidebarGroup className="py-0 mt-auto">
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  onClick={goFiles}
-                  isActive={filesActive}
-                  className="!text-[12.5px] font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
-                >
-                  <FolderOpen />
-                  <span>Files</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
                   onClick={goCustomize}
-                  isActive={customizeActive}
+                  isActive={isCustomizeRoute}
                   className="!text-[12.5px] font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
                 >
                   <SlidersHorizontal />

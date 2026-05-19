@@ -31,7 +31,7 @@ const projectRow: typeof projects.$inferSelect = {
   defaultBranch: 'main',
   manifestPath: 'kortix.toml',
   status: 'active',
-  metadata: {},
+  metadata: { github: { auth_source: 'pat', full_name: 'kortix-ai/contract-project' } },
   lastOpenedAt: null,
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -90,6 +90,7 @@ mock.module('../projects/git', () => ({
   resolveCommitSha: async () => 'a'.repeat(40),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
+  getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
 }));
@@ -104,6 +105,13 @@ mock.module('../snapshots/builder', () => ({
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  verifyGitHubAppInstallState: (state: string) => state,
+  verifyGitHubAppInstallStatePayload: (state: string) => ({
+    accountId: state,
+    nonce: 'test-nonce',
+    issuedAt: Math.floor(Date.now() / 1000),
+  }),
+  getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
   deleteFile: async () => undefined,
   commitFile: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
@@ -456,7 +464,7 @@ describe('project session API contract', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'local_docker', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
     });
     expect(createRes.status).toBe(201);
 
@@ -496,7 +504,7 @@ describe('project session API contract', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        provider: 'local_docker',
+        provider: 'daytona',
         base_ref: 'main',
         name: 'Contract session',
         agent_name: 'reviewer',
@@ -511,7 +519,7 @@ describe('project session API contract', () => {
     expect(body.session_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.session_id).toBe(body.sandbox_id);
     expect(body.session_id).toBe(body.branch_name);
-    expect(body.sandbox_provider).toBe('local_docker');
+    expect(body.sandbox_provider).toBe('daytona');
     expect(body.status).toBe('provisioning');
     expect(body.name).toBe('Contract session');
     expect(branchCreateCalls).toBe(1);
@@ -545,7 +553,7 @@ describe('project session API contract', () => {
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'local_docker' }),
+      body: JSON.stringify({ provider: 'daytona' }),
     });
 
     expect(res.status).toBe(429);

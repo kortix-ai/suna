@@ -1,4 +1,4 @@
-import { createSign } from 'node:crypto';
+import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
 import { getTraceHeaders } from '../lib/request-context';
 
 const GITHUB_API = 'https://api.github.com';
@@ -73,15 +73,105 @@ export function isGithubPatConfigured() {
   return Boolean(patToken());
 }
 
+export function getGitHubPatAuthContext(): GitHubAuthContext | null {
+  const token = patToken();
+  if (!token) return null;
+  return {
+    token,
+    source: 'pat',
+    owner: process.env.KORTIX_GITHUB_OWNER?.trim() || undefined,
+  };
+}
+
 export function isGithubAppConfigured() {
   return Boolean(githubAppId() && githubAppPrivateKey());
 }
 
-export function buildGitHubAppInstallUrl(accountId?: string | null) {
+function githubAppStateSecret() {
+  return (
+    process.env.KORTIX_GITHUB_APP_STATE_SECRET ||
+    process.env.SUPABASE_JWT_SECRET ||
+    githubAppPrivateKey() ||
+    patToken() ||
+    null
+  );
+}
+
+function signGitHubAppStatePayload(payload: string) {
+  const secret = githubAppStateSecret();
+  if (!secret) {
+    throw new Error('GitHub App install state secret is not configured');
+  }
+  return createHmac('sha256', secret).update(payload).digest('base64url');
+}
+
+export interface GitHubAppInstallState {
+  accountId: string;
+  nonce?: string;
+  issuedAt: number;
+}
+
+export function buildGitHubAppInstallState(
+  accountId: string,
+  options: { nonce?: string } = {},
+  nowMs = Date.now(),
+) {
+  const payload = Buffer.from(JSON.stringify({
+    account_id: accountId,
+    nonce: options.nonce,
+    iat: Math.floor(nowMs / 1000),
+  })).toString('base64url');
+  return `v1.${payload}.${signGitHubAppStatePayload(payload)}`;
+}
+
+export function verifyGitHubAppInstallStatePayload(state: string, nowMs = Date.now()): GitHubAppInstallState | null {
+  const parts = state.split('.');
+  if (parts.length !== 3 || parts[0] !== 'v1') return null;
+  const payload = parts[1]!;
+  const signature = parts[2]!;
+  let expected: string;
+  try {
+    expected = signGitHubAppStatePayload(payload);
+  } catch {
+    return null;
+  }
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) {
+    return null;
+  }
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      account_id?: unknown;
+      nonce?: unknown;
+      iat?: unknown;
+    };
+    const accountId = typeof decoded.account_id === 'string' ? decoded.account_id : '';
+    const nonce = typeof decoded.nonce === 'string' ? decoded.nonce : undefined;
+    const issuedAt = typeof decoded.iat === 'number' ? decoded.iat : 0;
+    const now = Math.floor(nowMs / 1000);
+    if (!accountId || issuedAt < now - 30 * 60 || issuedAt > now + 60) return null;
+    return { accountId, nonce, issuedAt };
+  } catch {
+    return null;
+  }
+}
+
+export function verifyGitHubAppInstallState(state: string, nowMs = Date.now()): string | null {
+  return verifyGitHubAppInstallStatePayload(state, nowMs)?.accountId ?? null;
+}
+
+export function buildGitHubAppInstallUrl(accountId?: string | null, nonce?: string) {
   const slug = githubAppSlug()?.trim();
   if (!slug) return null;
   const url = new URL(`https://github.com/apps/${slug}/installations/new`);
-  if (accountId) url.searchParams.set('state', accountId);
+  if (accountId) {
+    try {
+      url.searchParams.set('state', buildGitHubAppInstallState(accountId, { nonce }));
+    } catch {
+      return null;
+    }
+  }
   return url.toString();
 }
 
@@ -202,16 +292,7 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
     throw new Error('GitHub owner must match the account GitHub App installation');
   }
 
-  const target = ownerInput && !input.auth?.owner
-    ? await (async () => {
-        try {
-          await ghFetch(`/orgs/${ownerInput}`, undefined, input.auth);
-          return { owner: ownerInput, isOrg: true };
-        } catch {
-          return { owner: ownerInput, isOrg: false };
-        }
-      })()
-    : await resolveDefaultOwner(input.auth);
+  const target = await resolveDefaultOwner(input.auth);
 
   const body = {
     name: input.name,

@@ -64,37 +64,6 @@ export function PresentationSlideCard({
   // Calculate the scale factor to fit 1920x1080 content into the container
   const scale = containerWidth / 1920;
 
-  // Inject JavaScript to properly scale the slide content
-  const injectedJS = `
-    (function() {
-      const existingViewport = document.querySelector('meta[name="viewport"]');
-      if (existingViewport) existingViewport.remove();
-      
-      const viewport = document.createElement('meta');
-      viewport.name = 'viewport';
-      viewport.content = 'width=1920, initial-scale=1, user-scalable=no';
-      document.head.appendChild(viewport);
-      
-      const style = document.createElement('style');
-      style.textContent = \`
-        * { box-sizing: border-box; }
-        html, body {
-          margin: 0;
-          padding: 0;
-          width: 1920px;
-          height: 1080px;
-          overflow: hidden;
-          background: white;
-        }
-        body > * {
-          max-width: 100%;
-        }
-      \`;
-      document.head.appendChild(style);
-      true;
-    })();
-  `;
-
   if (!slidePreviewUrl) {
     return (
       <View
@@ -160,9 +129,8 @@ export function PresentationSlideCard({
               showsHorizontalScrollIndicator={false}
               style={{ width: 1920, height: 1080, backgroundColor: 'white' }}
               originWhitelist={['*']}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              injectedJavaScript={injectedJS}
+              javaScriptEnabled={false}
+              domStorageEnabled={false}
               onMessage={() => {}}
             />
           </View>

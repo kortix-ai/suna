@@ -19,6 +19,7 @@ export class TunnelRateLimiter {
     permRequest: { limit: config.TUNNEL_RATE_LIMIT_PERM_REQUEST, windowMs: 60_000 },
     wsConnect: { limit: config.TUNNEL_RATE_LIMIT_WS_CONNECT, windowMs: 60_000 },
     permGrant: { limit: config.TUNNEL_RATE_LIMIT_PERM_GRANT, windowMs: 60_000 },
+    deviceAuthCreateGlobal: { limit: 100, windowMs: 60_000 },
     deviceAuthCreate: { limit: 5, windowMs: 60_000 },
     deviceAuthPoll: { limit: 30, windowMs: 60_000 },
   };

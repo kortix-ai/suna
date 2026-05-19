@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
   accountGithubInstallations,
+  accountGithubInstallationStates,
   accountMembers,
   projectMembers,
   projects,
@@ -22,6 +23,19 @@ const SPEC_STARTER_PATHS = [
   '.kortix/Dockerfile',
   '.kortix/opencode/agents/kortix.md',
   '.kortix/opencode/opencode.jsonc',
+  '.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md',
+  '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
+  '.kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/agents.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/commands.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/mcp-servers.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/models.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/overview.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/permissions.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/plugins.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/rules.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
+  '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
   '.kortix/opencode/skills/kortix-system/SKILL.md',
   '.kortix/opencode/tools/show.ts',
   'kortix.toml',
@@ -90,6 +104,7 @@ mock.module('../projects/git', () => ({
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
+  getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
 }));
@@ -107,6 +122,11 @@ mock.module('../snapshots/builder', () => ({
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  verifyGitHubAppInstallState: (state: string) => state === 'valid-install-state' ? ACCOUNT_ID : null,
+  verifyGitHubAppInstallStatePayload: (state: string) => state === 'valid-install-state'
+    ? { accountId: ACCOUNT_ID, nonce: 'valid-install-nonce', issuedAt: Math.floor(Date.now() / 1000) }
+    : null,
+  getGitHubPatAuthContext: () => null,
   deleteFile: async () => undefined,
   commitFile: async (input: any) => {
     commitCalls.push(input);
@@ -241,6 +261,15 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
+    update: (table: unknown) => ({
+      set: () => ({
+        where: () => ({
+          returning: async () => table === accountGithubInstallationStates
+            ? [{ stateNonce: 'valid-install-nonce' }]
+            : [],
+        }),
+      }),
+    }),
     delete: (table: unknown) => ({
       where: async () => {
         if (table === accountGithubInstallations) installationRow = null;
@@ -301,7 +330,7 @@ describe('create-repo starter scaffold contract', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        account_id: ACCOUNT_ID,
+        state: 'valid-install-state',
         installation_id: '42',
       }),
     });

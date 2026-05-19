@@ -108,12 +108,12 @@ describe('/v1/setup', () => {
       expect(data.api.ok).toBe(true);
     });
 
-    it('reports docker status', async () => {
+    it('reports provider config status', async () => {
       const app = createSetupTestApp();
       const res = await app.request('/v1/setup/health');
       const data = await res.json();
-      expect(data.docker).toBeDefined();
-      expect(typeof data.docker.ok).toBe('boolean');
+      expect(data.daytona).toBeDefined();
+      expect(typeof data.daytona.ok).toBe('boolean');
     });
   });
 });

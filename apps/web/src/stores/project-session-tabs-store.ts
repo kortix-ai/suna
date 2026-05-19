@@ -22,6 +22,12 @@ interface State {
   tabsByProject: Record<string, string[]>;
   /** projectId → stack of recently-closed session_ids (most recent last) */
   recentlyClosedByProject: Record<string, string[]>;
+  /**
+   * projectId → whether the Customize tab is currently open.
+   * Customize sits next to the session tabs but isn't a session, so it
+   * lives in its own slot rather than mingling with sessionId strings.
+   */
+  customizeOpenByProject: Record<string, boolean>;
 }
 
 interface Actions {
@@ -35,6 +41,10 @@ interface Actions {
   setTabs: (projectId: string, sessionIds: string[]) => void;
   /** Get tabs for a project (memoized via store). */
   getTabs: (projectId: string) => string[];
+  /** Pop the Customize tab open for this project (idempotent). */
+  openCustomizeTab: (projectId: string) => void;
+  /** Close the Customize tab for this project. */
+  closeCustomizeTab: (projectId: string) => void;
 }
 
 export const useProjectSessionTabsStore = create<State & Actions>()(
@@ -42,6 +52,24 @@ export const useProjectSessionTabsStore = create<State & Actions>()(
     (set, get) => ({
       tabsByProject: {},
       recentlyClosedByProject: {},
+      customizeOpenByProject: {},
+
+      openCustomizeTab: (projectId) => {
+        if (get().customizeOpenByProject[projectId]) return;
+        set({
+          customizeOpenByProject: {
+            ...get().customizeOpenByProject,
+            [projectId]: true,
+          },
+        });
+      },
+
+      closeCustomizeTab: (projectId) => {
+        if (!get().customizeOpenByProject[projectId]) return;
+        const next = { ...get().customizeOpenByProject };
+        delete next[projectId];
+        set({ customizeOpenByProject: next });
+      },
 
       openTab: (projectId, sessionId) => {
         const current = get().tabsByProject[projectId] ?? [];

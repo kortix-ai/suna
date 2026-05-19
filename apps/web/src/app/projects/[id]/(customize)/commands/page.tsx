@@ -49,7 +49,7 @@ export default function ProjectCommandsPage({
   return <CommandsView projectId={projectId} />;
 }
 
-function CommandsView({ projectId }: { projectId: string }) {
+export function CommandsView({ projectId }: { projectId: string }) {
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),

@@ -60,7 +60,7 @@ export default function ProjectSkillsPage({
   return <SkillsView projectId={projectId} />;
 }
 
-function SkillsView({ projectId }: { projectId: string }) {
+export function SkillsView({ projectId }: { projectId: string }) {
   const detailQuery = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),

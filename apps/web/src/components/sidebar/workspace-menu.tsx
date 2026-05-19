@@ -45,6 +45,7 @@ import {
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { themeOptions } from '@/lib/menu-registry';
 import { transitionFromElement } from '@/lib/view-transition';
 import {
@@ -217,6 +218,7 @@ export function WorkspaceMenu({
     const supabase = createClient();
     await supabase.auth.signOut();
     clearUserLocalStorage();
+    await clearSessionIDBCache();
     router.push('/auth');
   };
 

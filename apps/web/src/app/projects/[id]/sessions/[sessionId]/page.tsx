@@ -263,6 +263,22 @@ function ActiveSessionChat({
   const chatSessionId =
     (sessionsQuery.data ?? [])[0]?.id ?? createMutation.data?.id ?? null;
 
+  // Mirror the viewed session's title into our cloud DB so the name shows
+  // even when the sandbox isn't running. Fires on mount and whenever opencode
+  // changes the title (e.g. auto-titling after the first prompt). Cache-hit
+  // paths in useOpenCodeSession won't trigger the queryFn, so this effect is
+  // the authoritative trigger for per-session title sync.
+  // Must run BEFORE any conditional return — otherwise the runtimeError branch
+  // below would skip this hook and trigger "rendered fewer hooks than expected".
+  const activeSession = (sessionsQuery.data ?? []).find((s) => s.id === chatSessionId);
+  const activeTitle = activeSession?.title || null;
+  useEffect(() => {
+    if (!chatSessionId) return;
+    void syncOpencodeSessionTitles([
+      { opencode_session_id: chatSessionId, title: activeTitle },
+    ]).catch(() => {});
+  }, [chatSessionId, activeTitle]);
+
   const runtimeError = sessionsQuery.error ?? createMutation.error;
   if (runtimeError) {
     const formatted = formatOpenCodeRuntimeError(runtimeError);
@@ -292,20 +308,6 @@ function ActiveSessionChat({
       />
     );
   }
-
-  // Mirror the viewed session's title into our cloud DB so the name shows
-  // even when the sandbox isn't running. Fires on mount and whenever opencode
-  // changes the title (e.g. auto-titling after the first prompt). Cache-hit
-  // paths in useOpenCodeSession won't trigger the queryFn, so this effect is
-  // the authoritative trigger for per-session title sync.
-  const activeSession = (sessionsQuery.data ?? []).find((s) => s.id === chatSessionId);
-  const activeTitle = activeSession?.title || null;
-  useEffect(() => {
-    if (!chatSessionId) return;
-    void syncOpencodeSessionTitles([
-      { opencode_session_id: chatSessionId, title: activeTitle },
-    ]).catch(() => {});
-  }, [chatSessionId, activeTitle]);
 
   if (!chatSessionId) {
     return <SessionLoadingSkeleton />;

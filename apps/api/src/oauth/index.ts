@@ -104,6 +104,86 @@ function computeCodeChallenge(codeVerifier: string): string {
     .digest('base64url');
 }
 
+function parseRedirectUri(value: string): URL | null {
+  try {
+    const url = new URL(value);
+    if (['javascript:', 'data:', 'vbscript:', 'file:'].includes(url.protocol)) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function parseScopeList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((scope): scope is string => typeof scope === 'string' && Boolean(scope.trim())).map((scope) => scope.trim());
+  }
+  if (typeof value !== 'string') return [];
+  return value.split(/\s+/).map((scope) => scope.trim()).filter(Boolean);
+}
+
+function validateRequestedScopes(requested: string[], allowed: unknown): string[] | null {
+  const allowedSet = new Set(parseScopeList(allowed));
+  for (const scope of requested) {
+    if (!allowedSet.has(scope)) return null;
+  }
+  return requested;
+}
+
+function requireOAuthScope(c: Context, scope: string): Response | null {
+  const scopes = ((c as any).get('oauthScopes') as string[] | undefined) ?? [];
+  return scopes.includes(scope)
+    ? null
+    : c.json({ error: 'insufficient_scope', required_scope: scope }, 403);
+}
+
+type PendingAuthorizationRequest = {
+  clientId: string;
+  clientName: string;
+  redirectUri: string;
+  scopes: string[];
+  state: string;
+  codeChallenge: string;
+  codeChallengeMethod: string;
+  expiresAt: number;
+};
+
+const AUTH_REQUEST_TTL_MS = 10 * 60 * 1000;
+const pendingAuthorizationRequests = new Map<string, PendingAuthorizationRequest>();
+
+function createAuthorizationRequest(request: Omit<PendingAuthorizationRequest, 'expiresAt'>): string {
+  const requestId = randomBytes(32).toString('base64url');
+  pendingAuthorizationRequests.set(requestId, {
+    ...request,
+    expiresAt: Date.now() + AUTH_REQUEST_TTL_MS,
+  });
+  return requestId;
+}
+
+function getAuthorizationRequest(requestId: string): PendingAuthorizationRequest | null {
+  const request = pendingAuthorizationRequests.get(requestId);
+  if (!request) return null;
+  if (request.expiresAt < Date.now()) {
+    pendingAuthorizationRequests.delete(requestId);
+    return null;
+  }
+  return request;
+}
+
+function consumeAuthorizationRequest(requestId: string): PendingAuthorizationRequest | null {
+  const request = getAuthorizationRequest(requestId);
+  if (!request) return null;
+  pendingAuthorizationRequests.delete(requestId);
+  return request;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [requestId, request] of pendingAuthorizationRequests) {
+    if (request.expiresAt < now) pendingAuthorizationRequests.delete(requestId);
+  }
+}, 5 * 60_000);
+
 // ─── Token Generation ───────────────────────────────────────────────────────
 
 function generateAccessToken(): string {
@@ -199,53 +279,68 @@ oauthApp.get('/authorize', async (c) => {
   }
 
   const allowedUris = client.redirectUris ?? [];
-  if (!allowedUris.includes(redirectUri)) {
+  if (!parseRedirectUri(redirectUri) || !allowedUris.includes(redirectUri)) {
     return c.json({ error: 'invalid_request', error_description: 'redirect_uri not in allowed list' }, 400);
   }
+  const scopes = validateRequestedScopes(parseScopeList(scope), client.scopes);
+  if (!scopes) {
+    return c.json({ error: 'invalid_scope' }, 400);
+  }
+
+  const requestId = createAuthorizationRequest({
+    clientId,
+    clientName: client.name,
+    redirectUri,
+    scopes,
+    state,
+    codeChallenge,
+    codeChallengeMethod,
+  });
 
   const frontendUrl = config.FRONTEND_URL || 'https://kortix.com';
   const consentUrl = new URL(`${frontendUrl}/oauth/authorize`);
-  consentUrl.searchParams.set('client_name', client.name);
-  consentUrl.searchParams.set('client_id', clientId);
-  consentUrl.searchParams.set('scope', scope);
-  consentUrl.searchParams.set('state', state);
-  consentUrl.searchParams.set('redirect_uri', redirectUri);
-  consentUrl.searchParams.set('code_challenge', codeChallenge);
-  consentUrl.searchParams.set('code_challenge_method', codeChallengeMethod);
+  consentUrl.searchParams.set('request_id', requestId);
 
   return c.redirect(consentUrl.toString());
+});
+
+// ─── GET /authorize/consent/:requestId ──────────────────────────────────────
+
+oauthApp.get('/authorize/consent/:requestId', supabaseAuth, async (c) => {
+  const requestId = c.req.param('requestId');
+  const request = getAuthorizationRequest(requestId);
+  if (!request) {
+    return c.json({ error: 'invalid_request', error_description: 'Authorization request expired or not found' }, 400);
+  }
+
+  return c.json({
+    client_id: request.clientId,
+    client_name: request.clientName,
+    scope: request.scopes.join(' '),
+    scopes: request.scopes,
+  });
 });
 
 // ─── POST /authorize/consent ────────────────────────────────────────────────
 
 oauthApp.post('/authorize/consent', supabaseAuth, async (c) => {
   const body = await c.req.json();
-  const {
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    scope,
-    state,
-    code_challenge: codeChallenge,
-    code_challenge_method: codeChallengeMethod,
-    approved,
-  } = body;
+  const requestId = typeof body.request_id === 'string' ? body.request_id : '';
+  const approved = body.approved === true;
 
-  if (!clientId || !redirectUri || !codeChallenge) {
+  if (!requestId) {
     return c.json({ error: 'invalid_request' }, 400);
   }
 
-  const redirect = new URL(redirectUri);
-
-  if (!approved) {
-    redirect.searchParams.set('error', 'access_denied');
-    if (state) redirect.searchParams.set('state', state);
-    return c.json({ redirect_uri: redirect.toString() });
+  const request = consumeAuthorizationRequest(requestId);
+  if (!request) {
+    return c.json({ error: 'invalid_request', error_description: 'Authorization request expired or already used' }, 400);
   }
 
   const [client] = await db
     .select()
     .from(oauthClients)
-    .where(and(eq(oauthClients.clientId, clientId), eq(oauthClients.active, true)))
+    .where(and(eq(oauthClients.clientId, request.clientId), eq(oauthClients.active, true)))
     .limit(1);
 
   if (!client) {
@@ -253,8 +348,20 @@ oauthApp.post('/authorize/consent', supabaseAuth, async (c) => {
   }
 
   const allowedUris = client.redirectUris ?? [];
-  if (!allowedUris.includes(redirectUri)) {
+  const redirect = parseRedirectUri(request.redirectUri);
+  if (!redirect || !allowedUris.includes(request.redirectUri)) {
     return c.json({ error: 'invalid_request', error_description: 'redirect_uri mismatch' }, 400);
+  }
+
+  const scopes = validateRequestedScopes(request.scopes, client.scopes);
+  if (!scopes) {
+    return c.json({ error: 'invalid_scope' }, 400);
+  }
+
+  if (!approved) {
+    redirect.searchParams.set('error', 'access_denied');
+    if (request.state) redirect.searchParams.set('state', request.state);
+    return c.json({ redirect_uri: redirect.toString() });
   }
 
   const userId = (c as any).get('userId') as string;
@@ -268,23 +375,22 @@ oauthApp.post('/authorize/consent', supabaseAuth, async (c) => {
   const accountId = membership?.accountId ?? userId;
 
   const code = generateAuthCode();
-  const scopes = scope ? (typeof scope === 'string' ? scope.split(' ') : scope) : [];
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
   await db.insert(oauthAuthorizationCodes).values({
     code,
-    clientId,
+    clientId: request.clientId,
     userId,
     accountId,
-    redirectUri,
+    redirectUri: request.redirectUri,
     scopes,
-    codeChallenge,
-    codeChallengeMethod: codeChallengeMethod ?? 'S256',
+    codeChallenge: request.codeChallenge,
+    codeChallengeMethod: request.codeChallengeMethod,
     expiresAt,
   });
 
   redirect.searchParams.set('code', code);
-  if (state) redirect.searchParams.set('state', state);
+  if (request.state) redirect.searchParams.set('state', request.state);
 
   return c.json({ redirect_uri: redirect.toString() });
 });
@@ -375,10 +481,15 @@ async function handleAuthorizationCodeGrant(c: Context, body: Record<string, any
     return c.json({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
   }
 
-  await db
+  const [consumedCode] = await db
     .update(oauthAuthorizationCodes)
     .set({ usedAt: new Date() })
-    .where(eq(oauthAuthorizationCodes.id, authCode.id));
+    .where(and(eq(oauthAuthorizationCodes.id, authCode.id), isNull(oauthAuthorizationCodes.usedAt)))
+    .returning();
+
+  if (!consumedCode) {
+    return c.json({ error: 'invalid_grant', error_description: 'Authorization code already used' }, 400);
+  }
 
   const tokenResponse = await issueTokenPair({
     clientId: client.clientId,
@@ -420,10 +531,15 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
   }
 
   const now = new Date();
-  await db
+  const [consumedRefresh] = await db
     .update(oauthRefreshTokens)
     .set({ revokedAt: now })
-    .where(eq(oauthRefreshTokens.id, refreshRow.id));
+    .where(and(eq(oauthRefreshTokens.id, refreshRow.id), isNull(oauthRefreshTokens.revokedAt)))
+    .returning();
+
+  if (!consumedRefresh) {
+    return c.json({ error: 'invalid_grant', error_description: 'Refresh token already used' }, 400);
+  }
 
   await db
     .update(oauthAccessTokens)
@@ -449,6 +565,9 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
 // ─── GET /userinfo ──────────────────────────────────────────────────────────
 
 oauthApp.get('/userinfo', oauthTokenAuth, async (c) => {
+  const scopeError = requireOAuthScope(c, 'profile');
+  if (scopeError) return scopeError;
+
   const userId = (c as any).get('oauthUserId') as string;
   const accountId = (c as any).get('oauthAccountId') as string;
 
@@ -466,6 +585,9 @@ oauthApp.get('/userinfo', oauthTokenAuth, async (c) => {
 // ─── GET /claimable-machines ────────────────────────────────────────────────
 
 oauthApp.get('/claimable-machines', oauthTokenAuth, async (c) => {
+  const scopeError = requireOAuthScope(c, 'machines:read');
+  if (scopeError) return scopeError;
+
   const accountId = (c as any).get('oauthAccountId') as string;
 
   const rows = await db

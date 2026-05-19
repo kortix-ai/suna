@@ -105,6 +105,7 @@ interface SqliteRendererProps {
   filePath: string;
   fileName: string;
   className?: string;
+  readOnly?: boolean;
 }
 
 interface TableInfo {
@@ -161,9 +162,13 @@ function sqlLiteral(value: unknown): string {
   return `'${String(value).replace(/'/g, "''")}'`;
 }
 
+function quoteIdent(value: string): string {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
 // ── Component ────────────────────────────────────────────────────────────
 
-export function SqliteRenderer({ filePath, fileName, className }: SqliteRendererProps) {
+export function SqliteRenderer({ filePath, fileName, className, readOnly = false }: SqliteRendererProps) {
   // State
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -212,13 +217,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
 
           let rowCount = 0;
           try {
-            const countResult = db.exec(`SELECT COUNT(*) FROM "${name}"`);
+            const countResult = db.exec(`SELECT COUNT(*) FROM ${quoteIdent(name)}`);
             if (countResult.length > 0) rowCount = Number(countResult[0].values[0][0]);
           } catch { /* ignore */ }
 
           const columns: ColumnInfo[] = [];
           try {
-            const pragmaResult = db.exec(`PRAGMA table_info("${name}")`);
+            const pragmaResult = db.exec(`PRAGMA table_info(${quoteIdent(name)})`);
             if (pragmaResult.length > 0) {
               for (const col of pragmaResult[0].values) {
                 columns.push({
@@ -284,13 +289,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
 
             let rowCount = 0;
             try {
-              const countResult = db.exec(`SELECT COUNT(*) FROM "${name}"`);
+              const countResult = db.exec(`SELECT COUNT(*) FROM ${quoteIdent(name)}`);
               if (countResult.length > 0) rowCount = Number(countResult[0].values[0][0]);
             } catch { /* ignore */ }
 
             const columns: ColumnInfo[] = [];
             try {
-              const pragmaResult = db.exec(`PRAGMA table_info("${name}")`);
+              const pragmaResult = db.exec(`PRAGMA table_info(${quoteIdent(name)})`);
               if (pragmaResult.length > 0) {
                 for (const col of pragmaResult[0].values) {
                   columns.push({
@@ -341,7 +346,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     if (!dbRef.current || !selectedTable) return { columns: [], rows: [] };
 
     try {
-      const result = dbRef.current.exec(`SELECT * FROM "${selectedTable}" LIMIT 10000`);
+      const result = dbRef.current.exec(`SELECT * FROM ${quoteIdent(selectedTable)} LIMIT 10000`);
       if (result.length === 0) return { columns: [], rows: [] };
 
       const columns: string[] = result[0].columns;
@@ -372,7 +377,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
   );
 
   // ── Column defs for AG Grid (editable for tables, not views) ──────────
-  const isEditable = selectedTableInfo?.type === 'table';
+  const isEditable = !readOnly && selectedTableInfo?.type === 'table';
   const columnDefs = useMemo((): ColDef[] => {
     if (!tableData.columns.length) return [];
     const pkColumns = new Set(
@@ -394,7 +399,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
   // ── Handle cell edit → run UPDATE ─────────────────────────────────────
   const handleCellValueChanged = useCallback((event: CellValueChangedEvent) => {
     const db = dbRef.current;
-    if (!db || !selectedTable || !selectedTableInfo) return;
+    if (readOnly || !db || !selectedTable || !selectedTableInfo) return;
 
     const colName = event.colDef.field;
     const newValue = event.newValue;
@@ -410,13 +415,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
         const val = event.data[c.name];
         // For the column being edited, use old value in WHERE
         if (c.name === colName) {
-          return `"${c.name}" IS ${sqlLiteral(oldValue)}`;
+          return `${quoteIdent(c.name)} IS ${sqlLiteral(oldValue)}`;
         }
-        return `"${c.name}" IS ${sqlLiteral(val)}`;
+        return `${quoteIdent(c.name)} IS ${sqlLiteral(val)}`;
       })
       .join(' AND ');
 
-    const sql = `UPDATE "${selectedTable}" SET "${colName}" = ${sqlLiteral(newValue)} WHERE ${whereClause}`;
+    const sql = `UPDATE ${quoteIdent(selectedTable)} SET ${quoteIdent(colName)} = ${sqlLiteral(newValue)} WHERE ${whereClause}`;
 
     try {
       db.exec(sql);
@@ -427,7 +432,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
       // Revert the cell
       event.node.setDataValue(colName, oldValue);
     }
-  }, [selectedTable, selectedTableInfo, refreshTableMeta]);
+  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
 
   // ── Cell double-click → expand long values ────────────────────────────
   const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent) => {
@@ -453,7 +458,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
   // ── Save expanded cell edit ───────────────────────────────────────────
   const handleExpandedSave = useCallback(() => {
     const db = dbRef.current;
-    if (!db || !selectedTable || !selectedTableInfo || !expandedCell) return;
+    if (readOnly || !db || !selectedTable || !selectedTableInfo || !expandedCell) return;
 
     const newValue = expandedEditValue;
     const colName = expandedCell.column;
@@ -468,10 +473,10 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     const whereCols = pkCols.length > 0 ? pkCols : selectedTableInfo.columns;
 
     const whereClause = whereCols
-      .map((c) => `"${c.name}" IS ${sqlLiteral(rowNode.data[c.name])}`)
+      .map((c) => `${quoteIdent(c.name)} IS ${sqlLiteral(rowNode.data[c.name])}`)
       .join(' AND ');
 
-    const sql = `UPDATE "${selectedTable}" SET "${colName}" = ${sqlLiteral(newValue)} WHERE ${whereClause}`;
+    const sql = `UPDATE ${quoteIdent(selectedTable)} SET ${quoteIdent(colName)} = ${sqlLiteral(newValue)} WHERE ${whereClause}`;
 
     try {
       db.exec(sql);
@@ -483,7 +488,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     } catch (e: unknown) {
       toast.error(`Update failed: ${(e as Error)?.message || 'Unknown error'}`);
     }
-  }, [selectedTable, selectedTableInfo, expandedCell, expandedEditValue, refreshTableMeta]);
+  }, [selectedTable, selectedTableInfo, expandedCell, expandedEditValue, refreshTableMeta, readOnly]);
 
   // ── Row selection config ──────────────────────────────────────────────
   const rowSelection = useMemo((): RowSelectionOptions => ({
@@ -495,11 +500,11 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
   // ── Add new row ───────────────────────────────────────────────────────
   const handleAddRow = useCallback(() => {
     const db = dbRef.current;
-    if (!db || !selectedTable || !selectedTableInfo) return;
+    if (readOnly || !db || !selectedTable || !selectedTableInfo) return;
 
     // Build INSERT with default values
     const cols = selectedTableInfo.columns;
-    const colNames = cols.map((c) => `"${c.name}"`).join(', ');
+    const colNames = cols.map((c) => quoteIdent(c.name)).join(', ');
     const values = cols.map((c) => {
       if (c.dflt_value != null) return c.dflt_value;
       if (c.pk) return 'NULL'; // autoincrement
@@ -512,7 +517,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
       return 'NULL';
     }).join(', ');
 
-    const sql = `INSERT INTO "${selectedTable}" (${colNames}) VALUES (${values})`;
+    const sql = `INSERT INTO ${quoteIdent(selectedTable)} (${colNames}) VALUES (${values})`;
     try {
       db.exec(sql);
       setHasUnsavedChanges(true);
@@ -522,13 +527,13 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     } catch (e: unknown) {
       toast.error(`Insert failed: ${(e as Error)?.message || 'Unknown error'}`);
     }
-  }, [selectedTable, selectedTableInfo, refreshTableMeta]);
+  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
 
   // ── Delete selected rows ──────────────────────────────────────────────
   const handleDeleteSelected = useCallback(() => {
     const db = dbRef.current;
     const api = gridApiRef.current?.api;
-    if (!db || !api || !selectedTable || !selectedTableInfo) return;
+    if (readOnly || !db || !api || !selectedTable || !selectedTableInfo) return;
 
     const selectedRows = api.getSelectedRows();
     if (selectedRows.length === 0) {
@@ -542,11 +547,11 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     let deleted = 0;
     for (const row of selectedRows) {
       const whereClause = whereCols
-        .map((c) => `"${c.name}" IS ${sqlLiteral(row[c.name])}`)
+        .map((c) => `${quoteIdent(c.name)} IS ${sqlLiteral(row[c.name])}`)
         .join(' AND ');
 
       try {
-        db.exec(`DELETE FROM "${selectedTable}" WHERE ${whereClause} LIMIT 1`);
+        db.exec(`DELETE FROM ${quoteIdent(selectedTable)} WHERE ${whereClause} LIMIT 1`);
         deleted++;
       } catch { /* skip */ }
     }
@@ -557,12 +562,12 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
       refreshTableMeta();
       toast.success(`${deleted} row${deleted !== 1 ? 's' : ''} deleted`);
     }
-  }, [selectedTable, selectedTableInfo, refreshTableMeta]);
+  }, [selectedTable, selectedTableInfo, refreshTableMeta, readOnly]);
 
   // ── Save database back to file ────────────────────────────────────────
   const handleSave = useCallback(async () => {
     const db = dbRef.current;
-    if (!db) return;
+    if (readOnly || !db) return;
 
     setIsSaving(true);
     try {
@@ -579,7 +584,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     } finally {
       setIsSaving(false);
     }
-  }, [filePath, fileName]);
+  }, [filePath, fileName, readOnly]);
 
   // ── Discard changes (reload from disk) ────────────────────────────────
   const handleDiscard = useCallback(() => {
@@ -642,8 +647,12 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
 
       // Detect mutation queries → mark dirty + refresh
       const upper = sqlQuery.trim().toUpperCase();
-      if (upper.startsWith('INSERT') || upper.startsWith('UPDATE') || upper.startsWith('DELETE') ||
-          upper.startsWith('DROP') || upper.startsWith('ALTER') || upper.startsWith('CREATE')) {
+      const isMutation = upper.startsWith('INSERT') || upper.startsWith('UPDATE') || upper.startsWith('DELETE') ||
+          upper.startsWith('DROP') || upper.startsWith('ALTER') || upper.startsWith('CREATE');
+      if (readOnly && isMutation) {
+        throw new Error('Database is open read-only');
+      }
+      if (isMutation) {
         setHasUnsavedChanges(true);
         setDataVersion((v) => v + 1);
         refreshTableMeta();
@@ -676,7 +685,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     } finally {
       setIsQueryRunning(false);
     }
-  }, [sqlQuery, refreshTableMeta]);
+  }, [sqlQuery, refreshTableMeta, readOnly]);
 
   // ── Keyboard shortcut: Cmd+Enter to run query ─────────────────────────
   const handleQueryKeyDown = useCallback(
@@ -691,7 +700,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
 
   // ── Cmd+S to save ─────────────────────────────────────────────────────
   useEffect(() => {
-    if (!hasUnsavedChanges) return;
+    if (readOnly || !hasUnsavedChanges) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
@@ -700,7 +709,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [hasUnsavedChanges, handleSave]);
+  }, [hasUnsavedChanges, handleSave, readOnly]);
 
   // ── Copy SQL ──────────────────────────────────────────────────────────
   const handleCopySchema = useCallback(() => {
@@ -873,7 +882,7 @@ export function SqliteRenderer({ filePath, fileName, className }: SqliteRenderer
                   setSelectedTable(table.name);
                   setSearchTerm('');
                   if (viewMode === 'query') {
-                    setSqlQuery(`SELECT * FROM "${table.name}" LIMIT 100`);
+                    setSqlQuery(`SELECT * FROM ${quoteIdent(table.name)} LIMIT 100`);
                   }
                 }}
                 className={cn(

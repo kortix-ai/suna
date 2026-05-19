@@ -54,7 +54,10 @@ export default function ProjectSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: projectId } = use(params);
+  return <SettingsView projectId={projectId} />;
+}
 
+export function SettingsView({ projectId }: { projectId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">

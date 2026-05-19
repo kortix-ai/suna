@@ -202,6 +202,8 @@ describe('startCopilotDeviceFlow', () => {
   });
 
   test('routes to enterprise host when enterpriseUrl is provided', async () => {
+    const previousHosts = process.env.KORTIX_GITHUB_ENTERPRISE_HOSTS;
+    process.env.KORTIX_GITHUB_ENTERPRISE_HOSTS = 'company.ghe.com';
     responders.push((url) => {
       if (url === 'https://company.ghe.com/login/device/code') {
         return fakeJsonResponse(200, {
@@ -214,11 +216,16 @@ describe('startCopilotDeviceFlow', () => {
       return null;
     });
 
-    const flow = await startCopilotDeviceFlow({ enterpriseUrl: 'https://company.ghe.com' });
+    try {
+      const flow = await startCopilotDeviceFlow({ enterpriseUrl: 'https://company.ghe.com' });
 
-    expect(flow.handle.domain).toBe('company.ghe.com');
-    expect(flow.handle.enterprise_url).toBe('company.ghe.com');
-    expect(flow.verification_url).toBe('https://company.ghe.com/login/device');
+      expect(flow.handle.domain).toBe('company.ghe.com');
+      expect(flow.handle.enterprise_url).toBe('company.ghe.com');
+      expect(flow.verification_url).toBe('https://company.ghe.com/login/device');
+    } finally {
+      if (previousHosts === undefined) delete process.env.KORTIX_GITHUB_ENTERPRISE_HOSTS;
+      else process.env.KORTIX_GITHUB_ENTERPRISE_HOSTS = previousHosts;
+    }
   });
 });
 

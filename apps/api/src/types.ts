@@ -81,6 +81,10 @@ export interface AuthVariables {
   userId: string;
   userEmail: string;
   accountId?: string;
+  authType?: 'supabase' | 'pat' | 'apiKey';
+  apiKeyType?: 'user' | 'sandbox';
+  keyId?: string;
+  sandboxId?: string;
 }
 
 // Hono environment type (cron/billing)

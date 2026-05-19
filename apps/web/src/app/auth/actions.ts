@@ -6,6 +6,22 @@ import { createClient } from '@/lib/supabase/server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { redirect } from 'next/navigation';
 
+function trustedWebOrigin(origin?: string | null): string {
+  const configured = getServerPublicEnv().APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
+  const candidate = configured
+    ? (configured.startsWith('http') ? configured : `https://${configured}`)
+    : origin;
+  try {
+    const url = new URL(candidate || 'http://localhost:3000');
+    if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+      return 'http://localhost:3000';
+    }
+    return url.origin;
+  } catch {
+    return 'http://localhost:3000';
+  }
+}
+
 
 export async function signIn(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
@@ -34,7 +50,7 @@ export async function signIn(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -108,7 +124,7 @@ export async function signUp(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -173,7 +189,7 @@ export async function forgotPassword(prevState: any, formData: FormData) {
   const supabase = await createClient();
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${origin}/auth/reset-password`,
+    redirectTo: `${trustedWebOrigin(origin)}/auth/reset-password`,
   });
 
   if (error) {
@@ -241,7 +257,7 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -281,7 +297,7 @@ export async function sendOtpCode(prevState: any, formData: FormData) {
   if (isDesktopApp && origin.startsWith('kortix://')) {
     emailRedirectTo = 'kortix://auth/callback';
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}`;
+    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -375,7 +391,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   }
 
   const supabase = await createClient();
-  const baseUrl = origin || getServerPublicEnv().APP_URL || 'http://localhost:3000';
+  const baseUrl = trustedWebOrigin(origin);
   const emailRedirectTo = `${baseUrl}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}`;
 
   const { error: signUpError } = await supabase.auth.signUp({
