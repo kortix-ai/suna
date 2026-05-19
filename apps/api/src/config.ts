@@ -104,6 +104,22 @@ const envSchema = z.object({
   FREESTYLE_API_URL:           optUrl('https://api.freestyle.sh'),
   FREESTYLE_API_KEY:           optStr,
 
+  // ── Channels — Slack adapter (optional) ──────────────────────────────────
+  // KORTIX_CHANNELS_MODE: 'auto' (default) honors whatever Slack env is set —
+  // SLACK_BOT_TOKEN → single, SLACK_CLIENT_ID+SECRET → multi, both → both.
+  // 'single' forces BYO-app mode (requires SLACK_BOT_TOKEN). 'multi' forces
+  // Kortix-managed-app mode (requires SLACK_CLIENT_ID+SECRET+REDIRECT_URI).
+  KORTIX_CHANNELS_MODE:        z.enum(['auto', 'single', 'multi']).optional().default('auto'),
+  SLACK_BOT_TOKEN:             optStr,
+  SLACK_SIGNING_SECRET:        optStr,
+  SLACK_TEAM_ID:               optStr,
+  SLACK_CLIENT_ID:             optStr,
+  SLACK_CLIENT_SECRET:         optStr,
+  SLACK_REDIRECT_URI:          optStr,
+  SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,chat:write,commands,im:history,im:read,im:write'),
+  KORTIX_API_KEY_ENC_KEY:      optStr,
+  KORTIX_DASHBOARD_URL:        optStr,
+
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   OPENROUTER_API_KEY:          optStr,
@@ -372,6 +388,17 @@ export const config = {
   // ─── Freestyle (Deployments) ──────────────────────────────────────────────
   FREESTYLE_API_URL: env.FREESTYLE_API_URL,
   FREESTYLE_API_KEY: env.FREESTYLE_API_KEY,
+
+  // ─── Channels (Slack) ─────────────────────────────────────────────────────
+  KORTIX_CHANNELS_MODE: env.KORTIX_CHANNELS_MODE,
+  SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
+  SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+  SLACK_TEAM_ID: env.SLACK_TEAM_ID,
+  SLACK_CLIENT_ID: env.SLACK_CLIENT_ID,
+  SLACK_CLIENT_SECRET: env.SLACK_CLIENT_SECRET,
+  SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
+  SLACK_OAUTH_SCOPES: env.SLACK_OAUTH_SCOPES,
+  KORTIX_DASHBOARD_URL: env.KORTIX_DASHBOARD_URL,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,

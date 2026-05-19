@@ -67,6 +67,44 @@ config_dir = ".kortix/opencode"
 # User said: {{ body.text }}
 # """
 
+# ─── Channels ────────────────────────────────────────────────────────────
+# Bind a chat surface (Slack today; Teams/Discord/etc. later) to this
+# project. Messages in the bound channel spawn project sessions; agent
+# output streams back into the same thread.
+#
+# Account-level OAuth install lives in the Kortix dashboard. Each
+# [[channels]] entry below points at one channel inside an installed
+# workspace.
+#
+# Server is gated by KORTIX_CHANNELS_MODE (single | multi | auto). Hit
+# GET /v1/webhooks/chat/health to see which mode the server resolved to.
+#
+# Slack requires publicly reachable HTTPS for OAuth redirect, event
+# subscriptions, interactivity, and slash commands — so for local dev
+# point your Slack app at an ngrok / cloudflared tunnel, not localhost.
+#
+# [[channels]]
+# slug = "eng-slack"
+# name = "Engineering Slack"
+# platform = "slack"                  # currently: slack
+# channel_id = "C01234567"            # or channel_name = "#engineering"
+# enabled = true
+# agent = "kortix"                    # any agent under [opencode] config_dir
+# events = ["mention", "dm"]          # mention | dm | subscribed | slash | action
+# response = "text"                   # plan | text | none
+# prompt_prefix = """
+# You're working on {{ project.name }}.
+# {{ message.text }}
+# """
+#
+#   [[channels.slash_commands]]
+#   name = "plan"
+#   prompt = "Draft a plan for: {{ args }}"
+#
+#   [[channels.slash_commands]]
+#   name = "review"
+#   prompt = "Review the open PR at {{ args }} and post feedback."
+
 # ─── Apps (experimental) ─────────────────────────────────────────────────
 # Gated by the platform flag KORTIX_APPS_EXPERIMENTAL. When off, entries
 # are parsed but never acted on. One `[[apps]]` entry per deployable.

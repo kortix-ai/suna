@@ -15,8 +15,8 @@ import { usePathname } from 'next/navigation';
 import {
   Bot,
   KeyRound,
-  MessageSquare,
   Settings,
+  Slack,
   Sparkles,
   Timer,
   Webhook,
@@ -24,6 +24,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { useSlackInstall } from '@/hooks/channels/use-channels-installations';
 
 interface NavItem {
   slug: string;
@@ -42,7 +43,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { slug: 'secrets',    label: 'Secrets',    icon: KeyRound,       hint: 'Per-project env values' },
   { slug: 'schedules',  label: 'Schedules',  icon: Timer,          hint: 'Cron-driven triggers' },
   { slug: 'webhooks',   label: 'Webhooks',   icon: Webhook,        hint: 'Signed HTTP triggers' },
-  { slug: 'channels',   label: 'Channels',   icon: MessageSquare,  hint: 'Inbound message routes' },
+  { slug: 'channels',   label: 'Channels',   icon: Slack,          hint: 'Slack workspace install' },
 ];
 
 const FOOTER_ITEMS: readonly NavItem[] = [
@@ -51,6 +52,8 @@ const FOOTER_ITEMS: readonly NavItem[] = [
 
 export function CustomizeNav({ projectId }: { projectId: string }) {
   const pathname = usePathname();
+  const { data: slackInstall } = useSlackInstall(projectId);
+  const channelsConnected = !!slackInstall;
 
   return (
     <nav
@@ -76,6 +79,9 @@ export function CustomizeNav({ projectId }: { projectId: string }) {
                 active={
                   pathname?.startsWith(`/projects/${projectId}/${item.slug}`) ?? false
                 }
+                badge={item.slug === 'channels' && channelsConnected ? (
+                  <span aria-label="Connected" className="ml-auto inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                ) : null}
               />
             </li>
           ))}
@@ -105,10 +111,12 @@ function CustomizeNavLink({
   item,
   href,
   active,
+  badge,
 }: {
   item: NavItem;
   href: string;
   active: boolean;
+  badge?: React.ReactNode;
 }) {
   const Icon = item.icon;
   return (
@@ -146,7 +154,8 @@ function CustomizeNavLink({
           )}
         />
       ) : null}
-      <span className="truncate">{item.label}</span>
+      <span className="flex-1 truncate">{item.label}</span>
+      {badge}
     </Link>
   );
 }

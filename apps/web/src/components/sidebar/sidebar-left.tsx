@@ -1422,6 +1422,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
             {/* Files lives exclusively on the right sidebar — no redundant
                 entry here. Board is also right-sidebar-only (see
                 menu-registry entry `board`). */}
+
           </nav>
 
           <SidebarSections />

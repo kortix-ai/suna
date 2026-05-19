@@ -136,6 +136,18 @@ import {
   type AppSpec,
 } from './apps';
 import {
+  channelSpecToTomlEntry,
+  extractChannels,
+  type ChannelSpec,
+} from '../channels/manifest';
+import { loadProjectChannels } from '../channels/load';
+import { syncProjectChannelBindings } from '../channels/sync';
+import {
+  deleteSlackInstall,
+  loadSlackInstall,
+  saveSlackInstall,
+} from '../channels/install-store';
+import {
   buildDeploymentRequest,
   deployAppSpec,
   getLatestDeployment,
@@ -1282,7 +1294,7 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
  * triggers don't have a `created_by` like the DB-backed ones do — we pick
  * the account's first owner as a stable, audit-friendly stand-in.
  */
-async function resolveGitTriggerActor(accountId: string): Promise<string | null> {
+export async function resolveGitTriggerActor(accountId: string): Promise<string | null> {
   const [row] = await db
     .select({ userId: accountMembers.userId })
     .from(accountMembers)
@@ -1500,6 +1512,16 @@ export function startProjectTriggerScheduler(): void {
         console.error('[project-apps] sweep failed:', error);
       });
     }
+
+    import('../channels/sweep').then(({ runChannelBindingSweep }) =>
+      runChannelBindingSweep().then((result) => {
+        if (result.inserted || result.updated || result.removed) {
+          console.log('[channels] binding sweep completed', result);
+        }
+      }),
+    ).catch((error) => {
+      console.error('[channels] binding sweep failed:', error);
+    });
   }, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
 }
@@ -2736,6 +2758,310 @@ projectsApp.delete('/:projectId/triggers/:slug', async (c) => {
     ));
 
   return c.json({ ok: true });
+});
+
+// ─── Channels CRUD ───────────────────────────────────────────────────────
+// All channel mutations round-trip through kortix.toml — read manifest,
+// upsert/remove the [[channels]] entry, commit back via the GitHub App.
+// Mirrors the trigger CRUD; uses the same loadManifestForEdit + commitManifest.
+
+const CHANNEL_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+
+function upsertChannelInManifest(manifest: ParsedManifest, spec: ChannelSpec): ParsedManifest {
+  const current = Array.isArray(manifest.raw.channels)
+    ? (manifest.raw.channels as Record<string, unknown>[])
+    : [];
+  const entry = channelSpecToTomlEntry(spec);
+  const idx = current.findIndex(
+    (e) => typeof e?.slug === 'string' && e.slug === spec.slug,
+  );
+  const next = current.slice();
+  if (idx >= 0) next[idx] = entry;
+  else next.push(entry);
+  return { ...manifest, raw: { ...manifest.raw, channels: next } };
+}
+
+function removeChannelFromManifest(manifest: ParsedManifest, slug: string): ParsedManifest {
+  const current = Array.isArray(manifest.raw.channels)
+    ? (manifest.raw.channels as Record<string, unknown>[])
+    : [];
+  const next = current.filter(
+    (e) => !(typeof e?.slug === 'string' && e.slug === slug),
+  );
+  return { ...manifest, raw: { ...manifest.raw, channels: next } };
+}
+
+function parseChannelDraft(
+  body: Record<string, unknown>,
+  opts: { existingSlug: string | null },
+): ChannelSpec | { error: string } {
+  const slug = normalizeString(body.slug) ?? opts.existingSlug ?? '';
+  if (!slug || !CHANNEL_SLUG_RE.test(slug)) {
+    return { error: 'slug is required (lowercase letters, digits, dashes, underscores)' };
+  }
+  const platformRaw = normalizeString(body.platform) ?? 'slack';
+  if (platformRaw !== 'slack') {
+    return { error: `Unsupported platform "${platformRaw}". Currently: slack.` };
+  }
+  const channelId = normalizeString(body.channel_id ?? (body as any).channelId);
+  const channelName = normalizeString(body.channel_name ?? (body as any).channelName);
+  if (!channelId && !channelName) return { error: 'channel_id or channel_name is required' };
+  if (channelId && channelName) return { error: 'set channel_id or channel_name, not both' };
+  if (platformRaw === 'slack' && channelId && !/^[A-Z0-9]{2,32}$/.test(channelId)) {
+    return { error: `Slack channel_id "${channelId}" does not look right` };
+  }
+  const prompt = normalizeString(body.prompt_prefix ?? (body as any).promptPrefix ?? body.prompt);
+  if (!prompt) return { error: 'prompt_prefix is required' };
+
+  const name = normalizeString(body.name) ?? slug;
+  const agent = normalizeString(body.agent ?? (body as any).agent_name) ?? 'default';
+  const enabled = body.enabled === undefined ? true : Boolean(body.enabled);
+  const responseRaw = normalizeString(body.response ?? (body as any).response_style) ?? 'text';
+  const responseStyle = (['plan', 'text', 'none'] as const).includes(responseRaw as any)
+    ? (responseRaw as 'plan' | 'text' | 'none')
+    : 'text';
+
+  const eventsRaw = Array.isArray(body.events) ? body.events : ['mention'];
+  const events: ChannelSpec['events'] = [];
+  const validEvents = ['mention', 'dm', 'subscribed', 'slash', 'action'] as const;
+  for (const e of eventsRaw) {
+    if (typeof e !== 'string') continue;
+    const v = e.trim().toLowerCase();
+    if (validEvents.includes(v as never) && !events.includes(v as never)) {
+      events.push(v as never);
+    }
+  }
+  if (events.length === 0) events.push('mention');
+
+  let maxConcurrentSessions: number | null = null;
+  const mcs = body.max_concurrent_sessions ?? (body as any).maxConcurrentSessions;
+  if (mcs !== undefined && mcs !== null) {
+    const n = Number(mcs);
+    if (!Number.isInteger(n) || n < 1) return { error: 'max_concurrent_sessions must be a positive integer' };
+    maxConcurrentSessions = n;
+  }
+
+  const slashCommandsRaw = Array.isArray(body.slash_commands) ? body.slash_commands : [];
+  const slashCommands: ChannelSpec['slashCommands'] = [];
+  for (const cmd of slashCommandsRaw) {
+    if (!cmd || typeof cmd !== 'object') continue;
+    const c = cmd as Record<string, unknown>;
+    const cmdName = normalizeString(c.name)?.replace(/^\//, '');
+    const cmdPrompt = normalizeString(c.prompt ?? (c as any).prompt_template);
+    if (!cmdName || !cmdPrompt) continue;
+    slashCommands.push({ name: cmdName, promptTemplate: cmdPrompt });
+  }
+
+  return {
+    slug,
+    path: `${MANIFEST_FILENAME}#channels.${slug}`,
+    name,
+    platform: 'slack',
+    enabled,
+    channelId: channelId ?? null,
+    channelName: channelName ?? null,
+    agent,
+    promptPrefix: prompt,
+    events,
+    responseStyle,
+    maxConcurrentSessions,
+    slashCommands,
+  };
+}
+
+async function loadChannelsForResponse(project: ProjectRow) {
+  const { specs, errors } = await loadProjectChannels(project);
+  return { specs, errors };
+}
+
+// GET /v1/projects/:projectId/channels
+projectsApp.get('/:projectId/channels', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  return c.json(await loadChannelsForResponse(loaded.row));
+});
+
+// POST /v1/projects/:projectId/channels
+projectsApp.post('/:projectId/channels', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const draft = parseChannelDraft(body, { existingSlug: null });
+  if ('error' in draft) return c.json({ error: draft.error }, 400);
+
+  let manifest: ParsedManifest;
+  try {
+    manifest = await loadManifestForEdit(loaded.row);
+  } catch (err) {
+    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
+  }
+  if (extractChannels(manifest).specs.some((s) => s.slug === draft.slug)) {
+    return c.json({
+      error: `A channel with slug "${draft.slug}" already exists.`,
+    }, 409);
+  }
+
+  const next = upsertChannelInManifest(manifest, draft);
+  const result = await commitManifest(loaded.row, next, `chore: add channel ${draft.slug}`);
+  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
+
+  await syncProjectChannelBindings(loaded.row).catch((err) =>
+    console.warn('[channels] sync after POST failed', err),
+  );
+  return c.json(await loadChannelsForResponse(loaded.row), 201);
+});
+
+// PATCH /v1/projects/:projectId/channels/:slug
+projectsApp.patch('/:projectId/channels/:slug', async (c) => {
+  const projectId = c.req.param('projectId');
+  const slug = c.req.param('slug');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let manifest: ParsedManifest;
+  try {
+    manifest = await loadManifestForEdit(loaded.row);
+  } catch (err) {
+    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
+  }
+  const current = extractChannels(manifest).specs.find((s) => s.slug === slug);
+  if (!current) return c.json({ error: 'Not found' }, 404);
+
+  const merged = {
+    name: current.name,
+    platform: current.platform,
+    enabled: current.enabled,
+    agent: current.agent,
+    events: current.events,
+    response: current.responseStyle,
+    prompt_prefix: current.promptPrefix,
+    channel_id: current.channelId,
+    channel_name: current.channelName,
+    max_concurrent_sessions: current.maxConcurrentSessions,
+    slash_commands: current.slashCommands.map((c) => ({ name: c.name, prompt: c.promptTemplate })),
+    ...body,
+    slug,
+  };
+  const draft = parseChannelDraft(merged, { existingSlug: slug });
+  if ('error' in draft) return c.json({ error: draft.error }, 400);
+
+  const next = upsertChannelInManifest(manifest, draft);
+  const result = await commitManifest(loaded.row, next, `chore: update channel ${slug}`);
+  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
+
+  await syncProjectChannelBindings(loaded.row).catch((err) =>
+    console.warn('[channels] sync after PATCH failed', err),
+  );
+  return c.json(await loadChannelsForResponse(loaded.row));
+});
+
+// DELETE /v1/projects/:projectId/channels/:slug
+projectsApp.delete('/:projectId/channels/:slug', async (c) => {
+  const projectId = c.req.param('projectId');
+  const slug = c.req.param('slug');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!CHANNEL_SLUG_RE.test(slug)) return c.json({ error: 'Invalid slug' }, 400);
+
+  let manifest: ParsedManifest;
+  try {
+    manifest = await loadManifestForEdit(loaded.row);
+  } catch (err) {
+    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
+  }
+  if (!extractChannels(manifest).specs.some((s) => s.slug === slug)) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+
+  const next = removeChannelFromManifest(manifest, slug);
+  const result = await commitManifest(loaded.row, next, `chore: delete channel ${slug}`);
+  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
+
+  await syncProjectChannelBindings(loaded.row).catch((err) =>
+    console.warn('[channels] sync after DELETE failed', err),
+  );
+  return c.json({ ok: true });
+});
+
+// ─── Slack install — per project, secrets live in project_secrets ────────
+
+interface SlackAuthTest {
+  ok: boolean;
+  team_id?: string;
+  team?: string;
+  user_id?: string;
+  error?: string;
+}
+
+// GET /v1/projects/:projectId/channels/slack/installation
+projectsApp.get('/:projectId/channels/slack/installation', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const install = await loadSlackInstall(projectId);
+  return c.json(install ?? null);
+});
+
+// POST /v1/projects/:projectId/channels/slack/connect
+projectsApp.post('/:projectId/channels/slack/connect', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let body: { bot_token?: string; signing_secret?: string };
+  try {
+    body = (await c.req.json()) as { bot_token?: string; signing_secret?: string };
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const botToken = body.bot_token?.trim();
+  const signingSecret = body.signing_secret?.trim();
+  if (!botToken || !botToken.startsWith('xoxb-')) {
+    return c.json({ error: 'bot_token is required and must start with xoxb-' }, 400);
+  }
+  if (!signingSecret) {
+    return c.json({ error: 'signing_secret is required' }, 400);
+  }
+
+  let authTest: SlackAuthTest;
+  try {
+    const res = await fetch('https://slack.com/api/auth.test', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${botToken}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+    });
+    authTest = (await res.json()) as SlackAuthTest;
+  } catch (err) {
+    return c.json({ error: `Failed to reach Slack: ${(err as Error).message}` }, 502);
+  }
+  if (!authTest.ok || !authTest.team_id || !authTest.user_id) {
+    return c.json({ error: `Slack rejected the token: ${authTest.error ?? 'unknown error'}` }, 400);
+  }
+
+  const summary = await saveSlackInstall({
+    projectId,
+    botToken,
+    signingSecret,
+    teamId: authTest.team_id,
+    teamName: authTest.team ?? null,
+    botUserId: authTest.user_id,
+  });
+  return c.json(summary);
+});
+
+// DELETE /v1/projects/:projectId/channels/slack
+projectsApp.delete('/:projectId/channels/slack', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await deleteSlackInstall(projectId);
+  return c.json({ status: 'disconnected' });
 });
 
 // POST /v1/projects/:projectId/triggers/:slug/fire

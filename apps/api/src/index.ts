@@ -43,6 +43,7 @@ import {
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
 } from './projects';
+import { channelsApp } from './channels';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { accountsRouter } from './accounts';
 import { accountInvitesRouter } from './accounts/invites';
@@ -275,6 +276,7 @@ app.route('/v1/account', accountDeletionApp); // account deletion status/request
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
+app.route('/v1/webhooks/chat', channelsApp); // /v1/webhooks/chat/slack — Chat SDK adapter webhooks
 if (config.KORTIX_DEPLOYMENTS_ENABLED) {
   const { deploymentsApp } = await import('./deployments');
   app.route('/v1/deployments', deploymentsApp); // /v1/deployments/*
