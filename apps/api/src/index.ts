@@ -34,6 +34,7 @@ import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
+// import { cloudGatewayApp } from './cloud-gateway/routes'; // TODO: restore once cloud-gateway routes land
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { oauthApp } from './oauth';
 import {
