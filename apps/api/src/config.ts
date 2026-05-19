@@ -125,10 +125,14 @@ const envSchema = z.object({
   REVENUECAT_WEBHOOK_SECRET:   optStr,
 
   // ── Daytona — Sandbox provisioning (conditional: required if daytona provider enabled) ──
+  // Note: there is intentionally no DAYTONA_SNAPSHOT here. Every sandbox
+  // boots from a per-project snapshot built by the snapshot builder
+  // (apps/api/src/snapshots/builder.ts). A shared/global fallback image
+  // would silently bypass per-project Dockerfiles and is explicitly
+  // disallowed.
   DAYTONA_API_KEY:             optStr,
   DAYTONA_SERVER_URL:          optStr,
   DAYTONA_TARGET:              optStr,
-  DAYTONA_SNAPSHOT:            optStr,
 
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // KORTIX_URL is auto-derived from PORT if not explicitly set (see validateEnv).
@@ -390,10 +394,12 @@ export const config = {
   REVENUECAT_WEBHOOK_SECRET: env.REVENUECAT_WEBHOOK_SECRET,
 
   // ─── Daytona (Sandbox provisioning + preview proxy) ───────────────────────
+  // No DAYTONA_SNAPSHOT here — see comment in the env schema above. Every
+  // sandbox boots from its project-specific snapshot resolved at session
+  // start time by apps/api/src/snapshots/builder.ts.
   DAYTONA_API_KEY: env.DAYTONA_API_KEY,
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
-  DAYTONA_SNAPSHOT: env.DAYTONA_SNAPSHOT || `kortix-sandbox-v${SANDBOX_VERSION}`,
 
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,

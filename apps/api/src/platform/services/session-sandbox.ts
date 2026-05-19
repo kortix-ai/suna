@@ -28,8 +28,10 @@ import {
   retrySandboxProvisionCreate,
   SANDBOX_INIT_MAX_ATTEMPTS,
 } from './sandbox-init-state';
-import { getOrBuildSnapshot } from '../../snapshots/builder';
-import { getOrBuildSnapshot, SnapshotBuildError } from '../../snapshots/builder';
+import {
+  ensureBuildForLatestCommit,
+  getLatestReadySnapshot,
+} from '../../snapshots/builder';
 import { config } from '../../config';
 import type { GitBackedProject } from '../../projects/git';
 
@@ -54,16 +56,17 @@ export async function provisionSessionSandbox(opts: {
    */
   extraEnvVars?: Record<string, string>;
   /**
-   * When present, the per-project snapshot builder runs before provider
-   * create so the session boots from a Dockerfile-built image instead of
-   * the shared platform default. Caller supplies the GitBackedProject
-   * (cheap — just the fields already loaded for the session); the
-   * builder handles caching + lazy build.
+   * Project + ref the session boots against. Required: every session
+   * sandbox boots from the project's own per-project snapshot
+   * (`kortix-snap-…`). There is no shared platform-wide fallback — if
+   * no `ready` snapshot exists yet for the project's default branch,
+   * the session fails with a clear "still building" error. See
+   * apps/api/src/snapshots/builder.ts.
    *
-   * `baseRef` pins the build to a commit; when omitted, defaults to
-   * `gitProject.defaultBranch`.
+   * `baseRef` is used to pick the *branch* whose latest ready snapshot
+   * we boot from; when omitted, defaults to `gitProject.defaultBranch`.
    */
-  gitProject?: GitBackedProject;
+  gitProject: GitBackedProject;
   baseRef?: string;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
@@ -123,36 +126,51 @@ export async function provisionSessionSandbox(opts: {
   void (async () => {
     let bgExternalId: string | null = null;
     try {
-      // Per-project snapshot resolution. The builder is provider-aware
-      // (see snapshots/builder.ts); we pass the provider through so a
-      // future runtime can land its own build path without re-threading
-      // callers. When the builder throws (build failed, project
-      // mis-configured), we surface a clear error on the session row.
-      if (opts.gitProject) {
-        try {
-          const resolution = await getOrBuildSnapshot(opts.gitProject, {
-            ref: opts.baseRef,
-            accountId,
-            provider: providerName,
-          });
-          providerCreateInput.snapshot = resolution.daytonaName;
-          console.log(
-            `[session-sandbox] Resolved snapshot for ${sandbox.sandboxId}: ` +
-            `${resolution.daytonaName} (commit ${resolution.commitSha.slice(0, 8)}, ` +
-            `${resolution.built ? 'built' : 'cached'})`,
-          );
-        } catch (snapErr) {
-          // Per-project snapshot building is incomplete (kortix-agent /
-          // kortix-entrypoint binaries aren't injected into the build context
-          // yet — see snapshots/builder.ts). Fall back to the shared
-          // DAYTONA_SNAPSHOT so sessions still boot locally.
-          console.warn(
-            `[session-sandbox] Snapshot resolution errored for ${sandbox.sandboxId}, ` +
-            `falling back to shared snapshot:`,
-            snapErr,
-          );
-        }
+      // Snapshot resolution policy:
+      //   1. Look up the latest `ready` snapshot for (project, branch,
+      //      provider). If present, boot from that. We never wait for a
+      //      build to finish.
+      //   2. Fire-and-forget: ask the builder to ensure a snapshot
+      //      exists for the *current* tip of the branch. If the tip
+      //      moved past the latest-ready commit, this kicks off a new
+      //      build in the background; the next session sees it.
+      //   3. If no `ready` snapshot exists at all (project just created,
+      //      first build hasn't finished, or every prior build failed),
+      //      fail the session with a clear message. There is NO shared
+      //      DAYTONA_SNAPSHOT fallback — every sandbox boots from its
+      //      project's own image.
+      const branch = opts.baseRef || opts.gitProject.defaultBranch;
+      const latest = await getLatestReadySnapshot(
+        opts.gitProject.projectId,
+        branch,
+        providerName,
+      );
+
+      // Kick off "is there a newer commit?" check + lazy build. Don't await.
+      void ensureBuildForLatestCommit(opts.gitProject, {
+        branch,
+        accountId,
+        provider: providerName,
+        source: 'session-start',
+      }).catch((err) => {
+        console.warn(
+          `[session-sandbox] ensureBuildForLatestCommit failed for ${sandbox.sandboxId}:`,
+          err,
+        );
+      });
+
+      if (!latest || !latest.snapshotId) {
+        throw new Error(
+          `Project sandbox is still building. ` +
+          `This is a one-time setup that runs the first time a project is created (or after every failed build is retried). ` +
+          `Please retry in ~1 minute.`,
+        );
       }
+      providerCreateInput.snapshot = latest.snapshotId;
+      console.log(
+        `[session-sandbox] Booting ${sandbox.sandboxId} from ${latest.snapshotId} ` +
+        `(commit ${latest.commitSha.slice(0, 8)}, branch ${branch})`,
+      );
 
       const firstStage = provider.provisioning.stages[0];
       const { result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {

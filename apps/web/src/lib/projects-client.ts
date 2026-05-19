@@ -380,6 +380,55 @@ export async function deleteProjectSecret(projectId: string, name: string) {
   );
 }
 
+// ─── Sandbox snapshots ────────────────────────────────────────────────────
+
+/** Build status of a project's Daytona snapshot row. */
+export type ProjectSnapshotStatus = 'queued' | 'building' | 'ready' | 'failed';
+
+export interface ProjectSnapshot {
+  snapshot_row_id: string;
+  project_id: string;
+  provider: string;
+  commit_sha: string;
+  branch: string;
+  snapshot_id: string | null;
+  status: ProjectSnapshotStatus;
+  error: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectSnapshotsResponse {
+  items: ProjectSnapshot[];
+  default_branch: string;
+  /** Current HEAD on the default branch. Null if the API couldn't resolve it. */
+  head_commit_sha: string | null;
+  /** Error string when head_commit_sha is null (e.g. GitHub App not installed). */
+  head_resolve_error: string | null;
+}
+
+export interface RebuildSnapshotResponse {
+  status: 'already-ready' | 'already-building' | 'started' | 'failed-to-start';
+  branch: string;
+  commit_sha: string | null;
+}
+
+export async function listProjectSnapshots(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectSnapshotsResponse>(`/projects/${projectId}/snapshots`),
+  );
+}
+
+export async function rebuildProjectSnapshot(projectId: string) {
+  return unwrap(
+    await backendApi.post<RebuildSnapshotResponse>(
+      `/projects/${projectId}/snapshots/rebuild`,
+      {},
+    ),
+  );
+}
+
 // ─── OAuth credentials (ChatGPT Pro/Plus headless + GitHub Copilot) ─────
 
 export type OauthProviderId = 'openai' | 'github-copilot';
@@ -629,6 +678,228 @@ export async function getProjectFileHistory(
   if (options?.skip != null) params.set('skip', String(options.skip));
   return unwrap(await backendApi.get<ProjectFileHistoryResponse>(
     `/projects/${projectId}/files/history?${params.toString()}`,
+  ));
+}
+
+// ---------------------------------------------------------------------------
+// Change Requests — Kortix-native PR layer. Backend-agnostic: the underlying
+// merge runs via apps/api/.../git.ts against whichever git host the project's
+// repo URL points to.
+// ---------------------------------------------------------------------------
+
+export type ChangeRequestStatus = 'open' | 'merged' | 'closed';
+export type ChangeRequestReviewState = 'approved' | 'changes_requested' | 'commented';
+
+export interface ChangeRequest {
+  cr_id: string;
+  account_id: string;
+  project_id: string;
+  number: number;
+  title: string;
+  description: string;
+  base_ref: string;
+  head_ref: string;
+  status: ChangeRequestStatus;
+  head_commit_sha: string | null;
+  base_commit_sha: string | null;
+  origin_session_id: string | null;
+  created_by: string;
+  merged_at: string | null;
+  merged_by: string | null;
+  merge_commit_sha: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChangeRequestRevision {
+  revision_id: string;
+  cr_id: string;
+  revision_number: number;
+  head_commit_sha: string;
+  base_commit_sha: string;
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface ChangeRequestReview {
+  review_id: string;
+  cr_id: string;
+  user_id: string;
+  state: ChangeRequestReviewState;
+  body: string;
+  revision_number: number;
+  created_at: string;
+}
+
+export interface ChangeRequestComment {
+  comment_id: string;
+  cr_id: string;
+  user_id: string;
+  body: string;
+  created_at: string;
+}
+
+export interface ChangeRequestReviewSummary {
+  state: 'approved' | 'changes_requested' | 'pending';
+  reviews: ChangeRequestReview[];
+  approvals: number;
+  changes_requested_count: number;
+}
+
+export interface ChangeRequestDetailResponse {
+  change_request: ChangeRequest;
+  revisions: ChangeRequestRevision[];
+  reviews: ChangeRequestReview[];
+  review_summary: ChangeRequestReviewSummary;
+  comments: ChangeRequestComment[];
+}
+
+export interface ChangeRequestDiffResponse {
+  cr_id: string;
+  base_ref: string;
+  head_ref: string;
+  base_sha: string;
+  head_sha: string;
+  merge_base: string | null;
+  files: ProjectCommitFile[];
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  patch: string;
+}
+
+export interface ChangeRequestMergePreview {
+  base_sha: string;
+  head_sha: string;
+  merge_base: string | null;
+  can_fast_forward: boolean;
+  can_merge: boolean;
+  conflicts: string[];
+  is_up_to_date: boolean;
+}
+
+export interface ChangeRequestMergeResponse {
+  change_request: ChangeRequest;
+  merge: {
+    merge_commit_sha: string;
+    fast_forward: boolean;
+    base_sha_before: string;
+    base_sha_after: string;
+  };
+}
+
+export async function listChangeRequests(
+  projectId: string,
+  status?: ChangeRequestStatus | 'all',
+) {
+  const query = status ? `?status=${status}` : '';
+  return unwrap(await backendApi.get<{ change_requests: ChangeRequest[] }>(
+    `/projects/${projectId}/change-requests${query}`,
+  ));
+}
+
+export async function getChangeRequest(projectId: string, crId: string) {
+  return unwrap(await backendApi.get<ChangeRequestDetailResponse>(
+    `/projects/${projectId}/change-requests/${crId}`,
+  ));
+}
+
+export async function getChangeRequestDiff(projectId: string, crId: string) {
+  return unwrap(await backendApi.get<ChangeRequestDiffResponse>(
+    `/projects/${projectId}/change-requests/${crId}/diff`,
+  ));
+}
+
+export async function getChangeRequestMergePreview(projectId: string, crId: string) {
+  return unwrap(await backendApi.get<ChangeRequestMergePreview>(
+    `/projects/${projectId}/change-requests/${crId}/merge-preview`,
+  ));
+}
+
+export async function openChangeRequest(
+  projectId: string,
+  input: {
+    title: string;
+    description?: string;
+    head_ref: string;
+    base_ref?: string;
+    session_id?: string;
+  },
+) {
+  return unwrap(await backendApi.post<ChangeRequest>(
+    `/projects/${projectId}/change-requests`,
+    input,
+  ));
+}
+
+export async function patchChangeRequest(
+  projectId: string,
+  crId: string,
+  input: { title?: string; description?: string },
+) {
+  return unwrap(await backendApi.patch<ChangeRequest>(
+    `/projects/${projectId}/change-requests/${crId}`,
+    input,
+  ));
+}
+
+export async function refreshChangeRequest(projectId: string, crId: string) {
+  return unwrap(await backendApi.post<{ revision: ChangeRequestRevision | null }>(
+    `/projects/${projectId}/change-requests/${crId}/refresh`,
+    {},
+  ));
+}
+
+export async function mergeChangeRequest(
+  projectId: string,
+  crId: string,
+  input?: { message?: string },
+) {
+  return unwrap(await backendApi.post<ChangeRequestMergeResponse>(
+    `/projects/${projectId}/change-requests/${crId}/merge`,
+    input ?? {},
+  ));
+}
+
+export async function closeChangeRequest(projectId: string, crId: string) {
+  return unwrap(await backendApi.post<ChangeRequest>(
+    `/projects/${projectId}/change-requests/${crId}/close`,
+    {},
+  ));
+}
+
+export async function reopenChangeRequest(projectId: string, crId: string) {
+  return unwrap(await backendApi.post<ChangeRequest>(
+    `/projects/${projectId}/change-requests/${crId}/reopen`,
+    {},
+  ));
+}
+
+export async function addChangeRequestReview(
+  projectId: string,
+  crId: string,
+  input: { state: ChangeRequestReviewState; body?: string },
+) {
+  return unwrap(await backendApi.post<ChangeRequestReview>(
+    `/projects/${projectId}/change-requests/${crId}/reviews`,
+    input,
+  ));
+}
+
+export async function addChangeRequestComment(
+  projectId: string,
+  crId: string,
+  body: string,
+) {
+  return unwrap(await backendApi.post<ChangeRequestComment>(
+    `/projects/${projectId}/change-requests/${crId}/comments`,
+    { body },
   ));
 }
 

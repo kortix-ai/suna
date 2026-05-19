@@ -112,6 +112,19 @@ mock.module('../projects/git', () => ({
   diffStat: async () => ({ filesChanged: 0, insertions: 0, deletions: 0 }),
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   getFileAtRef: async () => null,
+  resolveCommitSha: async () => 'a'.repeat(40),
+  resolveBranchTip: async () => 'a'.repeat(40),
+  getBranchDiff: async () => ({ files: [], diff: '' }),
+  previewMerge: async () => ({ canMerge: true, conflicts: [] }),
+  mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
+}));
+
+mock.module('../snapshots/builder', () => ({
+  ensureBuildForLatestCommit: async () => ({ status: 'started', commitSha: 'a'.repeat(40) }),
+  getLatestReadySnapshot: async () => null,
+  listSnapshotsForProject: async () => [],
+  buildSnapshotForCommit: async () => ({ daytonaName: '', commitSha: '', contentHash: '', built: false }),
+  pruneOldSnapshots: async () => ({ deletedRows: 0, deletedDaytonaSnapshots: 0 }),
 }));
 
 mock.module('../projects/github', () => ({

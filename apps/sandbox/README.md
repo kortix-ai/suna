@@ -30,16 +30,16 @@ From the repo root:
 docker build -f apps/sandbox/Dockerfile -t kortix/sandbox:dev .
 ```
 
-## Use as the Daytona snapshot
+## How sessions actually boot
 
-Push the image to a registry, then create a Daytona snapshot pointing at
-that image. Update `apps/api/.env`:
+Production sessions do **not** use a shared snapshot. The snapshot builder
+(`apps/api/src/snapshots/builder.ts`) reads each project's
+`.kortix/Dockerfile`, layers the Kortix runtime (OpenCode + the
+`kortix-agent` binary + entrypoint) on top, and creates a per-project
+Daytona snapshot named `kortix-snap-{project[:8]}-{contentHash[:12]}`.
+Each session boots from that project's latest `ready` snapshot.
 
-```
-DAYTONA_SNAPSHOT=<your-snapshot-name>
-```
-
-Restart the API. New sessions provisioned via `POST /v1/projects/:id/sessions`
-will spin up this image; the daemon reads the env vars the API already
-passes (`KORTIX_REPO_URL`, `KORTIX_BRANCH_NAME`, `KORTIX_GITHUB_TOKEN`,
-`KORTIX_SERVICE_PORT=8000`, etc.) and brings the sandbox online.
+The image in this directory is the reference layout for the layered
+runtime — useful when you want to reproduce the boot environment locally
+or iterate on the entrypoint. It is not pushed to Daytona as a global
+snapshot.

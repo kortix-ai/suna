@@ -27,8 +27,8 @@
  * DB row keyed on commit.
  */
 
-import { and, eq } from 'drizzle-orm';
-import { copyFile, mkdir, rm, stat } from 'node:fs/promises';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { copyFile, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Image } from '@daytonaio/sdk';
@@ -74,10 +74,25 @@ import {
 } from './dockerfile-layer';
 import { computeSnapshotHash, formatSnapshotName } from './hash';
 
-/** Cap how long the lazy-fallback path will wait for a build before giving up. */
+/** Cap how long the Daytona-side snapshot build is allowed to take. */
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
-/** Poll interval when waiting on a row already in `building` (e.g. another session triggered it). */
-const POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Default retention: how many `ready` snapshots we keep per
+ * (projectId, branch, provider). Older `ready` rows are deleted from the
+ * DB and the Daytona snapshot is removed *iff* no other DB row still
+ * references the same `snapshotId` (content-hash dedupe may share names
+ * across commits within the same project).
+ *
+ * Tunable via `KORTIX_SNAPSHOT_RETENTION_COUNT`.
+ */
+export const DEFAULT_SNAPSHOT_RETENTION = 5;
+
+function snapshotRetentionCount(): number {
+  const raw = Number.parseInt(process.env.KORTIX_SNAPSHOT_RETENTION_COUNT || '', 10);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return DEFAULT_SNAPSHOT_RETENTION;
+}
 
 /** What the builder reports back to its caller. */
 export interface SnapshotResolution {
@@ -99,31 +114,42 @@ export class SnapshotBuildError extends Error {
 }
 
 /**
- * Top-level entry point: returns a ready Daytona snapshot name, building
- * one inline if needed. Idempotent — concurrent calls for the same
- * (project, commit, provider) coalesce via the table's unique constraint.
+ * Sources we tag onto the snapshot row metadata for telemetry / debugging.
  *
- * `provider` is on the API for extensibility — every provider that ever
- * lands here will need a build path. Today only 'daytona' is supported;
- * unsupported values throw inside `runBuild` so the call site doesn't
- * have to guard.
+ * - `project-create` — fired the first time a project is registered.
+ * - `session-start` — fired async when a session starts and the latest
+ *   commit on the project's default branch has no snapshot yet. Never
+ *   awaited by the session-creation path.
+ * - `manual` — user clicked "Rebuild now" in the dashboard or an admin
+ *   ran the script.
  */
-export async function getOrBuildSnapshot(
+export type SnapshotBuildSource = 'project-create' | 'session-start' | 'manual';
+
+/**
+ * Build (or rebuild) the snapshot for a specific commit. Idempotent:
+ * concurrent callers race on the unique (projectId, commitSha, provider)
+ * insert; losers no-op and let the winner finish. This *always* runs the
+ * build to completion — callers that want fire-and-forget semantics
+ * should call this from a detached IIFE and ignore the promise.
+ *
+ * Returns the resolution (daytona snapshot name + content hash). On
+ * cache hit (row already `ready`) returns immediately with `built=false`.
+ */
+export async function buildSnapshotForCommit(
   project: GitBackedProject,
   options: {
-    /** Branch / tag / SHA to build from. Defaults to the project default branch. */
+    /** Branch / tag / SHA to resolve. Defaults to project default branch. */
     ref?: string;
-    /** Override the project account id (avoids re-querying the projects row). */
     accountId: string;
-    /** Provider to build for. Defaults to 'daytona'. */
     provider?: SandboxProviderName;
+    source: SnapshotBuildSource;
   },
 ): Promise<SnapshotResolution> {
   const commitSha = await resolveCommitSha(project, options.ref);
   const provider = options.provider ?? 'daytona';
+  const branch = options.ref ?? project.defaultBranch;
 
-  // Cache lookup first — by far the common case.
-  const existing = await findSnapshotRow(project.projectId, commitSha);
+  const existing = await findSnapshotRow(project.projectId, commitSha, provider);
   if (existing?.status === 'ready' && existing.snapshotId) {
     return {
       daytonaName: existing.snapshotId,
@@ -133,12 +159,13 @@ export async function getOrBuildSnapshot(
     };
   }
   if (existing?.status === 'building' || existing?.status === 'queued') {
-    const resolved = await waitForBuild(project.projectId, commitSha);
-    return { ...resolved, built: false };
+    // Another build is in flight for this exact commit. Don't race it.
+    throw new SnapshotBuildError(
+      `Snapshot build for commit ${commitSha.slice(0, 8)} is already in progress`,
+    );
   }
   if (existing?.status === 'failed') {
     // Retry from scratch — failures shouldn't pin a project forever.
-    // (Could rate-limit later; for v1 a session-create retries inline.)
     await db
       .delete(projectRuntimeSnapshots)
       .where(
@@ -150,25 +177,25 @@ export async function getOrBuildSnapshot(
       );
   }
 
-  // No row (or failed-and-cleared) — claim the build by inserting `queued`.
-  // The unique (projectId, commitSha, provider) constraint makes concurrent
-  // callers race and exactly one wins; losers fall through to the wait path.
+  // Claim the build by inserting `queued`. The unique (projectId,
+  // commitSha, provider) constraint makes concurrent callers race so
+  // exactly one wins; losers throw and the caller can no-op.
   try {
     await db.insert(projectRuntimeSnapshots).values({
       accountId: options.accountId,
       projectId: project.projectId,
       provider,
       commitSha,
+      branch,
       status: 'queued',
-      metadata: { source: 'lazy-fallback' },
+      metadata: { source: options.source },
     });
   } catch {
-    // Lost the race — another session beat us to the insert. Wait on it.
-    const resolved = await waitForBuild(project.projectId, commitSha);
-    return { ...resolved, built: false };
+    throw new SnapshotBuildError(
+      `Lost race to claim snapshot build for ${commitSha.slice(0, 8)} — another worker has it`,
+    );
   }
 
-  // We own the build. Anything that throws below must mark the row failed.
   try {
     const result = await runBuild(project, commitSha, provider);
     await db
@@ -177,7 +204,7 @@ export async function getOrBuildSnapshot(
         status: 'ready',
         snapshotId: result.daytonaName,
         metadata: {
-          source: 'lazy-fallback',
+          source: options.source,
           contentHash: result.contentHash,
           shortHash: result.shortHash,
           sandboxVersion: SANDBOX_VERSION,
@@ -216,6 +243,248 @@ export async function getOrBuildSnapshot(
       .catch(() => {});
     throw new SnapshotBuildError(`Snapshot build failed: ${message}`, err);
   }
+}
+
+/**
+ * Return the most recent `ready` snapshot for a project + branch +
+ * provider, or null if none exists yet. Cheap — one indexed lookup.
+ * Sessions read this to pick the image they boot from.
+ */
+export async function getLatestReadySnapshot(
+  projectId: string,
+  branch: string,
+  provider: SandboxProviderName = 'daytona',
+): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
+  const [row] = await db
+    .select()
+    .from(projectRuntimeSnapshots)
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.branch, branch),
+        eq(projectRuntimeSnapshots.provider, provider),
+        eq(projectRuntimeSnapshots.status, 'ready'),
+      ),
+    )
+    .orderBy(desc(projectRuntimeSnapshots.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Find any (non-failed) row for a specific commit. Used by the rebuild-
+ * check fast path so we don't re-claim a commit that's already built or
+ * actively building.
+ */
+async function findActiveRowForCommit(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName,
+): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
+  const [row] = await db
+    .select()
+    .from(projectRuntimeSnapshots)
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.commitSha, commitSha),
+        eq(projectRuntimeSnapshots.provider, provider),
+        ne(projectRuntimeSnapshots.status, 'failed'),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Fire-and-forget: ensure a snapshot exists for the current tip of
+ * `branch`. Returns immediately if one is already present (`ready` or
+ * `building`); otherwise spawns a detached build. Used by:
+ *
+ *   - Project creation (initial build).
+ *   - Session start (check for newer commits without blocking the boot).
+ *   - Manual UI trigger.
+ *
+ * Always resolves to a status code so callers can surface UI hints:
+ *   - `already-ready`  → tip already has a ready snapshot
+ *   - `already-building` → another worker is mid-build for this commit
+ *   - `started`        → we kicked off a new build
+ *   - `failed-to-start` → couldn't even resolve the commit / claim row
+ */
+export async function ensureBuildForLatestCommit(
+  project: GitBackedProject,
+  options: {
+    branch?: string;
+    accountId: string;
+    provider?: SandboxProviderName;
+    source: SnapshotBuildSource;
+  },
+): Promise<{
+  status: 'already-ready' | 'already-building' | 'started' | 'failed-to-start';
+  commitSha?: string;
+  error?: string;
+}> {
+  const provider = options.provider ?? 'daytona';
+  const branch = options.branch ?? project.defaultBranch;
+
+  let commitSha: string;
+  try {
+    commitSha = await resolveCommitSha(project, branch);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { status: 'failed-to-start', error: message };
+  }
+
+  const existing = await findActiveRowForCommit(project.projectId, commitSha, provider);
+  if (existing?.status === 'ready') {
+    return { status: 'already-ready', commitSha };
+  }
+  if (existing) {
+    return { status: 'already-building', commitSha };
+  }
+
+  // Detach the build — we promised the caller this is non-blocking.
+  void (async () => {
+    try {
+      await buildSnapshotForCommit(project, {
+        ref: branch,
+        accountId: options.accountId,
+        provider,
+        source: options.source,
+      });
+      // Successful build → prune older snapshots for this branch in the
+      // background. Errors here are non-fatal; we'll log and move on.
+      pruneOldSnapshots(project.projectId, branch, provider).catch((err) => {
+        console.warn(
+          `[snapshots] prune failed for project ${project.projectId} branch ${branch}:`,
+          err,
+        );
+      });
+    } catch (err) {
+      // buildSnapshotForCommit already marked the row failed in the DB;
+      // this just surfaces the error in server logs for diagnosis.
+      console.warn(
+        `[snapshots] background build failed for project ${project.projectId} ` +
+        `commit ${commitSha.slice(0, 8)} (source=${options.source}):`,
+        err,
+      );
+    }
+  })();
+
+  return { status: 'started', commitSha };
+}
+
+/**
+ * List snapshot history for a project, most recent first. Powers the
+ * "Sandbox snapshot" panel in the dashboard.
+ */
+export async function listSnapshotsForProject(
+  projectId: string,
+  options: { limit?: number; provider?: SandboxProviderName } = {},
+): Promise<Array<typeof projectRuntimeSnapshots.$inferSelect>> {
+  const limit = Math.min(Math.max(options.limit ?? 25, 1), 100);
+  return db
+    .select()
+    .from(projectRuntimeSnapshots)
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.provider, options.provider ?? 'daytona'),
+      ),
+    )
+    .orderBy(desc(projectRuntimeSnapshots.createdAt))
+    .limit(limit);
+}
+
+/**
+ * Retention: keep the N most-recent `ready` snapshots for
+ * (projectId, branch, provider); delete the rest from the DB and (when
+ * safe) the Daytona side too.
+ *
+ * Reference-safety: snapshot names are content-addressed, so two
+ * different commits can share the same `snapshotId` (same Dockerfile +
+ * tree → same hash). We only remove the Daytona snapshot when *no other
+ * surviving DB row* (across any branch in the project) still references
+ * that same `snapshotId`. Without this guard, pruning an old branch row
+ * would yank the image out from under a `ready` row on the default
+ * branch.
+ */
+export async function pruneOldSnapshots(
+  projectId: string,
+  branch: string,
+  provider: SandboxProviderName = 'daytona',
+  retain: number = snapshotRetentionCount(),
+): Promise<{ deletedRows: number; deletedDaytonaSnapshots: number }> {
+  const readyRows = await db
+    .select()
+    .from(projectRuntimeSnapshots)
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.branch, branch),
+        eq(projectRuntimeSnapshots.provider, provider),
+        eq(projectRuntimeSnapshots.status, 'ready'),
+      ),
+    )
+    .orderBy(desc(projectRuntimeSnapshots.createdAt));
+
+  const expired = readyRows.slice(retain);
+  if (expired.length === 0) {
+    return { deletedRows: 0, deletedDaytonaSnapshots: 0 };
+  }
+
+  const expiredRowIds = expired.map((r) => r.snapshotRowId);
+  const expiredSnapshotIds = Array.from(
+    new Set(expired.map((r) => r.snapshotId).filter((s): s is string => Boolean(s))),
+  );
+
+  await db
+    .delete(projectRuntimeSnapshots)
+    .where(inArray(projectRuntimeSnapshots.snapshotRowId, expiredRowIds));
+
+  // For each expired Daytona snapshot, check whether any *surviving* row
+  // in the same project still references it. Only delete from Daytona
+  // when no references remain. Cross-project sharing isn't possible
+  // because snapshot names are project-scoped.
+  let deletedDaytonaSnapshots = 0;
+  if (provider === 'daytona' && expiredSnapshotIds.length > 0) {
+    const daytona = getDaytona();
+    for (const snapshotId of expiredSnapshotIds) {
+      const stillReferenced = await db
+        .select({ id: projectRuntimeSnapshots.snapshotRowId })
+        .from(projectRuntimeSnapshots)
+        .where(
+          and(
+            eq(projectRuntimeSnapshots.projectId, projectId),
+            eq(projectRuntimeSnapshots.provider, provider),
+            eq(projectRuntimeSnapshots.snapshotId, snapshotId),
+          ),
+        )
+        .limit(1);
+      if (stillReferenced.length > 0) continue;
+
+      try {
+        // SDK requires the full Snapshot object — fetch by name first,
+        // then delete. If the get() throws "not found", the snapshot is
+        // already gone (race with manual cleanup or a previous prune
+        // attempt) and there's nothing to do.
+        const snapshot = await daytona.snapshot.get(snapshotId).catch(() => null);
+        if (snapshot) {
+          await daytona.snapshot.delete(snapshot);
+          deletedDaytonaSnapshots += 1;
+        }
+      } catch (err) {
+        // Best-effort: any other failure we log and move on so retention
+        // doesn't get stuck on a single bad snapshot.
+        console.warn(
+          `[snapshots] Daytona snapshot.delete('${snapshotId}') failed (continuing):`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  return { deletedRows: expired.length, deletedDaytonaSnapshots };
 }
 
 /* ─── Internals ────────────────────────────────────────────────────────── */
@@ -364,7 +633,11 @@ async function resolveSandboxPaths(project: GitBackedProject, _commitSha: string
   return extractSandboxPaths(parsed?.raw ?? null);
 }
 
-async function findSnapshotRow(projectId: string, commitSha: string) {
+async function findSnapshotRow(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName = 'daytona',
+) {
   const [row] = await db
     .select()
     .from(projectRuntimeSnapshots)
@@ -372,31 +645,11 @@ async function findSnapshotRow(projectId: string, commitSha: string) {
       and(
         eq(projectRuntimeSnapshots.projectId, projectId),
         eq(projectRuntimeSnapshots.commitSha, commitSha),
-        eq(projectRuntimeSnapshots.provider, 'daytona'),
+        eq(projectRuntimeSnapshots.provider, provider),
       ),
     )
     .limit(1);
   return row ?? null;
-}
-
-async function waitForBuild(projectId: string, commitSha: string): Promise<SnapshotResolution> {
-  const deadline = Date.now() + BUILD_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const row = await findSnapshotRow(projectId, commitSha);
-    if (row?.status === 'ready' && row.snapshotId) {
-      return {
-        daytonaName: row.snapshotId,
-        commitSha,
-        contentHash: extractMetadataHash(row.metadata) ?? '',
-        built: false,
-      };
-    }
-    if (row?.status === 'failed') {
-      throw new SnapshotBuildError(`Snapshot build failed: ${row.error ?? 'unknown error'}`);
-    }
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-  }
-  throw new SnapshotBuildError(`Snapshot build timed out after ${BUILD_TIMEOUT_MS / 1000}s`);
 }
 
 function extractMetadataHash(metadata: unknown): string | null {

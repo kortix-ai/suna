@@ -29,6 +29,7 @@ import {
   type ProjectRole,
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
+import { SandboxSnapshotCard } from '@/components/projects/sandbox-snapshot-card';
 
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   manager: 'Manager',
@@ -120,6 +121,7 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
           <>
             <GeneralProjectCard project={project} canManage={!!canManage} />
             <RepositoryCard repoUrl={project.repo_url} />
+            <SandboxSnapshotCard projectId={projectId} canManage={!!canManage} />
             <ProjectAccessCard
               projectId={projectId}
               canManage={!!canManage}

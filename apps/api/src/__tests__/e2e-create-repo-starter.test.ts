@@ -84,6 +84,25 @@ mock.module('../projects/git', () => ({
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
+  // Used by snapshots/builder + the snapshots HTTP surface in projects/index.
+  resolveCommitSha: async () => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  resolveTreeOid: async () => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  materializeRepoContext: async () => '/tmp/fake-snapshot-context',
+  resolveBranchTip: async () => 'a'.repeat(40),
+  getBranchDiff: async () => ({ files: [], diff: '' }),
+  previewMerge: async () => ({ canMerge: true, conflicts: [] }),
+  mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
+}));
+
+// snapshots/builder imports from projects/git — once mocked, builder.ts
+// resolves cleanly. We stub the helpers projects/index calls so the
+// fire-and-forget snapshot kickoff in the create paths is a no-op here.
+mock.module('../snapshots/builder', () => ({
+  ensureBuildForLatestCommit: async () => ({ status: 'started', commitSha: 'a'.repeat(40) }),
+  getLatestReadySnapshot: async () => null,
+  listSnapshotsForProject: async () => [],
+  buildSnapshotForCommit: async () => ({ daytonaName: '', commitSha: '', contentHash: '', built: false }),
+  pruneOldSnapshots: async () => ({ deletedRows: 0, deletedDaytonaSnapshots: 0 }),
 }));
 
 mock.module('../projects/github', () => ({

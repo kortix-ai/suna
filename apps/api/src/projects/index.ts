@@ -23,6 +23,10 @@ import {
   projectTriggers,
   projectSessions,
   sessionSandboxes,
+  changeRequests,
+  changeRequestRevisions,
+  changeRequestReviews,
+  changeRequestComments,
 } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
@@ -32,6 +36,7 @@ import { getSupabase } from '../shared/supabase';
 import {
   archiveRepoSubtree,
   createRemoteSessionBranch,
+  getBranchDiff,
   getCommit,
   getCommitDiff,
   getFileHistory,
@@ -40,8 +45,27 @@ import {
   listCommits,
   listRepoFiles,
   loadProjectConfig,
+  mergeBranches,
+  previewMerge,
   readRepoFile,
+  resolveBranchTip,
+  resolveCommitSha,
 } from './git';
+import {
+  getCrById,
+  getCrByNumber,
+  getLatestRevision,
+  getNextCrNumber,
+  insertRevision,
+  listComments,
+  listReviews,
+  listRevisions,
+  serializeChangeRequest,
+  serializeComment,
+  serializeReview,
+  serializeRevision,
+  summarizeReviews,
+} from './change-requests';
 import {
   buildGitHubAppInstallUrl,
   commitFile,
@@ -55,6 +79,10 @@ import {
   type GitHubAuthContext,
 } from './github';
 import { buildStarterFiles } from './starter';
+import {
+  ensureBuildForLatestCommit,
+  listSnapshotsForProject,
+} from '../snapshots/builder';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import { getProvider } from '../platform/providers';
 import { config, type SandboxProviderName } from '../config';
@@ -190,6 +218,42 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
   };
+}
+
+/**
+ * Fire-and-forget initial snapshot build for a freshly-created project.
+ *
+ * Called from both project-creation paths (`POST /v1/projects` and
+ * `POST /v1/projects/create-repo`) so every project gets its own
+ * `kortix-snap-…` image built right away — sessions can boot from it as
+ * soon as it lands. Swallows errors (logs only) because project creation
+ * already succeeded; a failed initial build just means the user sees the
+ * "still building" prompt on first session start.
+ */
+function kickInitialSnapshotBuild(
+  project: ProjectRow,
+  accountId: string,
+  options: { gitAuthToken?: string | null } = {},
+): void {
+  void ensureBuildForLatestCommit(
+    {
+      projectId: project.projectId,
+      repoUrl: project.repoUrl,
+      defaultBranch: project.defaultBranch,
+      manifestPath: project.manifestPath,
+      gitAuthToken: options.gitAuthToken ?? null,
+    },
+    {
+      branch: project.defaultBranch,
+      accountId,
+      source: 'project-create',
+    },
+  ).catch((err) => {
+    console.warn(
+      `[projects] initial snapshot build kickoff failed for ${project.projectId}:`,
+      err,
+    );
+  });
 }
 
 function clientIp(c: Context) {
@@ -1511,6 +1575,12 @@ projectsApp.post('/', async (c) => {
     grantedBy: scope.userId,
   });
 
+  // Kick off the first snapshot build for this project's default branch.
+  // Fire-and-forget: snapshot builds take minutes, the API response must
+  // not wait. The dashboard's Sandbox Snapshot panel polls the row
+  // until it flips to `ready`. See apps/api/src/snapshots/builder.ts.
+  void kickInitialSnapshotBuild(row, scope.accountId);
+
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 });
 
@@ -1726,7 +1796,151 @@ projectsApp.post('/create-repo', async (c) => {
     grantedBy: scope.userId,
   });
 
+  // Kick off the first snapshot build (same fire-and-forget contract as the
+  // plain POST /v1/projects path above). The starter is already committed
+  // to the new repo, so .kortix/Dockerfile exists at this point.
+  void kickInitialSnapshotBuild(row, scope.accountId, {
+    gitAuthToken: githubAuth.auth?.token ?? null,
+  });
+
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
+});
+
+// ─── Snapshots ─────────────────────────────────────────────────────────────
+// Per-project Daytona snapshots. The "Sandbox snapshot" panel on the project
+// settings page calls these endpoints to show build status (latest commit
+// on default branch vs commit of latest ready snapshot) and to trigger
+// manual rebuilds.
+
+function serializeProjectSnapshot(row: {
+  snapshotRowId: string;
+  projectId: string;
+  provider: string;
+  commitSha: string;
+  branch: string;
+  snapshotId: string | null;
+  status: string;
+  error: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    snapshot_row_id: row.snapshotRowId,
+    project_id: row.projectId,
+    provider: row.provider,
+    commit_sha: row.commitSha,
+    branch: row.branch,
+    snapshot_id: row.snapshotId,
+    status: row.status,
+    error: row.error,
+    metadata: row.metadata ?? {},
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+// GET /v1/projects/:projectId/snapshots
+// Returns the snapshot history for a project plus the latest commit SHA on
+// the project's default branch so the UI can compare it against the most
+// recent `ready` snapshot's commit and show "needs rebuild" when they
+// drift apart.
+projectsApp.get('/:projectId/snapshots', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let rows: Awaited<ReturnType<typeof listSnapshotsForProject>> = [];
+  try {
+    rows = await listSnapshotsForProject(projectId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: `Failed to list snapshots: ${message}` }, 500);
+  }
+
+  // Resolve the current HEAD on the default branch so the UI can detect
+  // "the latest ready snapshot is behind the branch tip". Failure here is
+  // non-fatal — we still return the snapshot history without it (e.g.
+  // GitHub App not yet installed for the account).
+  let headCommitSha: string | null = null;
+  let headResolveError: string | null = null;
+  try {
+    const gitAuth = await resolveGitHubRepoAuth(loaded.row.accountId);
+    headCommitSha = await resolveCommitSha(
+      {
+        projectId,
+        repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
+        gitAuthToken: gitAuth.auth?.token ?? null,
+      },
+      loaded.row.defaultBranch,
+    );
+  } catch (err) {
+    headResolveError = err instanceof Error ? err.message : String(err);
+  }
+
+  return c.json({
+    items: rows.map(serializeProjectSnapshot),
+    default_branch: loaded.row.defaultBranch,
+    head_commit_sha: headCommitSha,
+    head_resolve_error: headResolveError,
+  });
+});
+
+// POST /v1/projects/:projectId/snapshots/rebuild
+// Manually kick off a build for the current HEAD of the project's default
+// branch. Idempotent: if a `ready` snapshot already exists for that
+// commit, returns immediately with `status: 'already-ready'`.
+projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  let gitAuth: Awaited<ReturnType<typeof resolveGitHubRepoAuth>>;
+  try {
+    gitAuth = await resolveGitHubRepoAuth(loaded.row.accountId);
+  } catch (error) {
+    if (error instanceof GitHubInstallationRequiredError) {
+      return c.json(
+        {
+          error: error.message,
+          install_url: buildGitHubAppInstallUrl(error.accountId),
+        },
+        409,
+      );
+    }
+    const message = (error as Error).message || 'GitHub is not configured on the server';
+    return c.json({ error: message }, 503);
+  }
+
+  const result = await ensureBuildForLatestCommit(
+    {
+      projectId,
+      repoUrl: loaded.row.repoUrl,
+      defaultBranch: loaded.row.defaultBranch,
+      manifestPath: loaded.row.manifestPath,
+      gitAuthToken: gitAuth.auth?.token ?? null,
+    },
+    {
+      branch: loaded.row.defaultBranch,
+      accountId: loaded.row.accountId,
+      source: 'manual',
+    },
+  );
+
+  if (result.status === 'failed-to-start') {
+    return c.json({ error: result.error ?? 'Failed to start build' }, 502);
+  }
+
+  return c.json({
+    status: result.status,
+    branch: loaded.row.defaultBranch,
+    commit_sha: result.commitSha ?? null,
+  });
 });
 
 // GET /v1/projects/:projectId/secrets
@@ -3635,4 +3849,548 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
   })();
 
   return c.json({ ok: true, session_id: sessionId, status: 'provisioning' }, 202);
+});
+
+// ─── Change Requests ────────────────────────────────────────────────────────
+// Kortix-native PR layer. The CR is metadata stored alongside the project;
+// the underlying merge runs through ./git.ts which works against any git
+// backend (GitHub, GitLab, Freestyle, plain git) — so the review UI lives in
+// Kortix even when the repo is hosted elsewhere.
+
+/**
+ * Refresh the latest revision against the current head SHA. If the head ref
+ * has moved since the last revision, inserts a new revision row with the
+ * current diff summary. Returns the latest revision and the live diff.
+ * Mutates the CR's head/base/updatedAt timestamps on advance.
+ */
+async function refreshCrLatestRevision(input: {
+  cr: typeof changeRequests.$inferSelect;
+  project: {
+    projectId: string;
+    repoUrl: string;
+    defaultBranch: string;
+    manifestPath: string;
+    gitAuthToken?: string | null;
+  };
+  userId?: string | null;
+}) {
+  const { cr, project, userId } = input;
+  if (cr.status !== 'open') return null;
+  try {
+    const diff = await getBranchDiff(project, cr.baseRef, cr.headRef);
+    const latest = await getLatestRevision(cr.crId);
+    const sameHead = latest && latest.headCommitSha === diff.head_sha && latest.baseCommitSha === diff.base_sha;
+    if (sameHead) return latest;
+
+    const revisionNumber = (latest?.revisionNumber ?? 0) + 1;
+    const inserted = await insertRevision({
+      crId: cr.crId,
+      revisionNumber,
+      headCommitSha: diff.head_sha,
+      baseCommitSha: diff.base_sha,
+      filesChanged: diff.files_changed,
+      additions: diff.additions,
+      deletions: diff.deletions,
+      createdBy: userId ?? null,
+    });
+    await db
+      .update(changeRequests)
+      .set({
+        headCommitSha: diff.head_sha,
+        baseCommitSha: diff.base_sha,
+        updatedAt: new Date(),
+      })
+      .where(eq(changeRequests.crId, cr.crId));
+    return inserted;
+  } catch (error) {
+    // Repo unreachable or branch missing — leave the CR as-is so the UI can
+    // still render historical revisions and the user can decide what to do.
+    console.warn('[change-requests] refresh failed', {
+      crId: cr.crId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+// GET /v1/projects/:projectId/change-requests?status=open|merged|closed|all
+projectsApp.get('/:projectId/change-requests', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const statusFilter = normalizeString(c.req.query('status'))?.toLowerCase();
+  const whereClauses = [eq(changeRequests.projectId, projectId)];
+  if (statusFilter && statusFilter !== 'all') {
+    if (!['open', 'merged', 'closed'].includes(statusFilter)) {
+      return c.json({ error: 'Invalid status filter' }, 400);
+    }
+    whereClauses.push(eq(changeRequests.status, statusFilter as 'open' | 'merged' | 'closed'));
+  }
+
+  const rows = await db
+    .select()
+    .from(changeRequests)
+    .where(and(...whereClauses))
+    .orderBy(desc(changeRequests.number));
+
+  return c.json({
+    change_requests: rows.map(serializeChangeRequest),
+  });
+});
+
+// POST /v1/projects/:projectId/change-requests
+// Body: { title, description?, head_ref, base_ref?, session_id? }
+projectsApp.post('/:projectId/change-requests', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const title = normalizeString(body.title);
+  if (!title) return c.json({ error: 'title is required' }, 400);
+  const description = normalizeString(body.description) ?? '';
+  const headRef = normalizeString(body.head_ref ?? body.headRef);
+  if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
+  const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? loaded.row.defaultBranch;
+  if (baseRef === headRef) {
+    return c.json({ error: 'head_ref and base_ref must differ' }, 400);
+  }
+
+  let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
+  if (originSessionId) {
+    const [sessionRow] = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .where(and(eq(projectSessions.sessionId, originSessionId), eq(projectSessions.projectId, projectId)))
+      .limit(1);
+    if (!sessionRow) originSessionId = null;
+  }
+
+  // Resolve current tips so the initial revision is correctly anchored.
+  let baseSha: string | null = null;
+  let headSha: string | null = null;
+  let diff: Awaited<ReturnType<typeof getBranchDiff>> | null = null;
+  try {
+    diff = await getBranchDiff(
+      {
+        projectId: loaded.row.projectId,
+        repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
+      },
+      baseRef,
+      headRef,
+    );
+    baseSha = diff.base_sha;
+    headSha = diff.head_sha;
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : 'Failed to resolve branches',
+    }, 400);
+  }
+
+  // Atomically allocate the next per-project number and insert. Retry once on
+  // unique-constraint collision (only happens under racing opens).
+  let inserted: typeof changeRequests.$inferSelect | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const number = await getNextCrNumber(projectId);
+    try {
+      const [row] = await db
+        .insert(changeRequests)
+        .values({
+          accountId: loaded.row.accountId,
+          projectId,
+          number,
+          title,
+          description,
+          baseRef,
+          headRef,
+          headCommitSha: headSha,
+          baseCommitSha: baseSha,
+          originSessionId,
+          createdBy: loaded.userId,
+        })
+        .returning();
+      inserted = row;
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate key/.test(message)) throw error;
+    }
+  }
+  if (!inserted) return c.json({ error: 'Failed to allocate CR number' }, 500);
+
+  if (diff && baseSha && headSha) {
+    await insertRevision({
+      crId: inserted.crId,
+      revisionNumber: 1,
+      headCommitSha: headSha,
+      baseCommitSha: baseSha,
+      filesChanged: diff.files_changed,
+      additions: diff.additions,
+      deletions: diff.deletions,
+      createdBy: loaded.userId,
+    });
+  }
+
+  return c.json(serializeChangeRequest(inserted), 201);
+});
+
+// GET /v1/projects/:projectId/change-requests/:crId
+// Auto-refreshes the head SHA on read so the UI never shows stale "X commits behind".
+projectsApp.get('/:projectId/change-requests/:crId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+
+  // Opportunistic revision refresh against current head SHA.
+  await refreshCrLatestRevision({
+    cr,
+    project: {
+      projectId: loaded.row.projectId,
+      repoUrl: loaded.row.repoUrl,
+      defaultBranch: loaded.row.defaultBranch,
+      manifestPath: loaded.row.manifestPath,
+    },
+    userId: loaded.userId,
+  });
+  cr = (await getCrById(crId, projectId))!;
+
+  const [revisions, reviews, comments] = await Promise.all([
+    listRevisions(crId),
+    listReviews(crId),
+    listComments(crId),
+  ]);
+
+  return c.json({
+    change_request: serializeChangeRequest(cr),
+    revisions: revisions.map(serializeRevision),
+    reviews: reviews.map(serializeReview),
+    review_summary: summarizeReviews(reviews),
+    comments: comments.map(serializeComment),
+  });
+});
+
+// PATCH /v1/projects/:projectId/change-requests/:crId
+// Body: { title?, description? }
+projectsApp.patch('/:projectId/change-requests/:crId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+  if (cr.status !== 'open') {
+    return c.json({ error: `Cannot edit a ${cr.status} change request` }, 409);
+  }
+
+  const updates: Partial<typeof changeRequests.$inferInsert> = { updatedAt: new Date() };
+  const title = normalizeString(body.title);
+  if (title) updates.title = title;
+  if (typeof body.description === 'string') updates.description = body.description;
+
+  const [row] = await db
+    .update(changeRequests)
+    .set(updates)
+    .where(eq(changeRequests.crId, crId))
+    .returning();
+  return c.json(serializeChangeRequest(row));
+});
+
+// GET /v1/projects/:projectId/change-requests/:crId/diff
+projectsApp.get('/:projectId/change-requests/:crId/diff', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+
+  try {
+    const diff = await getBranchDiff(
+      {
+        projectId: loaded.row.projectId,
+        repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
+      },
+      cr.baseRef,
+      cr.headRef,
+    );
+    return c.json({
+      cr_id: cr.crId,
+      base_ref: cr.baseRef,
+      head_ref: cr.headRef,
+      base_sha: diff.base_sha,
+      head_sha: diff.head_sha,
+      merge_base: diff.merge_base,
+      files: diff.files,
+      files_changed: diff.files_changed,
+      additions: diff.additions,
+      deletions: diff.deletions,
+      patch: diff.patch,
+    });
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : 'Failed to compute diff',
+    }, 400);
+  }
+});
+
+// POST /v1/projects/:projectId/change-requests/:crId/refresh
+// Explicitly recompute revision against latest head SHA. Returns the latest
+// revision after refresh.
+projectsApp.post('/:projectId/change-requests/:crId/refresh', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+
+  const latest = await refreshCrLatestRevision({
+    cr,
+    project: {
+      projectId: loaded.row.projectId,
+      repoUrl: loaded.row.repoUrl,
+      defaultBranch: loaded.row.defaultBranch,
+      manifestPath: loaded.row.manifestPath,
+    },
+    userId: loaded.userId,
+  });
+
+  return c.json({
+    revision: latest ? serializeRevision(latest) : null,
+  });
+});
+
+// GET /v1/projects/:projectId/change-requests/:crId/merge-preview
+projectsApp.get('/:projectId/change-requests/:crId/merge-preview', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+
+  try {
+    const preview = await previewMerge(
+      {
+        projectId: loaded.row.projectId,
+        repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
+      },
+      cr.baseRef,
+      cr.headRef,
+    );
+    return c.json(preview);
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : 'Failed to preview merge',
+    }, 400);
+  }
+});
+
+// POST /v1/projects/:projectId/change-requests/:crId/merge
+// Body: { message?: string }
+projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+  if (cr.status !== 'open') {
+    return c.json({ error: `Change request is ${cr.status}` }, 409);
+  }
+
+  const reviews = await listReviews(crId);
+  const reviewSummary = summarizeReviews(reviews);
+  if (reviewSummary.state === 'changes_requested') {
+    return c.json({
+      error: 'Cannot merge: changes have been requested',
+      review_summary: reviewSummary,
+    }, 409);
+  }
+
+  const customMessage = normalizeString(body.message);
+  const projectForGit = {
+    projectId: loaded.row.projectId,
+    repoUrl: loaded.row.repoUrl,
+    defaultBranch: loaded.row.defaultBranch,
+    manifestPath: loaded.row.manifestPath,
+  };
+
+  let result: Awaited<ReturnType<typeof mergeBranches>>;
+  try {
+    result = await mergeBranches(projectForGit, cr.baseRef, cr.headRef, {
+      message: customMessage ?? `Merge CR #${cr.number}: ${cr.title}`,
+      authorName: 'Kortix',
+      authorEmail: 'noreply@kortix.ai',
+    });
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : 'Merge failed',
+    }, 409);
+  }
+
+  const [row] = await db
+    .update(changeRequests)
+    .set({
+      status: 'merged',
+      mergedAt: new Date(),
+      mergedBy: loaded.userId,
+      mergeCommitSha: result.merge_commit_sha,
+      headCommitSha: result.merge_commit_sha,
+      updatedAt: new Date(),
+    })
+    .where(eq(changeRequests.crId, crId))
+    .returning();
+
+  invalidateProjectMirror(projectId);
+
+  return c.json({
+    change_request: serializeChangeRequest(row),
+    merge: result,
+  });
+});
+
+// POST /v1/projects/:projectId/change-requests/:crId/close
+projectsApp.post('/:projectId/change-requests/:crId/close', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+  if (cr.status === 'merged') {
+    return c.json({ error: 'Cannot close a merged change request' }, 409);
+  }
+
+  const [row] = await db
+    .update(changeRequests)
+    .set({
+      status: 'closed',
+      closedAt: new Date(),
+      closedBy: loaded.userId,
+      updatedAt: new Date(),
+    })
+    .where(eq(changeRequests.crId, crId))
+    .returning();
+  return c.json(serializeChangeRequest(row));
+});
+
+// POST /v1/projects/:projectId/change-requests/:crId/reopen
+projectsApp.post('/:projectId/change-requests/:crId/reopen', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+  if (cr.status !== 'closed') {
+    return c.json({ error: `Cannot reopen a ${cr.status} change request` }, 409);
+  }
+
+  const [row] = await db
+    .update(changeRequests)
+    .set({
+      status: 'open',
+      closedAt: null,
+      closedBy: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(changeRequests.crId, crId))
+    .returning();
+  return c.json(serializeChangeRequest(row));
+});
+
+// POST /v1/projects/:projectId/change-requests/:crId/reviews
+// Body: { state: 'approved'|'changes_requested'|'commented', body?: string }
+projectsApp.post('/:projectId/change-requests/:crId/reviews', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+  if (cr.status !== 'open') {
+    return c.json({ error: `Cannot review a ${cr.status} change request` }, 409);
+  }
+
+  const state = normalizeString(body.state);
+  if (!state || !['approved', 'changes_requested', 'commented'].includes(state)) {
+    return c.json({ error: 'state must be approved | changes_requested | commented' }, 400);
+  }
+  const reviewBody = typeof body.body === 'string' ? body.body : '';
+
+  const latest = await getLatestRevision(crId);
+  const revisionNumber = latest?.revisionNumber ?? 1;
+
+  const [row] = await db
+    .insert(changeRequestReviews)
+    .values({
+      crId,
+      userId: loaded.userId,
+      state: state as 'approved' | 'changes_requested' | 'commented',
+      body: reviewBody,
+      revisionNumber,
+    })
+    .returning();
+
+  await db
+    .update(changeRequests)
+    .set({ updatedAt: new Date() })
+    .where(eq(changeRequests.crId, crId));
+
+  return c.json(serializeReview(row), 201);
+});
+
+// POST /v1/projects/:projectId/change-requests/:crId/comments
+// Body: { body: string }
+projectsApp.post('/:projectId/change-requests/:crId/comments', async (c) => {
+  const projectId = c.req.param('projectId');
+  const crId = c.req.param('crId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const cr = await getCrById(crId, projectId);
+  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+
+  const commentBody = typeof body.body === 'string' ? body.body.trim() : '';
+  if (!commentBody) return c.json({ error: 'body is required' }, 400);
+
+  const [row] = await db
+    .insert(changeRequestComments)
+    .values({
+      crId,
+      userId: loaded.userId,
+      body: commentBody,
+    })
+    .returning();
+
+  await db
+    .update(changeRequests)
+    .set({ updatedAt: new Date() })
+    .where(eq(changeRequests.crId, crId));
+
+  return c.json(serializeComment(row), 201);
 });

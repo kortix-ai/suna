@@ -136,6 +136,21 @@ mock.module('../projects/git', () => ({
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   invalidateProjectMirror: () => {},
+  resolveCommitSha: async () => 'a'.repeat(40),
+  resolveBranchTip: async () => 'a'.repeat(40),
+  getBranchDiff: async () => ({ files: [], diff: '' }),
+  previewMerge: async () => ({ canMerge: true, conflicts: [] }),
+  mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
+}));
+
+// Short-circuit the snapshot builder so it doesn't try to resolve git
+// helpers we haven't mocked. This test doesn't exercise snapshot builds.
+mock.module('../snapshots/builder', () => ({
+  ensureBuildForLatestCommit: async () => ({ status: 'started', commitSha: 'a'.repeat(40) }),
+  getLatestReadySnapshot: async () => null,
+  listSnapshotsForProject: async () => [],
+  buildSnapshotForCommit: async () => ({ daytonaName: '', commitSha: '', contentHash: '', built: false }),
+  pruneOldSnapshots: async () => ({ deletedRows: 0, deletedDaytonaSnapshots: 0 }),
 }));
 
 mock.module('../projects/github', () => ({

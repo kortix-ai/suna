@@ -10,6 +10,9 @@ import { sandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import { config, SANDBOX_VERSION } from '../../config';
+// (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
+// own per-project snapshot, resolved by the snapshot builder. Callers
+// must pass `opts.snapshot`; there is no shared platform-wide image.)
 import type {
   SandboxProvider,
   ProviderName,
@@ -36,12 +39,20 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
-    // Per-project snapshot wins; fall back to the shared default for
-    // legacy callers + early-boot sessions that pre-date the per-project
-    // builder.
-    const snapshot = opts.snapshot || config.DAYTONA_SNAPSHOT;
+    // Every Daytona sandbox boots from its project's own per-project
+    // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
+    // we get here (see platform/services/session-sandbox.ts +
+    // snapshots/builder.ts). There is intentionally no shared platform
+    // fallback: a missing snapshot means the project's first build
+    // hasn't finished, which is a session-creation error — not something
+    // we paper over with an unrelated image.
+    const snapshot = opts.snapshot;
     if (!snapshot) {
-      throw new Error('DAYTONA_SNAPSHOT is not configured — set it to the snapshot name (e.g. kortix-sandbox-v0.4.1)');
+      throw new Error(
+        'Daytona create() called without opts.snapshot. ' +
+        'Every sandbox must boot from a per-project snapshot built by ' +
+        'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
+      );
     }
 
     const daytona = getDaytona();
