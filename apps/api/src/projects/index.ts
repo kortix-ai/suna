@@ -3247,6 +3247,66 @@ projectsApp.get('/:projectId/commits/:sha/diff', async (c) => {
   }
 });
 
+// GET /v1/projects/:projectId/version-diff?from=<ref>&into=<ref>
+// Lightweight preview used by the "Open change request" dialog so the user
+// can see whether there's anything to merge BEFORE creating the CR. Returns
+// a summary (no patch body) so the dialog can show "X files changed, +Y -Z"
+// live and gate the submit button.
+projectsApp.get('/:projectId/version-diff', async (c) => {
+  const projectId = c.req.param('projectId');
+  const fromRef = normalizeString(c.req.query('from') ?? c.req.query('head'));
+  const intoRef = normalizeString(c.req.query('into') ?? c.req.query('base'));
+  if (!fromRef || !intoRef) {
+    return c.json({ error: 'from and into query params are required' }, 400);
+  }
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  if (fromRef === intoRef) {
+    return c.json({
+      from: fromRef,
+      into: intoRef,
+      from_sha: null,
+      into_sha: null,
+      merge_base: null,
+      files_changed: 0,
+      additions: 0,
+      deletions: 0,
+      is_up_to_date: true,
+      is_same_ref: true,
+    });
+  }
+
+  try {
+    const diff = await getBranchDiff(
+      {
+        projectId: loaded.row.projectId,
+        repoUrl: loaded.row.repoUrl,
+        defaultBranch: loaded.row.defaultBranch,
+        manifestPath: loaded.row.manifestPath,
+      },
+      intoRef,
+      fromRef,
+    );
+    return c.json({
+      from: fromRef,
+      into: intoRef,
+      from_sha: diff.head_sha,
+      into_sha: diff.base_sha,
+      merge_base: diff.merge_base,
+      files_changed: diff.files_changed,
+      additions: diff.additions,
+      deletions: diff.deletions,
+      is_up_to_date: diff.head_sha === diff.base_sha,
+      is_same_ref: false,
+    });
+  } catch (error) {
+    return c.json({
+      error: error instanceof Error ? error.message : 'Failed to compute diff preview',
+    }, 400);
+  }
+});
+
 // PATCH /v1/projects/:projectId
 projectsApp.patch('/:projectId', async (c) => {
   const projectId = c.req.param('projectId');

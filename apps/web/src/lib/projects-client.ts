@@ -744,6 +744,29 @@ export interface ChangeRequestMergePreview {
   is_up_to_date: boolean;
 }
 
+export interface VersionDiffPreview {
+  from: string;
+  into: string;
+  from_sha: string | null;
+  into_sha: string | null;
+  merge_base: string | null;
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  is_up_to_date: boolean;
+  is_same_ref: boolean;
+}
+
+export async function getVersionDiff(
+  projectId: string,
+  input: { from: string; into: string },
+) {
+  const params = new URLSearchParams({ from: input.from, into: input.into });
+  return unwrap(await backendApi.get<VersionDiffPreview>(
+    `/projects/${projectId}/version-diff?${params.toString()}`,
+  ));
+}
+
 export interface ChangeRequestMergeResponse {
   change_request: ChangeRequest;
   merge: {

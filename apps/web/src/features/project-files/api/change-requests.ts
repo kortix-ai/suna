@@ -9,6 +9,7 @@ import {
   getChangeRequest,
   getChangeRequestDiff,
   getChangeRequestMergePreview,
+  getVersionDiff,
   listChangeRequests,
   mergeChangeRequest,
   openChangeRequest,
@@ -19,6 +20,7 @@ import {
   type ChangeRequestMergePreview,
   type ChangeRequestMergeResponse,
   type ChangeRequestStatus,
+  type VersionDiffPreview,
 } from '@/lib/projects-client';
 
 export type {
@@ -28,6 +30,7 @@ export type {
   ChangeRequestMergePreview,
   ChangeRequestMergeResponse,
   ChangeRequestStatus,
+  VersionDiffPreview,
 };
 
 export async function fetchChangeRequests(
@@ -75,4 +78,11 @@ export async function performClose(projectId: string, crId: string) {
 
 export async function performReopen(projectId: string, crId: string) {
   return reopenChangeRequest(projectId, crId);
+}
+
+export async function fetchVersionDiff(
+  projectId: string,
+  input: { from: string; into: string },
+) {
+  return getVersionDiff(projectId, input);
 }

@@ -89,6 +89,25 @@ function FileStatusIcon({ status }: { status: string }) {
   return <FileEdit className="h-3.5 w-3.5 text-blue-500" />;
 }
 
+/**
+ * Split a unified diff that touches multiple files into one chunk per file.
+ * Pierre's `PatchDiff` (and our `DiffRenderer` wrapper) only renders a single
+ * file per call, so a multi-file CR has to be sliced before rendering.
+ */
+function splitUnifiedPatch(patch: string): Array<{ path: string; body: string }> {
+  if (!patch || !patch.trim()) return [];
+  // Each file diff in `git diff` output begins with `diff --git a/<src> b/<dst>`.
+  // Split before each such header so the resulting array contains
+  // self-contained per-file patches.
+  const chunks = patch.split(/^(?=diff --git )/m).filter((c) => c.trim().length > 0);
+  return chunks.map((body) => {
+    // The destination path (post-rename) is what the file list shows.
+    const match = body.match(/^diff --git a\/(?:.*?) b\/(.+?)$/m);
+    const path = match ? match[1] : '';
+    return { path, body };
+  });
+}
+
 interface ChangeRequestDetailDialogProps {
   crId: string | null;
   onClose: () => void;
@@ -331,7 +350,19 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 </div>
                 {diff.patch && (
                   <div className="border-t border-border/60">
-                    <DiffRenderer patch={diff.patch} />
+                    {splitUnifiedPatch(diff.patch).map((chunk, i) => (
+                      <div
+                        key={chunk.path || i}
+                        className="border-b border-border/40 last:border-b-0"
+                      >
+                        {chunk.path && (
+                          <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 text-[11px] font-mono text-muted-foreground border-b border-border/40">
+                            {chunk.path}
+                          </div>
+                        )}
+                        <DiffRenderer patch={chunk.body} />
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

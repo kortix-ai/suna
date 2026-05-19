@@ -27,7 +27,8 @@ import { cn } from '@/lib/utils';
 
 import { useBranches } from '../hooks/use-branches';
 import { useProjectContext } from '../context';
-import { useOpenChangeRequest } from '../hooks/use-change-requests';
+import { useOpenChangeRequest, useVersionDiff } from '../hooks/use-change-requests';
+import { DiffPreviewBanner } from './diff-preview-banner';
 import type { ProjectBranch } from '@/lib/projects-client';
 
 interface OpenChangeRequestDialogProps {
@@ -120,7 +121,23 @@ export function OpenChangeRequestDialog({
 
   const openMutation = useOpenChangeRequest();
 
-  const canSubmit = Boolean(title.trim()) && Boolean(headRef) && headRef !== baseRef;
+  // Live diff between the two selected versions. The user sees the file-count
+  // and +/- before submitting, and we block submit when there's nothing to
+  // merge (avoids creating empty CRs).
+  const diffPreviewQuery = useVersionDiff(
+    headRef && baseRef && headRef !== baseRef ? { from: headRef, into: baseRef } : null,
+    { enabled: open },
+  );
+  const diffPreview = diffPreviewQuery.data;
+  const hasChanges =
+    Boolean(diffPreview) && !diffPreview!.is_same_ref && !diffPreview!.is_up_to_date && diffPreview!.files_changed > 0;
+
+  const canSubmit =
+    Boolean(title.trim()) &&
+    Boolean(headRef) &&
+    headRef !== baseRef &&
+    !diffPreviewQuery.isLoading &&
+    hasChanges;
 
   const handleSubmit = () => {
     if (!canSubmit) return;
@@ -261,6 +278,22 @@ export function OpenChangeRequestDialog({
                   </Select>
                 </div>
               </div>
+
+              {/* Live diff preview — shows the user whether there's anything
+                  to merge BEFORE they click submit. */}
+              {headRef && baseRef && headRef !== baseRef && (
+                <DiffPreviewBanner
+                  loading={diffPreviewQuery.isLoading}
+                  error={diffPreviewQuery.error as Error | null}
+                  preview={diffPreview}
+                />
+              )}
+              {headRef && baseRef && headRef === baseRef && (
+                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                  Pick two different versions — you can't merge a version into
+                  itself.
+                </div>
+              )}
 
               {/* Description */}
               <div className="space-y-1.5">

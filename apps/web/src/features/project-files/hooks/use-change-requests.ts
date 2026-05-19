@@ -7,6 +7,7 @@ import {
   fetchChangeRequestDiff,
   fetchChangeRequestMergePreview,
   fetchChangeRequests,
+  fetchVersionDiff,
   performClose,
   performMerge,
   performReopen,
@@ -16,6 +17,7 @@ import {
   type ChangeRequestMergePreview,
   type ChangeRequestMergeResponse,
   type ChangeRequestStatus,
+  type VersionDiffPreview,
 } from '../api/change-requests';
 import { useProjectContext } from '../context';
 
@@ -69,6 +71,28 @@ export function useChangeRequestDiff(crId: string | null) {
       : ['project-files', 'change-requests', 'diff', 'idle'],
     queryFn: () => fetchChangeRequestDiff(projectId, crId as string),
     enabled: Boolean(projectId && crId),
+    staleTime: 10_000,
+  });
+}
+
+/**
+ * Live diff preview between two refs — used by the Open-CR dialog so the
+ * user sees "X files changed" (or "no changes") before submitting. Cheap
+ * server-side query that does NOT create a CR.
+ */
+export function useVersionDiff(
+  input: { from: string; into: string } | null,
+  options?: { enabled?: boolean },
+) {
+  const ctx = useProjectContext();
+  const projectId = ctx?.projectId ?? '';
+  const canRun = Boolean(projectId && input?.from && input?.into);
+  return useQuery<VersionDiffPreview>({
+    queryKey: canRun
+      ? ['project-files', 'version-diff', projectId, input!.from, input!.into]
+      : ['project-files', 'version-diff', 'idle'],
+    queryFn: () => fetchVersionDiff(projectId, input!),
+    enabled: canRun && options?.enabled !== false,
     staleTime: 10_000,
   });
 }

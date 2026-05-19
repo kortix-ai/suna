@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   FolderPlus,
   FilePlus,
@@ -471,6 +472,24 @@ export function FileExplorerPage() {
   // reviews even when the drawer is closed. Cheap query (just a row count).
   const openCrCountQuery = useChangeRequests('open', { refetchInterval: 10_000 });
   const openCrCount = openCrCountQuery.data?.change_requests.length ?? 0;
+
+  // Deep-link support: if someone navigates here with ?cr=<uuid> (e.g. from
+  // the "Open change request" affordance on the sessions list), pop open
+  // that CR's detail dialog and strip the query param so a refresh doesn't
+  // re-trigger it.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  useEffect(() => {
+    const cr = searchParams.get('cr');
+    if (!cr) return;
+    setCreatedCrId(cr);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('cr');
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // ── Page-level drag & drop (external files only) ─────────────
   const isExternalFileDrag = useCallback((e: React.DragEvent) => {
