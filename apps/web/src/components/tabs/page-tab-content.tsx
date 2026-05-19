@@ -60,12 +60,6 @@ const FilesPage = lazy(() =>
 
 const BoardPage = lazy(() => import('@/components/pages/board/page'));
 
-const MarketplacePage = lazy(() =>
-	import('@/features/skills/components/marketplace').then((m) => ({
-		default: m.Marketplace,
-	})),
-);
-
 const DeploymentsPage = lazy(() =>
 	import('@/components/deployments/deployments-page').then((m) => ({
 		default: m.DeploymentsPage,
@@ -109,9 +103,6 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/credits-explained': CreditsPage,
 	'/changelog': ChangelogPage,
 	'/workspace': WorkspacePage,
-	// Marketplace - browse and install all components from registry
-	'/marketplace': MarketplacePage,
-	'/skills': MarketplacePage, // backwards compat
 	'/tools': WorkspacePage,
 	'/commands': WorkspacePage,
 	'/agents': WorkspacePage,

@@ -25,7 +25,6 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:files':             { id: 'page:files',             label: 'Files',             icon: 'folder-open-outline' },
   'page:terminal':          { id: 'page:terminal',          label: 'Terminal',          icon: 'terminal-outline' },
   'page:memory':            { id: 'page:memory',            label: 'Memory',            icon: 'hardware-chip-outline' },
-  'page:marketplace':       { id: 'page:marketplace',       label: 'Marketplace',       icon: 'sparkles-outline' },
   'page:workspace':         { id: 'page:workspace',         label: 'Workspace',         icon: 'grid-outline' },
   'page:secrets':           { id: 'page:secrets',           label: 'Secrets Manager',   icon: 'key-outline' },
   'page:llm-providers':     { id: 'page:llm-providers',     label: 'LLM Providers',     icon: 'cube-outline' },

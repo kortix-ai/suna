@@ -352,7 +352,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
   const filesActive = pathname?.startsWith(`/projects/${projectId}/files`) ?? false;
   // Customize covers the whole route group: agents, skills, secrets, triggers,
-  // channels, executor, settings. Any of those should light up the sidebar
+  // channels, settings. Any of those should light up the sidebar
   // button so the user knows where they are.
   const CUSTOMIZE_SECTIONS = [
     'agents',
@@ -362,7 +362,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     'schedules',
     'webhooks',
     'channels',
-    'executor',
     'settings',
   ];
   const customizeActive = CUSTOMIZE_SECTIONS.some((slug) =>

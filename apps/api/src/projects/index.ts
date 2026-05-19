@@ -68,6 +68,28 @@ import {
   listProjectSecrets,
 } from './secrets';
 import {
+  SUPPORTED_OAUTH_PROVIDERS,
+  buildOpencodeAuthContent,
+  deleteOauthCredential,
+  isSupportedOauthProvider,
+  listOauthCredentials,
+  summarizeCredential,
+  upsertOauthCredential,
+  type OauthProviderId,
+} from './oauth';
+import {
+  pollOnceCopilot,
+  pollOnceOpenAi,
+  startCopilotDeviceFlow,
+  startOpenAiDeviceFlow,
+} from './oauth-flow';
+import {
+  bumpInterval,
+  createFlow,
+  deleteFlow,
+  getFlow,
+} from './oauth-flow-store';
+import {
   effectiveProjectRole,
   isAccountManager,
   parseProjectRole,
@@ -593,7 +615,13 @@ async function buildSessionSandboxEnvVars(input: {
   initialPrompt?: string | null;
   githubToken?: string | null;
 }): Promise<Record<string, string>> {
-  const runtimeSecrets = await listProjectSecrets(input.projectId);
+  // Project secrets + OAuth credentials are independent stores but both
+  // funnel into the same sandbox env. Run them in parallel — refresh-on-boot
+  // can do an upstream HTTP round-trip for expiring tokens.
+  const [runtimeSecrets, opencodeAuthContent] = await Promise.all([
+    listProjectSecrets(input.projectId),
+    buildOpencodeAuthContent(input.projectId),
+  ]);
   const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
   const llmToken = encodeSessionLlmToken({
     accountId: input.accountId,
@@ -621,6 +649,7 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_AGENT_NAME: input.agentName,
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
     ...(githubToken ? { KORTIX_GITHUB_TOKEN: githubToken } : {}),
+    ...(opencodeAuthContent ? { OPENCODE_AUTH_CONTENT: opencodeAuthContent } : {}),
   };
 }
 
@@ -1819,6 +1848,162 @@ projectsApp.delete('/:projectId/secrets/:name', async (c) => {
       eq(projectSecrets.name, name),
     ));
 
+  return c.json({ ok: true });
+});
+
+// ─── OAuth provider credentials ────────────────────────────────────────────
+//
+// Mirrors the opencode auth flow (codex.ts / github-copilot/copilot.ts) but
+// persists tokens as encrypted per-project rows instead of opencode's local
+// auth.json. At session boot, all connected providers are bundled into the
+// `OPENCODE_AUTH_CONTENT` env var which opencode reads natively.
+
+// GET /v1/projects/:projectId/oauth
+projectsApp.get('/:projectId/oauth', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  const creds = await listOauthCredentials(projectId);
+  return c.json({
+    items: creds.map(summarizeCredential),
+    supported: SUPPORTED_OAUTH_PROVIDERS,
+  });
+});
+
+// POST /v1/projects/:projectId/oauth/:provider/start
+projectsApp.post('/:projectId/oauth/:provider/start', async (c) => {
+  const projectId = c.req.param('projectId');
+  const provider = c.req.param('provider');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+  if (!isSupportedOauthProvider(provider)) {
+    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
+  }
+
+  const body = await readBody(c);
+  const enterpriseUrl = normalizeString(body.enterprise_url ?? body.enterpriseUrl);
+
+  try {
+    const flowStart = provider === 'openai'
+      ? await startOpenAiDeviceFlow()
+      : await startCopilotDeviceFlow({ enterpriseUrl: enterpriseUrl ?? undefined });
+
+    const { flowId } = createFlow({
+      projectId,
+      providerId: provider,
+      handle: flowStart.handle,
+      intervalMs: flowStart.interval_ms,
+      expiresAt: flowStart.expires_at,
+    });
+
+    return c.json({
+      flow_id: flowId,
+      provider_id: provider,
+      verification_url: flowStart.verification_url,
+      user_code: flowStart.user_code,
+      interval_ms: flowStart.interval_ms,
+      expires_at: flowStart.expires_at,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[projects] oauth start failed', { projectId, provider, error: msg });
+    return c.json({ error: msg }, 502);
+  }
+});
+
+// POST /v1/projects/:projectId/oauth/:provider/poll
+// Body: { flow_id: string }
+// Returns one of:
+//   { status: 'pending', next_poll_ms }
+//   { status: 'success', credential: {...} }
+//   { status: 'expired' }
+//   { status: 'failed', error }
+projectsApp.post('/:projectId/oauth/:provider/poll', async (c) => {
+  const projectId = c.req.param('projectId');
+  const provider = c.req.param('provider');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+  if (!isSupportedOauthProvider(provider)) {
+    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
+  }
+
+  const body = await readBody(c);
+  const flowId = normalizeString(body.flow_id ?? body.flowId);
+  if (!flowId) return c.json({ error: 'flow_id is required' }, 400);
+
+  const flow = getFlow(flowId);
+  if (!flow) return c.json({ status: 'expired' });
+  if (flow.projectId !== projectId) return c.json({ error: 'Flow not found' }, 404);
+  if (flow.providerId !== provider) return c.json({ error: 'Provider mismatch' }, 400);
+  if (flow.expiresAt < Date.now()) {
+    deleteFlow(flowId);
+    return c.json({ status: 'expired' });
+  }
+
+  try {
+    const result = provider === 'openai'
+      ? await pollOnceOpenAi(flow.handle)
+      : await pollOnceCopilot(flow.handle);
+
+    if (result.status === 'pending') {
+      return c.json({ status: 'pending', next_poll_ms: flow.recommendedIntervalMs });
+    }
+    if (result.status === 'slow_down') {
+      bumpInterval(flowId, result.new_interval_ms);
+      return c.json({ status: 'pending', next_poll_ms: result.new_interval_ms });
+    }
+    if (result.status === 'failed') {
+      deleteFlow(flowId);
+      return c.json({ status: 'failed', error: result.error });
+    }
+
+    const credential = await upsertOauthCredential({
+      projectId,
+      providerId: provider as OauthProviderId,
+      refresh: result.refresh,
+      access: result.access,
+      expires: result.expires,
+      accountId: result.accountId,
+      enterpriseUrl: result.enterpriseUrl,
+      createdBy: loaded.userId,
+    });
+    deleteFlow(flowId);
+
+    return c.json({
+      status: 'success',
+      credential: summarizeCredential(credential),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[projects] oauth poll failed', { projectId, provider, error: msg });
+    return c.json({ status: 'failed', error: msg }, 502);
+  }
+});
+
+// DELETE /v1/projects/:projectId/oauth/:provider
+projectsApp.delete('/:projectId/oauth/:provider', async (c) => {
+  const projectId = c.req.param('projectId');
+  const provider = c.req.param('provider');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+  if (!isSupportedOauthProvider(provider)) {
+    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
+  }
+
+  await deleteOauthCredential(projectId, provider);
   return c.json({ ok: true });
 });
 
@@ -3177,6 +3362,70 @@ projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
 
   if (!row) return c.json({ error: 'Not found' }, 404);
   return c.json(serializeSession(row));
+});
+
+// POST /v1/projects/sync-opencode-titles
+// Mirrors session titles from the sandbox-local opencode DB into our cloud DB
+// (project_sessions.metadata.name). Opencode is the source of truth for the
+// title; the frontend pipes opencode's session.list response and SSE
+// session.updated events through this endpoint so the name is available even
+// when the sandbox isn't running. Rename direction (UI -> opencode) goes via
+// the SDK's session.update and lands back here through the same SSE pipe.
+projectsApp.post('/sync-opencode-titles', async (c) => {
+  const userId = c.get('userId') as string;
+  const body = await readBody(c);
+  const rawEntries = body.entries;
+  if (!Array.isArray(rawEntries)) {
+    return c.json({ error: 'entries must be an array' }, 400);
+  }
+
+  const desiredByOcId = new Map<string, string | null>();
+  for (const raw of rawEntries) {
+    if (!isPlainObject(raw)) continue;
+    const opencodeSessionId = normalizeString(
+      raw.opencode_session_id ?? raw.opencodeSessionId,
+    );
+    if (!opencodeSessionId) continue;
+    const title = normalizeString(raw.title);
+    desiredByOcId.set(opencodeSessionId, title);
+  }
+  if (desiredByOcId.size === 0) return c.json({ updated: 0 });
+
+  const ids = Array.from(desiredByOcId.keys());
+  const rows = await db
+    .select()
+    .from(projectSessions)
+    .where(inArray(projectSessions.opencodeSessionId, ids));
+  if (rows.length === 0) return c.json({ updated: 0 });
+
+  const accountIds = Array.from(new Set(rows.map((r) => r.accountId)));
+  const memberships = await db
+    .select({ accountId: accountMembers.accountId })
+    .from(accountMembers)
+    .where(and(
+      eq(accountMembers.userId, userId),
+      inArray(accountMembers.accountId, accountIds),
+    ));
+  const allowedAccounts = new Set(memberships.map((m) => m.accountId));
+
+  let updated = 0;
+  for (const row of rows) {
+    if (!allowedAccounts.has(row.accountId)) continue;
+    const ocId = row.opencodeSessionId;
+    if (!ocId) continue;
+    const desired = desiredByOcId.get(ocId) ?? null;
+    const current = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+    if (desired === current) continue;
+    const nextMetadata: Record<string, unknown> = { ...(row.metadata ?? {}) };
+    if (desired) nextMetadata.name = desired;
+    else delete nextMetadata.name;
+    await db
+      .update(projectSessions)
+      .set({ metadata: nextMetadata, updatedAt: new Date() })
+      .where(eq(projectSessions.sessionId, row.sessionId));
+    updated += 1;
+  }
+  return c.json({ updated });
 });
 
 // GET /v1/projects/:projectId/sessions/:sessionId/sandbox

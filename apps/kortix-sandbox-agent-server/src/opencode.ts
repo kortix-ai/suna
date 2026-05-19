@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
 import { access, constants, stat } from 'node:fs/promises'
 
 import type { Config } from './config'
@@ -81,6 +82,19 @@ export function createOpencodeSupervisor(cfg: Config, opencodeConfigDir: string)
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
   let opencodeCwd = cfg.workspace
 
+  function ensureCwdExists(): string {
+    // Daytona can delete /workspace after our entrypoint exits — re-mkdir
+    // on every spawn attempt. If recreation fails (extremely rare), fall
+    // back to / so spawn at least gets a valid working directory.
+    try {
+      mkdirSync(opencodeCwd, { recursive: true })
+      return opencodeCwd
+    } catch (err) {
+      logger.warn('[opencode] could not mkdir cwd, falling back to /', { opencodeCwd, err: (err as Error).message })
+      return '/'
+    }
+  }
+
   function spawnChild(bin: string) {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -100,9 +114,10 @@ export function createOpencodeSupervisor(cfg: Config, opencodeConfigDir: string)
       '127.0.0.1',
     ]
 
-    logger.info('[opencode] spawning', { bin, port: cfg.opencodeInternalPort, cwd: opencodeCwd })
+    const cwd = ensureCwdExists()
+    logger.info('[opencode] spawning', { bin, port: cfg.opencodeInternalPort, cwd })
     const proc = spawn(bin, args, {
-      cwd: opencodeCwd,
+      cwd,
       env,
       stdio: ['ignore', 'inherit', 'inherit'],
     })
@@ -128,11 +143,18 @@ export function createOpencodeSupervisor(cfg: Config, opencodeConfigDir: string)
   }
 
   async function checkReady(): Promise<boolean> {
+    // Probe /global/health, NOT /app. opencode 1.14.x's /app route (the web
+    // UI HTML) returns HTTP 500 once the sqlite migration finishes, so it
+    // can't be used as a liveness signal — the daemon would sit forever in
+    // `starting` even though opencode is actually serving traffic.
+    // /global/health is the canonical liveness endpoint and returns
+    // 200 {"healthy":true,"version":"…"} as soon as the HTTP server is
+    // bound + DB migrated. Verified end-to-end against opencode-ai@1.14.28
+    // both locally and in the Daytona sandbox image.
     try {
-      const res = await fetch(`http://127.0.0.1:${cfg.opencodeInternalPort}/app`, {
+      const res = await fetch(`http://127.0.0.1:${cfg.opencodeInternalPort}/global/health`, {
         signal: AbortSignal.timeout(2_000),
       })
-      // Any 2xx/3xx counts as "bound and responding"
       return res.status >= 200 && res.status < 400
     } catch {
       return false

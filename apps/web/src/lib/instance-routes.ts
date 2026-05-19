@@ -3,8 +3,6 @@ export const ACTIVE_INSTANCE_COOKIE = 'kortix-active-instance';
 export const INSTANCE_SCOPED_ROUTES = [
   '/dashboard',
   '/agents',
-  '/marketplace',
-  '/skills',
   '/p',
   '/workspace',
   '/settings',

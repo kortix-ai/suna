@@ -31,7 +31,6 @@ import {
   Compass,
   Activity,
   Rocket,
-  Sparkles,
   Coins,
   LayoutTemplate,
 
@@ -311,7 +310,7 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette', 'rightSidebar'],
     kind: 'navigate',
     href: '/workspace',
-    activePathPrefixes: ['/workspace', '/agents', '/skills', '/commands', '/tools'],
+    activePathPrefixes: ['/workspace', '/agents', '/commands', '/tools'],
     keywords: 'workspace agents skills commands tools build create',
   },
   {
@@ -372,16 +371,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/dashboard',
     tabType: 'dashboard',
-  },
-  {
-    id: 'marketplace',
-    label: 'Marketplace',
-    icon: Sparkles,
-    group: 'navigation',
-    showIn: [],
-    subGroup: 'tools',
-    kind: 'navigate',
-    href: '/marketplace',
   },
   {
     id: 'scheduled-tasks',

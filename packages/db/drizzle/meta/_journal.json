@@ -29,6 +29,13 @@
       "when": 1779100000000,
       "tag": "0003_drop_executor_bridge_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779123753375,
+      "tag": "0004_add_project_oauth_credentials",
+      "breakpoints": true
     }
   ]
 }

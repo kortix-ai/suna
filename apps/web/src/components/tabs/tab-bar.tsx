@@ -94,7 +94,6 @@ function resolveRouteTab(pathname: string): Omit<Tab, 'openedAt'> | null {
   // Static page routes
   const ROUTE_MAP: Record<string, { title: string; type: TabType }> = {
     '/agents': { title: 'Agents', type: 'page' },
-    '/skills': { title: 'Skills Browser', type: 'page' },
     '/tools': { title: 'Tools', type: 'page' },
     '/commands': { title: 'Commands', type: 'page' },
     '/files': { title: 'Files', type: 'page' },

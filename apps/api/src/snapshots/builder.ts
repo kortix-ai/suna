@@ -28,8 +28,9 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { copyFile, mkdir, rm, stat } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Image } from '@daytonaio/sdk';
 import { projectRuntimeSnapshots } from '@kortix/db';
 import { db } from '../shared/db';
@@ -43,6 +44,20 @@ import { SANDBOX_VERSION } from '../config';
  * cache so the next session pulls the new binary.
  */
 const OPENCODE_VERSION = '1.14.28';
+
+/**
+ * Filesystem paths to the runtime artifacts the layered Dockerfile
+ * COPYs into the image: the compiled `kortix-agent` (Linux ELF) and
+ * the entrypoint shim that execs it. Defaults walk up from this file
+ * to the repo root so the API works out-of-the-box in dev; override
+ * via env in prod when the API runs from a packaged bundle.
+ */
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(__dirname, '../../../..');
+const AGENT_BIN_PATH = process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
+  || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
+const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
 import {
   materializeRepoContext,
   readRepoFile,
@@ -255,18 +270,24 @@ async function runBuild(project: GitBackedProject, commitSha: string): Promise<B
     sandboxPaths.context === '.' ? null : sandboxPaths.context,
   );
   try {
+    // Copy the agent binary + entrypoint shim into the context so the
+    // layered Dockerfile's COPY instructions resolve. Fail loud and
+    // early if either is missing — a build that proceeds without them
+    // would land in Daytona's queue, fail there, and waste a slot.
+    await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+    await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
+    await copyFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent'));
+    await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
+
     const composedPath = join(contextDir, '.kortix-snapshot.Dockerfile');
     const composed = buildLayeredDockerfile({
       userDockerfile,
       opencodeVersion: OPENCODE_VERSION,
-      // These paths are read by Daytona's builder, which copies from the
-      // build context. We embed the binaries at known paths under the
-      // snapshot-builder dir (out of scope for v1 — the builder
-      // expects them present alongside the runtime).
+      // Filenames here resolve against `contextDir` at docker build time
+      // — they're the basenames of the files we just copied in above.
       agentBinaryPath: 'kortix-agent',
       entrypointScriptPath: 'kortix-entrypoint',
     });
-    await mkdir(contextDir, { recursive: true });
     await Bun.write(composedPath, composed);
 
     await daytona.snapshot.create(
@@ -280,6 +301,26 @@ async function runBuild(project: GitBackedProject, commitSha: string): Promise<B
     return { daytonaName, contentHash: hash.contentHash, shortHash: hash.shortHash, built: true };
   } finally {
     await rm(contextDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function assertExists(path: string, envVarHint: string): Promise<void> {
+  if (!isAbsolute(path)) {
+    throw new SnapshotBuildError(
+      `${envVarHint} must be an absolute path (got "${path}")`,
+    );
+  }
+  try {
+    const s = await stat(path);
+    if (!s.isFile()) {
+      throw new SnapshotBuildError(`${envVarHint} (${path}) is not a regular file`);
+    }
+  } catch (err) {
+    if (err instanceof SnapshotBuildError) throw err;
+    throw new SnapshotBuildError(
+      `Required artifact missing: ${path}. Set ${envVarHint} or run \`bun run build\` in apps/kortix-sandbox-agent-server.`,
+      err,
+    );
   }
 }
 

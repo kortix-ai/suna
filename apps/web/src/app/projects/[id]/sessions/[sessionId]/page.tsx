@@ -7,9 +7,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import { SessionChat } from '@/components/session/session-chat';
 import { SessionLayout } from '@/components/session/session-layout';
+import { SessionLoadingSkeleton } from '@/components/session/session-loading-skeleton';
 import { ProjectShell } from '@/components/projects/project-shell';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
-import { getProjectSessionSandbox } from '@/lib/projects-client';
+import { getProjectSessionSandbox, syncOpencodeSessionTitles } from '@/lib/projects-client';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
 import {
   markProvisioningVerified,
@@ -118,11 +119,11 @@ export default function ProjectSessionPage() {
   const sandboxLabel = sandbox ? `session ${sandbox.sandbox_id.slice(0, 8)}` : undefined;
   const inner = (() => {
     if (authLoading || !user || isLoading || !sandbox) {
-      return <InlineSessionLoader label="Loading session" />;
+      return <SessionLoadingSkeleton />;
     }
 
     if (sandbox.status === 'provisioning') {
-      return <InlineSessionLoader label="Provisioning session" />;
+      return <SessionLoadingSkeleton />;
     }
 
     if (sandbox.status === 'error') {
@@ -151,7 +152,7 @@ export default function ProjectSessionPage() {
     // Active — wait until the server-store has actually flipped to this
     // sandbox before mounting the chat (downstream hooks read from the store).
     if (activeInstanceId !== sandbox.sandbox_id) {
-      return <InlineSessionLoader label="Connecting" />;
+      return <SessionLoadingSkeleton />;
     }
 
     return (
@@ -167,42 +168,7 @@ export default function ProjectSessionPage() {
   return <ProjectShell projectId={projectId}>{inner}</ProjectShell>;
 }
 
-/* ─── Inline loaders (used inside the project shell) ───────────────────── */
-
-/**
- * Session loader — sits inside the project shell while the sandbox provisions
- * or the connection settles. Designed to look intentional rather than like a
- * "page is broken" state:
- *
- *   - Centered pill with a quiet pulsing dot + label.
- *   - Hairline progress underneath the pill.
- *   - Pinned to the vertical center of the chat area, NOT the full page,
- *     so the project shell (sidebar + tab bar) reads as the real chrome
- *     and the loader as just a placeholder for the inner chat.
- *
- * No Kortix logo, no progress percent, no machine info. Quiet and certain.
- */
-function InlineSessionLoader({ label }: { label: string }) {
-  return (
-    <div className="flex-1 min-h-0 flex flex-col items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-4 max-w-[260px] text-center">
-        <div className="inline-flex items-center gap-2.5 rounded-full bg-foreground/[0.04] border border-foreground/[0.06] px-3.5 py-1.5">
-          <span className="relative inline-flex h-1.5 w-1.5">
-            <span className="absolute inset-0 rounded-full bg-foreground/60 animate-ping opacity-50" />
-            <span className="relative inline-flex h-full w-full rounded-full bg-foreground/70" />
-          </span>
-          <span className="text-[12px] font-medium text-foreground/80">{label}</span>
-        </div>
-        <div
-          className="h-[1.5px] w-[140px] overflow-hidden rounded-full bg-foreground/[0.06]"
-          aria-hidden
-        >
-          <div className="h-full w-1/3 rounded-full bg-foreground/50 animate-connect-progress" />
-        </div>
-      </div>
-    </div>
-  );
-}
+/* ─── Inline error card (used inside the project shell) ────────────────── */
 
 function InlineSessionError({ title, message }: { title: string; message: string }) {
   return (
@@ -245,8 +211,22 @@ function ActiveSessionChat() {
   const chatSessionId =
     (sessionsQuery.data ?? [])[0]?.id ?? createMutation.data?.id ?? null;
 
+  // Mirror the viewed session's title into our cloud DB so the name shows
+  // even when the sandbox isn't running. Fires on mount and whenever opencode
+  // changes the title (e.g. auto-titling after the first prompt). Cache-hit
+  // paths in useOpenCodeSession won't trigger the queryFn, so this effect is
+  // the authoritative trigger for per-session title sync.
+  const activeSession = (sessionsQuery.data ?? []).find((s) => s.id === chatSessionId);
+  const activeTitle = activeSession?.title || null;
+  useEffect(() => {
+    if (!chatSessionId) return;
+    void syncOpencodeSessionTitles([
+      { opencode_session_id: chatSessionId, title: activeTitle },
+    ]).catch(() => {});
+  }, [chatSessionId, activeTitle]);
+
   if (!chatSessionId) {
-    return <InlineSessionLoader label="Connecting" />;
+    return <SessionLoadingSkeleton />;
   }
 
   return (

@@ -183,12 +183,17 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   // when the cursor leaves the row.
   const showActions = isHovering || menuOpen;
 
-  const metadataName =
+  // Title source of truth is the cloud DB's `name` column (mirrored from
+  // opencode via /v1/projects/sync-opencode-titles). Older rows may still
+  // carry the legacy metadata.session_name key, so fall back to it before
+  // showing the branch_name slice.
+  const legacyMetadataName =
     typeof session.metadata?.session_name === 'string'
       ? (session.metadata.session_name as string)
       : null;
+  const titleCandidate = session.name?.trim() || legacyMetadataName?.trim() || null;
   const fallback = session.branch_name ? session.branch_name.slice(0, 14) : 'session';
-  const displayTitle = metadataName?.trim() || fallback;
+  const displayTitle = titleCandidate || fallback;
 
   const relative = (() => {
     try {

@@ -29,6 +29,8 @@ import {
   SANDBOX_INIT_MAX_ATTEMPTS,
 } from './sandbox-init-state';
 import { getOrBuildSnapshot } from '../../snapshots/builder';
+import { getOrBuildSnapshot, SnapshotBuildError } from '../../snapshots/builder';
+import { config } from '../../config';
 import type { GitBackedProject } from '../../projects/git';
 
 export interface ProvisionSessionSandboxResult {
@@ -65,10 +67,14 @@ export async function provisionSessionSandbox(opts: {
   baseRef?: string;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
-  // Sessions intentionally bypass the legacy "default provider" — they
-  // always want a fresh Daytona sandbox spun from a pre-built snapshot so
-  // cold-starts stay fast. Callers can still override via `opts.provider`.
-  const providerName = opts.provider || 'daytona';
+  // Resolution order:
+  //   1. Explicit per-request `opts.provider` (set by callers that need a
+  //      specific runtime, e.g. when restarting an existing sandbox).
+  //   2. `config.getDefaultProvider()` — honours SANDBOX_PROVIDER env first
+  //      and falls back to the head of ALLOWED_SANDBOX_PROVIDERS.
+  // This lets `SANDBOX_PROVIDER=local_docker` in apps/api/.env flip every
+  // new session onto the local docker daemon without code changes.
+  const providerName = opts.provider || config.getDefaultProvider();
   const provider = getProvider(providerName);
 
   const [sandbox] = await db
