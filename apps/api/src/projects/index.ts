@@ -765,7 +765,7 @@ function deriveKortixApiBase(): string {
   return url.replace(/\/v1\/router\/?$/, '');
 }
 
-async function createProjectSession(input: {
+export async function createProjectSession(input: {
   project: ProjectRow;
   userId: string;
   body: Record<string, unknown>;
