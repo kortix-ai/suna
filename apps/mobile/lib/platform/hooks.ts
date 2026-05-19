@@ -478,7 +478,7 @@ export async function forkSession(
 export function useInstances(enabled: boolean = true) {
   return useQuery({
     queryKey: platformKeys.instances(),
-    queryFn: listSandboxes,
+    queryFn: () => listSandboxes(),
     enabled,
     staleTime: 30 * 1000,
   });

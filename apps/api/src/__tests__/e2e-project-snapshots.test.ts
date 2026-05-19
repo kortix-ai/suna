@@ -78,12 +78,20 @@ mock.module('../projects/git', () => ({
   },
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
+  getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
 }));
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  verifyGitHubAppInstallState: (state: string) => state,
+  verifyGitHubAppInstallStatePayload: (state: string) => ({
+    accountId: state,
+    nonce: 'test-nonce',
+    issuedAt: Math.floor(Date.now() / 1000),
+  }),
+  getGitHubPatAuthContext: () => null,
   isGithubAppConfigured: () => true,
   isGithubPatConfigured: () => false,
   githubAppSlug: () => 'kortix-test',

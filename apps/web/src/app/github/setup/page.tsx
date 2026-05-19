@@ -23,7 +23,7 @@ function GitHubSetup() {
   const [state, setState] = useState<'saving' | 'done' | 'error'>('saving');
   const [message, setMessage] = useState('Connecting GitHub...');
 
-  const accountId = searchParams.get('state') || '';
+  const installState = searchParams.get('state') || '';
   const installationId = searchParams.get('installation_id') || '';
   const setupAction = searchParams.get('setup_action') || '';
 
@@ -44,7 +44,7 @@ function GitHubSetup() {
       return;
     }
 
-    if (!accountId || !installationId) {
+    if (!installState || !installationId) {
       setState('error');
       setMessage('GitHub did not return the installation details.');
       return;
@@ -52,7 +52,7 @@ function GitHubSetup() {
 
     let cancelled = false;
     saveGitHubInstallation({
-      account_id: accountId,
+      state: installState,
       installation_id: installationId,
     })
       .then((status) => {
@@ -70,7 +70,7 @@ function GitHubSetup() {
     return () => {
       cancelled = true;
     };
-  }, [accountId, installationId, isLoading, router, setupAction, user]);
+  }, [installState, installationId, isLoading, router, setupAction, user]);
 
   if (isLoading || !user) {
     return <ConnectingScreen forceConnecting minimal title="Connecting GitHub" />;

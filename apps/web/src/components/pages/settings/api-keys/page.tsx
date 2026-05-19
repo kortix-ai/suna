@@ -392,19 +392,7 @@ export default function APIKeysPage() {
             onClick={async () => {
               const base = getActiveOpenCodeUrl().replace(/\/+$/, '');
               const docsUrl = `${base}/docs`;
-              const token = await getAuthToken();
-              if (token) {
-                try {
-                  const url = new URL(docsUrl);
-                  url.searchParams.set('token', token);
-                  window.open(url.toString(), '_blank');
-                } catch {
-                  const sep = docsUrl.includes('?') ? '&' : '?';
-                  window.open(`${docsUrl}${sep}token=${encodeURIComponent(token)}`, '_blank');
-                }
-              } else {
-                window.open(docsUrl, '_blank', 'noopener,noreferrer');
-              }
+              window.open(docsUrl, '_blank', 'noopener,noreferrer');
             }}
           >
             <ExternalLink className="w-3.5 h-3.5 mr-1.5" />

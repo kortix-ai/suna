@@ -44,6 +44,16 @@ async function backendFetch<T>(path: string, options?: RequestInit): Promise<T> 
   return body;
 }
 
+function secureSecretToken(): string {
+  const bytes = new Uint8Array(24);
+  const crypto = globalThis.crypto as Crypto | undefined;
+  if (!crypto?.getRandomValues) {
+    throw new Error('Secure random generator unavailable');
+  }
+  crypto.getRandomValues(bytes);
+  return `oc-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
 // ─── Telegram ───────────────────────────────────────────────────────────────
 
 export interface TelegramVerifyResult {
@@ -130,7 +140,7 @@ export function useTelegramConnect() {
       }
 
       // Fallback: direct Telegram API setup
-      const secretToken = `oc-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const secretToken = secureSecretToken();
 
       // Push env vars
       for (const [key, value] of Object.entries({

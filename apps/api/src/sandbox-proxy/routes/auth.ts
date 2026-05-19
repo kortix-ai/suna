@@ -60,7 +60,7 @@ getAuthToken.post('/', async (c) => {
   const encoded = encodeURIComponent(token);
   c.header(
     'Set-Cookie',
-    `${PREVIEW_SESSION_COOKIE}=${encoded}; Path=/v1/p/; HttpOnly; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}`,
+    `${PREVIEW_SESSION_COOKIE}=${encoded}; Path=/v1/p/; HttpOnly; Secure; SameSite=Lax; Max-Age=${COOKIE_MAX_AGE}`,
     { append: true },
   );
 

@@ -13,6 +13,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { useMaintenanceNoticeQuery } from '@/hooks/edge-flags';
 import { useAuth } from '@/components/AuthProvider';
 import { useAdminRole } from '@/hooks/admin';
@@ -72,6 +73,7 @@ export default function ActivateTrialPage() {
     const supabase = createClient();
     await supabase.auth.signOut();
     clearUserLocalStorage();
+    await clearSessionIDBCache();
     router.push('/auth');
   };
 

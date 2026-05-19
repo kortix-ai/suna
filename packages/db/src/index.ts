@@ -23,6 +23,7 @@ export {
   accountMembers,
   accountInvitations,
   accountGithubInstallations,
+  accountGithubInstallationStates,
   accountRoleEnum,
   accountsRelations,
   accountMembersRelations,

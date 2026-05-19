@@ -749,6 +749,7 @@ export function FileContentRenderer({
               filePath={filePath}
               fileName={fileName}
               className="h-full"
+              readOnly={readOnly}
             />
           </Suspense>
         )}

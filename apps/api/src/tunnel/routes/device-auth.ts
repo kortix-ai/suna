@@ -19,6 +19,7 @@ import { generateDeviceCode, generateTunnelToken, hashSecretKey, verifySecretKey
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { config } from '../../config';
+import { requireUserCredential } from './auth';
 
 const DEVICE_AUTH_TTL_MS = 5 * 60_000;
 
@@ -31,7 +32,11 @@ export function createDeviceAuthPublicRouter(): Hono {
 
   // POST / — create device auth request
   router.post('/', async (c) => {
-    const ip = c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown';
+    const ip = 'public-device-auth-create';
+    const globalRl = tunnelRateLimiter.check('deviceAuthCreateGlobal', 'global');
+    if (!globalRl.allowed) {
+      return c.json({ error: 'Too many requests', retryAfterMs: globalRl.retryAfterMs }, 429);
+    }
     const rl = tunnelRateLimiter.check('deviceAuthCreate', ip);
     if (!rl.allowed) {
       return c.json({ error: 'Too many requests', retryAfterMs: rl.retryAfterMs }, 429);
@@ -67,10 +72,13 @@ export function createDeviceAuthPublicRouter(): Hono {
   // GET /:code/status — poll for approval
   router.get('/:code/status', async (c) => {
     const code = c.req.param('code');
-    const secret = c.req.query('secret');
+    const authHeader = c.req.header('Authorization');
+    const secret = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : undefined;
 
     if (!secret) {
-      return c.json({ error: 'secret query parameter required' }, 400);
+      return c.json({ error: 'device auth secret required' }, 400);
     }
 
     const rl = tunnelRateLimiter.check('deviceAuthPoll', code);
@@ -132,6 +140,7 @@ export function createDeviceAuthRouter(): Hono {
 
   // GET /:code/info — fetch request details for approval page
   router.get('/:code/info', async (c: any) => {
+    requireUserCredential(c);
     const code = c.req.param('code');
 
     const [row] = await db
@@ -158,6 +167,7 @@ export function createDeviceAuthRouter(): Hono {
 
   // POST /:code/approve — approve and create tunnel + token
   router.post('/:code/approve', async (c: any) => {
+    requireUserCredential(c);
     const userId = c.get('userId') as string;
     const accountId = await resolveAccountId(userId);
     const code = c.req.param('code');
@@ -226,6 +236,7 @@ export function createDeviceAuthRouter(): Hono {
 
   // POST /:code/deny — deny request
   router.post('/:code/deny', async (c: any) => {
+    requireUserCredential(c);
     const code = c.req.param('code');
 
     const [updated] = await db

@@ -2,8 +2,8 @@
  * useSandboxPoller — monitors provisioning progress via HTTP polling.
  *
  * Adapted from the web frontend's useSandboxPoller hook.
- * Uses HTTP polling (GET /platform/sandbox/:id/status every 5s) instead of SSE
- * for simplicity and reliability on mobile.
+ * Uses HTTP polling against the current project-session sandbox API instead
+ * of the removed legacy /platform/sandbox lifecycle endpoints.
  *
  * Includes time-based interpolation between stages for smooth progress animation.
  */
@@ -17,6 +17,7 @@ import {
   STAGE_DURATION_MS,
   type ProvisioningStageInfo,
 } from './provisioning-stages';
+import { findProjectSessionSandbox } from './client';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -186,86 +187,51 @@ export function useSandboxPoller(opts: UseSandboxPollerOpts = {}) {
   const fetchStatus = useCallback(async (): Promise<StatusResponse | null> => {
     if (!sandboxId) return null;
     try {
-      const token = await getAuthToken();
-      if (!token) return null;
-
-      // Local Docker uses a different status endpoint
-      if (isLocalDocker) {
-        const res = await fetch(`${API_URL}/platform/init/local/status`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-          },
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        const d = data?.data ?? data;
-
-        // Map local docker status to our StatusResponse shape
-        if (d.status === 'ready' || d.status === 'running' || d.status === 'active') {
-          return { status: 'active', stage: null, stageProgress: 100, stageMessage: 'Ready', machineInfo: null, stages: null, startedAt: null };
-        }
-        if (d.status === 'error') {
-          return { status: 'error', stage: null, stageProgress: 0, stageMessage: d.message, machineInfo: null, stages: null, error: d.message || 'Provisioning failed', startedAt: null };
-        }
-        // If progress reached 100 but status hasn't flipped yet, treat as active
-        if ((d.progress ?? 0) >= 100) {
-          return { status: 'active', stage: null, stageProgress: 100, stageMessage: 'Ready', machineInfo: null, stages: null, startedAt: null };
-        }
-        // When progress is high (≥90), also check the DB sandbox status as fallback
-        // The local init endpoint can lag behind the actual DB state
-        const progress = d.progress ?? 0;
-        if (progress >= 90) {
-          try {
-            const dbRes = await fetch(`${API_URL}/platform/sandbox/${sandboxId}/status`, {
-              headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-            });
-            if (dbRes.ok) {
-              const dbData = await dbRes.json();
-              const dbStatus = dbData?.data ?? dbData;
-              if (dbStatus?.status === 'active') {
-                return { status: 'active', stage: null, stageProgress: 100, stageMessage: 'Ready', machineInfo: null, stages: null, startedAt: null };
-              }
-            }
-          } catch { /* fallback — continue with local status */ }
-        }
-
-        // Map to provisioning stages the UI understands
-        const message = d.status === 'creating' ? 'Creating container...' : d.message || 'Pulling sandbox image...';
-        let stage = 'cloud_init_running'; // generic provisioning stage
-        if (progress < 10) stage = 'server_creating';
-        else if (progress < 30) stage = 'server_created';
-        else if (progress < 60) stage = 'cloud_init_running';
-        else if (progress < 80) stage = 'cloud_init_done';
-        else if (progress < 95) stage = 'services_starting';
-        else stage = 'services_ready';
-
-        return {
-          status: 'provisioning',
-          stage,
-          stageProgress: progress,
-          stageMessage: message,
-          machineInfo: null,
-          stages: null,
-          startedAt: null,
-        };
+      const row = await findProjectSessionSandbox(sandboxId || externalId || undefined);
+      if (!row) {
+        return { status: 'not_found', stage: null, stageProgress: 0, stageMessage: 'Session not found', machineInfo: null, stages: null, startedAt: null };
       }
 
-      // Cloud (JustAVPS) — standard status endpoint
-      const res = await fetch(`${API_URL}/platform/sandbox/${sandboxId}/status`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-      });
+      const status = row.sandbox.status;
+      const metadata = row.runtime?.metadata || row.session.metadata || {};
+      const stage = typeof metadata.provisioningStage === 'string'
+        ? metadata.provisioningStage
+        : status === 'provisioning'
+          ? 'cloud_init_running'
+          : null;
+      const stageProgress = status === 'active'
+        ? 100
+        : stage
+          ? STAGE_PROGRESS_MAP[stage] ?? 25
+          : 0;
+      const stageMessage = typeof metadata.provisioningMessage === 'string'
+        ? metadata.provisioningMessage
+        : status === 'active'
+          ? 'Ready'
+          : status === 'error'
+            ? row.session.error || 'Provisioning failed'
+            : 'Provisioning project session...';
 
-      if (!res.ok) return null;
-      const data = await res.json();
-      return data?.data ?? data;
+      return {
+        status: status === 'active'
+          ? 'active'
+          : status === 'error'
+            ? 'error'
+            : status === 'stopped'
+              ? 'stopped'
+              : 'provisioning',
+        stage,
+        stageProgress,
+        stageMessage,
+        machineInfo: null,
+        stages: null,
+        error: status === 'error' ? stageMessage : null,
+        startedAt: typeof metadata.initStartedAt === 'string' ? metadata.initStartedAt : row.session.created_at,
+      };
     } catch {
       return null;
     }
-  }, [sandboxId, isLocalDocker]);
+  }, [sandboxId, externalId]);
 
   // ── Polling loop ────────────────────────────────────────────────────────
 

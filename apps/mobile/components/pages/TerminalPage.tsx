@@ -7,8 +7,9 @@
  * 3. PATCH {sandboxUrl}/pty/{ptyId} — resize notifications
  * 4. DELETE {sandboxUrl}/pty/{ptyId} — cleanup on unmount
  *
- * The WebView runs xterm.js and the WebSocket URL + token are baked into the
- * HTML so it auto-connects on load (no postMessage race conditions).
+ * The WebView uses a small local terminal surface. It intentionally avoids
+ * third-party scripts because the WebSocket URL contains a short-lived bearer
+ * token for browser-compatible PTY auth.
  */
 
 import React, { useRef, useCallback, useEffect, useState } from 'react';
@@ -123,22 +124,19 @@ function buildTerminalHtml(params: {
   sandboxUrl: string;
   ptyId: string;
 }): string {
-  const { wsUrl, sandboxUrl, ptyId } = params;
+  const { wsUrl } = params;
   // Terminal is always dark, matching the web frontend
   const isDark = true;
   const bg = '#0f0f14';
 
   // Escape for safe JS string embedding
   const safeWsUrl = wsUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const safeSandboxUrl = sandboxUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  const safePtyId = ptyId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -151,36 +149,81 @@ function buildTerminalHtml(params: {
       width: 100%;
       height: 100%;
       padding: 8px 4px;
+      color: #e4e4e7;
+      background: ${bg};
+      font: 14px/1.25 Menlo, Monaco, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-y: auto;
+      outline: none;
     }
-    .xterm { height: 100%; }
-    .xterm-viewport { overflow-y: auto !important; }
-    .xterm-viewport::-webkit-scrollbar { width: 4px; }
-    .xterm-viewport::-webkit-scrollbar-thumb {
+    #terminal::-webkit-scrollbar { width: 4px; }
+    #terminal::-webkit-scrollbar-thumb {
       background: ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'};
       border-radius: 2px;
     }
   </style>
 </head>
 <body>
-  <div id="terminal"></div>
+  <div id="terminal" tabindex="0"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"><\/script>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"><\/script>
   <script>
     (function() {
       var WS_URL = '${safeWsUrl}';
-      var SANDBOX_URL = '${safeSandboxUrl}';
-      var PTY_ID = '${safePtyId}';
 
       var ws = null;
       var term = null;
-      var fitAddon = null;
       var resizeTimer = null;
 
       function postMsg(type, data) {
         try {
           window.ReactNativeWebView.postMessage(JSON.stringify({ type: type, data: data }));
         } catch(e) {}
+      }
+
+      function stripAnsi(value) {
+        return String(value || '').replace(/\\x1b\\[[0-9;?]*[ -/]*[@-~]/g, '').replace(/\\r/g, '');
+      }
+
+      function createTerminal() {
+        var el = document.getElementById('terminal');
+        function size() {
+          var rect = el.getBoundingClientRect();
+          return {
+            cols: Math.max(20, Math.floor(rect.width / 8)),
+            rows: Math.max(8, Math.floor(rect.height / 18))
+          };
+        }
+        var currentSize = size();
+        function append(value) {
+          el.textContent += stripAnsi(value);
+          el.scrollTop = el.scrollHeight;
+        }
+        el.addEventListener('keydown', function(event) {
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          var data = null;
+          if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) data = event.key;
+          else if (event.key === 'Enter') data = '\\r';
+          else if (event.key === 'Backspace') data = '\\x7f';
+          else if (event.key === 'Tab') data = '\\t';
+          else if (event.key === 'ArrowUp') data = '\\x1b[A';
+          else if (event.key === 'ArrowDown') data = '\\x1b[B';
+          else if (event.key === 'ArrowRight') data = '\\x1b[C';
+          else if (event.key === 'ArrowLeft') data = '\\x1b[D';
+          if (data !== null) {
+            event.preventDefault();
+            ws.send(data);
+          }
+        });
+        el.focus();
+        return {
+          get cols() { return currentSize.cols; },
+          get rows() { return currentSize.rows; },
+          write: append,
+          writeln: function(value) { append(String(value || '') + '\\n'); },
+          clear: function() { el.textContent = ''; },
+          fit: function() { currentSize = size(); }
+        };
       }
 
       function connect() {
@@ -247,75 +290,23 @@ function buildTerminalHtml(params: {
 
       function initTerminal() {
         try {
-          var isDark = ${isDark ? 'true' : 'false'};
-
-          term = new Terminal({
-            cursorBlink: true,
-            cursorStyle: 'bar',
-            fontSize: 14,
-            lineHeight: 1.2,
-            fontFamily: 'Menlo, Monaco, Consolas, monospace',
-            theme: isDark ? {
-              background: '${bg}',
-              foreground: '#e4e4e7',
-              cursor: '#e4e4e7',
-              cursorAccent: '#0f0f14',
-              selectionBackground: 'rgba(139, 92, 246, 0.3)',
-              black: '#27272a', red: '#f87171', green: '#4ade80', yellow: '#fbbf24',
-              blue: '#60a5fa', magenta: '#c084fc', cyan: '#22d3ee', white: '#e4e4e7',
-              brightBlack: '#52525b', brightRed: '#fca5a5', brightGreen: '#86efac',
-              brightYellow: '#fde047', brightBlue: '#93c5fd', brightMagenta: '#d8b4fe',
-              brightCyan: '#67e8f9', brightWhite: '#fafafa'
-            } : {
-              background: '${bg}',
-              foreground: '#18181b',
-              cursor: '#7c3aed',
-              cursorAccent: '#fafafc',
-              selectionBackground: 'rgba(124, 58, 237, 0.15)',
-              black: '#18181b', red: '#dc2626', green: '#16a34a', yellow: '#ca8a04',
-              blue: '#2563eb', magenta: '#9333ea', cyan: '#0891b2', white: '#a1a1aa',
-              brightBlack: '#52525b', brightRed: '#ef4444', brightGreen: '#22c55e',
-              brightYellow: '#eab308', brightBlue: '#3b82f6', brightMagenta: '#a855f7',
-              brightCyan: '#06b6d4', brightWhite: '#fafafa'
-            },
-            allowProposedApi: true,
-            scrollback: 5000,
-            convertEol: true
-          });
-
-          fitAddon = new FitAddon.FitAddon();
-          term.loadAddon(fitAddon);
-          term.open(document.getElementById('terminal'));
-
-          setTimeout(function() {
-            try { fitAddon.fit(); } catch(e) {}
-          }, 100);
-
-          // User input => raw WebSocket send (PTY protocol uses raw data)
-          term.onData(function(data) {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(data);
-            }
-          });
-
-          // Resize => notify RN to PATCH the PTY
-          term.onResize(function(size) {
-            clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(function() {
-              postMsg('resize', { cols: size.cols, rows: size.rows });
-            }, 100);
-          });
+          term = createTerminal();
 
           // Refit on viewport changes
           var fitTimer = null;
           function debouncedFit() {
             clearTimeout(fitTimer);
             fitTimer = setTimeout(function() {
-              try { fitAddon.fit(); } catch(e) {}
+              try {
+                term.fit();
+                postMsg('resize', { cols: term.cols, rows: term.rows });
+              } catch(e) {}
             }, 100);
           }
           window.addEventListener('resize', debouncedFit);
-          new ResizeObserver(debouncedFit).observe(document.getElementById('terminal'));
+          if (typeof ResizeObserver !== 'undefined') {
+            new ResizeObserver(debouncedFit).observe(document.getElementById('terminal'));
+          }
 
           postMsg('ready', {});
 
@@ -336,8 +327,8 @@ function buildTerminalHtml(params: {
             if (term) term.clear();
             connect();
           } else if (msg.type === 'refit') {
-            if (fitAddon) {
-              setTimeout(function() { try { fitAddon.fit(); } catch(e) {} }, 50);
+            if (term) {
+              setTimeout(function() { try { term.fit(); } catch(e) {} }, 50);
             }
           }
         } catch(e) {}
@@ -345,19 +336,10 @@ function buildTerminalHtml(params: {
       window.addEventListener('message', handleRNMessage);
       document.addEventListener('message', handleRNMessage);
 
-      // Wait for CDN scripts then init
-      function waitForXterm() {
-        if (typeof Terminal !== 'undefined' && typeof FitAddon !== 'undefined') {
-          initTerminal();
-        } else {
-          setTimeout(waitForXterm, 50);
-        }
-      }
-
       if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', waitForXterm);
+        document.addEventListener('DOMContentLoaded', initTerminal);
       } else {
-        waitForXterm();
+        initTerminal();
       }
     })();
   <\/script>
@@ -421,7 +403,7 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
 
         // 3. Build WebSocket URL
         const wsUrl = getPtyWsUrl(sandboxUrl, pty.id, token);
-        log.log('[TerminalPage] WS URL:', wsUrl);
+        log.log('[TerminalPage] WS URL prepared:', { ptyId: pty.id });
 
         // 4. Build HTML
         const html = buildTerminalHtml({

@@ -4,10 +4,10 @@ import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Linking from 'expo-linking';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
-import { makeRedirectUri } from 'expo-auth-session';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { initializeRevenueCat, shouldUseRevenueCat } from '@/lib/billing';
+import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth/callback-state';
 
 let useTracking: any = null;
 try {
@@ -29,6 +29,50 @@ import { log, setLoggerUserId } from '@/lib/logger';
 
 // Complete any pending auth sessions (required for web)
 WebBrowser.maybeCompleteAuthSession();
+
+function redactAuthUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const redact = (params: URLSearchParams) => {
+      for (const key of ['access_token', 'refresh_token', 'code', 'state']) {
+        if (params.has(key)) params.set(key, '[redacted]');
+      }
+    };
+    redact(parsed.searchParams);
+    if (parsed.hash.startsWith('#')) {
+      const hashParams = new URLSearchParams(parsed.hash.slice(1));
+      redact(hashParams);
+      parsed.hash = hashParams.toString();
+    }
+    return parsed.toString();
+  } catch {
+    return '[invalid-url]';
+  }
+}
+
+function isExpectedAuthCallbackUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'kortix:' &&
+      parsed.hostname === 'auth' &&
+      parsed.pathname === '/callback';
+  } catch {
+    return false;
+  }
+}
+
+function extractAuthCallbackState(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const queryState = parsed.searchParams.get('state');
+    if (queryState) return queryState;
+    if (parsed.hash.startsWith('#')) {
+      return new URLSearchParams(parsed.hash.slice(1)).get('state');
+    }
+  } catch {
+  }
+  return null;
+}
 
 /**
  * Extract tokens from OAuth callback URL
@@ -253,7 +297,7 @@ export function useAuth() {
             data: {
               full_name: fullName,
             },
-            emailRedirectTo: 'kortix://auth/callback',
+            emailRedirectTo: await createAuthCallbackRedirect(),
           },
         });
 
@@ -356,11 +400,7 @@ export function useAuth() {
       // - Other providers: Platform-specific browser handling
       // ========================================
       
-      // Create redirect URL using expo-auth-session
-      const redirectTo = makeRedirectUri({
-        scheme: 'kortix',
-        path: 'auth/callback',
-      });
+      const redirectTo = await createAuthCallbackRedirect();
 
       log.log('📊 Redirect URL:', redirectTo, 'Platform:', Platform.OS);
 
@@ -509,11 +549,20 @@ export function useAuth() {
           }
         );
 
-        log.log('📊 WebBrowser result:', result, 'Type:', result.type);
+        log.log('📊 WebBrowser result type:', result.type);
 
         if (result.type === 'success' && result.url) {
           const url = result.url;
-          log.log('✅ OAuth redirect received:', url);
+          log.log('✅ OAuth redirect received:', redactAuthUrl(url));
+
+          if (!isExpectedAuthCallbackUrl(url) || !(await consumeAuthCallbackState(extractAuthCallbackState(url)))) {
+            const stateError = { message: 'Invalid authentication callback. Please try signing in again.' };
+            log.warn('⚠️ OAuth callback rejected: invalid redirect or state');
+            setError(stateError);
+            setAuthState((prev) => ({ ...prev, isLoading: false }));
+            oauthSessionActiveRef.current = false;
+            return { success: false, error: stateError };
+          }
           
           // Check for access_token in URL fragment (implicit flow)
           if (url.includes('access_token=')) {
@@ -631,13 +680,9 @@ export function useAuth() {
       setError(null);
       setAuthState((prev) => ({ ...prev, isLoading: true }));
 
-      // Build deep link URL directly
-      const params = new URLSearchParams();
-      if (acceptedTerms) {
-        params.set('terms_accepted', 'true');
-      }
-      
-      const emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
+      const emailRedirectTo = await createAuthCallbackRedirect({
+        terms_accepted: acceptedTerms ? 'true' : undefined,
+      });
 
       log.log('📱 Magic link redirect URL:', emailRedirectTo);
 
@@ -880,4 +925,3 @@ export function useAuth() {
     signOut,
   };
 }
-

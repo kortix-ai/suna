@@ -42,6 +42,7 @@ let lastProvisionInput: {
 } | null = null;
 let sandboxProvisionCalls = 0;
 let branchCreateCalls = 0;
+const originalEnterpriseHosts = process.env.KORTIX_GITHUB_ENTERPRISE_HOSTS;
 
 const projectRow: typeof projects.$inferSelect = {
   projectId: PROJECT_ID,
@@ -51,7 +52,7 @@ const projectRow: typeof projects.$inferSelect = {
   defaultBranch: 'main',
   manifestPath: 'kortix.toml',
   status: 'active',
-  metadata: {},
+  metadata: { github: { auth_source: 'pat', full_name: 'kortix-ai/oauth-test' } },
   lastOpenedAt: null,
   createdAt: new Date('2026-05-18T00:00:00Z'),
   updatedAt: new Date('2026-05-18T00:00:00Z'),
@@ -115,6 +116,7 @@ mock.module('../projects/git', () => ({
   resolveCommitSha: async () => 'a'.repeat(40),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
+  getDiffBetweenShas: async () => ({ files: [], diff: '' }),
   previewMerge: async () => ({ canMerge: true, conflicts: [] }),
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
 }));
@@ -129,6 +131,13 @@ mock.module('../snapshots/builder', () => ({
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  verifyGitHubAppInstallState: (state: string) => state,
+  verifyGitHubAppInstallStatePayload: (state: string) => ({
+    accountId: state,
+    nonce: 'test-nonce',
+    issuedAt: Math.floor(Date.now() / 1000),
+  }),
+  getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
   deleteFile: async () => undefined,
   commitFile: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
@@ -312,6 +321,7 @@ function createApp() {
 
 beforeEach(() => {
   resetState();
+  process.env.KORTIX_GITHUB_ENTERPRISE_HOSTS = 'company.ghe.com';
   fetchCalls.length = 0;
   fetchResponders.length = 0;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -327,6 +337,8 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalEnterpriseHosts === undefined) delete process.env.KORTIX_GITHUB_ENTERPRISE_HOSTS;
+  else process.env.KORTIX_GITHUB_ENTERPRISE_HOSTS = originalEnterpriseHosts;
 });
 
 describe('project OAuth e2e — ChatGPT Pro/Plus headless', () => {
@@ -638,7 +650,7 @@ describe('project OAuth e2e — sandbox env injection', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'local_docker', base_ref: 'main' }),
+      body: JSON.stringify({ base_ref: 'main' }),
     });
     expect(createRes.status).toBe(201);
 
@@ -676,7 +688,7 @@ describe('project OAuth e2e — sandbox env injection', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'local_docker', base_ref: 'main' }),
+      body: JSON.stringify({ base_ref: 'main' }),
     });
     expect(createRes.status).toBe(201);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -740,7 +752,7 @@ describe('project OAuth e2e — sandbox env injection', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'local_docker', base_ref: 'main' }),
+      body: JSON.stringify({ base_ref: 'main' }),
     });
     expect(createRes.status).toBe(201);
     await new Promise((resolve) => setTimeout(resolve, 0));

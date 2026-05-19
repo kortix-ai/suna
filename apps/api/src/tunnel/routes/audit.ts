@@ -8,12 +8,13 @@ import { Hono } from 'hono';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { tunnelAuditLogs, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
+import { getTunnelOwnerContext } from './auth';
 
 export function createAuditRouter(): Hono {
   const router = new Hono();
 
   router.get('/:tunnelId', async (c: any) => {
-    const accountId = c.get('userId') as string;
+    const { ownerClause } = await getTunnelOwnerContext(c);
     const tunnelId = c.req.param('tunnelId');
     const page = parseInt(c.req.query('page') || '1', 10);
     const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100);
@@ -25,7 +26,7 @@ export function createAuditRouter(): Hono {
       .where(
         and(
           eq(tunnelConnections.tunnelId, tunnelId),
-          eq(tunnelConnections.accountId, accountId),
+          ownerClause,
         ),
       );
 

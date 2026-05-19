@@ -33,7 +33,7 @@ export function useAccountInitialization() {
       log.log('🚀 Initializing account...');
       const headers = await getAuthHeaders();
       
-      const response = await fetch(`${API_URL}/setup/initialize`, {
+      const response = await fetch(`${API_URL}/billing/setup/initialize`, {
         method: 'POST',
         headers,
       });
@@ -60,13 +60,18 @@ export function useAccountInitialization() {
       }
 
       const data = await response.json();
-      log.log('📦 Account initialization response:', data);
+      log.log('📦 Account initialization response:', {
+        status: data?.status,
+        tier: data?.tier,
+        hasSandbox: Boolean(data?.sandbox),
+      });
 
-      if (data.success) {
+      const status = typeof data?.status === 'string' ? data.status : '';
+      if (data.success || status === 'initialized' || status === 'already_initialized') {
         log.log('✅ Account initialized successfully');
         return {
           success: true,
-          message: data.message || 'Account initialized successfully',
+          message: data.message || (status === 'already_initialized' ? 'Account already initialized' : 'Account initialized successfully'),
           subscription_id: data.subscription_id,
         };
       } else {
@@ -84,4 +89,3 @@ export function useAccountInitialization() {
     },
   });
 }
-

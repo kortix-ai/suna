@@ -1,0 +1,11 @@
+{
+  "tags": [
+    "github-actions",
+    "node"
+  ],
+  "sentinels": [
+    "package.json"
+  ],
+  "detectedAt": "2026-05-19T20:49:45.782Z",
+  "rootPath": "/Users/markokraemer/Projects/kortix/suna"
+}

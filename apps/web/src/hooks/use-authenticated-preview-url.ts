@@ -23,7 +23,31 @@ function derivePreviewAuthEndpoint(candidateUrl: string): string | null {
   }
 }
 
+function isPreviewProxyUrl(candidateUrl: string, serverUrl?: string): boolean {
+  try {
+    const url = new URL(candidateUrl);
+    const path = url.pathname;
+    const isPreviewPath = /^\/v1\/p\/[^/]+\/\d+(?:\/|$)/.test(path)
+      || /^\/proxy\/\d+(?:\/|$)/.test(path);
+    if (!isPreviewPath) return false;
+
+    const trustedOrigins = new Set<string>();
+    if (serverUrl) {
+      try {
+        trustedOrigins.add(new URL(serverUrl).origin);
+      } catch {}
+    }
+    if (typeof window !== 'undefined') {
+      trustedOrigins.add(window.location.origin);
+    }
+    return trustedOrigins.size === 0 || trustedOrigins.has(url.origin);
+  } catch {
+    return false;
+  }
+}
+
 export function buildPreviewAuthEndpoint(previewUrl: string, serverUrl?: string): string | null {
+  if (!isPreviewProxyUrl(previewUrl, serverUrl)) return null;
   return (serverUrl ? derivePreviewAuthEndpoint(serverUrl) : null)
     ?? derivePreviewAuthEndpoint(previewUrl);
 }

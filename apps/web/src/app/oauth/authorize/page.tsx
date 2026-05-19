@@ -30,16 +30,14 @@ function OAuthConsent() {
   const { user, isLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [consentRequest, setConsentRequest] = useState<{
+    clientName: string;
+    scopes: string[];
+  } | null>(null);
 
-  const clientName = searchParams.get('client_name') || 'Unknown App';
-  const clientId = searchParams.get('client_id') || '';
-  const scope = searchParams.get('scope') || '';
-  const state = searchParams.get('state') || '';
-  const redirectUri = searchParams.get('redirect_uri') || '';
-  const codeChallenge = searchParams.get('code_challenge') || '';
-  const codeChallengeMethod = searchParams.get('code_challenge_method') || 'S256';
-
-  const scopes = scope.split(' ').filter(Boolean);
+  const requestId = searchParams.get('request_id') || '';
+  const clientName = consentRequest?.clientName || 'Unknown App';
+  const scopes = consentRequest?.scopes || [];
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -47,6 +45,52 @@ function OAuthConsent() {
       router.replace(`/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`);
     }
   }, [user, isLoading, router]);
+
+  useEffect(() => {
+    if (isLoading || !user || !requestId) return;
+    let cancelled = false;
+
+    async function loadConsentRequest() {
+      setError(null);
+      setConsentRequest(null);
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          setError('Session expired. Please sign in again.');
+          return;
+        }
+
+        const backendUrl = getEnv().BACKEND_URL || '';
+        const res = await fetch(`${backendUrl}/oauth/authorize/consent/${encodeURIComponent(requestId)}`, {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          setError(data?.error_description || data?.error || 'Authorization request expired.');
+          return;
+        }
+        if (!cancelled) {
+          setConsentRequest({
+            clientName: data.client_name || 'Unknown App',
+            scopes: Array.isArray(data.scopes)
+              ? data.scopes.filter((scope: unknown): scope is string => typeof scope === 'string')
+              : String(data.scope || '').split(' ').filter(Boolean),
+          });
+        }
+      } catch {
+        if (!cancelled) setError('Network error. Please try again.');
+      }
+    }
+
+    loadConsentRequest();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, requestId, user]);
 
   const handleConsent = async (approved: boolean) => {
     setSubmitting(true);
@@ -69,12 +113,7 @@ function OAuthConsent() {
           Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          client_id: clientId,
-          redirect_uri: redirectUri,
-          scope,
-          state,
-          code_challenge: codeChallenge,
-          code_challenge_method: codeChallengeMethod,
+          request_id: requestId,
           approved,
         }),
       });
@@ -100,12 +139,29 @@ function OAuthConsent() {
     return <ConnectingScreen forceConnecting minimal title="Authorizing" />;
   }
 
-  if (!clientId || !redirectUri || !codeChallenge) {
+  if (!requestId) {
     return (
       <div className="fixed inset-0 bg-background flex items-center justify-center">
         <div className="max-w-sm text-center space-y-4">
           <p className="text-destructive font-medium">Invalid authorization request</p>
           <p className="text-sm text-muted-foreground">Missing required parameters.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!consentRequest) {
+    return (
+      <div className="fixed inset-0 bg-background flex items-center justify-center">
+        <div className="max-w-sm text-center space-y-4">
+          {error ? (
+            <>
+              <p className="text-destructive font-medium">Authorization request unavailable</p>
+              <p className="text-sm text-muted-foreground">{error}</p>
+            </>
+          ) : (
+            <ConnectingScreen forceConnecting minimal title="Authorizing" />
+          )}
         </div>
       </div>
     );

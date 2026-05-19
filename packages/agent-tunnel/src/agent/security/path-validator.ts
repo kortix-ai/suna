@@ -8,8 +8,32 @@
  *   4. Don't hit blocked paths (configurable)
  */
 
-import { resolve, normalize } from 'path';
+import { dirname, resolve, normalize } from 'path';
 import { realpathSync } from 'fs';
+
+function assertAllowedResolvedPath(
+  originalPath: string,
+  resolved: string,
+  allowedPaths: string[],
+  blockedPaths: string[] = [],
+): void {
+  for (const blocked of blockedPaths) {
+    if (resolved === blocked || resolved.startsWith(blocked + '/')) {
+      throw new Error(`Access denied: blocked path "${originalPath}"`);
+    }
+  }
+
+  if (allowedPaths.length > 0) {
+    const withinAllowed = allowedPaths.some((allowed) => {
+      const normalizedAllowed = normalize(resolve(allowed));
+      return resolved === normalizedAllowed || resolved.startsWith(normalizedAllowed + '/');
+    });
+
+    if (!withinAllowed) {
+      throw new Error(`Access denied: path "${originalPath}" is outside allowed directories`);
+    }
+  }
+}
 
 export function validatePath(
   path: string,
@@ -33,20 +57,30 @@ export function validatePath(
     }
   }
 
-  for (const blocked of blockedPaths) {
-    if (resolved === blocked || resolved.startsWith(blocked + '/')) {
-      throw new Error(`Access denied: blocked path "${path}"`);
+  assertAllowedResolvedPath(path, resolved, allowedPaths, blockedPaths);
+}
+
+export function validateWritePath(
+  path: string,
+  allowedPaths: string[],
+  blockedPaths: string[] = [],
+): void {
+  validatePath(path, allowedPaths, blockedPaths);
+
+  let parent = dirname(normalize(resolve(path)));
+  while (parent && parent !== dirname(parent)) {
+    try {
+      const resolvedParent = realpathSync(parent);
+      assertAllowedResolvedPath(path, resolvedParent, allowedPaths, blockedPaths);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        throw new Error(`Access denied: cannot resolve parent for "${path}" (${code})`);
+      }
+      parent = dirname(parent);
     }
   }
 
-  if (allowedPaths.length > 0) {
-    const withinAllowed = allowedPaths.some((allowed) => {
-      const normalizedAllowed = normalize(resolve(allowed));
-      return resolved === normalizedAllowed || resolved.startsWith(normalizedAllowed + '/');
-    });
-
-    if (!withinAllowed) {
-      throw new Error(`Access denied: path "${path}" is outside allowed directories`);
-    }
-  }
+  throw new Error(`Access denied: cannot resolve parent for "${path}"`);
 }

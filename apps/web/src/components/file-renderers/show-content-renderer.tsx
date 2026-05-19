@@ -52,6 +52,7 @@ import { SANDBOX_PORTS } from '@/lib/platform-client';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
+import { safeHttpUrl } from '@/lib/safe-url';
 
 // ── Lazy-load heavy renderers ──────────────────────────────────────────────
 
@@ -213,6 +214,7 @@ export function ShowContentRenderer({
   const isHtml = effectiveType === 'html';
   const isHtmlFile = effectiveType === 'html-file';
   const hasLocalhostUrl = !!parseLocalhostUrl(url) && !isAppRouteUrl(url);
+  const safeExternalUrl = safeHttpUrl(url);
 
   // ── Sandbox file path normalization ──
   // The show tool backend resolves paths to absolute (e.g. /workspace/foo.png).
@@ -298,12 +300,22 @@ export function ShowContentRenderer({
   // URL / Link — hero link card with favicon
   // ═════════════════════════════════════════════════════════════════════════
   if (effectiveType === 'url' && url) {
-    const favicon = showFavicon(url);
-    const domain = showDomain(url);
+    if (!safeExternalUrl) {
+      return (
+        <div className="px-5 py-4">
+          <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs truncate">
+            <Globe className="size-3.5 shrink-0" />
+            {url}
+          </div>
+        </div>
+      );
+    }
+    const favicon = showFavicon(safeExternalUrl);
+    const domain = showDomain(safeExternalUrl);
     return (
       <div className="px-5 py-5">
         <a
-          href={url}
+          href={safeExternalUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="group flex items-center gap-4 p-4 rounded-xl border border-border/30 bg-muted/5 hover:bg-muted/20 transition-colors"
@@ -588,11 +600,17 @@ export function ShowContentRenderer({
           {path}
         </div>
       )}
-      {url && !content && (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary font-mono text-xs truncate hover:underline flex items-center gap-1.5">
+      {safeExternalUrl && !content && (
+        <a href={safeExternalUrl} target="_blank" rel="noopener noreferrer" className="text-primary font-mono text-xs truncate hover:underline flex items-center gap-1.5">
           <ExternalLink className="size-3.5" />
-          {url}
+          {safeExternalUrl}
         </a>
+      )}
+      {url && !safeExternalUrl && !content && (
+        <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs truncate">
+          <Globe className="size-3.5 shrink-0" />
+          {url}
+        </div>
       )}
     </div>
   );

@@ -46,11 +46,14 @@ function repoCachePath(project: GitBackedProject) {
   return join(cacheRoot(), `${id}.git`);
 }
 
-function gitAuthArgs(tokenOverride?: string | null) {
-  const token = tokenOverride || process.env.KORTIX_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
-  if (!token) return [];
+function gitAuthEnv(token?: string | null): Record<string, string> {
+  if (!token) return {};
   const encoded = Buffer.from(`x-access-token:${token}`).toString('base64');
-  return ['-c', `http.https://github.com/.extraheader=AUTHORIZATION: basic ${encoded}`];
+  return {
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+    GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${encoded}`,
+  };
 }
 
 async function runGit(
@@ -60,11 +63,11 @@ async function runGit(
   authToken?: string | null,
   extraEnv?: Record<string, string>,
 ) {
-  const fullArgs = auth ? [...gitAuthArgs(authToken), ...args] : args;
+  const authEnv = auth ? gitAuthEnv(authToken) : {};
   try {
-    const result = await execFileAsync('git', fullArgs, {
+    const result = await execFileAsync('git', args, {
       cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(extraEnv || {}) },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: 30_000,
     });
@@ -92,11 +95,10 @@ async function runGitCapture(
   authToken?: string | null,
   extraEnv?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const fullArgs = [...gitAuthArgs(authToken), ...args];
   try {
-    const result = await execFileAsync('git', fullArgs, {
+    const result = await execFileAsync('git', args, {
       cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(extraEnv || {}) },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken), ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: 30_000,
     });
@@ -269,6 +271,20 @@ export async function materializeRepoContext(
   const path = await import('node:path');
   const target = await fs.mkdtemp(path.join(os.tmpdir(), 'kortix-snap-'));
 
+  async function assertNoSymlinks(dir: string): Promise<void> {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      const stat = await fs.lstat(fullPath);
+      if (stat.isSymbolicLink()) {
+        throw new Error(`Snapshot context contains unsupported symlink: ${path.relative(target, fullPath)}`);
+      }
+      if (stat.isDirectory()) {
+        await assertNoSymlinks(fullPath);
+      }
+    }
+  }
+
   await new Promise<void>((resolve, reject) => {
     const archive = spawn('git', ['archive', '--format=tar', treeish], {
       cwd: repoPath,
@@ -285,6 +301,13 @@ export async function materializeRepoContext(
       else reject(new Error(archiveErr.trim() || `archive/extract exit code ${code}`));
     });
   });
+
+  try {
+    await assertNoSymlinks(target);
+  } catch (error) {
+    await fs.rm(target, { recursive: true, force: true });
+    throw error;
+  }
 
   return target;
 }

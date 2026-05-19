@@ -61,6 +61,7 @@ import { createClient } from '@/lib/supabase/client';
 import { isBillingEnabled } from '@/lib/config';
 import { useTheme } from 'next-themes';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { flattenModels } from '@/components/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import {
@@ -816,6 +817,7 @@ export function CommandPalette() {
     const supabase = createClient();
     await supabase.auth.signOut();
     clearUserLocalStorage();
+    await clearSessionIDBCache();
     router.push('/auth');
   }, [close, router]);
 

@@ -1,22 +1,25 @@
 /**
  * Platform API client.
  *
- * Routes through kortix-api (the unified backend) for sandbox lifecycle:
- *   GET  /platform/providers          — available sandbox providers
- *   POST /platform/init               — ensure user has a sandbox, provision if needed
- *   GET  /platform/sandbox            — get user's active sandbox
- *   GET  /platform/sandbox/list        — list all sandboxes
- *   POST /platform/sandbox/stop       — stop the active sandbox
- *   POST /platform/sandbox/restart    — restart the active sandbox
- *
- * In production: https://api.kortix.com/v1/platform/*  (base URL includes /v1)
- * In local:      http://localhost:8008/v1/platform/*  (base URL includes /v1)
+ * The legacy account-level sandbox lifecycle API was removed. This adapter
+ * keeps older instance UI call sites pointed at the supported project-session
+ * endpoints under /projects/:projectId/sessions/:sessionId.
  */
 
 import { authenticatedFetch } from '@/lib/auth-token';
-import { backendApi } from '@/lib/api-client';
 import { getEnv } from '@/lib/env-config';
 import type { ServerEntry } from '@/stores/server-store';
+import {
+  createProjectSession,
+  deleteProjectSession,
+  getProjectSessionSandbox,
+  listProjectSessions,
+  listProjects,
+  restartProjectSession,
+  type KortixProject,
+  type ProjectSession,
+  type ProjectSessionSandbox,
+} from '@/lib/projects-client';
 
 // ─── Sandbox Port Constants ──────────────────────────────────────────────────
 
@@ -161,6 +164,91 @@ function getLocalBridgeStatusUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/platform/local-bridge/status`;
 }
 
+function normalizeSessionStatus(status: string | undefined): string {
+  if (status === 'running' || status === 'active') return 'active';
+  if (status === 'queued' || status === 'branching' || status === 'provisioning') return 'provisioning';
+  if (status === 'failed' || status === 'error') return 'error';
+  if (status === 'stopped' || status === 'completed' || status === 'archived') return 'stopped';
+  return status || 'unknown';
+}
+
+function projectSessionToSandboxInfo(
+  project: KortixProject,
+  session: ProjectSession,
+  runtime?: ProjectSessionSandbox | null,
+): SandboxInfo {
+  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
+  return {
+    sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
+    external_id: externalId,
+    name: session.name || `${project.name} session`,
+    provider: runtime?.provider || (session.sandbox_provider as SandboxProviderName | null) || 'daytona',
+    base_url: runtime?.base_url || session.sandbox_url || (runtime?.external_id ? `${getPlatformUrl()}/p/${runtime.external_id}/${SANDBOX_PORTS.KORTIX_MASTER}` : ''),
+    status: normalizeSessionStatus(runtime?.status || session.status),
+    metadata: {
+      ...(session.metadata ?? {}),
+      project_id: project.project_id,
+      session_id: session.session_id,
+      project_name: project.name,
+      runtime_status: runtime?.status,
+      error: session.error,
+    },
+    created_at: runtime?.created_at || session.created_at,
+    updated_at: runtime?.updated_at || session.updated_at,
+  };
+}
+
+async function listProjectSessionSandboxes(): Promise<Array<{
+  project: KortixProject;
+  session: ProjectSession;
+  runtime: ProjectSessionSandbox | null;
+  sandbox: SandboxInfo;
+}>> {
+  const projects = await listProjects();
+  const rows: Array<{
+    project: KortixProject;
+    session: ProjectSession;
+    runtime: ProjectSessionSandbox | null;
+    sandbox: SandboxInfo;
+  }> = [];
+
+  for (const project of projects) {
+    const sessions = await listProjectSessions(project.project_id).catch(() => []);
+    for (const session of sessions) {
+      const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
+      rows.push({
+        project,
+        session,
+        runtime,
+        sandbox: projectSessionToSandboxInfo(project, session, runtime),
+      });
+    }
+  }
+
+  return rows.sort((a, b) => {
+    const priority: Record<string, number> = { active: 0, provisioning: 1, stopped: 2, error: 3 };
+    const statusDelta = (priority[a.sandbox.status] ?? 99) - (priority[b.sandbox.status] ?? 99);
+    if (statusDelta !== 0) return statusDelta;
+    return Date.parse(b.sandbox.updated_at) - Date.parse(a.sandbox.updated_at);
+  });
+}
+
+async function findProjectSessionSandbox(sandboxId?: string): Promise<{
+  project: KortixProject;
+  session: ProjectSession;
+  runtime: ProjectSessionSandbox | null;
+  sandbox: SandboxInfo;
+} | null> {
+  const rows = await listProjectSessionSandboxes();
+  if (!sandboxId) return rows[0] ?? null;
+  return rows.find((row) =>
+    row.sandbox.sandbox_id === sandboxId ||
+    row.sandbox.external_id === sandboxId ||
+    row.session.session_id === sandboxId ||
+    row.runtime?.external_id === sandboxId
+  ) ?? null;
+}
+
 // ─── Fetch helper ────────────────────────────────────────────────────────────
 
 async function platformFetch<T>(
@@ -242,11 +330,7 @@ export function extractMappedPorts(
  * Get available sandbox providers from the platform service.
  */
 export async function getProviders(): Promise<ProvidersInfo> {
-  const result = await platformFetch<ProvidersInfo>('/platform/providers');
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to get providers');
-  }
-  return result.data;
+  return { providers: ['daytona'], default: 'daytona' };
 }
 
 /**
@@ -259,21 +343,20 @@ export async function ensureSandbox(opts?: {
   provider?: SandboxProviderName;
   serverType?: ServerTypeOption;
 }): Promise<{ sandbox: SandboxInfo; created: boolean }> {
-  const result = await platformFetch<SandboxInfo>('/platform/init', {
-    method: 'POST',
-    body: opts
-      ? JSON.stringify({
-          ...(opts.provider ? { provider: opts.provider } : {}),
-          ...(opts.serverType ? { serverType: opts.serverType } : {}),
-        })
-      : undefined,
-  });
+  const existing = await findProjectSessionSandbox();
+  if (existing) return { sandbox: existing.sandbox, created: false };
 
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to ensure sandbox');
+  const projects = await listProjects();
+  const project = projects[0];
+  if (!project) {
+    throw new Error('Create a project before starting a sandbox');
   }
 
-  return { sandbox: result.data, created: result.created ?? false };
+  const session = await createProjectSession(project.project_id, {
+    ...(opts?.provider ? { agent_name: opts.provider } : {}),
+  });
+  const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
+  return { sandbox: projectSessionToSandboxInfo(project, session, runtime), created: true };
 }
 
 /**
@@ -281,19 +364,8 @@ export async function ensureSandbox(opts?: {
  * Returns null if no sandbox exists (call ensureSandbox first).
  */
 export async function getSandbox(): Promise<SandboxInfo | null> {
-  try {
-    const result = await platformFetch<SandboxInfo>('/platform/sandbox', {
-      method: 'GET',
-    });
-
-    if (!result.success || !result.data) {
-      return null;
-    }
-
-    return result.data;
-  } catch {
-    return null;
-  }
+  const row = await findProjectSessionSandbox().catch(() => null);
+  return row?.sandbox ?? null;
 }
 
 /**
@@ -309,50 +381,11 @@ export async function createSandbox(opts?: {
   name?: string;
 }): Promise<{ sandbox: SandboxInfo }> {
   if (opts?.provider === 'local_docker') {
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-
-    const initRes = await authenticatedFetch(`${getPlatformUrl()}/platform/init/local`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        ...(opts?.name ? { name: opts.name } : {}),
-      }),
-    });
-
-    const initData = await initRes.json();
-    if (!initRes.ok) {
-      throw new Error(initData?.error || initData?.message || `Platform API error ${initRes.status}`);
-    }
-
-    if (initData.status === 'ready' && initData.data) {
-      return { sandbox: initData.data as SandboxInfo };
-    }
-
-    if (initData.success && initData.data) {
-      return { sandbox: initData.data as SandboxInfo };
-    }
-
-    throw new Error(
-      initData.error || initData.message || 'Local sandbox is not running. Start it manually with `pnpm dev:sandbox`, then try again.',
-    );
+    throw new Error('Local Docker instances are not exposed by the current project-session API');
   }
 
-  const result = await platformFetch<SandboxInfo>('/platform/sandbox', {
-    method: 'POST',
-    body: JSON.stringify({
-      ...(opts?.provider ? { provider: opts.provider } : {}),
-      ...(opts?.serverType ? { serverType: opts.serverType } : {}),
-      ...(opts?.name ? { name: opts.name } : {}),
-    }),
-  });
-
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to create sandbox');
-  }
-
-  return { sandbox: result.data };
+  const result = await ensureSandbox(opts);
+  return { sandbox: result.sandbox };
 }
 
 /**
@@ -363,64 +396,14 @@ export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | 
   const normalizedSandboxId = normalizeSandboxId(sandboxId);
   if (!normalizedSandboxId) return null;
 
-  const all = await listSandboxes(normalizedSandboxId);
-  const ownMatch = all.find((s) => s.sandbox_id === normalizedSandboxId) ?? null;
-  if (ownMatch) return ownMatch;
-
-  try {
-    // Admin-scoped fallback — if the user isn't admin, the 403 is expected
-    // for non-owners. Suppress the automatic error toast/log so the
-    // instance-detail page doesn't scream about an expected 403 just
-    // because the sandbox isn't in the caller's own listing.
-    const response = await backendApi.get<{
-      sandbox: {
-        sandboxId: string;
-        externalId: string | null;
-        name: string | null;
-        provider: SandboxProviderName | null;
-        baseUrl: string | null;
-        status: string | null;
-        metadata: unknown;
-        createdAt: string;
-        updatedAt: string;
-      };
-    }>(`/admin/api/sandboxes/${normalizedSandboxId}`, { showErrors: false });
-
-    const row = response.data?.sandbox;
-    if (!row) return null;
-    const providers = await getProviders().catch(() => null);
-    if (row.provider && providers && !providers.providers.includes(row.provider)) {
-      return null;
-    }
-
-    return {
-      sandbox_id: row.sandboxId,
-      external_id: row.externalId || '',
-      name: row.name || row.sandboxId,
-      provider: (row.provider || 'justavps') as SandboxProviderName,
-      base_url: row.baseUrl || '',
-      status: row.status || 'unknown',
-      metadata: (row.metadata as Record<string, unknown> | undefined) ?? undefined,
-      created_at: row.createdAt,
-      updated_at: row.updatedAt,
-    };
-  } catch {
-    return null;
-  }
+  const row = await findProjectSessionSandbox(normalizedSandboxId).catch(() => null);
+  return row?.sandbox ?? null;
 }
 
-export async function renameSandbox(sandboxId: string, name: string): Promise<SandboxInfo> {
-  const result = await platformFetch<SandboxInfo>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({ name }),
-    },
-  );
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to rename sandbox');
-  }
-  return result.data;
+export async function renameSandbox(sandboxId: string, _name: string): Promise<SandboxInfo> {
+  const row = await findProjectSessionSandbox(sandboxId);
+  if (!row) throw new Error('Project session sandbox not found');
+  throw new Error('Renaming project-session sandboxes is not exposed by the current API');
 }
 
 // ─── Sandbox members (team access) ───────────────────────────────────────────
@@ -462,14 +445,7 @@ export interface AddSandboxMemberResult {
 }
 
 export async function listSandboxMembers(sandboxId: string): Promise<SandboxMembersResponse> {
-  const result = await platformFetch<SandboxMembersResponse>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members`,
-    { method: 'GET' },
-  );
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to list members');
-  }
-  return result.data;
+  throw new Error('Sandbox members moved to project access; use project members for project-session sandboxes');
 }
 
 export async function addSandboxMember(
@@ -477,27 +453,11 @@ export async function addSandboxMember(
   email: string,
   role: 'admin' | 'member' = 'member',
 ): Promise<AddSandboxMemberResult> {
-  const result = await platformFetch<AddSandboxMemberResult>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ email, role }),
-    },
-  );
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to add member');
-  }
-  return result.data;
+  throw new Error('Sandbox members moved to project access; invite the user to the project instead');
 }
 
 export async function removeSandboxMember(sandboxId: string, userId: string): Promise<void> {
-  const result = await platformFetch<void>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}`,
-    { method: 'DELETE' },
-  );
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to remove member');
-  }
+  throw new Error('Sandbox members moved to project access; update project access instead');
 }
 
 export async function updateSandboxMemberRole(
@@ -505,16 +465,7 @@ export async function updateSandboxMemberRole(
   userId: string,
   role: SandboxMemberRole,
 ): Promise<void> {
-  const result = await platformFetch<void>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({ role }),
-    },
-  );
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to change role');
-  }
+  throw new Error('Sandbox members moved to project access; update project access instead');
 }
 
 export async function updateSandboxMemberSpendCap(
@@ -522,16 +473,7 @@ export async function updateSandboxMemberSpendCap(
   userId: string,
   capCents: number | null,
 ): Promise<void> {
-  const result = await platformFetch<void>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({ monthly_spend_cap_cents: capCents }),
-    },
-  );
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to update spending cap');
-  }
+  throw new Error('Sandbox member spend caps are not exposed for project-session sandboxes');
 }
 
 export type ScopeEffect = 'grant' | 'revoke' | null;
@@ -564,28 +506,14 @@ export interface SandboxViewerScopes {
 export async function getViewerSandboxScopes(
   sandboxId: string,
 ): Promise<SandboxViewerScopes> {
-  const result = await platformFetch<SandboxViewerScopes>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}/me/scopes`,
-    { method: 'GET' },
-  );
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to load scopes');
-  }
-  return result.data;
+  throw new Error('Sandbox scopes moved to project access for project-session sandboxes');
 }
 
 export async function getSandboxMemberScopes(
   sandboxId: string,
   userId: string,
 ): Promise<SandboxMemberScopes> {
-  const result = await platformFetch<SandboxMemberScopes>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}/scopes`,
-    { method: 'GET' },
-  );
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to load scopes');
-  }
-  return result.data;
+  throw new Error('Sandbox scopes moved to project access for project-session sandboxes');
 }
 
 export async function updateSandboxMemberScope(
@@ -594,16 +522,7 @@ export async function updateSandboxMemberScope(
   scope: string,
   effect: ScopeEffect,
 ): Promise<void> {
-  const result = await platformFetch<void>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}/members/${encodeURIComponent(userId)}/scopes`,
-    {
-      method: 'PATCH',
-      body: JSON.stringify({ scope, effect }),
-    },
-  );
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to update scope');
-  }
+  throw new Error('Sandbox scopes moved to project access for project-session sandboxes');
 }
 
 // ─── Legacy project ACL inside a sandbox ─────────────────────────────────────
@@ -683,13 +602,7 @@ export async function revokeSandboxProjectAccess(
 }
 
 export async function revokeSandboxInvite(sandboxId: string, inviteId: string): Promise<void> {
-  const result = await platformFetch<void>(
-    `/platform/sandbox/${encodeURIComponent(sandboxId)}/invites/${encodeURIComponent(inviteId)}`,
-    { method: 'DELETE' },
-  );
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to revoke invite');
-  }
+  throw new Error('Sandbox invites moved to project access for project-session sandboxes');
 }
 
 // ─── Invite accept/decline ───────────────────────────────────────────────────
@@ -763,31 +676,14 @@ export async function declineInvite(inviteId: string): Promise<void> {
 export async function listSandboxes(sandboxId?: unknown): Promise<SandboxInfo[]> {
   const normalizedSandboxId = normalizeSandboxId(sandboxId);
 
-  try {
-    const qs = normalizedSandboxId ? `?sandbox_id=${encodeURIComponent(normalizedSandboxId)}` : '';
-    const result = await platformFetch<SandboxInfo[]>(`/platform/sandbox/list${qs}`, {
-      method: 'GET',
-    });
-
-    const rows = result.success && result.data ? result.data : [];
-    const discoveredLocal = await discoverLocalSandbox();
-    if (!discoveredLocal) return rows;
-    if (normalizedSandboxId && discoveredLocal.sandbox_id !== normalizedSandboxId) {
-      return rows;
-    }
-
-    const withoutDuplicate = rows.filter((sandbox) =>
-      sandbox.sandbox_id !== discoveredLocal.sandbox_id && sandbox.external_id !== discoveredLocal.external_id,
+  const rows = await listProjectSessionSandboxes().catch(() => []);
+  return rows
+    .map((row) => row.sandbox)
+    .filter((sandbox) =>
+      !normalizedSandboxId ||
+      sandbox.sandbox_id === normalizedSandboxId ||
+      sandbox.external_id === normalizedSandboxId
     );
-    return [discoveredLocal, ...withoutDuplicate];
-  } catch {
-    const discoveredLocal = await discoverLocalSandbox().catch(() => null);
-    if (!discoveredLocal) return [];
-    if (normalizedSandboxId && discoveredLocal.sandbox_id !== normalizedSandboxId) {
-      return [];
-    }
-    return [discoveredLocal];
-  }
 }
 
 export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
@@ -831,31 +727,9 @@ export async function restartSandbox(sandboxId?: string): Promise<void> {
   if (!sandboxId) {
     throw new Error('No sandbox selected for workload restart');
   }
-  try {
-    const result = await platformFetch<void>('/platform/sandbox/restart', {
-      method: 'POST',
-      body: JSON.stringify({ sandbox_id: sandboxId }),
-    });
-
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to restart sandbox');
-    }
-    return;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!/No sandbox to restart/i.test(message)) {
-      throw error;
-    }
-
-    const adminFallback = await backendApi.post(`/admin/api/sandboxes/${sandboxId}/repair`, { action: 'restart_workload' }, {
-      showErrors: false,
-    });
-    if (adminFallback.success) {
-      return;
-    }
-
-    throw error;
-  }
+  const row = await findProjectSessionSandbox(sandboxId);
+  if (!row) throw new Error('Project session sandbox not found');
+  await restartProjectSession(row.project.project_id, row.session.session_id);
 }
 
 /**
@@ -863,14 +737,10 @@ export async function restartSandbox(sandboxId?: string): Promise<void> {
  * stop the user's active sandbox.
  */
 export async function stopSandbox(sandboxId?: string): Promise<void> {
-  const result = await platformFetch<void>('/platform/sandbox/stop', {
-    method: 'POST',
-    body: sandboxId ? JSON.stringify({ sandbox_id: sandboxId }) : undefined,
-  });
-
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to stop sandbox');
-  }
+  if (!sandboxId) throw new Error('No sandbox selected to stop');
+  const row = await findProjectSessionSandbox(sandboxId);
+  if (!row) throw new Error('Project session sandbox not found');
+  await deleteProjectSession(row.project.project_id, row.session.session_id);
 }
 
 /**
@@ -878,27 +748,14 @@ export async function stopSandbox(sandboxId?: string): Promise<void> {
  * The instance keeps running until then; reactivate to reverse.
  */
 export async function cancelSandbox(sandboxId?: string): Promise<{ cancel_at: string | null }> {
-  const result = await platformFetch<{ cancel_at: string | null }>('/platform/sandbox/cancel', {
-    method: 'POST',
-    body: sandboxId ? JSON.stringify({ sandbox_id: sandboxId }) : undefined,
-  });
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to schedule cancellation');
-  }
-  return (result.data as { cancel_at: string | null }) ?? { cancel_at: null };
+  throw new Error('Cancellation is not exposed for project-session sandboxes');
 }
 
 /**
  * Reverse a scheduled cancellation — subscription continues as normal.
  */
 export async function reactivateSandbox(sandboxId?: string): Promise<void> {
-  const result = await platformFetch<void>('/platform/sandbox/reactivate', {
-    method: 'POST',
-    body: sandboxId ? JSON.stringify({ sandbox_id: sandboxId }) : undefined,
-  });
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to reactivate sandbox');
-  }
+  throw new Error('Reactivation is not exposed for project-session sandboxes');
 }
 
 // ─── Backup API ─────────────────────────────────────────────────────────────
@@ -917,56 +774,28 @@ export interface BackupListResponse {
 }
 
 export async function listBackups(sandboxId: string): Promise<BackupListResponse> {
-  const result = await platformFetch<BackupListResponse>(
-    `/platform/sandbox/${sandboxId}/backups`,
-  );
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to list backups');
-  }
-  return result.data;
+  throw new Error('Backups are not exposed for project-session sandboxes');
 }
 
 export async function createBackup(
   sandboxId: string,
   description?: string,
 ): Promise<{ backup_id: string; status: string }> {
-  const result = await platformFetch<{ backup_id: string; status: string }>(
-    `/platform/sandbox/${sandboxId}/backups`,
-    {
-      method: 'POST',
-      body: description ? JSON.stringify({ description }) : undefined,
-    },
-  );
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to create backup');
-  }
-  return result.data;
+  throw new Error('Backups are not exposed for project-session sandboxes');
 }
 
 export async function restoreBackup(
   sandboxId: string,
   backupId: string,
 ): Promise<void> {
-  const result = await platformFetch<{ action: string; status: string }>(
-    `/platform/sandbox/${sandboxId}/backups/${backupId}/restore`,
-    { method: 'POST' },
-  );
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to restore backup');
-  }
+  throw new Error('Backups are not exposed for project-session sandboxes');
 }
 
 export async function deleteBackup(
   sandboxId: string,
   backupId: string,
 ): Promise<void> {
-  const result = await platformFetch<{ action: string; status: string }>(
-    `/platform/sandbox/${sandboxId}/backups/${backupId}`,
-    { method: 'DELETE' },
-  );
-  if (!result.success) {
-    throw new Error(result.error || 'Failed to delete backup');
-  }
+  throw new Error('Backups are not exposed for project-session sandboxes');
 }
 
 // ─── SSH Setup API ──────────────────────────────────────────────────────────
@@ -997,29 +826,11 @@ export interface SSHSetupResult extends SSHConnectionInfo {
  * Returns the private key and connection details for VS Code Remote SSH.
  */
 export async function setupSSH(sandboxId?: string): Promise<SSHSetupResult> {
-  const result = await platformFetch<SSHSetupResult>('/platform/sandbox/ssh/setup', {
-    method: 'POST',
-    body: JSON.stringify(sandboxId ? { sandboxId } : {}),
-  });
-
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to setup SSH');
-  }
-
-  return result.data;
+  throw new Error('SSH setup is not exposed for project-session sandboxes');
 }
 
 export async function getSSHConnection(sandboxId?: string): Promise<SSHConnectionInfo> {
-  const qs = sandboxId ? `?sandboxId=${encodeURIComponent(sandboxId)}` : '';
-  const result = await platformFetch<SSHConnectionInfo>(`/platform/sandbox/ssh/connection${qs}`, {
-    method: 'GET',
-  });
-
-  if (!result.success || !result.data) {
-    throw new Error(result.error || 'Failed to resolve SSH connection');
-  }
-
-  return result.data;
+  throw new Error('SSH connection details are not exposed for project-session sandboxes');
 }
 
 // ─── Sandbox Update API ─────────────────────────────────────────────────────
@@ -1139,30 +950,17 @@ export function isDestructivePhase(phase: UpdatePhase): boolean {
 export async function getSandboxUpdateStatus(
   sandbox?: SandboxInfo,
 ): Promise<SandboxUpdateStatus> {
-  if (sandbox?.provider === 'local_docker') {
-    return {
-      phase: 'idle',
-      progress: 0,
-      message: 'Local Docker updates are manual-only.',
-      targetVersion: null,
-      previousVersion: null,
-      currentVersion: null,
-      error: null,
-      startedAt: null,
-      updatedAt: null,
-    };
-  }
-
-  const url = sandbox?.sandbox_id && isDbSandboxId(sandbox.sandbox_id)
-    ? `${getPlatformUrl()}/platform/sandbox/${sandbox.sandbox_id}/update/status`
-    : `${getPlatformUrl()}/platform/sandbox/update/status`;
-  const res = await authenticatedFetch(url, {
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-  if (!res.ok) throw new Error(`Status check failed: ${res.status}`);
-  return res.json();
+  return {
+    phase: 'idle',
+    progress: 0,
+    message: 'Sandbox image updates are managed by project-session provisioning.',
+    targetVersion: null,
+    previousVersion: null,
+    currentVersion: sandbox?.version ?? null,
+    error: null,
+    startedAt: null,
+    updatedAt: null,
+  };
 }
 
 /**
@@ -1225,62 +1023,16 @@ export async function triggerSandboxUpdate(
   sandbox: SandboxInfo,
   version: string,
 ): Promise<SandboxUpdateResult> {
-  if (sandbox.provider === 'local_docker') {
-    throw new Error('Local sandbox updates are manual-only. Rebuild/restart it with `pnpm dev:sandbox:build`.');
-  }
-
-  const url = sandbox.sandbox_id && isDbSandboxId(sandbox.sandbox_id)
-    ? `${getPlatformUrl()}/platform/sandbox/${sandbox.sandbox_id}/update`
-    : `${getPlatformUrl()}/platform/sandbox/update`;
-  const res = await authenticatedFetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({ version }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Update failed: ${res.status}`);
-  }
-  return res.json();
+  throw new Error('Sandbox image updates are managed by project-session provisioning');
 }
 
 /**
  * Reset the update status on kortix-api (e.g. after a failed update to allow retry).
  */
 export async function resetSandboxUpdateStatus(sandbox?: SandboxInfo): Promise<void> {
-  if (sandbox?.provider === 'local_docker') return;
-
-  const url = sandbox?.sandbox_id && isDbSandboxId(sandbox.sandbox_id)
-    ? `${getPlatformUrl()}/platform/sandbox/${sandbox.sandbox_id}/update/reset`
-    : `${getPlatformUrl()}/platform/sandbox/update/reset`;
-  const res = await authenticatedFetch(url, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-  if (!res.ok) throw new Error(`Reset failed: ${res.status}`);
+  return;
 }
 
 export async function cancelSandboxUpdate(sandbox?: SandboxInfo): Promise<void> {
-  if (sandbox?.provider === 'local_docker') {
-    throw new Error('Local Docker updates are manual-only. Nothing to cancel.');
-  }
-
-  const url = sandbox?.sandbox_id && isDbSandboxId(sandbox.sandbox_id)
-    ? `${getPlatformUrl()}/platform/sandbox/${sandbox.sandbox_id}/update/cancel`
-    : `${getPlatformUrl()}/platform/sandbox/update/cancel`;
-  const res = await authenticatedFetch(url, {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-    },
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Cancel failed: ${res.status}`);
-  }
+  return;
 }

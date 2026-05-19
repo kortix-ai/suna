@@ -1114,7 +1114,7 @@ export async function getGitHubInstallation(accountId: string) {
 }
 
 export async function saveGitHubInstallation(input: {
-  account_id: string;
+  state: string;
   installation_id: string;
 }) {
   return unwrap(

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { versionRouter } from './routes/version';
+import { apiKeysRouter } from './routes/api-keys';
 
 // Platform sub-app. The legacy /v1/platform/sandbox/* lifecycle surface
 // (one-per-account sandbox lifecycle, members, invites, pool admin, backup
@@ -11,6 +12,7 @@ import { versionRouter } from './routes/version';
 const platformApp = new Hono();
 
 platformApp.get('/', (c) => c.json({ ok: true, message: 'platform' }));
+platformApp.route('/api-keys', apiKeysRouter);
 platformApp.route('/sandbox/version', versionRouter);
 
 export { platformApp };

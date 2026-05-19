@@ -63,8 +63,8 @@ function exec(cmd: string, args: string[], timeoutMs = 15000): Promise<string> {
   });
 }
 
-function osascript(script: string, timeoutMs = 15000): Promise<string> {
-  return exec('osascript', ['-l', 'JavaScript', '-e', script], timeoutMs);
+function osascript(script: string, timeoutMs = 15000, args: string[] = []): Promise<string> {
+  return exec('osascript', ['-l', 'JavaScript', '-e', script, ...args], timeoutMs);
 }
 
 // ─── JXA-based Accessibility (System Events) ──────────────────────────────────
@@ -476,16 +476,16 @@ export class MacOSDriver implements DesktopDriver {
   }
 
   async appQuit(name: string): Promise<void> {
-    const script = `
+    const script = `function run(argv) {
       try {
-        const app = Application("${name}");
+        const app = Application(argv[0]);
         app.quit();
-        "ok";
+        return "ok";
       } catch(e) {
-        "error: " + e.message;
+        return "error: " + e.message;
       }
-    `;
-    const result = await osascript(script);
+    }`;
+    const result = await osascript(script, 15000, [name]);
     if (result.trim().startsWith('error:')) {
       throw new Error(result.trim());
     }

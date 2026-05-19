@@ -6,24 +6,10 @@ import { isKortixToken, isAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
-import { config } from '../config';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 
-// ─── Cookie name for preview session auth ────────────────────────────────────
 const PREVIEW_SESSION_COOKIE = '__preview_session';
-
-function isLocalPreviewBypassRequest(c: Context, previewSandboxId: string | null): boolean {
-  if (!previewSandboxId) return false;
-  if (previewSandboxId !== config.SANDBOX_CONTAINER_NAME) return false;
-
-  try {
-    const { hostname } = new URL(c.req.url);
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
-  } catch {
-    return false;
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Auth Middleware (3 middlewares — one per auth strategy)
@@ -77,6 +63,8 @@ export async function apiKeyAuth(c: Context, next: Next) {
 
   c.set('accountId', result.accountId);
   c.set('keyId', result.keyId);
+  c.set('authType', 'apiKey');
+  c.set('apiKeyType', result.type);
   if (result.sandboxId) {
     c.set('sandboxId', result.sandboxId);
   }
@@ -116,6 +104,7 @@ export async function supabaseAuth(c: Context, next: Next) {
     }
     c.set('userId', result.userId);
     c.set('userEmail', '');
+    c.set('authType', 'pat');
     if (result.accountId) c.set('accountId', result.accountId);
     if (result.projectId) c.set('tokenProjectId', result.projectId);
     setSentryUser({ id: result.userId, accountId: result.accountId });
@@ -130,6 +119,7 @@ export async function supabaseAuth(c: Context, next: Next) {
   if (local.ok) {
     c.set('userId', local.userId);
     c.set('userEmail', local.email);
+    c.set('authType', 'supabase');
     setSentryUser({ id: local.userId, email: local.email });
     setContextField('userId', local.userId);
     setContextField('userEmail', local.email);
@@ -156,6 +146,7 @@ export async function supabaseAuth(c: Context, next: Next) {
 
     c.set('userId', user.id);
     c.set('userEmail', user.email || '');
+    c.set('authType', 'supabase');
     setSentryUser({ id: user.id, email: user.email || undefined });
     setContextField('userId', user.id);
     setContextField('userEmail', user.email || '');
@@ -190,11 +181,6 @@ export async function combinedAuth(c: Context, next: Next) {
   }
 
   const previewSandboxId = extractPreviewSandboxId(c.req.path);
-
-  if (isLocalPreviewBypassRequest(c, previewSandboxId)) {
-    await next();
-    return;
-  }
 
   // Extract token: header → X-Kortix-Token (preview only) → cookie → query param
   const authHeader = c.req.header('Authorization');
@@ -251,6 +237,7 @@ export async function combinedAuth(c: Context, next: Next) {
     }
     c.set('userId', patResult.userId);
     c.set('userEmail', '');
+    c.set('authType', 'pat');
     if (patResult.accountId) c.set('accountId', patResult.accountId);
     if (patResult.projectId) c.set('tokenProjectId', patResult.projectId);
     setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
@@ -276,7 +263,11 @@ export async function combinedAuth(c: Context, next: Next) {
     // Map accountId → userId so route handlers work unchanged
     c.set('userId', result.accountId);
     c.set('userEmail', '');
+    c.set('authType', 'apiKey');
+    c.set('apiKeyType', result.type);
     if (result.accountId) c.set('accountId', result.accountId);
+    if (result.keyId) c.set('keyId', result.keyId);
+    if (result.sandboxId) c.set('sandboxId', result.sandboxId);
     setSentryUser({ id: result.accountId || 'unknown', accountId: result.accountId });
     setContextField('accountId', result.accountId || 'unknown');
     if (isPreviewRoute) setPreviewSessionCookie(c, token);
@@ -295,6 +286,7 @@ export async function combinedAuth(c: Context, next: Next) {
     }
     c.set('userId', local.userId);
     c.set('userEmail', local.email);
+    c.set('authType', 'supabase');
     setSentryUser({ id: local.userId, email: local.email });
     setContextField('userId', local.userId);
     setContextField('userEmail', local.email);
@@ -326,6 +318,7 @@ export async function combinedAuth(c: Context, next: Next) {
 
     c.set('userId', user.id);
     c.set('userEmail', user.email || '');
+    c.set('authType', 'supabase');
     setSentryUser({ id: user.id, email: user.email || undefined });
     setContextField('userId', user.id);
     setContextField('userEmail', user.email || '');
@@ -350,7 +343,7 @@ function setPreviewSessionCookie(c: Context, token: string) {
   const encoded = encodeURIComponent(token);
   c.header(
     'Set-Cookie',
-    `${PREVIEW_SESSION_COOKIE}=${encoded}; Path=/v1/p/; HttpOnly; SameSite=Lax; Max-Age=3600`,
+    `${PREVIEW_SESSION_COOKIE}=${encoded}; Path=/v1/p/; HttpOnly; Secure; SameSite=Lax; Max-Age=3600`,
     { append: true },
   );
 }

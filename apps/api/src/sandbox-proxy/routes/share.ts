@@ -11,6 +11,7 @@
 import { Hono } from 'hono'
 import { resolveProvider } from '../index'
 import { combinedAuth } from '../../middleware/auth'
+import { canAccessPreviewSandbox } from '../../shared/preview-ownership'
 
 const shareApp = new Hono()
 type ResolvedProvider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>
@@ -60,6 +61,19 @@ async function resolveShareTarget(sandboxId: string): Promise<{
   return { resolved, sandboxShareBaseUrl }
 }
 
+async function ensureShareAccess(c: any, sandboxId: string): Promise<Response | null> {
+  const userId = c.get('userId') as string | undefined
+  const accountId = c.get('accountId') as string | undefined
+
+  if (userId && await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId })) {
+    return null
+  }
+  if (accountId && await canAccessPreviewSandbox({ previewSandboxId: sandboxId, accountId })) {
+    return null
+  }
+  return c.json({ error: 'Not authorized to access this sandbox' }, 403)
+}
+
 shareApp.post('/',
   combinedAuth,
   async (c) => {
@@ -77,6 +91,9 @@ shareApp.post('/',
     if (!port || typeof port !== 'number' || port < 1 || port > 65535) {
       return c.json({ error: 'port is required (1-65535)' }, 400)
     }
+
+    const accessError = await ensureShareAccess(c, sandbox_id)
+    if (accessError) return accessError
 
     const target = await resolveShareTarget(sandbox_id)
     if ('error' in target) {
@@ -110,6 +127,9 @@ shareApp.get('/', combinedAuth, async (c) => {
     return c.json({ error: 'sandbox_id is required (string)' }, 400)
   }
 
+  const accessError = await ensureShareAccess(c, sandbox_id)
+  if (accessError) return accessError
+
   const target = await resolveShareTarget(sandbox_id)
   if ('error' in target) {
     return c.json({ error: target.error }, target.status as any)
@@ -138,6 +158,9 @@ shareApp.delete('/:token', combinedAuth, async (c) => {
   if (!token) {
     return c.json({ error: 'token is required' }, 400)
   }
+
+  const accessError = await ensureShareAccess(c, sandbox_id)
+  if (accessError) return accessError
 
   const target = await resolveShareTarget(sandbox_id)
   if ('error' in target) {

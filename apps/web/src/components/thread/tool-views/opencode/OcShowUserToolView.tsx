@@ -38,6 +38,7 @@ import { cn } from '@/lib/utils';
 import { ShowContentRenderer, ShowCarousel, SHOW_HTML_EXT_RE } from '@/components/file-renderers/show-content-renderer';
 import type { ShowCarouselItem } from '@/components/file-renderers/show-content-renderer';
 import { SANDBOX_PORTS } from '@/lib/platform-client';
+import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 
 /** Ensure a sandbox file path starts with /workspace/ for the static file server. */
 function ensureWorkspacePath(filePath: string): string {
@@ -87,8 +88,10 @@ function SidePanelIframePreview({ url, title }: { url: string; title?: string })
     return { proxyUrl: resolvedProxyUrl, port: parsed.port };
   }, [url, proxyUrl]);
 
-  const authenticatedUrl = useAuthenticatedPreviewUrl(proxy?.proxyUrl || url);
-  const isAuthReady = authenticatedUrl !== null;
+  const externalUrl = proxy ? null : safeHttpUrl(url);
+  const authenticatedProxyUrl = useAuthenticatedPreviewUrl(proxy?.proxyUrl || '');
+  const previewUrl = proxy ? authenticatedProxyUrl : externalUrl;
+  const isAuthReady = previewUrl !== null;
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -154,7 +157,7 @@ function SidePanelIframePreview({ url, title }: { url: string; title?: string })
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button type="button" onClick={() => authenticatedUrl && window.open(authenticatedUrl, '_blank', 'noopener,noreferrer')} disabled={!isAuthReady} variant="ghost" size="icon-xs">
+            <Button type="button" onClick={() => previewUrl && openSafeExternalUrl(previewUrl)} disabled={!isAuthReady} variant="ghost" size="icon-xs">
               <ExternalLink className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
@@ -188,7 +191,7 @@ function SidePanelIframePreview({ url, title }: { url: string; title?: string })
         {isAuthReady && vpScale > 0 && (
           <iframe
             key={refreshKey}
-            src={authenticatedUrl}
+            src={previewUrl ?? undefined}
             title={displayLabel}
             className="border-0 bg-white"
             style={{
@@ -215,6 +218,7 @@ function SidePanelIframePreview({ url, title }: { url: string; title?: string })
 // ---------------------------------------------------------------------------
 
 function ScaledExternalIframe({ url, title }: { url: string; title?: string }) {
+  const safeUrl = safeHttpUrl(url);
   const vpRef = useRef<HTMLDivElement>(null);
   const [vpScale, setVpScale] = useState(0);
   useEffect(() => {
@@ -235,16 +239,18 @@ function ScaledExternalIframe({ url, title }: { url: string; title?: string }) {
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-1.5 h-9 px-3 bg-muted/30 border-b border-border/30 shrink-0">
         <Globe className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-        <span className="text-xs text-muted-foreground font-mono truncate flex-1">{url}</span>
-        <a href={url} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground transition-colors">
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+        <span className="text-xs text-muted-foreground font-mono truncate flex-1">{safeUrl ?? url}</span>
+        {safeUrl && (
+          <a href={safeUrl} target="_blank" rel="noopener noreferrer" className="p-1 rounded hover:bg-muted/60 text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        )}
       </div>
       <div ref={vpRef} className="relative flex-1 min-h-0 overflow-hidden bg-white">
-        {vpScale > 0 && (
+        {safeUrl && vpScale > 0 && (
           <iframe
-            src={url}
-            title={title || url}
+            src={safeUrl}
+            title={title || safeUrl}
             className="border-0 bg-white"
             style={{
               width: '1920px',
@@ -322,6 +328,8 @@ export function OcShowUserToolView({
     () => proxyUrl(url) ?? url,
     [url, proxyUrl],
   );
+  const safeResolvedUrl = safeHttpUrl(resolvedUrl);
+  const safeUrl = safeHttpUrl(url);
 
   const displayTitle = isCarousel
     ? (title || `${items!.length} items`)
@@ -362,10 +370,12 @@ export function OcShowUserToolView({
       <Card className={cn("gap-0 flex shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card border-0", borderStyle)}>
         <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
           <div className="flex flex-row items-center justify-between">
-            <ToolViewIconTitle icon={Globe} title={displayTitle} subtitle={resolvedUrl || undefined} />
-            <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
+            <ToolViewIconTitle icon={Globe} title={displayTitle} subtitle={safeResolvedUrl || undefined} />
+            {safeResolvedUrl && (
+              <a href={safeResolvedUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0 h-full flex-1 overflow-hidden">
@@ -381,19 +391,19 @@ export function OcShowUserToolView({
   // ═══════════════════════════════════════════════════════════════════════════
   // EXTERNAL URL → full iframe preview
   // ═══════════════════════════════════════════════════════════════════════════
-  if (type === 'url' && url && !hasLocalhostUrl) {
+  if (type === 'url' && safeUrl && !hasLocalhostUrl) {
     return (
       <Card className={cn("gap-0 flex shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card border-0", borderStyle)}>
         <CardHeader className="h-11 bg-background border-b border-border/50 px-3 py-0 space-y-0 flex justify-center">
           <div className="flex flex-row items-center justify-between">
-            <ToolViewIconTitle icon={Globe} title={displayTitle} subtitle={url} />
-            <a href={url} target="_blank" rel="noopener noreferrer" className="p-1 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+            <ToolViewIconTitle icon={Globe} title={displayTitle} subtitle={safeUrl} />
+            <a href={safeUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
           </div>
         </CardHeader>
         <CardContent className="p-0 h-full flex-1 overflow-hidden">
-          <ScaledExternalIframe url={url} title={title || undefined} />
+          <ScaledExternalIframe url={safeUrl} title={title || undefined} />
         </CardContent>
         <ToolViewFooter assistantTimestamp={assistantTimestamp} toolTimestamp={toolTimestamp} isStreaming={isStreaming}>
           {footerBadge}
@@ -456,7 +466,7 @@ export function OcShowUserToolView({
         }
       }
       if (ciUrl) {
-        window.open(ciUrl, '_blank', 'noopener,noreferrer');
+        openSafeExternalUrl(ciUrl);
         return;
       }
       if (ciPath) {
@@ -514,8 +524,8 @@ export function OcShowUserToolView({
         <div className="flex flex-row items-center justify-between">
           <ToolViewIconTitle icon={Icon} title={displayTitle} subtitle={path || url || language || undefined} />
           <div className="flex items-center gap-2 flex-shrink-0">
-            {url && (
-              <a href={url} target="_blank" rel="noopener noreferrer" className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+            {safeUrl && (
+              <a href={safeUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-muted-foreground hover:text-foreground transition-colors">
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             )}

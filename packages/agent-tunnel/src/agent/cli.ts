@@ -6,10 +6,10 @@ import { createFilesystemCapability } from './capabilities/filesystem';
 import { createShellCapability } from './capabilities/shell';
 import { createDesktopCapability } from './capabilities/desktop';
 import { hostname, platform, arch, release } from 'os';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync, renameSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { execSync } from 'child_process';
+import { spawn } from 'child_process';
 
 const c = {
   reset:   '\x1b[0m',
@@ -140,12 +140,34 @@ function startAgent(config: TunnelConfig): void {
   process.on('SIGINT', shutdown);
 }
 
+function normalizeBrowserUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function openBrowser(url: string): void {
+  const safeUrl = normalizeBrowserUrl(url);
+  if (!safeUrl) return;
   try {
     const plat = platform();
-    if (plat === 'darwin') execSync(`open "${url}"`);
-    else if (plat === 'win32') execSync(`start "" "${url}"`);
-    else execSync(`xdg-open "${url}"`);
+    let command: string;
+    let args: string[];
+    if (plat === 'darwin') {
+      command = 'open';
+      args = [safeUrl];
+    } else if (plat === 'win32') {
+      command = 'rundll32.exe';
+      args = ['url.dll,FileProtocolHandler', safeUrl];
+    } else {
+      command = 'xdg-open';
+      args = [safeUrl];
+    }
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.unref();
   } catch {}
 }
 
@@ -153,12 +175,17 @@ const CONFIG_DIR = join(homedir(), '.agent-tunnel');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 function saveCredentials(tunnelId: string, token: string, apiUrl: string): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
+  mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  try { chmodSync(CONFIG_DIR, 0o700); } catch {}
   let existing: Record<string, unknown> = {};
   if (existsSync(CONFIG_FILE)) {
     try { existing = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')); } catch {}
   }
-  writeFileSync(CONFIG_FILE, JSON.stringify({ ...existing, tunnelId, token, apiUrl }, null, 2));
+  const tmpFile = join(CONFIG_DIR, `config.${process.pid}.${Date.now()}.tmp`);
+  writeFileSync(tmpFile, JSON.stringify({ ...existing, tunnelId, token, apiUrl }, null, 2), { mode: 0o600, flag: 'wx' });
+  try { chmodSync(tmpFile, 0o600); } catch {}
+  renameSync(tmpFile, CONFIG_FILE);
+  try { chmodSync(CONFIG_FILE, 0o600); } catch {}
 }
 
 async function commandConnectDeviceAuth(config: TunnelConfig): Promise<void> {
@@ -220,7 +247,9 @@ async function commandConnectDeviceAuth(config: TunnelConfig): Promise<void> {
     process.stdout.write(`\r  ${c.dim}Waiting for approval... ${c.white}${min}:${sec.toString().padStart(2, '0')}${c.reset}  `);
 
     try {
-      const res = await fetch(`${config.apiUrl}/device-auth/${deviceCode}/status?secret=${deviceSecret}`);
+      const res = await fetch(`${config.apiUrl}/device-auth/${deviceCode}/status`, {
+        headers: { Authorization: `Bearer ${deviceSecret}` },
+      });
       if (res.ok) {
         const data = await res.json();
 

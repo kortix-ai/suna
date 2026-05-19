@@ -30,6 +30,7 @@ import { isLocal } from '@/lib/utils/env-config';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { createAuthCallbackRedirect } from '@/lib/auth/callback-state';
 
 export default function AuthScreen() {
   const router = useRouter();
@@ -331,7 +332,7 @@ function CloudAuthScreen() {
                       const { data, error } = await supabase.auth.signInWithOAuth({
                         provider: 'google',
                         options: {
-                          redirectTo: 'kortix://auth/callback',
+                          redirectTo: await createAuthCallbackRedirect(),
                           skipBrowserRedirect: true,
                         },
                       });
