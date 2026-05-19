@@ -2,8 +2,54 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
+# --- supply-chain hardening ---------------------------------------------------
+# These mirror pnpm 11 defaults and are duplicated here for clarity / older clients.
+# See also .npmrc (same settings as flat keys for non-workspace tooling).
+
+# 72h cooldown before any newly-published version is resolvable. Stops fast-moving
+# account-takeover attacks (TanStack 2026-05-11, Shai-Hulud, mini-Shai-Hulud) which
+# are typically yanked within hours. 3 days covers Fri-night publish through
+# Monday-morning disclosure. Use minimumReleaseAgeExclude for emergency hotfixes.
+minimumReleaseAge: 4320
+minimumReleaseAgeExclude: []   # add specific packages here for emergency hotfixes
+
+# Block lifecycle scripts everywhere except the allow-list below. The TanStack
+# payload was a postinstall — this is the single most important defense.
+dangerouslyAllowAllBuilds: false
+onlyBuiltDependencies:
+  - esbuild
+  - "@esbuild/darwin-arm64"
+  - "@esbuild/linux-x64"
+  - "@esbuild/linux-arm64"
+  - sharp
+  - "@img/sharp-darwin-arm64"
+  - "@img/sharp-linux-x64"
+  - "@img/sharp-linux-arm64"
+  - "@img/sharp-libvips-darwin-arm64"
+  - "@img/sharp-libvips-linux-x64"
+  - "@img/sharp-libvips-linux-arm64"
+  - "@swc/core"
+  - "@parcel/watcher"
+  - lightningcss
+  - "@tailwindcss/oxide"
+  - "@playwright/test"
+  - playwright
+  - playwright-core
+  - next
+  - "@next/swc"
+  - bufferutil
+  - utf-8-validate
+  - unrs-resolver
+
 catalog:
   '@tsconfig/bun': ^1.0.7
   'typescript': ^5.4.0
   '@types/bun': ^1.1.0
   '@types/node': ^22.0.0
+
+# Moved from package.json -> pnpm.overrides (pnpm 11 dropped that location).
+overrides:
+  '@types/react': ^18.3.28
+  '@types/react-dom': ^18.3.7
+  'import-in-the-middle': 3.0.0
+  'shiki': 3.23.0
