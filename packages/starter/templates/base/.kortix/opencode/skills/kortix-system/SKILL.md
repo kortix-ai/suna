@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: Canonical reference for a Kortix project. Covers (1) the platform overview — repo-native projects, sessions backed by ephemeral branches, the strict boundary between Kortix config (`kortix.toml`) and OpenCode config (`.kortix/opencode/`) — (2) the in-depth `kortix.toml` manifest with every key, every trigger field, the secrets contract, the `[[apps]]` deployment surface, (3) the full `kortix` CLI reference (every command, every flag, the project-scoped token model, what works inside a session sandbox with the pre-injected `KORTIX_TOKEN`), and (4) the OpenCode runtime reference mirroring opencode.ai/docs/ for agents, skills, commands, tools (built-in + custom), plugins, MCP servers, permissions, rules (AGENTS.md), and models. Load when the user asks how Kortix works, asks about anything in `kortix.toml` or the `kortix` CLI, asks about anything under `.kortix/opencode/`, or needs to author/edit any OpenCode primitive (agent persona, skill, slash command, custom tool, plugin, MCP server, permission policy, AGENTS.md rule, or model config).
+description: Canonical reference for a Kortix project. Covers (1) the platform overview — repo-native projects, sessions backed by ephemeral branches, the strict boundary between Kortix config (`kortix.toml`) and OpenCode config (`.kortix/opencode/`) — (2) the in-depth `kortix.toml` manifest with every key, every trigger field, the secrets contract, the `[[apps]]` deployment surface, (3) the full `kortix` CLI reference (every command, every flag, the project-scoped token model, what works inside a session sandbox with the pre-injected `KORTIX_TOKEN`), (4) the Kortix change-request (CR) system — the mandatory path for landing any session-branch work on `main`, including the rule that an agent MUST open a CR if it wants its changes merged, and (5) the OpenCode runtime reference mirroring opencode.ai/docs/ for agents, skills, commands, tools (built-in + custom), plugins, MCP servers, permissions, rules (AGENTS.md), and models. Load when the user asks how Kortix works, asks about anything in `kortix.toml` or the `kortix` CLI, asks about anything under `.kortix/opencode/`, asks how to merge / ship / land session work on `main`, asks anything about change requests / CRs / PRs, or needs to author/edit any OpenCode primitive (agent persona, skill, slash command, custom tool, plugin, MCP server, permission policy, AGENTS.md rule, or model config).
 ---
 
 <skill name="kortix-system">
@@ -32,8 +32,13 @@ Load this skill when the user asks any of:
 - "How do I tighten permissions for the build agent?"
 - "What does `AGENTS.md` do in OpenCode?"
 - "Which model should I default to?" / "How do I configure reasoning effort?"
+- "How do I land this work on `main`?" / "Open a PR / change request for me"
+- "How do change requests work in Kortix?" / "What's `kortix cr`?"
 
-If the question is purely about *operating* code (running tests, opening a PR, choosing between `edit` and `write`), you don't need this skill — the agent's own instructions cover that. This skill is the **configuration** reference.
+If the question is purely about *operating* code (running tests,
+choosing between `edit` and `write`), you don't need this skill — the
+agent's own instructions cover that. This skill is the **configuration
++ platform** reference.
 </when-to-load>
 
 <cli>
@@ -73,6 +78,69 @@ intentional. Use `kortix projects info` to inspect **this** project.
 when you need exact syntax.
 </cli>
 
+<change-requests>
+**This is the single most important rule for any agent running in a
+Kortix session: if you want your work to land on `main`, you MUST open
+a change request (CR).**
+
+Sessions run on ephemeral branches (`session-<id>`). The session VM
+dies when the conversation ends; the branch persists in git, but
+**nothing on it reaches `main` automatically.** A session-branch
+commit is invisible to every future session — they all boot from
+`main`. The only sanctioned merge path is a CR — the user reviews
+the diff in the dashboard or CLI and merges it (or asks for changes,
+or closes it).
+
+### The mandate
+
+When you, as an agent, have changes you believe should persist:
+
+1. **Commit on the session branch.** Small, working commits. No
+   force-pushes, no rewriting upstream history.
+2. **Push the branch.**
+   ```sh
+   git push origin HEAD
+   ```
+3. **Open a CR.** From inside the sandbox the CLI reads
+   `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_TOKEN`
+   automatically:
+   ```sh
+   kortix cr open \
+     --title  "Short, imperative summary" \
+     --description "What changed and why. Test plan. Risks."
+   ```
+4. **Surface the CR to the user.** Print the CR number so they can
+   review:
+   ```sh
+   kortix cr ls
+   ```
+5. **Wait.** The user merges via dashboard, CLI (`kortix cr merge
+   <n>`), or asks for changes. *You do not merge your own CRs.*
+
+### Don't bypass this
+
+- **Don't push to `main` directly.** The platform doesn't currently
+  block force-pushes to protected branches in every backend, but
+  doing so violates the user-review contract and surprises the user.
+- **Don't paper over with "I committed it on my branch."** That isn't
+  persistence. The session branch dissolves; only `main` survives.
+- **Don't ask the user to copy-paste files out of the session.** The
+  CR exists precisely so they don't have to.
+
+### How a CR composes with the rest of the system
+
+| Surface       | How it interacts with the CR                                                              |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| Sandbox       | CR is opened from inside the sandbox via `$KORTIX_TOKEN`. Branch tip is the session HEAD. |
+| Dashboard     | Renders the CR — title, description, diff, merge preview, conflict markers.               |
+| CLI           | `kortix cr ls / show / diff / open / merge / close / reopen` — full life-cycle locally.   |
+| `kortix.toml` | Edits to triggers / env / apps land via CR like any other file.                           |
+| Skills        | New `.kortix/opencode/skills/<name>/SKILL.md` files reach future sessions **only** after a CR merges. |
+| Triggers      | Cron / webhook trigger edits reach the scheduler **only** after the CR merges to `main`.  |
+
+Full reference: `.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md`.
+</change-requests>
+
 <contract>
 The boundary between the two halves of the project:
 
@@ -105,6 +173,21 @@ The platform never reads opencode's config dir; OpenCode never reads `kortix.tom
   webhook), the prompt template variables, the secrets contract, the
   `[[apps]]` deployment surface, schema versioning, common gotchas.
   Load this when editing or debugging the manifest.
+</reference>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/change-requests.md">
+  Full Kortix change-request reference. The data model (the
+  `change_requests` table — `cr_id`, `number`, `head_ref`, `base_ref`,
+  `status`, `head_commit_sha`, `base_commit_sha`, `origin_session_id`,
+  `merge_commit_sha`), the lifecycle (`open` → `merged` | `closed`,
+  reopen path), the CLI surface (`kortix cr ls / show / diff / open /
+  merge / close / reopen`) with every flag, the REST API endpoints under
+  `/v1/projects/:projectId/change-requests/...`, the merge-preview /
+  conflict story, the agent mandate ("MUST open a CR for changes to
+  land on `main`"), and common gotchas (force-pushes, merged-CR diffs,
+  origin_session_id orphaning). Load this whenever the user mentions
+  change requests, CRs, merging, landing work, opening a PR-equivalent,
+  or asks how Kortix handles the GitHub-PR gap.
 </reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/opencode/overview.md">
@@ -182,12 +265,18 @@ Things that surprise people:
 
 - **The workspace IS global — sessions are not.** A Kortix project is
   one big GitHub repo everyone shares. Persistent changes happen by
-  committing to the session branch and merging back to `main`. Every
-  session — even thousands running concurrently — gets its own isolated
-  sandbox + ephemeral branch. Branches can `git pull` from `main` to
-  pick up the latest config; merging back to `main` is how anything
-  becomes persistent. (PR-creation isn't GitHub-native yet; today
-  branches land on the repo and the user PR/merges externally.)
+  committing to the session branch and **opening a change request**
+  that merges back to `main`. Every session — even thousands running
+  concurrently — gets its own isolated sandbox + ephemeral branch.
+  Branches can `git pull` from `main` to pick up the latest. Merging
+  back to `main` is how anything becomes persistent, and the *only*
+  sanctioned path is `kortix cr open` → user review → merge.
+- **Merging to `main` is a CR — there is no other path.** Direct
+  pushes to `main` from inside the sandbox skip the user-review
+  contract and surprise the user. If an agent has changes worth
+  keeping, the next move is *always* `kortix cr open`, never a force
+  push, never asking the user to copy files out. See the
+  `<change-requests>` section above.
 - **Triggers live in `kortix.toml`, not as files.** Old Kortix shipped
   triggers under `.opencode/triggers/<slug>.md` — that's gone.
   Centralized in the manifest now, parsed as `[[triggers]]`.
