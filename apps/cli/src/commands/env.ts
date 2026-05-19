@@ -41,11 +41,13 @@ export async function runEnv(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   let projectFlag: string | undefined;
+  let hostFlag: string | undefined;
   let outFlag: string | undefined;
   let fromFlag: string | undefined;
   let force = false;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
+    hostFlag = takeFlagValue(rest, ['--host']);
     outFlag = takeFlagValue(rest, ['--out', '-o']);
     fromFlag = takeFlagValue(rest, ['--from', '-f']);
     force = takeFlagBool(rest, ['--force']);
@@ -53,20 +55,23 @@ export async function runEnv(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
+  const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'pull':
-      return envPull(outFlag, force, projectFlag);
+      return envPull(outFlag, force, ctxOpts);
     case 'push':
-      return envPush(fromFlag, projectFlag);
+      return envPush(fromFlag, ctxOpts);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
 }
 
-async function envPull(outArg: string | undefined, force: boolean, projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+type CtxOpts = { projectArg?: string; hostArg?: string };
+
+async function envPull(outArg: string | undefined, force: boolean, opts: CtxOpts): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectSecretsResponse;
@@ -124,12 +129,12 @@ async function envPull(outArg: string | undefined, force: boolean, projectArg?: 
   return 0;
 }
 
-async function envPush(fromArg: string | undefined, projectArg?: string): Promise<number> {
+async function envPush(fromArg: string | undefined, opts: CtxOpts): Promise<number> {
   if (!fromArg) {
     process.stderr.write(`${status.err('Pass --from <dotenv-path>.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   const srcPath = resolve(process.cwd(), fromArg);

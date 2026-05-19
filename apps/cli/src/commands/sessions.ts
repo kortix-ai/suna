@@ -38,38 +38,43 @@ export async function runSessions(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   let projectFlag: string | undefined;
   let promptFlag: string | undefined;
+  let hostFlag: string | undefined;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
+    hostFlag = takeFlagValue(rest, ['--host']);
     promptFlag = takeFlagValue(rest, ['--prompt', '-p']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
+  const ctxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'ls':
-      return sessionsLs(projectFlag);
+      return sessionsLs(ctxOpts);
     case 'new':
     case 'create':
-      return sessionsNew(promptFlag, projectFlag);
+      return sessionsNew(promptFlag, ctxOpts);
     case 'info':
     case 'show':
-      return sessionsInfo(rest[0], projectFlag);
+      return sessionsInfo(rest[0], ctxOpts);
     case 'restart':
-      return sessionsRestart(rest[0], projectFlag);
+      return sessionsRestart(rest[0], ctxOpts);
     case 'rm':
     case 'delete':
-      return sessionsRm(rest[0], projectFlag);
+      return sessionsRm(rest[0], ctxOpts);
     case 'open':
-      return sessionsOpen(rest[0], projectFlag);
+      return sessionsOpen(rest[0], ctxOpts);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
 }
 
-async function sessionsLs(projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+type CtxOpts = { projectArg?: string; hostArg?: string };
+
+async function sessionsLs(opts: CtxOpts): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let sessions: ProjectSession[];
@@ -103,8 +108,8 @@ async function sessionsLs(projectArg?: string): Promise<number> {
   return 0;
 }
 
-async function sessionsNew(prompt: string | undefined, projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+async function sessionsNew(prompt: string | undefined, opts: CtxOpts): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   const body: Record<string, unknown> = {};
@@ -131,12 +136,12 @@ async function sessionsNew(prompt: string | undefined, projectArg?: string): Pro
   return 0;
 }
 
-async function sessionsInfo(sessionId: string | undefined, projectArg?: string): Promise<number> {
+async function sessionsInfo(sessionId: string | undefined, opts: CtxOpts): Promise<number> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let s: ProjectSession;
@@ -167,12 +172,12 @@ async function sessionsInfo(sessionId: string | undefined, projectArg?: string):
   return 0;
 }
 
-async function sessionsRestart(sessionId: string | undefined, projectArg?: string): Promise<number> {
+async function sessionsRestart(sessionId: string | undefined, opts: CtxOpts): Promise<number> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   try {
@@ -186,12 +191,12 @@ async function sessionsRestart(sessionId: string | undefined, projectArg?: strin
   return 0;
 }
 
-async function sessionsRm(sessionId: string | undefined, projectArg?: string): Promise<number> {
+async function sessionsRm(sessionId: string | undefined, opts: CtxOpts): Promise<number> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   try {
@@ -203,12 +208,12 @@ async function sessionsRm(sessionId: string | undefined, projectArg?: string): P
   return 0;
 }
 
-async function sessionsOpen(sessionId: string | undefined, projectArg?: string): Promise<number> {
+async function sessionsOpen(sessionId: string | undefined, opts: CtxOpts): Promise<number> {
   if (!sessionId) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
   const auth = loadAuth();
   if (!auth) return 1;

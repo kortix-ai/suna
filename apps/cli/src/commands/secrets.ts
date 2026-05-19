@@ -37,30 +37,35 @@ export async function runSecrets(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   let projectFlag: string | undefined;
+  let hostFlag: string | undefined;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
+    hostFlag = takeFlagValue(rest, ['--host']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
+  const ctxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'ls':
-      return secretsLs(projectFlag);
+      return secretsLs(ctxOpts);
     case 'set':
-      return secretsSet(rest, projectFlag);
+      return secretsSet(rest, ctxOpts);
     case 'unset':
     case 'rm':
     case 'remove':
-      return secretsUnset(rest, projectFlag);
+      return secretsUnset(rest, ctxOpts);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
 }
 
-async function secretsLs(projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+type CtxOpts = { projectArg?: string; hostArg?: string };
+
+async function secretsLs(opts: CtxOpts): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectSecretsResponse;
@@ -136,8 +141,8 @@ async function secretsLs(projectArg?: string): Promise<number> {
   return 0;
 }
 
-async function secretsSet(args: string[], projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
   if (args.length === 0) {
     process.stderr.write(`${status.err('Pass at least one NAME=VALUE pair.')}\n`);
@@ -183,8 +188,8 @@ async function secretsSet(args: string[], projectArg?: string): Promise<number> 
   return okCount === pairs.length ? 0 : 1;
 }
 
-async function secretsUnset(names: string[], projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
   if (names.length === 0) {
     process.stderr.write(`${status.err('Pass at least one secret name to unset.')}\n`);

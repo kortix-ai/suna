@@ -1,7 +1,13 @@
 import { spawn } from 'node:child_process';
 import { hostname } from 'node:os';
 
-import { DEFAULT_API_BASE, authFileLocation, loadAuth, saveAuth } from '../api/auth.ts';
+import { DEFAULT_API_BASE, authFileLocation, loadAuthForHost, saveAuthForHost } from '../api/auth.ts';
+import {
+  DEFAULT_HOST_NAME,
+  activeHostName,
+  getHost,
+  validateHostName,
+} from '../api/config.ts';
 import { ApiError, createApiClient } from '../api/client.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
 import { C, status } from '../style.ts';
@@ -9,27 +15,30 @@ import type { MeResponse } from '../api/types.ts';
 
 const HELP = `Usage: kortix login [options]
 
-Authenticate the CLI against the Kortix cloud.
-
-By default this opens your browser to the Kortix dashboard, where one
-click authorizes this CLI and a token is sent back to a temporary
-local callback. No copy-paste.
+Authenticate the CLI against the Kortix cloud. Browser opens to the
+dashboard, one click authorizes this CLI, the token is sent back to a
+local callback — no copy/paste.
 
 Options:
+  --host <name>     Save under a specific named host (default: active or
+                    "${DEFAULT_HOST_NAME}"). Use this to add a second
+                    instance: \`kortix login --host local --api …\`.
+  --api <url>       API base URL the host points at (default: stored
+                    host URL or ${DEFAULT_API_BASE}).
   --token <pat>     Skip the browser flow and authenticate directly
                     with a token. Useful for CI or headless boxes.
-  --api <url>       Override the API base URL (default: ${DEFAULT_API_BASE}).
   -h, --help        Show this help.
 
 Examples:
   kortix login
+  kortix login --host local --api http://localhost:8008
   kortix login --token kortix_pat_...
-  kortix login --api http://localhost:8000
 `;
 
 interface LoginFlags {
   token?: string;
   api?: string;
+  host?: string;
   help: boolean;
 }
 
@@ -47,6 +56,11 @@ function parseFlags(argv: string[]): LoginFlags {
       const next = argv[i + 1];
       if (!next) throw new Error('--api requires a value');
       f.api = next;
+      i += 1;
+    } else if (a === '--host') {
+      const next = argv[i + 1];
+      if (!next) throw new Error('--host requires a value');
+      f.host = next;
       i += 1;
     } else {
       throw new Error(`unknown option "${a}"`);
@@ -68,14 +82,30 @@ export async function runLogin(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const apiBase = flags.api ?? process.env.KORTIX_API_URL ?? DEFAULT_API_BASE;
+  // Resolve which host we're logging into.
+  let hostName = flags.host ?? activeHostName() ?? DEFAULT_HOST_NAME;
+  try {
+    validateHostName(hostName);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
 
-  const existing = loadAuth();
-  if (existing?.token && !flags.token) {
+  // Pick the API base URL with this priority:
+  //   --api flag → existing host's URL → KORTIX_API_URL env → default
+  const existing = getHost(hostName);
+  const apiBase =
+    flags.api ?? existing?.url ?? process.env.KORTIX_API_URL ?? DEFAULT_API_BASE;
+
+  // If this host already has a working token + caller didn't pass
+  // --token or --api, treat that as a no-op login.
+  if (existing?.token && !flags.token && !flags.api) {
     process.stdout.write(
-      `${status.info(`Already logged in as ${C.bold}${existing.user_email || existing.user_id}${C.reset}${C.dim} (token at ${authFileLocation()})${C.reset}`)}\n`,
+      `${status.info(`Already logged in to host ${C.bold}${hostName}${C.reset} as ${C.bold}${existing.user_email || existing.user_id}${C.reset}`)}\n`,
     );
-    process.stdout.write(`${C.dim}Run \`kortix logout\` first to switch accounts.${C.reset}\n`);
+    process.stdout.write(
+      `${C.dim}  Run \`kortix logout --host ${hostName}\` first to switch accounts.${C.reset}\n`,
+    );
     return 0;
   }
 
@@ -89,7 +119,7 @@ export async function runLogin(argv: string[]): Promise<number> {
     return 1;
   }
 
-  // Verify the token + capture identity for the auth file.
+  // Verify the token + capture identity for the host record.
   const client = createApiClient({ apiBase, token });
   let me: MeResponse;
   try {
@@ -104,16 +134,22 @@ export async function runLogin(argv: string[]): Promise<number> {
   }
 
   const primary = me.accounts[0];
-  saveAuth({
-    api_base: apiBase,
-    token,
-    user_id: me.user_id,
-    user_email: me.email,
-    account_id: primary?.account_id ?? '',
-    logged_in_at: new Date().toISOString(),
-  });
+  saveAuthForHost(
+    hostName,
+    {
+      api_base: apiBase,
+      token,
+      user_id: me.user_id,
+      user_email: me.email,
+      account_id: primary?.account_id ?? '',
+      logged_in_at: new Date().toISOString(),
+    },
+    /* makeActive */ true,
+  );
 
-  process.stdout.write(`\n${status.ok(`Logged in as ${C.bold}${me.email || me.user_id}${C.reset}`)}\n`);
+  process.stdout.write(
+    `\n${status.ok(`Logged in to host ${C.bold}${hostName}${C.reset} as ${C.bold}${me.email || me.user_id}${C.reset}`)}\n`,
+  );
   if (primary) {
     process.stdout.write(
       `${C.dim}  Active account: ${C.reset}${primary.name} ${C.faded}(${primary.slug})${C.reset}\n`,
@@ -210,3 +246,6 @@ function openInBrowser(url: string): void {
     /* user can copy-paste the URL from stdout */
   }
 }
+
+// Silence unused-import detection if loadAuthForHost ever becomes useful here.
+void loadAuthForHost;

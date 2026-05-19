@@ -1,8 +1,20 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import {
+  DEFAULT_API_BASE,
+  activeHost,
+  activeHostName,
+  configFilePath,
+  getHost,
+  upsertHost,
+  removeHost,
+  type Host,
+} from './config.ts';
 
-export const DEFAULT_API_BASE = 'https://api.kortix.com';
+// Backward-compatible auth surface — every existing command imports
+// `Auth`, `loadAuth`, `saveAuth`, `clearAuth`, `authFileLocation` from
+// here. Internally we now delegate to the multi-host config store, but
+// the shape callers see is unchanged.
+
+export { DEFAULT_API_BASE };
 
 export interface Auth {
   /** Base URL of the Kortix API, e.g. https://api.kortix.com */
@@ -18,73 +30,68 @@ export interface Auth {
   logged_in_at: string;
 }
 
-function authFilePath(): string {
-  if (process.env.KORTIX_AUTH_FILE) return process.env.KORTIX_AUTH_FILE;
-  return resolve(homedir(), '.config', 'kortix', 'auth.json');
+function hostToAuth(host: Host): Auth {
+  return {
+    api_base: host.url,
+    token: host.token,
+    user_id: host.user_id,
+    user_email: host.user_email,
+    account_id: host.account_id,
+    logged_in_at: host.logged_in_at,
+  };
 }
 
-/** Read the auth file, applying KORTIX_CLI_TOKEN env override if present.
- *
- * Note: we intentionally use `KORTIX_CLI_TOKEN`, not the generic
- * `KORTIX_TOKEN`. The latter is also injected into Kortix session
- * sandboxes (as a `kortix_sb_...` key) — if a developer has that
- * value exported in their shell, we don't want this CLI to pick it
- * up by accident, because it's a sandbox key, not a CLI PAT. */
+function authToHost(auth: Auth): Host {
+  return {
+    url: auth.api_base,
+    token: auth.token,
+    user_id: auth.user_id,
+    user_email: auth.user_email,
+    account_id: auth.account_id,
+    logged_in_at: auth.logged_in_at,
+  };
+}
+
+/** Load the active host's auth. Honors KORTIX_CLI_TOKEN env override. */
 export function loadAuth(): Auth | null {
-  const envToken = process.env.KORTIX_CLI_TOKEN;
-  if (envToken) {
-    return {
-      api_base: process.env.KORTIX_API_URL ?? DEFAULT_API_BASE,
-      token: envToken,
-      user_id: '',
-      user_email: '',
-      account_id: '',
-      logged_in_at: new Date().toISOString(),
-    };
-  }
-  const path = authFilePath();
-  if (!existsSync(path)) return null;
-  try {
-    const raw = readFileSync(path, 'utf8');
-    const parsed = JSON.parse(raw) as Partial<Auth>;
-    if (typeof parsed.token !== 'string' || !parsed.token) return null;
-    return {
-      api_base: parsed.api_base ?? DEFAULT_API_BASE,
-      token: parsed.token,
-      user_id: parsed.user_id ?? '',
-      user_email: parsed.user_email ?? '',
-      account_id: parsed.account_id ?? '',
-      logged_in_at: parsed.logged_in_at ?? new Date().toISOString(),
-    };
-  } catch {
-    return null;
-  }
+  const host = activeHost();
+  return host ? hostToAuth(host) : null;
 }
 
-/** Persist auth at ~/.config/kortix/auth.json with mode 0600. */
+/** Load a specific named host's auth (for --host overrides). */
+export function loadAuthForHost(name: string): Auth | null {
+  const host = getHost(name);
+  return host ? hostToAuth(host) : null;
+}
+
+/** Persist the active host. Saves under the active host name, or under
+ * `default` if no hosts are configured yet. Marks the touched host
+ * active. */
 export function saveAuth(auth: Auth): void {
-  const path = authFilePath();
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(auth, null, 2) + '\n', 'utf8');
-  try {
-    chmodSync(path, 0o600);
-  } catch {
-    /* best-effort on Windows */
-  }
+  const targetName = activeHostName() ?? 'default';
+  upsertHost(targetName, authToHost(auth), true);
 }
 
-/** Remove the auth file. Idempotent. */
-export function clearAuth(): void {
-  const path = authFilePath();
-  if (existsSync(path)) rmSync(path, { force: true });
+/** Persist a named host explicitly. */
+export function saveAuthForHost(name: string, auth: Auth, makeActive: boolean): void {
+  upsertHost(name, authToHost(auth), makeActive);
 }
 
+/** Remove the active host (or a named one). Returns true if anything was removed. */
+export function clearAuth(name?: string): boolean {
+  const target = name ?? activeHostName();
+  if (!target) return false;
+  return removeHost(target).removed;
+}
+
+/** Display path of the config file backing this CLI's auth state. */
 export function authFileLocation(): string {
-  return authFilePath();
+  return configFilePath();
 }
 
+/** Resolve the API base URL the CLI should use for "no auth yet" calls. */
 export function resolveApiBase(): string {
   if (process.env.KORTIX_API_URL) return process.env.KORTIX_API_URL;
-  const auth = loadAuth();
-  return auth?.api_base ?? DEFAULT_API_BASE;
+  const host = activeHost();
+  return host?.url ?? DEFAULT_API_BASE;
 }

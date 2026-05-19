@@ -37,33 +37,38 @@ export async function runTriggers(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   let projectFlag: string | undefined;
+  let hostFlag: string | undefined;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
+    hostFlag = takeFlagValue(rest, ['--host']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
+  const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'ls':
-      return triggersLs(projectFlag);
+      return triggersLs(ctxOpts);
     case 'fire':
-      return triggersFire(rest[0], projectFlag);
+      return triggersFire(rest[0], ctxOpts);
     case 'enable':
-      return triggersToggle(rest[0], true, projectFlag);
+      return triggersToggle(rest[0], true, ctxOpts);
     case 'disable':
-      return triggersToggle(rest[0], false, projectFlag);
+      return triggersToggle(rest[0], false, ctxOpts);
     case 'info':
     case 'show':
-      return triggersInfo(rest[0], projectFlag);
+      return triggersInfo(rest[0], ctxOpts);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
 }
 
-async function triggersLs(projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+type CtxOpts = { projectArg?: string; hostArg?: string };
+
+async function triggersLs(opts: CtxOpts): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectTriggersResponse;
@@ -108,12 +113,12 @@ async function triggersLs(projectArg?: string): Promise<number> {
   return 0;
 }
 
-async function triggersFire(slug: string | undefined, projectArg?: string): Promise<number> {
+async function triggersFire(slug: string | undefined, opts: CtxOpts): Promise<number> {
   if (!slug) {
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: TriggerFireResponse;
@@ -138,13 +143,13 @@ async function triggersFire(slug: string | undefined, projectArg?: string): Prom
 async function triggersToggle(
   slug: string | undefined,
   enabled: boolean,
-  projectArg?: string,
+  opts: CtxOpts,
 ): Promise<number> {
   if (!slug) {
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   try {
@@ -160,12 +165,12 @@ async function triggersToggle(
   return 0;
 }
 
-async function triggersInfo(slug: string | undefined, projectArg?: string): Promise<number> {
+async function triggersInfo(slug: string | undefined, opts: CtxOpts): Promise<number> {
   if (!slug) {
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ProjectTriggersResponse;

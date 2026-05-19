@@ -2,6 +2,7 @@
 import { runCr } from './commands/cr.ts';
 import { runCreate } from './commands/create.ts';
 import { runEnv } from './commands/env.ts';
+import { runHosts } from './commands/hosts.ts';
 import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
@@ -28,6 +29,7 @@ const COMMANDS: readonly Command[] = [
   { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
   { name: 'logout', blurb: 'Remove the stored auth token' },
   { name: 'whoami', blurb: 'Show the currently authenticated user' },
+  { name: 'hosts', args: '<subcommand>', blurb: 'Manage + switch Kortix API hosts' },
   { name: 'projects', args: '<subcommand>', blurb: 'List, link, open Kortix cloud projects' },
   { name: 'secrets', args: '<subcommand>', blurb: 'Manage project secrets (project-scoped)' },
   { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
@@ -94,6 +96,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'projects') {
     return runProjects(argv.slice(1));
+  }
+  if (argv[0] === 'hosts') {
+    return runHosts(argv.slice(1));
   }
   if (argv[0] === 'secrets') {
     return runSecrets(argv.slice(1));

@@ -7,7 +7,7 @@ import {
   resolveProjectId,
   saveLink,
 } from '../project-link.ts';
-import { selectFrom } from '../prompts.ts';
+import { selectFromList } from '../tui-select.ts';
 import { C, pad, status } from '../style.ts';
 import type { ProjectSummary } from '../api/types.ts';
 
@@ -144,14 +144,19 @@ async function projectsLink(arg?: string): Promise<number> {
       process.stderr.write(`${status.err('No projects in this account to link to.')}\n`);
       return 1;
     }
-    const choices = list.map((p) => p.project_id);
-    process.stdout.write(`\n${C.bold}Pick a project to link to ${process.cwd()}${C.reset}\n`);
-    for (const p of list) {
-      process.stdout.write(`  ${C.dim}${p.project_id}${C.reset}  ${p.name}\n`);
+    const picked = await selectFromList<ProjectSummary>({
+      title: `Pick a project to link to ${process.cwd()}`,
+      items: list.map((p) => ({
+        value: p,
+        label: p.name,
+        sublabel: p.project_id,
+      })),
+    });
+    if (!picked) {
+      process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+      return 0;
     }
-    process.stdout.write('\n');
-    const picked = await selectFrom('project_id', choices, choices[0]);
-    target = list.find((p) => p.project_id === picked) ?? null;
+    target = picked;
   }
 
   if (!target) {

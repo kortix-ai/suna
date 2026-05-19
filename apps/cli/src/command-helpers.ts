@@ -1,23 +1,44 @@
-import { loadAuth } from './api/auth.ts';
+import { loadAuth, loadAuthForHost } from './api/auth.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { resolveProjectId } from './project-link.ts';
 import { C, status } from './style.ts';
+
+interface ProjectContextOpts {
+  /** Override project via --project flag or KORTIX_PROJECT_ID env. */
+  projectArg?: string;
+  /** Override active host for this invocation via --host flag. */
+  hostArg?: string;
+}
 
 /**
  * Common setup for any project-scoped command: validate auth, resolve a
  * project id, build an API client. Prints a friendly error and returns
  * null if either piece is missing.
+ *
+ * Backward-compat: callers that pass a string get the legacy
+ * `(projectArg)` shape; callers that need --host pass an object.
  */
-export function resolveProjectContext(projectArg?: string): {
-  client: ApiClient;
-  projectId: string;
-} | null {
-  const auth = loadAuth();
+export function resolveProjectContext(
+  optsOrProjectArg?: ProjectContextOpts | string,
+): { client: ApiClient; projectId: string } | null {
+  const opts: ProjectContextOpts =
+    typeof optsOrProjectArg === 'string'
+      ? { projectArg: optsOrProjectArg }
+      : optsOrProjectArg ?? {};
+
+  const auth = opts.hostArg ? loadAuthForHost(opts.hostArg) : loadAuth();
   if (!auth?.token) {
-    process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);
+    if (opts.hostArg) {
+      process.stderr.write(
+        `${status.err(`Host "${opts.hostArg}" is not logged in.`)} Run ` +
+          `${C.cyan}kortix login --host ${opts.hostArg}${C.reset}.\n`,
+      );
+    } else {
+      process.stderr.write(`${status.err('Not logged in. Run `kortix login`.')}\n`);
+    }
     return null;
   }
-  const projectId = resolveProjectId(projectArg);
+  const projectId = resolveProjectId(opts.projectArg);
   if (!projectId) {
     process.stderr.write(
       `${status.err('No project linked.')} Run \`kortix projects link\` ` +
