@@ -9,7 +9,7 @@ export interface SyncResult {
   inserted: number;
   updated: number;
   removed: number;
-  skipped: { slug: string; reason: string }[];
+  skipped: { platform: string; reason: string }[];
 }
 
 export async function syncProjectChannelBindings(project: Project): Promise<SyncResult> {
@@ -25,14 +25,10 @@ export async function syncProjectChannelBindings(project: Project): Promise<Sync
   const platforms = new Set<ChannelPlatform>(specs.map((s) => s.platform));
   const workspaces = await loadWorkspaceIds(project.projectId, platforms);
 
-  const idBound = specs.filter((spec) => {
-    if (!spec.channelId) {
-      result.skipped.push({ slug: spec.slug, reason: 'channel_name not yet resolved' });
-      return false;
-    }
+  const ready = specs.filter((spec) => {
     if (!workspaces.has(spec.platform)) {
       result.skipped.push({
-        slug: spec.slug,
+        platform: spec.platform,
         reason: `${spec.platform} is not connected on this project — open Channels in the sidebar`,
       });
       return false;
@@ -40,7 +36,7 @@ export async function syncProjectChannelBindings(project: Project): Promise<Sync
     return true;
   });
 
-  if (idBound.length === 0) {
+  if (ready.length === 0) {
     const removed = await db
       .delete(chatChannelBindings)
       .where(eq(chatChannelBindings.projectId, project.projectId))
@@ -49,39 +45,30 @@ export async function syncProjectChannelBindings(project: Project): Promise<Sync
     return result;
   }
 
-  const survivingSlugs = idBound.map((s) => s.slug);
+  const survivingPlatforms = ready.map((s) => s.platform);
   const removed = await db
     .delete(chatChannelBindings)
     .where(
       and(
         eq(chatChannelBindings.projectId, project.projectId),
-        notInArray(chatChannelBindings.slug, survivingSlugs),
+        notInArray(chatChannelBindings.platform, survivingPlatforms),
       ),
     )
     .returning({ id: chatChannelBindings.bindingId });
   result.removed = removed.length;
 
-  for (const spec of idBound) {
+  for (const spec of ready) {
     const workspaceId = workspaces.get(spec.platform)!;
     const ret = await db
       .insert(chatChannelBindings)
       .values({
         projectId: project.projectId,
-        slug: spec.slug,
         platform: spec.platform,
         workspaceId,
-        channelId: spec.channelId!,
-        channelName: spec.channelName,
       })
       .onConflictDoUpdate({
-        target: [chatChannelBindings.projectId, chatChannelBindings.slug],
-        set: {
-          platform: spec.platform,
-          workspaceId,
-          channelId: spec.channelId!,
-          channelName: spec.channelName,
-          updatedAt: sql`now()`,
-        },
+        target: [chatChannelBindings.projectId, chatChannelBindings.platform],
+        set: { workspaceId, updatedAt: sql`now()` },
       })
       .returning({
         id: chatChannelBindings.bindingId,

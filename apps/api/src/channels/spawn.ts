@@ -14,7 +14,6 @@ interface SpawnInput {
   authorUserId: string | null;
   messageText: string;
   event: ChannelEvent;
-  slashCommand?: { name: string; args: string };
 }
 
 export interface SpawnResult {
@@ -28,15 +27,17 @@ export async function spawnChannelSession(input: SpawnInput): Promise<SpawnResul
   const { project, spec, workspaceId, event } = input;
 
   if (!spec.events.includes(event)) {
-    return { status: 'skipped', reason: `event "${event}" not enabled for channel "${spec.slug}"` };
+    return {
+      status: 'skipped',
+      reason: `event "${event}" not enabled for ${spec.platform}`,
+    };
   }
 
-  const renderedPrompt = renderPromptPrefix(spec.promptPrefix, {
+  const renderedPrompt = renderPromptPrefix(spec.promptPrefix ?? '', {
     project,
     spec,
     event,
     messageText: input.messageText,
-    slashCommand: input.slashCommand,
   });
 
   const actor = await resolveGitTriggerActor(project.accountId);
@@ -49,23 +50,20 @@ export async function spawnChannelSession(input: SpawnInput): Promise<SpawnResul
     userId: actor,
     enforceAccountCap: false,
     body: {
-      agent_name: spec.agent,
+      agent_name: spec.agent ?? undefined,
       initial_prompt: renderedPrompt,
       metadata: {
         channel_source: spec.platform,
-        channel_slug: spec.slug,
         channel_event: event,
         channel_thread_id: input.threadId,
       },
     },
     metadata: {
       channel_source: spec.platform,
-      channel_slug: spec.slug,
       channel_event: event,
       channel_workspace_id: workspaceId,
       channel_thread_id: input.threadId,
       channel_user_id: input.authorUserId,
-      ...(input.slashCommand ? { channel_slash: input.slashCommand.name } : {}),
     },
   });
 
@@ -87,7 +85,6 @@ export async function spawnChannelSession(input: SpawnInput): Promise<SpawnResul
       threadId: input.threadId,
       projectId: project.projectId,
       sessionId,
-      channelSlug: spec.slug,
       openedBy: input.authorUserId,
       lastMessageAt: new Date(),
     })

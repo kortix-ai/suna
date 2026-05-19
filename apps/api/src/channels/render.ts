@@ -6,17 +6,14 @@ interface RenderInput {
   spec: ChannelSpec;
   event: ChannelEvent;
   messageText: string;
-  slashCommand?: { name: string; args: string };
 }
 
 export function renderPromptPrefix(template: string, input: RenderInput): string {
   const payload: Record<string, unknown> = {
     project: { id: input.project.projectId, name: input.project.name },
-    channel: { slug: input.spec.slug, name: input.spec.name, platform: input.spec.platform },
+    channel: { platform: input.spec.platform },
     message: { text: input.messageText },
     event: input.event,
-    args: input.slashCommand?.args ?? '',
-    command: input.slashCommand?.name ?? '',
   };
   return template.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, token: string) => {
     const [root, ...path] = token.split('.');

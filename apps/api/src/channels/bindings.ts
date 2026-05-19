@@ -9,12 +9,15 @@ export interface ResolvedChannel {
   spec: ChannelSpec;
 }
 
+/**
+ * Map an incoming Slack event (workspace_id from the event payload) to the
+ * project that owns this Slack install. One project per (platform, workspace_id)
+ * is the contract enforced by chat_channel_bindings.
+ */
 export async function resolveChannel(
   platform: ChannelPlatform,
   workspaceId: string,
-  channelId: string,
 ): Promise<ResolvedChannel | null> {
-  const rawChannelId = stripAdapterPrefix(platform, channelId);
   const [binding] = await db
     .select()
     .from(chatChannelBindings)
@@ -22,7 +25,6 @@ export async function resolveChannel(
       and(
         eq(chatChannelBindings.platform, platform),
         eq(chatChannelBindings.workspaceId, workspaceId),
-        eq(chatChannelBindings.channelId, rawChannelId),
       ),
     )
     .limit(1);
@@ -41,15 +43,8 @@ export async function resolveChannel(
     defaultBranch: project.defaultBranch,
     manifestPath: project.manifestPath,
   });
-  const spec = specs.find((s) => s.slug === binding.slug);
+  const spec = specs.find((s) => s.platform === platform);
   if (!spec || !spec.enabled) return null;
-  if (spec.platform !== platform) return null;
-  if (spec.channelId && spec.channelId !== rawChannelId) return null;
 
   return { project, spec };
-}
-
-function stripAdapterPrefix(platform: ChannelPlatform, value: string): string {
-  const prefix = `${platform}:`;
-  return value.startsWith(prefix) ? value.slice(prefix.length) : value;
 }

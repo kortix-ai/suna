@@ -8,7 +8,7 @@ import { workspaceIdFromRaw } from '../workspace';
 export function registerMentionHandler(bot: Chat) {
   bot.onNewMention(async (thread, message) => {
     const workspaceId = workspaceIdFromRaw(message.raw);
-    const resolved = await resolveChannel('slack', workspaceId, thread.channelId);
+    const resolved = await resolveChannel('slack', workspaceId);
     if (!resolved) return;
 
     await thread.subscribe();

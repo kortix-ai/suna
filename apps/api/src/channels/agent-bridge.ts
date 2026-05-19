@@ -95,10 +95,10 @@ async function sendPrompt(
   ctx: AgentContext,
   opencodeSessionId: string,
   text: string,
-  agent: string,
+  agent: string | null,
 ): Promise<void> {
   const body: Record<string, unknown> = { parts: [{ type: 'text', text }] };
-  if (agent && agent !== 'default') body.agent = agent;
+  if (agent) body.agent = agent;
   const res = await callSandbox(
     ctx,
     'POST',
@@ -116,7 +116,7 @@ export async function* streamAgentResponse(
   sessionId: string,
   accountId: string,
   userText: string,
-  agent: string,
+  agent: string | null,
 ): AsyncIterable<string> {
   const ctx = await loadAgentContext(sessionId, accountId);
   if (!ctx) {

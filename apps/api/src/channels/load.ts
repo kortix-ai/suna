@@ -10,7 +10,7 @@ export async function loadProjectChannels(project: GitBackedProject): Promise<Lo
     return {
       specs: [],
       errors: [{
-        slug: '(manifest)',
+        platform: '(manifest)',
         path: MANIFEST_FILENAME,
         error: (e as Error).message || 'Failed to read manifest',
       }],
