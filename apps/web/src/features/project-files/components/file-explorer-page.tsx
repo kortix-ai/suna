@@ -46,6 +46,10 @@ import { DriveListView } from './drive-list-view';
 import { FilePreviewModal } from './file-preview-modal';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { CheckpointsPanel } from './checkpoints-panel';
+import { ChangeRequestsPanel } from './change-requests-panel';
+import { OpenChangeRequestDialog } from './open-change-request-dialog';
+import { ChangeRequestDetailDialog } from './change-request-detail-dialog';
+import { useChangeRequests } from '../hooks/use-change-requests';
 import { DRAG_MIME } from './file-tree-item';
 
 /**
@@ -449,7 +453,24 @@ export function FileExplorerPage() {
   const [historyPopoverPath, setHistoryPopoverPath] = useState<string | null>(null);
 
   // Checkpoints (whole-repo commit history) side panel
-  const [checkpointsOpen, setCheckpointsOpen] = useState(false);
+  // Single state for the right-edge drawer — only one can be open at a time.
+  // Two open at once would overlap; mutual exclusion keeps each fully visible.
+  type RightPanel = 'checkpoints' | 'change-requests' | null;
+  const [rightPanel, setRightPanel] = useState<RightPanel>(null);
+  const [openCrDialogShown, setOpenCrDialogShown] = useState(false);
+  const [createdCrId, setCreatedCrId] = useState<string | null>(null);
+  const activeRefForCrs = projectCtx?.ref ?? '';
+  const defaultBranchForCrs = projectCtx?.defaultBranch ?? '';
+  const canOpenChangeRequest = Boolean(
+    activeRefForCrs && defaultBranchForCrs && activeRefForCrs !== defaultBranchForCrs,
+  );
+  const toggleRightPanel = (panel: RightPanel) =>
+    setRightPanel((current) => (current === panel ? null : panel));
+
+  // Always-on poll of the open-CR count so the toolbar pill can flag pending
+  // reviews even when the drawer is closed. Cheap query (just a row count).
+  const openCrCountQuery = useChangeRequests('open', { refetchInterval: 10_000 });
+  const openCrCount = openCrCountQuery.data?.change_requests.length ?? 0;
 
   // ── Page-level drag & drop (external files only) ─────────────
   const isExternalFileDrag = useCallback((e: React.DragEvent) => {
@@ -509,8 +530,16 @@ export function FileExplorerPage() {
         readOnly
         showVersionSelector
         checkpointsToggle={{
-          open: checkpointsOpen,
-          onToggle: () => setCheckpointsOpen((v) => !v),
+          open: rightPanel === 'checkpoints',
+          onToggle: () => toggleRightPanel('checkpoints'),
+        }}
+        changeRequestsToggle={{
+          open: rightPanel === 'change-requests',
+          onToggle: () => toggleRightPanel('change-requests'),
+          openCount: openCrCount,
+        }}
+        openChangeRequestAction={{
+          onClick: () => setOpenCrDialogShown(true),
         }}
         onUpload={handleUpload}
         onNewFolder={() => { setNewFolderName('New Folder'); setIsCreatingFolder(true); }}
@@ -672,10 +701,34 @@ export function FileExplorerPage() {
         </div>
 
         <CheckpointsPanel
-          open={checkpointsOpen}
-          onClose={() => setCheckpointsOpen(false)}
+          open={rightPanel === 'checkpoints'}
+          onClose={() => setRightPanel(null)}
+        />
+
+        <ChangeRequestsPanel
+          open={rightPanel === 'change-requests'}
+          onClose={() => setRightPanel(null)}
         />
       </div>
+
+      {/* Open-CR dialog (toolbar shortcut). The drawer renders its own copy
+          for the "+ New" button — both live in the same query cache so opening
+          a CR from either path lights up the panel. */}
+      <OpenChangeRequestDialog
+        open={openCrDialogShown}
+        onOpenChange={setOpenCrDialogShown}
+        initialHeadRef={canOpenChangeRequest ? activeRefForCrs : undefined}
+        onCreated={(crId) => {
+          setRightPanel('change-requests');
+          setCreatedCrId(crId);
+        }}
+      />
+
+      {/* Auto-open the detail dialog after a CR is created. */}
+      <ChangeRequestDetailDialog
+        crId={createdCrId}
+        onClose={() => setCreatedCrId(null)}
+      />
 
       {/* Upload progress indicator */}
       {uploadingCount > 0 && (

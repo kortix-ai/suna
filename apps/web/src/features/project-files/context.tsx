@@ -16,6 +16,8 @@ export interface ProjectFilesContextValue {
   projectId: string;
   /** Git ref (branch / tag / sha) — usually the project's default_branch */
   ref: string;
+  /** Project default branch (so CR controls know when `ref` is a non-default version). */
+  defaultBranch?: string;
 }
 
 const ProjectFilesContext = createContext<ProjectFilesContextValue | null>(null);

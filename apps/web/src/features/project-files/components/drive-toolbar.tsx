@@ -14,6 +14,7 @@ import {
   Home,
   Download,
   GitCommitHorizontal,
+  GitPullRequest,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -49,6 +50,13 @@ interface DriveToolbarProps {
   showVersionSelector?: boolean;
   /** When set, renders a Checkpoints toggle pill on the right. */
   checkpointsToggle?: { open: boolean; onToggle: () => void };
+  /** When set, renders a Change Requests toggle pill on the right.
+   *  `openCount` adds a numeric badge on the pill so the user can see at a
+   *  glance how many CRs are waiting for review. */
+  changeRequestsToggle?: { open: boolean; onToggle: () => void; openCount?: number };
+  /** When set, renders a contextual "Open change request" button (only
+   *  meaningful when the selected version is not the default branch). */
+  openChangeRequestAction?: { onClick: () => void; disabled?: boolean };
 }
 
 /**
@@ -66,6 +74,8 @@ export function DriveToolbar({
   readOnlyLabel: _readOnlyLabel = 'Read-only · backed by Git',
   showVersionSelector = false,
   checkpointsToggle,
+  changeRequestsToggle,
+  openChangeRequestAction,
 }: DriveToolbarProps) {
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -321,6 +331,29 @@ export function DriveToolbar({
           </DropdownMenu>
         )}
 
+        {/* Quick "+ Open CR" — opens the new-CR dialog with a branch picker.
+            Subtle by design so it doesn't fight the Checkpoints / Change
+            Requests pills, but always visible so opening a CR is reachable
+            from any state. */}
+        {openChangeRequestAction && (
+          <>
+            <div className="h-4 w-px bg-border/50 mx-1 shrink-0" />
+            <button
+              type="button"
+              onClick={openChangeRequestAction.onClick}
+              disabled={openChangeRequestAction.disabled}
+              title="Open a new change request"
+              className={cn(
+                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium',
+                'transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/60',
+              )}
+            >
+              <GitPullRequest className="h-3.5 w-3.5" />
+              <span>Open CR</span>
+            </button>
+          </>
+        )}
+
         {/* Checkpoints toggle — visual emphasis without harsh "active" state. */}
         {checkpointsToggle && (
           <>
@@ -342,6 +375,55 @@ export function DriveToolbar({
             </button>
           </>
         )}
+
+        {/* Change Requests toggle — same visual treatment as Checkpoints,
+            with a count badge when CRs are open so reviewers can spot them at
+            a glance. */}
+        {changeRequestsToggle && (() => {
+          const count = changeRequestsToggle.openCount ?? 0;
+          const hasOpen = count > 0;
+          return (
+            <button
+              type="button"
+              onClick={changeRequestsToggle.onToggle}
+              title={
+                hasOpen
+                  ? `${count} change request${count === 1 ? '' : 's'} waiting for review`
+                  : 'Toggle Change Requests panel'
+              }
+              className={cn(
+                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium',
+                'transition-colors ml-1',
+                changeRequestsToggle.open
+                  ? 'bg-muted text-foreground'
+                  : hasOpen
+                    ? 'text-foreground hover:bg-muted/60'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+              )}
+            >
+              <span className="relative inline-flex">
+                <GitPullRequest className="h-3.5 w-3.5" />
+                {hasOpen && (
+                  <span
+                    className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-background"
+                    aria-hidden
+                  />
+                )}
+              </span>
+              <span>Change requests</span>
+              {hasOpen && (
+                <span
+                  className={cn(
+                    'ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full',
+                    'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[10px] font-semibold tabular-nums',
+                  )}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })()}
       </div>
     </div>
   );

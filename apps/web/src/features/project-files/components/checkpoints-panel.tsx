@@ -171,6 +171,8 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
       <aside
         aria-hidden={!open}
         className={cn(
+          // Same width and chrome as the Change Requests drawer below so the
+          // two feel like two tabs of the same surface.
           'absolute top-0 bottom-0 right-0 w-[400px] flex flex-col',
           'border-l border-border/40 bg-background',
           'transition-transform duration-200 ease-out',

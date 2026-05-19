@@ -24,9 +24,6 @@ import {
   projectSessions,
   sessionSandboxes,
   changeRequests,
-  changeRequestRevisions,
-  changeRequestReviews,
-  changeRequestComments,
 } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
@@ -39,6 +36,7 @@ import {
   getBranchDiff,
   getCommit,
   getCommitDiff,
+  getDiffBetweenShas,
   getFileHistory,
   invalidateProjectMirror,
   listBranches,
@@ -53,18 +51,8 @@ import {
 } from './git';
 import {
   getCrById,
-  getCrByNumber,
-  getLatestRevision,
   getNextCrNumber,
-  insertRevision,
-  listComments,
-  listReviews,
-  listRevisions,
   serializeChangeRequest,
-  serializeComment,
-  serializeReview,
-  serializeRevision,
-  summarizeReviews,
 } from './change-requests';
 import {
   buildGitHubAppInstallUrl,
@@ -3854,16 +3842,19 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
 // the underlying merge runs through ./git.ts which works against any git
-// backend (GitHub, GitLab, Freestyle, plain git) — so the review UI lives in
+// backend (GitHub, GitLab, Freestyle, plain git) — so the merge UI lives in
 // Kortix even when the repo is hosted elsewhere.
+//
+// v1 is intentionally minimal: open / merged / closed, head_ref + base_ref,
+// head/base commit SHAs auto-refreshed on read. No reviews, no comments,
+// no mirrored revision history — git remains the source of truth.
 
 /**
- * Refresh the latest revision against the current head SHA. If the head ref
- * has moved since the last revision, inserts a new revision row with the
- * current diff summary. Returns the latest revision and the live diff.
- * Mutates the CR's head/base/updatedAt timestamps on advance.
+ * Refresh the CR's cached head/base SHAs against the live git tips. Used by
+ * read endpoints so the UI never shows stale "X commits behind" state. No-op
+ * when the SHAs already match or the CR is no longer open.
  */
-async function refreshCrLatestRevision(input: {
+async function refreshCrTips(input: {
   cr: typeof changeRequests.$inferSelect;
   project: {
     projectId: string;
@@ -3872,44 +3863,26 @@ async function refreshCrLatestRevision(input: {
     manifestPath: string;
     gitAuthToken?: string | null;
   };
-  userId?: string | null;
 }) {
-  const { cr, project, userId } = input;
-  if (cr.status !== 'open') return null;
+  const { cr, project } = input;
+  if (cr.status !== 'open') return;
   try {
-    const diff = await getBranchDiff(project, cr.baseRef, cr.headRef);
-    const latest = await getLatestRevision(cr.crId);
-    const sameHead = latest && latest.headCommitSha === diff.head_sha && latest.baseCommitSha === diff.base_sha;
-    if (sameHead) return latest;
-
-    const revisionNumber = (latest?.revisionNumber ?? 0) + 1;
-    const inserted = await insertRevision({
-      crId: cr.crId,
-      revisionNumber,
-      headCommitSha: diff.head_sha,
-      baseCommitSha: diff.base_sha,
-      filesChanged: diff.files_changed,
-      additions: diff.additions,
-      deletions: diff.deletions,
-      createdBy: userId ?? null,
-    });
+    const [baseSha, headSha] = await Promise.all([
+      resolveBranchTip(project, cr.baseRef),
+      resolveBranchTip(project, cr.headRef),
+    ]);
+    if (cr.headCommitSha === headSha && cr.baseCommitSha === baseSha) return;
     await db
       .update(changeRequests)
-      .set({
-        headCommitSha: diff.head_sha,
-        baseCommitSha: diff.base_sha,
-        updatedAt: new Date(),
-      })
+      .set({ headCommitSha: headSha, baseCommitSha: baseSha, updatedAt: new Date() })
       .where(eq(changeRequests.crId, cr.crId));
-    return inserted;
   } catch (error) {
-    // Repo unreachable or branch missing — leave the CR as-is so the UI can
-    // still render historical revisions and the user can decide what to do.
-    console.warn('[change-requests] refresh failed', {
+    // Repo unreachable or branch missing — leave the CR alone so the UI can
+    // still render the metadata it has.
+    console.warn('[change-requests] tip refresh failed', {
       crId: cr.crId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return null;
   }
 }
 
@@ -3967,23 +3940,30 @@ projectsApp.post('/:projectId/change-requests', async (c) => {
     if (!sessionRow) originSessionId = null;
   }
 
-  // Resolve current tips so the initial revision is correctly anchored.
+  // Resolve current tips so the CR has anchored SHAs from the start.
   let baseSha: string | null = null;
   let headSha: string | null = null;
-  let diff: Awaited<ReturnType<typeof getBranchDiff>> | null = null;
   try {
-    diff = await getBranchDiff(
-      {
-        projectId: loaded.row.projectId,
-        repoUrl: loaded.row.repoUrl,
-        defaultBranch: loaded.row.defaultBranch,
-        manifestPath: loaded.row.manifestPath,
-      },
-      baseRef,
-      headRef,
-    );
-    baseSha = diff.base_sha;
-    headSha = diff.head_sha;
+    [baseSha, headSha] = await Promise.all([
+      resolveBranchTip(
+        {
+          projectId: loaded.row.projectId,
+          repoUrl: loaded.row.repoUrl,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+        },
+        baseRef,
+      ),
+      resolveBranchTip(
+        {
+          projectId: loaded.row.projectId,
+          repoUrl: loaded.row.repoUrl,
+          defaultBranch: loaded.row.defaultBranch,
+          manifestPath: loaded.row.manifestPath,
+        },
+        headRef,
+      ),
+    ]);
   } catch (error) {
     return c.json({
       error: error instanceof Error ? error.message : 'Failed to resolve branches',
@@ -4021,24 +4001,12 @@ projectsApp.post('/:projectId/change-requests', async (c) => {
   }
   if (!inserted) return c.json({ error: 'Failed to allocate CR number' }, 500);
 
-  if (diff && baseSha && headSha) {
-    await insertRevision({
-      crId: inserted.crId,
-      revisionNumber: 1,
-      headCommitSha: headSha,
-      baseCommitSha: baseSha,
-      filesChanged: diff.files_changed,
-      additions: diff.additions,
-      deletions: diff.deletions,
-      createdBy: loaded.userId,
-    });
-  }
-
   return c.json(serializeChangeRequest(inserted), 201);
 });
 
 // GET /v1/projects/:projectId/change-requests/:crId
-// Auto-refreshes the head SHA on read so the UI never shows stale "X commits behind".
+// Auto-refreshes the cached head/base SHAs against the live git tips so the
+// UI never shows stale "X commits behind" state.
 projectsApp.get('/:projectId/change-requests/:crId', async (c) => {
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
@@ -4048,8 +4016,7 @@ projectsApp.get('/:projectId/change-requests/:crId', async (c) => {
   let cr = await getCrById(crId, projectId);
   if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
-  // Opportunistic revision refresh against current head SHA.
-  await refreshCrLatestRevision({
+  await refreshCrTips({
     cr,
     project: {
       projectId: loaded.row.projectId,
@@ -4057,23 +4024,10 @@ projectsApp.get('/:projectId/change-requests/:crId', async (c) => {
       defaultBranch: loaded.row.defaultBranch,
       manifestPath: loaded.row.manifestPath,
     },
-    userId: loaded.userId,
   });
   cr = (await getCrById(crId, projectId))!;
 
-  const [revisions, reviews, comments] = await Promise.all([
-    listRevisions(crId),
-    listReviews(crId),
-    listComments(crId),
-  ]);
-
-  return c.json({
-    change_request: serializeChangeRequest(cr),
-    revisions: revisions.map(serializeRevision),
-    reviews: reviews.map(serializeReview),
-    review_summary: summarizeReviews(reviews),
-    comments: comments.map(serializeComment),
-  });
+  return c.json({ change_request: serializeChangeRequest(cr) });
 });
 
 // PATCH /v1/projects/:projectId/change-requests/:crId
@@ -4105,6 +4059,9 @@ projectsApp.patch('/:projectId/change-requests/:crId', async (c) => {
 });
 
 // GET /v1/projects/:projectId/change-requests/:crId/diff
+// For open / closed CRs: lives off the live branch tips (three-dot diff).
+// For merged CRs: uses the SHAs captured at merge time, so the diff still
+// renders even though the head branch is now fully reachable from base.
 projectsApp.get('/:projectId/change-requests/:crId/diff', async (c) => {
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
@@ -4114,17 +4071,18 @@ projectsApp.get('/:projectId/change-requests/:crId/diff', async (c) => {
   const cr = await getCrById(crId, projectId);
   if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
+  const projectForGit = {
+    projectId: loaded.row.projectId,
+    repoUrl: loaded.row.repoUrl,
+    defaultBranch: loaded.row.defaultBranch,
+    manifestPath: loaded.row.manifestPath,
+  };
+
   try {
-    const diff = await getBranchDiff(
-      {
-        projectId: loaded.row.projectId,
-        repoUrl: loaded.row.repoUrl,
-        defaultBranch: loaded.row.defaultBranch,
-        manifestPath: loaded.row.manifestPath,
-      },
-      cr.baseRef,
-      cr.headRef,
-    );
+    const useSnapshot = cr.status === 'merged' && cr.baseCommitSha && cr.headCommitSha;
+    const diff = useSnapshot
+      ? await getDiffBetweenShas(projectForGit, cr.baseCommitSha!, cr.headCommitSha!)
+      : await getBranchDiff(projectForGit, cr.baseRef, cr.headRef);
     return c.json({
       cr_id: cr.crId,
       base_ref: cr.baseRef,
@@ -4143,34 +4101,6 @@ projectsApp.get('/:projectId/change-requests/:crId/diff', async (c) => {
       error: error instanceof Error ? error.message : 'Failed to compute diff',
     }, 400);
   }
-});
-
-// POST /v1/projects/:projectId/change-requests/:crId/refresh
-// Explicitly recompute revision against latest head SHA. Returns the latest
-// revision after refresh.
-projectsApp.post('/:projectId/change-requests/:crId/refresh', async (c) => {
-  const projectId = c.req.param('projectId');
-  const crId = c.req.param('crId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const cr = await getCrById(crId, projectId);
-  if (!cr) return c.json({ error: 'Change request not found' }, 404);
-
-  const latest = await refreshCrLatestRevision({
-    cr,
-    project: {
-      projectId: loaded.row.projectId,
-      repoUrl: loaded.row.repoUrl,
-      defaultBranch: loaded.row.defaultBranch,
-      manifestPath: loaded.row.manifestPath,
-    },
-    userId: loaded.userId,
-  });
-
-  return c.json({
-    revision: latest ? serializeRevision(latest) : null,
-  });
 });
 
 // GET /v1/projects/:projectId/change-requests/:crId/merge-preview
@@ -4217,15 +4147,6 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
     return c.json({ error: `Change request is ${cr.status}` }, 409);
   }
 
-  const reviews = await listReviews(crId);
-  const reviewSummary = summarizeReviews(reviews);
-  if (reviewSummary.state === 'changes_requested') {
-    return c.json({
-      error: 'Cannot merge: changes have been requested',
-      review_summary: reviewSummary,
-    }, 409);
-  }
-
   const customMessage = normalizeString(body.message);
   const projectForGit = {
     projectId: loaded.row.projectId,
@@ -4254,7 +4175,11 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
       mergedAt: new Date(),
       mergedBy: loaded.userId,
       mergeCommitSha: result.merge_commit_sha,
-      headCommitSha: result.merge_commit_sha,
+      // Capture the SHAs that were active at merge time. head_commit_sha
+      // intentionally stays at the head branch's tip (not the merge commit)
+      // so the merged-CR diff can re-render the changes via base...head.
+      headCommitSha: result.fast_forward ? result.merge_commit_sha : (cr.headCommitSha ?? result.merge_commit_sha),
+      baseCommitSha: result.base_sha_before,
       updatedAt: new Date(),
     })
     .where(eq(changeRequests.crId, crId))
@@ -4320,77 +4245,3 @@ projectsApp.post('/:projectId/change-requests/:crId/reopen', async (c) => {
   return c.json(serializeChangeRequest(row));
 });
 
-// POST /v1/projects/:projectId/change-requests/:crId/reviews
-// Body: { state: 'approved'|'changes_requested'|'commented', body?: string }
-projectsApp.post('/:projectId/change-requests/:crId/reviews', async (c) => {
-  const projectId = c.req.param('projectId');
-  const crId = c.req.param('crId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const cr = await getCrById(crId, projectId);
-  if (!cr) return c.json({ error: 'Change request not found' }, 404);
-  if (cr.status !== 'open') {
-    return c.json({ error: `Cannot review a ${cr.status} change request` }, 409);
-  }
-
-  const state = normalizeString(body.state);
-  if (!state || !['approved', 'changes_requested', 'commented'].includes(state)) {
-    return c.json({ error: 'state must be approved | changes_requested | commented' }, 400);
-  }
-  const reviewBody = typeof body.body === 'string' ? body.body : '';
-
-  const latest = await getLatestRevision(crId);
-  const revisionNumber = latest?.revisionNumber ?? 1;
-
-  const [row] = await db
-    .insert(changeRequestReviews)
-    .values({
-      crId,
-      userId: loaded.userId,
-      state: state as 'approved' | 'changes_requested' | 'commented',
-      body: reviewBody,
-      revisionNumber,
-    })
-    .returning();
-
-  await db
-    .update(changeRequests)
-    .set({ updatedAt: new Date() })
-    .where(eq(changeRequests.crId, crId));
-
-  return c.json(serializeReview(row), 201);
-});
-
-// POST /v1/projects/:projectId/change-requests/:crId/comments
-// Body: { body: string }
-projectsApp.post('/:projectId/change-requests/:crId/comments', async (c) => {
-  const projectId = c.req.param('projectId');
-  const crId = c.req.param('crId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const cr = await getCrById(crId, projectId);
-  if (!cr) return c.json({ error: 'Change request not found' }, 404);
-
-  const commentBody = typeof body.body === 'string' ? body.body.trim() : '';
-  if (!commentBody) return c.json({ error: 'body is required' }, 400);
-
-  const [row] = await db
-    .insert(changeRequestComments)
-    .values({
-      crId,
-      userId: loaded.userId,
-      body: commentBody,
-    })
-    .returning();
-
-  await db
-    .update(changeRequests)
-    .set({ updatedAt: new Date() })
-    .where(eq(changeRequests.crId, crId));
-
-  return c.json(serializeComment(row), 201);
-});

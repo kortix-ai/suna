@@ -458,7 +458,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             />
           </div>
           {/* Files + Customize pinned to the bottom — mirrors the expanded
-              layout, where the project nav lives just above the footer. */}
+              layout, where the project nav lives just above the footer.
+              Versions + Change Requests are surfaced inside the /files page
+              chrome (toolbar pills + right-edge drawers). */}
           <div className="mt-auto w-full space-y-0.5">
             <CollapsedIconButton
               icon={<FolderOpen className="h-4 w-4" />}

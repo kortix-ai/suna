@@ -103,6 +103,10 @@ export {
   // Pool
   poolResources,
   poolSandboxes,
+  // Change Requests
+  changeRequestStatusEnum,
+  changeRequests,
+  changeRequestsRelations,
 } from './schema/kortix';
 
 export type {

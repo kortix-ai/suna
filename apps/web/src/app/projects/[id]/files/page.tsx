@@ -60,7 +60,7 @@ export default function ProjectFilesPage({
 
   return (
     <ProjectShell projectId={projectId}>
-      <ProjectFilesProvider value={{ projectId, ref: activeRef }}>
+      <ProjectFilesProvider value={{ projectId, ref: activeRef, defaultBranch }}>
         {/* Scoped FilesStore so this view's currentPath / view-mode / sort
             state doesn't leak into the instance dashboard's global store. */}
         <FilesStoreProvider>

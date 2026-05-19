@@ -1489,3 +1489,71 @@ export const accessRequests = kortixSchema.table(
     index('idx_access_requests_status').on(table.status),
   ],
 );
+
+// ─── Change Requests ────────────────────────────────────────────────────────
+// PR-equivalent for Kortix-native git workflows. A change_request proposes
+// merging `head_ref` into `base_ref` for a given project. The CR is metadata;
+// the underlying git operations (fetch, diff, merge) run through
+// apps/api/src/projects/git.ts and work against whichever backend the
+// project's repo URL points to (GitHub, GitLab, Freestyle, plain git).
+
+export const changeRequestStatusEnum = kortixSchema.enum('change_request_status', [
+  'open',
+  'merged',
+  'closed',
+]);
+
+export const changeRequests = kortixSchema.table(
+  'change_requests',
+  {
+    crId: uuid('cr_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Short, monotonically-increasing per-project display number (CR #1, #2, …). */
+    number: integer('number').notNull(),
+    title: text('title').notNull(),
+    description: text('description').default('').notNull(),
+    baseRef: text('base_ref').notNull(),
+    headRef: text('head_ref').notNull(),
+    status: changeRequestStatusEnum('status').default('open').notNull(),
+    /** Auto-refreshed against the live head_ref tip on every read. */
+    headCommitSha: text('head_commit_sha'),
+    baseCommitSha: text('base_commit_sha'),
+    /** Originating session (if the CR was opened from inside a sandbox). */
+    originSessionId: text('origin_session_id').references(() => projectSessions.sessionId, { onDelete: 'set null' }),
+    createdBy: uuid('created_by').notNull(),
+    mergedAt: timestamp('merged_at', { withTimezone: true }),
+    mergedBy: uuid('merged_by'),
+    mergeCommitSha: text('merge_commit_sha'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_change_requests_account').on(table.accountId),
+    index('idx_change_requests_project').on(table.projectId),
+    index('idx_change_requests_project_status').on(table.projectId, table.status),
+    uniqueIndex('idx_change_requests_project_number').on(table.projectId, table.number),
+  ],
+);
+
+export const changeRequestsRelations = relations(changeRequests, ({ one }) => ({
+  project: one(projects, {
+    fields: [changeRequests.projectId],
+    references: [projects.projectId],
+  }),
+  account: one(accounts, {
+    fields: [changeRequests.accountId],
+    references: [accounts.accountId],
+  }),
+  originSession: one(projectSessions, {
+    fields: [changeRequests.originSessionId],
+    references: [projectSessions.sessionId],
+  }),
+}));

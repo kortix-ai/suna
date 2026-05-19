@@ -5,7 +5,9 @@ import { DiffView } from '@/components/diff/diff-view';
 
 interface DiffRendererProps {
   patch: string;
-  filename: string;
+  /** Optional. Older call sites pass it but Pierre derives the language from
+   *  the patch's `+++` header, so we don't actually need it. */
+  filename?: string;
   className?: string;
 }
 

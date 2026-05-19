@@ -685,10 +685,12 @@ export async function getProjectFileHistory(
 // Change Requests — Kortix-native PR layer. Backend-agnostic: the underlying
 // merge runs via apps/api/.../git.ts against whichever git host the project's
 // repo URL points to.
+//
+// v1 is deliberately minimal — no reviews, no comments, no mirrored revision
+// history. Just open / merged / closed plus the live diff against base.
 // ---------------------------------------------------------------------------
 
 export type ChangeRequestStatus = 'open' | 'merged' | 'closed';
-export type ChangeRequestReviewState = 'approved' | 'changes_requested' | 'commented';
 
 export interface ChangeRequest {
   cr_id: string;
@@ -714,50 +716,8 @@ export interface ChangeRequest {
   updated_at: string;
 }
 
-export interface ChangeRequestRevision {
-  revision_id: string;
-  cr_id: string;
-  revision_number: number;
-  head_commit_sha: string;
-  base_commit_sha: string;
-  files_changed: number;
-  additions: number;
-  deletions: number;
-  created_by: string | null;
-  created_at: string;
-}
-
-export interface ChangeRequestReview {
-  review_id: string;
-  cr_id: string;
-  user_id: string;
-  state: ChangeRequestReviewState;
-  body: string;
-  revision_number: number;
-  created_at: string;
-}
-
-export interface ChangeRequestComment {
-  comment_id: string;
-  cr_id: string;
-  user_id: string;
-  body: string;
-  created_at: string;
-}
-
-export interface ChangeRequestReviewSummary {
-  state: 'approved' | 'changes_requested' | 'pending';
-  reviews: ChangeRequestReview[];
-  approvals: number;
-  changes_requested_count: number;
-}
-
 export interface ChangeRequestDetailResponse {
   change_request: ChangeRequest;
-  revisions: ChangeRequestRevision[];
-  reviews: ChangeRequestReview[];
-  review_summary: ChangeRequestReviewSummary;
-  comments: ChangeRequestComment[];
 }
 
 export interface ChangeRequestDiffResponse {
@@ -838,24 +798,6 @@ export async function openChangeRequest(
   ));
 }
 
-export async function patchChangeRequest(
-  projectId: string,
-  crId: string,
-  input: { title?: string; description?: string },
-) {
-  return unwrap(await backendApi.patch<ChangeRequest>(
-    `/projects/${projectId}/change-requests/${crId}`,
-    input,
-  ));
-}
-
-export async function refreshChangeRequest(projectId: string, crId: string) {
-  return unwrap(await backendApi.post<{ revision: ChangeRequestRevision | null }>(
-    `/projects/${projectId}/change-requests/${crId}/refresh`,
-    {},
-  ));
-}
-
 export async function mergeChangeRequest(
   projectId: string,
   crId: string,
@@ -878,28 +820,6 @@ export async function reopenChangeRequest(projectId: string, crId: string) {
   return unwrap(await backendApi.post<ChangeRequest>(
     `/projects/${projectId}/change-requests/${crId}/reopen`,
     {},
-  ));
-}
-
-export async function addChangeRequestReview(
-  projectId: string,
-  crId: string,
-  input: { state: ChangeRequestReviewState; body?: string },
-) {
-  return unwrap(await backendApi.post<ChangeRequestReview>(
-    `/projects/${projectId}/change-requests/${crId}/reviews`,
-    input,
-  ));
-}
-
-export async function addChangeRequestComment(
-  projectId: string,
-  crId: string,
-  body: string,
-) {
-  return unwrap(await backendApi.post<ChangeRequestComment>(
-    `/projects/${projectId}/change-requests/${crId}/comments`,
-    { body },
   ));
 }
 
