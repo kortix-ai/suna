@@ -2842,11 +2842,11 @@ projectsApp.delete('/:projectId/triggers/:slug', async (c) => {
 });
 
 // ─── Channels CRUD ───────────────────────────────────────────────────────
-// All channel mutations round-trip through kortix.toml — read manifest,
-// upsert/remove the [[channels]] entry, commit back via the GitHub App.
-// Mirrors the trigger CRUD; uses the same loadManifestForEdit + commitManifest.
+// Channels are keyed by platform (one entry per platform per project). The
+// bot listens in any channel of the connected workspace, so the manifest
+// holds preferences (agent, prompt, events) — not channel ids.
 
-const CHANNEL_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+const SUPPORTED_CHANNEL_PLATFORMS = ['slack'] as const;
 
 function upsertChannelInManifest(manifest: ParsedManifest, spec: ChannelSpec): ParsedManifest {
   const current = Array.isArray(manifest.raw.channels)
@@ -2854,7 +2854,7 @@ function upsertChannelInManifest(manifest: ParsedManifest, spec: ChannelSpec): P
     : [];
   const entry = channelSpecToTomlEntry(spec);
   const idx = current.findIndex(
-    (e) => typeof e?.slug === 'string' && e.slug === spec.slug,
+    (e) => typeof e?.platform === 'string' && e.platform === spec.platform,
   );
   const next = current.slice();
   if (idx >= 0) next[idx] = entry;
@@ -2862,91 +2862,56 @@ function upsertChannelInManifest(manifest: ParsedManifest, spec: ChannelSpec): P
   return { ...manifest, raw: { ...manifest.raw, channels: next } };
 }
 
-function removeChannelFromManifest(manifest: ParsedManifest, slug: string): ParsedManifest {
+function removeChannelFromManifest(manifest: ParsedManifest, platform: string): ParsedManifest {
   const current = Array.isArray(manifest.raw.channels)
     ? (manifest.raw.channels as Record<string, unknown>[])
     : [];
   const next = current.filter(
-    (e) => !(typeof e?.slug === 'string' && e.slug === slug),
+    (e) => !(typeof e?.platform === 'string' && e.platform === platform),
   );
   return { ...manifest, raw: { ...manifest.raw, channels: next } };
 }
 
 function parseChannelDraft(
   body: Record<string, unknown>,
-  opts: { existingSlug: string | null },
+  opts: { existingPlatform: ChannelSpec['platform'] | null },
 ): ChannelSpec | { error: string } {
-  const slug = normalizeString(body.slug) ?? opts.existingSlug ?? '';
-  if (!slug || !CHANNEL_SLUG_RE.test(slug)) {
-    return { error: 'slug is required (lowercase letters, digits, dashes, underscores)' };
+  const platformRaw = normalizeString(body.platform) ?? opts.existingPlatform ?? '';
+  if (!(SUPPORTED_CHANNEL_PLATFORMS as readonly string[]).includes(platformRaw)) {
+    return {
+      error: `Unsupported platform "${platformRaw || 'unset'}". Currently: ${SUPPORTED_CHANNEL_PLATFORMS.join(', ')}.`,
+    };
   }
-  const platformRaw = normalizeString(body.platform) ?? 'slack';
-  if (platformRaw !== 'slack') {
-    return { error: `Unsupported platform "${platformRaw}". Currently: slack.` };
-  }
-  const channelId = normalizeString(body.channel_id ?? (body as any).channelId);
-  const channelName = normalizeString(body.channel_name ?? (body as any).channelName);
-  if (!channelId && !channelName) return { error: 'channel_id or channel_name is required' };
-  if (channelId && channelName) return { error: 'set channel_id or channel_name, not both' };
-  if (platformRaw === 'slack' && channelId && !/^[A-Z0-9]{2,32}$/.test(channelId)) {
-    return { error: `Slack channel_id "${channelId}" does not look right` };
-  }
-  const prompt = normalizeString(body.prompt_prefix ?? (body as any).promptPrefix ?? body.prompt);
-  if (!prompt) return { error: 'prompt_prefix is required' };
+  const platform = platformRaw as ChannelSpec['platform'];
 
-  const name = normalizeString(body.name) ?? slug;
-  const agent = normalizeString(body.agent ?? (body as any).agent_name) ?? 'default';
+  const agent = normalizeString(body.agent ?? (body as any).agent_name);
+  const promptPrefix = normalizeString(body.prompt_prefix ?? (body as any).promptPrefix ?? body.prompt);
   const enabled = body.enabled === undefined ? true : Boolean(body.enabled);
-  const responseRaw = normalizeString(body.response ?? (body as any).response_style) ?? 'text';
-  const responseStyle = (['plan', 'text', 'none'] as const).includes(responseRaw as any)
-    ? (responseRaw as 'plan' | 'text' | 'none')
-    : 'text';
 
-  const eventsRaw = Array.isArray(body.events) ? body.events : ['mention'];
-  const events: ChannelSpec['events'] = [];
-  const validEvents = ['mention', 'dm', 'subscribed', 'slash', 'action'] as const;
-  for (const e of eventsRaw) {
-    if (typeof e !== 'string') continue;
-    const v = e.trim().toLowerCase();
-    if (validEvents.includes(v as never) && !events.includes(v as never)) {
-      events.push(v as never);
+  const validEvents = ['mention', 'dm', 'subscribed'] as const;
+  const eventsRaw = Array.isArray(body.events) ? body.events : null;
+  let events: ChannelSpec['events'];
+  if (eventsRaw === null) {
+    events = ['mention', 'dm'];
+  } else {
+    events = [];
+    for (const e of eventsRaw) {
+      if (typeof e !== 'string') continue;
+      const v = e.trim().toLowerCase();
+      if (validEvents.includes(v as never) && !events.includes(v as never)) {
+        events.push(v as never);
+      }
     }
-  }
-  if (events.length === 0) events.push('mention');
-
-  let maxConcurrentSessions: number | null = null;
-  const mcs = body.max_concurrent_sessions ?? (body as any).maxConcurrentSessions;
-  if (mcs !== undefined && mcs !== null) {
-    const n = Number(mcs);
-    if (!Number.isInteger(n) || n < 1) return { error: 'max_concurrent_sessions must be a positive integer' };
-    maxConcurrentSessions = n;
-  }
-
-  const slashCommandsRaw = Array.isArray(body.slash_commands) ? body.slash_commands : [];
-  const slashCommands: ChannelSpec['slashCommands'] = [];
-  for (const cmd of slashCommandsRaw) {
-    if (!cmd || typeof cmd !== 'object') continue;
-    const c = cmd as Record<string, unknown>;
-    const cmdName = normalizeString(c.name)?.replace(/^\//, '');
-    const cmdPrompt = normalizeString(c.prompt ?? (c as any).prompt_template);
-    if (!cmdName || !cmdPrompt) continue;
-    slashCommands.push({ name: cmdName, promptTemplate: cmdPrompt });
+    if (events.length === 0) events = ['mention', 'dm'];
   }
 
   return {
-    slug,
-    path: `${MANIFEST_FILENAME}#channels.${slug}`,
-    name,
-    platform: 'slack',
+    platform,
+    path: `${MANIFEST_FILENAME}#channels.${platform}`,
     enabled,
-    channelId: channelId ?? null,
-    channelName: channelName ?? null,
-    agent,
-    promptPrefix: prompt,
+    agent: agent || null,
+    promptPrefix: promptPrefix || null,
     events,
-    responseStyle,
-    maxConcurrentSessions,
-    slashCommands,
   };
 }
 
@@ -2964,13 +2929,14 @@ projectsApp.get('/:projectId/channels', async (c) => {
 });
 
 // POST /v1/projects/:projectId/channels
+// Upserts the [[channels]] entry for the body's platform (one per platform).
 projectsApp.post('/:projectId/channels', async (c) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const draft = parseChannelDraft(body, { existingSlug: null });
+  const draft = parseChannelDraft(body, { existingPlatform: null });
   if ('error' in draft) return c.json({ error: draft.error }, 400);
 
   let manifest: ParsedManifest;
@@ -2979,14 +2945,9 @@ projectsApp.post('/:projectId/channels', async (c) => {
   } catch (err) {
     return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
   }
-  if (extractChannels(manifest).specs.some((s) => s.slug === draft.slug)) {
-    return c.json({
-      error: `A channel with slug "${draft.slug}" already exists.`,
-    }, 409);
-  }
 
   const next = upsertChannelInManifest(manifest, draft);
-  const result = await commitManifest(loaded.row, next, `chore: add channel ${draft.slug}`);
+  const result = await commitManifest(loaded.row, next, `chore: update channels (${draft.platform})`);
   if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
 
   await syncProjectChannelBindings(loaded.row).catch((err) =>
@@ -2995,13 +2956,15 @@ projectsApp.post('/:projectId/channels', async (c) => {
   return c.json(await loadChannelsForResponse(loaded.row), 201);
 });
 
-// PATCH /v1/projects/:projectId/channels/:slug
-projectsApp.patch('/:projectId/channels/:slug', async (c) => {
+// DELETE /v1/projects/:projectId/channels/:platform
+projectsApp.delete('/:projectId/channels/:platform', async (c) => {
   const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const body = await readBody(c);
+  const platform = c.req.param('platform');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!(SUPPORTED_CHANNEL_PLATFORMS as readonly string[]).includes(platform)) {
+    return c.json({ error: `Unknown platform "${platform}"` }, 400);
+  }
 
   let manifest: ParsedManifest;
   try {
@@ -3009,57 +2972,12 @@ projectsApp.patch('/:projectId/channels/:slug', async (c) => {
   } catch (err) {
     return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
   }
-  const current = extractChannels(manifest).specs.find((s) => s.slug === slug);
-  if (!current) return c.json({ error: 'Not found' }, 404);
-
-  const merged = {
-    name: current.name,
-    platform: current.platform,
-    enabled: current.enabled,
-    agent: current.agent,
-    events: current.events,
-    response: current.responseStyle,
-    prompt_prefix: current.promptPrefix,
-    channel_id: current.channelId,
-    channel_name: current.channelName,
-    max_concurrent_sessions: current.maxConcurrentSessions,
-    slash_commands: current.slashCommands.map((c) => ({ name: c.name, prompt: c.promptTemplate })),
-    ...body,
-    slug,
-  };
-  const draft = parseChannelDraft(merged, { existingSlug: slug });
-  if ('error' in draft) return c.json({ error: draft.error }, 400);
-
-  const next = upsertChannelInManifest(manifest, draft);
-  const result = await commitManifest(loaded.row, next, `chore: update channel ${slug}`);
-  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
-
-  await syncProjectChannelBindings(loaded.row).catch((err) =>
-    console.warn('[channels] sync after PATCH failed', err),
-  );
-  return c.json(await loadChannelsForResponse(loaded.row));
-});
-
-// DELETE /v1/projects/:projectId/channels/:slug
-projectsApp.delete('/:projectId/channels/:slug', async (c) => {
-  const projectId = c.req.param('projectId');
-  const slug = c.req.param('slug');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!CHANNEL_SLUG_RE.test(slug)) return c.json({ error: 'Invalid slug' }, 400);
-
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-  if (!extractChannels(manifest).specs.some((s) => s.slug === slug)) {
+  if (!extractChannels(manifest).specs.some((s) => s.platform === platform)) {
     return c.json({ error: 'Not found' }, 404);
   }
 
-  const next = removeChannelFromManifest(manifest, slug);
-  const result = await commitManifest(loaded.row, next, `chore: delete channel ${slug}`);
+  const next = removeChannelFromManifest(manifest, platform);
+  const result = await commitManifest(loaded.row, next, `chore: remove ${platform} channel`);
   if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
 
   await syncProjectChannelBindings(loaded.row).catch((err) =>

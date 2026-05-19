@@ -147,13 +147,12 @@ function Connected({
       </div>
 
       <div className="rounded-md border border-border/70 bg-card px-4 py-3 text-sm">
-        <p className="font-medium text-foreground">Next: bind a channel</p>
+        <p className="font-medium text-foreground">Next: enable for this project</p>
         <p className="mt-1 text-muted-foreground">
-          Add a <code className="font-mono text-xs">[[channels]]</code> entry to this project's{' '}
-          <code className="font-mono text-xs">kortix.toml</code> with{' '}
-          <code className="font-mono text-xs">platform = "slack"</code> +{' '}
-          <code className="font-mono text-xs">channel_id</code>, then{' '}
-          <code className="font-mono text-xs">@kortix</code> in that channel.
+          Add a <code className="font-mono text-xs">[[channels]]</code> entry with{' '}
+          <code className="font-mono text-xs">platform = "slack"</code> to this project's{' '}
+          <code className="font-mono text-xs">kortix.toml</code>, invite the bot to a channel, and{' '}
+          <code className="font-mono text-xs">@kortix</code> — replies stream right here.
         </p>
       </div>
 

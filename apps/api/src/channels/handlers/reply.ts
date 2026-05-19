@@ -16,7 +16,7 @@ export function registerReplyHandler(bot: Chat) {
     if (message.isMention === false && !thread.channel?.isDM) {
     }
     const workspaceId = workspaceIdFromRaw(message.raw);
-    const resolved = await resolveChannel('slack', workspaceId, thread.channelId);
+    const resolved = await resolveChannel('slack', workspaceId);
     if (!resolved) return;
 
     const existing = await loadExistingSession(

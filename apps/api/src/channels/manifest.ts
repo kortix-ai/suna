@@ -1,44 +1,29 @@
 import type { ParsedManifest } from '../projects/triggers';
 import { MANIFEST_FILENAME } from '../projects/triggers';
 
-const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
-const SLASH_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const CHANNEL_ID_RE = /^[A-Z0-9]{2,32}$/;
-
-export const SUPPORTED_PLATFORMS = [
-  'slack',
-] as const;
+export const SUPPORTED_PLATFORMS = ['slack'] as const;
 export type ChannelPlatform = (typeof SUPPORTED_PLATFORMS)[number];
 
-export const CHANNEL_EVENTS = ['mention', 'dm', 'subscribed', 'slash', 'action'] as const;
+export const CHANNEL_EVENTS = ['mention', 'dm', 'subscribed'] as const;
 export type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
 
-export const CHANNEL_RESPONSE_STYLES = ['plan', 'text', 'none'] as const;
-export type ChannelResponseStyle = (typeof CHANNEL_RESPONSE_STYLES)[number];
-
-export interface ChannelSlashCommand {
-  name: string;
-  promptTemplate: string;
-}
-
+/**
+ * One [[channels]] entry per platform per project. The bot listens in any
+ * channel of the project's connected workspace where it's been invited —
+ * channel ids are deliberately NOT in the manifest. Everything except
+ * `platform` is optional; sensible defaults below.
+ */
 export interface ChannelSpec {
-  slug: string;
-  path: string;
-  name: string;
   platform: ChannelPlatform;
+  path: string;
   enabled: boolean;
-  channelId: string | null;
-  channelName: string | null;
-  agent: string;
-  promptPrefix: string;
+  agent: string | null;
+  promptPrefix: string | null;
   events: ChannelEvent[];
-  responseStyle: ChannelResponseStyle;
-  maxConcurrentSessions: number | null;
-  slashCommands: ChannelSlashCommand[];
 }
 
 export interface ChannelParseError {
-  slug: string;
+  platform: string;
   path: string;
   error: string;
 }
@@ -47,6 +32,8 @@ export interface LoadedChannels {
   specs: ChannelSpec[];
   errors: ChannelParseError[];
 }
+
+const DEFAULT_EVENTS: ChannelEvent[] = ['mention', 'dm'];
 
 export function extractChannels(manifest: ParsedManifest): LoadedChannels {
   const raw = manifest.raw.channels;
@@ -57,7 +44,7 @@ export function extractChannels(manifest: ParsedManifest): LoadedChannels {
     return {
       specs: [],
       errors: [{
-        slug: '(top-level)',
+        platform: '(top-level)',
         path: MANIFEST_FILENAME,
         error: '`channels` must be an array of tables — use [[channels]], not [channels]',
       }],
@@ -66,8 +53,7 @@ export function extractChannels(manifest: ParsedManifest): LoadedChannels {
 
   const specs: ChannelSpec[] = [];
   const errors: ChannelParseError[] = [];
-  const seenSlugs = new Set<string>();
-  const seenBindings = new Set<string>();
+  const seen = new Set<ChannelPlatform>();
 
   raw.forEach((entry, index) => {
     const result = parseChannelEntry(entry, index);
@@ -75,58 +61,29 @@ export function extractChannels(manifest: ParsedManifest): LoadedChannels {
       errors.push(result.error);
       return;
     }
-    const spec = result.spec;
-    if (seenSlugs.has(spec.slug)) {
+    if (seen.has(result.spec.platform)) {
       errors.push({
-        slug: spec.slug,
-        path: spec.path,
-        error: `Duplicate channel slug "${spec.slug}" — slugs must be unique within a project`,
+        platform: result.spec.platform,
+        path: result.spec.path,
+        error: `Duplicate [[channels]] entry for platform "${result.spec.platform}" — one per platform per project`,
       });
       return;
     }
-    const bindingKey = spec.channelId
-      ? `${spec.platform}:id:${spec.channelId}`
-      : `${spec.platform}:name:${spec.channelName}`;
-    if (seenBindings.has(bindingKey)) {
-      errors.push({
-        slug: spec.slug,
-        path: spec.path,
-        error: `Two [[channels]] entries point at the same ${spec.platform} channel — bindings must be unique`,
-      });
-      return;
-    }
-    seenSlugs.add(spec.slug);
-    seenBindings.add(bindingKey);
-    specs.push(spec);
+    seen.add(result.spec.platform);
+    specs.push(result.spec);
   });
 
-  specs.sort((a, b) => a.slug.localeCompare(b.slug));
-  errors.sort((a, b) => a.slug.localeCompare(b.slug));
+  specs.sort((a, b) => a.platform.localeCompare(b.platform));
+  errors.sort((a, b) => a.platform.localeCompare(b.platform));
   return { specs, errors };
 }
 
 export function channelSpecToTomlEntry(spec: ChannelSpec): Record<string, unknown> {
-  const entry: Record<string, unknown> = {
-    slug: spec.slug,
-    name: spec.name,
-    platform: spec.platform,
-    enabled: spec.enabled,
-    agent: spec.agent,
-    events: spec.events,
-    response: spec.responseStyle,
-    prompt_prefix: spec.promptPrefix,
-  };
-  if (spec.channelId) entry.channel_id = spec.channelId;
-  if (spec.channelName) entry.channel_name = spec.channelName;
-  if (spec.maxConcurrentSessions !== null) {
-    entry.max_concurrent_sessions = spec.maxConcurrentSessions;
-  }
-  if (spec.slashCommands.length > 0) {
-    entry.slash_commands = spec.slashCommands.map((cmd) => ({
-      name: cmd.name,
-      prompt: cmd.promptTemplate,
-    }));
-  }
+  const entry: Record<string, unknown> = { platform: spec.platform };
+  if (!spec.enabled) entry.enabled = false;
+  if (spec.agent) entry.agent = spec.agent;
+  if (spec.promptPrefix) entry.prompt_prefix = spec.promptPrefix;
+  if (!eventsEqual(spec.events, DEFAULT_EVENTS)) entry.events = spec.events;
   return entry;
 }
 
@@ -145,149 +102,62 @@ function parseChannelEntry(entry: unknown, index: number): ParseOk | ParseErr {
   }
   const row = entry as Record<string, unknown>;
 
-  const slug = typeof row.slug === 'string' ? row.slug.trim() : '';
-  if (!slug) return err(`(index-${index})`, `[[channels]] entry #${index + 1} is missing a slug`);
-  if (!SLUG_RE.test(slug)) {
-    return err(slug, `Invalid slug "${slug}" — lowercase letters, digits, dashes, underscores only`);
-  }
-
   const platformRaw = typeof row.platform === 'string' ? row.platform.trim().toLowerCase() : '';
   if (!isSupportedPlatform(platformRaw)) {
     return err(
-      slug,
+      platformRaw || `(index-${index})`,
       `Unsupported platform "${platformRaw || 'unset'}" — must be one of ${SUPPORTED_PLATFORMS.join(', ')}`,
     );
   }
   const platform = platformRaw;
 
-  const channelId = stringField(row, 'channel_id', 'channelId');
-  const channelName = stringField(row, 'channel_name', 'channelName');
-  if (!channelId && !channelName) {
-    return err(slug, 'channel_id or channel_name is required');
-  }
-  if (channelId && channelName) {
-    return err(slug, 'set channel_id or channel_name, not both');
-  }
-  if (platform === 'slack' && channelId && !CHANNEL_ID_RE.test(channelId)) {
-    return err(slug, `Slack channel_id "${channelId}" does not look right (expected uppercase letters/digits)`);
-  }
-
-  const prompt = stringField(row, 'prompt_prefix', 'promptPrefix', 'prompt');
-  if (!prompt) return err(slug, 'prompt_prefix is required');
-
-  const name = stringField(row, 'name') || slug;
-  const agent = stringField(row, 'agent', 'agent_name') || 'default';
   const enabled = coerceBool(row.enabled, true);
+  const agent = stringField(row, 'agent', 'agent_name');
+  const promptPrefix = stringField(row, 'prompt_prefix', 'prompt');
 
-  const eventsResult = parseEvents(row.events, slug);
+  const eventsResult = parseEvents(row.events, platform);
   if (!eventsResult.ok) return eventsResult;
   const events = eventsResult.value;
-
-  const responseRaw = stringField(row, 'response', 'response_style').toLowerCase();
-  const responseStyle: ChannelResponseStyle =
-    responseRaw && isResponseStyle(responseRaw) ? responseRaw : 'text';
-
-  let maxConcurrentSessions: number | null = null;
-  if (row.max_concurrent_sessions !== undefined && row.max_concurrent_sessions !== null) {
-    const raw = Number(row.max_concurrent_sessions);
-    if (!Number.isFinite(raw) || raw < 1 || !Number.isInteger(raw)) {
-      return err(slug, 'max_concurrent_sessions must be a positive integer');
-    }
-    maxConcurrentSessions = raw;
-  }
-
-  const slashResult = parseSlashCommands(row.slash_commands, slug);
-  if (!slashResult.ok) return slashResult;
-  const slashCommands = slashResult.value;
-
-  if (events.includes('slash') && slashCommands.length === 0) {
-    return err(slug, 'events includes "slash" but no [[channels.slash_commands]] are declared');
-  }
 
   return {
     ok: true,
     spec: {
-      slug,
-      path: `${MANIFEST_FILENAME}#channels.${slug}`,
-      name,
       platform,
+      path: `${MANIFEST_FILENAME}#channels.${platform}`,
       enabled,
-      channelId: channelId || null,
-      channelName: channelName || null,
-      agent,
-      promptPrefix: prompt,
+      agent: agent || null,
+      promptPrefix: promptPrefix || null,
       events,
-      responseStyle,
-      maxConcurrentSessions,
-      slashCommands,
     },
   };
 }
 
 function parseEvents(
   raw: unknown,
-  slug: string,
+  platform: ChannelPlatform,
 ): { ok: true; value: ChannelEvent[] } | ParseErr {
   if (raw === undefined || raw === null) {
-    return { ok: true, value: ['mention'] };
+    return { ok: true, value: [...DEFAULT_EVENTS] };
   }
   if (!Array.isArray(raw)) {
-    return err(slug, 'events must be an array of strings');
+    return err(platform, 'events must be an array of strings');
   }
   const result: ChannelEvent[] = [];
   const seen = new Set<string>();
   for (const entry of raw) {
     if (typeof entry !== 'string') {
-      return err(slug, 'events must be an array of strings');
+      return err(platform, 'events must be an array of strings');
     }
     const e = entry.trim().toLowerCase();
     if (!isChannelEvent(e)) {
-      return err(slug, `Unknown event "${entry}" — must be one of ${CHANNEL_EVENTS.join(', ')}`);
+      return err(platform, `Unknown event "${entry}" — must be one of ${CHANNEL_EVENTS.join(', ')}`);
     }
     if (seen.has(e)) continue;
     seen.add(e);
     result.push(e);
   }
-  if (result.length === 0) result.push('mention');
+  if (result.length === 0) result.push(...DEFAULT_EVENTS);
   return { ok: true, value: result };
-}
-
-function parseSlashCommands(
-  raw: unknown,
-  slug: string,
-): { ok: true; value: ChannelSlashCommand[] } | ParseErr {
-  if (raw === undefined || raw === null) return { ok: true, value: [] };
-  if (!Array.isArray(raw)) {
-    return err(slug, 'slash_commands must be an array of tables — use [[channels.slash_commands]]');
-  }
-  const out: ChannelSlashCommand[] = [];
-  const seen = new Set<string>();
-  for (let i = 0; i < raw.length; i += 1) {
-    const cmd = raw[i];
-    if (!cmd || typeof cmd !== 'object' || Array.isArray(cmd)) {
-      return err(slug, `slash_commands entry #${i + 1} is not a table`);
-    }
-    const row = cmd as Record<string, unknown>;
-    const name = typeof row.name === 'string' ? row.name.trim().replace(/^\//, '') : '';
-    if (!name) return err(slug, `slash_commands entry #${i + 1} is missing a name`);
-    if (!SLASH_RE.test(name)) {
-      return err(slug, `Invalid slash command name "${name}" — lowercase letters, digits, dashes, underscores`);
-    }
-    if (seen.has(name)) {
-      return err(slug, `Duplicate slash command "${name}"`);
-    }
-    const promptTemplate = typeof row.prompt === 'string'
-      ? row.prompt
-      : typeof row.prompt_template === 'string'
-        ? row.prompt_template
-        : '';
-    if (!promptTemplate.trim()) {
-      return err(slug, `slash command "${name}" is missing a prompt`);
-    }
-    seen.add(name);
-    out.push({ name, promptTemplate });
-  }
-  return { ok: true, value: out };
 }
 
 function stringField(row: Record<string, unknown>, ...keys: string[]): string {
@@ -317,13 +187,19 @@ function isChannelEvent(value: string): value is ChannelEvent {
   return (CHANNEL_EVENTS as readonly string[]).includes(value);
 }
 
-function isResponseStyle(value: string): value is ChannelResponseStyle {
-  return (CHANNEL_RESPONSE_STYLES as readonly string[]).includes(value);
+function eventsEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
 }
 
-function err(slug: string, message: string): ParseErr {
+function err(platform: string, message: string): ParseErr {
   return {
     ok: false,
-    error: { slug, path: `${MANIFEST_FILENAME}#channels.${slug}`, error: message },
+    error: {
+      platform,
+      path: `${MANIFEST_FILENAME}#channels.${platform}`,
+      error: message,
+    },
   };
 }

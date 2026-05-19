@@ -49,13 +49,13 @@ export function ChannelsView() {
               </div>
 
               <div className="rounded-lg border border-border/60 bg-card p-4">
-                <p className="text-sm font-medium text-foreground">Bind a channel</p>
+                <p className="text-sm font-medium text-foreground">Enable the bot for this project</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Add a <code className="font-mono text-xs">[[channels]]</code> entry to this project's{' '}
-                  <code className="font-mono text-xs">kortix.toml</code> with{' '}
-                  <code className="font-mono text-xs">platform = "slack"</code> and a{' '}
-                  <code className="font-mono text-xs">channel_id</code>, then{' '}
-                  <code className="font-mono text-xs">@kortix</code> in that Slack channel.
+                  Add a <code className="font-mono text-xs">[[channels]]</code> entry with{' '}
+                  <code className="font-mono text-xs">platform = "slack"</code> to this project's{' '}
+                  <code className="font-mono text-xs">kortix.toml</code>. Invite the bot to any channel in
+                  your workspace, then <code className="font-mono text-xs">@kortix</code> — it'll respond
+                  there.
                 </p>
               </div>
             </div>

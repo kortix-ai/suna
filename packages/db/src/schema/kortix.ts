@@ -415,22 +415,14 @@ export const chatChannelBindings = kortixSchema.table(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    slug: varchar('slug', { length: 128 }).notNull(),
     platform: chatPlatformEnum('platform').notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    channelId: varchar('channel_id', { length: 128 }).notNull(),
-    channelName: varchar('channel_name', { length: 256 }),
-    lastManifestSha: varchar('last_manifest_sha', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('idx_chat_channel_bindings_project_slug').on(table.projectId, table.slug),
-    index('idx_chat_channel_bindings_lookup').on(
-      table.platform,
-      table.workspaceId,
-      table.channelId,
-    ),
+    uniqueIndex('idx_chat_channel_bindings_project_platform').on(table.projectId, table.platform),
+    index('idx_chat_channel_bindings_lookup').on(table.platform, table.workspaceId),
   ],
 );
 
@@ -448,7 +440,6 @@ export const chatThreads = kortixSchema.table(
     sessionId: text('session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
     }),
-    channelSlug: varchar('channel_slug', { length: 128 }).notNull(),
     openedBy: varchar('opened_by', { length: 256 }),
     openedAt: timestamp('opened_at', { withTimezone: true }).defaultNow().notNull(),
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }).defaultNow().notNull(),

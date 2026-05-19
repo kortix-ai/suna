@@ -14,7 +14,6 @@ import {
 import { resolveChannelsMode, type ChannelsModeReport } from './mode';
 import { registerMentionHandler } from './handlers/mention';
 import { registerDmHandler } from './handlers/dm';
-import { registerSlashHandler } from './handlers/slash';
 import { registerActionHandler } from './handlers/action';
 import { registerReplyHandler } from './handlers/reply';
 
@@ -61,7 +60,6 @@ export function getChannelsBot(): Chat | null {
 
   registerMentionHandler(bot);
   registerDmHandler(bot);
-  registerSlashHandler(bot);
   registerActionHandler(bot);
   registerReplyHandler(bot);
 
