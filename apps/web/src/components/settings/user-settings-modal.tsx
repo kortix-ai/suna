@@ -94,7 +94,7 @@ import { LanguageSwitcher } from './language-switcher';
 import { useTranslations } from 'next-intl';
 // import { ReferralsTab } from '@/components/referrals/referrals-tab';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Keyboard, CheckCircle2, HelpCircle, ShieldCheck, Volume2, EyeOff, Globe } from 'lucide-react';
+import { Keyboard, CheckCircle2, HelpCircle, ShieldCheck, Volume2, EyeOff, Globe, KeyRound } from 'lucide-react';
 import CreditTransactions from '@/components/billing/credit-transactions';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
 import { activateInstanceSelection, useServerStore } from '@/stores/server-store';
@@ -102,9 +102,11 @@ import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifica
 import { useSoundStore, type SoundPack, type SoundEvent } from '@/stores/sound-store';
 import { previewSound } from '@/lib/sounds';
 import { AppearanceTab } from './appearance-tab';
+import { CliTokensTab } from './cli-tokens-tab';
 import {
     getPreferenceTabs,
     getInstanceTabs,
+    getAccountTabs,
     type SettingsTabId,
 } from '@/lib/menu-registry';
 import { getCurrentInstanceIdFromPathname } from '@/lib/instance-routes';
@@ -158,6 +160,9 @@ export function UserSettingsModal({
     // this modal is for user preferences and the currently-scoped instance.
     const preferenceTabs: Tab[] = getPreferenceTabs();
     const instanceTabs: Tab[] = hasInstance ? getInstanceTabs() : [];
+    const accountTabs: Tab[] = [
+        { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
+    ];
 
     const instanceLoading =
         open && !!currentInstanceId && !hasInstance && instanceSandboxQuery.isLoading;
@@ -165,6 +170,7 @@ export function UserSettingsModal({
     type TabGroup = { label: string; tabs: Tab[]; skeleton?: boolean };
     const tabGroups: TabGroup[] = [
         { label: 'Preferences', tabs: preferenceTabs },
+        { label: 'Account', tabs: accountTabs },
         ...(instanceTabs.length > 0
             ? [{ label: instanceSandbox?.name || 'Instance', tabs: instanceTabs }]
             : instanceLoading
@@ -172,7 +178,7 @@ export function UserSettingsModal({
               : []),
     ];
 
-    const allTabs = [...preferenceTabs, ...instanceTabs];
+    const allTabs = [...preferenceTabs, ...accountTabs, ...instanceTabs];
 
     useEffect(() => {
         setActiveTab(defaultTab);
@@ -261,6 +267,7 @@ export function UserSettingsModal({
                                 {activeTab === 'sounds' && <SoundsTab />}
                                 {activeTab === 'notifications' && <NotificationsTab />}
                                 {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
+                                {activeTab === 'tokens' && <CliTokensTab />}
                                 {activeTab === 'instance-members' && instanceSandbox && (
                                     <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                                 )}
@@ -337,6 +344,7 @@ export function UserSettingsModal({
                             {activeTab === 'sounds' && <SoundsTab />}
                             {activeTab === 'notifications' && <NotificationsTab />}
                             {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
+                            {activeTab === 'tokens' && <CliTokensTab />}
                             {activeTab === 'instance-members' && instanceSandbox && (
                                 <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                             )}

@@ -437,6 +437,7 @@ export const projectRuntimeSnapshots = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     provider: sandboxProviderEnum('provider').default('daytona').notNull(),
     commitSha: text('commit_sha').notNull(),
+    branch: text('branch').default('').notNull(),
     snapshotId: text('snapshot_id'),
     status: projectSnapshotStatusEnum('status').default('queued').notNull(),
     error: text('error'),
@@ -447,6 +448,7 @@ export const projectRuntimeSnapshots = kortixSchema.table(
   (table) => [
     index('idx_project_runtime_snapshots_project').on(table.projectId),
     index('idx_project_runtime_snapshots_status').on(table.status),
+    index('idx_project_runtime_snapshots_branch_ready').on(table.projectId, table.branch, table.status, table.createdAt),
     uniqueIndex('idx_project_runtime_snapshots_commit_provider').on(table.projectId, table.commitSha, table.provider),
   ],
 );
@@ -694,6 +696,35 @@ export const kortixApiKeys = kortixSchema.table(
     index('idx_kortix_api_keys_secret_hash').on(table.secretKeyHash),
     index('idx_kortix_api_keys_sandbox').on(table.sandboxId),
     index('idx_kortix_api_keys_account').on(table.accountId),
+  ],
+);
+
+// ─── Account Tokens (Personal Access Tokens for the CLI) ────────────────────
+// Account-scoped, minted from the dashboard, used as
+// `Authorization: Bearer <kortix_pat_...>` by the `kortix` CLI.
+
+export const accountTokens = kortixSchema.table(
+  'account_tokens',
+  {
+    tokenId: uuid('token_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    publicKey: varchar('public_key', { length: 64 }).notNull(),
+    secretKeyHash: varchar('secret_key_hash', { length: 128 }).notNull(),
+    status: apiKeyStatusEnum('status').default('active').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),
+    index('idx_account_tokens_secret_hash').on(table.secretKeyHash),
+    index('idx_account_tokens_account').on(table.accountId),
+    index('idx_account_tokens_user').on(table.userId),
   ],
 );
 

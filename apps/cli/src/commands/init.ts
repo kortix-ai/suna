@@ -3,7 +3,7 @@ import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { applyScaffold } from '../scaffold.ts';
-import { prompt, confirm, selectFrom } from '../prompts.ts';
+import { prompt, confirm, selectFrom, selectMany } from '../prompts.ts';
 import {
   installAgentSkills,
   SUPPORTED_AGENTS,
@@ -17,9 +17,9 @@ const HELP = `Usage: kortix init [options]
 Scaffold a Kortix project in the current directory. Drops kortix.toml at
 the repo root + a .kortix/ folder containing the Dockerfile and the
 OpenCode runtime config dir (default agent + Kortix system skill). Then
-wires the Kortix skill into every supported coding agent's discovery
-path (${SUPPORTED_AGENTS.join(', ')}) so any of them can configure the
-project for you.
+wires the Kortix skill into whichever coding agents you pick
+(${SUPPORTED_AGENTS.join(', ')}) so they can configure the project for
+you.
 
 Behavior:
   * If kortix.toml already exists, init refuses unless you pass --force.
@@ -29,19 +29,21 @@ Behavior:
 
 Options:
   --name <project>     Display name for kortix.toml. Defaults to cwd basename.
-  --primary <agent>    Which coding agent to feature in the get-started
-                       panel (${SUPPORTED_AGENTS.join('|')}). All four
-                       are always wired up regardless.
+  --primary <agent>    Primary coding agent — featured in the get-started
+                       panel (${SUPPORTED_AGENTS.join('|')}).
+  --agents <list>      Comma-separated extras to wire up alongside --primary.
+                       Example: --agents claude,cursor
   --force              Re-scaffold even if kortix.toml already exists.
   --overwrite          Overwrite existing files (default: preserve).
   --no-git             Don't run \`git init\` if the dir isn't a repo.
-  -y, --yes            Skip prompts; accept all defaults.
+  -y, --yes            Skip prompts; accept all defaults (primary only).
   -h, --help           Show this help.
 `;
 
 interface InitFlags {
   name?: string;
   primary?: CodingAgent;
+  agents?: CodingAgent[];
   force: boolean;
   overwrite: boolean;
   noGit: boolean;
@@ -98,6 +100,24 @@ function parseFlags(argv: string[]): InitFlags {
         i += 1;
         break;
       }
+      case '--agents': {
+        const next = argv[i + 1];
+        if (!next || next.startsWith('-')) {
+          throw new Error(`kortix: --agents requires a value`);
+        }
+        const list: CodingAgent[] = [];
+        for (const part of next.split(',')) {
+          const norm = part.trim().toLowerCase();
+          if (!norm) continue;
+          if (!(SUPPORTED_AGENTS as readonly string[]).includes(norm)) {
+            throw new Error(`kortix: unknown coding agent "${norm}"`);
+          }
+          list.push(norm as CodingAgent);
+        }
+        f.agents = list;
+        i += 1;
+        break;
+      }
       default:
         if (arg.startsWith('-')) throw new Error(`kortix: unknown option "${arg}"`);
         throw new Error(`kortix: unexpected argument "${arg}"`);
@@ -134,12 +154,12 @@ function printAgentPreamble(): void {
   const opts = SUPPORTED_AGENTS.map((a) => `${bold}${a}${reset}`).join(`  ${dim}·${reset}  `);
   const lines = [
     '',
-    `  Which coding agent do you primarily use?`,
+    `  Pick your local coding agent to configure this Kortix project.`,
     '',
-    `  ${dim}We'll wire the Kortix skill into all four below so any of them${reset}`,
-    `  ${dim}can configure this project — your pick just decides which one${reset}`,
-    `  ${dim}we highlight in the get-started prompt.${reset}`,
+    `  ${dim}It picks up the Kortix skill — ask it to scaffold triggers,${reset}`,
+    `  ${dim}custom agents, or edit kortix.toml for you.${reset}`,
     `  ${dim}(Kortix itself runs opencode inside every sandbox session.)${reset}`,
+    `  ${dim}You can add more agents on the next prompt.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -194,11 +214,12 @@ export async function runInit(argv: string[]): Promise<number> {
     projectName = normalizeProjectName(answer);
   }
 
-  // ── Resolve primary coding agent ─────────────────────────────────────
-  // Kortix skills are always wired into every supported agent's discovery
-  // path (opencode, claude, codex, cursor) — the primary choice only
-  // decides which agent gets called out in the "paste this prompt" panel.
+  // ── Resolve coding agents ────────────────────────────────────────────
+  // The primary is the one we feature in the get-started panel. Extras
+  // also get the Kortix skill wired into their discovery paths.
   let primary: CodingAgent;
+  let extras: CodingAgent[] = [];
+
   if (flags.primary) {
     primary = flags.primary;
   } else if (flags.yes) {
@@ -208,7 +229,25 @@ export async function runInit(argv: string[]): Promise<number> {
     primary = await selectFrom('Primary coding agent', SUPPORTED_AGENTS, DEFAULT_PRIMARY);
   }
 
-  const chosenAgents: readonly CodingAgent[] = SUPPORTED_AGENTS;
+  if (flags.agents) {
+    extras = flags.agents.filter((a) => a !== primary);
+  } else if (!flags.yes) {
+    const others = SUPPORTED_AGENTS.filter((a) => a !== primary);
+    const wantOthers = await confirm(
+      `Also configure ${others.join(', ')}?`,
+      false,
+    );
+    if (wantOthers) {
+      process.stdout.write(`  Available: ${others.join(', ')}\n`);
+      const picked = await selectMany(
+        '  Which? (comma-separated, blank = all)',
+        others,
+      );
+      extras = picked.length > 0 ? picked : [...others];
+    }
+  }
+
+  const chosenAgents: CodingAgent[] = [primary, ...extras];
 
   // ── Detect existing .kortix/ ─────────────────────────────────────────
   const kortixExists = existsSync(resolve(cwd, '.kortix'));

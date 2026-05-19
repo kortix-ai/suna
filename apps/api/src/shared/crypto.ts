@@ -24,6 +24,7 @@ export function randomAlphanumeric(length: number): string {
 export const KEY_PREFIX = 'kortix_';
 export const KEY_PREFIX_SANDBOX = 'kortix_sb_';
 export const KEY_PREFIX_TUNNEL = 'kortix_tnl_';
+export const KEY_PREFIX_PAT = 'kortix_pat_';
 export const KEY_PREFIX_PUBLIC = 'pk_';
 
 const SECRET_RANDOM_LENGTH = 32;
@@ -66,6 +67,23 @@ export function generateSandboxKeyPair(): { publicKey: string; secretKey: string
  */
 export function generateTunnelToken(): string {
   return `${KEY_PREFIX_TUNNEL}${randomAlphanumeric(SECRET_RANDOM_LENGTH)}`;
+}
+
+/**
+ * Generate a Personal Access Token (PAT) for the CLI.
+ * Secret key: kortix_pat_<32 chars>  (shown once, only hash stored)
+ * Public key: pk_<32 chars>           (safe to store/display)
+ */
+export function generateAccountTokenPair(): { publicKey: string; secretKey: string } {
+  return {
+    publicKey: `${KEY_PREFIX_PUBLIC}${randomAlphanumeric(SECRET_RANDOM_LENGTH)}`,
+    secretKey: `${KEY_PREFIX_PAT}${randomAlphanumeric(SECRET_RANDOM_LENGTH)}`,
+  };
+}
+
+/** Check if a token is a CLI Personal Access Token. */
+export function isAccountToken(token: string): boolean {
+  return token.startsWith(KEY_PREFIX_PAT);
 }
 
 const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';

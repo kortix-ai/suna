@@ -1,7 +1,8 @@
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validateSecretKey } from '../repositories/api-keys';
-import { isKortixToken } from '../shared/crypto';
+import { validateAccountToken } from '../repositories/account-tokens';
+import { isKortixToken, isAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
@@ -85,6 +86,11 @@ export async function apiKeyAuth(c: Context, next: Next) {
 /**
  * Supabase JWT auth (for billing, platform, admin routes).
  * Header-only — sets userId and userEmail in context on success.
+ *
+ * Also accepts CLI Personal Access Tokens (kortix_pat_...) — these carry
+ * a real user_id from the account_tokens table, so the rest of the
+ * pipeline (resolveAccountId, project access checks, etc.) works
+ * unchanged.
  */
 export async function supabaseAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
@@ -96,6 +102,22 @@ export async function supabaseAuth(c: Context, next: Next) {
   const token = authHeader.slice(7);
   if (!token) {
     throw new HTTPException(401, { message: 'Missing token' });
+  }
+
+  // CLI Personal Access Token — same identity as the user who minted it.
+  if (isAccountToken(token)) {
+    const result = await validateAccountToken(token);
+    if (!result.isValid || !result.userId) {
+      throw new HTTPException(401, { message: result.error || 'Invalid PAT' });
+    }
+    c.set('userId', result.userId);
+    c.set('userEmail', '');
+    if (result.accountId) c.set('accountId', result.accountId);
+    setSentryUser({ id: result.userId, accountId: result.accountId });
+    setContextField('userId', result.userId);
+    if (result.accountId) setContextField('accountId', result.accountId);
+    await next();
+    return;
   }
 
   // Fast path: verify JWT locally (no network roundtrip)
@@ -212,6 +234,23 @@ export async function combinedAuth(c: Context, next: Next) {
 
   // Determine if this is a preview proxy route (for cookie management)
   const isPreviewRoute = c.req.path.startsWith('/v1/p/') || c.req.path === '/v1/p';
+
+  // 0. CLI Personal Access Token — carries a real user_id.
+  if (isAccountToken(token)) {
+    const patResult = await validateAccountToken(token);
+    if (!patResult.isValid || !patResult.userId) {
+      throw new HTTPException(401, { message: patResult.error || 'Invalid PAT' });
+    }
+    c.set('userId', patResult.userId);
+    c.set('userEmail', '');
+    if (patResult.accountId) c.set('accountId', patResult.accountId);
+    setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
+    setContextField('userId', patResult.userId);
+    if (patResult.accountId) setContextField('accountId', patResult.accountId);
+    if (isPreviewRoute) setPreviewSessionCookie(c, token);
+    await next();
+    return;
+  }
 
   // 1. Try Kortix token (kortix_ or kortix_sb_) — used by agents inside the sandbox
   if (isKortixToken(token)) {

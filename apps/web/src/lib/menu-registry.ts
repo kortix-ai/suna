@@ -111,6 +111,7 @@ export type SettingsTabId =
   | 'billing'
   | 'transactions'
   | 'referrals'
+  | 'tokens'
   | 'shortcuts'
   | 'instance-members'
   | 'instance-projects';
@@ -673,6 +674,16 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'referrals invite share friends earn',
     requiresBilling: true,
   },
+  {
+    id: 'account-tokens',
+    label: 'CLI tokens',
+    icon: KeyRound,
+    group: 'account',
+    showIn: ['commandPalette', 'userMenu'],
+    kind: 'settings',
+    settingsTab: 'tokens',
+    keywords: 'cli tokens personal access pat command line authentication',
+  },
 
   // ──────────────────────────────────────────────────────────────────────────
   // THEME
@@ -838,6 +849,7 @@ export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
   const items: SettingsTab[] = [
     { id: 'billing', label: 'Billing', icon: CreditCard },
     { id: 'transactions', label: 'Transactions', icon: Receipt },
+    { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
   ];
   // Referrals tab disabled for now
   // if (billingEnabled) {

@@ -1,0 +1,310 @@
+'use client';
+
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { CheckCircle2, KeyRound, Loader2, TerminalSquare, XCircle } from 'lucide-react';
+
+import { useAuth } from '@/components/AuthProvider';
+import { accountTokensApi } from '@/lib/api/account-tokens';
+import { Button } from '@/components/ui/button';
+
+/**
+ * Browser-callback authorization page. The CLI runs `kortix login`,
+ * spawns a one-shot HTTP server on `http://127.0.0.1:<port>/callback`,
+ * and opens this page with `?callback=<encoded URL>&state=<nonce>`.
+ *
+ * The user clicks **Authorize**. We mint a fresh PAT via the existing
+ * `/v1/accounts/tokens` endpoint and POST `{state, token}` to the
+ * local callback. The CLI captures it and tears its server down.
+ *
+ * Security:
+ *  - `callback` must be `http://127.0.0.1` or `http://localhost`.
+ *  - The `state` nonce is round-tripped to prevent cross-tab CSRF.
+ *  - We never expose the token in the URL (no `#fragment`, no query) —
+ *    it's only sent via POST body to localhost.
+ */
+export default function CliAuthorizePage() {
+  return (
+    <Suspense fallback={<Centered><Loader2 className="size-6 animate-spin text-muted-foreground" /></Centered>}>
+      <CliAuthorizeInner />
+    </Suspense>
+  );
+}
+
+type Phase = 'idle' | 'authorizing' | 'success' | 'error';
+
+function CliAuthorizeInner() {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const params = useSearchParams();
+
+  const callback = params.get('callback');
+  const state = params.get('state');
+  const label = params.get('label') ?? '';
+
+  const validation = useMemo(() => validateCallback(callback), [callback]);
+
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!user) {
+      const target = `/cli/authorize?${params.toString()}`;
+      router.replace(`/auth?redirect=${encodeURIComponent(target)}`);
+    }
+  }, [isLoading, user, params, router]);
+
+  if (isLoading || !user) {
+    return (
+      <Centered>
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </Centered>
+    );
+  }
+
+  if (!callback || !state) {
+    return (
+      <Centered>
+        <ErrorCard
+          title="Missing callback"
+          message="This page is opened by the kortix CLI. Run `kortix login` in your terminal to start."
+        />
+      </Centered>
+    );
+  }
+
+  if (!validation.ok) {
+    return (
+      <Centered>
+        <ErrorCard title="Invalid callback" message={validation.reason} />
+      </Centered>
+    );
+  }
+
+  async function authorize() {
+    if (!callback || !state) return;
+    setPhase('authorizing');
+    setError(null);
+    try {
+      const name = label ? `CLI · ${label}` : `CLI · ${new Date().toLocaleString()}`;
+      const minted = await accountTokensApi.create({ name });
+
+      const resp = await fetch(callback, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state, token: minted.secret_key }),
+      });
+
+      if (!resp.ok) {
+        let detail = `HTTP ${resp.status}`;
+        try {
+          const body = await resp.json();
+          if (body?.error) detail = `${detail} — ${body.error}`;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(`CLI callback rejected the token: ${detail}`);
+      }
+
+      setPhase('success');
+    } catch (err) {
+      setError((err as Error).message);
+      setPhase('error');
+    }
+  }
+
+  if (phase === 'success') {
+    return (
+      <Centered>
+        <SuccessCard />
+      </Centered>
+    );
+  }
+
+  return (
+    <Centered>
+      <ConsentCard
+        userEmail={user.email ?? ''}
+        callbackHost={validation.display}
+        deviceLabel={label}
+        phase={phase}
+        error={error}
+        onAuthorize={authorize}
+      />
+    </Centered>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Layout
+// ──────────────────────────────────────────────────────────────────────────
+
+function Centered({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
+      <div className="w-full max-w-md">{children}</div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Consent card
+// ──────────────────────────────────────────────────────────────────────────
+
+interface ConsentProps {
+  userEmail: string;
+  callbackHost: string;
+  deviceLabel: string;
+  phase: Phase;
+  error: string | null;
+  onAuthorize: () => void;
+}
+
+function ConsentCard({
+  userEmail,
+  callbackHost,
+  deviceLabel,
+  phase,
+  error,
+  onAuthorize,
+}: ConsentProps) {
+  const busy = phase === 'authorizing';
+  return (
+    <div className="rounded-xl border bg-background shadow-sm">
+      <div className="p-7">
+        <div className="mb-6 flex items-center gap-3">
+          <div className="grid size-11 place-items-center rounded-lg border bg-muted/40">
+            <TerminalSquare className="size-5" />
+          </div>
+          <div>
+            <div className="text-base font-semibold">Authorize Kortix CLI</div>
+            <div className="text-xs text-muted-foreground">
+              kortix.com → your terminal
+            </div>
+          </div>
+        </div>
+
+        <p className="text-sm text-muted-foreground">
+          Approving will create a new Personal Access Token in your account
+          and hand it to the CLI running on this machine.
+        </p>
+
+        <dl className="mt-5 space-y-2 rounded-md border bg-muted/30 p-4 text-sm">
+          <Row label="Account" value={userEmail || 'You'} />
+          <Row label="Callback" value={callbackHost} />
+          {deviceLabel && <Row label="Device" value={deviceLabel} />}
+        </dl>
+
+        {phase === 'error' && error && (
+          <div className="mt-5 flex items-start gap-2 rounded-md border border-destructive bg-destructive/5 p-3 text-sm text-destructive">
+            <XCircle className="mt-0.5 size-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="mt-6 flex items-center justify-between gap-3">
+          <a
+            href="/"
+            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+          >
+            Cancel
+          </a>
+          <Button onClick={onAuthorize} disabled={busy} size="lg">
+            {busy ? (
+              <>
+                <Loader2 className="size-4 animate-spin" /> Authorizing…
+              </>
+            ) : (
+              <>
+                <KeyRound className="size-4" /> Authorize
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      <div className="border-t bg-muted/30 px-7 py-3 text-xs text-muted-foreground">
+        You can revoke this token anytime under{' '}
+        <strong className="text-foreground">Settings → CLI tokens</strong>.
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="truncate font-mono text-xs">{value}</dd>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Success / error states
+// ──────────────────────────────────────────────────────────────────────────
+
+function SuccessCard() {
+  return (
+    <div className="rounded-xl border bg-background p-7 shadow-sm text-center">
+      <div className="mx-auto grid size-12 place-items-center rounded-full bg-green-500/10 text-green-600">
+        <CheckCircle2 className="size-6" />
+      </div>
+      <div className="mt-4 text-base font-semibold">CLI authorized</div>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Return to your terminal — you&apos;re signed in.
+      </p>
+      <p className="mt-4 text-xs text-muted-foreground">
+        You can close this tab.
+      </p>
+    </div>
+  );
+}
+
+function ErrorCard({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="rounded-xl border bg-background p-7 shadow-sm text-center">
+      <div className="mx-auto grid size-12 place-items-center rounded-full bg-destructive/10 text-destructive">
+        <XCircle className="size-6" />
+      </div>
+      <div className="mt-4 text-base font-semibold">{title}</div>
+      <p className="mt-1 text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────────────────
+
+interface Validation {
+  ok: boolean;
+  reason: string;
+  display: string;
+}
+
+function validateCallback(raw: string | null): Validation {
+  if (!raw) return { ok: false, reason: 'No callback URL provided.', display: '' };
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return { ok: false, reason: 'Callback is not a valid URL.', display: '' };
+  }
+  if (url.protocol !== 'http:') {
+    return {
+      ok: false,
+      reason: 'Callback must use http:// — refusing other protocols.',
+      display: url.origin,
+    };
+  }
+  if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
+    return {
+      ok: false,
+      reason: 'Callback must be a localhost address.',
+      display: url.origin,
+    };
+  }
+  return { ok: true, reason: '', display: `${url.hostname}:${url.port}` };
+}

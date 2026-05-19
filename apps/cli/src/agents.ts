@@ -33,11 +33,6 @@ export interface InstallAgentsResult {
  * agents (opencode, claude) get a symlink at their native discovery
  * path. Always-loaded agents (codex AGENTS.md, cursor rules) get a
  * tiny stub that points them at the canonical skill.
- *
- * Also always drops `.agents/skills/kortix/SKILL.md` as the universal
- * Agent Skills convention — opencode reads it natively, Prime's CLI
- * uses it as the shared path for codex/amp/letta, and any future
- * agent following the open standard will pick it up.
  */
 export function installAgentSkills(input: InstallAgentsInput): InstallAgentsResult {
   const written: string[] = [];
@@ -49,29 +44,7 @@ export function installAgentSkills(input: InstallAgentsInput): InstallAgentsResu
     skipped.push(...res.skipped);
   }
 
-  const universal = installUniversalAgentsLink(input.repoRoot, input.overwrite);
-  written.push(...universal.written);
-  skipped.push(...universal.skipped);
-
   return { written, skipped };
-}
-
-/** Universal `.agents/skills/kortix/SKILL.md` symlink — the cross-agent
- * Agent Skills convention. */
-function installUniversalAgentsLink(
-  repoRoot: string,
-  overwrite: boolean,
-): { written: string[]; skipped: string[] } {
-  const canonicalAbs = resolve(repoRoot, CANONICAL_SKILL);
-  const linkPath = '.agents/skills/kortix/SKILL.md';
-  const linkAbs = resolve(repoRoot, linkPath);
-  if (!handleExisting(linkAbs, overwrite)) {
-    return { written: [], skipped: [linkPath] };
-  }
-  mkdirSync(dirname(linkAbs), { recursive: true });
-  const linkTarget = relative(dirname(linkAbs), canonicalAbs);
-  symlinkSync(linkTarget, linkAbs);
-  return { written: [`${linkPath} -> ${CANONICAL_SKILL}`], skipped: [] };
 }
 
 function installOne(repoRoot: string, agent: CodingAgent, overwrite: boolean): InstallResult {

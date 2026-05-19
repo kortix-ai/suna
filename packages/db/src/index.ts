@@ -49,6 +49,7 @@ export {
   legacySandboxMigrations,
   deployments,
   kortixApiKeys,
+  accountTokens,
   serverEntries,
   // Relations
   projectsRelations,
