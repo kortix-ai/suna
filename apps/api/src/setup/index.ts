@@ -19,7 +19,9 @@ import { accounts } from '@kortix/db';
 import { db, hasDatabase } from '../shared/db';
 import { resolveAccountId } from '../shared/resolve-account';
 import { getSupabase } from '../shared/supabase';
-import { checkLocalSandboxHealth, type LocalSandboxHealthCheck } from '../platform/services/local-sandbox-health';
+/** Shape mirrors the legacy LocalSandboxHealthCheck (now removed) so the
+ *  frontend health UI keeps reading the same `{ok, error?}` per check. */
+type HealthCheck = { ok: boolean; error?: string };
 
 export const setupApp = new Hono<AppEnv>();
 
@@ -167,18 +169,16 @@ setupApp.get('/install-status', async (c) => {
  * Public (no auth) — the installer wizard calls this to know which sandbox
  * providers are enabled so it can branch the setup flow accordingly.
  *
- * Response: { providers: string[], default: string }
- *   e.g. { providers: ["local_docker"], default: "local_docker" }
- *   e.g. { providers: ["daytona", "local_docker"], default: "daytona" }
+ * Response: { providers: string[], default: string, capabilities: ... }
+ *   e.g. { providers: ["daytona"], default: "daytona", capabilities: {...} }
  */
 setupApp.get('/sandbox-providers', async (c) => {
-  const available: string[] = [];
-  if (config.isLocalDockerEnabled()) available.push('local_docker');
-  if (config.isDaytonaEnabled()) available.push('daytona');
+  const available = config.ALLOWED_SANDBOX_PROVIDERS.filter((name) =>
+    config.isProviderEnabled(name),
+  );
 
   // Provider capabilities — tells the frontend how to handle provisioning UI
   const capabilities: Record<string, { async: boolean; events: boolean; polling: boolean }> = {
-    local_docker: { async: false, events: false, polling: false },
     daytona: { async: false, events: false, polling: false },
   };
 
@@ -296,33 +296,17 @@ setupApp.get('/status', async (c) => {
  * Health check of all local services
  */
 setupApp.get('/health', async (c) => {
-  const repoRoot = findRepoRoot();
-  const checks: Record<string, LocalSandboxHealthCheck> = {};
-
-  // Check API (self)
+  const checks: Record<string, HealthCheck> = {};
+  // The API itself answered — by definition this check passes.
   checks.api = { ok: true };
-
-  // Installed/local Docker mode: check sandbox by HTTP (no docker CLI in image)
-  if (!repoRoot) {
-    try {
-      const health = await fetchMasterJson<{ status: string; runtimeReady?: boolean }>('/kortix/health', {}, 5000);
-      checks.sandbox = { ok: true };
-      checks.docker = { ok: true };
-      if (health.status === 'starting' || health.runtimeReady === false) {
-        checks.sandbox = { ok: false, error: 'Sandbox reachable but runtime is still starting' };
-      }
-    } catch (e: any) {
-      const msg = e?.message || String(e);
-      checks.sandbox = { ok: false, error: msg };
-      checks.docker = { ok: false, error: msg };
-    }
-    return c.json(checks);
-  }
-
-  const localChecks = checkLocalSandboxHealth();
-  checks.docker = localChecks.docker;
-  checks.sandbox = localChecks.sandbox;
-
+  // Daytona is the only provider — surface its config status so the
+  // setup wizard / health page can tell the operator they need to set
+  // DAYTONA_API_KEY. We don't ping Daytona here on purpose: that's a
+  // latency-sensitive UI call and Daytona's auth-check endpoint is
+  // their billing concern, not ours.
+  checks.daytona = config.DAYTONA_API_KEY
+    ? { ok: true }
+    : { ok: false, error: 'DAYTONA_API_KEY not configured' };
   return c.json(checks);
 });
 

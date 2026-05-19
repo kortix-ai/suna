@@ -1,20 +1,16 @@
 import { config } from '../../config';
 import { DaytonaProvider } from './daytona';
-import { LocalDockerProvider } from './local-docker';
 
 /**
- * Sandbox provider lineup.
+ * Sandbox provider lineup. Extensible registry — adding a new runtime is
+ * a one-place change in `getProvider()` plus a value added to the
+ * `ProviderName` union. Call sites depend on the `SandboxProvider`
+ * interface, not the concrete class, so they stay untouched.
  *
- *   - daytona       — managed cloud (Daytona). Default for hosted deployments.
- *   - local_docker  — self-host. Spins the same image as cloud (apps/sandbox/
- *                     Dockerfile) as a local container, one per session.
- *
- * Reserved (not yet implemented):
- *   - docker_sbx    — Docker Inc.'s managed Sandboxes product
- *                     (https://docs.docker.com/ai/sandboxes/). Adding it here
- *                     in the future is a non-breaking widening of the union.
+ *   - daytona — managed cloud (Daytona). Only provider implemented today;
+ *               local_docker was removed when we consolidated on cloud.
  */
-export type ProviderName = 'daytona' | 'local_docker';
+export type ProviderName = 'daytona';
 export type { SandboxProviderName } from '../../config';
 
 export interface CreateSandboxOpts {
@@ -87,28 +83,19 @@ export function getProvider(name: ProviderName): SandboxProvider {
   const existing = providers.get(name);
   if (existing) return existing;
 
-  if (!config.ALLOWED_SANDBOX_PROVIDERS.includes(name)) {
-    throw new Error(
-      `Sandbox provider '${name}' is not allowed. ` +
-      `Allowed: ${config.ALLOWED_SANDBOX_PROVIDERS.join(', ')}. ` +
-      `Set ALLOWED_SANDBOX_PROVIDERS in your .env.`
-    );
-  }
-
   let provider: SandboxProvider;
 
   switch (name) {
     case 'daytona':
       if (!config.DAYTONA_API_KEY) {
-        throw new Error('Daytona provider is allowed but not configured. Set DAYTONA_API_KEY.');
+        throw new Error('Daytona provider requires DAYTONA_API_KEY to be set.');
       }
       provider = new DaytonaProvider();
       break;
-    case 'local_docker':
-      provider = new LocalDockerProvider();
-      break;
-    default:
-      throw new Error(`Unknown sandbox provider: ${name}`);
+    default: {
+      const exhaustive: never = name;
+      throw new Error(`Unknown sandbox provider: ${exhaustive}`);
+    }
   }
 
   providers.set(name, provider);
@@ -120,8 +107,5 @@ export function getDefaultProviderName(): ProviderName {
 }
 
 export function getAvailableProviders(): ProviderName[] {
-  const available: ProviderName[] = [];
-  if (config.isDaytonaEnabled()) available.push('daytona');
-  if (config.isLocalDockerEnabled()) available.push('local_docker');
-  return available;
+  return ['daytona'];
 }

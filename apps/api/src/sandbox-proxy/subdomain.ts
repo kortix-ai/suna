@@ -10,9 +10,8 @@
  *     side-steps third-party cookie restrictions inside iframes and lets
  *     sub-resources, redirects, WS upgrades flow through unchanged.
  *   - HTTP forwarding goes through `proxyToDaytona` so we reuse the same
- *     provider-aware path resolution (local_docker → agent-server /proxy/{port};
- *     daytona → getPreviewLink(port)) that the path-based `/v1/p/:sandboxId/:port`
- *     route uses.
+ *     path resolution (Daytona's getPreviewLink(port)) that the path-based
+ *     `/v1/p/:sandboxId/:port` route uses.
  *
  * What this DOESN'T cover (yet): WebSocket upgrade on the subdomain. The
  * agent server's `/proxy/{port}/*` handler is HTTP-only, and the API's WS

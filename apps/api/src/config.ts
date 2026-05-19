@@ -11,7 +11,10 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker';
+// Only Daytona is supported end-to-end. The DB enum still carries the
+// historical 'local_docker' value for legacy rows, but the API will never
+// produce one.
+export type SandboxProviderName = 'daytona';
 export type InternalKortixEnv = 'dev' | 'staging' | 'prod';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -127,30 +130,16 @@ const envSchema = z.object({
   DAYTONA_TARGET:              optStr,
   DAYTONA_SNAPSHOT:            optStr,
 
-  // ── Local Docker — Sandbox provisioning via local Docker daemon ──────────
-  // The image kortix/sandbox:dev is the same one Daytona uses in cloud
-  // (built by apps/sandbox/Dockerfile). Run `docker build` once locally
-  // before turning this provider on.
-  KORTIX_LOCAL_DOCKER_IMAGE:   optStrDefault('kortix/sandbox:dev'),
-
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // KORTIX_URL is auto-derived from PORT if not explicitly set (see validateEnv).
   KORTIX_URL:                  optStr,
   KORTIX_YOLO_URL:             optUrl('https://api-yolo.kortix.com/v1'),
+  // Legacy: kept so old .env files don't fail validation. Value is ignored —
+  // every sandbox now provisions on Daytona.
   ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
-  // Single-env override that pins the DEFAULT sandbox provider for new
-  // sessions. When set, takes precedence over the head-of-ALLOWED rule
-  // used by `getDefaultProvider()`. Values: 'daytona' | 'local_docker'.
-  // Leave unset to let ALLOWED_SANDBOX_PROVIDERS[0] win.
-  SANDBOX_PROVIDER:            optStr,
-  DOCKER_HOST:                 optStr,
   // Default port base for sandbox port mapping; kept for the queue drainer
-  // and deployments router which still reference it. Functional logic has
-  // moved off the legacy local sandbox.
+  // and deployments router which still reference it.
   SANDBOX_PORT_BASE:           optInt(14000),
-  // Container name for the local-docker dev bridge. Empty/undefined when
-  // local_docker isn't in use — codepaths that read it should treat the
-  // absence as "no local bridge configured".
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
@@ -209,14 +198,21 @@ const envSchema = z.object({
 
 type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 
-/** Parse comma-separated provider list (e.g. "daytona,local_docker") */
+// Recognised provider names. Source-of-truth for what can legally appear in
+// ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
+// here plus a case in `getProvider()` in platform/providers/index.ts.
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona'] as const;
+
+/** Parse comma-separated provider list (e.g. "daytona"). Unknown entries
+ *  are dropped with a warning so an old .env doesn't break boot. */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
   if (!raw) return ['daytona'];
   const names = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   const valid: SandboxProviderName[] = [];
   for (const n of names) {
-    if (n === 'daytona' || n === 'local_docker') {
-      if (!valid.includes(n)) valid.push(n);
+    if ((KNOWN_PROVIDERS as readonly string[]).includes(n)) {
+      const known = n as SandboxProviderName;
+      if (!valid.includes(known)) valid.push(known);
     } else {
       console.warn(`[config] Unknown sandbox provider "${n}" in ALLOWED_SANDBOX_PROVIDERS - ignored`);
     }
@@ -248,8 +244,6 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
   }
 
-  // ── local_docker: no hard requirements — DOCKER_HOST defaults to system socket.
-
   // ── Conditional: Billing enabled → need Stripe keys ────────────────────
   const billingWillBeEnabled = (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === 'true' || (raw as any).KORTIX_BILLING_INTERNAL_ENABLED === true || (raw as any).ENV_MODE === 'cloud';
   if (billingWillBeEnabled) {
@@ -264,7 +258,6 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Conditional: KORTIX_URL — required for sandbox routing ──────────────
-  // Used by every sandbox provider (daytona, local_docker) and sandbox health.
   // Auto-derive from PORT in local mode if not set — fatal in cloud mode.
   if (!raw.KORTIX_URL) {
     const envMode = (raw as any).ENV_MODE || 'local';
@@ -406,9 +399,6 @@ export const config = {
   KORTIX_URL: env.KORTIX_URL,
   KORTIX_YOLO_URL: env.KORTIX_YOLO_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
-  SANDBOX_PROVIDER: env.SANDBOX_PROVIDER,
-  DOCKER_HOST: env.DOCKER_HOST,
-  KORTIX_LOCAL_DOCKER_IMAGE: env.KORTIX_LOCAL_DOCKER_IMAGE,
   SANDBOX_PORT_BASE: env.SANDBOX_PORT_BASE,
   SANDBOX_CONTAINER_NAME: env.SANDBOX_CONTAINER_NAME,
 
@@ -511,32 +501,25 @@ export const config = {
     return !this.isLocal();
   },
 
-  isDaytonaEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
-  },
-
-  isLocalDockerEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker');
+  isProviderEnabled(name: SandboxProviderName): boolean {
+    if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
+    switch (name) {
+      case 'daytona': return !!this.DAYTONA_API_KEY;
+      default: {
+        const exhaustive: never = name;
+        return exhaustive;
+      }
+    }
   },
 
   /**
-   * Default sandbox provider for new sessions.
-   *
-   * Resolution order:
-   *   1. SANDBOX_PROVIDER env (single-value override) — must be in the
-   *      ALLOWED_SANDBOX_PROVIDERS list, otherwise we fall back to (2)
-   *      to avoid handing out a provider the operator hasn't opted in to.
-   *   2. First entry of ALLOWED_SANDBOX_PROVIDERS.
-   *   3. 'daytona' as the final safety belt.
-   *
-   * This lets a self-host operator flip every new session to local docker
-   * with just `SANDBOX_PROVIDER=local_docker` in apps/api/.env.
+   * Default sandbox provider for new sessions. First entry of
+   * ALLOWED_SANDBOX_PROVIDERS, with 'daytona' as the safety belt for an
+   * empty list. The single-provider invariant means there's no resolution
+   * order today, but the function is the contract callers depend on —
+   * adding a new provider later just changes what the list can contain.
    */
   getDefaultProvider(): SandboxProviderName {
-    const explicit = (this.SANDBOX_PROVIDER || '').trim().toLowerCase();
-    if (explicit === 'daytona' || explicit === 'local_docker') {
-      if (this.ALLOWED_SANDBOX_PROVIDERS.includes(explicit)) return explicit;
-    }
     return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
   },
 

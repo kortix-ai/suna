@@ -36,6 +36,7 @@ import { projectRuntimeSnapshots } from '@kortix/db';
 import { db } from '../shared/db';
 import { getDaytona } from '../shared/daytona';
 import { SANDBOX_VERSION } from '../config';
+import type { SandboxProviderName } from '../config';
 
 /**
  * Pinned opencode CLI version layered into every snapshot. Bump this
@@ -80,7 +81,7 @@ const POLL_INTERVAL_MS = 2_000;
 
 /** What the builder reports back to its caller. */
 export interface SnapshotResolution {
-  /** Daytona snapshot name a session can boot from. */
+  /** Daytona snapshot name a session can boot from (`kortix-snap-…`). */
   daytonaName: string;
   /** Commit SHA the snapshot was built for. */
   commitSha: string;
@@ -100,7 +101,12 @@ export class SnapshotBuildError extends Error {
 /**
  * Top-level entry point: returns a ready Daytona snapshot name, building
  * one inline if needed. Idempotent — concurrent calls for the same
- * (project, commit) coalesce via the table's unique constraint.
+ * (project, commit, provider) coalesce via the table's unique constraint.
+ *
+ * `provider` is on the API for extensibility — every provider that ever
+ * lands here will need a build path. Today only 'daytona' is supported;
+ * unsupported values throw inside `runBuild` so the call site doesn't
+ * have to guard.
  */
 export async function getOrBuildSnapshot(
   project: GitBackedProject,
@@ -109,10 +115,12 @@ export async function getOrBuildSnapshot(
     ref?: string;
     /** Override the project account id (avoids re-querying the projects row). */
     accountId: string;
+    /** Provider to build for. Defaults to 'daytona'. */
+    provider?: SandboxProviderName;
   },
 ): Promise<SnapshotResolution> {
   const commitSha = await resolveCommitSha(project, options.ref);
-  const provider = 'daytona' as const;
+  const provider = options.provider ?? 'daytona';
 
   // Cache lookup first — by far the common case.
   const existing = await findSnapshotRow(project.projectId, commitSha);
@@ -162,7 +170,7 @@ export async function getOrBuildSnapshot(
 
   // We own the build. Anything that throws below must mark the row failed.
   try {
-    const result = await runBuild(project, commitSha);
+    const result = await runBuild(project, commitSha, provider);
     await db
       .update(projectRuntimeSnapshots)
       .set({
@@ -219,7 +227,11 @@ interface BuildOutcome {
   built: boolean;
 }
 
-async function runBuild(project: GitBackedProject, commitSha: string): Promise<BuildOutcome> {
+async function runBuild(
+  project: GitBackedProject,
+  commitSha: string,
+  provider: SandboxProviderName,
+): Promise<BuildOutcome> {
   // Flip to `building` first so concurrent waiters can distinguish "in
   // progress" from "queued and stuck". Best-effort — if the update misses
   // (row vanished, db blip), the build still proceeds.
@@ -230,11 +242,54 @@ async function runBuild(project: GitBackedProject, commitSha: string): Promise<B
       and(
         eq(projectRuntimeSnapshots.projectId, project.projectId),
         eq(projectRuntimeSnapshots.commitSha, commitSha),
-        eq(projectRuntimeSnapshots.provider, 'daytona'),
+        eq(projectRuntimeSnapshots.provider, provider),
       ),
     )
     .catch(() => {});
 
+  const ctx = await prepareBuildContext(project, commitSha);
+  try {
+    // Daytona is the only provider with a build path today. New providers
+    // can be added here as cases; the rest of the function stays the same.
+    if (provider !== 'daytona') {
+      throw new SnapshotBuildError(
+        `snapshot builder not implemented for provider '${provider}'`,
+      );
+    }
+    const daytona = getDaytona();
+    try {
+      const existing = await daytona.snapshot.get(ctx.snapshotName);
+      if (existing) {
+        return { daytonaName: ctx.snapshotName, contentHash: ctx.contentHash, shortHash: ctx.shortHash, built: false };
+      }
+    } catch { /* not present — proceed with build */ }
+    await daytona.snapshot.create(
+      { name: ctx.snapshotName, image: Image.fromDockerfile(ctx.composedPath) },
+      { timeout: Math.floor(BUILD_TIMEOUT_MS / 1000) },
+    );
+    return { daytonaName: ctx.snapshotName, contentHash: ctx.contentHash, shortHash: ctx.shortHash, built: true };
+  } finally {
+    await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Shared prepare-step used by every build path: materializes the git
+ * context to a tmpdir, copies the kortix-agent + entrypoint, composes the
+ * layered Dockerfile, computes the content-addressed snapshot name.
+ */
+interface PreparedContext {
+  contextDir: string;
+  composedPath: string;
+  snapshotName: string;
+  contentHash: string;
+  shortHash: string;
+}
+
+async function prepareBuildContext(
+  project: GitBackedProject,
+  commitSha: string,
+): Promise<PreparedContext> {
   const sandboxPaths = await resolveSandboxPaths(project, commitSha);
   const userDockerfile = await readRepoFile(project, sandboxPaths.dockerfile, commitSha);
   if (!userDockerfile.trim()) {
@@ -248,61 +303,36 @@ async function runBuild(project: GitBackedProject, commitSha: string): Promise<B
     sandboxPaths.context === '.' ? null : sandboxPaths.context,
   );
   const hash = computeSnapshotHash({ dockerfile: userDockerfile, contextTreeOid });
-  const daytonaName = formatSnapshotName(project.projectId, hash.contentHash);
+  const snapshotName = formatSnapshotName(project.projectId, hash.contentHash);
 
-  // Dedup against Daytona — content-addressed name means an identical
-  // build done by another project (or an earlier commit with the same
-  // content) is already there.
-  const daytona = getDaytona();
-  try {
-    const existing = await daytona.snapshot.get(daytonaName);
-    if (existing) {
-      return { daytonaName, contentHash: hash.contentHash, shortHash: hash.shortHash, built: false };
-    }
-  } catch {
-    // get() throws when the snapshot doesn't exist — proceed with build.
-  }
-
-  // Materialize context to a tmpdir + write the composed Dockerfile beside it.
   const contextDir = await materializeRepoContext(
     project,
     commitSha,
     sandboxPaths.context === '.' ? null : sandboxPaths.context,
   );
-  try {
-    // Copy the agent binary + entrypoint shim into the context so the
-    // layered Dockerfile's COPY instructions resolve. Fail loud and
-    // early if either is missing — a build that proceeds without them
-    // would land in Daytona's queue, fail there, and waste a slot.
-    await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
-    await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-    await copyFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent'));
-    await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
+  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
+  await copyFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent'));
+  await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
 
-    const composedPath = join(contextDir, '.kortix-snapshot.Dockerfile');
-    const composed = buildLayeredDockerfile({
-      userDockerfile,
-      opencodeVersion: OPENCODE_VERSION,
-      // Filenames here resolve against `contextDir` at docker build time
-      // — they're the basenames of the files we just copied in above.
-      agentBinaryPath: 'kortix-agent',
-      entrypointScriptPath: 'kortix-entrypoint',
-    });
-    await Bun.write(composedPath, composed);
+  const composedPath = join(contextDir, '.kortix-snapshot.Dockerfile');
+  const composed = buildLayeredDockerfile({
+    userDockerfile,
+    opencodeVersion: OPENCODE_VERSION,
+    agentBinaryPath: 'kortix-agent',
+    entrypointScriptPath: 'kortix-entrypoint',
+  });
+  await Bun.write(composedPath, composed);
 
-    await daytona.snapshot.create(
-      {
-        name: daytonaName,
-        image: Image.fromDockerfile(composedPath),
-      },
-      { timeout: Math.floor(BUILD_TIMEOUT_MS / 1000) },
-    );
-
-    return { daytonaName, contentHash: hash.contentHash, shortHash: hash.shortHash, built: true };
-  } finally {
-    await rm(contextDir, { recursive: true, force: true }).catch(() => {});
-  }
+  return {
+    contextDir,
+    composedPath,
+    snapshotName,
+    contentHash: hash.contentHash,
+    shortHash: hash.shortHash,
+  };
 }
+
 
 async function assertExists(path: string, envVarHint: string): Promise<void> {
   if (!isAbsolute(path)) {

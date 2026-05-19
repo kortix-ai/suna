@@ -70,10 +70,7 @@ export async function provisionSessionSandbox(opts: {
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
-  //   2. `config.getDefaultProvider()` — honours SANDBOX_PROVIDER env first
-  //      and falls back to the head of ALLOWED_SANDBOX_PROVIDERS.
-  // This lets `SANDBOX_PROVIDER=local_docker` in apps/api/.env flip every
-  // new session onto the local docker daemon without code changes.
+  //   2. `config.getDefaultProvider()` — head of ALLOWED_SANDBOX_PROVIDERS.
   const providerName = opts.provider || config.getDefaultProvider();
   const provider = getProvider(providerName);
 
@@ -126,15 +123,17 @@ export async function provisionSessionSandbox(opts: {
   void (async () => {
     let bgExternalId: string | null = null;
     try {
-      // Per-project snapshot resolution. Daytona-only for v1 — local
-      // docker still uses the shared platform image. When the builder
-      // throws (build failed, project mis-configured), we surface a
-      // clear error on the session row and abort.
-      if (opts.gitProject && providerName === 'daytona') {
+      // Per-project snapshot resolution. The builder is provider-aware
+      // (see snapshots/builder.ts); we pass the provider through so a
+      // future runtime can land its own build path without re-threading
+      // callers. When the builder throws (build failed, project
+      // mis-configured), we surface a clear error on the session row.
+      if (opts.gitProject) {
         try {
           const resolution = await getOrBuildSnapshot(opts.gitProject, {
             ref: opts.baseRef,
             accountId,
+            provider: providerName,
           });
           providerCreateInput.snapshot = resolution.daytonaName;
           console.log(
@@ -190,9 +189,9 @@ export async function provisionSessionSandbox(opts: {
       });
       bgExternalId = result.externalId;
 
-      // Cloud (async) providers leave the row at 'provisioning' so the
-      // dashboard poller can flip it to 'active' once port 8000 is reachable.
-      // Sync providers (local_docker) are ready immediately on create().
+      // Async providers leave the row at 'provisioning' so the dashboard
+      // poller can flip it to 'active' once port 8000 is reachable. Sync
+      // providers (none today) would be ready immediately on create.
       const finishUpdate: Partial<typeof sessionSandboxes.$inferInsert> = {
         externalId: result.externalId,
         baseUrl: result.baseUrl || null,

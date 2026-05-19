@@ -57,7 +57,7 @@ import {
 import { buildStarterFiles } from './starter';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import { getProvider } from '../platform/providers';
-import { config } from '../config';
+import { config, type SandboxProviderName } from '../config';
 import { encodeSessionLlmToken } from '../shared/session-llm-token';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
 import { recordAuditEvent } from '../shared/audit';
@@ -668,16 +668,12 @@ async function createProjectSession(input: {
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
   const agentName = normalizeString(body.agent_name ?? body.agentName) ?? 'default';
   const requestedProvider = normalizeString(body.provider);
-  let providerName: 'daytona' | 'local_docker' = config.getDefaultProvider();
+  let providerName: SandboxProviderName = config.getDefaultProvider();
   if (requestedProvider) {
-    if (requestedProvider === 'daytona' || requestedProvider === 'local_docker') {
-      if (!config.ALLOWED_SANDBOX_PROVIDERS.includes(requestedProvider)) {
-        return { error: { status: 400, body: { error: `Sandbox provider not enabled: ${requestedProvider}` } } };
-      }
-      providerName = requestedProvider;
-    } else {
-      return { error: { status: 400, body: { error: `Unknown sandbox provider: ${requestedProvider}` } } };
+    if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(requestedProvider)) {
+      return { error: { status: 400, body: { error: `Unknown or disabled sandbox provider: ${requestedProvider}` } } };
     }
+    providerName = requestedProvider as SandboxProviderName;
   }
 
   let responseHeaders: Record<string, string> | undefined;
@@ -3518,8 +3514,8 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
     .limit(1);
   if (!session) return c.json({ error: 'Not found' }, 404);
 
-  const providerName = session.sandboxProvider;
-  if (providerName !== 'daytona' && providerName !== 'local_docker') {
+  const providerName = session.sandboxProvider as SandboxProviderName;
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
     return c.json({ error: `Restart is not supported for provider ${providerName}` }, 400);
   }
 
@@ -3552,10 +3548,10 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
 
   if (
     existingSandbox?.externalId &&
-    (existingSandbox.provider === 'daytona' || existingSandbox.provider === 'local_docker')
+    existingSandbox.provider === 'daytona'
   ) {
     try {
-      const provider = getProvider(existingSandbox.provider);
+      const provider = getProvider('daytona');
       await provider.remove(existingSandbox.externalId);
     } catch (err) {
       console.warn(`[projects] restart: failed to remove provider container for ${sessionId}:`, err);

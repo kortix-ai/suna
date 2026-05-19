@@ -4,8 +4,8 @@
  * Proxies to the sandbox's /kortix/share endpoints so the frontend can create,
  * list, and revoke share links without talking to the sandbox directly.
  *
- * Provider-neutral: cloud and local_docker sessions both resolve through the
- * session sandbox proxy table before this route talks to the sandbox daemon.
+ * Provider-neutral: every session resolves through the session sandbox
+ * proxy table before this route talks to the sandbox daemon.
  */
 
 import { Hono } from 'hono'

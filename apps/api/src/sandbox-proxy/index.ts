@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { eq, and } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
+import { config, type SandboxProviderName } from '../config';
 import { combinedAuth } from '../middleware/auth';
 import { preview, proxyToDaytona } from './routes/preview';
 import { getAuthToken } from './routes/auth';
@@ -59,7 +60,7 @@ sandboxProxyApp.use('/:sandboxId/:port', createSandboxProxyRateLimitMiddleware()
 // Cache sandbox provider lookups (single-table: kortix.session_sandboxes) to
 // avoid a DB query on every request. The legacy kortix.sandboxes lookup is
 // gone — only sessions create sandboxes now.
-type CachedProviderName = 'daytona' | 'local_docker';
+type CachedProviderName = SandboxProviderName;
 interface ProviderCacheEntry {
   provider: CachedProviderName;
   baseUrl: string;
@@ -107,7 +108,7 @@ export async function resolveProvider(externalId: string): Promise<{
       .limit(1);
 
     if (!row) return null;
-    if (row.provider !== 'daytona' && row.provider !== 'local_docker') return null;
+    if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) return null;
 
     const provider = row.provider as CachedProviderName;
     const baseUrl = row.baseUrl || '';
@@ -127,9 +128,9 @@ export async function resolveProvider(externalId: string): Promise<{
   }
 }
 
-// Both daytona and local_docker sandboxes ultimately serve from a per-sandbox
-// URL — the preview handler reads it from the row (`baseUrl`) or fetches it
-// from Daytona's SDK. No per-provider dispatch needed in this thin proxy.
+// Every sandbox serves from a per-sandbox URL — the preview handler reads
+// it from the row (`baseUrl`) or fetches it from Daytona's SDK. No
+// per-provider dispatch needed in this thin proxy.
 sandboxProxyApp.route('/', preview);
 
 // Suppress unused-import warning — `buildSignedUserContextHeader` is exported

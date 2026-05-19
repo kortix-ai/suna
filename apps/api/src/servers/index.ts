@@ -16,7 +16,7 @@ import { eq, and } from 'drizzle-orm';
 import { serverEntries } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
-import { config } from '../config';
+import { config, type SandboxProviderName } from '../config';
 import { supabaseAuth } from '../middleware/auth';
 import { resolveAccountId } from '../shared/resolve-account';
 
@@ -56,7 +56,7 @@ serversApp.put('/sync', async (c) => {
       label: string;
       url: string;
       isDefault?: boolean;
-      provider?: 'daytona' | 'local_docker';
+      provider?: SandboxProviderName;
       sandboxId?: string;
       mappedPorts?: Record<string, string>;
     }>;
@@ -140,7 +140,7 @@ serversApp.post('/', async (c) => {
     label: string;
     url: string;
     isDefault?: boolean;
-    provider?: 'daytona' | 'local_docker';
+    provider?: SandboxProviderName;
     sandboxId?: string;
     mappedPorts?: Record<string, string>;
   }>();
@@ -192,7 +192,7 @@ serversApp.put('/:id', async (c) => {
     label?: string;
     url?: string;
     isDefault?: boolean;
-    provider?: 'daytona' | 'local_docker' | null;
+    provider?: SandboxProviderName | null;
     sandboxId?: string | null;
     mappedPorts?: Record<string, string> | null;
   }>();
