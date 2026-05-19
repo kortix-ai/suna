@@ -52,6 +52,62 @@ export async function confirm(label: string, defaultValue: boolean): Promise<boo
 }
 
 /**
+ * Pick one value from a fixed list. Returns the chosen value
+ * (lowercased + trimmed). Empty input falls back to `defaultValue`.
+ * Re-prompts on unknown values.
+ */
+export async function selectFrom<T extends string>(
+  label: string,
+  options: readonly T[],
+  defaultValue: T,
+): Promise<T> {
+  ensureTTY();
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    while (true) {
+      const raw = await new Promise<string>((resolve) =>
+        rl.question(`${label} [${defaultValue}]: `, (answer) => resolve(answer)),
+      );
+      const norm = raw.trim().toLowerCase();
+      if (norm === '') return defaultValue;
+      if ((options as readonly string[]).includes(norm)) return norm as T;
+      process.stdout.write(`  Pick one of: ${options.join(', ')}\n`);
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+/**
+ * Comma-separated multi-select against a fixed list. Empty input
+ * returns `[]`. Unknown / duplicate entries are dropped silently.
+ */
+export async function selectMany<T extends string>(
+  label: string,
+  options: readonly T[],
+): Promise<T[]> {
+  ensureTTY();
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const raw = await new Promise<string>((resolve) =>
+      rl.question(`${label}: `, (answer) => resolve(answer)),
+    );
+    const seen = new Set<T>();
+    const out: T[] = [];
+    for (const part of raw.split(',')) {
+      const norm = part.trim().toLowerCase() as T;
+      if (!norm || seen.has(norm)) continue;
+      if (!(options as readonly string[]).includes(norm)) continue;
+      seen.add(norm);
+      out.push(norm);
+    }
+    return out;
+  } finally {
+    rl.close();
+  }
+}
+
+/**
  * Loop-until-non-empty prompt. Used when the answer is mandatory.
  */
 export async function promptForProjectName(): Promise<string> {

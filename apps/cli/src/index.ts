@@ -16,10 +16,15 @@ Run \`kortix init --help\`, \`kortix apps --help\`, or \`kortix <name> --help\`
 for command-specific options.
 
 What 'init' does:
-  Drops kortix.toml + Dockerfile + .opencode/ (kortix agent,
-  kortix-system skill, show tool) + README + .gitignore into the
-  current directory. Preserves any existing files (use --overwrite to
-  replace) and runs \`git init\` if the directory isn't already a repo.
+  Drops kortix.toml + .kortix/ (Dockerfile + OpenCode config dir with
+  the default agent, the kortix-system skill, and the show tool) +
+  README + .gitignore into the current directory. Then asks which
+  coding agent(s) you use (opencode / claude / codex / cursor) and
+  wires the canonical Kortix skill into each one's discovery path
+  (symlinks for opencode + claude, AGENTS.md for codex, .cursor/rules
+  for cursor) so they can configure the project for you. Preserves any
+  existing files (use --overwrite to replace) and runs \`git init\` if
+  the directory isn't already a repo.
 `;
 
 function printVersion(): void {
