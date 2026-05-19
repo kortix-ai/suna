@@ -33,6 +33,7 @@ describe('applyScaffold', () => {
     expect(result.written.sort()).toEqual([
       '.gitignore',
       '.kortix/Dockerfile',
+      '.kortix/kortix-cli.md',
       '.kortix/opencode/agents/kortix.md',
       '.kortix/opencode/opencode.jsonc',
       '.kortix/opencode/skills/kortix-system/SKILL.md',

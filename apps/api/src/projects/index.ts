@@ -143,6 +143,11 @@ import {
 } from './app-sweep';
 import { getProvider as getDeploymentProvider } from '../deployments/providers';
 import { deployments } from '@kortix/db';
+import {
+  createAccountToken,
+  listAccountTokens,
+  revokeAccountToken,
+} from '../repositories/account-tokens';
 
 export const projectsApp = new Hono<AppEnv>();
 export const projectWebhooksApp = new Hono<AppEnv>();
@@ -667,12 +672,14 @@ async function buildSessionSandboxEnvVars(input: {
   initialPrompt?: string | null;
   githubToken?: string | null;
 }): Promise<Record<string, string>> {
-  // Project secrets + OAuth credentials are independent stores but both
-  // funnel into the same sandbox env. Run them in parallel — refresh-on-boot
-  // can do an upstream HTTP round-trip for expiring tokens.
-  const [runtimeSecrets, opencodeAuthContent] = await Promise.all([
+  // Project secrets + OAuth credentials + project-scoped CLI token all
+  // funnel into the sandbox env. Run them in parallel — the CLI token
+  // path mints a fresh token per session boot so the in-container CLI
+  // works out of the box.
+  const [runtimeSecrets, opencodeAuthContent, cliToken] = await Promise.all([
     listProjectSecrets(input.projectId),
     buildOpencodeAuthContent(input.projectId),
+    mintSessionCliToken(input.projectId, input.userId, input.accountId, input.sessionId),
   ]);
   const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
   const llmToken = encodeSessionLlmToken({
@@ -699,10 +706,51 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_LLM_TOKEN: llmToken,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
+    // The project-scoped CLI token. `kortix login`-less auth for any
+    // shell inside the sandbox. The CLI reads KORTIX_CLI_TOKEN; we set
+    // both names so `kortix` works without configuration AND user code
+    // that already reads $KORTIX_TOKEN (e.g. older agents) keeps working.
+    ...(cliToken ? { KORTIX_TOKEN: cliToken, KORTIX_CLI_TOKEN: cliToken } : {}),
+    KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
     ...(githubToken ? { KORTIX_GITHUB_TOKEN: githubToken } : {}),
     ...(opencodeAuthContent ? { OPENCODE_AUTH_CONTENT: opencodeAuthContent } : {}),
   };
+}
+
+/** Mint a project-scoped CLI token at session boot. Stored hashed
+ *  alongside user-scoped tokens; auth middleware enforces the project
+ *  scope based on the `project_id` column. */
+async function mintSessionCliToken(
+  projectId: string,
+  userId: string,
+  accountId: string,
+  sessionId: string,
+): Promise<string | null> {
+  try {
+    const result = await createAccountToken({
+      accountId,
+      userId,
+      projectId,
+      name: `session ${sessionId.slice(0, 8)}`,
+    });
+    return result.secretKey;
+  } catch (err) {
+    console.warn(
+      `[mintSessionCliToken] could not mint CLI token for session ${sessionId}:`,
+      err,
+    );
+    return null;
+  }
+}
+
+/** Best-effort derivation of the API base URL we want sandboxes to
+ *  call as `$KORTIX_API_URL`. KORTIX_URL is the platform's router URL
+ *  with `/v1/router` suffix; we strip that to get the API root. */
+function deriveKortixApiBase(): string {
+  const url = config.KORTIX_URL;
+  if (!url) return 'https://api.kortix.com';
+  return url.replace(/\/v1\/router\/?$/, '');
 }
 
 async function createProjectSession(input: {
@@ -1874,6 +1922,88 @@ projectsApp.get('/:projectId/snapshots', async (c) => {
     head_commit_sha: headCommitSha,
     head_resolve_error: headResolveError,
   });
+});
+
+// ─── Project-scoped CLI tokens ─────────────────────────────────────────────
+// These are PATs (`kortix_pat_...`) bound to a single project. The auth
+// middleware enforces that the URL's `:projectId` matches the token's
+// project_id, so the token is useless outside this one project. They're
+// auto-minted at session-create time and injected into the sandbox as
+// `KORTIX_TOKEN` so the in-container CLI works with zero config.
+
+projectsApp.get('/:projectId/cli-token', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const tokens = await listAccountTokens(loaded.row.accountId, projectId);
+  return c.json({
+    items: tokens.map((t) => ({
+      token_id: t.tokenId,
+      name: t.name,
+      public_key: t.publicKey,
+      status: t.status,
+      expires_at: t.expiresAt?.toISOString() ?? null,
+      last_used_at: t.lastUsedAt?.toISOString() ?? null,
+      created_at: t.createdAt.toISOString(),
+      revoked_at: t.revokedAt?.toISOString() ?? null,
+    })),
+  });
+});
+
+projectsApp.post('/:projectId/cli-token', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  // One body field: `name`. Defaults to "cli · <project name>".
+  let body: { name?: unknown } = {};
+  try {
+    body = (await c.req.json()) ?? {};
+  } catch {
+    /* empty body is fine */
+  }
+  const name =
+    typeof body.name === 'string' && body.name.trim()
+      ? body.name.trim().slice(0, 255)
+      : `cli · ${loaded.row.name}`;
+
+  const userId = c.get('userId') as string;
+  const created = await createAccountToken({
+    accountId: loaded.row.accountId,
+    userId,
+    projectId,
+    name,
+  });
+
+  return c.json(
+    {
+      token_id: created.tokenId,
+      name: created.name,
+      public_key: created.publicKey,
+      secret_key: created.secretKey,
+      status: created.status,
+      project_id: created.projectId,
+      expires_at: created.expiresAt?.toISOString() ?? null,
+      created_at: created.createdAt.toISOString(),
+    },
+    201,
+  );
+});
+
+projectsApp.delete('/:projectId/cli-token/:tokenId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const tokenId = c.req.param('tokenId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+  const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
+  if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
+  return c.json({ ok: true });
 });
 
 // POST /v1/projects/:projectId/snapshots/rebuild

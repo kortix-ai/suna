@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: Canonical reference for a Kortix project. Covers (1) the platform overview — repo-native projects, sessions backed by ephemeral branches, the strict boundary between Kortix config (`kortix.toml`) and OpenCode config (`.kortix/opencode/`) — (2) the in-depth `kortix.toml` manifest with every key, every trigger field, the secrets contract, the `[[apps]]` deployment surface, and (3) the OpenCode runtime reference mirroring opencode.ai/docs/ for agents, skills, commands, tools (built-in + custom), plugins, MCP servers, permissions, rules (AGENTS.md), and models. Load when the user asks how Kortix works, asks about anything in `kortix.toml`, asks about anything under `.kortix/opencode/`, or needs to author/edit any OpenCode primitive (agent persona, skill, slash command, custom tool, plugin, MCP server, permission policy, AGENTS.md rule, or model config).
+description: Canonical reference for a Kortix project. Covers (1) the platform overview — repo-native projects, sessions backed by ephemeral branches, the strict boundary between Kortix config (`kortix.toml`) and OpenCode config (`.kortix/opencode/`) — (2) the in-depth `kortix.toml` manifest with every key, every trigger field, the secrets contract, the `[[apps]]` deployment surface, (3) the full `kortix` CLI reference (every command, every flag, the project-scoped token model, what works inside a session sandbox with the pre-injected `KORTIX_TOKEN`), and (4) the OpenCode runtime reference mirroring opencode.ai/docs/ for agents, skills, commands, tools (built-in + custom), plugins, MCP servers, permissions, rules (AGENTS.md), and models. Load when the user asks how Kortix works, asks about anything in `kortix.toml` or the `kortix` CLI, asks about anything under `.kortix/opencode/`, or needs to author/edit any OpenCode primitive (agent persona, skill, slash command, custom tool, plugin, MCP server, permission policy, AGENTS.md rule, or model config).
 ---
 
 <skill name="kortix-system">
@@ -50,6 +50,17 @@ The platform never reads opencode's config dir; OpenCode never reads `kortix.tom
 </contract>
 
 <references>
+
+<reference path=".kortix/kortix-cli.md">
+  In-depth `kortix` CLI reference. Every subcommand (login, hosts,
+  projects, secrets, env, sessions, triggers, cr, init, update,
+  uninstall), every flag, every env var the CLI reads. Includes the
+  project-scoped token model and what the CLI can do **from inside a
+  session sandbox** (where `KORTIX_TOKEN` + `KORTIX_API_URL` are
+  pre-injected so `kortix sessions ls`, `kortix secrets set FOO=bar`,
+  `kortix cr ls` all work out of the box). Load this when you want to
+  drive the Kortix cloud from a terminal or agent.
+</reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix-toml.md">
   In-depth `kortix.toml` reference. Every top-level table (`[project]`,

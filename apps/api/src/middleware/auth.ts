@@ -110,9 +110,14 @@ export async function supabaseAuth(c: Context, next: Next) {
     if (!result.isValid || !result.userId) {
       throw new HTTPException(401, { message: result.error || 'Invalid PAT' });
     }
+    // Project-scoped tokens: enforce the URL's :projectId matches.
+    if (result.projectId) {
+      enforceTokenProjectScope(c, result.projectId);
+    }
     c.set('userId', result.userId);
     c.set('userEmail', '');
     if (result.accountId) c.set('accountId', result.accountId);
+    if (result.projectId) c.set('tokenProjectId', result.projectId);
     setSentryUser({ id: result.userId, accountId: result.accountId });
     setContextField('userId', result.userId);
     if (result.accountId) setContextField('accountId', result.accountId);
@@ -241,9 +246,13 @@ export async function combinedAuth(c: Context, next: Next) {
     if (!patResult.isValid || !patResult.userId) {
       throw new HTTPException(401, { message: patResult.error || 'Invalid PAT' });
     }
+    if (patResult.projectId) {
+      enforceTokenProjectScope(c, patResult.projectId);
+    }
     c.set('userId', patResult.userId);
     c.set('userEmail', '');
     if (patResult.accountId) c.set('accountId', patResult.accountId);
+    if (patResult.projectId) c.set('tokenProjectId', patResult.projectId);
     setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
     setContextField('userId', patResult.userId);
     if (patResult.accountId) setContextField('accountId', patResult.accountId);
@@ -351,4 +360,57 @@ function extractPreviewSandboxId(path: string): string | null {
   if (!match) return null;
   const segment = match[1];
   return segment === 'auth' || segment === 'share' ? null : segment;
+}
+
+/**
+ * A project-scoped CLI PAT can only act on its bound project. Reject
+ * the request if:
+ *   - the URL targets a `:projectId` parameter that doesn't match, OR
+ *   - the URL is an account-level route (`/v1/accounts/*` other than
+ *     `/v1/accounts/me`, which we allow as a self-identity probe), OR
+ *   - the URL is a webhook / preview / system route the token has no
+ *     business hitting.
+ *
+ * Throws HTTPException(403) so the calling middleware aborts the chain.
+ */
+function enforceTokenProjectScope(c: Context, tokenProjectId: string): void {
+  const path = c.req.path;
+
+  // Whitelist a couple of self-identity probes the CLI hits even for
+  // project-scoped tokens. `/v1/accounts/me` lets the agent confirm
+  // "what project am I bound to?".
+  if (path === '/v1/accounts/me') return;
+
+  // Reject other account-level routes outright.
+  if (path.startsWith('/v1/accounts/') || path === '/v1/accounts') {
+    throw new HTTPException(403, {
+      message: 'Project-scoped token cannot call account-level routes',
+    });
+  }
+
+  // `/v1/projects/:projectId/...` — require the URL id to match.
+  const m = path.match(/^\/v1\/projects\/([^/]+)/);
+  if (m) {
+    const urlProjectId = m[1];
+    if (urlProjectId !== tokenProjectId) {
+      throw new HTTPException(403, {
+        message: 'Project-scoped token cannot access a different project',
+      });
+    }
+    return;
+  }
+
+  // Bare `/v1/projects` (list) is also account-scoped: a project-bound
+  // token shouldn't enumerate other projects.
+  if (path === '/v1/projects') {
+    throw new HTTPException(403, {
+      message: 'Project-scoped token cannot list projects',
+    });
+  }
+
+  // All other surfaces (router, billing, channels, etc.) are
+  // account-level — refuse.
+  throw new HTTPException(403, {
+    message: 'Project-scoped token cannot call this surface',
+  });
 }

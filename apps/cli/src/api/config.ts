@@ -210,7 +210,13 @@ export function removeHost(name: string): { removed: boolean; switchedTo?: strin
     config.active = remaining[0] ?? DEFAULT_HOST_NAME;
     if (remaining.length > 0) switchedTo = config.active;
   }
-  saveConfig(config);
+  // If there are no hosts left, remove the file entirely — leaving an
+  // empty `{active, hosts: {}}` shell behind is just clutter.
+  if (Object.keys(config.hosts).length === 0) {
+    deleteConfig();
+  } else {
+    saveConfig(config);
+  }
   return { removed: true, switchedTo };
 }
 

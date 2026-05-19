@@ -15,6 +15,9 @@ export interface AccountTokenValidationResult {
   accountId?: string;
   userId?: string;
   tokenId?: string;
+  /** Non-null = this token is scoped to one project; the auth
+   *  middleware enforces URL :projectId === this value. */
+  projectId?: string | null;
   error?: string;
 }
 
@@ -22,6 +25,9 @@ export interface CreateAccountTokenParams {
   accountId: string;
   userId: string;
   name: string;
+  /** Non-null = project-scoped token (sandbox injection). Null/undefined
+   *  = user-scoped (laptop CLI). */
+  projectId?: string;
   expiresAt?: Date;
 }
 
@@ -31,6 +37,7 @@ export interface CreateAccountTokenResult {
   secretKey: string; // plaintext — shown ONCE at creation
   name: string;
   status: string;
+  projectId: string | null;
   expiresAt: Date | null;
   createdAt: Date;
 }
@@ -40,6 +47,7 @@ export interface AccountTokenListEntry {
   publicKey: string;
   name: string;
   status: string;
+  projectId: string | null;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
@@ -72,6 +80,7 @@ export async function createAccountToken(
     .values({
       accountId: params.accountId,
       userId: params.userId,
+      projectId: params.projectId ?? null,
       name: params.name,
       publicKey,
       secretKeyHash,
@@ -89,26 +98,36 @@ export async function createAccountToken(
     secretKey, // plaintext — shown once
     name: row.name,
     status: row.status,
+    projectId: row.projectId,
     expiresAt: row.expiresAt,
     createdAt: row.createdAt,
   };
 }
 
-/** List all tokens for an account. Never returns secret data. */
-export async function listAccountTokens(accountId: string): Promise<AccountTokenListEntry[]> {
+/** List tokens for an account. If `projectId` is provided, narrows to
+ *  tokens scoped to that project (useful for the per-project token
+ *  management UI). Never returns secret data. */
+export async function listAccountTokens(
+  accountId: string,
+  projectId?: string,
+): Promise<AccountTokenListEntry[]> {
+  const filter = projectId
+    ? and(eq(accountTokens.accountId, accountId), eq(accountTokens.projectId, projectId))
+    : eq(accountTokens.accountId, accountId);
   return db
     .select({
       tokenId: accountTokens.tokenId,
       publicKey: accountTokens.publicKey,
       name: accountTokens.name,
       status: accountTokens.status,
+      projectId: accountTokens.projectId,
       expiresAt: accountTokens.expiresAt,
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
       revokedAt: accountTokens.revokedAt,
     })
     .from(accountTokens)
-    .where(eq(accountTokens.accountId, accountId))
+    .where(filter)
     .orderBy(desc(accountTokens.createdAt));
 }
 
@@ -157,6 +176,7 @@ export async function validateAccountToken(
         tokenId: accountTokens.tokenId,
         accountId: accountTokens.accountId,
         userId: accountTokens.userId,
+        projectId: accountTokens.projectId,
         status: accountTokens.status,
         expiresAt: accountTokens.expiresAt,
       })
@@ -184,6 +204,7 @@ export async function validateAccountToken(
       accountId: row.accountId,
       userId: row.userId,
       tokenId: row.tokenId,
+      projectId: row.projectId,
     };
   } catch (err) {
     console.error('Account token validation error:', err);

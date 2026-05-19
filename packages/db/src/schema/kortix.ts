@@ -711,6 +711,13 @@ export const accountTokens = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     userId: uuid('user_id').notNull(),
+    /** When non-null, this token is scoped to a single project — it
+     *  can only call `/v1/projects/<project_id>/*` routes and is
+     *  rejected by account-level handlers. Used for sandbox-injected
+     *  CLI tokens. */
+    projectId: uuid('project_id').references(() => projects.projectId, {
+      onDelete: 'cascade',
+    }),
     name: varchar('name', { length: 255 }).notNull(),
     publicKey: varchar('public_key', { length: 64 }).notNull(),
     secretKeyHash: varchar('secret_key_hash', { length: 128 }).notNull(),
@@ -725,6 +732,7 @@ export const accountTokens = kortixSchema.table(
     index('idx_account_tokens_secret_hash').on(table.secretKeyHash),
     index('idx_account_tokens_account').on(table.accountId),
     index('idx_account_tokens_user').on(table.userId),
+    index('idx_account_tokens_project').on(table.projectId),
   ],
 );
 

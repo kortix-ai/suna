@@ -13,6 +13,7 @@ import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runWhoami } from './commands/whoami.ts';
+import { printBanner } from './banner.ts';
 import { C, header, pad, rule } from './style.ts';
 
 const VERSION = '0.1.0';
@@ -74,7 +75,14 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
   }
-  if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
+  if (argv.length === 0) {
+    // No args — show the big ASCII banner above the help, like `vercel`
+    // and the legacy installer did.
+    printBanner();
+    process.stdout.write(renderHelp());
+    return 0;
+  }
+  if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
     process.stdout.write(renderHelp());
     return 0;
   }

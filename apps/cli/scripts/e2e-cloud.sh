@@ -136,7 +136,7 @@ section "Auth"
 out=$($CLI login --token "$PAT" 2>&1)
 rc=$?
 assert_exit "login --token returns 0" 0 "$rc"
-assert_contains "login prints success line" "Logged in as" "$out"
+assert_contains "login prints success line" "Logged in to host" "$out"
 
 out=$($CLI whoami 2>&1)
 rc=$?
@@ -194,6 +194,18 @@ assert_exit "projects info <id> returns 0" 0 "$rc"
 assert_contains "projects info shows project_id" "$PROJECT_ID" "$out"
 
 cd "$WORK_DIR"
+
+# projects link now refuses to scatter `.kortix/` into a random dir. The
+# work dir is not a Kortix project, so link should fail cleanly first…
+out=$($CLI projects link "$PROJECT_ID" 2>&1)
+rc=$?
+assert_exit "projects link in non-Kortix dir exits 1" 1 "$rc"
+assert_contains "projects link refuses with hint" "Not a Kortix project" "$out"
+
+# …then scaffold a Kortix project so link CAN succeed.
+$CLI init --name "$(basename "$WORK_DIR")" --primary codex --yes >/dev/null
+[ -f kortix.toml ] && ok "init scaffold wrote kortix.toml" || bad "kortix.toml missing after init"
+
 out=$($CLI projects link "$PROJECT_ID" 2>&1)
 rc=$?
 assert_exit "projects link <id> returns 0" 0 "$rc"
