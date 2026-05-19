@@ -86,15 +86,46 @@ function CliAuthorizeInner() {
     if (!callback || !state) return;
     setPhase('authorizing');
     setError(null);
+
+    // Two timeouts to avoid the page hanging forever if anything along
+    // the way silently stalls (e.g. the API takes too long to mint, or
+    // the CLI callback socket accepts the connection but never replies).
+    const MINT_TIMEOUT_MS = 15_000;
+    const CALLBACK_TIMEOUT_MS = 10_000;
+
     try {
       const name = label ? `CLI · ${label}` : `CLI · ${new Date().toLocaleString()}`;
-      const minted = await accountTokensApi.create({ name });
+      const minted = await withTimeout(
+        accountTokensApi.create({ name }),
+        MINT_TIMEOUT_MS,
+        'Timed out asking the Kortix API to mint a token. Is the API reachable?',
+      );
 
-      const resp = await fetch(callback, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ state, token: minted.secret_key }),
-      });
+      const controller = new AbortController();
+      const callbackTimer = setTimeout(() => controller.abort(), CALLBACK_TIMEOUT_MS);
+      let resp: Response;
+      try {
+        resp = await fetch(callback, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ state, token: minted.secret_key }),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // Best-effort cleanup: revoke the just-minted PAT so we don't
+        // leave a dead token in the DB after a failed delivery.
+        accountTokensApi.revoke(minted.token_id).catch(() => {});
+        if ((err as Error).name === 'AbortError') {
+          throw new Error(
+            `Timed out delivering the token to ${new URL(callback).host}. Is the \`kortix login\` process still running in your terminal?`,
+          );
+        }
+        throw new Error(
+          `Could not reach ${new URL(callback).host}: ${(err as Error).message}. Make sure \`kortix login\` is running in your terminal and try again.`,
+        );
+      } finally {
+        clearTimeout(callbackTimer);
+      }
 
       if (!resp.ok) {
         let detail = `HTTP ${resp.status}`;
@@ -104,6 +135,8 @@ function CliAuthorizeInner() {
         } catch {
           /* ignore */
         }
+        // Same cleanup if the CLI rejected the token (state mismatch, etc.)
+        accountTokensApi.revoke(minted.token_id).catch(() => {});
         throw new Error(`CLI callback rejected the token: ${detail}`);
       }
 
@@ -307,4 +340,23 @@ function validateCallback(raw: string | null): Validation {
     };
   }
   return { ok: true, reason: '', display: `${url.hostname}:${url.port}` };
+}
+
+/** Race a promise against a timeout. Rejects with `message` if the
+ *  promise doesn't settle in time — keeps the UI from sitting on a
+ *  silent "Authorizing…" spinner if the network stalls. */
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(message)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (err) => {
+        clearTimeout(t);
+        reject(err);
+      },
+    );
+  });
 }

@@ -203,6 +203,189 @@ function countLines(s: string): number {
   return s.split('\n').length - 1;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-select variant — same shape, but space toggles a checkbox on each row.
+// The first toggled row is the "primary" by convention (callers can read
+// `result[0]` if they need a singular pick alongside the set).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface MultiSelectOpts<T> extends Omit<SelectOpts<T>, 'initialIndex'> {
+  /** Indices to start with toggled on. */
+  initiallySelected?: number[];
+  /** Require at least one to be toggled before allowing Enter. */
+  minSelected?: number;
+}
+
+export async function selectMultiFromList<T>(
+  opts: MultiSelectOpts<T>,
+): Promise<T[] | null> {
+  if (opts.items.length === 0) return null;
+
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  const interactive = stdin.isTTY === true && stdout.isTTY === true;
+  if (!interactive) {
+    return numberedMultiFallback(opts);
+  }
+
+  return new Promise<T[] | null>((resolve) => {
+    let cursor = 0;
+    let search = '';
+    const selected = new Set<number>(opts.initiallySelected ?? []);
+    let filtered = filterItems(opts.items, search);
+
+    let lastFrameLines = 0;
+
+    function render(initial = false) {
+      if (!initial && lastFrameLines > 0) {
+        stdout.write(`${CSI}${lastFrameLines}A${CSI}0J`);
+      }
+      const lines: string[] = [];
+      if (opts.title) {
+        lines.push(`  ${C.bold}${opts.title}${C.reset}`);
+      }
+      const hint = opts.searchHint
+        ? opts.searchHint
+        : `${C.dim}↑/↓ navigate · Space toggle · Enter confirm · Esc cancel · type to filter${C.reset}`;
+      lines.push(`  ${hint}`);
+      if (search) {
+        lines.push(`  ${C.dim}filter:${C.reset} ${C.cyan}${search}${C.reset}`);
+      }
+      lines.push('');
+
+      if (filtered.length === 0) {
+        lines.push(`  ${C.dim}(no matches)${C.reset}`);
+      } else {
+        const labelWidth = Math.max(...filtered.map((it) => visibleWidth(it.label)));
+        const cur = clamp(cursor, 0, filtered.length - 1);
+        for (let i = 0; i < filtered.length; i += 1) {
+          const item = filtered[i]!;
+          const itemIdx = opts.items.indexOf(item);
+          const isCursor = i === cur;
+          const isOn = selected.has(itemIdx);
+          const cursorMark = isCursor ? `${C.cyan}▸${C.reset}` : ' ';
+          const checkbox = isOn ? `${C.green}●${C.reset}` : `${C.dim}○${C.reset}`;
+          const labelText = isCursor ? `${C.bold}${item.label}${C.reset}` : item.label;
+          const pad = ' '.repeat(Math.max(0, labelWidth - visibleWidth(item.label)));
+          const sub = item.sublabel ? `   ${C.faded}${item.sublabel}${C.reset}` : '';
+          lines.push(`  ${cursorMark} ${checkbox} ${labelText}${pad}${sub}`);
+        }
+      }
+
+      const min = opts.minSelected ?? 0;
+      const count = selected.size;
+      const summary =
+        count < min
+          ? `${C.yellow}select at least ${min} (currently ${count})${C.reset}`
+          : `${C.dim}${count} selected${C.reset}`;
+      lines.push('');
+      lines.push(`  ${summary}`);
+      lines.push('');
+      const frame = lines.join('\n') + '\n';
+      stdout.write(frame);
+      lastFrameLines = countLines(frame);
+    }
+
+    function cleanup() {
+      stdin.setRawMode?.(false);
+      stdin.pause();
+      stdin.removeListener('data', onData);
+      if (lastFrameLines > 0) {
+        stdout.write(`${CSI}${lastFrameLines}A${CSI}0J`);
+      }
+    }
+
+    function confirm() {
+      const min = opts.minSelected ?? 0;
+      if (selected.size < min) return;
+      // Preserve the original list order when returning — callers
+      // shouldn't depend on selection order. (The "first toggled is
+      // primary" convention is preserved by sorting by toggle order;
+      // see below.)
+      // …actually for the agent-picker, we want toggle order so the
+      // first thing the user picked is the primary. Track that.
+      const ordered = toggleOrder.filter((idx) => selected.has(idx));
+      cleanup();
+      resolve(ordered.map((idx) => opts.items[idx]!.value));
+    }
+
+    const toggleOrder: number[] = [...(opts.initiallySelected ?? [])];
+
+    function toggle(itemIdx: number) {
+      if (selected.has(itemIdx)) {
+        selected.delete(itemIdx);
+        const at = toggleOrder.indexOf(itemIdx);
+        if (at >= 0) toggleOrder.splice(at, 1);
+      } else {
+        selected.add(itemIdx);
+        toggleOrder.push(itemIdx);
+      }
+    }
+
+    function refilter() {
+      filtered = filterItems(opts.items, search);
+      cursor = 0;
+      render();
+    }
+
+    function onData(buf: Buffer) {
+      const str = buf.toString('utf8');
+      if (str === '') {
+        cleanup();
+        resolve(null);
+        return;
+      }
+      if (str === ESC) {
+        cleanup();
+        resolve(null);
+        return;
+      }
+      if (str === '\r' || str === '\n') {
+        confirm();
+        return;
+      }
+      if (str === ' ') {
+        if (filtered.length > 0) {
+          const item = filtered[clamp(cursor, 0, filtered.length - 1)]!;
+          toggle(opts.items.indexOf(item));
+          render();
+        }
+        return;
+      }
+      if (str === '' || str === '\b') {
+        if (search.length > 0) {
+          search = search.slice(0, -1);
+          refilter();
+        }
+        return;
+      }
+      if (str.startsWith(`${ESC}[`)) {
+        const code = str.slice(2);
+        if (code === 'A') {
+          cursor = Math.max(0, cursor - 1);
+          render();
+          return;
+        }
+        if (code === 'B') {
+          cursor = Math.min(filtered.length - 1, cursor + 1);
+          render();
+          return;
+        }
+        return;
+      }
+      if (str.length === 1 && str >= ' ' && str <= '~') {
+        search += str;
+        refilter();
+      }
+    }
+
+    stdin.resume();
+    stdin.setRawMode?.(true);
+    stdin.on('data', onData);
+    render(true);
+  });
+}
+
 /** Non-TTY fallback: print a numbered list and read a line with the
  *  number (or value). Used by tests / piped invocations. */
 async function numberedFallback<T>(opts: SelectOpts<T>): Promise<T | null> {
@@ -224,6 +407,36 @@ async function numberedFallback<T>(opts: SelectOpts<T>): Promise<T | null> {
         return;
       }
       resolve(opts.items[n - 1]!.value);
+    });
+  });
+}
+
+async function numberedMultiFallback<T>(opts: MultiSelectOpts<T>): Promise<T[] | null> {
+  process.stdout.write('\n');
+  if (opts.title) process.stdout.write(`  ${opts.title}\n`);
+  opts.items.forEach((it, i) => {
+    const sub = it.sublabel ? `  ${it.sublabel}` : '';
+    process.stdout.write(`  ${(i + 1).toString().padStart(2)}) ${it.label}${sub}\n`);
+  });
+  process.stdout.write('\n');
+  const readline = await import('node:readline');
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question('  Pick numbers (comma-separated, blank = all): ', (answer) => {
+      rl.close();
+      const trimmed = answer.trim();
+      if (!trimmed) {
+        resolve(opts.items.map((i) => i.value));
+        return;
+      }
+      const out: T[] = [];
+      for (const part of trimmed.split(',')) {
+        const n = Number.parseInt(part.trim(), 10);
+        if (Number.isFinite(n) && n >= 1 && n <= opts.items.length) {
+          out.push(opts.items[n - 1]!.value);
+        }
+      }
+      resolve(out.length > 0 ? out : null);
     });
   });
 }

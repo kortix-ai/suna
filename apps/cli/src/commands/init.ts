@@ -3,7 +3,8 @@ import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { applyScaffold } from '../scaffold.ts';
-import { prompt, confirm, selectFrom, selectMany } from '../prompts.ts';
+import { prompt, confirm } from '../prompts.ts';
+import { selectMultiFromList } from '../tui-select.ts';
 import {
   installAgentSkills,
   SUPPORTED_AGENTS,
@@ -11,6 +12,22 @@ import {
   type CodingAgent,
 } from '../agents.ts';
 import { printBanner, printGetStarted } from '../banner.ts';
+import { C, status } from '../style.ts';
+
+function agentSublabel(agent: CodingAgent): string {
+  switch (agent) {
+    case 'opencode':
+      return 'symlink at .opencode/skills/kortix/';
+    case 'claude':
+      return 'symlink at .claude/skills/kortix/';
+    case 'codex':
+      return 'AGENTS.md pointer';
+    case 'cursor':
+      return '.cursor/rules/kortix.mdc pointer';
+    default:
+      return '';
+  }
+}
 
 const HELP = `Usage: kortix init [options]
 
@@ -214,40 +231,39 @@ export async function runInit(argv: string[]): Promise<number> {
     projectName = normalizeProjectName(answer);
   }
 
-  // ── Resolve coding agents ────────────────────────────────────────────
-  // The primary is the one we feature in the get-started panel. Extras
-  // also get the Kortix skill wired into their discovery paths.
+  // ── Resolve coding agents (multi-select TUI) ─────────────────────────
+  // One picker, space toggles, Enter confirms. First toggled is the
+  // "primary" used in the get-started panel. Order returned from the
+  // TUI is toggle-order, so primary = chosen[0].
   let primary: CodingAgent;
-  let extras: CodingAgent[] = [];
+  let chosenAgents: CodingAgent[];
 
-  if (flags.primary) {
-    primary = flags.primary;
-  } else if (flags.yes) {
-    primary = DEFAULT_PRIMARY;
+  if (flags.primary || flags.agents || flags.yes) {
+    // Headless / flag-driven path. Honor --primary + --agents.
+    primary = flags.primary ?? DEFAULT_PRIMARY;
+    const extras = (flags.agents ?? []).filter((a) => a !== primary);
+    chosenAgents = [primary, ...extras];
   } else {
     printAgentPreamble();
-    primary = await selectFrom('Primary coding agent', SUPPORTED_AGENTS, DEFAULT_PRIMARY);
-  }
-
-  if (flags.agents) {
-    extras = flags.agents.filter((a) => a !== primary);
-  } else if (!flags.yes) {
-    const others = SUPPORTED_AGENTS.filter((a) => a !== primary);
-    const wantOthers = await confirm(
-      `Also configure ${others.join(', ')}?`,
-      false,
-    );
-    if (wantOthers) {
-      process.stdout.write(`  Available: ${others.join(', ')}\n`);
-      const picked = await selectMany(
-        '  Which? (comma-separated, blank = all)',
-        others,
-      );
-      extras = picked.length > 0 ? picked : [...others];
+    const initialIdx = SUPPORTED_AGENTS.indexOf(DEFAULT_PRIMARY);
+    const picked = await selectMultiFromList<CodingAgent>({
+      title: 'Pick the coding agent(s) you want the Kortix skill wired into',
+      searchHint: `${C.dim}↑/↓ navigate · Space toggle · Enter confirm · first toggled = primary${C.reset}`,
+      items: SUPPORTED_AGENTS.map((a) => ({
+        value: a,
+        label: a,
+        sublabel: agentSublabel(a),
+      })),
+      initiallySelected: initialIdx >= 0 ? [initialIdx] : [0],
+      minSelected: 1,
+    });
+    if (!picked || picked.length === 0) {
+      process.stderr.write(`${status.err('No coding agent selected.')}\n`);
+      return 1;
     }
+    primary = picked[0]!;
+    chosenAgents = picked;
   }
-
-  const chosenAgents: CodingAgent[] = [primary, ...extras];
 
   // ── Detect existing .kortix/ ─────────────────────────────────────────
   const kortixExists = existsSync(resolve(cwd, '.kortix'));

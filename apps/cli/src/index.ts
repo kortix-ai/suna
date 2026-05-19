@@ -129,7 +129,32 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'uninstall') {
     return runUninstall(argv.slice(1));
   }
-  // Anything else is the legacy "create new directory" form.
+  // Reserved subcommand names we don't ship yet — don't let them fall
+  // through to the legacy scaffold (`kortix <new-project-name>`), which
+  // would otherwise create a directory called `deploy/`, etc.
+  const RESERVED_FUTURE_COMMANDS = new Set([
+    'deploy',
+    'apps',
+    'accounts',
+    'mcp',
+    'tunnel',
+    'logs',
+    'start',
+    'stop',
+    'restart',
+    'open',
+    'status',
+  ]);
+  if (RESERVED_FUTURE_COMMANDS.has(argv[0])) {
+    process.stderr.write(
+      `${C.red}kortix:${C.reset} \`${argv[0]}\` is not a kortix subcommand (yet).\n` +
+        `       Run ${C.cyan}kortix --help${C.reset} for the full list.\n`,
+    );
+    return 2;
+  }
+
+  // Anything else is the legacy "create new directory" form
+  // (`kortix my-new-project`).
   return runCreate(argv);
 }
 
