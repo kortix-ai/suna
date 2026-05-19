@@ -332,6 +332,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     createSession.mutate();
   }, [createSession]);
 
+
   // CMD/CTRL+J — global project "new session" accelerator.
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
