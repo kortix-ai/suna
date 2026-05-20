@@ -2,6 +2,8 @@ export {
   authorize,
   assertAuthorized,
   invalidateSystemRoleCache,
+  listAccessibleResources,
+  type AccessibleResources,
   type AuthorizeTarget,
   type AuthorizeResult,
 } from './engine';

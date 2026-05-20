@@ -72,7 +72,7 @@ export default function GroupDetailPage() {
             <button
               type="button"
               onClick={() => router.push('/projects')}
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to projects
@@ -81,7 +81,7 @@ export default function GroupDetailPage() {
               <button
                 type="button"
                 onClick={() => router.push('/accounts')}
-                className="transition-colors hover:text-foreground"
+                className="cursor-pointer transition-colors hover:text-foreground"
               >
                 Accounts
               </button>
@@ -89,7 +89,7 @@ export default function GroupDetailPage() {
               <button
                 type="button"
                 onClick={() => router.push(`/accounts/${accountId}`)}
-                className="transition-colors hover:text-foreground"
+                className="cursor-pointer transition-colors hover:text-foreground"
               >
                 Groups
               </button>

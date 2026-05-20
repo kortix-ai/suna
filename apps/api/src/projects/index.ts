@@ -117,7 +117,7 @@ import {
   type ProjectAccessAction,
   type ProjectRole,
 } from './access';
-import { authorize, PROJECT_ACTIONS } from '../iam';
+import { authorize, listAccessibleResources, PROJECT_ACTIONS } from '../iam';
 import {
   KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
@@ -1649,6 +1649,25 @@ projectsApp.get('/', async (c) => {
     })));
   }
 
+  // Non-manager: ask the IAM engine which project IDs they can read. The
+  // engine consults explicit policies (direct + via groups), denies, the
+  // legacy project_members bridge, and the (now-tightened) member bridge.
+  const accessible = await listAccessibleResources(
+    scope.userId,
+    scope.accountId,
+    PROJECT_ACTIONS.PROJECT_READ,
+    'project',
+  );
+
+  if (accessible.mode === 'none') return c.json([]);
+  // 'allow_only' with an empty set means no policy granted access yet.
+  if (accessible.mode === 'allow_only' && accessible.allowed.size === 0) {
+    return c.json([]);
+  }
+
+  // We still need project_members rows to compute project_role for the
+  // serializer, even though the engine already used them for the access
+  // decision. Cheap join — same accountId+userId.
   const grants = await db
     .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -1656,21 +1675,29 @@ projectsApp.get('/', async (c) => {
       eq(projectMembers.accountId, scope.accountId),
       eq(projectMembers.userId, scope.userId),
     ));
-
-  if (grants.length === 0) return c.json([]);
-
   const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
+
+  const baseWhere = and(
+    eq(projects.accountId, scope.accountId),
+    eq(projects.status, 'active'),
+  );
+  const idFilter =
+    accessible.mode === 'allow_only'
+      ? and(baseWhere, inArray(projects.projectId, Array.from(accessible.allowed)))
+      : baseWhere; // 'all_except' or 'all' — fetch every active project, filter below
+
   const rows = await db
     .select()
     .from(projects)
-    .where(and(
-      eq(projects.accountId, scope.accountId),
-      eq(projects.status, 'active'),
-      inArray(projects.projectId, grants.map((g) => g.projectId)),
-    ))
+    .where(idFilter)
     .orderBy(desc(projects.updatedAt));
 
-  return c.json(rows.map((row) => {
+  const filtered =
+    accessible.mode === 'all_except'
+      ? rows.filter((r) => !accessible.denied.has(r.projectId))
+      : rows;
+
+  return c.json(filtered.map((row) => {
     const projectRole = roleByProject.get(row.projectId) ?? null;
     return serializeProject(row, {
       projectRole,

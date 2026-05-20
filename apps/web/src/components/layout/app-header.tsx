@@ -14,6 +14,7 @@
  *               sitting over a full-screen loader / shell.
  */
 
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { ArrowLeftRight } from 'lucide-react';
@@ -31,11 +32,15 @@ export function AppHeader({
   leading,
   actions,
   variant = 'default',
+  logoHref = '/projects',
 }: {
   user: User;
   leading?: React.ReactNode;
   actions?: React.ReactNode;
   variant?: 'default' | 'overlay';
+  /** Where the logo navigates on click. Defaults to /projects (the main app
+   * landing). Pass an explicit href to override on a specific surface. */
+  logoHref?: string;
 }) {
   const pathname = usePathname();
   const onProjectsRoute = pathname?.startsWith('/projects') ?? false;
@@ -63,7 +68,13 @@ export function AppHeader({
           variant === 'overlay' && 'pointer-events-auto',
         )}
       >
-        <KortixLogo size={20} className="mr-1" />
+        <Link
+          href={logoHref}
+          aria-label="Kortix home"
+          className="mr-1 inline-flex cursor-pointer items-center rounded-md transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <KortixLogo size={20} />
+        </Link>
         {/* Vercel-style breadcrumb: pills separated by skewed dividers that
             sit BETWEEN them — not inside the buttons themselves. */}
         {onProjectsRoute && (

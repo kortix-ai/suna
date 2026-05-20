@@ -20,8 +20,24 @@ import {
   projectMembers,
 } from '@kortix/db';
 import { db } from '../shared/db';
-import { resourceTypeForAction, type ResourceType } from './actions';
+import { ACCOUNT_ACTIONS, resourceTypeForAction, type ResourceType } from './actions';
 import { SYSTEM_ROLE_KEY } from './system-roles';
+
+// Account-level read actions the legacy 'member' role keeps via the bridge.
+// We intentionally exclude every project.*/sandbox.*/etc. read so a plain
+// member doesn't accidentally see every project in the account just because
+// the system role they bridge to bundled project.read. Resource access
+// comes from explicit IAM policies or project_members rows instead.
+const LEGACY_MEMBER_ACCOUNT_READS: ReadonlySet<string> = new Set([
+  ACCOUNT_ACTIONS.ACCOUNT_READ,
+  ACCOUNT_ACTIONS.MEMBER_READ,
+  ACCOUNT_ACTIONS.GROUP_READ,
+  ACCOUNT_ACTIONS.POLICY_READ,
+  ACCOUNT_ACTIONS.ROLE_READ,
+  ACCOUNT_ACTIONS.AUDIT_READ,
+  ACCOUNT_ACTIONS.TOKEN_READ,
+  ACCOUNT_ACTIONS.BILLING_READ,
+]);
 
 export type AuthorizeTarget =
   | { type: 'account'; id?: never }
@@ -191,12 +207,22 @@ async function bridgeLegacyAccountRole(
 ): Promise<boolean> {
   if (!actor.accountRole) return false;
 
-  const key =
-    actor.accountRole === 'owner' || actor.accountRole === 'admin'
-      ? SYSTEM_ROLE_KEY.ADMINISTRATOR
-      : SYSTEM_ROLE_KEY.ADMINISTRATOR_READ_ONLY;
-  const actions = await getSystemRoleActions(key);
-  return actions.has(action);
+  // Owner/admin keep the full Administrator bridge — that's what they had
+  // before IAM and changing it would break every existing account.
+  if (actor.accountRole === 'owner' || actor.accountRole === 'admin') {
+    const actions = await getSystemRoleActions(SYSTEM_ROLE_KEY.ADMINISTRATOR);
+    return actions.has(action);
+  }
+
+  // Member: account-level reads only. NO blanket project / sandbox / trigger
+  // / channel access via the bridge — those come from explicit IAM policies
+  // or project_members rows. This is what makes "limit user to one project"
+  // actually work without requiring a deny policy on Everything.
+  if (actor.accountRole === 'member') {
+    return LEGACY_MEMBER_ACCOUNT_READS.has(action);
+  }
+
+  return false;
 }
 
 /**
@@ -340,4 +366,136 @@ export async function assertAuthorized(
     (err as Error & { status?: number }).status = 403;
     throw err;
   }
+}
+
+/**
+ * Returns which resource IDs (of `resourceType`) the user can perform
+ * `action` on. Used by list endpoints to filter a candidate set without
+ * N×authorize() round-trips.
+ *
+ *   all          – include every candidate
+ *   none         – include nothing
+ *   allow_only   – include only those whose id is in `allowed`
+ *   all_except   – include every candidate except those in `denied`
+ *
+ * Reads (in the worst case): actor + policies + project_members. That's
+ * three queries regardless of how many candidates the caller has.
+ */
+export type AccessibleResources =
+  | { mode: 'all' }
+  | { mode: 'none' }
+  | { mode: 'allow_only'; allowed: Set<string> }
+  | { mode: 'all_except'; denied: Set<string> };
+
+export async function listAccessibleResources(
+  userId: string,
+  accountId: string,
+  action: string,
+  resourceType: ResourceType,
+): Promise<AccessibleResources> {
+  const actor = await resolveActor(userId, accountId);
+  if (!actor) return { mode: 'none' };
+
+  if (actor.isSuperAdmin) return { mode: 'all' };
+
+  // Owner/admin legacy bridge always allows account-level reads/writes.
+  // Preserves today's "owners see everything" without enumerating policies.
+  if (
+    (actor.accountRole === 'owner' || actor.accountRole === 'admin') &&
+    (await bridgeLegacyAccountRole(actor, action))
+  ) {
+    return { mode: 'all' };
+  }
+
+  // Single query: every policy attached to this user (direct or via group)
+  // whose role grants `action` and whose scope matches Everything or this
+  // resource type. Partitioned by effect in-memory.
+  const principalConditions = [
+    and(
+      eq(iamPolicies.principalType, 'member'),
+      eq(iamPolicies.principalId, userId),
+    ),
+  ];
+  if (actor.groupIds.length > 0) {
+    principalConditions.push(
+      and(
+        eq(iamPolicies.principalType, 'group'),
+        inArray(iamPolicies.principalId, actor.groupIds),
+      ),
+    );
+  }
+
+  const rows = await db
+    .select({
+      scopeType: iamPolicies.scopeType,
+      scopeId: iamPolicies.scopeId,
+      effect: iamPolicies.effect,
+    })
+    .from(iamPolicies)
+    .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
+    .innerJoin(
+      iamRolePermissions,
+      and(
+        eq(iamRolePermissions.roleId, iamRoles.roleId),
+        eq(iamRolePermissions.action, action),
+      ),
+    )
+    .where(
+      and(
+        eq(iamPolicies.accountId, accountId),
+        or(...principalConditions),
+        or(eq(iamPolicies.scopeType, 'account'), eq(iamPolicies.scopeType, resourceType)),
+      ),
+    );
+
+  let allowEverything = false;
+  let denyEverything = false;
+  const allowedIds = new Set<string>();
+  const deniedIds = new Set<string>();
+
+  for (const r of rows) {
+    const matchesEverything =
+      r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
+    if (r.effect === 'deny') {
+      if (matchesEverything) denyEverything = true;
+      else if (r.scopeId) deniedIds.add(r.scopeId);
+    } else {
+      if (matchesEverything) allowEverything = true;
+      else if (r.scopeId) allowedIds.add(r.scopeId);
+    }
+  }
+
+  // Legacy project_members bridge: any project_role row counts as an allow
+  // for actions the bridged Project Admin/Editor/Viewer role would grant.
+  // Only consulted for project listings.
+  if (resourceType === 'project') {
+    const memberRows = await db
+      .select({
+        projectId: projectMembers.projectId,
+        projectRole: projectMembers.projectRole,
+      })
+      .from(projectMembers)
+      .where(
+        and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, userId)),
+      );
+
+    for (const m of memberRows) {
+      const key =
+        m.projectRole === 'manager'
+          ? SYSTEM_ROLE_KEY.PROJECT_ADMIN
+          : m.projectRole === 'editor'
+            ? SYSTEM_ROLE_KEY.PROJECT_EDITOR
+            : SYSTEM_ROLE_KEY.PROJECT_VIEWER;
+      const actions = await getSystemRoleActions(key);
+      if (actions.has(action)) allowedIds.add(m.projectId);
+    }
+  }
+
+  // Decide the mode. Deny-everything wins; otherwise allow-everything just
+  // shaves off the specific denies; otherwise we have an explicit allow list.
+  if (denyEverything) return { mode: 'none' };
+  if (allowEverything) return { mode: 'all_except', denied: deniedIds };
+  // Strip any allowed entries that also have a per-id deny.
+  for (const denied of deniedIds) allowedIds.delete(denied);
+  return { mode: 'allow_only', allowed: allowedIds };
 }
