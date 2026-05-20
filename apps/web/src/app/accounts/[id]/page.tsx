@@ -146,14 +146,20 @@ export default function AccountSettingsPage() {
           <div className="space-y-3">
             <button
               type="button"
-              onClick={() => router.push('/accounts')}
+              onClick={() => router.push('/projects')}
               className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              All accounts
+              Back to projects
             </button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>Accounts</span>
+              <button
+                type="button"
+                onClick={() => router.push('/accounts')}
+                className="transition-colors hover:text-foreground"
+              >
+                Accounts
+              </button>
               <span className="text-muted-foreground/40">/</span>
               {accountQuery.isLoading ? (
                 <Skeleton className="h-4 w-32" />

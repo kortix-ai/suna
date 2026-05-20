@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { Check, ChevronRight, Plus } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Plus } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
@@ -54,6 +54,14 @@ export default function AccountsPage() {
       <AppHeader user={user} />
       <main className="flex-1 px-4 py-8">
         <div className="mx-auto w-full max-w-4xl space-y-8">
+          <button
+            type="button"
+            onClick={() => router.push('/projects')}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to projects
+          </button>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Accounts</h1>

@@ -71,16 +71,28 @@ export default function GroupDetailPage() {
           <div className="space-y-3">
             <button
               type="button"
-              onClick={() => router.push(`/accounts/${accountId}`)}
+              onClick={() => router.push('/projects')}
               className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back to account
+              Back to projects
             </button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>Members</span>
+              <button
+                type="button"
+                onClick={() => router.push('/accounts')}
+                className="transition-colors hover:text-foreground"
+              >
+                Accounts
+              </button>
               <span className="text-muted-foreground/40">/</span>
-              <span>Groups</span>
+              <button
+                type="button"
+                onClick={() => router.push(`/accounts/${accountId}`)}
+                className="transition-colors hover:text-foreground"
+              >
+                Groups
+              </button>
               <span className="text-muted-foreground/40">/</span>
               {groupQuery.isLoading ? (
                 <Skeleton className="h-4 w-24" />
