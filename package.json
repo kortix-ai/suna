@@ -12,6 +12,8 @@
     "dev:sandbox": "docker build -f apps/sandbox/Dockerfile -t kortix/sandbox:dev .",
     "dev:sandbox:build": "pnpm dev:sandbox",
     "build": "pnpm -r run build",
+    "cli:bundle": "pnpm --filter @kortix/cli bundle",
+    "cli:bundle:all": "pnpm --filter @kortix/cli bundle:all",
     "nuke": "bash scripts/nuke-local.sh",
     "nuke:start": "bash scripts/nuke-local.sh --start",
     "start": "bash scripts/start-local.sh",

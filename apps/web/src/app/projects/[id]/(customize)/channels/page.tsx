@@ -11,12 +11,13 @@ import { useSlackInstall } from '@/hooks/channels/use-channels-installations';
 export default function ProjectChannelsPage() {
   const params = useParams<{ id: string }>();
   const projectId = params?.id ?? null;
-  const [open, setOpen] = useState(false);
-  const { data: install, isLoading } = useSlackInstall(projectId);
-  return <ChannelsView />;
+  return <ChannelsView projectId={projectId} />;
 }
 
-export function ChannelsView() {
+export function ChannelsView({ projectId }: { projectId: string | null }) {
+  const [open, setOpen] = useState(false);
+  const { data: install, isLoading } = useSlackInstall(projectId);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">

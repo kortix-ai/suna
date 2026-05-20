@@ -3054,8 +3054,8 @@ projectsApp.post('/:projectId/channels/slack/connect', async (c) => {
   return c.json(summary);
 });
 
-// DELETE /v1/projects/:projectId/channels/slack
-projectsApp.delete('/:projectId/channels/slack', async (c) => {
+// DELETE /v1/projects/:projectId/channels/slack/installation
+projectsApp.delete('/:projectId/channels/slack/installation', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);

@@ -74,7 +74,7 @@ function SectionContent({
     case 'webhooks':
       return <TriggersView projectId={projectId} type="webhook" />;
     case 'channels':
-      return <ChannelsView />;
+      return <ChannelsView projectId={projectId} />;
     case 'settings':
       return <SettingsView projectId={projectId} />;
     default:
