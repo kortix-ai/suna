@@ -382,3 +382,45 @@ export async function deletePolicy(accountId: string, policyId: string): Promise
     .returning({ policyId: iamPolicies.policyId });
   return rows.length > 0;
 }
+
+/**
+ * Mutate an existing policy. Only role, scope, and effect can change —
+ * principal is immutable (a policy is defined by who it grants to). The
+ * caller must validate role/scope compatibility before invoking.
+ *
+ * Returns null if no policy with that id exists in the account.
+ * Throws on unique-constraint conflict (a different policy already exists
+ * with the same (principal, scope, role, effect)).
+ */
+export async function updatePolicy(
+  accountId: string,
+  policyId: string,
+  patch: {
+    scopeType: ResourceType;
+    scopeId: string | null;
+    roleId: string;
+    effect: 'allow' | 'deny';
+  },
+): Promise<IamPolicy | null> {
+  const normalisedScopeId = patch.scopeType === 'account' ? null : patch.scopeId;
+
+  const [row] = await db
+    .update(iamPolicies)
+    .set({
+      scopeType: patch.scopeType,
+      scopeId: normalisedScopeId,
+      roleId: patch.roleId,
+      effect: patch.effect,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(iamPolicies.accountId, accountId), eq(iamPolicies.policyId, policyId)))
+    .returning();
+
+  if (!row) return null;
+  return {
+    ...row,
+    principalType: row.principalType as IamPolicy['principalType'],
+    scopeType: row.scopeType as ResourceType,
+    effect: row.effect as IamPolicy['effect'],
+  };
+}

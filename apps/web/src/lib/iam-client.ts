@@ -181,6 +181,25 @@ export async function createPolicy(
   );
 }
 
+export async function updatePolicy(
+  accountId: string,
+  policyId: string,
+  input: {
+    scopeType: ResourceType;
+    scopeId?: string | null;
+    roleId: string;
+    effect: PolicyEffect;
+  },
+) {
+  return unwrap(
+    await backendApi.patch<IamPolicy>(
+      `/accounts/${accountId}/iam/policies/${policyId}`,
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
 export async function deletePolicy(accountId: string, policyId: string) {
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(

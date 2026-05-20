@@ -31,6 +31,7 @@ import {
   listRoles,
   removeGroupMember,
   updateGroup,
+  updatePolicy,
   type PolicyFilter,
 } from '../repositories/iam';
 
@@ -363,6 +364,82 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
     },
     201,
   );
+});
+
+iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const policyId = c.req.param('policyId');
+  // policy.create covers both create + modify; treating them as the same
+  // capability is simpler and matches how Cloudflare scopes it. Add a
+  // dedicated policy.update later if we ever need to split them.
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+
+  const body = await readBody(c);
+
+  const scopeType = body.scopeType ?? body.scope_type;
+  if (!isResourceType(scopeType)) {
+    return c.json({ error: 'scopeType must be a valid resource type' }, 400);
+  }
+  const rawScopeId = body.scopeId ?? body.scope_id;
+  const scopeId: string | null =
+    typeof rawScopeId === 'string' && rawScopeId.length > 0 ? rawScopeId : null;
+  if (scopeType === 'account' && scopeId !== null) {
+    return c.json({ error: 'scope_type=account requires scope_id to be null' }, 400);
+  }
+  if (scopeType !== 'account' && scopeId === null) {
+    return c.json({ error: 'resource-specific scopes require a scope_id' }, 400);
+  }
+  const roleId = (body.roleId ?? body.role_id) as unknown;
+  if (typeof roleId !== 'string' || !roleId) {
+    return c.json({ error: 'roleId is required' }, 400);
+  }
+  const effectRaw = body.effect ?? 'allow';
+  if (effectRaw !== 'allow' && effectRaw !== 'deny') {
+    return c.json({ error: 'effect must be allow or deny' }, 400);
+  }
+  const effect = effectRaw as 'allow' | 'deny';
+
+  const role = await getRoleById(accountId, roleId);
+  if (!role) return c.json({ error: 'unknown role' }, 404);
+  if (role.resourceType !== scopeType && role.resourceType !== 'account') {
+    return c.json(
+      {
+        error: `role '${role.key}' is for ${role.resourceType} scope; cannot attach at ${scopeType} scope`,
+      },
+      400,
+    );
+  }
+
+  try {
+    const updated = await updatePolicy(accountId, policyId, {
+      scopeType,
+      scopeId,
+      roleId,
+      effect,
+    });
+    if (!updated) return c.json({ error: 'policy not found' }, 404);
+    return c.json({
+      policy_id: updated.policyId,
+      principal_type: updated.principalType,
+      principal_id: updated.principalId,
+      scope_type: updated.scopeType,
+      scope_id: updated.scopeId,
+      role_id: updated.roleId,
+      effect: updated.effect,
+      created_at: updated.createdAt.toISOString(),
+    });
+  } catch (err: unknown) {
+    // Postgres unique violation when the new (principal, scope, role, effect)
+    // already exists as a separate policy row.
+    if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+      return c.json(
+        { error: 'A policy with these exact properties already exists.' },
+        409,
+      );
+    }
+    throw err;
+  }
 });
 
 iamRouter.delete('/:accountId/iam/policies/:policyId', async (c) => {

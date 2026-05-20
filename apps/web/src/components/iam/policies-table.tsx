@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
+import { Loader2, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -51,6 +51,7 @@ import {
   listGroups,
   listPolicies,
   listRoles,
+  updatePolicy,
 } from '@/lib/iam-client';
 import {
   listAccountMembers,
@@ -94,6 +95,9 @@ export function PoliciesTable({
 }: PoliciesTableProps) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  // Non-null = the dialog is open in "edit" mode for that policy. Mutually
+  // exclusive with createOpen — opening one closes the other.
+  const [editTarget, setEditTarget] = useState<IamPolicy | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<IamPolicy | null>(null);
 
   const queryKey = ['iam-policies', accountId, principalType, principalId];
@@ -258,6 +262,13 @@ export function PoliciesTable({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-44">
                           <DropdownMenuItem
+                            onSelect={() => setEditTarget(p)}
+                            className="gap-2"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Edit policy
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             onSelect={() => setDeleteTarget(p)}
                             className="gap-2 text-destructive focus:text-destructive"
                           >
@@ -276,8 +287,15 @@ export function PoliciesTable({
       )}
 
       <CreatePolicyDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
+        open={createOpen || !!editTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreateOpen(false);
+            setEditTarget(null);
+          } else if (!editTarget) {
+            setCreateOpen(true);
+          }
+        }}
         accountId={accountId}
         principalType={principalType}
         principalId={principalId}
@@ -286,6 +304,7 @@ export function PoliciesTable({
         projects={projectsQuery.data ?? []}
         members={accountMembersQuery.data ?? []}
         groups={accountGroupsQuery.data ?? []}
+        editing={editTarget}
         onCreated={() => queryClient.invalidateQueries({ queryKey })}
       />
 
@@ -320,6 +339,11 @@ interface CreatePolicyDialogProps {
   projects: KortixProject[];
   members: AccountMember[];
   groups: AccountGroup[];
+  /** Non-null = the dialog opens pre-filled to edit this policy in place
+   * instead of creating new ones. Editing is single-role since a policy IS
+   * a (principal, scope, role, effect) tuple — changing the role means
+   * changing the row. */
+  editing?: IamPolicy | null;
   onCreated: () => void;
 }
 
@@ -334,13 +358,27 @@ function CreatePolicyDialog({
   projects,
   members,
   groups,
+  editing,
   onCreated,
 }: CreatePolicyDialogProps) {
+  const isEditing = !!editing;
   const [effect, setEffect] = useState<PolicyEffect>('allow');
   const [scopeType, setScopeType] = useState<ResourceType | ''>('');
   const [scopeId, setScopeId] = useState<string>('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
   const [roleSearch, setRoleSearch] = useState('');
+
+  // Hydrate from the policy being edited whenever the dialog opens in edit
+  // mode. Clearing happens via reset() on close.
+  useEffect(() => {
+    if (open && editing) {
+      setEffect(editing.effect);
+      setScopeType(editing.scope_type);
+      setScopeId(editing.scope_id ?? '');
+      setSelectedRoleIds(new Set([editing.role_id]));
+      setRoleSearch('');
+    }
+  }, [open, editing]);
 
   // Auto-focus the next picker as the user advances. Feels more like a
   // conversation than a form: pick a scope → focus jumps to the picker for
@@ -378,13 +416,27 @@ function CreatePolicyDialog({
     mutationFn: async () => {
       if (!scopeType) throw new Error('Pick a scope');
       if (selectedRoleIds.size === 0) throw new Error('Pick at least one role');
-      // One policy per (scope, role) — mirrors how Cloudflare stores them.
       const normalisedScopeId =
         scopeType === 'account'
           ? null
           : scopeId
             ? scopeId
             : null;
+
+      // Edit mode: in-place mutation of the existing row. Single role only —
+      // a policy IS one (scope, role, effect) triplet.
+      if (editing) {
+        const [roleId] = Array.from(selectedRoleIds);
+        await updatePolicy(accountId, editing.policy_id, {
+          scopeType,
+          scopeId: normalisedScopeId,
+          roleId,
+          effect,
+        });
+        return;
+      }
+
+      // Create mode: one row per selected role (Cloudflare-style).
       for (const roleId of selectedRoleIds) {
         await createPolicy(accountId, {
           principalType,
@@ -397,12 +449,13 @@ function CreatePolicyDialog({
       }
     },
     onSuccess: () => {
-      toast.success('Policy created');
+      toast.success(editing ? 'Policy updated' : 'Policy created');
       onCreated();
       reset();
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to create policy'),
+    onError: (err: Error) =>
+      toast.error(err.message || (editing ? 'Failed to update policy' : 'Failed to create policy')),
   });
 
   // Roles available for the chosen scope.
@@ -430,6 +483,12 @@ function CreatePolicyDialog({
   })();
 
   function toggleRole(roleId: string) {
+    // Editing a single policy → behave like a radio (one role per policy).
+    // Creating → checkbox (one policy per selected role).
+    if (isEditing) {
+      setSelectedRoleIds(new Set([roleId]));
+      return;
+    }
     setSelectedRoleIds((prev) => {
       const next = new Set(prev);
       if (next.has(roleId)) next.delete(roleId);
@@ -490,9 +549,11 @@ function CreatePolicyDialog({
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Create policy</DialogTitle>
+          <DialogTitle>{isEditing ? 'Edit policy' : 'Create policy'}</DialogTitle>
           <DialogDescription>
-            Grant access to a scope. One policy is created per role.
+            {isEditing
+              ? 'Change the scope, role, or effect. The principal stays the same.'
+              : 'Grant access to a scope. One policy is created per role.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -758,7 +819,11 @@ function CreatePolicyDialog({
             variant={effect === 'deny' ? 'destructive' : 'default'}
           >
             {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {effect === 'deny' ? 'Create deny policy' : 'Create policy'}
+            {isEditing
+              ? 'Save changes'
+              : effect === 'deny'
+                ? 'Create deny policy'
+                : 'Create policy'}
           </Button>
         </DialogFooter>
       </DialogContent>
