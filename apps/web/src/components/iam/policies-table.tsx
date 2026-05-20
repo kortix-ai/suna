@@ -694,7 +694,12 @@ function CreatePolicyDialog({
           {/* ── Step 3: Roles (only after Applies-to is satisfied) ── */}
           {showRoles && (
             <div className="space-y-1.5">
-              <Label>Roles</Label>
+              <Label>{isEditing ? 'Role' : 'Roles'}</Label>
+              {!isEditing && availableRoles.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Each selected role becomes its own policy.
+                </p>
+              )}
               {availableRoles.length === 0 ? (
                 <p className="rounded-md border border-dashed border-border/60 px-3 py-3 text-xs text-muted-foreground">
                   No roles available for this scope.
@@ -715,6 +720,7 @@ function CreatePolicyDialog({
                   )}
                   <div
                     ref={rolesContainerRef}
+                    role={isEditing ? 'radiogroup' : 'group'}
                     className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2"
                   >
                     {filteredRoles.length === 0 ? (
@@ -728,17 +734,24 @@ function CreatePolicyDialog({
                           <button
                             key={r.role_id}
                             type="button"
+                            role={isEditing ? 'radio' : 'checkbox'}
+                            aria-checked={checked}
                             onClick={() => toggleRole(r.role_id)}
                             className={`flex w-full cursor-pointer items-start gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
                               checked ? 'bg-primary/5' : 'hover:bg-muted/40'
                             }`}
                             disabled={createMutation.isPending}
                           >
+                            {/* Native input purely as the visual indicator —
+                                clicks are absorbed by the wrapping button. */}
                             <input
-                              type="checkbox"
+                              type={isEditing ? 'radio' : 'checkbox'}
                               checked={checked}
                               readOnly
-                              className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
+                              tabIndex={-1}
+                              className={`mt-0.5 h-3.5 w-3.5 border-border accent-primary ${
+                                isEditing ? 'rounded-full' : 'rounded'
+                              }`}
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
