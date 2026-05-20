@@ -84,6 +84,9 @@ export type InviteMemberResult =
       email: string;
       account_role: AccountRole;
       expires_at: string;
+      invite_url: string;
+      email_sent: boolean;
+      email_skip_reason: string | null;
     };
 
 export interface AccountInvitation {
@@ -93,6 +96,15 @@ export interface AccountInvitation {
   invited_by: string;
   created_at: string;
   expires_at: string;
+  invite_url: string;
+}
+
+export interface ResendInviteResult {
+  ok: boolean;
+  expires_at: string;
+  invite_url: string;
+  email_sent: boolean;
+  email_skip_reason: string | null;
 }
 
 export interface AccountInviteDescribeFull {
@@ -255,7 +267,7 @@ export async function cancelAccountInvite(accountId: string, inviteId: string) {
 
 export async function resendAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
-    await backendApi.post<{ ok: boolean; expires_at: string }>(
+    await backendApi.post<ResendInviteResult>(
       `/accounts/${accountId}/invites/${inviteId}/resend`,
       {},
     ),

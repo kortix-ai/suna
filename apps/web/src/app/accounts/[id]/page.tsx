@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Clock,
   KeyRound,
+  Link as LinkIcon,
   Loader2,
   Mail,
   MoreHorizontal,
@@ -88,6 +89,18 @@ function getInitial(text: string) {
 
 function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;
+}
+
+/** Copy an invite URL to the clipboard with a friendly toast either way. */
+async function copyInviteLink(url: string) {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast.success('Invite link copied to clipboard');
+  } catch {
+    // Older browsers / blocked clipboard — show the link in a toast so the
+    // admin can copy it by hand.
+    toast.message('Copy this invite link', { description: url, duration: 15_000 });
+  }
 }
 
 export default function AccountSettingsPage() {
@@ -651,7 +664,19 @@ function InviteMemberModal({
     mutationFn: () => inviteAccountMember(accountId, { email: email.trim(), role }),
     onSuccess: (res) => {
       if (res.status === 'pending') {
-        toast.success(`Invite sent to ${res.email} — they'll see it when they sign up`);
+        if (res.email_sent) {
+          toast.success(`Invite sent to ${res.email} — they'll see it when they sign up`);
+        } else {
+          // Email delivery was skipped (e.g. Mailtrap not configured locally).
+          // Surface the link so the admin can share it manually.
+          toast.warning(`Invite created — email skipped. Share the link manually.`, {
+            action: {
+              label: 'Copy link',
+              onClick: () => copyInviteLink(res.invite_url),
+            },
+            duration: 10_000,
+          });
+        }
       } else {
         toast.success(`Added ${res.email}`);
       }
@@ -824,8 +849,20 @@ function PendingInvitesSection({
     mutationFn: (inviteId: string) => resendAccountInvite(accountId, inviteId),
     onMutate: (id) => setPendingId(id),
     onSettled: () => setPendingId(null),
-    onSuccess: () => {
-      toast.success('Invite refreshed');
+    onSuccess: (res) => {
+      if (res.email_sent) {
+        toast.success('Invite email sent');
+      } else {
+        // Mailtrap not configured (local dev or unconfigured prod). Hand the
+        // admin the link directly so they can share it manually.
+        toast.warning('Email skipped — copy invite link to share manually', {
+          action: {
+            label: 'Copy link',
+            onClick: () => copyInviteLink(res.invite_url),
+          },
+          duration: 8_000,
+        });
+      }
       invalidate();
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to resend invite'),
@@ -886,13 +923,20 @@ function PendingInvitesSection({
                         <MoreHorizontal className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuContent align="end" className="w-52">
                       <DropdownMenuItem
                         onSelect={() => resendMutation.mutate(invite.invite_id)}
                         className="gap-2"
                       >
                         <RefreshCw className="h-3.5 w-3.5" />
                         Resend invite
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => copyInviteLink(invite.invite_url)}
+                        className="gap-2"
+                      >
+                        <LinkIcon className="h-3.5 w-3.5" />
+                        Copy invitation link
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
