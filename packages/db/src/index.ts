@@ -113,6 +113,21 @@ export {
   changeRequestStatusEnum,
   changeRequests,
   changeRequestsRelations,
+  // IAM
+  accountGroupSourceEnum,
+  iamPrincipalTypeEnum,
+  iamScopeTypeEnum,
+  iamResourceTypeEnum,
+  accountGroups,
+  accountGroupMembers,
+  iamRoles,
+  iamRolePermissions,
+  iamPolicies,
+  accountGroupsRelations,
+  accountGroupMembersRelations,
+  iamRolesRelations,
+  iamRolePermissionsRelations,
+  iamPoliciesRelations,
 } from './schema/kortix';
 
 export type {

@@ -117,6 +117,7 @@ import {
   type ProjectAccessAction,
   type ProjectRole,
 } from './access';
+import { authorize, PROJECT_ACTIONS } from '../iam';
 import {
   KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
@@ -743,6 +744,17 @@ async function resolveProjectAccount(c: Context, body?: Record<string, unknown>)
   };
 }
 
+// Map the legacy coarse action ('read' | 'write' | 'manage') onto a
+// representative IAM action string. `manage` covers everything from rename to
+// member-management to deletion — we pick `project.delete` as the canonical
+// gate because it's the action only a full project admin would have. Any
+// policy that grants it implies the others.
+const LEGACY_ACTION_TO_IAM: Record<ProjectAccessAction, string> = {
+  read: PROJECT_ACTIONS.PROJECT_READ,
+  write: PROJECT_ACTIONS.PROJECT_WRITE,
+  manage: PROJECT_ACTIONS.PROJECT_DELETE,
+};
+
 async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   const [row] = await db
@@ -760,9 +772,24 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
   const accountRole = membership.accountRole as AccountRole;
   const projectRole = await getProjectMemberRole(projectId, userId);
   const effectiveRole = effectiveProjectRole(accountRole, projectRole);
-  if (!roleAllows(effectiveRole, action)) {
+
+  if (config.KORTIX_IAM_V2_ENFORCED) {
+    // IAM engine is the source of truth. It bridges existing account_role
+    // and project_members internally, so unchanged accounts behave the same;
+    // policies are additive on top.
+    const result = await authorize(
+      userId,
+      row.accountId,
+      LEGACY_ACTION_TO_IAM[action],
+      { type: 'project', id: projectId },
+    );
+    if (!result.allowed) {
+      throw new HTTPException(403, { message: 'You do not have access to this project' });
+    }
+  } else if (!roleAllows(effectiveRole, action)) {
     throw new HTTPException(403, { message: 'You do not have access to this project' });
   }
+
   (c as any).set('accountId', row.accountId);
 
   return {
