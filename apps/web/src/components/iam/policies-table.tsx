@@ -5,9 +5,9 @@
 // Scope · Applies to · Roles, with a Create policy modal that walks
 // scope → applies to → roles.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { Loader2, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +27,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -339,6 +340,30 @@ function CreatePolicyDialog({
   const [scopeType, setScopeType] = useState<ResourceType | ''>('');
   const [scopeId, setScopeId] = useState<string>('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
+  const [roleSearch, setRoleSearch] = useState('');
+
+  // Auto-focus the next picker as the user advances. Feels more like a
+  // conversation than a form: pick a scope → focus jumps to the picker for
+  // resources of that scope → then to the roles list.
+  const appliesToTriggerRef = useRef<HTMLButtonElement>(null);
+  const rolesContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!scopeType || scopeType === 'account') return;
+    // Wait one frame so the newly-rendered SelectTrigger is in the DOM.
+    const id = requestAnimationFrame(() => appliesToTriggerRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [scopeType]);
+
+  useEffect(() => {
+    const rolesReady = scopeType === 'account' || (!!scopeType && !!scopeId);
+    if (!rolesReady) return;
+    const id = requestAnimationFrame(() => {
+      const first = rolesContainerRef.current?.querySelector<HTMLButtonElement>('button');
+      first?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [scopeType, scopeId]);
 
   // Reset whenever the dialog closes so the next open is clean.
   function reset() {
@@ -346,6 +371,7 @@ function CreatePolicyDialog({
     setScopeType('');
     setScopeId('');
     setSelectedRoleIds(new Set());
+    setRoleSearch('');
   }
 
   const createMutation = useMutation({
@@ -379,13 +405,17 @@ function CreatePolicyDialog({
     onError: (err: Error) => toast.error(err.message || 'Failed to create policy'),
   });
 
-  // Available roles for the chosen scope: account roles always match;
-  // resource roles must match the scope_type.
+  // Roles available for the chosen scope.
+  //   - Everything scope (account)  → every role in the catalog
+  //   - resource-specific scope     → ONLY roles tagged for that resource
+  //
+  // Cloudflare-style. Granting "Administrator" on a single project makes no
+  // sense; the strict filter cuts the role list from ~15 down to ~4 for the
+  // common case and removes a major source of confusion.
   const availableRoles = useMemo(() => {
     if (!scopeType) return [];
-    return roles.filter(
-      (r) => r.resource_type === scopeType || r.resource_type === 'account',
-    );
+    if (scopeType === 'account') return roles;
+    return roles.filter((r) => r.resource_type === scopeType);
   }, [roles, scopeType]);
 
   // Whether we have enough to submit.
@@ -411,6 +441,19 @@ function CreatePolicyDialog({
   // Roles section is revealed once the user has named a real target.
   // For account-Everything that's immediate; otherwise wait for the picker.
   const showRoles = scopeType === 'account' || (!!scopeType && !!scopeId);
+
+  // Search only kicks in when the role list is long enough to warrant it
+  // (Everything scope shows the full catalog). For 1–6 roles it's just noise.
+  const SEARCH_THRESHOLD = 6;
+  const filteredRoles = useMemo(() => {
+    if (!roleSearch.trim()) return availableRoles;
+    const q = roleSearch.trim().toLowerCase();
+    return availableRoles.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.description?.toLowerCase().includes(q),
+    );
+  }, [availableRoles, roleSearch]);
 
   // Human-readable summary fragments rendered above the Create button.
   const selectedRoleNames = useMemo(() => {
@@ -518,7 +561,7 @@ function CreatePolicyDialog({
                   onValueChange={setScopeId}
                   disabled={createMutation.isPending}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger ref={appliesToTriggerRef}>
                     <SelectValue placeholder="Pick a project..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -542,7 +585,7 @@ function CreatePolicyDialog({
                   onValueChange={setScopeId}
                   disabled={createMutation.isPending}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger ref={appliesToTriggerRef}>
                     <SelectValue placeholder="Pick a member..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -566,7 +609,7 @@ function CreatePolicyDialog({
                   onValueChange={setScopeId}
                   disabled={createMutation.isPending}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger ref={appliesToTriggerRef}>
                     <SelectValue placeholder="Pick a group..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -596,46 +639,69 @@ function CreatePolicyDialog({
                   No roles available for this scope.
                 </p>
               ) : (
-                <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2">
-                  {availableRoles.map((r) => {
-                    const checked = selectedRoleIds.has(r.role_id);
-                    return (
-                      <button
-                        key={r.role_id}
-                        type="button"
-                        onClick={() => toggleRole(r.role_id)}
-                        className={`flex w-full cursor-pointer items-start gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
-                          checked ? 'bg-primary/5' : 'hover:bg-muted/40'
-                        }`}
+                <>
+                  {availableRoles.length > SEARCH_THRESHOLD && (
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        value={roleSearch}
+                        onChange={(e) => setRoleSearch(e.target.value)}
+                        placeholder="Search roles..."
+                        className="h-8 pl-8 text-sm"
                         disabled={createMutation.isPending}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          readOnly
-                          className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-foreground">
-                              {r.name}
-                            </span>
-                            {r.is_system && (
-                              <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
-                                system
-                              </Badge>
-                            )}
-                          </div>
-                          {r.description && (
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {r.description}
-                            </p>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                      />
+                    </div>
+                  )}
+                  <div
+                    ref={rolesContainerRef}
+                    className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2"
+                  >
+                    {filteredRoles.length === 0 ? (
+                      <p className="px-2 py-3 text-center text-xs text-muted-foreground">
+                        No roles match &ldquo;{roleSearch}&rdquo;.
+                      </p>
+                    ) : (
+                      filteredRoles.map((r) => {
+                        const checked = selectedRoleIds.has(r.role_id);
+                        return (
+                          <button
+                            key={r.role_id}
+                            type="button"
+                            onClick={() => toggleRole(r.role_id)}
+                            className={`flex w-full cursor-pointer items-start gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                              checked ? 'bg-primary/5' : 'hover:bg-muted/40'
+                            }`}
+                            disabled={createMutation.isPending}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              readOnly
+                              className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-foreground">
+                                  {r.name}
+                                </span>
+                                {r.is_system && (
+                                  <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                                    system
+                                  </Badge>
+                                )}
+                              </div>
+                              {r.description && (
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                  {r.description}
+                                </p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
