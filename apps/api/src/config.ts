@@ -85,12 +85,6 @@ const envSchema = z.object({
   // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
   // by default until the wire is hardened.
   KORTIX_APPS_EXPERIMENTAL:         optBoolFalse,
-  // IAM v2 cut-over: when true, project route access checks call the IAM
-  // engine instead of (or in addition to) the legacy roleAllows() path. The
-  // engine bridges existing account_role + project_members rows so behaviour
-  // is unchanged for accounts that haven't created any policies yet. Default
-  // off until we've finished migrating every route group.
-  KORTIX_IAM_V2_ENFORCED:           optBoolFalse,
 
   // ── Search Providers (optional — features degrade gracefully) ────────────
   TAVILY_API_URL:              optUrl('https://api.tavily.com'),
@@ -366,7 +360,6 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED || env.ENV_MODE === 'cloud',
   KORTIX_DEPLOYMENTS_ENABLED: env.KORTIX_DEPLOYMENTS_ENABLED,
   KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
-  KORTIX_IAM_V2_ENFORCED: env.KORTIX_IAM_V2_ENFORCED,
 
   // ─── Database ──────────────────────────────────────────────────────────────
   DATABASE_URL: env.DATABASE_URL,

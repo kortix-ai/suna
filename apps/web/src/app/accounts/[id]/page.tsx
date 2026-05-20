@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Clock,
+  KeyRound,
   Loader2,
   Mail,
   MoreHorizontal,
@@ -48,6 +49,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { GroupsTab } from '@/components/iam/groups-tab';
 import {
   type AccountDetail,
   type AccountInvitation,
@@ -186,26 +189,41 @@ export default function AccountSettingsPage() {
           )}
 
           {account && (
-            <>
-              <GeneralCard
-                account={account}
-                queryClient={queryClient}
-                isOwner={isOwner}
-              />
-              <MembersCard
-                account={account}
-                members={members}
-                isLoading={membersQuery.isLoading}
-                isError={membersQuery.isError}
-                error={membersQuery.error as Error | null}
-                onRetry={() => membersQuery.refetch()}
-                queryClient={queryClient}
-                currentUserId={user.id}
-                isOwner={isOwner}
-                isAdmin={isAdmin}
-              />
-              {isTeam && isOwner && <DangerZoneCard />}
-            </>
+            <Tabs defaultValue="members" className="space-y-6">
+              <TabsList>
+                <TabsTrigger value="members">All members</TabsTrigger>
+                <TabsTrigger value="groups">Groups</TabsTrigger>
+                <TabsTrigger value="settings">Settings</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="members" className="space-y-6">
+                <MembersCard
+                  account={account}
+                  members={members}
+                  isLoading={membersQuery.isLoading}
+                  isError={membersQuery.isError}
+                  error={membersQuery.error as Error | null}
+                  onRetry={() => membersQuery.refetch()}
+                  queryClient={queryClient}
+                  currentUserId={user.id}
+                  isOwner={isOwner}
+                  isAdmin={isAdmin}
+                />
+              </TabsContent>
+
+              <TabsContent value="groups" className="space-y-6">
+                <GroupsTab accountId={account.account_id} canManage={isOwner || isAdmin} />
+              </TabsContent>
+
+              <TabsContent value="settings" className="space-y-6">
+                <GeneralCard
+                  account={account}
+                  queryClient={queryClient}
+                  isOwner={isOwner}
+                />
+                {isTeam && isOwner && <DangerZoneCard />}
+              </TabsContent>
+            </Tabs>
           )}
         </div>
       </main>
@@ -429,8 +447,9 @@ function MembersCard({
               member.account_role === 'owner' &&
               sorted.filter((m) => m.account_role === 'owner').length === 1;
             const pending = pendingUserId === member.user_id;
-            const showKebab =
-              !pending && (canManage || isSelf); // owners manage everyone; self can leave
+            // Kebab is always available — "View & Edit permission policies"
+            // is open to anyone who can view the member; backend gates writes.
+            const showKebab = !pending;
 
             return (
               <li
@@ -479,9 +498,21 @@ function MembersCard({
                           <MoreHorizontal className="h-3.5 w-3.5" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            router.push(
+                              `/accounts/${account.account_id}/members/${member.user_id}`,
+                            )
+                          }
+                          className="gap-2"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                          View &amp; Edit permission policies
+                        </DropdownMenuItem>
                         {canManage && !isSelf && (
                           <>
+                            <DropdownMenuSeparator />
                             <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                               Change role
                             </DropdownMenuLabel>
@@ -515,14 +546,17 @@ function MembersCard({
                           </>
                         )}
                         {isSelf && !account.personal_account && (
-                          <DropdownMenuItem
-                            onSelect={() => setLeaveConfirmOpen(true)}
-                            disabled={isLastOwner}
-                            className="gap-2 text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Leave team
-                          </DropdownMenuItem>
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => setLeaveConfirmOpen(true)}
+                              disabled={isLastOwner}
+                              className="gap-2 text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Leave team
+                            </DropdownMenuItem>
+                          </>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
