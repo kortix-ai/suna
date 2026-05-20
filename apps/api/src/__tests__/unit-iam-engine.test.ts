@@ -7,6 +7,7 @@ import {
   SANDBOX_ACTIONS,
   TRIGGER_ACTIONS,
   resourceTypeForAction,
+  type ResourceType,
 } from '../iam/actions';
 import { policyMatchesTarget } from '../iam/engine';
 import { SYSTEM_ROLES, SYSTEM_ROLE_KEY } from '../iam/system-roles';
@@ -46,34 +47,44 @@ describe('resourceTypeForAction', () => {
 });
 
 describe('policyMatchesTarget', () => {
+  const allow = (rest: { scopeType: ResourceType; scopeId: string | null }) => ({
+    ...rest,
+    effect: 'allow' as const,
+  });
+
   test('account-Everything policy matches every target', () => {
-    const policy = { scopeType: 'account' as const, scopeId: null };
+    const policy = allow({ scopeType: 'account', scopeId: null });
     expect(policyMatchesTarget(policy, 'project', { type: 'project', id: 'p1' })).toBe(true);
     expect(policyMatchesTarget(policy, 'sandbox', { type: 'sandbox', id: 's1' })).toBe(true);
     expect(policyMatchesTarget(policy, 'account', { type: 'account' })).toBe(true);
   });
 
   test('project-NULL policy matches any project, not other types', () => {
-    const policy = { scopeType: 'project' as const, scopeId: null };
+    const policy = allow({ scopeType: 'project', scopeId: null });
     expect(policyMatchesTarget(policy, 'project', { type: 'project', id: 'p1' })).toBe(true);
     expect(policyMatchesTarget(policy, 'project', { type: 'project', id: 'p2' })).toBe(true);
     expect(policyMatchesTarget(policy, 'sandbox', { type: 'sandbox', id: 's1' })).toBe(false);
   });
 
   test('project-specific policy matches only that project id', () => {
-    const policy = { scopeType: 'project' as const, scopeId: 'p1' };
+    const policy = allow({ scopeType: 'project', scopeId: 'p1' });
     expect(policyMatchesTarget(policy, 'project', { type: 'project', id: 'p1' })).toBe(true);
     expect(policyMatchesTarget(policy, 'project', { type: 'project', id: 'p2' })).toBe(false);
   });
 
   test('resource-scoped policy never satisfies an account-only target', () => {
-    const policy = { scopeType: 'project' as const, scopeId: null };
+    const policy = allow({ scopeType: 'project', scopeId: null });
     expect(policyMatchesTarget(policy, 'account', { type: 'account' })).toBe(false);
   });
 
   test('mismatched scope_type with target type fails closed', () => {
-    const policy = { scopeType: 'trigger' as const, scopeId: 't1' };
+    const policy = allow({ scopeType: 'trigger', scopeId: 't1' });
     expect(policyMatchesTarget(policy, 'project', { type: 'project', id: 'p1' })).toBe(false);
+  });
+
+  test('matcher ignores effect — that is the caller’s concern', () => {
+    const denyPolicy = { scopeType: 'project' as const, scopeId: 'p1', effect: 'deny' as const };
+    expect(policyMatchesTarget(denyPolicy, 'project', { type: 'project', id: 'p1' })).toBe(true);
   });
 });
 

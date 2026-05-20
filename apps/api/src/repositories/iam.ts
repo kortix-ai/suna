@@ -257,6 +257,7 @@ export type IamPolicy = {
   scopeType: ResourceType;
   scopeId: string | null;
   roleId: string;
+  effect: 'allow' | 'deny';
   createdBy: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -300,6 +301,7 @@ export async function listPolicies(
     ...r,
     principalType: r.principalType as IamPolicy['principalType'],
     scopeType: r.scopeType as ResourceType,
+    effect: r.effect as IamPolicy['effect'],
   }));
 }
 
@@ -310,12 +312,14 @@ export async function createPolicy(args: {
   scopeType: ResourceType;
   scopeId: string | null;
   roleId: string;
+  effect?: 'allow' | 'deny';
   createdBy: string;
 }): Promise<IamPolicy> {
   // The DB CHECK constraint already enforces that scope_type='account' has
   // scope_id NULL. Belt-and-braces: normalise here so callers can't pass a
   // bad combo.
   const normalisedScopeId = args.scopeType === 'account' ? null : args.scopeId;
+  const effect = args.effect ?? 'allow';
 
   const [row] = await db
     .insert(iamPolicies)
@@ -326,6 +330,7 @@ export async function createPolicy(args: {
       scopeType: args.scopeType,
       scopeId: normalisedScopeId,
       roleId: args.roleId,
+      effect,
       createdBy: args.createdBy,
     })
     .onConflictDoNothing()
@@ -347,6 +352,7 @@ export async function createPolicy(args: {
             ? isNull(iamPolicies.scopeId)
             : eq(iamPolicies.scopeId, normalisedScopeId),
           eq(iamPolicies.roleId, args.roleId),
+          eq(iamPolicies.effect, effect),
         ),
       )
       .limit(1);
@@ -357,6 +363,7 @@ export async function createPolicy(args: {
       ...existing,
       principalType: existing.principalType as IamPolicy['principalType'],
       scopeType: existing.scopeType as ResourceType,
+      effect: existing.effect as IamPolicy['effect'],
     };
   }
 
@@ -364,6 +371,7 @@ export async function createPolicy(args: {
     ...row,
     principalType: row.principalType as IamPolicy['principalType'],
     scopeType: row.scopeType as ResourceType,
+    effect: row.effect as IamPolicy['effect'],
   };
 }
 

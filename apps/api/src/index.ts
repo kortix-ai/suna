@@ -462,12 +462,24 @@ ensureSchema()
   .then(async () => {
     schemaReady = true;
     // Reconcile system IAM roles. Idempotent and fast (~15 roles).
+    // If the IAM tables haven't been migrated yet (e.g. dev with
+    // KORTIX_SKIP_ENSURE_SCHEMA=1 on a fresh branch), log a one-liner
+    // pointing at the fix instead of a noisy stack trace.
     try {
       const { seedSystemRoles } = await import('./iam');
       await seedSystemRoles();
       console.log('[startup] IAM system roles seeded');
     } catch (err) {
-      console.error('[startup] IAM role seed failed:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/iam_roles.*does not exist|relation .* does not exist/i.test(msg)) {
+        console.warn(
+          '[startup] IAM tables not present yet — skipping role seed. ' +
+          'Run the IAM migration (supabase/migrations/00000000000054_iam_*.sql) ' +
+          'or unset KORTIX_SKIP_ENSURE_SCHEMA for one restart.',
+        );
+      } else {
+        console.error('[startup] IAM role seed failed:', err);
+      }
     }
     startAccessControlCache();
     startDrainer();

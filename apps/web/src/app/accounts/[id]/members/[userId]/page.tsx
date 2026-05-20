@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Shield, ShieldOff } from 'lucide-react';
+import { ArrowLeft, Shield, ShieldOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -30,7 +30,8 @@ export default function MemberDetailPage() {
   const memberUserId = params?.userId;
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
-  const [superConfirmOpen, setSuperConfirmOpen] = useState(false);
+  const [grantConfirmOpen, setGrantConfirmOpen] = useState(false);
+  const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
 
   const accountQuery = useQuery({
     queryKey: ['account', accountId],
@@ -62,7 +63,8 @@ export default function MemberDetailPage() {
     onSuccess: (res) => {
       toast.success(res.is_super_admin ? 'Granted super-admin' : 'Revoked super-admin');
       queryClient.invalidateQueries({ queryKey: ['account-members', accountId] });
-      setSuperConfirmOpen(false);
+      setGrantConfirmOpen(false);
+      setRevokeConfirmOpen(false);
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to update'),
   });
@@ -123,20 +125,35 @@ export default function MemberDetailPage() {
                     <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-normal">
                       {ROLE_LABEL[member.account_role] ?? member.account_role}
                     </Badge>
-                    {(groupsQuery.data ?? []).filter((g) => g.member_count && g.member_count > 0)
-                      .length > 0 && (
-                      <span className="text-xs text-muted-foreground">
-                        Joined {new Date(member.joined_at).toLocaleDateString()}
-                      </span>
+                    {member.is_super_admin && (
+                      <Badge className="h-5 gap-1 rounded-md px-1.5 text-[10px] font-normal">
+                        <Shield className="h-2.5 w-2.5" />
+                        Super-admin
+                      </Badge>
                     )}
+                    <span className="text-xs text-muted-foreground">
+                      Joined {new Date(member.joined_at).toLocaleDateString()}
+                    </span>
                   </div>
                 )}
               </div>
-              {canPromoteSuperAdmin && memberUserId !== user.id && (
+              {canPromoteSuperAdmin && memberUserId !== user.id && member?.is_super_admin && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSuperConfirmOpen(true)}
+                  onClick={() => setRevokeConfirmOpen(true)}
+                  className="gap-1.5 text-destructive hover:text-destructive"
+                  disabled={setSuperAdminMutation.isPending}
+                >
+                  <ShieldOff className="h-3.5 w-3.5" />
+                  Revoke super-admin
+                </Button>
+              )}
+              {canPromoteSuperAdmin && memberUserId !== user.id && !member?.is_super_admin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setGrantConfirmOpen(true)}
                   className="gap-1.5"
                   disabled={setSuperAdminMutation.isPending}
                 >
@@ -175,8 +192,8 @@ export default function MemberDetailPage() {
           )}
 
           <ConfirmDialog
-            open={superConfirmOpen}
-            onOpenChange={setSuperConfirmOpen}
+            open={grantConfirmOpen}
+            onOpenChange={setGrantConfirmOpen}
             title="Grant super-admin?"
             description={
               <span>
@@ -188,6 +205,22 @@ export default function MemberDetailPage() {
             confirmLabel="Grant super-admin"
             isPending={setSuperAdminMutation.isPending}
             onConfirm={() => setSuperAdminMutation.mutate(true)}
+          />
+
+          <ConfirmDialog
+            open={revokeConfirmOpen}
+            onOpenChange={setRevokeConfirmOpen}
+            title="Revoke super-admin?"
+            description={
+              <span>
+                <strong>{memberLabel}</strong> will lose the bypass. From now on, every
+                action they perform will go through the normal policy checks. They may
+                lose access to parts of the account if no explicit policies grant it.
+              </span>
+            }
+            confirmLabel="Revoke super-admin"
+            isPending={setSuperAdminMutation.isPending}
+            onConfirm={() => setSuperAdminMutation.mutate(false)}
           />
         </div>
       </main>

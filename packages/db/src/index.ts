@@ -116,6 +116,7 @@ export {
   // IAM
   accountGroupSourceEnum,
   iamPrincipalTypeEnum,
+  iamPolicyEffectEnum,
   iamScopeTypeEnum,
   iamResourceTypeEnum,
   accountGroups,

@@ -42,6 +42,8 @@ export interface IamRole {
   account_id: string | null;
 }
 
+export type PolicyEffect = 'allow' | 'deny';
+
 export interface IamPolicy {
   policy_id: string;
   principal_type: PrincipalType;
@@ -49,6 +51,7 @@ export interface IamPolicy {
   scope_type: ResourceType;
   scope_id: string | null;
   role_id: string;
+  effect: PolicyEffect;
   created_by: string | null;
   created_at: string;
 }
@@ -168,6 +171,7 @@ export async function createPolicy(
     scopeType: ResourceType;
     scopeId?: string | null;
     roleId: string;
+    effect?: PolicyEffect;
   },
 ) {
   return unwrap(

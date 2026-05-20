@@ -1676,6 +1676,11 @@ export const iamPrincipalTypeEnum = kortixSchema.enum('iam_principal_type', [
   'token',
 ]);
 
+export const iamPolicyEffectEnum = kortixSchema.enum('iam_policy_effect', [
+  'allow',
+  'deny',
+]);
+
 export const iamScopeTypeEnum = kortixSchema.enum('iam_scope_type', [
   'account',
   'project',
@@ -1795,6 +1800,9 @@ export const iamPolicies = kortixSchema.table(
     roleId: uuid('role_id')
       .notNull()
       .references(() => iamRoles.roleId, { onDelete: 'restrict' }),
+    // 'allow' grants the role's actions; 'deny' subtracts them and wins over
+    // any allow on the same action+scope. Engine handles precedence.
+    effect: iamPolicyEffectEnum('effect').default('allow').notNull(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1805,7 +1813,9 @@ export const iamPolicies = kortixSchema.table(
     index('idx_iam_policies_scope').on(table.accountId, table.scopeType, table.scopeId),
     index('idx_iam_policies_role').on(table.roleId),
     // Dedupe policies. Split into two partial indexes because Postgres treats
-    // NULLs as distinct by default and we want them treated as equal.
+    // NULLs as distinct by default and we want them treated as equal. Effect
+    // is part of the key so an allow + deny on the same (principal, scope,
+    // role) can coexist — useful for "grant role, then carve out exception".
     uniqueIndex('idx_iam_policies_unique_with_scope')
       .on(
         table.accountId,
@@ -1814,6 +1824,7 @@ export const iamPolicies = kortixSchema.table(
         table.scopeType,
         table.scopeId,
         table.roleId,
+        table.effect,
       )
       .where(sql`${table.scopeId} IS NOT NULL`),
     uniqueIndex('idx_iam_policies_unique_no_scope')
@@ -1823,6 +1834,7 @@ export const iamPolicies = kortixSchema.table(
         table.principalId,
         table.scopeType,
         table.roleId,
+        table.effect,
       )
       .where(sql`${table.scopeId} IS NULL`),
   ],

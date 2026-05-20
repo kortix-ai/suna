@@ -266,6 +266,7 @@ iamRouter.get('/:accountId/iam/policies', async (c) => {
       scope_type: p.scopeType,
       scope_id: p.scopeId,
       role_id: p.roleId,
+      effect: p.effect,
       created_by: p.createdBy,
       created_at: p.createdAt.toISOString(),
     })),
@@ -303,6 +304,11 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
   if (typeof roleId !== 'string' || !roleId) {
     return c.json({ error: 'roleId is required' }, 400);
   }
+  const effectRaw = body.effect ?? 'allow';
+  if (effectRaw !== 'allow' && effectRaw !== 'deny') {
+    return c.json({ error: 'effect must be allow or deny' }, 400);
+  }
+  const effect = effectRaw as 'allow' | 'deny';
 
   // Role must exist and be available to this account (system or own).
   const role = await getRoleById(accountId, roleId);
@@ -340,6 +346,7 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
     scopeType,
     scopeId,
     roleId,
+    effect,
     createdBy: userId,
   });
 
@@ -351,6 +358,7 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
       scope_type: policy.scopeType,
       scope_id: policy.scopeId,
       role_id: policy.roleId,
+      effect: policy.effect,
       created_at: policy.createdAt.toISOString(),
     },
     201,

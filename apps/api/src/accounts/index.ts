@@ -529,6 +529,7 @@ accountsRouter.get('/:accountId/members', async (c) => {
     .select({
       userId: accountMembers.userId,
       accountRole: accountMembers.accountRole,
+      isSuperAdmin: accountMembers.isSuperAdmin,
       joinedAt: accountMembers.joinedAt,
     })
     .from(accountMembers)
@@ -550,6 +551,7 @@ accountsRouter.get('/:accountId/members', async (c) => {
       user_id: r.userId,
       email: emails.get(r.userId) ?? null,
       account_role: r.accountRole,
+      is_super_admin: r.isSuperAdmin,
       explicit_project_count: projectGrantCountByUser.get(r.userId) ?? 0,
       joined_at: r.joinedAt.toISOString(),
     })),

@@ -45,6 +45,7 @@ export interface AccountMember {
   user_id: string;
   email: string | null;
   account_role: AccountRole;
+  is_super_admin?: boolean;
   explicit_project_count?: number;
   joined_at: string;
 }

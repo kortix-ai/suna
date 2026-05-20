@@ -40,6 +40,7 @@ export type AuthorizeResult = {
 type LoadedPolicy = {
   scopeType: ResourceType;
   scopeId: string | null;
+  effect: 'allow' | 'deny';
 };
 
 type ResolvedActor = {
@@ -144,6 +145,7 @@ async function loadGrantingPolicies(
     .select({
       scopeType: iamPolicies.scopeType,
       scopeId: iamPolicies.scopeId,
+      effect: iamPolicies.effect,
     })
     .from(iamPolicies)
     .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
@@ -169,6 +171,7 @@ async function loadGrantingPolicies(
   return rows.map((r) => ({
     scopeType: r.scopeType as ResourceType,
     scopeId: r.scopeId,
+    effect: r.effect as 'allow' | 'deny',
   }));
 }
 
@@ -257,7 +260,8 @@ export async function authorize(
   // account-level target, only an account-Everything policy can satisfy it.
   // That's fine — the SQL filter handles it. No early-out needed.
 
-  // 2. Explicit policies (direct + via groups).
+  // 2. Explicit policies (direct + via groups). Partition by effect; deny
+  //    wins over allow on a per-action+scope basis.
   const policies = await loadGrantingPolicies(
     accountId,
     actor,
@@ -265,13 +269,24 @@ export async function authorize(
     action,
     requiredScopeType,
   );
+
+  let matchedAllow = false;
   for (const p of policies) {
-    if (policyMatchesTarget(p, requiredScopeType, effectiveTarget)) {
-      return { allowed: true, reason: 'policy' };
+    if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+    if (p.effect === 'deny') {
+      // Explicit deny is final. Short-circuit immediately so a single deny
+      // overrides any number of allows on the same action+scope.
+      return { allowed: false, reason: 'explicit_deny' };
     }
+    matchedAllow = true;
+  }
+
+  if (matchedAllow) {
+    return { allowed: true, reason: 'policy' };
   }
 
   // 3. Legacy bridges (only consulted when no explicit policy matched).
+  //    Explicit denies above already short-circuited.
   if (await bridgeLegacyAccountRole(actor, action)) {
     return { allowed: true, reason: 'legacy_account_role' };
   }

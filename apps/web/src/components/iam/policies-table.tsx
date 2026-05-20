@@ -39,16 +39,24 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  type AccountGroup,
   type IamPolicy,
   type IamRole,
+  type PolicyEffect,
   type PrincipalType,
   type ResourceType,
   createPolicy,
   deletePolicy,
+  listGroups,
   listPolicies,
   listRoles,
 } from '@/lib/iam-client';
-import { listProjectsForAccount, type KortixProject } from '@/lib/projects-client';
+import {
+  listAccountMembers,
+  listProjectsForAccount,
+  type AccountMember,
+  type KortixProject,
+} from '@/lib/projects-client';
 
 // ─── Resource-type metadata (UI labels + which pickers are wired) ─────────
 
@@ -58,11 +66,12 @@ const RESOURCE_TYPE_META: Record<
 > = {
   account: { label: 'Everything', pickerSupported: true },
   project: { label: 'Individual Projects', pickerSupported: true },
+  member: { label: 'Individual Members', pickerSupported: true },
+  group: { label: 'Individual Groups', pickerSupported: true },
+  // Slug-based, ephemeral, or sub-resource — defer until they have stable UUIDs.
   sandbox: { label: 'Individual Sandboxes', pickerSupported: false },
   trigger: { label: 'Individual Triggers', pickerSupported: false },
   channel: { label: 'Individual Channels', pickerSupported: false },
-  member: { label: 'Individual Members', pickerSupported: false },
-  group: { label: 'Individual Groups', pickerSupported: false },
 };
 
 // ─── PoliciesTable ─────────────────────────────────────────────────────────
@@ -103,6 +112,18 @@ export function PoliciesTable({
   const projectsQuery = useQuery({
     queryKey: ['projects-for-account', accountId],
     queryFn: () => listProjectsForAccount(accountId),
+    staleTime: 30_000,
+  });
+
+  const accountMembersQuery = useQuery({
+    queryKey: ['account-members', accountId],
+    queryFn: () => listAccountMembers(accountId),
+    staleTime: 30_000,
+  });
+
+  const accountGroupsQuery = useQuery({
+    queryKey: ['account-groups', accountId],
+    queryFn: () => listGroups(accountId),
     staleTime: 30_000,
   });
 
@@ -180,7 +201,8 @@ export function PoliciesTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border/60 bg-muted/20 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              <th className="px-6 py-2.5 font-medium">Scope</th>
+              <th className="px-6 py-2.5 font-medium">Effect</th>
+              <th className="px-3 py-2.5 font-medium">Scope</th>
               <th className="px-3 py-2.5 font-medium">Applies to</th>
               <th className="px-3 py-2.5 font-medium">Role</th>
               <th className="w-12 px-3 py-2.5" />
@@ -198,9 +220,18 @@ export function PoliciesTable({
                     : p.scope_type === 'project'
                       ? projectsById.get(p.scope_id)?.name ?? p.scope_id
                       : p.scope_id;
+              const isDeny = p.effect === 'deny';
               return (
                 <tr key={p.policy_id} className="hover:bg-muted/20">
-                  <td className="px-6 py-3 font-medium text-foreground">{scopeLabel}</td>
+                  <td className="px-6 py-3">
+                    <Badge
+                      variant={isDeny ? 'destructive' : 'outline'}
+                      className="h-5 rounded-md px-1.5 text-[10px] font-normal uppercase tracking-wider"
+                    >
+                      {p.effect}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-3 font-medium text-foreground">{scopeLabel}</td>
                   <td className="px-3 py-3 text-muted-foreground">{appliesTo}</td>
                   <td className="px-3 py-3">
                     {role ? (
@@ -251,6 +282,8 @@ export function PoliciesTable({
         principalId={principalId}
         roles={rolesQuery.data ?? []}
         projects={projectsQuery.data ?? []}
+        members={accountMembersQuery.data ?? []}
+        groups={accountGroupsQuery.data ?? []}
         onCreated={() => queryClient.invalidateQueries({ queryKey })}
       />
 
@@ -281,6 +314,8 @@ interface CreatePolicyDialogProps {
   principalId: string;
   roles: IamRole[];
   projects: KortixProject[];
+  members: AccountMember[];
+  groups: AccountGroup[];
   onCreated: () => void;
 }
 
@@ -292,14 +327,18 @@ function CreatePolicyDialog({
   principalId,
   roles,
   projects,
+  members,
+  groups,
   onCreated,
 }: CreatePolicyDialogProps) {
+  const [effect, setEffect] = useState<PolicyEffect>('allow');
   const [scopeType, setScopeType] = useState<ResourceType | ''>('');
   const [scopeId, setScopeId] = useState<string>('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
 
   // Reset whenever the dialog closes so the next open is clean.
   function reset() {
+    setEffect('allow');
     setScopeType('');
     setScopeId('');
     setSelectedRoleIds(new Set());
@@ -323,6 +362,7 @@ function CreatePolicyDialog({
           scopeType,
           scopeId: normalisedScopeId,
           roleId,
+          effect,
         });
       }
     },
@@ -383,6 +423,43 @@ function CreatePolicyDialog({
         </DialogHeader>
 
         <div className="space-y-5">
+          {/* ── Effect ────────────────────────────────────────────────── */}
+          <div className="space-y-1.5">
+            <Label>Effect</Label>
+            <div className="inline-flex rounded-md border border-border/70 bg-muted/30 p-0.5">
+              <button
+                type="button"
+                onClick={() => setEffect('allow')}
+                disabled={createMutation.isPending}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                  effect === 'allow'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Allow
+              </button>
+              <button
+                type="button"
+                onClick={() => setEffect('deny')}
+                disabled={createMutation.isPending}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                  effect === 'deny'
+                    ? 'bg-destructive/10 text-destructive shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                Deny
+              </button>
+            </div>
+            {effect === 'deny' && (
+              <p className="text-xs text-muted-foreground">
+                A deny policy revokes the role&apos;s actions on the chosen scope.
+                Deny always wins over allow, including the legacy account_role bridge.
+              </p>
+            )}
+          </div>
+
           {/* ── Scope ────────────────────────────────────────────────── */}
           <div className="space-y-1.5">
             <Label>Select a scope</Label>
@@ -468,9 +545,59 @@ function CreatePolicyDialog({
                 </SelectContent>
               </Select>
             )}
+            {scopeType === 'member' && (
+              <Select
+                value={scopeId || undefined}
+                onValueChange={setScopeId}
+                disabled={createMutation.isPending}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a member..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.length === 0 ? (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      No members in this account
+                    </div>
+                  ) : (
+                    members.map((m) => (
+                      <SelectItem key={m.user_id} value={m.user_id}>
+                        {m.email ?? m.user_id}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            )}
+            {scopeType === 'group' && (
+              <Select
+                value={scopeId || undefined}
+                onValueChange={setScopeId}
+                disabled={createMutation.isPending}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a group..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {groups.length === 0 ? (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      No groups in this account
+                    </div>
+                  ) : (
+                    groups.map((g) => (
+                      <SelectItem key={g.group_id} value={g.group_id}>
+                        {g.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            )}
             {scopeType &&
               scopeType !== 'account' &&
-              scopeType !== 'project' && (
+              scopeType !== 'project' &&
+              scopeType !== 'member' &&
+              scopeType !== 'group' && (
                 <p className="rounded-md border border-dashed border-border/60 px-3 py-3 text-xs text-muted-foreground">
                   Picker for this resource type ships in a follow-up.
                 </p>
