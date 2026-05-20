@@ -59,6 +59,21 @@ async function readBody(c: Context): Promise<Record<string, unknown>> {
   }
 }
 
+/**
+ * Drizzle wraps the raw postgres-js error inside DrizzleQueryError as `cause`.
+ * The wrapper's `message` is the formatted "Failed query: …" string, which
+ * never matches "unique"/"duplicate" — we have to drill into the cause and
+ * check the Postgres SQLSTATE. 23505 = unique_violation.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const cause = (err as { cause?: { code?: string } }).cause;
+  if (cause && cause.code === '23505') return true;
+  // Belt-and-braces: some adapters surface the code on the top-level error.
+  if ((err as { code?: string }).code === '23505') return true;
+  return false;
+}
+
 // ─── Groups ────────────────────────────────────────────────────────────────
 
 iamRouter.get('/:accountId/iam/groups', async (c) => {
@@ -107,7 +122,7 @@ iamRouter.post('/:accountId/iam/groups', async (c) => {
       201,
     );
   } catch (err: unknown) {
-    if (err instanceof Error && /unique/i.test(err.message)) {
+    if (isUniqueViolation(err)) {
       return c.json({ error: 'A group with this name already exists' }, 409);
     }
     throw err;
@@ -430,9 +445,7 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
       created_at: updated.createdAt.toISOString(),
     });
   } catch (err: unknown) {
-    // Postgres unique violation when the new (principal, scope, role, effect)
-    // already exists as a separate policy row.
-    if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+    if (isUniqueViolation(err)) {
       return c.json(
         { error: 'A policy with these exact properties already exists.' },
         409,
