@@ -122,11 +122,19 @@ const formatErrorMessage = (message: string, context?: ErrorContext): string => 
 
 
 export const handleApiError = (error: any, context?: ErrorContext): void => {
-  console.error('API Error:', error, context);
+  const status = error?.status || error?.response?.status;
+  // Expected 4xx (auth, validation, forbidden, not-found, etc.) should not
+  // light up the Next.js dev overlay — they're user-facing business outcomes
+  // we already surface via toast. Keep server errors and network failures
+  // at console.error so real bugs still surface.
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    console.warn('API Error:', error, context);
+  } else {
+    console.error('API Error:', error, context);
+  }
 
   // Report server errors (5xx) and network failures to Better Stack via Sentry.
   // 4xx errors are expected (auth, validation) and don't need alerting.
-  const status = error?.status || error?.response?.status;
   if (status >= 500 || error?.code === 'TIMEOUT' || error?.code === 'NETWORK_ERROR') {
     Sentry.captureException(error instanceof Error ? error : new Error(error?.message || String(error)), {
       tags: {
