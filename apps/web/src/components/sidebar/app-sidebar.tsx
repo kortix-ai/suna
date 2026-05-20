@@ -1,23 +1,22 @@
 'use client';
 
 import * as React from 'react';
-import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  Bot,
+  Activity,
   FolderOpen,
-  KeyRound,
+  Globe,
+  Home,
   Loader2,
-  MessageSquare,
   Search,
-  Settings as SettingsIcon,
-  Sparkles,
+  Settings,
+  ShieldAlert,
   SquarePen,
-  Timer,
-  Webhook,
+  Terminal as TerminalIcon,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react';
 import {
@@ -43,14 +42,20 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-import { ProjectSelector } from '@/components/projects/project-selector';
-import { ProjectSessionList } from '@/components/projects/project-session-list';
+import { InstanceSwitcherPopover } from '@/components/sidebar/instance-switcher-popover';
+import { SessionList } from '@/components/sidebar/session-list';
 import { UserMenu } from '@/components/sidebar/user-menu';
 import { useAdminRole } from '@/hooks/admin';
 import { useAuth } from '@/components/AuthProvider';
+import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
+import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { useIsMobile } from '@/hooks/utils';
-import { createProjectSession } from '@/lib/projects-client';
-import { toast } from '@/lib/toast';
+import {
+  buildInstancePath,
+  getActiveInstanceIdFromCookie,
+  getCurrentInstanceIdFromPathname,
+  normalizeAppPathname,
+} from '@/lib/instance-routes';
 
 const FLOATING_SHELL_OVERRIDE =
   '[&_[data-sidebar=sidebar]]:!bg-transparent ' +
@@ -58,42 +63,43 @@ const FLOATING_SHELL_OVERRIDE =
   '[&_[data-sidebar=sidebar]]:!shadow-none ' +
   '[&_[data-sidebar=sidebar]]:!rounded-none';
 
-interface CustomizeItem {
-  slug: string;
+interface NavItem {
+  href: string;
   label: string;
-  icon?: LucideIcon;
-  glyph?: string;
+  icon: LucideIcon;
+  adminOnly?: boolean;
 }
 
-const CUSTOMIZE_ITEMS: readonly CustomizeItem[] = [
-  { slug: 'files',     label: 'Files',     icon: FolderOpen },
-  { slug: 'skills',    label: 'Skills',    icon: Sparkles },
-  { slug: 'agents',    label: 'Agents',    icon: Bot },
-  { slug: 'commands',  label: 'Commands',  glyph: '/' },
-  { slug: 'secrets',   label: 'Secrets',   icon: KeyRound },
-  { slug: 'schedules', label: 'Schedules', icon: Timer },
-  { slug: 'webhooks',  label: 'Webhooks',  icon: Webhook },
-  { slug: 'channels',  label: 'Channels',  icon: MessageSquare },
+const WORKSPACE_NAV: NavItem[] = [
+  { href: '/dashboard', label: 'Home', icon: Home },
+  { href: '/files', label: 'Files', icon: FolderOpen },
+  { href: '/terminal', label: 'Terminal', icon: TerminalIcon },
+  { href: '/browser', label: 'Browser', icon: Globe },
+  { href: '/services', label: 'Services', icon: Activity },
+  { href: '/tools', label: 'Tools', icon: Wrench },
 ];
 
-const SETTINGS_ITEM: CustomizeItem = { slug: 'settings', label: 'Settings', icon: SettingsIcon };
+const ACCOUNT_NAV: NavItem[] = [
+  { href: '/settings/credentials', label: 'Settings', icon: Settings },
+  { href: '/admin', label: 'Admin', icon: ShieldAlert, adminOnly: true },
+];
+
+function isPathnameActive(pathname: string, href: string): boolean {
+  if (href === '/dashboard') return pathname === '/dashboard' || pathname === '/';
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 function isMacPlatform(): boolean {
   if (typeof navigator === 'undefined') return true;
   return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 }
 
-function isRouteActive(pathname: string | null, href: string): boolean {
-  if (!pathname) return false;
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-export function ProjectSidebar({ projectId }: { projectId: string }) {
+export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const router = useRouter();
-  const pathname = usePathname();
-  const { setOpenMobile } = useSidebar();
+  const rawPathname = usePathname() ?? '';
+  const pathname = normalizeAppPathname(rawPathname);
   const isMobile = useIsMobile();
-  const queryClient = useQueryClient();
+  const { setOpenMobile } = useSidebar();
 
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
@@ -115,59 +121,62 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     [authUser, isAdmin],
   );
 
-  const createSession = useMutation({
-    mutationFn: () => createProjectSession(projectId),
-    onSuccess: (session) => {
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-      router.push(`/projects/${projectId}/sessions/${session.session_id}`);
+  const currentInstanceId =
+    getCurrentInstanceIdFromPathname(rawPathname) || getActiveInstanceIdFromCookie();
+
+  const createSession = useCreateOpenCodeSession();
+  const handleNewSession = React.useCallback(async () => {
+    try {
+      const session = await createSession.mutateAsync();
+      const target = currentInstanceId
+        ? buildInstancePath(currentInstanceId, `/sessions/${session.id}`)
+        : `/sessions/${session.id}`;
+      router.push(target);
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent('focus-session-textarea'));
+      });
       if (isMobile) setOpenMobile(false);
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to start session');
-    },
-  });
+    } catch {
+      router.push(
+        currentInstanceId
+          ? buildInstancePath(currentInstanceId, '/dashboard')
+          : '/dashboard',
+      );
+      if (isMobile) setOpenMobile(false);
+    }
+  }, [createSession, router, isMobile, setOpenMobile, currentInstanceId]);
 
-  const handleNewSession = useCallback(() => {
-    if (createSession.isPending) return;
-    createSession.mutate();
-  }, [createSession]);
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
+  const isDocumentModalOpen = useDocumentModalStore((s) => s.isOpen);
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isDocumentModalOpen) return;
       if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.shiftKey &&
-        !event.altKey &&
-        (event.key === 'j' || event.key === 'J')
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        (e.key === 'j' || e.key === 'n' || e.key === 'N')
       ) {
-        event.preventDefault();
-        handleNewSession();
+        e.preventDefault();
+        void handleNewSession();
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [handleNewSession]);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isDocumentModalOpen, handleNewSession]);
 
-  const customizeItems = React.useMemo(
-    () =>
-      CUSTOMIZE_ITEMS.map((item) => ({
-        ...item,
-        href: `/projects/${projectId}/${item.slug}`,
-      })),
-    [projectId],
-  );
-
-  const settingsHref = `/projects/${projectId}/settings`;
+  const workspaceItems = WORKSPACE_NAV;
+  const accountItems = ACCOUNT_NAV.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <Sidebar
       variant="floating"
       collapsible="icon"
-      className={FLOATING_SHELL_OVERRIDE}
+      className={cn(FLOATING_SHELL_OVERRIDE, props.className)}
+      {...props}
     >
       <SidebarHeader className="gap-2 px-2 pt-2 pb-1 group-data-[collapsible=icon]:px-1">
         <div className="group-data-[collapsible=icon]:hidden">
-          <ProjectSelector />
+          <InstanceSwitcherPopover />
         </div>
 
         <div className="px-1 group-data-[collapsible=icon]:hidden">
@@ -177,7 +186,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
       <SidebarContent className="px-1.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         <CompactRail
-          projectId={projectId}
           handleNewSession={handleNewSession}
           isCreating={createSession.isPending}
           pathname={pathname}
@@ -189,16 +197,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             disabled={createSession.isPending}
           />
 
-          <SessionsSection projectId={projectId} />
+          <SectionLabel>Workspace</SectionLabel>
+          <ProximityNavGroup items={workspaceItems} pathname={pathname} />
 
-          <div className="flex flex-1 flex-col pt-3">
-            <SectionLabel>Customize</SectionLabel>
-            <ProximityNavGroup
-              items={customizeItems}
-              pathname={pathname}
-              tailItems={[{ ...SETTINGS_ITEM, href: settingsHref }]}
-              tailLabel="Project"
-            />
+          <SidebarSessions />
+
+          <div className="pt-2">
+            <SectionLabel>Account</SectionLabel>
+            <ProximityNavGroup items={accountItems} pathname={pathname} />
           </div>
         </div>
       </SidebarContent>
@@ -212,11 +218,86 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   );
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function CompactRail({
+  handleNewSession,
+  isCreating,
+  pathname,
+}: {
+  handleNewSession: () => void;
+  isCreating: boolean;
+  pathname: string;
+}) {
+  const items: NavItem[] = [...WORKSPACE_NAV, ...ACCOUNT_NAV];
   return (
-    <div className="px-3 pb-1.5 pt-1 font-sans text-[0.65rem] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
-      {children}
+    <div className="hidden flex-col items-center gap-0.5 px-1 pt-1 group-data-[collapsible=icon]:flex">
+      <RailIconButton
+        icon={isCreating ? <Loader2 className="size-4 animate-spin" /> : <SquarePen className="size-4" />}
+        label="New session"
+        onClick={handleNewSession}
+        disabled={isCreating}
+      />
+      <div className="my-1 h-px w-full bg-sidebar-border/60" />
+      {items.map((item) => {
+        const active = isPathnameActive(pathname, item.href);
+        const Icon = item.icon;
+        return (
+          <RailIconButton
+            key={item.href}
+            icon={<Icon className="size-4" />}
+            label={item.label}
+            href={item.href}
+            isActive={active}
+          />
+        );
+      })}
     </div>
+  );
+}
+
+function RailIconButton({
+  icon,
+  label,
+  onClick,
+  href,
+  isActive,
+  disabled,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick?: () => void;
+  href?: string;
+  isActive?: boolean;
+  disabled?: boolean;
+}) {
+  const className = cn(
+    'flex h-8 w-8 items-center justify-center rounded-lg transition-colors duration-150',
+    isActive
+      ? 'bg-sidebar-accent text-foreground'
+      : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+    disabled && 'cursor-not-allowed opacity-50',
+  );
+  const inner = href ? (
+    <Link href={href} className={className} aria-label={label}>
+      {icon}
+    </Link>
+  ) : (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={className}
+      aria-label={label}
+    >
+      {icon}
+    </button>
+  );
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{inner}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={12} className="text-xs">
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -333,48 +414,41 @@ function SidebarSearch() {
   );
 }
 
-function SessionsSection({ projectId }: { projectId: string }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-0 flex-col pt-3">
+    <div className="px-3 pb-1.5 pt-1 font-sans text-[0.65rem] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
+      {children}
+    </div>
+  );
+}
+
+function SidebarSessions() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col pt-3">
       <SectionLabel>Sessions</SectionLabel>
-      <div className="max-h-[36vh] min-h-0 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-        <ProjectSessionList projectId={projectId} />
+      <div className="min-h-0 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+        <SessionList projectId={null} />
       </div>
     </div>
   );
 }
 
-interface ProxItem {
-  href: string;
-  label: string;
-  icon?: LucideIcon;
-  glyph?: string;
-}
-
-function ProximityNavGroup({
+export function ProximityNavGroup({
   items,
   pathname,
-  tailItems,
-  tailLabel,
 }: {
-  items: ProxItem[];
-  pathname: string | null;
-  tailItems?: ProxItem[];
-  tailLabel?: string;
+  items: NavItem[];
+  pathname: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { activeIndex, itemRects, sessionRef, handlers, registerItem, measureItems } =
     useProximityHover<HTMLDivElement>(containerRef, { axis: 'y' });
 
-  const allItems = useMemo(
-    () => (tailItems ? [...items, ...tailItems] : items),
-    [items, tailItems],
-  );
-  const activeRouteIdx = allItems.findIndex((item) => isRouteActive(pathname, item.href));
+  const activeRouteIdx = items.findIndex((item) => isPathnameActive(pathname, item.href));
 
   useEffect(() => {
     measureItems();
-  }, [allItems.length, measureItems]);
+  }, [items.length, measureItems]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -387,14 +461,8 @@ function ProximityNavGroup({
   const activeRect = activeRouteIdx >= 0 ? itemRects[activeRouteIdx] : null;
   const hoverIsOnActive = activeIndex === activeRouteIdx;
 
-  const hasTail = !!tailItems && tailItems.length > 0;
-
   return (
-    <div
-      ref={containerRef}
-      className={cn('relative', hasTail && 'flex flex-1 flex-col')}
-      {...handlers}
-    >
+    <div ref={containerRef} className="relative" {...handlers}>
       {activeRect ? (
         <motion.div
           aria-hidden
@@ -442,25 +510,6 @@ function ProximityNavGroup({
           registerItem={registerItem}
         />
       ))}
-
-      {hasTail ? (
-        <div className="mt-auto pt-3">
-          {tailLabel ? <SectionLabel>{tailLabel}</SectionLabel> : null}
-          {tailItems!.map((item, i) => {
-            const index = items.length + i;
-            return (
-              <ProximityNavLink
-                key={item.href}
-                item={item}
-                index={index}
-                isActive={index === activeRouteIdx}
-                isHovered={index === activeIndex}
-                registerItem={registerItem}
-              />
-            );
-          })}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -472,7 +521,7 @@ function ProximityNavLink({
   isHovered,
   registerItem,
 }: {
-  item: ProxItem;
+  item: NavItem;
   index: number;
   isActive: boolean;
   isHovered: boolean;
@@ -486,136 +535,26 @@ function ProximityNavLink({
   );
 
   const emphasized = isActive || isHovered;
-  const Icon = item.icon;
+  const { icon: Icon, label, href } = item;
 
   return (
     <Link
       ref={linkRef}
-      href={item.href}
+      href={href}
       className={cn(
-        'relative z-10 flex items-center gap-2.5 rounded-lg px-3 py-1.5 font-sans text-xs transition-[color,font-variation-settings] duration-150',
+        'relative z-10 flex items-center gap-2.5 rounded-lg px-3 py-1.5 font-sans text-sm transition-[color,font-variation-settings] duration-150',
         emphasized ? 'text-foreground' : 'text-muted-foreground',
       )}
       style={{
         fontVariationSettings: isActive ? fontWeights.semibold : fontWeights.normal,
       }}
     >
-      {item.glyph ? (
-        <span
-          aria-hidden
-          className={cn(
-            'inline-flex size-3.5 shrink-0 items-center justify-center font-mono text-[0.75rem] leading-none transition-colors duration-150',
-            emphasized ? 'text-foreground' : 'text-muted-foreground/40',
-          )}
-        >
-          {item.glyph}
-        </span>
-      ) : Icon ? (
-        <Icon
-          className="size-3.5 shrink-0 text-muted-foreground/40 transition-[stroke-width] duration-150"
-          strokeWidth={emphasized ? 2 : 1.5}
-          aria-hidden="true"
-        />
-      ) : null}
-      <span className="flex-1">{item.label}</span>
-    </Link>
-  );
-}
-
-function CompactRail({
-  projectId,
-  handleNewSession,
-  isCreating,
-  pathname,
-}: {
-  projectId: string;
-  handleNewSession: () => void;
-  isCreating: boolean;
-  pathname: string | null;
-}) {
-  return (
-    <div className="hidden flex-col items-center gap-0.5 px-1 pt-1 group-data-[collapsible=icon]:flex">
-      <RailIconButton
-        icon={isCreating ? <Loader2 className="size-4 animate-spin" /> : <SquarePen className="size-4" />}
-        label="New session"
-        onClick={handleNewSession}
-        disabled={isCreating}
+      <Icon
+        className="size-4 shrink-0 text-muted-foreground/40 transition-[stroke-width] duration-150"
+        strokeWidth={emphasized ? 2 : 1.5}
+        aria-hidden="true"
       />
-      <div className="my-1 h-px w-full bg-sidebar-border/60" />
-      {CUSTOMIZE_ITEMS.map((item) => {
-        const href = `/projects/${projectId}/${item.slug}`;
-        const active = isRouteActive(pathname, href);
-        const Icon = item.icon;
-        return (
-          <RailIconButton
-            key={item.slug}
-            icon={
-              item.glyph ? (
-                <span className="font-mono text-[0.85rem] leading-none">{item.glyph}</span>
-              ) : Icon ? (
-                <Icon className="size-4" />
-              ) : null
-            }
-            label={item.label}
-            href={href}
-            isActive={active}
-          />
-        );
-      })}
-      <div className="my-1 h-px w-full bg-sidebar-border/60" />
-      <RailIconButton
-        icon={<SettingsIcon className="size-4" />}
-        label="Settings"
-        href={`/projects/${projectId}/settings`}
-        isActive={isRouteActive(pathname, `/projects/${projectId}/settings`)}
-      />
-    </div>
-  );
-}
-
-function RailIconButton({
-  icon,
-  label,
-  onClick,
-  href,
-  isActive,
-  disabled,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick?: () => void;
-  href?: string;
-  isActive?: boolean;
-  disabled?: boolean;
-}) {
-  const className = cn(
-    'flex h-8 w-8 items-center justify-center rounded-lg transition-colors duration-150',
-    isActive
-      ? 'bg-sidebar-accent text-foreground'
-      : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
-    disabled && 'cursor-not-allowed opacity-50',
-  );
-  const inner = href ? (
-    <Link href={href} className={className} aria-label={label}>
-      {icon}
+      <span className="flex-1">{label}</span>
     </Link>
-  ) : (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={className}
-      aria-label={label}
-    >
-      {icon}
-    </button>
-  );
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{inner}</TooltipTrigger>
-      <TooltipContent side="right" sideOffset={12} className="text-xs">
-        {label}
-      </TooltipContent>
-    </Tooltip>
   );
 }

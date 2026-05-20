@@ -5,7 +5,7 @@ import { Slot } from 'radix-ui';
 import { cn } from '../../lib/utils';
 
 const buttonVariants = cva(
-  "group/btn relative inline-flex shrink-0 items-center justify-center gap-2 rounded-full text-sm font-medium whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50 aria-invalid:ring-destructive/30 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg]:transition-[stroke-width] [&_svg]:duration-150 hover:[&_svg]:[stroke-width:2] data-[loading=true]:cursor-wait data-[loading=true]:disabled:opacity-100 transition-[color,background-color,border-color,opacity,transform] duration-150 active:scale-[0.98]",
+  "group/btn relative inline-flex shrink-0 items-center justify-center gap-2 rounded-full text-md font-medium whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:pointer-events-none disabled:opacity-50 aria-invalid:ring-destructive/30 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg]:transition-[stroke-width] [&_svg]:duration-150 hover:[&_svg]:[stroke-width:2] data-[loading=true]:cursor-wait data-[loading=true]:disabled:opacity-100 transition-[color,background-color,border-color,opacity,transform] duration-150 active:scale-[0.98]",
   {
     variants: {
       variant: {
@@ -21,7 +21,8 @@ const buttonVariants = cva(
       size: {
         default: 'h-10 px-5 has-[>svg]:pl-4',
         xs: "h-7 gap-1 px-3 text-xs has-[>svg]:pl-2.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: 'h-8 gap-1.5 px-4 text-xs has-[>svg]:pl-3',
+        sm: 'h-8 gap-1.5 px-4 text-sm has-[>svg]:pl-3',
+        md: 'h-9 gap-2 px-5 text-sm has-[>svg]:pl-4',
         lg: 'h-12 px-7 text-[0.95rem] has-[>svg]:pl-6',
         icon: 'size-10',
         'icon-xs': "size-7 [&_svg:not([class*='size-'])]:size-3.5",

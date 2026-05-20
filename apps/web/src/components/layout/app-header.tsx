@@ -1,30 +1,13 @@
 'use client';
 
-/**
- * AppHeader — the canonical top bar used outside the (dashboard) shell.
- *
- * Layout:
- *  - LEFT:  KortixLogo + optional `leading` slot (e.g. a back button).
- *  - RIGHT: optional `actions` slot + WorkspaceMenu (single widget that
- *           carries identity + workspace context + settings).
- *
- * Variants:
- *  - default  — renders as an in-flow header (use inside a flex column page).
- *  - overlay  — renders absolutely positioned at the top of its container,
- *               sitting over a full-screen loader / shell.
- */
-
 import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
 import type { User } from '@supabase/supabase-js';
 import { ArrowLeftRight } from 'lucide-react';
+import { cn } from '@kortix/design-system';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { WorkspaceMenu } from '@/components/sidebar/workspace-menu';
-import {
-  AccountSwitcher,
-  ProjectSwitcher,
-} from '@/components/layout/account-switcher';
-import { cn } from '@/lib/utils';
 
 export function AppHeader({
   user,
@@ -53,35 +36,43 @@ export function AppHeader({
   return (
     <header
       className={cn(
-        'flex shrink-0 items-center justify-between gap-3 px-6 py-4',
-        variant === 'overlay' && 'pointer-events-none absolute inset-x-0 top-0 z-20',
+        'sticky top-0 z-30 flex h-12 shrink-0 items-center justify-between gap-3 bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 sm:px-6',
+        variant === 'overlay' && 'pointer-events-none absolute inset-x-0 top-0 z-20 bg-transparent backdrop-blur-none',
       )}
     >
       <div
         className={cn(
-          'flex min-w-0 items-center gap-1',
+          'flex items-center gap-1.5',
           variant === 'overlay' && 'pointer-events-auto',
         )}
       >
-        <KortixLogo size={20} className="mr-1" />
-        {/* Vercel-style breadcrumb: pills separated by skewed dividers that
-            sit BETWEEN them — not inside the buttons themselves. */}
-        {onProjectsRoute && (
-          <>
-            <BreadcrumbDivider />
-            <AccountSwitcher />
-            <BreadcrumbDivider />
-            <ProjectSwitcher />
-          </>
-        )}
+        <Link
+          href="/projects"
+          aria-label="Kortix"
+          className="group/logo flex items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <KortixLogo
+            variant="logomark"
+            size={16}
+            className="transition-transform duration-150 group-hover/logo:scale-105"
+          />
+        </Link>
         {leading}
       </div>
+
       <div
         className={cn(
-          'flex items-center gap-2',
+          'flex items-center gap-3',
           variant === 'overlay' && 'pointer-events-auto',
         )}
       >
+        <span
+          aria-hidden
+          className="hidden items-center gap-1.5 font-mono text-[0.6rem] uppercase tracking-[0.18em] text-muted-foreground/70 md:inline-flex"
+        >
+          <span className="size-1 rounded-full bg-emerald-400" />
+          <span>Workspace</span>
+        </span>
         {actions}
         <WorkspaceMenu
           user={{ name: displayName, email: displayEmail, avatar: avatarUrl }}
@@ -92,24 +83,6 @@ export function AppHeader({
   );
 }
 
-/** Subtle Vercel-style separator between breadcrumb pills. Skewed so the
- *  "/" reads as a divider, not a textual slash inside a pill. */
-function BreadcrumbDivider() {
-  return (
-    <span
-      aria-hidden="true"
-      className="select-none px-0.5 text-[14px] font-light text-muted-foreground/40 transform -skew-x-12"
-    >
-      /
-    </span>
-  );
-}
-
-/**
- * Project picker link — small "Projects" button intended for the
- * AppHeader's `actions` slot on full-screen loader states. Provides a
- * one-click escape from an unreachable workspace.
- */
 export function WorkspacePickerLink({
   href = '/projects',
 }: {
@@ -120,9 +93,9 @@ export function WorkspacePickerLink({
     <button
       type="button"
       onClick={() => router.push(href)}
-      className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+      className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-2.5 font-sans text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
     >
-      <ArrowLeftRight className="h-3.5 w-3.5" />
+      <ArrowLeftRight className="size-3.5" />
       Projects
     </button>
   );

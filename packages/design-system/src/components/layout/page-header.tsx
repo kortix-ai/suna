@@ -36,23 +36,23 @@ export function PageHeader({
   return (
     <header
       data-slot="page-header"
-      className={cn('flex flex-wrap items-end justify-between gap-6', className)}
+      className={cn('mb-4 flex flex-wrap items-end justify-between gap-6', className)}
     >
-      <div className="grid min-w-0 gap-3">
+      <div className="grid min-w-0">
         {eyebrow ? (
-          <div className="flex items-center gap-2 font-mono text-[0.62rem] uppercase tracking-[0.2em] text-muted-foreground/80">
+          <div className="mb-2 flex items-center gap-2 font-mono text-[0.62rem] uppercase tracking-[0.2em] text-muted-foreground/80">
             <span className={cn('size-1 rounded-full', TONE_DOT[eyebrowTone])} aria-hidden />
             <span>{eyebrow}</span>
           </div>
         ) : null}
-        <div className="flex items-center gap-2">
-          <h1 className="font-sans text-2xl font-medium tracking-[-0.02em] text-foreground md:text-2xl">
+        <div className="mb-1 flex items-center gap-2">
+          <h1 className="font-sans text-2xl font-semibold tracking-[-0.02em] text-foreground md:text-2xl">
             {title}
           </h1>
           {icon ? <div className="size-6">{icon}</div> : null}
         </div>
         {description ? (
-          <div className="max-w-2xl font-sans text-md leading-relaxed text-muted-foreground">
+          <div className="mb-2 max-w-2xl font-sans text-md leading-relaxed text-muted-foreground">
             {description}
           </div>
         ) : null}

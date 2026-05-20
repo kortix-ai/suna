@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useMemo, useCallback, startTransition, useEffect, useRef, memo } from 'react';
+import { createContext, useContext, useState, useMemo, useCallback, startTransition, useEffect, useRef, memo, type RefObject } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { AnimatePresence, motion } from 'motion/react';
+import { springs, useProximityHover, useRegisterProximityItem } from '@kortix/design-system';
 import { normalizeAppPathname, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname, buildInstancePath } from '@/lib/instance-routes';
 import {
   MoreHorizontal,
@@ -72,6 +74,15 @@ import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category'
 import { useTriggers } from '@/hooks/scheduled-tasks';
 import Link from 'next/link';
 
+interface FluidContextValue {
+  registerItem: (index: number, element: HTMLElement | null) => void;
+  sessionIdToIndex: Map<string, number>;
+}
+
+const FluidContext = createContext<FluidContextValue | null>(null);
+
+const NOOP_REGISTER = (_i: number, _el: HTMLElement | null) => {};
+
 // ============================================================================
 // Session Row — flat, uniform layout for both parent and child sessions
 // ============================================================================
@@ -111,6 +122,14 @@ const SessionRow = memo(function SessionRow({
   onPrefetch,
 }: SessionRowProps) {
   const [isHovering, setIsHovering] = useState(false);
+  const linkRef = useRef<HTMLAnchorElement>(null);
+  const ctx = useContext(FluidContext);
+  const proximityIndex = ctx?.sessionIdToIndex.get(session.id) ?? -1;
+  useRegisterProximityItem(
+    ctx?.registerItem ?? NOOP_REGISTER,
+    proximityIndex,
+    linkRef as unknown as RefObject<HTMLElement | null>,
+  );
 
   const displayTitle = session.title?.includes('@worker')
     ? session.title.replace(/\s*\(@worker\)\s*$/, '')
@@ -118,18 +137,17 @@ const SessionRow = memo(function SessionRow({
 
   return (
     <Link
+      ref={linkRef}
       href={`/sessions/${session.id}`}
       onClick={(e) => onClick(e, session.id)}
-      className="block"
+      className="relative z-10 block"
     >
       <div
         className={cn(
           'flex items-center gap-2 rounded-lg cursor-pointer transition-colors duration-150',
           'pr-1.5',
           isChild ? 'py-0.5 pl-2.5' : 'py-1 pl-2.5',
-          isActive
-            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+          isActive ? 'text-sidebar-accent-foreground' : 'text-muted-foreground hover:text-sidebar-foreground',
         )}
         onMouseEnter={() => {
           setIsHovering(true);
@@ -756,6 +774,30 @@ export function SessionList({ projectId }: SessionListProps = {}) {
 
   if (state === 'collapsed' && !isMobile) return null;
 
+  const pendingRootSessions = rootSessions.filter((s) => getPendingCount(s.id) > 0);
+  const remainingRootSessions = rootSessions.filter((s) => getPendingCount(s.id) === 0);
+  const visibleRemaining = remainingRootSessions.slice(0, displayLimit);
+  const hasMoreRemaining = remainingRootSessions.length > displayLimit;
+
+  const flatSessionIds: string[] = [];
+  const visitForFlat = (s: Session) => {
+    flatSessionIds.push(s.id);
+    if (expandedNodes[s.id]) {
+      const childIds = childMap.get(s.id) ?? [];
+      const children = childIds
+        .map((id) => sessions?.find((x) => x.id === id))
+        .filter((c): c is Session => !!c)
+        .sort((a, b) => a.time.created - b.time.created);
+      for (const c of children) visitForFlat(c);
+    }
+  };
+  for (const s of pendingRootSessions) visitForFlat(s);
+  for (const s of visibleRemaining) visitForFlat(s);
+
+  const sessionIdToIndex = new Map<string, number>();
+  flatSessionIds.forEach((id, i) => sessionIdToIndex.set(id, i));
+  const activeRouteIdx = activeSessionId ? sessionIdToIndex.get(activeSessionId) ?? -1 : -1;
+
   const sharedGroupProps = {
     allSessions: sessions || [],
     childMap,
@@ -907,44 +949,32 @@ export function SessionList({ projectId }: SessionListProps = {}) {
             <p className="text-xs text-muted-foreground mt-1">Start a new session to get going</p>
           </div>
         ) : (
-          <div className="space-y-px">
-            {/* Pending sessions — need user input */}
-            {rootSessions.filter((s) => getPendingCount(s.id) > 0).map((session) => (
+          <FluidList sessionIdToIndex={sessionIdToIndex} activeRouteIdx={activeRouteIdx}>
+            {pendingRootSessions.map((session) => (
               <SessionGroup
                 key={session.id}
                 session={session}
                 {...sharedGroupProps}
               />
             ))}
-
-            {/* Remaining sessions (paginated) */}
-            {(() => {
-              const remaining = rootSessions.filter((s) => getPendingCount(s.id) === 0);
-              const visible = remaining.slice(0, displayLimit);
-              const hasMore = remaining.length > displayLimit;
-              return (
-                <>
-                  {visible.map((session) => (
-                    <SessionGroup
-                      key={session.id}
-                      session={session}
-                      {...sharedGroupProps}
-                    />
-                  ))}
-                  {hasMore && (
-                    <Button
-                      type="button"
-                      onClick={() => setDisplayLimit((l) => l + SESSION_PAGE_SIZE)}
-                      variant="ghost"
-                      className="w-full h-auto py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-sidebar-accent rounded-lg"
-                    >
-                      Show more ({remaining.length - displayLimit} remaining)
-                    </Button>
-                  )}
-                </>
-              );
-            })()}
-          </div>
+            {visibleRemaining.map((session) => (
+              <SessionGroup
+                key={session.id}
+                session={session}
+                {...sharedGroupProps}
+              />
+            ))}
+            {hasMoreRemaining && (
+              <Button
+                type="button"
+                onClick={() => setDisplayLimit((l) => l + SESSION_PAGE_SIZE)}
+                variant="ghost"
+                className="w-full h-auto py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-sidebar-accent rounded-lg"
+              >
+                Show more ({remainingRootSessions.length - displayLimit} remaining)
+              </Button>
+            )}
+          </FluidList>
         )}
       </div>
 
@@ -1036,5 +1066,76 @@ export function SessionList({ projectId }: SessionListProps = {}) {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function FluidList({
+  children,
+  sessionIdToIndex,
+  activeRouteIdx,
+}: {
+  children: React.ReactNode;
+  sessionIdToIndex: Map<string, number>;
+  activeRouteIdx: number;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { activeIndex, itemRects, sessionRef, handlers, registerItem, measureItems } =
+    useProximityHover<HTMLDivElement>(containerRef, { axis: 'y' });
+
+  useEffect(() => {
+    measureItems();
+  }, [sessionIdToIndex, measureItems]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(() => measureItems());
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [measureItems]);
+
+  const ctx = useMemo<FluidContextValue>(
+    () => ({ registerItem, sessionIdToIndex }),
+    [registerItem, sessionIdToIndex],
+  );
+
+  const hoverRect = activeIndex !== null ? itemRects[activeIndex] : null;
+  const activeRect = activeRouteIdx >= 0 ? itemRects[activeRouteIdx] : null;
+  const hoverIsOnActive = activeIndex === activeRouteIdx;
+
+  return (
+    <FluidContext.Provider value={ctx}>
+      <div ref={containerRef} className="relative space-y-px" {...handlers}>
+        {activeRect ? (
+          <motion.div
+            aria-hidden
+            className={cn(
+              'pointer-events-none absolute left-0 right-0 rounded-lg transition-colors duration-150',
+              activeIndex !== null && !hoverIsOnActive
+                ? 'bg-sidebar-accent/40'
+                : 'bg-sidebar-accent',
+            )}
+            initial={false}
+            animate={{ top: activeRect.top, height: activeRect.height }}
+            transition={springs.moderate}
+          />
+        ) : null}
+
+        <AnimatePresence>
+          {hoverRect && !hoverIsOnActive ? (
+            <motion.div
+              key={`hover-${sessionRef.current}`}
+              aria-hidden
+              className="pointer-events-none absolute left-0 right-0 rounded-lg bg-sidebar-accent/60"
+              initial={{ top: hoverRect.top, height: hoverRect.height, opacity: 0 }}
+              animate={{ top: hoverRect.top, height: hoverRect.height, opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={springs.moderate}
+            />
+          ) : null}
+        </AnimatePresence>
+
+        {children}
+      </div>
+    </FluidContext.Provider>
   );
 }

@@ -8,13 +8,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import { AppProviders } from '@/components/layout/app-providers';
 import { ProjectSidebar } from '@/components/projects/project-sidebar';
-import { ProjectTabBar } from '@/components/projects/project-tab-bar';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { createProjectSession } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
 import { useIsSwitchingProject } from '@/stores/project-switch-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
 // CommandPalette is mounted here (not in AppProviders) so it loads lazily and
 // owns the global Cmd+K / Cmd+` listeners while a project shell is on screen.
@@ -69,7 +66,6 @@ export function ProjectShell({
   useProjectShellShortcuts({ projectId, onNewSession: handleNewSession });
 
   const isSwitchingProject = useIsSwitchingProject();
-  const disableTabSelector = useUserPreferencesStore((s) => s.preferences.disableTabSelector ?? false);
 
   // Quiet, chrome-free render until auth resolves — no Kortix logo flash,
   // no progress bar. If unauthenticated, the effect above redirects to /auth.
@@ -109,32 +105,7 @@ export function ProjectShell({
           )}
         </AnimatePresence>
 
-        {/* Project tab bar — mirrors the dashboard's entrance animation
-            (see dashboard/layout-content.tsx lines 1062–1075). When tabs
-            are disabled we still leave a small sidebar-colored strip so the
-            rounded panel "floats" instead of bleeding to the top edge. */}
-        <AnimatePresence initial={false}>
-          {!disableTabSelector && (
-            <motion.div
-              key="project-tab-bar"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-hidden"
-            >
-              <ProjectTabBar projectId={projectId} />
-            </motion.div>
-          )}
-        </AnimatePresence>
-        {disableTabSelector && <div className="flex-shrink-0 bg-sidebar h-3" />}
-
-        <div
-          className={cn(
-            'flex-1 min-h-0 flex flex-col overflow-hidden relative',
-            'md:border md:border-b-0 md:border-border/50 md:rounded-t-xl',
-          )}
-        >
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
           {/* Session-internal layout (chat + actions/browser side panel) is
               owned by `apps/web/src/components/session/session-layout.tsx`.
               The project shell just hosts the chrome. */}

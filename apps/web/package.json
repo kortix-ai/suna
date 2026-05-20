@@ -36,6 +36,7 @@
     "@hookform/resolvers": "^5.2.1",
     "@hugeicons/react": "^1.1.4",
     "@icons-pack/react-simple-icons": "^13.7.0",
+    "@kortix/design-system": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@lezer/highlight": "1.2.3",
     "@liquidglass/react": "^0.1.3",

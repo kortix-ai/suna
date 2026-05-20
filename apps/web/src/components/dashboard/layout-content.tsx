@@ -11,7 +11,7 @@ import {
 	type Stage as ConnectingStage,
 } from "@/components/dashboard/connecting-screen";
 import { AppProviders } from "@/components/layout/app-providers";
-import { TabBar } from "@/components/tabs/tab-bar";
+import { AppSidebar } from "@/components/sidebar/app-sidebar";
 import { useAdminRole } from "@/hooks/admin";
 import { useSystemStatusQuery } from "@/hooks/edge-flags";
 import { useCreateOpenCodeSession } from "@/hooks/opencode/use-opencode-sessions";
@@ -979,7 +979,6 @@ export default function DashboardLayoutContent({
 		!isAdmin;
 
 	const hideChrome = ob.active && !ob.morphing;
-	const disableTabSelector = useUserPreferencesStore((s) => s.preferences.disableTabSelector ?? false);
 
 	// ConnectingScreen is mounted once at the top level and persists across
 	// the gate→dashboard transition. Same DOM position in every branch, so
@@ -1024,6 +1023,7 @@ export default function DashboardLayoutContent({
 					// there's no persisted choice yet.
 					initialSidebarOpen ?? !ob.active
 				}
+				sidebarContent={<AppSidebar />}
 				sidebarSiblings={
 					<Suspense fallback={null}>
 						<StatusOverlay />
@@ -1062,36 +1062,7 @@ export default function DashboardLayoutContent({
 						<CommandPalette />
 					</Suspense>
 
-					{/* Tab bar — hidden during onboarding, morphs in.
-					    Also hidden when the user has disabled the tab selector
-					    in Appearance preferences. We still leave a small
-					    sidebar-colored strip above the content so the rounded
-					    top curvature reads as a "floating panel" instead of
-					    bleeding flush against the window chrome. */}
-					<AnimatePresence initial={false}>
-						{!hideChrome && !disableTabSelector && (
-							<motion.div
-								key="tab-bar"
-								initial={{ height: 0, opacity: 0 }}
-								animate={{ height: "auto", opacity: 1 }}
-								exit={{ height: 0, opacity: 0 }}
-							transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-							className="overflow-hidden"
-						>
-								<TabBar />
-							</motion.div>
-						)}
-					</AnimatePresence>
-					{!hideChrome && disableTabSelector && (
-						<div className="flex-shrink-0 bg-sidebar h-3" />
-					)}
-
-					<div
-						className={cn(
-							"flex-1 min-h-0 flex flex-col overflow-hidden relative",
-							"md:border md:border-b-0 md:border-border/50 md:rounded-t-xl",
-						)}
-					>
+					<div className="flex-1 min-h-0 flex flex-col overflow-hidden relative">
 						<SessionTabsContainer>{children}</SessionTabsContainer>
 
 						{/* Floating skip button during onboarding chat session */}

@@ -1,8 +1,15 @@
 'use client';
 
 import * as React from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, type RefObject } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { AnimatePresence, motion } from 'motion/react';
+import {
+    cn as dsCn,
+    springs,
+    useProximityHover,
+    useRegisterProximityItem,
+} from '@kortix/design-system';
 import {
     Dialog,
     DialogContent,
@@ -10,6 +17,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -197,19 +205,21 @@ export function UserSettingsModal({
         setActiveTab(tabId);
     };
 
+    const activeTabMeta = allTabs.find((t) => t.id === activeTab);
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 className={cn(
                     "p-0 gap-0",
-                    isMobile 
-                        ? "fixed inset-0 w-screen h-screen max-w-none max-h-none rounded-none m-0 translate-x-0 translate-y-0 left-0 top-0" 
-                        : "max-w-6xl max-h-[90vh] overflow-hidden"
+                    isMobile
+                        ? "fixed inset-0 w-screen h-screen max-w-none max-h-none rounded-none m-0 translate-x-0 translate-y-0 left-0 top-0"
+                        : "max-w-5xl max-h-[min(720px,90vh)] overflow-hidden"
                 )}
                 hideCloseButton={true}
             >
-                <DialogTitle className="sr-only">Settings</DialogTitle>
-                
+                <DialogTitle className="sr-only">Settings · {activeTabMeta?.label || 'General'}</DialogTitle>
+
                 {isMobile ? (
                     /* Mobile Layout - Full Screen */
                     <div className="flex flex-col h-screen w-screen overflow-hidden">
@@ -275,86 +285,294 @@ export function UserSettingsModal({
                         </div>
                     </div>
                 ) : (
-                    /* Desktop Layout - Side by Side */
-                    <div className="flex flex-row h-[700px]">
-                        {/* Desktop Sidebar */}
-                        <div className="bg-background flex-shrink-0 w-56 p-4 border-r border-border">
-                            <div className="flex justify-start mb-3">
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => onOpenChange(false)}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            </div>
-
-                            {/* Desktop Tabs - Grouped */}
-                            <div className="flex flex-col gap-4">
-                                {tabGroups.map((group, groupIdx) => (
-                                    <div key={group.skeleton ? `skeleton-${groupIdx}` : group.label}>
-                                        <div className="px-4 pb-1.5">
-                                            {group.skeleton ? (
-                                                <Skeleton className="h-3 w-20 rounded" />
-                                            ) : (
-                                                <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">{group.label}</span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-col gap-0.5">
-                                            {group.skeleton ? (
-                                                <>
-                                                    <Skeleton className="mx-2 h-9 rounded-md" />
-                                                    <Skeleton className="mx-2 h-9 rounded-md" />
-                                                </>
-                                            ) : (
-                                                group.tabs.map((tab) => {
-                                                const Icon = tab.icon;
-                                                const isActive = activeTab === tab.id;
-
-                                                return (
-                                                    <Button
-                                                        key={tab.id}
-                                                        onClick={() => handleTabClick(tab.id)}
-                                                        disabled={tab.disabled}
-                                                        variant="ghost"
-                                                        className={cn(
-                                                            "w-full flex items-center gap-3 justify-start",
-                                                            isActive
-                                                                ? "bg-accent text-foreground hover:bg-accent"
-                                                                : "text-muted-foreground hover:text-foreground"
-                                                        )}
-                                                    >
-                                                        <Icon className="h-4 w-4 flex-shrink-0" />
-                                                        <span>{tab.label}</span>
-                                                    </Button>
-                                                );
-                                                })
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Desktop Content */}
-                        <div className="flex-1 overflow-y-auto min-h-0 w-full max-w-full">
-                            {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                            {activeTab === 'appearance' && <AppearanceTab />}
-                            {activeTab === 'sounds' && <SoundsTab />}
-                            {activeTab === 'notifications' && <NotificationsTab />}
-                            {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
-                            {activeTab === 'tokens' && <CliTokensTab />}
-                            {activeTab === 'instance-members' && instanceSandbox && (
-                                <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
-                            )}
-                        </div>
-                    </div>
+                    <SettingsShell
+                        tabGroups={tabGroups}
+                        flatTabs={allTabs}
+                        activeTab={activeTab}
+                        onSelect={handleTabClick}
+                        onClose={() => onOpenChange(false)}
+                    >
+                        {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                        {activeTab === 'appearance' && <AppearanceTab />}
+                        {activeTab === 'sounds' && <SoundsTab />}
+                        {activeTab === 'notifications' && <NotificationsTab />}
+                        {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
+                        {activeTab === 'tokens' && <CliTokensTab />}
+                        {activeTab === 'instance-members' && instanceSandbox && (
+                            <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
+                        )}
+                    </SettingsShell>
                 )}
 
 
             </DialogContent>
         </Dialog>
+    );
+}
+
+
+type SettingsTabGroup = { label: string; tabs: Tab[]; skeleton?: boolean };
+
+function SettingsShell({
+    tabGroups,
+    flatTabs,
+    activeTab,
+    onSelect,
+    onClose,
+    children,
+}: {
+    tabGroups: SettingsTabGroup[];
+    flatTabs: Tab[];
+    activeTab: TabId;
+    onSelect: (id: TabId) => void;
+    onClose: () => void;
+    children: React.ReactNode;
+}) {
+    const { session } = useAuth();
+    const user = session?.user;
+    const displayName =
+        (user?.user_metadata?.name as string | undefined) ||
+        user?.email?.split('@')[0] ||
+        'You';
+    const displayEmail = user?.email || '';
+
+    const indexFor = useMemo(() => {
+        const m = new Map<TabId, number>();
+        flatTabs.forEach((t, i) => m.set(t.id, i + 1));
+        return m;
+    }, [flatTabs]);
+
+    return (
+        <div className="grid h-[680px] grid-cols-[260px_1fr]">
+            <aside className="flex h-full min-h-0 flex-col border-r border-border/60 bg-muted/30 dark:bg-muted/20">
+                <div className="px-5 pt-5 pb-4">
+                    <div className="flex items-center gap-2.5">
+                        <UserAvatar
+                            email={displayEmail || displayName}
+                            name={displayName}
+                            size="md"
+                        />
+                        <div className="grid min-w-0 gap-0.5">
+                            <span className="truncate font-sans text-[0.85rem] font-medium leading-tight tracking-[-0.01em] text-foreground">
+                                {displayName}
+                            </span>
+                            <span className="truncate font-mono text-[0.6rem] text-muted-foreground">
+                                {displayEmail}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <nav
+                    aria-label="Settings sections"
+                    className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-4"
+                >
+                    {tabGroups.map((group, gi) =>
+                        group.skeleton ? (
+                            <SettingsNavSkeleton key={`skel-${gi}`} />
+                        ) : group.tabs.length === 0 ? null : (
+                            <SettingsNavGroup
+                                key={group.label}
+                                label={group.label}
+                                tabs={group.tabs}
+                                indexFor={indexFor}
+                                activeTab={activeTab}
+                                onSelect={onSelect}
+                            />
+                        ),
+                    )}
+                </nav>
+            </aside>
+
+            <div className="relative flex min-h-0 flex-col">
+                <button
+                    type="button"
+                    onClick={onClose}
+                    aria-label="Close settings"
+                    className="absolute right-4 top-4 z-20 grid size-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+                >
+                    <X className="size-4" />
+                </button>
+
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                    <AnimatePresence mode="wait" initial={false}>
+                        <motion.div
+                            key={activeTab}
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -3 }}
+                            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                        >
+                            {children}
+                        </motion.div>
+                    </AnimatePresence>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function SettingsNavGroup({
+    label,
+    tabs,
+    indexFor,
+    activeTab,
+    onSelect,
+}: {
+    label: string;
+    tabs: Tab[];
+    indexFor: Map<TabId, number>;
+    activeTab: TabId;
+    onSelect: (id: TabId) => void;
+}) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const {
+        activeIndex,
+        itemRects,
+        sessionRef,
+        handlers,
+        registerItem,
+        measureItems,
+    } = useProximityHover<HTMLDivElement>(containerRef, { axis: 'y' });
+
+    const activeRowIdx = tabs.findIndex((t) => t.id === activeTab);
+
+    useEffect(() => {
+        measureItems();
+    }, [tabs.length, activeTab, measureItems]);
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const ro = new ResizeObserver(() => measureItems());
+        ro.observe(containerRef.current);
+        return () => ro.disconnect();
+    }, [measureItems]);
+
+    const hoverRect = activeIndex !== null ? itemRects[activeIndex] : null;
+    const activeRect = activeRowIdx >= 0 ? itemRects[activeRowIdx] : null;
+    const hoverIsOnActive = activeIndex === activeRowIdx;
+
+    return (
+        <div className="grid gap-0 px-3 pt-4 first:pt-2">
+            <div className="flex items-center gap-2 px-3 pb-2">
+                <span className="font-mono text-[0.58rem] uppercase tracking-[0.22em] text-muted-foreground/60">
+                    {label}
+                </span>
+                <span aria-hidden className="h-px flex-1 bg-border/60" />
+            </div>
+            <div ref={containerRef} className="relative" {...handlers}>
+                {activeRect ? (
+                    <motion.div
+                        aria-hidden
+                        className={dsCn(
+                            'pointer-events-none absolute left-0 right-0 rounded-lg transition-colors duration-150',
+                            activeIndex !== null && !hoverIsOnActive
+                                ? 'bg-muted-foreground/[0.05]'
+                                : 'bg-muted-foreground/10',
+                        )}
+                        initial={false}
+                        animate={{ top: activeRect.top, height: activeRect.height }}
+                        transition={springs.moderate}
+                    />
+                ) : null}
+
+                <AnimatePresence>
+                    {hoverRect && !hoverIsOnActive ? (
+                        <motion.div
+                            key={`hover-${sessionRef.current}`}
+                            aria-hidden
+                            className="pointer-events-none absolute left-0 right-0 rounded-lg bg-muted-foreground/[0.05]"
+                            initial={{ top: hoverRect.top, height: hoverRect.height, opacity: 0 }}
+                            animate={{ top: hoverRect.top, height: hoverRect.height, opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={springs.moderate}
+                        />
+                    ) : null}
+                </AnimatePresence>
+
+                {tabs.map((tab, rowIndex) => (
+                    <SettingsNavRow
+                        key={tab.id}
+                        tab={tab}
+                        rowIndex={rowIndex}
+                        indexLabel={String(indexFor.get(tab.id) ?? 0).padStart(2, '0')}
+                        isActive={rowIndex === activeRowIdx}
+                        isHovered={rowIndex === activeIndex}
+                        registerItem={registerItem}
+                        onSelect={() => onSelect(tab.id)}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function SettingsNavRow({
+    tab,
+    rowIndex,
+    indexLabel,
+    isActive,
+    isHovered,
+    registerItem,
+    onSelect,
+}: {
+    tab: Tab;
+    rowIndex: number;
+    indexLabel: string;
+    isActive: boolean;
+    isHovered: boolean;
+    registerItem: (i: number, el: HTMLElement | null) => void;
+    onSelect: () => void;
+}) {
+    const ref = useRef<HTMLButtonElement>(null);
+    useRegisterProximityItem(
+        registerItem,
+        rowIndex,
+        ref as unknown as RefObject<HTMLElement | null>,
+    );
+
+    const emphasized = isActive || isHovered;
+
+    return (
+        <button
+            ref={ref}
+            type="button"
+            onClick={onSelect}
+            disabled={tab.disabled}
+            aria-current={isActive ? 'page' : undefined}
+            className={dsCn(
+                'relative z-10 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50',
+                emphasized ? 'text-foreground' : 'text-muted-foreground',
+            )}
+            style={{
+                fontVariationSettings: isActive ? "'wght' 550" : "'wght' 450",
+            }}
+        >
+            <span
+                className={dsCn(
+                    'inline-block w-6 shrink-0 font-mono text-[0.6rem] tabular-nums transition-colors duration-150',
+                    emphasized ? 'text-foreground/70' : 'text-muted-foreground/50',
+                )}
+            >
+                {indexLabel}
+            </span>
+            <span className="font-sans text-[0.82rem] leading-tight">{tab.label}</span>
+        </button>
+    );
+}
+
+function SettingsNavSkeleton() {
+    return (
+        <div className="grid gap-0 px-3 pt-4">
+            <div className="flex items-center gap-2 px-3 pb-2">
+                <Skeleton className="h-2.5 w-20 rounded" />
+                <span aria-hidden className="h-px flex-1 bg-border/40" />
+            </div>
+            <div className="grid gap-1 px-3">
+                <Skeleton className="h-9 rounded-lg" />
+                <Skeleton className="h-9 rounded-lg" />
+            </div>
+        </div>
     );
 }
 

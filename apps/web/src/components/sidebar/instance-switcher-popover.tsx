@@ -41,6 +41,7 @@ import {
   PopoverContent,
 } from '@/components/ui/popover';
 import { InstanceSettingsModal } from '@/components/instances/instance-settings-modal';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { isBillingEnabled } from '@/lib/config';
 import { listSandboxes, ensureSandbox, type SandboxInfo } from '@/lib/platform-client';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
@@ -350,22 +351,21 @@ export function InstanceSwitcherPopover() {
           <button
             type="button"
             className={cn(
-              'group/switcher flex items-center gap-2 w-full h-9 px-1.5 rounded-lg text-left',
-              'text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer',
-              open && 'bg-sidebar-accent',
+              'group/ws flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left outline-none transition-colors',
+              'hover:bg-sidebar-accent/60 focus-visible:ring-2 focus-visible:ring-ring',
+              open && 'bg-sidebar-accent/60',
             )}
-            aria-label="Switch workspace"
+            aria-label={`Switch workspace · ${triggerLabel}`}
           >
-            <WorkspaceAvatar sandbox={triggerSandbox} size="sm" />
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-[12px] font-semibold leading-tight text-foreground">
-                {triggerLabel}
-              </p>
-              <p className="truncate text-[9.5px] font-medium uppercase tracking-wider text-muted-foreground/60 leading-tight mt-0.5">
-                Workspace
-              </p>
-            </div>
-            <ChevronsUpDown className="size-3 opacity-50 flex-shrink-0 group-hover/switcher:opacity-100 transition-opacity" />
+            <KortixLogo variant="symbol" size={16} className="flex-shrink-0" />
+            <span className="text-muted-foreground/40">/</span>
+            <span className="min-w-0 flex-1 truncate font-sans text-[0.875rem] font-medium tracking-[-0.005em] text-foreground">
+              {triggerLabel}
+            </span>
+            <ChevronsUpDown
+              className="size-3 shrink-0 text-muted-foreground/60 transition-colors group-hover/ws:text-foreground"
+              aria-hidden="true"
+            />
           </button>
         </PopoverTrigger>
 

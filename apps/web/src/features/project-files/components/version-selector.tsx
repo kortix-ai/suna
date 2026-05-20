@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -11,22 +11,21 @@ import {
   Search,
 } from 'lucide-react';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
+  Button,
+  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@kortix/design-system';
+
 import { useBranches } from '../hooks/use-branches';
 import { useProjectContext } from '../context';
 import { useVersionStore } from '../store/version-store';
 import type { ProjectBranch } from '@/lib/projects-client';
 
-/**
- * Version (Git branch) picker — Vercel-style chip trigger.
- *
- * Trigger: pill with branch icon, version name, optional "Main" tag, chevron.
- * Popover: search + list, with the default branch pinned at the top.
- */
 export function VersionSelector() {
   const ctx = useProjectContext();
   const projectId = ctx?.projectId ?? '';
@@ -36,9 +35,8 @@ export function VersionSelector() {
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  // Fetch lazily — the picker is usually closed, but the trigger needs to
-  // know whether the active version is the default to render the "Main" tag.
   const { data, isLoading, error } = useBranches({ enabled: open || activeRef !== '' });
 
   const defaultBranch = data?.default_branch ?? activeRef;
@@ -67,123 +65,132 @@ export function VersionSelector() {
     setQuery('');
   };
 
+  const displayLabel = activeRef
+    ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeRef)
+      ? activeRef.slice(0, 8)
+      : activeRef
+    : 'version';
+
   return (
-    <Popover
+    <DropdownMenu
       open={open}
       onOpenChange={(v) => {
         setOpen(v);
         if (!v) setQuery('');
       }}
     >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'group inline-flex items-center gap-2 h-8 pl-2 pr-1.5 rounded-md',
-            'border border-border/60 bg-background hover:bg-muted/40',
-            'transition-colors',
-            'text-[12.5px] font-medium',
-            'shrink-0 min-w-0 max-w-[280px]',
-          )}
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
           title="Switch version"
         >
-          <GitBranch className="h-3.5 w-3.5 text-muted-foreground/80 shrink-0" />
-          <span className="truncate">{activeRef || 'Version'}</span>
-          {isOnMain && (
-            <span className="hidden sm:inline-flex items-center rounded bg-muted px-1 py-px text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Main
+          <GitBranch className="size-3.5 shrink-0 text-muted-foreground/70" aria-hidden />
+          <span className="max-w-[14rem] truncate font-mono text-sm font-medium text-foreground">
+            {displayLabel}
+          </span>
+          {/* {isOnMain ? (
+            <span className="font-mono text-[0.55rem] uppercase tracking-[0.22em] text-muted-foreground/60">
+              main
             </span>
-          )}
-          <ChevronsUpDown className="h-3 w-3 text-muted-foreground/60 shrink-0 ml-0.5" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
+          ) : null} */}
+          <ChevronsUpDown
+            className="size-3 shrink-0 text-muted-foreground/40 transition-colors group-hover/v:text-muted-foreground"
+            aria-hidden
+          />
+        </Button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className="w-[340px] p-0 overflow-hidden"
+        onCloseAutoFocus={(e) => e.preventDefault()}
       >
-        {/* Search */}
-        <div className="flex items-center gap-1.5 px-3 h-10 border-b border-border/40">
-          <Search className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
+        <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2">
+          <Search className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden />
           <input
+            ref={searchRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape' && e.key !== 'Enter' && e.key !== 'ArrowDown') {
+                e.stopPropagation();
+              }
+            }}
             placeholder="Find a version…"
-            className="flex-1 min-w-0 h-7 bg-transparent border-0 outline-none px-0 text-[12.5px] text-foreground placeholder:text-muted-foreground/50"
+            className="h-6 flex-1 bg-transparent font-sans text-[0.8rem] text-foreground outline-none placeholder:text-muted-foreground/50"
             autoFocus
           />
         </div>
 
-        <div className="max-h-[380px] overflow-y-auto overscroll-contain">
-          {isLoading && (
-            <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <div className="max-h-[360px] overflow-y-auto py-1">
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 py-8 font-mono text-[0.68rem] text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
               Loading versions…
             </div>
-          )}
-
-          {error && !isLoading && (
-            <div className="py-8 px-4 text-center text-xs text-muted-foreground">
+          ) : error ? (
+            <div className="py-8 text-center font-mono text-[0.68rem] text-muted-foreground">
               Failed to load versions
             </div>
-          )}
-
-          {!isLoading && !error && filtered.length === 0 && (
-            <div className="py-8 px-4 text-center text-xs text-muted-foreground">
+          ) : filtered.length === 0 ? (
+            <div className="py-8 text-center font-mono text-[0.68rem] text-muted-foreground">
               No versions match {query ? `“${query}”` : ''}
             </div>
-          )}
+          ) : (
+            <>
+              {primary.length > 0 ? (
+                <>
+                  <DropdownMenuLabel>
+                    Main version
+                  </DropdownMenuLabel>
+                  {primary.map((b) => (
+                    <VersionRow
+                      key={b.name}
+                      branch={b}
+                      isActive={activeRef === b.name}
+                      onSelect={() => handleSelect(b.name)}
+                    />
+                  ))}
+                </>
+              ) : null}
 
-          {primary.length > 0 && (
-            <div>
-              <SectionLabel>Main version</SectionLabel>
-              {primary.map((b) => (
-                <VersionRow
-                  key={b.name}
-                  branch={b}
-                  isActive={activeRef === b.name}
-                  onClick={() => handleSelect(b.name)}
-                />
-              ))}
-            </div>
-          )}
+              {primary.length > 0 && others.length > 0 ? (
+                <DropdownMenuSeparator className="my-1" />
+              ) : null}
 
-          {others.length > 0 && (
-            <div className="border-t border-border/30">
-              <SectionLabel>Other versions</SectionLabel>
-              {others.map((b) => (
-                <VersionRow
-                  key={b.name}
-                  branch={b}
-                  isActive={activeRef === b.name}
-                  onClick={() => handleSelect(b.name)}
-                />
-              ))}
-            </div>
+              {others.length > 0 ? (
+                <>
+                  <DropdownMenuLabel>
+                    Other versions
+                  </DropdownMenuLabel>
+                  {others.map((b) => (
+                    <VersionRow
+                      key={b.name}
+                      branch={b}
+                      isActive={activeRef === b.name}
+                      onSelect={() => handleSelect(b.name)}
+                    />
+                  ))}
+                </>
+              ) : null}
+            </>
           )}
         </div>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-[0.08em] font-semibold text-muted-foreground/60">
-      {children}
-    </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 function VersionRow({
   branch,
   isActive,
-  onClick,
+  onSelect,
 }: {
   branch: ProjectBranch;
   isActive: boolean;
-  onClick: () => void;
+  onSelect: () => void;
 }) {
   const date = branch.committed_at
     ? new Date(branch.committed_at).toLocaleDateString(undefined, {
@@ -192,66 +199,71 @@ function VersionRow({
       })
     : '';
 
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    branch.name,
+  );
+  const label = isUuid ? `${branch.name.slice(0, 8)}…` : branch.name;
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <DropdownMenuItem
+      onSelect={(e) => {
+        e.preventDefault();
+        onSelect();
+      }}
       className={cn(
-        'flex items-start gap-2.5 w-full px-3 py-2 text-left',
-        'hover:bg-muted/40 transition-colors',
-        isActive && 'bg-primary/[0.05]',
+        'flex items-start gap-2.5 px-3 py-2',
+        isActive && 'bg-muted/40',
       )}
     >
-      <div className="mt-0.5 flex w-4 shrink-0 items-center justify-center">
+      <span className="mt-0.5 flex size-3.5 shrink-0 items-center justify-center">
         {isActive ? (
-          <Check className="h-3.5 w-3.5 text-primary" />
+          <Check className="size-3.5 text-foreground" />
         ) : (
-          <GitBranch className="h-3.5 w-3.5 text-muted-foreground/50" />
+          <GitBranch className="size-3.5 text-muted-foreground/50" />
         )}
-      </div>
+      </span>
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[13px] font-medium text-foreground truncate">
-            {branch.name}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate font-mono text-[0.8rem] font-medium text-foreground">
+            {label}
           </span>
-          {branch.is_default && (
-            <span className="inline-flex items-center rounded bg-muted px-1 py-px text-[9.5px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Main
+          {branch.is_default ? (
+            <span className="font-mono text-[0.55rem] uppercase tracking-[0.22em] text-muted-foreground/70">
+              main
             </span>
-          )}
+          ) : null}
         </div>
 
-        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
-          <span className="font-mono">{branch.tip_short}</span>
-          {date && <span className="text-muted-foreground/40">·</span>}
-          {date && <span>{date}</span>}
-          {!branch.is_default && branch.ahead != null && branch.behind != null && (
+        <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[0.66rem] text-muted-foreground">
+          {branch.tip_short ? <span>{branch.tip_short}</span> : null}
+          {date ? (
             <>
               <span className="text-muted-foreground/40">·</span>
-              <span
-                className="inline-flex items-center gap-1"
-                title="Ahead / behind main version"
-              >
-                <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-500">
-                  <ArrowUpRight className="h-2.5 w-2.5" />
-                  {branch.ahead}
-                </span>
-                <span className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-500">
-                  <ArrowDownLeft className="h-2.5 w-2.5" />
-                  {branch.behind}
-                </span>
+              <span>{date}</span>
+            </>
+          ) : null}
+          {!branch.is_default && branch.ahead != null && branch.behind != null ? (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span className="inline-flex items-center gap-0.5 text-emerald-500">
+                <ArrowUpRight className="size-2.5" />
+                {branch.ahead}
+              </span>
+              <span className="inline-flex items-center gap-0.5 text-rose-500">
+                <ArrowDownLeft className="size-2.5" />
+                {branch.behind}
               </span>
             </>
-          )}
+          ) : null}
         </div>
 
-        {branch.subject && (
-          <div className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">
+        {branch.subject ? (
+          <div className="mt-0.5 truncate font-sans text-[0.7rem] text-muted-foreground/70">
             {branch.subject}
           </div>
-        )}
+        ) : null}
       </div>
-    </button>
+    </DropdownMenuItem>
   );
 }

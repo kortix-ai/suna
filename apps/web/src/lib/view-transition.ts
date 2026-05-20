@@ -54,3 +54,20 @@ export function transitionFromElement(
     duration,
   });
 }
+
+export function crossfadeTransition(applyChange: () => void): void {
+  if (typeof document.startViewTransition !== 'function') {
+    applyChange();
+    return;
+  }
+  const reduced =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) {
+    applyChange();
+    return;
+  }
+  document.startViewTransition(() => {
+    flushSync(applyChange);
+  });
+}

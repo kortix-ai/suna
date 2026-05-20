@@ -22,6 +22,7 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { crossfadeTransition } from '@/lib/view-transition';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -41,11 +42,11 @@ import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { isBillingEnabled } from '@/lib/config';
-import { transitionFromElement } from '@/lib/view-transition';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
 import { themeOptions, type SettingsTabId } from '@/lib/menu-registry';
+import { UserAvatar } from '../ui/user-avatar';
 
 /* ─── Types ───────────────────────────────────────────────────────────────── */
 
@@ -116,7 +117,7 @@ export function UserMenu({ user }: UserMenuProps) {
       event.preventDefault();
       event.stopPropagation();
       if (next === theme) return;
-      transitionFromElement(event.currentTarget as HTMLElement, () => setTheme(next));
+      crossfadeTransition(() => setTheme(next));
     },
     [theme, setTheme],
   );
@@ -155,19 +156,14 @@ export function UserMenu({ user }: UserMenuProps) {
               <SidebarMenuButton
                 size="lg"
                 className={cn(
-                  'group/user relative h-auto gap-2 rounded-lg px-1.5 py-1',
+                  'group/user relative h-auto gap-2 rounded-xl px-1.5 py-1',
                   'border border-transparent bg-transparent',
                   'hover:bg-sidebar-accent/60',
                   'data-[state=open]:bg-sidebar-accent',
                   'group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!px-0',
                 )}
               >
-                <Avatar className="h-6 w-6 shrink-0 rounded-full ring-1 ring-border/40">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-full bg-muted text-[9.5px] font-semibold text-muted-foreground">
-                    {initials(user.name)}
-                  </AvatarFallback>
-                </Avatar>
+                <UserAvatar email={user.email} size="md" />
                 <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
                   <span className="truncate text-[12px] font-medium text-foreground tracking-tight">
                     {user.name}

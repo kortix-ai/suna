@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ChevronRight,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -11,27 +13,31 @@ import {
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Input,
+  Page,
+  PageBody,
+  PageHeader,
+  Skeleton,
+} from '@kortix/design-system';
+
 import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { ProjectCreateModal } from '@/components/projects/project-create-modal';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import {
   archiveProject,
   listAccounts,
   listProjectsForAccount,
   type KortixProject,
 } from '@/lib/projects-client';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 function relativeTime(input: string) {
@@ -49,91 +55,6 @@ function relativeTime(input: string) {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-function projectInitial(name: string) {
-  const trimmed = name.trim();
-  if (!trimmed) return 'K';
-  // First letter of each of the first two words, or first two letters.
-  const words = trimmed.split(/[\s_\-./]+/).filter(Boolean);
-  if (words.length >= 2) return (words[0]![0]! + words[1]![0]!).toUpperCase();
-  return trimmed.slice(0, 2).toUpperCase();
-}
-
-function ProjectCard({
-  project,
-  onOpen,
-  onArchive,
-  archiving,
-}: {
-  project: KortixProject;
-  onOpen: () => void;
-  onArchive: () => void;
-  archiving: boolean;
-}) {
-  const updatedLabel = relativeTime(project.updated_at);
-  const canManageProject = project.effective_project_role === 'manager' || !project.effective_project_role;
-
-  return (
-    <div
-      className={cn(
-        'group relative flex flex-col rounded-2xl border border-border/60 bg-card',
-        'transition-all duration-150 hover:border-foreground/20 hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.12)]',
-      )}
-    >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex flex-1 flex-col items-start gap-4 p-5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-2xl"
-      >
-        <div className="flex w-full items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-muted/40 text-sm font-semibold text-foreground">
-            {projectInitial(project.name)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-[15px] font-semibold leading-tight text-foreground">
-              {project.name}
-            </h3>
-            <p className="mt-1 truncate text-xs text-muted-foreground">
-              Updated {updatedLabel}
-            </p>
-          </div>
-        </div>
-      </button>
-
-      <div className="absolute right-3 top-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-md bg-background/80 backdrop-blur text-muted-foreground hover:bg-background hover:text-foreground"
-              onClick={(e) => e.stopPropagation()}
-              aria-label="Project actions"
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem onSelect={onOpen}>Open project</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onSelect={onArchive}
-              disabled={archiving || !canManageProject}
-              className="gap-2 text-destructive focus:text-destructive"
-            >
-              {archiving ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
-              )}
-              Archive
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
-  );
-}
-
 export default function ProjectsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -148,9 +69,6 @@ export default function ProjectsPage() {
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
 
-  // Project selector elsewhere in the app can deep-link to "open the new
-  // project modal" via ?new=1. Consume it once on mount, then strip the
-  // query so reloads don't keep popping the modal.
   useEffect(() => {
     if (searchParams.get('new') === '1') {
       setModalOpen(true);
@@ -174,9 +92,15 @@ export default function ProjectsPage() {
     staleTime: 60_000,
   });
 
-  const selectedAccount = accountsQuery.data?.find((account) => account.account_id === selectedAccountId);
+  const selectedAccount = accountsQuery.data?.find(
+    (account) => account.account_id === selectedAccountId,
+  );
   const canCreateProjects =
-    selectedAccount?.account_role === 'owner' || selectedAccount?.account_role === 'admin';
+    selectedAccount?.account_role === 'owner' ||
+    selectedAccount?.account_role === 'admin';
+  const accountName =
+    selectedAccount?.name ||
+    (selectedAccount?.personal_account ? 'Personal' : 'Workspace');
 
   const archiveMutation = useMutation({
     mutationFn: archiveProject,
@@ -196,121 +120,105 @@ export default function ProjectsPage() {
     const q = query.trim().toLowerCase();
     if (!q) return items;
     return items.filter((project) =>
-      [project.name, project.repo_url, project.default_branch]
-        .some((value) => value.toLowerCase().includes(q)),
+      [project.name, project.repo_url, project.default_branch].some((value) =>
+        value.toLowerCase().includes(q),
+      ),
     );
   }, [projectsQuery.data, query]);
 
   if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+    return (
+      <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />
+    );
   }
 
   const total = projectsQuery.data?.length ?? 0;
-  const showEmptyState = !projectsQuery.isLoading && !projectsQuery.isError && total === 0;
-  const showNoResults = !projectsQuery.isLoading && !projectsQuery.isError && total > 0 && filtered.length === 0;
+  const showEmptyState =
+    !projectsQuery.isLoading && !projectsQuery.isError && total === 0;
+  const showNoResults =
+    !projectsQuery.isLoading &&
+    !projectsQuery.isError &&
+    total > 0 &&
+    filtered.length === 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <AppHeader user={user} />
-      <main className="flex-1 px-4 py-10 sm:py-12">
-        <div className="mx-auto w-full max-w-6xl space-y-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex flex-col gap-1">
-              <h1 className="text-[26px] font-semibold tracking-tight text-foreground">
-                Projects
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Your workspaces, one place. Pick up where you left off.
-              </p>
-            </div>
-            <div className="flex w-full items-center gap-2 sm:w-auto">
-              <div className="relative flex-1 sm:w-72">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <main className="flex-1">
+        <Page size="md">
+          <PageHeader
+            className="[&_h1]:text-xl [&_h1]:tracking-[-0.015em] [&_p]:text-sm"
+            eyebrow={accountName}
+            eyebrowTone={total > 0 ? 'success' : 'muted'}
+            title="Projects"
+            description="Your workspaces, one place. Pick up where you left off."
+            meta={
+              <div className="relative max-w-sm">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60"
+                  aria-hidden
+                />
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search projects..."
-                  className="h-9 pl-9 text-sm"
+                  placeholder="Search projects…"
+                  className="pl-9"
                 />
               </div>
+            }
+            actions={
               <Button
                 onClick={() => setModalOpen(true)}
                 disabled={!selectedAccountId || !canCreateProjects}
-                size="sm"
-                className="h-9 gap-1.5"
+                size="md"
               >
-                <Plus className="h-4 w-4" />
+                <Plus />
                 New project
               </Button>
-            </div>
-          </div>
+            }
+          />
 
-          {projectsQuery.isLoading && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-[92px] rounded-2xl" />
-              ))}
-            </div>
-          )}
-
-          {projectsQuery.isError && (
-            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
-              <p className="text-sm font-medium text-destructive">Failed to load projects</p>
-              <p className="mt-1 text-xs text-destructive/80">
-                {(projectsQuery.error as Error).message}
-              </p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={() => projectsQuery.refetch()}>
-                Retry
-              </Button>
-            </div>
-          )}
-
-          {showEmptyState && (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 px-6 py-16 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-muted/40 text-base font-semibold text-foreground">
-                K
-              </div>
-              <h2 className="mt-5 text-base font-semibold text-foreground">
-                Create your first project
-              </h2>
-              <p className="mx-auto mt-1.5 max-w-md text-sm text-muted-foreground">
-                A project is a workspace for one company or idea. We&apos;ll set it up in seconds — no
-                Git account required.
-              </p>
-              <Button
-                onClick={() => setModalOpen(true)}
+          <PageBody>
+            {projectsQuery.isLoading ? (
+              <ProjectListSkeleton />
+            ) : projectsQuery.isError ? (
+              <ProjectListError
+                message={(projectsQuery.error as Error).message}
+                onRetry={() => projectsQuery.refetch()}
+              />
+            ) : showEmptyState ? (
+              <ProjectsEmpty
+                onCreate={() => setModalOpen(true)}
                 disabled={!selectedAccountId || !canCreateProjects}
-                size="sm"
-                className="mt-6 h-9 gap-1.5"
-              >
-                <Plus className="h-4 w-4" />
-                New project
-              </Button>
-            </div>
-          )}
-
-          {showNoResults && (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-10 text-center">
-              <Search className="mx-auto h-5 w-5 text-muted-foreground" />
-              <h2 className="mt-3 text-sm font-medium text-foreground">No matches for &ldquo;{query}&rdquo;</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Try a different search term.</p>
-            </div>
-          )}
-
-          {filtered.length > 0 && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filtered.map((project) => (
-                <ProjectCard
-                  key={project.project_id}
-                  project={project}
-                  onOpen={() => router.push(`/projects/${project.project_id}`)}
-                  onArchive={() => archiveMutation.mutate(project.project_id)}
-                  archiving={archivingId === project.project_id}
+              />
+            ) : showNoResults ? (
+              <NoResults query={query} />
+            ) : (
+              <section>
+                <SectionRule
+                  label="Projects"
+                  meta={
+                    query.trim()
+                      ? `${filtered.length} of ${total}`
+                      : `${total} ${total === 1 ? 'project' : 'projects'}`
+                  }
                 />
-              ))}
-            </div>
-          )}
-        </div>
+                <ColumnHeader />
+                <div>
+                  {filtered.map((project) => (
+                    <ProjectRow
+                      key={project.project_id}
+                      project={project}
+                      onArchive={() => archiveMutation.mutate(project.project_id)}
+                      onOpen={() => router.push(`/projects/${project.project_id}`)}
+                      archiving={archivingId === project.project_id}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </PageBody>
+        </Page>
       </main>
 
       <ProjectCreateModal
@@ -320,4 +228,239 @@ export default function ProjectsPage() {
       />
     </div>
   );
+}
+
+function SectionRule({ label, meta }: { label: string; meta?: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="font-mono text-[0.62rem] uppercase tracking-[0.18em] text-muted-foreground/80">
+        {label}
+      </span>
+      {meta ? (
+        <span className="font-mono text-[0.62rem] tracking-[0.04em] text-muted-foreground/70">
+          {meta}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ColumnHeader() {
+  return (
+    <div className="mt-2.5 grid grid-cols-[1.75rem_minmax(0,1fr)_auto_1rem] items-center gap-x-4 px-2 pb-2 font-mono text-[0.58rem] uppercase tracking-[0.18em] text-muted-foreground/60">
+      <span />
+      <span>project</span>
+      <span className="hidden text-right md:inline">role</span>
+      <span />
+    </div>
+  );
+}
+
+function ProjectListSkeleton() {
+  return (
+    <section>
+      <SectionRule label="Projects" meta="loading" />
+      <ColumnHeader />
+      <div>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto_1rem] items-center gap-x-4 border-t border-border/60 px-2 py-3"
+          >
+            <Skeleton className="h-6 w-6 rounded-md" />
+            <div className="space-y-1.5">
+              <Skeleton className="h-3 w-36" />
+              <Skeleton className="h-2.5 w-24" />
+            </div>
+            <Skeleton className="hidden h-2.5 w-14 md:block" />
+            <span />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProjectListError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <section>
+      <SectionRule label="Projects" meta="failed" />
+      <div className="mt-3 border-t border-border/60 px-3 py-8">
+        <p className="font-sans text-sm font-medium text-rose-400">
+          Failed to load projects
+        </p>
+        <p className="mt-1 font-mono text-[0.72rem] text-muted-foreground">
+          {message}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-4"
+          onClick={onRetry}
+        >
+          Retry
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function ProjectsEmpty({
+  onCreate,
+  disabled,
+}: {
+  onCreate: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <section>
+      <SectionRule label="Get started" meta="no projects yet" />
+      <div className="mt-3 grid gap-4 border-t border-border/60 px-3 py-10">
+        <div className="flex size-10 items-center justify-center rounded-md border border-border/70 bg-muted/40 font-mono text-[0.78rem] font-semibold text-foreground">
+          K
+        </div>
+        <div className="space-y-1.5">
+          <h2 className="font-sans text-lg font-medium tracking-[-0.01em] text-foreground">
+            Create your first project
+          </h2>
+          <p className="max-w-md font-sans text-sm text-muted-foreground">
+            A project is a workspace for one company or idea. We&apos;ll set it
+            up in seconds — no Git account required.
+          </p>
+        </div>
+        <div>
+          <Button
+            onClick={onCreate}
+            disabled={disabled}
+            size="sm"
+          >
+            <Plus />
+            New project
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function NoResults({ query }: { query: string }) {
+  return (
+    <section>
+      <SectionRule label="Search" meta="no matches" />
+      <div className="mt-3 border-t border-border/60 px-3 py-10">
+        <p className="font-sans text-sm font-medium text-foreground">
+          No matches for <span className="font-mono">&ldquo;{query}&rdquo;</span>
+        </p>
+        <p className="mt-1 font-mono text-[0.72rem] text-muted-foreground">
+          Try a different search term.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function ProjectRow({
+  project,
+  onOpen,
+  onArchive,
+  archiving,
+}: {
+  project: KortixProject;
+  onOpen: () => void;
+  onArchive: () => void;
+  archiving: boolean;
+}) {
+  const canManage =
+    project.effective_project_role === 'manager' || !project.effective_project_role;
+  const role = (project.effective_project_role || 'manager').toString();
+  const updated = relativeTime(project.updated_at);
+
+  return (
+    <Link
+      href={`/projects/${project.project_id}`}
+      className="group/row block outline-none"
+    >
+      <div className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto_1rem] items-center gap-x-4 border-t border-border/60 px-2 py-3">
+        <UserAvatar email={project.project_id} size="sm" />
+
+        <div className="min-w-0">
+          <h3 className="truncate font-sans text-[0.85rem] font-medium leading-tight tracking-[-0.005em] text-foreground">
+            {project.name}
+          </h3>
+          <div className="mt-0.5 truncate font-mono text-[0.68rem] text-muted-foreground">
+            <span>updated {updated}</span>
+            {project.default_branch ? (
+              <>
+                <span className="px-1.5 text-muted-foreground/40">·</span>
+                <span>{project.default_branch}</span>
+              </>
+            ) : null}
+            {project.repo_url ? (
+              <>
+                <span className="px-1.5 text-muted-foreground/40">·</span>
+                <span className="truncate">{stripRepoOrigin(project.repo_url)}</span>
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        <span className="hidden font-mono text-[0.58rem] uppercase tracking-[0.16em] text-muted-foreground/60 md:inline">
+          {role}
+        </span>
+
+        <span className="relative flex items-center justify-end">
+          <ChevronRight
+            className="size-3.5 shrink-0 text-muted-foreground/40 transition-all duration-150 group-hover/row:translate-x-0.5 group-hover/row:text-foreground"
+            aria-hidden
+          />
+          <div
+            className="absolute -right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Project actions"
+                >
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onOpen}>Open project</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={onArchive}
+                  disabled={archiving || !canManage}
+                  variant="destructive"
+                >
+                  {archiving ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                  Archive
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function stripRepoOrigin(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname}${u.pathname}`.replace(/\.git$/, '').replace(/\/$/, '');
+  } catch {
+    return url;
+  }
 }

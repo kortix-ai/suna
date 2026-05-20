@@ -12,6 +12,9 @@
 /* Streamdown source for Tailwind CSS v4 */
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/fumadocs-ui/dist/**/*.js";
+/* Pull in design-system component classes so Tailwind v4 generates the CSS
+   for anything imported from @kortix/design-system. */
+@source "../../../../packages/design-system/src/**/*.{ts,tsx}";
 
 /* ─── Fumadocs → Kortix brand overrides ─── */
 :root {
@@ -1600,20 +1603,30 @@
   }
 }
 
-::view-transition-old(root), ::view-transition-new(root) {
-  animation: none;
+::view-transition-old(root),
+::view-transition-new(root) {
   mix-blend-mode: normal;
+  animation-duration: 600ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  animation-fill-mode: both;
+}
+
+::view-transition-old(root) {
+  animation-name: view-transition-fade-out;
 }
 
 ::view-transition-new(root) {
-  filter: blur(20px);
-  animation: view-transition-sharpen 400ms ease-in-out forwards;
+  animation-name: view-transition-fade-in;
 }
 
-@keyframes view-transition-sharpen {
-  0% { filter: blur(20px); }
-  60% { filter: blur(6px); }
-  100% { filter: blur(0px); }
+@keyframes view-transition-fade-out {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes view-transition-fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
 }
 
 /* ─── Provisioning / Setup animations ─── */

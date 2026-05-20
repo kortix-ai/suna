@@ -125,7 +125,7 @@ export function FilePreviewModal() {
       />
 
       {/* Modal surface */}
-      <div className="fixed inset-3 sm:inset-4 z-50 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150">
+      <div className="fixed left-1/2 top-1/2 z-50 flex h-[min(85vh,720px)] w-[min(92vw,960px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border/60 bg-background shadow-2xl animate-in fade-in-0 zoom-in-[0.98] duration-150">
         {/* Top bar */}
         <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0 bg-background/95 backdrop-blur-sm">
           <Button

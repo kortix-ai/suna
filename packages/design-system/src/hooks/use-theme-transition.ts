@@ -2,6 +2,7 @@
 
 import { useTheme as useNextTheme } from 'next-themes';
 import { useCallback } from 'react';
+import { flushSync } from 'react-dom';
 
 /**
  * Drop-in for `useTheme` from next-themes. `setTheme` runs the swap through the
@@ -36,7 +37,7 @@ export function useThemeTransition() {
         return;
       }
       startTransition.call(document, () => {
-        setRaw(value);
+        flushSync(() => setRaw(value));
       });
     },
     [setRaw],

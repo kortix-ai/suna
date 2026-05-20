@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import {
   FolderPlus,
   FilePlus,
   Upload,
 } from 'lucide-react';
+import { getProject } from '@/lib/projects-client';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -82,6 +84,14 @@ export function FileExplorerPage() {
   const projectCtx = useProjectContext();
   const projectId = projectCtx?.projectId ?? '';
   const projectRef = projectCtx?.ref ?? '';
+
+  const projectMetaQuery = useQuery({
+    queryKey: ['projects', projectId, 'meta'],
+    queryFn: () => getProject(projectId),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+  const projectName = projectMetaQuery.data?.name ?? '';
 
   useFileEventInvalidation();
 
@@ -670,6 +680,7 @@ export function FileExplorerPage() {
           <>
             {viewMode === 'grid' ? (
               <DriveGridView
+                projectName={projectName}
                 elevatedDirs={elevatedDirs}
                 dirs={dirs}
                 files={fileItems}

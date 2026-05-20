@@ -1,25 +1,5 @@
 'use client';
 
-/**
- * Project Customize — single-page view.
- *
- * One umbrella surface that hosts every per-project config: Files, Skills,
- * Agents, Commands, Secrets, Schedules, Webhooks, Channels, Settings. Lives
- * at `/projects/[id]/customize?section=<name>` and renders inside the same
- * `ProjectShell` as sessions so the project sidebar + tab bar stay anchored
- * while a user is configuring the project.
- *
- *   ┌─────────────────────────────────────────────────────────┐
- *   │ Customize                                                │
- *   ├─────────┬───────────────────────────────────────────────┤
- *   │ Files   │                                               │
- *   │ Skills  │  active section content                       │
- *   │ Agents  │  (each section owns its own internal          │
- *   │ ...     │   list + detail layout)                       │
- *   │ Settings│                                               │
- *   └─────────┴───────────────────────────────────────────────┘
- */
-
 import { AgentsView } from '@/app/projects/[id]/(customize)/agents/page';
 import { ChannelsView } from '@/app/projects/[id]/(customize)/channels/page';
 import { CommandsView } from '@/app/projects/[id]/(customize)/commands/page';
@@ -29,7 +9,6 @@ import { SkillsView } from '@/app/projects/[id]/(customize)/skills/page';
 import { TriggersView } from '@/components/projects/triggers-view';
 import type { CustomizeSection } from '@/lib/customize-sections';
 
-import { CustomizeRail } from './customize-rail';
 import { FilesSection } from './sections/files-section';
 
 interface CustomizeViewProps {
@@ -39,12 +18,9 @@ interface CustomizeViewProps {
 
 export function CustomizeView({ projectId, section }: CustomizeViewProps) {
   return (
-    <div className="flex h-full min-h-0">
-      <CustomizeRail projectId={projectId} />
-      <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
-        <SectionContent section={section} projectId={projectId} />
-      </main>
-    </div>
+    <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+      <SectionContent section={section} projectId={projectId} />
+    </main>
   );
 }
 

@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, memo } from 'react';
+import { useEffect, useRef, useState, memo, type RefObject } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { AnimatePresence, motion } from 'motion/react';
 import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { springs, useProximityHover, useRegisterProximityItem } from '@kortix/design-system';
 
 import {
   DropdownMenu,
@@ -105,28 +107,36 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     );
   }
 
+  const activeRouteIdx = sessions.findIndex((s) =>
+    pathname?.includes(`/sessions/${s.session_id}`),
+  );
+
   return (
     <>
-      <div className="space-y-px">
-        {sessions.map((session) => {
-          const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
-          const isActive = pathname?.includes(`/sessions/${session.session_id}`);
-          return (
-            <ProjectSessionRow
-              key={session.session_id}
-              session={session}
-              href={href}
-              isActive={!!isActive}
-              onDelete={(id, label) => setSessionToDelete({ id, label })}
-              onRestart={(id) => restartMutation.mutate(id)}
-              isRestarting={
-                restartMutation.isPending &&
-                restartMutation.variables === session.session_id
-              }
-            />
-          );
-        })}
-      </div>
+      <ProximitySessionList activeRouteIdx={activeRouteIdx} itemCount={sessions.length}>
+        {(registerItem) =>
+          sessions.map((session, index) => {
+            const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
+            const isActive = pathname?.includes(`/sessions/${session.session_id}`);
+            return (
+              <ProjectSessionRow
+                key={session.session_id}
+                session={session}
+                href={href}
+                isActive={!!isActive}
+                index={index}
+                registerItem={registerItem}
+                onDelete={(id, label) => setSessionToDelete({ id, label })}
+                onRestart={(id) => restartMutation.mutate(id)}
+                isRestarting={
+                  restartMutation.isPending &&
+                  restartMutation.variables === session.session_id
+                }
+              />
+            );
+          })
+        }
+      </ProximitySessionList>
 
       <AlertDialog
         open={!!sessionToDelete}
@@ -164,6 +174,8 @@ interface ProjectSessionRowProps {
   session: ProjectSession;
   href: string;
   isActive: boolean;
+  index: number;
+  registerItem: (index: number, element: HTMLElement | null) => void;
   onDelete: (sessionId: string, label: string) => void;
   onRestart: (sessionId: string) => void;
   isRestarting: boolean;
@@ -173,12 +185,20 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   session,
   href,
   isActive,
+  index,
+  registerItem,
   onDelete,
   onRestart,
   isRestarting,
 }: ProjectSessionRowProps) {
   const [isHovering, setIsHovering] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const linkRef = useRef<HTMLAnchorElement>(null);
+  useRegisterProximityItem(
+    registerItem,
+    index,
+    linkRef as unknown as RefObject<HTMLElement | null>,
+  );
   // Keep menu trigger mounted while open so the dropdown stays anchored
   // when the cursor leaves the row.
   const showActions = isHovering || menuOpen;
@@ -205,17 +225,16 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
 
   return (
     <Link
+      ref={linkRef}
       href={href}
-      className="block"
+      className="relative z-10 block"
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
       <div
         className={cn(
           'flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors duration-150',
-          isActive
-            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-            : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+          isActive ? 'text-sidebar-accent-foreground' : 'text-muted-foreground hover:text-sidebar-foreground',
         )}
       >
         <SessionStatusDot status={session.status} />
@@ -323,6 +342,72 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
         {status}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function ProximitySessionList({
+  itemCount,
+  activeRouteIdx,
+  children,
+}: {
+  itemCount: number;
+  activeRouteIdx: number;
+  children: (
+    registerItem: (index: number, element: HTMLElement | null) => void,
+  ) => React.ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { activeIndex, itemRects, sessionRef, handlers, registerItem, measureItems } =
+    useProximityHover<HTMLDivElement>(containerRef, { axis: 'y' });
+
+  useEffect(() => {
+    measureItems();
+  }, [itemCount, measureItems]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(() => measureItems());
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [measureItems]);
+
+  const hoverRect = activeIndex !== null ? itemRects[activeIndex] : null;
+  const activeRect = activeRouteIdx >= 0 ? itemRects[activeRouteIdx] : null;
+  const hoverIsOnActive = activeIndex === activeRouteIdx;
+
+  return (
+    <div ref={containerRef} className="relative space-y-px" {...handlers}>
+      {activeRect ? (
+        <motion.div
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute left-0 right-0 rounded-lg transition-colors duration-150',
+            activeIndex !== null && !hoverIsOnActive
+              ? 'bg-sidebar-accent/40'
+              : 'bg-sidebar-accent',
+          )}
+          initial={false}
+          animate={{ top: activeRect.top, height: activeRect.height }}
+          transition={springs.moderate}
+        />
+      ) : null}
+
+      <AnimatePresence>
+        {hoverRect && !hoverIsOnActive ? (
+          <motion.div
+            key={`hover-${sessionRef.current}`}
+            aria-hidden
+            className="pointer-events-none absolute left-0 right-0 rounded-lg bg-sidebar-accent/60"
+            initial={{ top: hoverRect.top, height: hoverRect.height, opacity: 0 }}
+            animate={{ top: hoverRect.top, height: hoverRect.height, opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={springs.moderate}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      {children(registerItem)}
+    </div>
   );
 }
 

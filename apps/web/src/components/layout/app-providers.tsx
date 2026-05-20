@@ -160,7 +160,7 @@ export function AppProviders({
   if (!showSidebar) return content;
 
   return (
-    <SidebarProvider defaultOpen={defaultSidebarOpen}>
+    <SidebarProvider defaultOpen={defaultSidebarOpen} className="bg-background">
       <SidebarLeftSlot sidebarContent={sidebarContent} />
       <SidebarInset>
         <RightSidebarProvider>

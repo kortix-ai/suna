@@ -34,9 +34,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import {
   listAccounts,
@@ -200,42 +200,26 @@ export function ProjectSelector() {
       <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
+            <button
+              type="button"
+              aria-label={`Switch project · ${projectName}`}
               className={cn(
-                'group/trigger relative h-auto gap-2 rounded-lg px-1.5 py-1',
-                'border border-transparent bg-transparent',
-                'hover:bg-sidebar-accent/60',
-                'data-[state=open]:bg-sidebar-accent',
-                'group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!px-0',
+                'group/ws flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left outline-none transition-colors',
+                'hover:bg-sidebar-accent/60 focus-visible:ring-2 focus-visible:ring-ring',
+                menuOpen && 'bg-sidebar-accent/60',
+                'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!px-0',
               )}
             >
-              <span
-                className={cn(
-                  'flex h-6 w-6 shrink-0 items-center justify-center rounded-md',
-                  'text-[9.5px] font-semibold tracking-tight tabular-nums',
-                  MONOGRAM_CLASS,
-                )}
-              >
-                {monogram(activeProject?.name || accountName)}
+              <KortixLogo variant="symbol" size={16} className="flex-shrink-0" />
+              <span className="text-muted-foreground/40 group-data-[collapsible=icon]:hidden">/</span>
+              <span className="min-w-0 flex-1 truncate font-sans text-[0.875rem] font-medium tracking-[-0.005em] text-foreground group-data-[collapsible=icon]:hidden">
+                {projectName}
               </span>
-              <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
-                <span className="truncate text-[12px] font-semibold text-foreground tracking-tight">
-                  {projectName}
-                </span>
-                <span className="truncate text-[10.5px] text-muted-foreground/80 mt-0.5">
-                  {accountName}
-                </span>
-              </div>
               <ChevronsUpDown
-                className={cn(
-                  'ml-auto size-3 shrink-0 text-muted-foreground/30',
-                  'transition-colors duration-150',
-                  'group-hover/trigger:text-muted-foreground/70 group-data-[state=open]/trigger:text-muted-foreground/70',
-                  'group-data-[collapsible=icon]:hidden',
-                )}
+                className="size-3 shrink-0 text-muted-foreground/60 transition-colors group-hover/ws:text-foreground group-data-[collapsible=icon]:hidden"
+                aria-hidden="true"
               />
-            </SidebarMenuButton>
+            </button>
           </DropdownMenuTrigger>
 
           <DropdownMenuContent

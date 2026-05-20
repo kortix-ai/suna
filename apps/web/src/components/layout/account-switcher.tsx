@@ -14,26 +14,24 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  Badge,
+  Button,
+  cn,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+  Input,
+  Label,
+  Skeleton,
+} from '@kortix/design-system';
 import {
   createAccount,
   listAccounts,
@@ -74,9 +72,7 @@ export function AccountSwitcher({ className }: { className?: string }) {
   if (!selected) return null;
 
   const displayName = selected.name || (selected.personal_account ? 'Personal' : 'Account');
-  const initial = displayName.charAt(0).toUpperCase();
 
-  // Personal first, then alpha. Flat list — no Personal/Teams split.
   const sortedAccounts = [...(accountsQuery.data ?? [])].sort((a, b) => {
     if (a.personal_account && !b.personal_account) return -1;
     if (!a.personal_account && b.personal_account) return 1;
@@ -87,21 +83,23 @@ export function AccountSwitcher({ className }: { className?: string }) {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
+            type="button"
             className={cn(
-              'h-8 gap-2 px-2 rounded-md text-foreground',
+              'group/acc inline-flex h-8 items-center gap-1.5 rounded-md px-2 outline-none transition-colors',
               'hover:bg-muted/50 data-[state=open]:bg-muted/60',
+              'focus-visible:ring-2 focus-visible:ring-ring',
               className,
             )}
           >
-            <span className="flex h-5 w-5 items-center justify-center rounded-[5px] border border-border/60 bg-muted/40 text-[10px] font-semibold text-foreground/80">
-              {initial}
+            <span className="max-w-40 truncate font-sans text-[0.8rem] font-medium tracking-[-0.005em] text-foreground">
+              {displayName}
             </span>
-            <span className="max-w-32 truncate text-[13px] font-medium">{displayName}</span>
-            <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />
-          </Button>
+            <ChevronsUpDown
+              className="size-3 shrink-0 text-muted-foreground/40 transition-colors group-hover/acc:text-muted-foreground"
+              aria-hidden
+            />
+          </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64">
           <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -285,19 +283,27 @@ export function ProjectSwitcher({ className }: { className?: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
+        <button
+          type="button"
           className={cn(
-            'h-8 gap-2 px-2 rounded-md text-foreground',
+            'group/proj inline-flex h-8 items-center gap-1.5 rounded-md px-2 outline-none transition-colors',
             'hover:bg-muted/50 data-[state=open]:bg-muted/60',
+            'focus-visible:ring-2 focus-visible:ring-ring',
             className,
           )}
         >
-          <FolderGit2 className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="max-w-40 truncate text-[13px] font-medium">{label}</span>
-          <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />
-        </Button>
+          <FolderGit2
+            className="size-3 shrink-0 text-muted-foreground/60 transition-colors group-hover/proj:text-foreground"
+            aria-hidden
+          />
+          <span className="max-w-48 truncate font-sans text-[0.8rem] font-medium tracking-[-0.005em] text-foreground">
+            {label}
+          </span>
+          <ChevronsUpDown
+            className="size-3 shrink-0 text-muted-foreground/40 transition-colors group-hover/proj:text-muted-foreground"
+            aria-hidden
+          />
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
         <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">

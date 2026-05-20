@@ -28,26 +28,28 @@ import {
   Users,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { crossfadeTransition } from '@/lib/view-transition';
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
+  Skeleton,
+} from '@kortix/design-system';
 import {
   SidebarContext,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { themeOptions } from '@/lib/menu-registry';
-import { transitionFromElement } from '@/lib/view-transition';
 import {
   listAccounts,
   listProjectsForAccount,
@@ -64,6 +66,7 @@ import { AccountSettingsModal } from '@/components/settings/account-settings-mod
 import { CreateAccountModal } from '@/components/accounts/create-account-modal';
 import type { AccountSettingsTabId } from '@/stores/account-settings-modal-store';
 import type { SettingsTabId } from '@/lib/menu-registry';
+import { UserAvatar } from '../ui/user-avatar';
 
 type WorkspaceUser = {
   name: string;
@@ -199,7 +202,7 @@ export function WorkspaceMenu({
     event.preventDefault();
     event.stopPropagation();
     if (next === theme) return;
-    transitionFromElement(event.currentTarget as HTMLElement, () => setTheme(next));
+    crossfadeTransition(() => setTheme(next));
   };
 
   const openSettings = (tab: SettingsTabId) => {
@@ -249,12 +252,7 @@ export function WorkspaceMenu({
           'group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!border-transparent group-data-[collapsible=icon]:!bg-transparent group-data-[collapsible=icon]:!shadow-none',
         )}
       >
-        <Avatar className="h-8 w-8 shrink-0 ring-1 ring-border/60">
-          <AvatarImage src={user.avatar} alt={user.name} />
-          <AvatarFallback className="bg-primary/10 text-[11px] font-semibold text-primary">
-            {userInitials}
-          </AvatarFallback>
-        </Avatar>
+        <UserAvatar email={user.email} size="sm" />
         <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
           <span className="truncate text-[13px] font-semibold text-foreground tracking-tight">
             {user.name}
@@ -279,10 +277,7 @@ export function WorkspaceMenu({
           'data-[state=open]:bg-muted/50',
         )}
       >
-        <Avatar className="h-7 w-7 shrink-0">
-          <AvatarImage src={user.avatar} alt={user.name} />
-          <AvatarFallback className="text-[10px] font-semibold">{userInitials}</AvatarFallback>
-        </Avatar>
+        <UserAvatar email={user.email} size="sm" />
         <span className="hidden max-w-[18ch] truncate text-[12.5px] font-medium text-foreground sm:inline">
           {subtitle}
         </span>
