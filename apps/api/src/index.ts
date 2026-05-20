@@ -461,6 +461,14 @@ export function isSchemaReady() { return schemaReady; }
 ensureSchema()
   .then(async () => {
     schemaReady = true;
+    // Reconcile system IAM roles. Idempotent and fast (~15 roles).
+    try {
+      const { seedSystemRoles } = await import('./iam');
+      await seedSystemRoles();
+      console.log('[startup] IAM system roles seeded');
+    } catch (err) {
+      console.error('[startup] IAM role seed failed:', err);
+    }
     startAccessControlCache();
     startDrainer();
     startTunnelService();

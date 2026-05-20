@@ -12,10 +12,16 @@ import {
   revokeAccountToken,
 } from '../repositories/account-tokens';
 import { sendAccountInviteEmail } from './email';
+import { iamRouter } from './iam';
 
 export const accountsRouter = new Hono<AppEnv>();
 
 accountsRouter.use('/*', supabaseAuth);
+
+// Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
+// declares its own paths under /:accountId/iam/*, so mounting at '/' here is
+// correct.
+accountsRouter.route('/', iamRouter);
 
 // ─── Static (non-parameterized) routes MUST come before /:accountId ────────
 // Hono matches routes in registration order, so anything declared after the
