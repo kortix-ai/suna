@@ -280,6 +280,7 @@ export function PoliciesTable({
         accountId={accountId}
         principalType={principalType}
         principalId={principalId}
+        principalLabel={principalLabel}
         roles={rolesQuery.data ?? []}
         projects={projectsQuery.data ?? []}
         members={accountMembersQuery.data ?? []}
@@ -312,6 +313,8 @@ interface CreatePolicyDialogProps {
   accountId: string;
   principalType: PrincipalType;
   principalId: string;
+  /** Used in the summary sentence above the Create button. */
+  principalLabel: string;
   roles: IamRole[];
   projects: KortixProject[];
   members: AccountMember[];
@@ -325,6 +328,7 @@ function CreatePolicyDialog({
   accountId,
   principalType,
   principalId,
+  principalLabel,
   roles,
   projects,
   members,
@@ -404,6 +408,34 @@ function CreatePolicyDialog({
     });
   }
 
+  // Roles section is revealed once the user has named a real target.
+  // For account-Everything that's immediate; otherwise wait for the picker.
+  const showRoles = scopeType === 'account' || (!!scopeType && !!scopeId);
+
+  // Human-readable summary fragments rendered above the Create button.
+  const selectedRoleNames = useMemo(() => {
+    if (selectedRoleIds.size === 0) return '';
+    return availableRoles
+      .filter((r) => selectedRoleIds.has(r.role_id))
+      .map((r) => r.name)
+      .join(', ');
+  }, [availableRoles, selectedRoleIds]);
+
+  const appliesToLabel = useMemo(() => {
+    if (scopeType === 'account') return 'all resources in this account';
+    if (scopeType === 'project') {
+      return projects.find((p) => p.project_id === scopeId)?.name ?? 'this project';
+    }
+    if (scopeType === 'member') {
+      const m = members.find((x) => x.user_id === scopeId);
+      return m?.email ?? 'this member';
+    }
+    if (scopeType === 'group') {
+      return groups.find((g) => g.group_id === scopeId)?.name ?? 'this group';
+    }
+    return 'this scope';
+  }, [scopeType, scopeId, projects, members, groups]);
+
   return (
     <Dialog
       open={open}
@@ -413,56 +445,18 @@ function CreatePolicyDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Create policy</DialogTitle>
           <DialogDescription>
-            Choose a scope, the resources it applies to, and the roles to grant.
-            A policy is created for each role selected.
+            Grant access to a scope. One policy is created per role.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5">
-          {/* ── Effect ────────────────────────────────────────────────── */}
+          {/* ── Step 1: Scope (always visible) ─────────────────────── */}
           <div className="space-y-1.5">
-            <Label>Effect</Label>
-            <div className="inline-flex rounded-md border border-border/70 bg-muted/30 p-0.5">
-              <button
-                type="button"
-                onClick={() => setEffect('allow')}
-                disabled={createMutation.isPending}
-                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                  effect === 'allow'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Allow
-              </button>
-              <button
-                type="button"
-                onClick={() => setEffect('deny')}
-                disabled={createMutation.isPending}
-                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
-                  effect === 'deny'
-                    ? 'bg-destructive/10 text-destructive shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Deny
-              </button>
-            </div>
-            {effect === 'deny' && (
-              <p className="text-xs text-muted-foreground">
-                A deny policy revokes the role&apos;s actions on the chosen scope.
-                Deny always wins over allow, including the legacy account_role bridge.
-              </p>
-            )}
-          </div>
-
-          {/* ── Scope ────────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label>Select a scope</Label>
+            <Label>Scope</Label>
             <Select
               value={scopeType || undefined}
               onValueChange={(v) => {
@@ -473,7 +467,7 @@ function CreatePolicyDialog({
               disabled={createMutation.isPending}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select a scope..." />
+                <SelectValue placeholder="Pick a scope..." />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -486,7 +480,7 @@ function CreatePolicyDialog({
                   <SelectLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                     Resource-specific
                   </SelectLabel>
-                  {(['project', 'sandbox', 'trigger', 'channel', 'member', 'group'] as ResourceType[]).map(
+                  {(['project', 'member', 'group', 'sandbox', 'trigger', 'channel'] as ResourceType[]).map(
                     (rt) => {
                       const meta = RESOURCE_TYPE_META[rt];
                       return (
@@ -494,6 +488,7 @@ function CreatePolicyDialog({
                           key={rt}
                           value={rt}
                           disabled={!meta.pickerSupported}
+                          className={!meta.pickerSupported ? 'italic opacity-50' : undefined}
                         >
                           {meta.label}
                           {!meta.pickerSupported && (
@@ -508,156 +503,176 @@ function CreatePolicyDialog({
             </Select>
           </div>
 
-          {/* ── Applies to ──────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label>Applies to</Label>
-            {!scopeType && (
-              <p className="rounded-md border border-dashed border-border/60 px-3 py-3 text-xs text-muted-foreground">
-                Pick a scope to choose what this applies to.
-              </p>
-            )}
-            {scopeType === 'account' && (
-              <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-                All resources in this account
-              </p>
-            )}
-            {scopeType === 'project' && (
-              <Select
-                value={scopeId || undefined}
-                onValueChange={setScopeId}
-                disabled={createMutation.isPending}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a project..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.length === 0 ? (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      No projects in this account
-                    </div>
-                  ) : (
-                    projects.map((p) => (
-                      <SelectItem key={p.project_id} value={p.project_id}>
-                        {p.name}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            )}
-            {scopeType === 'member' && (
-              <Select
-                value={scopeId || undefined}
-                onValueChange={setScopeId}
-                disabled={createMutation.isPending}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a member..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {members.length === 0 ? (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      No members in this account
-                    </div>
-                  ) : (
-                    members.map((m) => (
-                      <SelectItem key={m.user_id} value={m.user_id}>
-                        {m.email ?? m.user_id}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            )}
-            {scopeType === 'group' && (
-              <Select
-                value={scopeId || undefined}
-                onValueChange={setScopeId}
-                disabled={createMutation.isPending}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a group..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.length === 0 ? (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      No groups in this account
-                    </div>
-                  ) : (
-                    groups.map((g) => (
-                      <SelectItem key={g.group_id} value={g.group_id}>
-                        {g.name}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            )}
-            {scopeType &&
-              scopeType !== 'account' &&
-              scopeType !== 'project' &&
-              scopeType !== 'member' &&
-              scopeType !== 'group' && (
-                <p className="rounded-md border border-dashed border-border/60 px-3 py-3 text-xs text-muted-foreground">
-                  Picker for this resource type ships in a follow-up.
+          {/* ── Step 2: Applies to (only after a scope is picked) ─── */}
+          {scopeType && (
+            <div className="space-y-1.5">
+              <Label>Applies to</Label>
+              {scopeType === 'account' && (
+                <p className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                  All resources in this account
                 </p>
               )}
-          </div>
+              {scopeType === 'project' && (
+                <Select
+                  value={scopeId || undefined}
+                  onValueChange={setScopeId}
+                  disabled={createMutation.isPending}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pick a project..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.length === 0 ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        No projects in this account
+                      </div>
+                    ) : (
+                      projects.map((p) => (
+                        <SelectItem key={p.project_id} value={p.project_id}>
+                          {p.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+              {scopeType === 'member' && (
+                <Select
+                  value={scopeId || undefined}
+                  onValueChange={setScopeId}
+                  disabled={createMutation.isPending}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pick a member..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.length === 0 ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        No members in this account
+                      </div>
+                    ) : (
+                      members.map((m) => (
+                        <SelectItem key={m.user_id} value={m.user_id}>
+                          {m.email ?? m.user_id}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+              {scopeType === 'group' && (
+                <Select
+                  value={scopeId || undefined}
+                  onValueChange={setScopeId}
+                  disabled={createMutation.isPending}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pick a group..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {groups.length === 0 ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        No groups in this account
+                      </div>
+                    ) : (
+                      groups.map((g) => (
+                        <SelectItem key={g.group_id} value={g.group_id}>
+                          {g.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
 
-          {/* ── Roles ───────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <Label>Roles</Label>
-            {!scopeType ? (
-              <p className="rounded-md border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
-                Roles will appear after you select a scope.
-              </p>
-            ) : availableRoles.length === 0 ? (
-              <p className="rounded-md border border-dashed border-border/60 px-3 py-3 text-xs text-muted-foreground">
-                No roles available for this scope.
-              </p>
-            ) : (
-              <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2">
-                {availableRoles.map((r) => {
-                  const checked = selectedRoleIds.has(r.role_id);
-                  return (
-                    <button
-                      key={r.role_id}
-                      type="button"
-                      onClick={() => toggleRole(r.role_id)}
-                      className={`flex w-full items-start gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
-                        checked ? 'bg-primary/5' : 'hover:bg-muted/40'
-                      }`}
-                      disabled={createMutation.isPending}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        readOnly
-                        className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">
-                            {r.name}
-                          </span>
-                          {r.is_system && (
-                            <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
-                              system
-                            </Badge>
+          {/* ── Step 3: Roles (only after Applies-to is satisfied) ── */}
+          {showRoles && (
+            <div className="space-y-1.5">
+              <Label>Roles</Label>
+              {availableRoles.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border/60 px-3 py-3 text-xs text-muted-foreground">
+                  No roles available for this scope.
+                </p>
+              ) : (
+                <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2">
+                  {availableRoles.map((r) => {
+                    const checked = selectedRoleIds.has(r.role_id);
+                    return (
+                      <button
+                        key={r.role_id}
+                        type="button"
+                        onClick={() => toggleRole(r.role_id)}
+                        className={`flex w-full cursor-pointer items-start gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                          checked ? 'bg-primary/5' : 'hover:bg-muted/40'
+                        }`}
+                        disabled={createMutation.isPending}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          readOnly
+                          className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-foreground">
+                              {r.name}
+                            </span>
+                            {r.is_system && (
+                              <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                                system
+                              </Badge>
+                            )}
+                          </div>
+                          {r.description && (
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {r.description}
+                            </p>
                           )}
                         </div>
-                        {r.description && (
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            {r.description}
-                          </p>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Optional: Deny toggle (subdued, after Roles) ──────── */}
+          {showRoles && availableRoles.length > 0 && (
+            <label className="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={effect === 'deny'}
+                onChange={(e) => setEffect(e.target.checked ? 'deny' : 'allow')}
+                disabled={createMutation.isPending}
+                className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-destructive"
+              />
+              <span>
+                Make this a <strong className="text-destructive">deny</strong> policy
+                {effect === 'deny' && (
+                  <span className="block text-[11px] text-muted-foreground">
+                    Revokes the role&apos;s actions on this scope. Wins over any allow.
+                  </span>
+                )}
+              </span>
+            </label>
+          )}
+
+          {/* ── Summary line (visible once ready) ─────────────────── */}
+          {ready && (
+            <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2.5 text-sm leading-relaxed text-foreground">
+              <span className="text-muted-foreground">{principalLabel}</span> will
+              be{' '}
+              <strong className={effect === 'deny' ? 'text-destructive' : 'text-foreground'}>
+                {effect === 'deny' ? 'denied' : 'allowed'}
+              </strong>{' '}
+              <strong>{selectedRoleNames}</strong> on{' '}
+              <strong>{appliesToLabel}</strong>.
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -674,9 +689,10 @@ function CreatePolicyDialog({
             onClick={() => createMutation.mutate()}
             disabled={!ready || createMutation.isPending}
             className="gap-1.5"
+            variant={effect === 'deny' ? 'destructive' : 'default'}
           >
             {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            Create policy
+            {effect === 'deny' ? 'Create deny policy' : 'Create policy'}
           </Button>
         </DialogFooter>
       </DialogContent>
