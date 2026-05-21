@@ -204,7 +204,7 @@ function ConsentCard({
 }: ConsentProps) {
   const busy = phase === 'authorizing';
   return (
-    <div className="rounded-xl border bg-background shadow-sm">
+    <div className="rounded-2xl border bg-background shadow-sm">
       <div className="p-7">
         <div className="mb-6 flex items-center gap-3">
           <div className="grid size-11 place-items-center rounded-lg border bg-muted/40">
@@ -223,14 +223,14 @@ function ConsentCard({
           and hand it to the CLI running on this machine.
         </p>
 
-        <dl className="mt-5 space-y-2 rounded-md border bg-muted/30 p-4 text-sm">
+        <dl className="mt-5 space-y-2 rounded-2xl border bg-muted/30 p-4 text-sm">
           <Row label="Account" value={userEmail || 'You'} />
           <Row label="Callback" value={callbackHost} />
           {deviceLabel && <Row label="Device" value={deviceLabel} />}
         </dl>
 
         {phase === 'error' && error && (
-          <div className="mt-5 flex items-start gap-2 rounded-md border border-destructive bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="mt-5 flex items-start gap-2 rounded-2xl border border-destructive bg-destructive/5 p-3 text-sm text-destructive">
             <XCircle className="mt-0.5 size-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -280,7 +280,7 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function SuccessCard() {
   return (
-    <div className="rounded-xl border bg-background p-7 shadow-sm text-center">
+    <div className="rounded-2xl border bg-background p-7 shadow-sm text-center">
       <div className="mx-auto grid size-12 place-items-center rounded-full bg-green-500/10 text-green-600">
         <CheckCircle2 className="size-6" />
       </div>
@@ -297,7 +297,7 @@ function SuccessCard() {
 
 function ErrorCard({ title, message }: { title: string; message: string }) {
   return (
-    <div className="rounded-xl border bg-background p-7 shadow-sm text-center">
+    <div className="rounded-2xl border bg-background p-7 shadow-sm text-center">
       <div className="mx-auto grid size-12 place-items-center rounded-full bg-destructive/10 text-destructive">
         <XCircle className="size-6" />
       </div>

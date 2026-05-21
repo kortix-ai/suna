@@ -224,7 +224,7 @@ function TemplatePicker({
       </div>
 
       <div className="px-5 pb-4">
-        <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+        <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
           <TemplateRow
             title="Blank"
             hint="Start from an empty ticket."

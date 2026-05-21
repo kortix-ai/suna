@@ -148,7 +148,7 @@ export function InstanceMembersPanel({ sandboxId }: { sandboxId: string }) {
           <IconLoader className="h-4 w-4 animate-spin" /> Loading team…
         </div>
       ) : membersQuery.error ? (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
           {membersQuery.error instanceof Error
             ? membersQuery.error.message
             : 'Failed to load members.'}
@@ -650,7 +650,7 @@ function RoleCard({
       onClick={onSelect}
       disabled={disabled}
       className={cn(
-        'group relative flex h-full flex-col items-start gap-1 rounded-xl border p-3 text-left transition-all',
+        'group relative flex h-full flex-col items-start gap-1 rounded-2xl border p-3 text-left transition-all',
         'disabled:cursor-not-allowed disabled:opacity-50',
         selected
           ? 'bg-foreground/10 shadow-sm'

@@ -133,7 +133,7 @@ export const FileInfoContent = memo(function FileInfoContent({
         </div>
       </div>
 
-      <div className="bg-muted/50 rounded-xl p-4 border border-border">
+      <div className="bg-muted/50 rounded-2xl p-4 border border-border">
         <div className="space-y-3">
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shrink-0">

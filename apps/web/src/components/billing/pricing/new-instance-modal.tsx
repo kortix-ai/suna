@@ -164,7 +164,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
                     <label
                       key={t.name}
                       className={cn(
-                        'relative flex items-center gap-3.5 px-4 py-3.5 rounded-xl border-2 transition-colors cursor-pointer',
+                        'relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border-2 transition-colors cursor-pointer',
                         isSelected
                           ? 'border-foreground bg-foreground/[0.03]'
                           : 'border-border hover:border-foreground/20',
@@ -203,7 +203,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
 
           {/* Includes */}
           <div className="px-5 pb-5">
-            <div className="rounded-lg bg-muted/40 px-4 py-3">
+            <div className="rounded-2xl bg-muted/40 px-4 py-3">
               <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Every plan includes</p>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                 {[
@@ -226,7 +226,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
 
         {/* Error */}
         {error && (
-          <div className="mx-5 mb-3 rounded-lg border border-destructive bg-destructive/10 px-3 py-2.5">
+          <div className="mx-5 mb-3 rounded-2xl border border-destructive bg-destructive/10 px-3 py-2.5">
             <p className="text-xs text-destructive">{error}</p>
           </div>
         )}

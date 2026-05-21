@@ -123,7 +123,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
         className={cn(
           'pointer-events-auto flex flex-col transition-all duration-200 ease-out',
           hovered
-            ? 'bg-popover/95 backdrop-blur-md rounded-xl border border-border/30 px-1.5 py-2 min-w-[220px] max-w-[280px] max-h-[60vh] overflow-y-auto scrollbar-hide gap-0'
+            ? 'bg-popover/95 backdrop-blur-md rounded-2xl border border-border/30 px-1.5 py-2 min-w-[220px] max-w-[280px] max-h-[60vh] overflow-y-auto scrollbar-hide gap-0'
             : 'py-1 gap-[5px]',
         )}
       >

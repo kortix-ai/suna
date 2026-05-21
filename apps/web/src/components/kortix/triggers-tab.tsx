@@ -237,7 +237,7 @@ export function TriggersTab({ projectId }: Props) {
             </Button>
           </div>
 
-          <div className="rounded-xl border border-border/50 divide-y divide-border/40 overflow-hidden bg-card/40">
+          <div className="rounded-2xl border border-border/50 divide-y divide-border/40 overflow-hidden bg-card/40">
             {isLoading && (
               <div className="p-4 space-y-3">
                 {[1, 2].map((i) => (

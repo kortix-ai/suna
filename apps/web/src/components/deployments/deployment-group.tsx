@@ -236,7 +236,7 @@ export function DeploymentGroup({
         {/* Error message for latest deployment */}
         {latestDeployment.status === 'failed' && latestDeployment.error && (
           <div className="mt-3 pl-16 space-y-2.5">
-            <div className="flex items-center gap-2 text-sm text-red-500 dark:text-red-400 bg-red-500/5 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2 text-sm text-red-500 dark:text-red-400 bg-red-500/5 rounded-2xl px-3 py-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span className="flex-1 line-clamp-2">{latestDeployment.error}</span>
               {isFreestyleKeyError(latestDeployment.error) && onConfigureApiKey && (

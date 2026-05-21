@@ -49,7 +49,7 @@ export function Dock({ children, className }: DockProps) {
     <div className="relative isolate">
       <div className="absolute inset-x-0 bottom-0 h-[56px] pointer-events-none" style={{ zIndex: -1 }}>
         <div
-          className={cn("h-full w-full border bg-background/40 backdrop-blur-2xl rounded-xl", className)}
+          className={cn("h-full w-full border bg-background/40 backdrop-blur-2xl rounded-2xl", className)}
         >
         </div>
       </div>

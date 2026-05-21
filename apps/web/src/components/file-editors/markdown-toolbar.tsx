@@ -843,7 +843,7 @@ export function MarkdownToolbar({
           <TabsContent value="upload" className="space-y-4 pt-4">
             <div
               className={cn(
-                "border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors",
+                "border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-colors",
                 "hover:border-primary hover:bg-muted/50",
                 imagePreview && "border-primary bg-muted/50"
               )}

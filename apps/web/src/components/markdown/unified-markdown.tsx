@@ -585,7 +585,7 @@ function CodeBlock({
     <div
       className={cn(
         "relative group not-prose my-5",
-        "rounded-xl overflow-hidden",
+        "rounded-2xl overflow-hidden",
         "border border-[#eeeeef] dark:border-[#1f1f21]",
         "bg-[#ffffff] dark:bg-[#070707]",
         "shadow-[0_1px_0_rgba(0,0,0,0.02)] dark:shadow-none",
@@ -641,7 +641,7 @@ function KaTeXBlock({ math }: { math: string }) {
 
   return (
     <div
-      className="my-5 overflow-x-auto py-4 px-5 rounded-xl border border-border/60 bg-card/50 [&_.katex-display]:!my-0"
+      className="my-5 overflow-x-auto py-4 px-5 rounded-2xl border border-border/60 bg-card/50 [&_.katex-display]:!my-0"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
@@ -986,7 +986,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
     // TABLES - Clean, modern table design
     // ═══════════════════════════════════════════════════════════════
     table: ({ children }: { children?: React.ReactNode }) => (
-      <div className="my-5 overflow-x-auto rounded-xl border border-border/60">
+      <div className="my-5 overflow-x-auto rounded-2xl border border-border/60">
         <table className="w-full text-sm !m-0">
           {children}
         </table>

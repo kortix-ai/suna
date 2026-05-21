@@ -120,7 +120,7 @@ export default function ActivateTrialPage() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          <div className="bg-muted/50 rounded-lg p-6 space-y-4">
+          <div className="bg-muted/50 rounded-2xl p-6 space-y-4">
             <h3 className="font-semibold text-lg flex items-center gap-2">
               <Zap className="h-5 w-5 text-primary" />
               What's included in trial:
@@ -143,7 +143,7 @@ export default function ActivateTrialPage() {
               </div>
             </div>
           </div>
-          <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+          <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4">
             <div className="flex items-start gap-3">
               <Shield className="h-5 w-5 text-primary mt-0.5" />
               <div className="space-y-1">

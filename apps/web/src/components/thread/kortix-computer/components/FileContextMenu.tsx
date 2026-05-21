@@ -52,7 +52,7 @@ export const FileContextMenu = memo(function FileContextMenu({
   return (
     <ContextMenu onOpenChange={onOpenChange}>
       {children}
-      <ContextMenuContent className="w-52 bg-background/60 backdrop-blur-2xl border-border/20 rounded-xl overflow-hidden shadow-2xl">
+      <ContextMenuContent className="w-52 bg-background/60 backdrop-blur-2xl border-border/20 rounded-2xl overflow-hidden shadow-2xl">
         <ContextMenuItem 
           onClick={onOpen}
           className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg"

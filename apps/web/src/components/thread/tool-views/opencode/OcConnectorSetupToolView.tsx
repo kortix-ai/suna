@@ -57,7 +57,7 @@ export function OcConnectorSetupToolView({
           <ScrollArea className="h-full w-full">
             <div className="p-4 space-y-3">
               {data.connectors.map((conn, i) => (
-                <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-md border border-border/50 bg-foreground/[0.02]">
+                <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-2xl border border-border/50 bg-foreground/[0.02]">
                   <Plug className="w-3.5 h-3.5 text-muted-foreground/70 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="text-[12.5px] font-medium text-foreground truncate tracking-tight">

@@ -201,7 +201,7 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
         }
       />
 
-      <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+      <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
         {flowRows.length === 0 && (
           <div className="py-8 text-center text-[12px] text-muted-foreground/50">No flow columns yet.</div>
         )}
@@ -238,7 +238,7 @@ function ColumnsEditor({ projectId }: { projectId: string }) {
           }
         />
 
-        <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+        <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
           {offFlowRows.length === 0 && (
             <div className="py-6 text-center text-[11.5px] text-muted-foreground/45">
               None. Tickets that stall waiting on external input can sit in a flow column, or you can add a side-channel like <code className="font-mono text-[10.5px] px-1 py-0.5 rounded bg-muted/30">blocked</code>.
@@ -457,7 +457,7 @@ function FieldsEditor({ projectId }: { projectId: string }) {
         }
       />
 
-      <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+      <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
         {drafts.length === 0 && (
           <div className="py-8 text-center text-[12px] text-muted-foreground/50">No custom fields yet.</div>
         )}
@@ -561,7 +561,7 @@ function TemplatesEditor({ projectId }: { projectId: string }) {
         }
       />
 
-      <div className="rounded-xl border border-border/40 overflow-hidden bg-card">
+      <div className="rounded-2xl border border-border/40 overflow-hidden bg-card">
         {drafts.length === 0 ? (
           <div className="py-8 text-center text-[12px] text-muted-foreground/50">No templates yet.</div>
         ) : (

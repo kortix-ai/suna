@@ -127,7 +127,7 @@ export function MaintenanceConfigDialog({
                         key={service.id}
                         onClick={() => toggleService(service.label)}
                         className={cn(
-                          'flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors text-sm',
+                          'flex items-center gap-2 p-2 rounded-2xl border cursor-pointer transition-colors text-sm',
                           isSelected
                             ? 'border-primary bg-primary/5'
                             : 'border-border hover:border-primary/50',

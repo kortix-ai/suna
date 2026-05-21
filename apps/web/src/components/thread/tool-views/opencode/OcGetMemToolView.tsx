@@ -67,7 +67,7 @@ export function OcGetMemToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-2">
             {(source || memoryId) && (
-              <div className="rounded-xl border border-sky-200/50 dark:border-sky-900/50 bg-gradient-to-r from-sky-50/60 via-background to-background dark:from-sky-950/20 p-3">
+              <div className="rounded-2xl border border-sky-200/50 dark:border-sky-900/50 bg-gradient-to-r from-sky-50/60 via-background to-background dark:from-sky-950/20 p-3">
                 <p className="text-[11px] uppercase tracking-[0.18em] text-sky-700/80 dark:text-sky-300/80 mb-2">Request</p>
                 <div className="flex flex-wrap items-center gap-2">
                   {source && (
@@ -110,7 +110,7 @@ export function OcGetMemToolView({
 
                 <div className="px-4 py-3 space-y-3">
                   {report.narrative && (
-                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                    <div className="rounded-2xl border border-border/60 bg-foreground/[0.02] p-3">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                         <FileText className="h-3.5 w-3.5" />
                         Narrative
@@ -120,7 +120,7 @@ export function OcGetMemToolView({
                   )}
 
                   {report.facts.length > 0 && (
-                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                    <div className="rounded-2xl border border-border/60 bg-foreground/[0.02] p-3">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                           <ClipboardList className="h-3.5 w-3.5" />
@@ -140,7 +140,7 @@ export function OcGetMemToolView({
                   )}
 
                   {report.concepts.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/60 bg-foreground/[0.02] p-2.5">
+                    <div className="flex flex-wrap gap-1.5 rounded-2xl border border-border/60 bg-foreground/[0.02] p-2.5">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mr-1">
                         <Tags className="h-3.5 w-3.5" />
                         Concepts
@@ -155,7 +155,7 @@ export function OcGetMemToolView({
                   )}
 
                   {(report.tool || report.prompt || report.session || report.filesRead.length > 0) && (
-                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
+                    <div className="rounded-2xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                         {report.tool && <Badge variant="outline" className="h-5 px-1.5 font-medium bg-background/80">Tool: {report.tool}</Badge>}
                         {report.prompt && <Badge variant="outline" className="h-5 px-1.5 font-medium bg-background/80">Prompt #{report.prompt}</Badge>}
@@ -202,7 +202,7 @@ export function OcGetMemToolView({
 
                 <div className="px-4 py-3 space-y-3">
                   {report.caption && (
-                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                    <div className="rounded-2xl border border-border/60 bg-foreground/[0.02] p-3">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                         <FileText className="h-3.5 w-3.5" />
                         Caption
@@ -212,7 +212,7 @@ export function OcGetMemToolView({
                   )}
 
                   {report.content && (
-                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3">
+                    <div className="rounded-2xl border border-border/60 bg-foreground/[0.02] p-3">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
                         <ClipboardList className="h-3.5 w-3.5" />
                         Content
@@ -222,7 +222,7 @@ export function OcGetMemToolView({
                   )}
 
                   {report.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 rounded-xl border border-border/60 bg-foreground/[0.02] p-2.5">
+                    <div className="flex flex-wrap gap-1.5 rounded-2xl border border-border/60 bg-foreground/[0.02] p-2.5">
                       <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.16em] text-muted-foreground mr-1">
                         <Tags className="h-3.5 w-3.5" />
                         Tags
@@ -236,7 +236,7 @@ export function OcGetMemToolView({
                   )}
 
                   {(report.session || report.updated) && (
-                    <div className="rounded-xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
+                    <div className="rounded-2xl border border-border/60 bg-foreground/[0.02] p-3 space-y-2">
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                         {report.session && <Badge variant="outline" className="h-5 px-1.5 font-medium font-mono bg-background/80">{report.session}</Badge>}
                         {report.updated && <Badge variant="outline" className="h-5 px-1.5 font-medium bg-background/80">Updated: {report.updated}</Badge>}
@@ -252,7 +252,7 @@ export function OcGetMemToolView({
                 <p className="text-sm">{output || 'Get memory failed'}</p>
               </div>
             ) : (
-              <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-3">
                 <pre className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">{output}</pre>
               </div>
             )}

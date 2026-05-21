@@ -1024,8 +1024,9 @@ export default function BrandPage() {
                   <ComponentLabel>Button</ComponentLabel>
                   <ComponentDesc>
                     10 variants × 8 sizes. The foundation of every interaction.
-                    All sizes use <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-full</code> pill shape.
-                    Containers (cards, inputs, dialogs) use <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-2xl</code>.
+                    There are only two radii: pills (buttons, badges) use <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-full</code>;
+                    every container (cards, dialogs, inputs, textareas, selects, info banners, alerts) uses <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-2xl</code>.
+                    Never put <code className="font-mono text-[11px] bg-muted px-1 rounded">rounded-sm/md/lg/xl</code> on a box.
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-6">
@@ -1203,8 +1204,9 @@ export default function BrandPage() {
                 <div id="comp-input" className="mb-12">
                   <ComponentLabel>Input</ComponentLabel>
                   <ComponentDesc>
-                    Text input for forms and search. Supports labels, placeholders,
-                    and disabled state.
+                    Text input for forms and search. The canonical form-control
+                    treatment — Textarea &amp; Select inherit the same bg-card
+                    surface, accent focus ring, and rounded-2xl shape.
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4 max-w-sm">
@@ -1226,7 +1228,9 @@ export default function BrandPage() {
                 <div id="comp-textarea" className="mb-12">
                   <ComponentLabel>Textarea</ComponentLabel>
                   <ComponentDesc>
-                    Multi-line text input for longer content.
+                    Multi-line text input for longer content. Shares one treatment
+                    with Input &amp; Select — bg-card surface, accent focus ring,
+                    rounded-2xl, no shadow.
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="space-y-4 max-w-sm">
@@ -1240,7 +1244,9 @@ export default function BrandPage() {
                 <div id="comp-select" className="mb-12">
                   <ComponentLabel>Select</ComponentLabel>
                   <ComponentDesc>
-                    Dropdown selection from a list of options.
+                    Dropdown selection from a list of options. Matches Input &amp;
+                    Textarea — same bg-card surface, accent focus ring, and
+                    rounded-2xl shape.
                   </ComponentDesc>
                   <DemoContainer>
                     <div className="max-w-xs">

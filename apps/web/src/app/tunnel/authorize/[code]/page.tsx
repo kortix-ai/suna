@@ -168,7 +168,7 @@ function DeviceAuthorize() {
             </div>
 
             {/* Device code hero */}
-            <div className="flex items-center justify-between rounded-xl bg-foreground/[0.04] border border-foreground/[0.06] px-4 py-3 mb-6">
+            <div className="flex items-center justify-between rounded-2xl bg-foreground/[0.04] border border-foreground/[0.06] px-4 py-3 mb-6">
               <div className="flex items-center gap-3">
                 <div className="size-2 rounded-full bg-amber-400 animate-pulse" />
                 <span className="font-mono text-lg font-medium tracking-[0.15em]">

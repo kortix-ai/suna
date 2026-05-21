@@ -37,7 +37,7 @@ export function TunnelAuditTable({ tunnelId }: TunnelAuditTableProps) {
           <div
             key={log.logId}
             className={cn(
-              'flex items-center gap-3 rounded-lg border px-3 py-2 text-sm',
+              'flex items-center gap-3 rounded-2xl border px-3 py-2 text-sm',
               log.success ? 'border-border' : 'border-red-500/20 bg-red-500/5',
             )}
           >

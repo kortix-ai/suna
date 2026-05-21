@@ -222,7 +222,7 @@ export function ThreadBrowser({
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="rounded-xl border bg-card">
+      <div className="rounded-2xl border bg-card">
         <div className="p-4 flex items-center gap-4">
           <div className="flex-1 max-w-sm">
             <div className="relative">

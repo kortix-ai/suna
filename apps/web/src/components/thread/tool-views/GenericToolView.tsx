@@ -407,7 +407,7 @@ function CollapsibleSection({
   const handleToggle = onToggle ?? (() => setInternalExpanded(v => !v));
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden bg-card">
+    <div className="rounded-2xl border border-border overflow-hidden bg-card">
       {/* Section header */}
       <div
         className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors group"
@@ -469,7 +469,7 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
             return (
               <div
                 key={i}
-                className="flex items-start gap-2.5 px-3 py-2 rounded-md bg-foreground/[0.03] border border-border/50"
+                className="flex items-start gap-2.5 px-3 py-2 rounded-2xl bg-foreground/[0.03] border border-border/50"
               >
                 <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-muted-foreground/70" />
                 <p className="text-[12px] leading-relaxed text-foreground/80 font-mono break-words">
@@ -482,7 +482,7 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
             return (
               <div
                 key={i}
-                className="flex items-start gap-2.5 px-3 py-2 rounded-md bg-red-500/[0.04] border border-red-500/25"
+                className="flex items-start gap-2.5 px-3 py-2 rounded-2xl bg-red-500/[0.04] border border-red-500/25"
               >
                 <Ban className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-red-500/90" />
                 <div className="min-w-0 flex-1">
@@ -517,7 +517,7 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
                   </span>
                 </button>
                 {showTrace && (
-                  <div className="mt-1 rounded-lg bg-muted/20 border border-border/30 overflow-hidden">
+                  <div className="mt-1 rounded-2xl bg-muted/20 border border-border/30 overflow-hidden">
                     <pre className="p-3 font-mono text-[10px] leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all max-h-80 overflow-auto">
                       {section.lines.map((line, li) => {
                         if (/^\s+File "/.test(line)) {
@@ -545,7 +545,7 @@ function GenericStructuredOutputDisplay({ sections }: { sections: OutputSectionT
             return (
               <div
                 key={i}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-foreground/[0.03] border border-border/50"
+                className="flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-foreground/[0.03] border border-border/50"
               >
                 <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-foreground/70" />
                 <span className="text-[12px] text-foreground/80 font-mono">
@@ -673,7 +673,7 @@ function GenericToolErrorDisplay({
   // Render validation issues with structured layout
   if (validationIssues && validationIssues.length > 0) {
     return (
-      <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
+      <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/10">
           <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
           <span className="text-xs font-medium text-red-400">{displayType}</span>
@@ -719,7 +719,7 @@ function GenericToolErrorDisplay({
   // If the content is structured JSON, show it with SmartJsonViewer
   if (typeof parsedToolContent === 'object' && parsedToolContent !== null) {
     return (
-      <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
+      <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/10">
           <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
           <span className="text-xs font-medium text-red-400">Error</span>
@@ -732,7 +732,7 @@ function GenericToolErrorDisplay({
   }
 
   return (
-    <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
+    <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/10">
         <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />

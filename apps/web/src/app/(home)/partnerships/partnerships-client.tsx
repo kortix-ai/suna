@@ -55,7 +55,7 @@ export default function PartnershipsPageClient() {
 
         {/* Price */}
         <Reveal delay={0.2}>
-          <div className="mt-14 p-6 rounded-lg border border-border bg-muted/5">
+          <div className="mt-14 p-6 rounded-2xl border border-border bg-muted/5">
             <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
               Monthly Retainer
             </p>
@@ -164,7 +164,7 @@ export default function PartnershipsPageClient() {
 
       {/* ═══ Cal.com Modal ═══ */}
       <Dialog open={calOpen} onOpenChange={setCalOpen}>
-        <DialogContent className="p-0 gap-0 border-none max-w-[min(700px,95vw)] rounded-xl overflow-hidden">
+        <DialogContent className="p-0 gap-0 border-none max-w-[min(700px,95vw)] rounded-2xl overflow-hidden">
           <DialogTitle className="sr-only">
             Schedule a Partnerships Call
           </DialogTitle>

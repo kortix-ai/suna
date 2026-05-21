@@ -78,7 +78,7 @@ export function TaskKanban({
             emptyAction={
               <button
                 onClick={() => onNewTask('todo')}
-                className="w-full py-6 rounded-xl border border-dashed border-border/50 text-[12px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
+                className="w-full py-6 rounded-2xl border border-dashed border-border/50 text-[12px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
               >
                 + Add task
               </button>
@@ -216,7 +216,7 @@ function Column({
       <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 pb-4">
         {isEmpty ? (
           emptyAction || (
-            <div className="py-4 text-center text-[11px] text-muted-foreground/25 rounded-xl border border-dashed border-border/30">
+            <div className="py-4 text-center text-[11px] text-muted-foreground/25 rounded-2xl border border-dashed border-border/30">
               {emptyText}
             </div>
           )
@@ -240,7 +240,7 @@ function RunningCard({ task, onSelect, onDelete }: {
       <ContextMenuTrigger asChild>
         <div
           onClick={onSelect}
-          className="rounded-xl border border-blue-500/15 bg-blue-500/[0.03] p-3 cursor-pointer transition-colors hover:bg-blue-500/[0.06] group"
+          className="rounded-2xl border border-blue-500/15 bg-blue-500/[0.03] p-3 cursor-pointer transition-colors hover:bg-blue-500/[0.06] group"
         >
           <div className="flex items-start gap-2.5 mb-2">
             <span className="relative flex h-2.5 w-2.5 mt-1 shrink-0">
@@ -307,7 +307,7 @@ function TaskCard({ task, onSelect, onDelete, action, badge, dimmed }: {
         <div
           onClick={onSelect}
           className={cn(
-            'rounded-xl border border-border/50 bg-card p-3 cursor-pointer transition-colors',
+            'rounded-2xl border border-border/50 bg-card p-3 cursor-pointer transition-colors',
             'hover:border-border hover:bg-muted/30',
             dimmed && 'opacity-55',
           )}

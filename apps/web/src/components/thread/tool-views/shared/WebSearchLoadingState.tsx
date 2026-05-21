@@ -107,7 +107,7 @@ export function WebSearchLoadingState({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   transition={{ duration: 0.35, delay, ease: [0.16, 1, 0.3, 1] }}
                   className={cn(
-                    'group flex items-center gap-2.5 px-3 py-2 rounded-md',
+                    'group flex items-center gap-2.5 px-3 py-2 rounded-2xl',
                     'bg-foreground/[0.02] border border-border/50',
                   )}
                 >

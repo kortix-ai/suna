@@ -181,7 +181,7 @@ function ProjectMembersInner({
             <IconLoader className="h-4 w-4 animate-spin" /> Loading members…
           </div>
         ) : memberRows.length === 0 ? (
-          <div className="border-border/60 bg-muted/20 text-muted-foreground rounded-xl border border-dashed px-4 py-8 text-center text-sm">
+          <div className="border-border/60 bg-muted/20 text-muted-foreground rounded-2xl border border-dashed px-4 py-8 text-center text-sm">
             Just you. Add teammates to let them see this project.
           </div>
         ) : (

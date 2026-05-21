@@ -88,7 +88,7 @@ export default function SandboxWebTerminal({
 
   if (!isReady || !externalId) {
     return (
-      <div className="rounded-xl border bg-[#09090b] overflow-hidden">
+      <div className="rounded-2xl border bg-[#09090b] overflow-hidden">
         <div className="flex items-center justify-center h-[400px]">
           <div className="text-center space-y-2">
             <Loader2 className="size-5 animate-spin text-yellow-500 mx-auto" />
@@ -101,7 +101,7 @@ export default function SandboxWebTerminal({
 
   if (error && !authUrl) {
     return (
-      <div className="rounded-xl border bg-[#09090b] overflow-hidden">
+      <div className="rounded-2xl border bg-[#09090b] overflow-hidden">
         <div className="flex flex-col items-center justify-center h-[400px] gap-3 px-6 text-center">
           <p className="text-sm text-red-400">{error}</p>
           <Button variant="outline" size="sm" onClick={handleReload}>
@@ -115,7 +115,7 @@ export default function SandboxWebTerminal({
   return (
     <div
       className={cn(
-        'rounded-xl overflow-hidden border bg-[#09090b] flex flex-col transition-all duration-200',
+        'rounded-2xl overflow-hidden border bg-[#09090b] flex flex-col transition-all duration-200',
         isFullscreen && 'fixed inset-3 z-50 shadow-2xl border-primary/20',
       )}
     >

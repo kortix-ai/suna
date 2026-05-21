@@ -79,7 +79,7 @@ export function ChannelsDialog({ open, onOpenChange, projectId }: ChannelsDialog
         </DialogHeader>
 
         {!projectId ? (
-          <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
             Open a project to manage its Slack connection. Each project has its own Slack install stored in
             that project's secrets.
           </div>
@@ -101,7 +101,7 @@ export function ChannelsDialog({ open, onOpenChange, projectId }: ChannelsDialog
 
 function NotConfigured({ errors }: { errors: string[] }) {
   return (
-    <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm">
+    <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm">
       <p className="font-medium text-foreground">Channels aren't configured on this server.</p>
       <p className="mt-1 text-muted-foreground">
         Restart the API with <code className="font-mono text-xs">KORTIX_CHANNELS_MODE=auto</code> (the
@@ -131,7 +131,7 @@ function Connected({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5 text-sm">
+      <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5 text-sm">
         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/15">
           <Check className="h-3.5 w-3.5 text-emerald-500" />
         </span>
@@ -146,7 +146,7 @@ function Connected({
         </div>
       </div>
 
-      <div className="rounded-md border border-border/70 bg-card px-4 py-3 text-sm">
+      <div className="rounded-2xl border border-border/70 bg-card px-4 py-3 text-sm">
         <p className="font-medium text-foreground">Next: enable for this project</p>
         <p className="mt-1 text-muted-foreground">
           Add a <code className="font-mono text-xs">[[channels]]</code> entry with{' '}
@@ -258,7 +258,7 @@ function SelfInstall({ projectId, manifest }: { projectId: string; manifest: str
           </div>
           <pre
             className={cn(
-              'max-h-64 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed',
+              'max-h-64 overflow-auto rounded-2xl border border-border bg-muted/30 p-3 text-xs leading-relaxed',
             )}
           >
             {manifest ?? '…'}
@@ -328,7 +328,7 @@ function SelfInstall({ projectId, manifest }: { projectId: string; manifest: str
       </div>
 
       {error ? (
-        <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+        <p className="rounded-2xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           {error}
         </p>
       ) : null}

@@ -120,7 +120,7 @@ export function MarkdownField({
 
   if (editing) {
     return (
-      <div className={cn('rounded-xl border border-border/40 bg-card focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/20 transition-colors', className)}>
+      <div className={cn('rounded-2xl border border-border/40 bg-card focus-within:border-primary/30 focus-within:ring-1 focus-within:ring-primary/20 transition-colors', className)}>
         <MentionTextarea
           ref={textRef}
           value={draft}
@@ -179,7 +179,7 @@ export function MarkdownField({
         {value.trim() ? (
           <MentionMarkdown content={value} agents={agents} userHandle={userHandle} />
         ) : (
-          <div className="rounded-xl border border-dashed border-border/50 p-8 text-center hover:border-border hover:bg-muted/20 transition-colors">
+          <div className="rounded-2xl border border-dashed border-border/50 p-8 text-center hover:border-border hover:bg-muted/20 transition-colors">
             <p className="text-[12.5px] text-muted-foreground/55">{placeholder}</p>
           </div>
         )}
@@ -190,7 +190,7 @@ export function MarkdownField({
   return (
     <div className={cn('group relative', className)}>
       {value.trim() ? (
-        <div className="rounded-xl border border-border/40 bg-card px-5 sm:px-6 py-5">
+        <div className="rounded-2xl border border-border/40 bg-card px-5 sm:px-6 py-5">
           <MentionMarkdown content={value} agents={agents} userHandle={userHandle} />
         </div>
       ) : (
@@ -198,7 +198,7 @@ export function MarkdownField({
           type="button"
           onClick={startEdit}
           disabled={readOnly}
-          className="w-full rounded-xl border border-dashed border-border/50 p-8 text-center hover:border-border hover:bg-muted/20 transition-colors cursor-pointer"
+          className="w-full rounded-2xl border border-dashed border-border/50 p-8 text-center hover:border-border hover:bg-muted/20 transition-colors cursor-pointer"
         >
           <p className="text-[12.5px] text-muted-foreground/55">{placeholder}</p>
         </button>

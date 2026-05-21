@@ -248,7 +248,7 @@ export function FilePreviewModal() {
 
           {/* History popover */}
           {historyPath && (
-            <div className="absolute bottom-4 right-4 z-30 bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-150">
+            <div className="absolute bottom-4 right-4 z-30 bg-popover border border-border/60 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-150">
               <FileHistoryPopoverContent
                 filePath={historyPath}
                 onClose={() => setHistoryPath(null)}

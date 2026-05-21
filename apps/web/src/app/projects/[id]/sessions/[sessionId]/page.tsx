@@ -198,7 +198,7 @@ function InlineSessionError({
         <h2 className="text-[14px] font-medium text-foreground/90">{title}</h2>
         <p className="text-[12px] leading-relaxed text-muted-foreground/70">{message}</p>
         {detail ? (
-          <p className="max-w-full rounded-md border border-border/60 bg-muted/40 px-2 py-1 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <p className="max-w-full rounded-2xl border border-border/60 bg-muted/40 px-2 py-1 font-mono text-[11px] leading-relaxed text-muted-foreground">
             {detail}
           </p>
         ) : null}

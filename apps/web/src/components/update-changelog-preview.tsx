@@ -71,8 +71,8 @@ export function UpdateChangelogPreview({
       className={cn(
         'overflow-hidden',
         variant === 'muted'
-          ? 'rounded-xl border border-border/60 bg-muted/10'
-          : 'rounded-lg border border-border/50 bg-muted/30',
+          ? 'rounded-2xl border border-border/60 bg-muted/10'
+          : 'rounded-2xl border border-border/50 bg-muted/30',
         className,
       )}
     >

@@ -184,7 +184,7 @@ export function AttachmentGroup({
                         <button
                             onClick={() => setIsModalOpen(true)}
                             className={cn(
-                                "h-[54px] rounded-xl cursor-pointer",
+                                "h-[54px] rounded-2xl cursor-pointer",
                                 "border border-black/10 dark:border-white/10",
                                 "bg-black/5 dark:bg-black/20",
                                 "hover:bg-primary/10 dark:hover:bg-primary/20",

@@ -218,7 +218,7 @@ export function UserMenu({
         align={variant === 'sidebar' ? 'start' : 'end'}
         side={variant === 'sidebar' ? (sidebar?.isMobile ? 'bottom' : 'top') : 'bottom'}
         sideOffset={variant === 'sidebar' ? 6 : 8}
-        className="w-[268px] overflow-hidden rounded-xl border-border/60 p-0"
+        className="w-[268px] overflow-hidden rounded-2xl border-border/60 p-0"
       >
         {/* Identity */}
         <div className="flex items-center gap-2.5 px-3 pt-3 pb-2.5">

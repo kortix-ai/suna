@@ -853,7 +853,7 @@ export default function APIKeysPage() {
                 </div>
               </div>
 
-              <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/20 px-3 py-2.5">
+              <div className="rounded-2xl bg-yellow-500/10 border border-yellow-500/20 px-3 py-2.5">
                 <p className="text-xs text-yellow-700 dark:text-yellow-300">
                   Store this key securely. It cannot be retrieved after closing this dialog.
                 </p>

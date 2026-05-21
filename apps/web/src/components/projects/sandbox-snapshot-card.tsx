@@ -144,11 +144,11 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
 
   // ── Empty / loading / error UI ─────────────────────────────────────────
   if (snapshotsQuery.isLoading) {
-    return <Skeleton className="h-56 rounded-xl" />;
+    return <Skeleton className="h-56 rounded-2xl" />;
   }
   if (snapshotsQuery.isError) {
     return (
-      <section className="rounded-xl border border-destructive/30 bg-destructive/5">
+      <section className="rounded-2xl border border-destructive/30 bg-destructive/5">
         <header className="border-b border-destructive/20 px-6 py-4">
           <h2 className="text-base font-semibold text-destructive">Sandbox snapshot</h2>
         </header>
@@ -166,7 +166,7 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
   if (!data) return null;
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
+    <section className="rounded-2xl border border-border/70 bg-card">
       <header className="border-b border-border/60 px-6 py-4">
         <h2 className="text-base font-semibold text-foreground">Sandbox snapshot</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -178,7 +178,7 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
 
       <div className="space-y-5 px-6 py-5">
         {/* ── Headline status row ─────────────────────────────────────── */}
-        <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+        <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-2 text-sm">
@@ -257,12 +257,12 @@ export function SandboxSnapshotCard({ projectId, canManage }: SandboxSnapshotCar
             Recent builds
           </h3>
           {data.items.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
+            <p className="rounded-2xl border border-dashed border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
               No snapshot builds yet. The first build kicks off automatically when the project is created;
               it typically completes within a few minutes.
             </p>
           ) : (
-            <ul className="divide-y divide-border/50 rounded-lg border border-border/60">
+            <ul className="divide-y divide-border/50 rounded-2xl border border-border/60">
               {data.items.slice(0, 10).map((snap) => (
                 <li key={snap.snapshot_row_id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
                   <code className="font-mono text-xs">{shortSha(snap.commit_sha)}</code>

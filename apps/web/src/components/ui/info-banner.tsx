@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
  */
 
 const bannerVariants = cva(
-  'flex items-start gap-3 rounded-xl border px-4 py-3 text-sm',
+  'flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm',
   {
     variants: {
       tone: {

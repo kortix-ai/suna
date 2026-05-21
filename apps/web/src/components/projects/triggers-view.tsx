@@ -416,7 +416,7 @@ function ProjectTriggersBody({
         )}
 
         {parseErrors.length > 0 && (
-          <section className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
+          <section className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
             <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
               {parseErrors.length} trigger file{parseErrors.length === 1 ? '' : 's'} failed to parse
             </p>
@@ -699,7 +699,7 @@ function CronSection({ trigger }: { trigger: ProjectTrigger }) {
   return (
     <section className="space-y-2">
       <SectionHeader title="Schedule" icon={Timer} />
-      <div className="space-y-1.5 rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
+      <div className="space-y-1.5 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
         <div className="text-sm font-medium text-foreground">{describeCron(expr)}</div>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <code className="rounded bg-background px-1.5 py-0.5 font-mono">{expr}</code>
@@ -721,7 +721,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
     <section className="space-y-3">
       <div className="space-y-2">
         <SectionHeader title="Endpoint" icon={Webhook} />
-        <div className="rounded-xl border border-border/70 bg-muted/20">
+        <div className="rounded-2xl border border-border/70 bg-muted/20">
           <div className="flex items-center gap-2 px-3 py-2">
             <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
               {url}
@@ -769,7 +769,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
             </Button>
           }
         />
-        <pre className="max-h-[200px] overflow-auto rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[10.5px] leading-snug text-foreground">
+        <pre className="max-h-[200px] overflow-auto rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[10.5px] leading-snug text-foreground">
           {curl}
         </pre>
         <p className="text-[10px] text-muted-foreground/70">
@@ -865,7 +865,7 @@ function PromptTemplateSection({
           autoFocus
         />
       ) : (
-        <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground">
+        <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground">
           {trigger.prompt_template}
         </pre>
       )}
@@ -889,7 +889,7 @@ function MetaSection({ trigger }: { trigger: ProjectTrigger }) {
   return (
     <section className="space-y-2">
       <SectionHeader title="Metadata" icon={AlertCircle} />
-      <dl className="rounded-xl border border-border/40 bg-muted/10">
+      <dl className="rounded-2xl border border-border/40 bg-muted/10">
         {rows.map(([label, value], i) => (
           <div
             key={label}
@@ -1186,7 +1186,7 @@ function slugifyName(input: string): string {
               </div>
 
               {error && (
-                <div className="flex items-start gap-2 rounded-xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                <div className="flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
                   <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                   <span>{error}</span>
                 </div>
@@ -1299,7 +1299,7 @@ function SourceCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'group flex h-auto w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+        'group flex h-auto w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors',
         selected
           ? 'border-primary/50 bg-primary/[0.04]'
           : 'border-border/50 bg-muted/20 hover:bg-muted/35',
@@ -1346,7 +1346,7 @@ function WebhookSourceConfig({
         </div>
       </div>
 
-      <div className="space-y-1.5 rounded-xl border bg-muted/50 p-3">
+      <div className="space-y-1.5 rounded-2xl border bg-muted/50 p-3">
         <div className="text-xs font-medium text-muted-foreground">
           External URL
         </div>
@@ -1434,7 +1434,7 @@ function TriggersSkeleton() {
 
 function ForbiddenNotice() {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/20 px-4 py-3 text-foreground">
+    <div className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-foreground">
       <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
       <div className="space-y-0.5 text-sm">
         <p className="font-medium">Access required</p>
@@ -1448,7 +1448,7 @@ function ForbiddenNotice() {
 
 function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3">
       <p className="text-sm font-medium text-destructive">Failed to load triggers</p>
       <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>

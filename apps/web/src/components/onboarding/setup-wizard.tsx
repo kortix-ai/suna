@@ -248,7 +248,7 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
         </div>
 
         {isBillingEnabled() && (
-          <div className="flex items-start gap-3 px-3 py-3 rounded-xl border border-foreground/[0.06] bg-foreground/[0.02]">
+          <div className="flex items-start gap-3 px-3 py-3 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]">
             <div className="h-7 w-7 rounded-lg bg-foreground/[0.05] flex items-center justify-center shrink-0 mt-0.5">
               <CreditCard className="h-3.5 w-3.5 text-foreground/40" />
             </div>
@@ -317,13 +317,13 @@ function AutoTopupPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
         </p>
       </div>
 
-      <div className="rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-[12.5px] text-muted-foreground/60 leading-relaxed">
+      <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-[12.5px] text-muted-foreground/60 leading-relaxed">
         Credits are used when your agent runs on Kortix-managed models instead of your own API keys.
         Most users connect their own provider and rarely use credits.
       </div>
 
       {/* Shared auto top-up card */}
-      <div className="w-full rounded-xl border bg-card/50 p-4">
+      <div className="w-full rounded-2xl border bg-card/50 p-4">
         <AutoTopupCard
           defaultEnabled={true}
           configRef={configRef}
@@ -403,7 +403,7 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
           {connectedProviders.map((p) => (
             <div
               key={p.id}
-              className="flex items-center gap-3 px-3 py-2 rounded-xl border border-foreground/[0.06] bg-foreground/[0.02]"
+              className="flex items-center gap-3 px-3 py-2 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]"
             >
               <ProviderLogo providerID={p.id} name={p.name} size="small" />
               <span className="text-[13px] font-medium text-foreground/80">
@@ -564,7 +564,7 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
                     key={`${model.providerID}:${model.modelID}`}
                     onClick={() => handleSelect(model)}
                     className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2 rounded-xl border text-left transition-colors cursor-pointer',
+                      'w-full flex items-center gap-3 px-3 py-2 rounded-2xl border text-left transition-colors cursor-pointer',
                       isSelected
                         ? 'border-foreground/20 bg-foreground/[0.04]'
                         : 'border-foreground/[0.06] bg-foreground/[0.01] hover:bg-foreground/[0.03]',
@@ -666,7 +666,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
         </div>
 
         {/* Info box */}
-        <div className="rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-[12.5px] text-muted-foreground/60 leading-relaxed">
+        <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-[12.5px] text-muted-foreground/60 leading-relaxed">
           {isCloud ? (
             <>
               All tool keys are <span className="text-foreground/80 font-medium">pre-configured</span> and
@@ -729,7 +729,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
               return (
                 <div
                   key={s.key}
-                  className="flex items-start gap-3 p-2.5 rounded-xl border border-foreground/[0.06] bg-foreground/[0.02]"
+                  className="flex items-start gap-3 p-2.5 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]"
                 >
                   <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.05]">
                     <Icon className="h-3.5 w-3.5 text-foreground/40" />

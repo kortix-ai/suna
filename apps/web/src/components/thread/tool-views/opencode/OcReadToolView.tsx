@@ -155,7 +155,7 @@ function SingleFile({
   const dir = getDirectory(displayPath);
 
   return (
-    <div className="rounded-md border border-border/50 overflow-hidden bg-foreground/[0.02]">
+    <div className="rounded-2xl border border-border/50 overflow-hidden bg-foreground/[0.02]">
       <div
         role={hasContent ? 'button' : undefined}
         onClick={hasContent ? onToggle : undefined}

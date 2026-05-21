@@ -256,7 +256,7 @@ function RawMessage({ message, parts, formatTime }: {
         </div>
       </AccordionTrigger>
       <AccordionContent className="px-3 pb-2">
-        <pre className="p-3 rounded-md bg-muted/40 overflow-x-auto text-[11px] font-mono whitespace-pre-wrap break-all select-text max-h-[400px] overflow-y-auto">
+        <pre className="p-3 rounded-2xl bg-muted/40 overflow-x-auto text-[11px] font-mono whitespace-pre-wrap break-all select-text max-h-[400px] overflow-y-auto">
           {JSON.stringify({ message, parts }, null, 2)}
         </pre>
       </AccordionContent>
@@ -549,7 +549,7 @@ export function SessionContextModal({
         <div className="flex-1 overflow-y-auto -mx-6 px-6 pb-4 space-y-8">
           {/* Aggregate totals — shown when sub-sessions exist */}
           {hasSubSessions && aggregateTotals && (
-            <div className="flex flex-col gap-3 p-4 rounded-lg border border-primary/20 bg-primary/5">
+            <div className="flex flex-col gap-3 p-4 rounded-2xl border border-primary/20 bg-primary/5">
               <div className="flex items-center gap-2">
                 <Network className="size-4 text-primary" />
                 <div className="text-sm font-semibold text-foreground">
@@ -615,7 +615,7 @@ export function SessionContextModal({
           {hasSubSessions && subSessionTree && subSessionTree.children.length > 0 && (
             <div className="flex flex-col gap-2">
               <div className="text-xs text-muted-foreground">Sub-Session Breakdown</div>
-              <div className="border rounded-lg p-3 bg-muted/20">
+              <div className="border rounded-2xl p-3 bg-muted/20">
                 {subSessionTree.children.map((child) => (
                   <SubSessionTreeNode key={child.id} node={child} usd={usd} />
                 ))}
@@ -628,7 +628,7 @@ export function SessionContextModal({
             <div className="text-xs text-muted-foreground">
               Raw Messages ({counts.all})
             </div>
-            <Accordion type="multiple" className="border rounded-lg overflow-hidden">
+            <Accordion type="multiple" className="border rounded-2xl overflow-hidden">
               {(messages ?? []).map((msg) => (
                 <RawMessage
                   key={msg.info.id}

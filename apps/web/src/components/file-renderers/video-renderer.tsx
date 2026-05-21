@@ -328,7 +328,7 @@ export function VideoRenderer({
 
           {/* Video info overlay */}
           {showInfo && videoInfo && (
-            <div className="absolute top-14 right-4 z-10 bg-black/80 p-4 rounded-lg text-sm text-white min-w-[180px]">
+            <div className="absolute top-14 right-4 z-10 bg-black/80 p-4 rounded-2xl text-sm text-white min-w-[180px]">
               <div className="space-y-2">
                 <div className="flex justify-between gap-6">
                   <span className="text-white/60">Resolution</span>

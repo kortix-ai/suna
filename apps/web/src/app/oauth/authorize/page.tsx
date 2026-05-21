@@ -184,7 +184,7 @@ function OAuthConsent() {
           </p>
         </div>
 
-        <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+        <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
             This will allow {clientName} to:
           </p>
@@ -198,13 +198,13 @@ function OAuthConsent() {
           </ul>
         </div>
 
-        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3">
+        <div className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
           <p className="text-xs text-muted-foreground">Signed in as</p>
           <p className="text-sm font-medium truncate">{user.email}</p>
         </div>
 
         {error && (
-          <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
             {error}
           </div>
         )}

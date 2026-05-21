@@ -870,7 +870,7 @@ export function FileOperationToolView({
       <h3 className="text-xl font-semibold mb-6 text-zinc-900 dark:text-zinc-100">
         File Deleted
       </h3>
-      <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 w-full max-w-md text-center mb-4 shadow-sm">
+      <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 w-full max-w-md text-center mb-4 shadow-sm">
         <code className="text-sm font-mono text-zinc-700 dark:text-zinc-300 break-all">
           {processedFilePath || 'Unknown file path'}
         </code>
@@ -1059,7 +1059,7 @@ export function FileOperationToolView({
                   <h3 className="text-xl font-semibold mb-6 text-zinc-900 dark:text-zinc-100">
                     Delete Operation
                   </h3>
-                  <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 w-full max-w-md text-center">
+                  <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 w-full max-w-md text-center">
                     <code className="text-sm font-mono text-zinc-700 dark:text-zinc-300 break-all">
                       {processedFilePath || 'Unknown file path'}
                     </code>

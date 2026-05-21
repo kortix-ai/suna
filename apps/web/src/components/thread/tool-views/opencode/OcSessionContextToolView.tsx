@@ -171,7 +171,7 @@ function MessagesContent({ output }: { output: string }) {
         <div
           key={i}
           className={cn(
-            'rounded-lg px-3 py-2 text-sm',
+            'rounded-2xl px-3 py-2 text-sm',
             msg.role === 'user'
               ? 'bg-muted/50 border border-border/50'
               : 'bg-card border border-border/30',
@@ -226,7 +226,7 @@ function DiffFile({ header, content }: { header: string; content: string }) {
   const deletions = match?.[4] || '0';
 
   return (
-    <div className="border border-border/50 rounded-lg overflow-hidden">
+    <div className="border border-border/50 rounded-2xl overflow-hidden">
       <button
         className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
         onClick={() => setOpen(!open)}

@@ -274,7 +274,7 @@ export default function SandboxPoolAdminPage() {
                   <button
                     onClick={handleReplenish}
                     disabled={isAnyMutating}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-border bg-card hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="w-10 h-10 rounded-lg bg-secondary/10 flex items-center justify-center">
                       {replenishMutation.isPending ? (
@@ -289,7 +289,7 @@ export default function SandboxPoolAdminPage() {
                   <button
                     onClick={handleCleanup}
                     disabled={isAnyMutating}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-border bg-card hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
                       {cleanupMutation.isPending ? (
@@ -304,7 +304,7 @@ export default function SandboxPoolAdminPage() {
                   <button
                     onClick={handleRestart}
                     disabled={isAnyMutating}
-                    className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-border bg-card hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
                       {restartMutation.isPending ? (
@@ -354,19 +354,19 @@ export default function SandboxPoolAdminPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1 p-3 rounded-xl border border-border">
+                  <div className="space-y-1 p-3 rounded-2xl border border-border">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</p>
                     <p className="text-sm font-semibold">{stats?.config?.enabled ? "Enabled" : "Disabled"}</p>
                   </div>
-                  <div className="space-y-1 p-3 rounded-xl border border-border">
+                  <div className="space-y-1 p-3 rounded-2xl border border-border">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Check Interval</p>
                     <p className="text-sm font-semibold">{stats?.config?.check_interval ?? "-"}s</p>
                   </div>
-                  <div className="space-y-1 p-3 rounded-xl border border-border">
+                  <div className="space-y-1 p-3 rounded-2xl border border-border">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Max Age</p>
                     <p className="text-sm font-semibold">{stats?.config?.max_age ? `${Math.round(stats.config.max_age / 60)}min` : "-"}</p>
                   </div>
-                  <div className="space-y-1 p-3 rounded-xl border border-border">
+                  <div className="space-y-1 p-3 rounded-2xl border border-border">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Replenish At</p>
                     <p className="text-sm font-semibold">
                       {stats?.config?.replenish_threshold && stats?.config?.min_size
@@ -374,13 +374,13 @@ export default function SandboxPoolAdminPage() {
                         : "-"}
                     </p>
                   </div>
-                  <div className="space-y-1 p-3 rounded-xl border border-border">
+                  <div className="space-y-1 p-3 rounded-2xl border border-border">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Replenish</p>
                     <p className="text-sm font-semibold">
                       {stats?.last_replenish_at ? new Date(stats.last_replenish_at).toLocaleTimeString() : "Never"}
                     </p>
                   </div>
-                  <div className="space-y-1 p-3 rounded-xl border border-border">
+                  <div className="space-y-1 p-3 rounded-2xl border border-border">
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Cleanup</p>
                     <p className="text-sm font-semibold">
                       {stats?.last_cleanup_at ? new Date(stats.last_cleanup_at).toLocaleTimeString() : "Never"}
@@ -418,7 +418,7 @@ export default function SandboxPoolAdminPage() {
                   {sandboxes.sandboxes.map((sandbox, index) => (
                     <div 
                       key={sandbox.id} 
-                      className="flex items-center justify-between p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50"
+                      className="flex items-center justify-between p-3 rounded-2xl bg-muted/30 hover:bg-muted/50 transition-colors border border-transparent hover:border-border/50"
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center text-xs font-mono text-secondary">

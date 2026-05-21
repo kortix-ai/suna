@@ -156,7 +156,7 @@ function GeneralSection({
           }}
           placeholder="docs/rules.md&#10;.cursorrules&#10;AGENTS.md"
           rows={4}
-          className="font-mono text-sm resize-none rounded-xl"
+          className="font-mono text-sm resize-none rounded-2xl"
         />
       </div>
 
@@ -366,7 +366,7 @@ function PermissionsSection({
           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
             Per-Tool Permissions
           </label>
-          <div className="rounded-xl border border-border/50 bg-card divide-y divide-border/30">
+          <div className="rounded-2xl border border-border/50 bg-card divide-y divide-border/30">
             {PERMISSION_TYPES.map(({ key, label, description }) => (
               <div
                 key={key}
@@ -408,7 +408,7 @@ function PermissionsSection({
           <p className="text-xs text-muted-foreground/60">
             Enable or disable individual tools.
           </p>
-          <div className="rounded-xl border border-border/50 bg-card divide-y divide-border/30 max-h-48 overflow-y-auto">
+          <div className="rounded-2xl border border-border/50 bg-card divide-y divide-border/30 max-h-48 overflow-y-auto">
             {builtinToolIds.map((id) => (
               <div
                 key={id}
@@ -897,7 +897,7 @@ function McpServersSection() {
             return (
               <div
                 key={name}
-                className="rounded-xl border border-border/50 bg-card overflow-hidden"
+                className="rounded-2xl border border-border/50 bg-card overflow-hidden"
               >
                 {/* Server header */}
                 <div className="flex items-center gap-3 px-3 py-2.5">

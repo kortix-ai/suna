@@ -142,7 +142,7 @@ export default function NotificationManagementPage() {
       <div className="flex-1 overflow-hidden">
         <div className="max-w-6xl mx-auto px-6 h-full flex gap-6 py-6">
           <div className="flex-1 overflow-y-auto space-y-4 pr-4">
-            <div className="flex items-center gap-3 p-4 border rounded-lg bg-card">
+            <div className="flex items-center gap-3 p-4 border rounded-2xl bg-card">
               <div className="flex items-center gap-2">
                 <User className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm font-medium">Single User</span>
@@ -233,7 +233,7 @@ export default function NotificationManagementPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                  <div className="flex items-center justify-between p-3 bg-muted/50 rounded-2xl">
                     <span className="text-sm font-medium">Target by:</span>
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-muted-foreground">User ID</span>

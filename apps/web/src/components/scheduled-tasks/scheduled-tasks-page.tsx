@@ -205,7 +205,7 @@ const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
 const LoadingSkeleton = () => (
   <div className="space-y-4">
     {[1, 2, 3].map((i) => (
-      <div key={i} className="rounded-xl border dark:bg-card px-4 py-3">
+      <div key={i} className="rounded-2xl border dark:bg-card px-4 py-3">
         <div className="flex items-center gap-3">
           <Skeleton className="h-12 w-12 rounded-xl" />
           <div className="flex-1 space-y-2">

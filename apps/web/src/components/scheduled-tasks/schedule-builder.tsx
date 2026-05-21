@@ -206,7 +206,7 @@ export function ScheduleBuilder({ value, onChange, disabled }: ScheduleBuilderPr
 
   if (isCustom) {
     return (
-      <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
+      <div className="rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
         <p className="text-sm text-muted-foreground">Custom cron expression</p>
         <Input type="text"
           value={rawCron}

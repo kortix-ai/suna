@@ -234,6 +234,8 @@ export function ChangeRequestsPanel({ open, onClose }: ChangeRequestsPanelProps)
       <OpenChangeRequestDialog
         open={openDialogShown}
         onOpenChange={setOpenDialogShown}
+        projectId={ctx?.projectId ?? ''}
+        defaultBranch={defaultBranch}
         initialHeadRef={initialHeadForDialog}
         onCreated={(crId) => {
           setSelectedCrId(crId);

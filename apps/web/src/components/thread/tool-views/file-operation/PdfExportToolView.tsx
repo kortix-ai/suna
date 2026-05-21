@@ -132,7 +132,7 @@ export function PdfExportToolView({
         {isSuccess ? (
           <div className="space-y-3">
             {/* File info */}
-            <div className="bg-foreground/[0.02] border border-border/50 rounded-md p-2.5">
+            <div className="bg-foreground/[0.02] border border-border/50 rounded-2xl p-2.5">
               <div className="flex items-center gap-2.5">
                 <FileText className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
                 <div className="flex-1 min-w-0">

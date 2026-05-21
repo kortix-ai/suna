@@ -309,7 +309,7 @@ export default function AdminAnalyticsPage() {
               isOverviewFetching && 'opacity-60'
             )}>
               {/* SECTION 1: Tasks & Users Analysis */}
-              <section className="rounded-xl border bg-card">
+              <section className="rounded-2xl border bg-card">
                 <div className="p-5 pb-4 border-b">
                   <h2 className="text-sm font-medium flex items-center gap-2">
                     <Zap className="h-4 w-4 text-muted-foreground" />
@@ -329,31 +329,31 @@ export default function AdminAnalyticsPage() {
                     <div className="space-y-4">
                       {/* Row 1: Core metrics */}
                       <div className="grid grid-cols-7 gap-3">
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-2xl font-bold">{conversionFunnel?.visitors?.toLocaleString() || 0}</p>
                           <p className="text-xs text-muted-foreground">Visitors</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-2xl font-bold">{conversionFunnel?.signups?.toLocaleString() || 0}</p>
                           <p className="text-xs text-muted-foreground">New Signups</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-emerald-500/10">
+                        <div className="text-center p-3 rounded-2xl bg-emerald-500/10">
                           <p className="text-2xl font-bold text-emerald-600">{conversionFunnel?.subscriptions || 0}</p>
                           <p className="text-xs text-muted-foreground">New Paid</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-2xl font-bold">{taskPerformance?.total_runs?.toLocaleString() || 0}</p>
                           <p className="text-xs text-muted-foreground">Total Tasks</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-2xl font-bold">{engagementSummary?.dau || 0}</p>
                           <p className="text-xs text-muted-foreground">Active Users</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-2xl font-bold">{engagementSummary?.avg_threads_per_active_user?.toFixed(1) || '0'}</p>
                           <p className="text-xs text-muted-foreground">Tasks/User</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className={cn(
                             "text-2xl font-bold",
                             (taskPerformance?.success_rate || 0) >= 80 ? "text-emerald-600" :
@@ -368,7 +368,7 @@ export default function AdminAnalyticsPage() {
                       {/* Row 2: Task Distribution & Duration */}
                       <div className="grid grid-cols-6 gap-3">
                         {/* Task Distribution - expanded */}
-                        <div className="col-span-5 p-4 rounded-lg bg-muted/30">
+                        <div className="col-span-5 p-4 rounded-2xl bg-muted/30">
                           <div className="flex items-center justify-between mb-3">
                             <p className="text-xs font-medium text-muted-foreground">Task Distribution by Category</p>
                             {categoryDistribution && (
@@ -398,7 +398,7 @@ export default function AdminAnalyticsPage() {
                         </div>
 
                         {/* Avg Duration */}
-                        <div className="text-center p-4 rounded-lg bg-muted/30 flex flex-col justify-center relative">
+                        <div className="text-center p-4 rounded-2xl bg-muted/30 flex flex-col justify-center relative">
                           <p className="text-2xl font-bold">
                             {(() => {
                               const duration = includeStuckTasks
@@ -433,7 +433,7 @@ export default function AdminAnalyticsPage() {
               </section>
 
               {/* SECTION 2: DAU/WAU/MAU */}
-              <section className="rounded-xl border bg-card">
+              <section className="rounded-2xl border bg-card">
                 <div className="p-5 pb-4 border-b">
                   <h2 className="text-sm font-medium flex items-center gap-2">
                     <Users className="h-4 w-4 text-muted-foreground" />
@@ -448,22 +448,22 @@ export default function AdminAnalyticsPage() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-4 gap-4">
-                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                      <div className="text-center p-4 rounded-2xl bg-muted/30">
                         <p className="text-3xl font-bold">{engagementSummary?.dau || 0}</p>
                         <p className="text-xs text-muted-foreground mt-1">DAU</p>
                         <p className="text-[10px] text-muted-foreground">Daily Active Users</p>
                       </div>
-                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                      <div className="text-center p-4 rounded-2xl bg-muted/30">
                         <p className="text-3xl font-bold">{engagementSummary?.wau || 0}</p>
                         <p className="text-xs text-muted-foreground mt-1">WAU</p>
                         <p className="text-[10px] text-muted-foreground">Weekly Active Users</p>
                       </div>
-                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                      <div className="text-center p-4 rounded-2xl bg-muted/30">
                         <p className="text-3xl font-bold">{engagementSummary?.mau || 0}</p>
                         <p className="text-xs text-muted-foreground mt-1">MAU</p>
                         <p className="text-[10px] text-muted-foreground">Monthly Active Users</p>
                       </div>
-                      <div className="text-center p-4 rounded-lg bg-blue-500/10">
+                      <div className="text-center p-4 rounded-2xl bg-blue-500/10">
                         <p className="text-3xl font-bold text-blue-600">{engagementSummary?.dau_mau_ratio || 0}%</p>
                         <p className="text-xs text-muted-foreground mt-1">DAU/MAU</p>
                         <p className="text-[10px] text-muted-foreground">Stickiness Ratio</p>
@@ -474,7 +474,7 @@ export default function AdminAnalyticsPage() {
               </section>
 
               {/* SECTION 3: Conversion Funnel */}
-              <section className="rounded-xl border bg-card">
+              <section className="rounded-2xl border bg-card">
                 <div className="flex items-center justify-between p-5 pb-4 border-b">
                   <h2 className="text-sm font-medium flex items-center gap-2">
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
@@ -589,7 +589,7 @@ export default function AdminAnalyticsPage() {
               </section>
 
               {/* SECTION 4: Financials */}
-              <section className="rounded-xl border bg-card">
+              <section className="rounded-2xl border bg-card">
                 <div className="p-5 pb-4 border-b flex items-center justify-between">
                   <h2 className="text-sm font-medium flex items-center gap-2">
                     <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -628,26 +628,26 @@ export default function AdminAnalyticsPage() {
                     <div className="space-y-6">
                       {/* Row 1: Key financial metrics */}
                       <div className="grid grid-cols-6 gap-4">
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-xl font-bold">{profitability.total_active_subscriptions?.toLocaleString() ?? '—'}</p>
                           <p className="text-xs text-muted-foreground">Total Active Subs</p>
                           <p className="text-[10px] text-muted-foreground mt-1">
                             Web: {profitability.stripe_active_subscriptions?.toLocaleString() ?? '—'} | App: {profitability.revenuecat_active_subscriptions?.toLocaleString() ?? '—'}
                           </p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-xl font-bold">—</p>
                           <p className="text-xs text-muted-foreground">MRR</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-xl font-bold">${profitability.avg_revenue_per_paid_user.toFixed(0)}</p>
                           <p className="text-xs text-muted-foreground">ARPU</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-xl font-bold">{churnLoading ? '...' : (churnData?.total ?? '—')}</p>
                           <p className="text-xs text-muted-foreground">Churns</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-xl font-bold">
                             {churnLoading ? '...' : (churnData && profitability?.total_active_subscriptions
                               ? `${((churnData.total / profitability.total_active_subscriptions) * 100).toFixed(2)}%`
@@ -655,7 +655,7 @@ export default function AdminAnalyticsPage() {
                           </p>
                           <p className="text-xs text-muted-foreground">Churn Rate</p>
                         </div>
-                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                        <div className="text-center p-3 rounded-2xl bg-muted/30">
                           <p className="text-xl font-bold">—</p>
                           <p className="text-xs text-muted-foreground">LTV</p>
                         </div>
@@ -665,7 +665,7 @@ export default function AdminAnalyticsPage() {
                       <div className="grid grid-cols-2 gap-6">
                         {/* Revenue & Profit Summary */}
                         <div className="space-y-4">
-                          <div className="flex items-center justify-between p-4 rounded-lg bg-emerald-500/10">
+                          <div className="flex items-center justify-between p-4 rounded-2xl bg-emerald-500/10">
                             <div>
                               <p className="text-xs text-muted-foreground">Revenue</p>
                               <p className="text-2xl font-bold text-emerald-600">${profitability.total_revenue.toLocaleString()}</p>
@@ -690,7 +690,7 @@ export default function AdminAnalyticsPage() {
                           </div>
 
                           {/* Per User Metrics */}
-                          <div className="relative flex items-center justify-between p-3 pt-4 rounded-lg border mt-2">
+                          <div className="relative flex items-center justify-between p-3 pt-4 rounded-2xl border mt-2">
                             <span className="absolute top-1 left-2 text-[0.5625rem] text-muted-foreground">Per Paying User ({profitability.unique_paying_users})</span>
                             <div>
                               <p className="text-[10px] text-muted-foreground">Revenue/User</p>
@@ -713,12 +713,12 @@ export default function AdminAnalyticsPage() {
 
                           {/* Platform Split */}
                           <div className="grid grid-cols-2 gap-3">
-                            <div className="p-3 rounded-lg border">
+                            <div className="p-3 rounded-2xl border">
                               <p className="text-xs text-muted-foreground mb-1">Web (Stripe)</p>
                               <p className="text-lg font-bold">${profitability.web_revenue.toLocaleString()}</p>
                               <p className="text-xs text-muted-foreground">Cost: ${profitability.web_cost.toFixed(2)}</p>
                             </div>
-                            <div className="p-3 rounded-lg border">
+                            <div className="p-3 rounded-2xl border">
                               <p className="text-xs text-muted-foreground mb-1">App (RevenueCat)</p>
                               <p className="text-lg font-bold">${profitability.app_revenue.toLocaleString()}</p>
                               <p className="text-xs text-muted-foreground">Cost: ${profitability.app_cost.toFixed(2)}</p>
@@ -930,7 +930,7 @@ export default function AdminAnalyticsPage() {
 
           {/* Users Tab */}
           <TabsContent value="users" className="mt-0">
-            <div className="rounded-xl border bg-card">
+            <div className="rounded-2xl border bg-card">
               <div className="p-5 border-b">
                 <h2 className="text-sm font-medium">User Management</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -964,7 +964,7 @@ export default function AdminAnalyticsPage() {
 
         {/* Loading indicator */}
         {isSearchingUser && pendingUserEmail && (
-          <div className="fixed bottom-4 right-4 bg-card border rounded-lg shadow-lg p-3 flex items-center gap-2">
+          <div className="fixed bottom-4 right-4 bg-card border rounded-2xl shadow-lg p-3 flex items-center gap-2">
             <KortixLoader size="small" />
             <span className="text-sm">Loading user...</span>
           </div>

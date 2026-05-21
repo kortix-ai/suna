@@ -29,10 +29,10 @@ export default function AdminOpsPage() {
         <SectionHeader icon={Activity} title="Operations" />
         <StatRow>
           {Array.from({ length: 4 }).map((_, index) => (
-            <Skeleton key={index} className="h-24 rounded-xl" />
+            <Skeleton key={index} className="h-24 rounded-2xl" />
           ))}
         </StatRow>
-        <Skeleton className="h-80 rounded-xl" />
+        <Skeleton className="h-80 rounded-2xl" />
       </SectionContainer>
     );
   }
@@ -112,7 +112,7 @@ export default function AdminOpsPage() {
 
         <SignalPanel icon={Database} title="Migration">
           <StatusList values={data.migrations.by_status} />
-          <div className="mt-4 flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+          <div className="mt-4 flex items-center justify-between rounded-2xl border border-border/60 px-3 py-2">
             <span className="text-sm text-muted-foreground">Legacy sandboxes</span>
             <Badge variant={data.migrations.active_legacy_sandboxes > 0 ? 'warning' : 'success'}>
               {data.migrations.active_legacy_sandboxes}
@@ -161,7 +161,7 @@ function SignalPanel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-border/60 bg-card p-4">
+    <section className="rounded-2xl border border-border/60 bg-card p-4">
       <div className="mb-4 flex items-center gap-2">
         <Icon className="h-4 w-4 text-muted-foreground" />
         <h2 className="text-sm font-semibold">{title}</h2>

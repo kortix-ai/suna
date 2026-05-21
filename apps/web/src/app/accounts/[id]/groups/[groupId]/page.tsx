@@ -387,11 +387,11 @@ function AddGroupMembersDialog({
           </DialogDescription>
         </DialogHeader>
         {eligible.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
+          <p className="rounded-2xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
             Every account member is already in this group.
           </p>
         ) : (
-          <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2">
+          <div className="max-h-72 space-y-1 overflow-y-auto rounded-2xl border border-border/60 p-2">
             {eligible.map((m) => {
               const checked = selected.has(m.user_id);
               const label = m.email ?? m.user_id;

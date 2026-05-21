@@ -115,7 +115,7 @@ export default function BillingHistory() {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-destructive px-4 py-3">
+      <div className="rounded-2xl border border-destructive px-4 py-3">
         <p className="text-sm text-destructive">{(error as Error).message || 'Failed to load history'}</p>
       </div>
     );
@@ -157,7 +157,7 @@ export default function BillingHistory() {
         </div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-lg border border-border">
+          <div className="overflow-hidden rounded-2xl border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">

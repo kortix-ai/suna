@@ -256,7 +256,7 @@ export function OcImageSearchToolView({
 
             {/* Error state */}
             {isError && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-red-500/30 bg-red-500/[0.04]">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-2xl border border-red-500/30 bg-red-500/[0.04]">
                 <AlertCircle className="w-3.5 h-3.5 text-red-500/90 flex-shrink-0" />
                 <span className="text-[12px] text-foreground/85 tracking-tight">
                   {typeof rawOutput === 'string' ? rawOutput : 'Image search failed'}

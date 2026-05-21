@@ -512,7 +512,7 @@ export function MarkdownEditor({
                   return selection && !selection.empty && selection.from !== selection.to;
                 }}
               >
-                <div className="flex items-center gap-1 bg-background border border-border rounded-lg shadow-lg p-1">
+                <div className="flex items-center gap-1 bg-background border border-border rounded-2xl shadow-lg p-1">
                   <MarkdownToolbar
                     editor={editor}
                     saveState={saveState}
@@ -535,7 +535,7 @@ export function MarkdownEditor({
                   return isEmpty && isRootDepth;
                 }}
               >
-                <div className="flex items-center gap-1 bg-background border border-border rounded-lg shadow-lg p-1">
+                <div className="flex items-center gap-1 bg-background border border-border rounded-2xl shadow-lg p-1">
                   <MarkdownToolbar
                     editor={editor}
                     saveState={saveState}

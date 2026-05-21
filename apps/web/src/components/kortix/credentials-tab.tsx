@@ -77,7 +77,7 @@ export function CredentialsTab({ projectId }: { projectId: string }) {
         )}
 
         {!isLoading && items.length > 0 && (
-          <ul className="rounded-xl border border-border/40 bg-card divide-y divide-border/30 overflow-hidden">
+          <ul className="rounded-2xl border border-border/40 bg-card divide-y divide-border/30 overflow-hidden">
             {items.map((item) => (
               <CredentialRow
                 key={item.id}
@@ -183,7 +183,7 @@ function CredentialRow({
               : <span>· never read</span>}
           </div>
           {value !== null && (
-            <div className="mt-2 rounded-md bg-muted/40 border border-border/40 px-2.5 py-1.5 font-mono text-[12px] break-all">
+            <div className="mt-2 rounded-2xl bg-muted/40 border border-border/40 px-2.5 py-1.5 font-mono text-[12px] break-all">
               {value}
             </div>
           )}
@@ -345,7 +345,7 @@ function CredentialDialog({
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="rounded-xl border border-dashed border-border/50 bg-muted/10 p-8 text-center">
+    <div className="rounded-2xl border border-dashed border-border/50 bg-muted/10 p-8 text-center">
       <KeyRound className="h-6 w-6 text-muted-foreground/40 mx-auto mb-3" />
       <h3 className="text-[13px] font-semibold text-foreground/90">No credentials yet</h3>
       <p className="text-[11.5px] text-muted-foreground/60 mt-1 max-w-md mx-auto">

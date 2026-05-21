@@ -279,7 +279,7 @@ function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, is
           <div
             ref={flyoutRef}
             style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 10001 }}
-            className="w-[260px] max-h-[60vh] overflow-hidden flex flex-col rounded-xl border bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-[0.98] slide-in-from-left-1 duration-100"
+            className="w-[260px] max-h-[60vh] overflow-hidden flex flex-col rounded-2xl border bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-[0.98] slide-in-from-left-1 duration-100"
             onMouseEnter={cancelClose}
             onMouseLeave={scheduleClose}
           >
@@ -453,7 +453,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
 
   if (showBackupCard) {
     return (
-      <div className="rounded-xl border border-primary/15 bg-muted/40 overflow-hidden">
+      <div className="rounded-2xl border border-primary/15 bg-muted/40 overflow-hidden">
         <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
           <Loader2 className="h-3.5 w-3.5 text-primary animate-spin flex-shrink-0" />
           <span className="text-xs font-semibold text-foreground truncate min-w-0">
@@ -481,7 +481,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
 
   if (phase === 'failed') {
     return (
-      <div className="rounded-xl border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
+      <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
         <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
           <Bug className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
           <span className="text-xs font-semibold text-foreground truncate min-w-0">Update failed</span>
@@ -503,7 +503,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
 
   if (isDestructive) {
     return (
-      <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] px-3 py-2.5 flex items-center gap-2">
+      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] px-3 py-2.5 flex items-center gap-2">
         <Loader2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 animate-spin flex-shrink-0" />
         <div className="min-w-0 flex-1">
           <span className="block text-xs font-medium text-amber-700 dark:text-amber-300 truncate">
@@ -523,7 +523,7 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
   const remaining = changes.length - 3;
 
   return (
-    <div className="rounded-xl border border-primary/15 bg-primary/[0.03] overflow-hidden">
+    <div className="rounded-2xl border border-primary/15 bg-primary/[0.03] overflow-hidden">
       {/* Header row */}
       <div className="flex items-center gap-2 px-3 pt-2.5 pb-1.5">
         <span className="relative flex h-2 w-2 flex-shrink-0">
@@ -874,7 +874,7 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
   }
 
   return (
-    <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-3.5 py-3">
+    <div className="rounded-2xl border border-red-500/30 bg-red-500/5 px-3.5 py-3">
       <p className="text-xs font-medium text-red-600 dark:text-red-400">
         Subscription cancelled
       </p>
@@ -1050,7 +1050,7 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
   }
 
   return (
-    <div className="rounded-xl border border-amber-500/18 bg-sidebar-accent/45 px-3 py-2.5 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
+    <div className="rounded-2xl border border-amber-500/18 bg-sidebar-accent/45 px-3 py-2.5 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
       <div className="flex items-start gap-2.5">
         <div className="relative mt-0.5 shrink-0 text-amber-400/90">
           <ShieldAlert className="h-4 w-4" />

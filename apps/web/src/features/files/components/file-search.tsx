@@ -97,7 +97,7 @@ export function FileSearch() {
   return (
     <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={closeSearch}>
       <div className="mx-auto max-w-lg mt-4 px-4" onClick={(e) => e.stopPropagation()}>
-        <div className="rounded-lg border border-border bg-card shadow-2xl overflow-hidden">
+        <div className="rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
           {/* Search input */}
           <div className="flex items-center gap-2 px-3 border-b">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />

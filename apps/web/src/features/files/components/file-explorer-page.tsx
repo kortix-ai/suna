@@ -735,7 +735,7 @@ export function FileExplorerPage() {
 
       {/* Drag & drop overlay */}
       {isDragOverPage && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary/50 rounded-xl pointer-events-none">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary/50 rounded-2xl pointer-events-none">
           <div className="flex flex-col items-center gap-3 text-center">
             <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
               <Upload className="h-8 w-8 text-primary" />
@@ -785,7 +785,7 @@ export function FileExplorerPage() {
 
       {/* History popover */}
       {historyPopoverPath && (
-        <div className="fixed bottom-4 right-4 z-50 bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+        <div className="fixed bottom-4 right-4 z-50 bg-popover border border-border rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
           <FileHistoryPopoverContent
             filePath={historyPopoverPath}
             onClose={() => setHistoryPopoverPath(null)}

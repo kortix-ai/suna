@@ -338,7 +338,7 @@ export function TaskDetailView({
                       });
                     }}
                     className={cn(
-                      'w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors cursor-pointer group text-left',
+                      'w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-colors cursor-pointer group text-left',
                       isRunning
                         ? 'border-blue-500/20 bg-blue-500/[0.03] hover:bg-blue-500/[0.06]'
                         : 'border-border/40 hover:border-border hover:bg-muted/30',
@@ -469,7 +469,7 @@ function AccentCard({
     ? 'text-amber-600 dark:text-amber-400'
     : 'text-emerald-600 dark:text-emerald-400';
   return (
-    <div className={cn('rounded-xl border p-4', toneClass)}>
+    <div className={cn('rounded-2xl border p-4', toneClass)}>
       <div className={cn('flex items-center gap-2 mb-2', labelClass)}>
         {icon}
         <span className="text-[11px] uppercase tracking-[0.08em] font-semibold">

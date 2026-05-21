@@ -124,7 +124,7 @@ export function ExportTranscriptDialog({
 
         {/* Options */}
         <div className="space-y-3">
-          <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/30 px-3 py-2.5">
+          <div className="flex items-center justify-between rounded-2xl border border-border/40 bg-muted/30 px-3 py-2.5">
             <div className="flex items-center gap-2.5">
               <Bot className="h-3.5 w-3.5 text-muted-foreground" />
               <Label htmlFor="opt-metadata" className="text-sm cursor-pointer">
@@ -138,7 +138,7 @@ export function ExportTranscriptDialog({
             />
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/30 px-3 py-2.5">
+          <div className="flex items-center justify-between rounded-2xl border border-border/40 bg-muted/30 px-3 py-2.5">
             <div className="flex items-center gap-2.5">
               <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
               <Label htmlFor="opt-tools" className="text-sm cursor-pointer">
@@ -152,7 +152,7 @@ export function ExportTranscriptDialog({
             />
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/30 px-3 py-2.5">
+          <div className="flex items-center justify-between rounded-2xl border border-border/40 bg-muted/30 px-3 py-2.5">
             <div className="flex items-center gap-2.5">
               <Brain className="h-3.5 w-3.5 text-muted-foreground" />
               <Label htmlFor="opt-thinking" className="text-sm cursor-pointer">
@@ -168,7 +168,7 @@ export function ExportTranscriptDialog({
         </div>
 
         {/* Preview stats */}
-        <div className="rounded-lg bg-muted/50 border border-border/40 px-3 py-2 flex items-center justify-between">
+        <div className="rounded-2xl bg-muted/50 border border-border/40 px-3 py-2 flex items-center justify-between">
           <span className="text-xs text-muted-foreground">
             {isLoadingMessages ? (
               <span className="flex items-center gap-1.5">

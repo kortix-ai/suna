@@ -303,7 +303,7 @@ export function CodeBlock({ children, lang, className }: CodeBlockProps) {
   return (
     <div
       className={cn(
-        'relative rounded-md border border-border/50 bg-foreground/[0.025] overflow-hidden',
+        'relative rounded-2xl border border-border/50 bg-foreground/[0.025] overflow-hidden',
         className,
       )}
     >

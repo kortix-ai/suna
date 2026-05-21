@@ -176,7 +176,7 @@ export function AppearanceTab() {
           </div>
           <label
             htmlFor="disable-tab-selector"
-            className="flex items-center justify-between gap-4 rounded-md border border-border/50 px-3 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
+            className="flex items-center justify-between gap-4 rounded-2xl border border-border/50 px-3 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
           >
             <div className="min-w-0">
               <div className="text-sm font-medium text-foreground">Show tabs</div>
