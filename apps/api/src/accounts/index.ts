@@ -23,6 +23,7 @@ function buildInviteUrl(inviteId: string): string {
   return `${base}/invites/${inviteId}`;
 }
 import { iamRouter } from './iam';
+import { auditRouter } from './audit';
 
 export const accountsRouter = new Hono<AppEnv>();
 
@@ -32,6 +33,7 @@ accountsRouter.use('/*', supabaseAuth);
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
 // correct.
 accountsRouter.route('/', iamRouter);
+accountsRouter.route('/', auditRouter);
 
 // ─── Static (non-parameterized) routes MUST come before /:accountId ────────
 // Hono matches routes in registration order, so anything declared after the

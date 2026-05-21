@@ -52,6 +52,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
+import { AuditTab } from '@/components/iam/audit-tab';
 import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
@@ -146,6 +147,7 @@ export default function AccountSettingsPage() {
   const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
   const canUpdateMember = usePermission(accountId, 'member.update').allowed;
   const canCreateGroup = usePermission(accountId, 'group.create').allowed;
+  const canReadAudit = usePermission(accountId, 'audit.read').allowed;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -221,6 +223,7 @@ export default function AccountSettingsPage() {
               <TabsList>
                 <TabsTrigger value="members">All members</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
+                {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
 
@@ -243,6 +246,12 @@ export default function AccountSettingsPage() {
               <TabsContent value="groups" className="space-y-6">
                 <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
               </TabsContent>
+
+              {canReadAudit && (
+                <TabsContent value="audit" className="space-y-6">
+                  <AuditTab accountId={account.account_id} />
+                </TabsContent>
+              )}
 
               <TabsContent value="settings" className="space-y-6">
                 <GeneralCard

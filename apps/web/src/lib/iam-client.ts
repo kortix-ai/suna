@@ -255,6 +255,48 @@ export async function setMemberSuperAdmin(
   );
 }
 
+// ─── Audit log ─────────────────────────────────────────────────────────────
+
+export interface AuditEvent {
+  event_id: string;
+  occurred_at: string;
+  actor_user_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  ip: string | null;
+  user_agent: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ListAuditFilter {
+  /** Prefix or exact match on action string ("iam.policy" matches every
+   *  iam.policy.* event; "iam.policy.create" matches exact). */
+  action?: string;
+  /** ISO datetime — events at or after. */
+  since?: string;
+  /** Cursor from a previous response's next_cursor. */
+  cursor?: string;
+  /** 1..200, default 50. */
+  limit?: number;
+}
+
+export async function listAuditEvents(accountId: string, filter: ListAuditFilter = {}) {
+  const params = new URLSearchParams();
+  if (filter.action) params.set('action', filter.action);
+  if (filter.since) params.set('since', filter.since);
+  if (filter.cursor) params.set('cursor', filter.cursor);
+  if (filter.limit) params.set('limit', String(filter.limit));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<{ events: AuditEvent[]; next_cursor: string | null }>(
+      `/accounts/${accountId}/audit${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
 // ─── Effective permissions probe ───────────────────────────────────────────
 
 export async function probeEffectivePermission(
