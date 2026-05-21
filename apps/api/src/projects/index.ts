@@ -117,7 +117,13 @@ import {
   type ProjectAccessAction,
   type ProjectRole,
 } from './access';
-import { authorize, listAccessibleResources, PROJECT_ACTIONS } from '../iam';
+import {
+  ACCOUNT_ACTIONS,
+  assertAuthorized,
+  authorize,
+  listAccessibleResources,
+  PROJECT_ACTIONS,
+} from '../iam';
 import {
   KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
@@ -1710,9 +1716,7 @@ projectsApp.get('/', async (c) => {
 projectsApp.post('/', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   let repoUrl: string | null;
   try {
@@ -1774,9 +1778,9 @@ projectsApp.post('/', async (c) => {
 // installation tokens are minted server-side at repo creation time.
 projectsApp.get('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  // Reading + minting an install URL is part of account admin — same gate
+  // as POST/DELETE on this endpoint.
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const row = await getAccountGitHubInstallation(scope.accountId);
   const installUrl = row ? null : await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
@@ -1797,9 +1801,7 @@ projectsApp.post('/github/installation', async (c) => {
   }
 
   const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const installationId = normalizeString(body.installation_id ?? body.installationId);
   if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
@@ -1867,9 +1869,7 @@ projectsApp.post('/github/installation', async (c) => {
 // DELETE /v1/projects/github/installation?account_id=...
 projectsApp.delete('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   await db
     .delete(accountGithubInstallations)
@@ -1884,9 +1884,7 @@ projectsApp.delete('/github/installation', async (c) => {
 projectsApp.post('/create-repo', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   const name = normalizeString(body.name);
   if (!name) return c.json({ error: 'name is required' }, 400);
