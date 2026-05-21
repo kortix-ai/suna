@@ -240,6 +240,82 @@ export async function getRolePermissions(accountId: string, roleId: string) {
   );
 }
 
+export interface ActionCatalogEntry {
+  action: string;
+  label: string;
+  resource_type: ResourceType;
+}
+
+export async function listActions(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ actions: ActionCatalogEntry[] }>(
+      `/accounts/${accountId}/iam/actions`,
+    ),
+  ).actions;
+}
+
+export async function getRoleUsage(accountId: string, roleId: string) {
+  return unwrap(
+    await backendApi.get<{ role_id: string; policy_count: number }>(
+      `/accounts/${accountId}/iam/roles/${roleId}/usage`,
+    ),
+  );
+}
+
+export async function createRole(
+  accountId: string,
+  input: {
+    key: string;
+    name: string;
+    description?: string;
+    resourceType: ResourceType;
+    actions: string[];
+  },
+) {
+  return unwrap(
+    await backendApi.post<IamRole>(`/accounts/${accountId}/iam/roles`, input, {
+      showErrors: false,
+    }),
+  );
+}
+
+export async function updateRole(
+  accountId: string,
+  roleId: string,
+  patch: { name?: string; description?: string | null },
+) {
+  return unwrap(
+    await backendApi.patch<IamRole>(
+      `/accounts/${accountId}/iam/roles/${roleId}`,
+      patch,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function updateRolePermissions(
+  accountId: string,
+  roleId: string,
+  actions: string[],
+) {
+  return unwrap(
+    await backendApi.put<{ role_id: string; actions: string[] }>(
+      `/accounts/${accountId}/iam/roles/${roleId}/permissions`,
+      { actions },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function deleteRole(accountId: string, roleId: string) {
+  return unwrap(
+    await backendApi.delete<{ deleted: boolean }>(
+      `/accounts/${accountId}/iam/roles/${roleId}`,
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── Super-admin promotion ─────────────────────────────────────────────────
 
 export async function setMemberSuperAdmin(

@@ -270,6 +270,156 @@ export async function getRolePermissions(roleId: string): Promise<string[]> {
   return rows.map((r) => r.action);
 }
 
+/**
+ * Create a custom (account-scoped, non-system) role with its initial action
+ * set in a single transaction. Throws if (accountId, key) collides — the
+ * route layer maps that to a 409. `key`, `name`, `resourceType`, and
+ * `actions` must already be validated by the caller (route handler).
+ */
+export async function createCustomRole(args: {
+  accountId: string;
+  key: string;
+  name: string;
+  description: string | null;
+  resourceType: ResourceType;
+  actions: string[];
+}): Promise<IamRole> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(iamRoles)
+      .values({
+        accountId: args.accountId,
+        key: args.key,
+        name: args.name,
+        description: args.description,
+        resourceType: args.resourceType,
+        isSystem: false,
+      })
+      .returning();
+    if (args.actions.length > 0) {
+      await tx
+        .insert(iamRolePermissions)
+        .values(args.actions.map((action) => ({ roleId: row.roleId, action })));
+    }
+    return { ...row, resourceType: row.resourceType as ResourceType };
+  });
+}
+
+/**
+ * Update a custom role's mutable fields. `key` is intentionally immutable —
+ * existing policies reference the role by id (not key) but tooling, audit
+ * logs, and external mentions assume keys are stable. resourceType is also
+ * immutable because changing it would invalidate every policy that scoped
+ * a target of the old type.
+ */
+export async function updateCustomRole(
+  accountId: string,
+  roleId: string,
+  patch: { name?: string; description?: string | null },
+): Promise<IamRole | null> {
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.name !== undefined) updates.name = patch.name;
+  if (patch.description !== undefined) updates.description = patch.description;
+
+  const [row] = await db
+    .update(iamRoles)
+    .set(updates)
+    .where(
+      and(
+        eq(iamRoles.roleId, roleId),
+        // The accountId guard prevents anyone from editing a system role
+        // (which has account_id IS NULL) via this code path.
+        eq(iamRoles.accountId, accountId),
+      ),
+    )
+    .returning();
+  if (!row) return null;
+  return { ...row, resourceType: row.resourceType as ResourceType };
+}
+
+/**
+ * Replace the action set of a custom role wholesale. Diffs in memory then
+ * issues one INSERT and one DELETE so the bus carries minimal traffic and
+ * concurrent updates can't shuffle the set into an intermediate state.
+ */
+export async function replaceRolePermissions(
+  accountId: string,
+  roleId: string,
+  actions: string[],
+): Promise<{ updated: boolean; added: number; removed: number }> {
+  // Verify the role exists AND belongs to this account before touching
+  // permissions — protects against tampering with system roles (NULL
+  // accountId never matches a real accountId).
+  const [role] = await db
+    .select({ roleId: iamRoles.roleId })
+    .from(iamRoles)
+    .where(and(eq(iamRoles.roleId, roleId), eq(iamRoles.accountId, accountId)))
+    .limit(1);
+  if (!role) return { updated: false, added: 0, removed: 0 };
+
+  const desired = new Set(actions);
+  const current = await db
+    .select({ action: iamRolePermissions.action })
+    .from(iamRolePermissions)
+    .where(eq(iamRolePermissions.roleId, roleId));
+  const have = new Set(current.map((r) => r.action));
+
+  const toAdd = [...desired].filter((a) => !have.has(a));
+  const toRemove = [...have].filter((a) => !desired.has(a));
+
+  await db.transaction(async (tx) => {
+    if (toAdd.length > 0) {
+      await tx
+        .insert(iamRolePermissions)
+        .values(toAdd.map((action) => ({ roleId, action })))
+        .onConflictDoNothing();
+    }
+    if (toRemove.length > 0) {
+      await tx.execute(sql`
+        DELETE FROM kortix.iam_role_permissions
+        WHERE role_id = ${roleId}
+          AND action IN (${sql.join(toRemove.map((a) => sql`${a}`), sql`, `)})
+      `);
+    }
+    // Touch updated_at on the role so audit ordering reflects the change.
+    await tx
+      .update(iamRoles)
+      .set({ updatedAt: new Date() })
+      .where(eq(iamRoles.roleId, roleId));
+  });
+
+  return { updated: true, added: toAdd.length, removed: toRemove.length };
+}
+
+/**
+ * Delete a custom role. The DB schema has ON DELETE RESTRICT on
+ * iam_policies.role_id, so a role currently referenced by any policy will
+ * raise a foreign-key error — the route maps that to a 409 with a clear
+ * message. Returns null if the role doesn't exist or is a system role.
+ */
+export async function deleteCustomRole(
+  accountId: string,
+  roleId: string,
+): Promise<boolean> {
+  const rows = await db
+    .delete(iamRoles)
+    .where(and(eq(iamRoles.roleId, roleId), eq(iamRoles.accountId, accountId)))
+    .returning({ roleId: iamRoles.roleId });
+  return rows.length > 0;
+}
+
+/** Count policies still referencing a role — used by the delete-warning UI. */
+export async function countPoliciesUsingRole(
+  accountId: string,
+  roleId: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`COUNT(*)::int` })
+    .from(iamPolicies)
+    .where(and(eq(iamPolicies.accountId, accountId), eq(iamPolicies.roleId, roleId)));
+  return row?.n ?? 0;
+}
+
 // ─── Policies ──────────────────────────────────────────────────────────────
 
 export type IamPolicy = {

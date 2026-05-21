@@ -52,6 +52,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
+import { RolesTab } from '@/components/iam/roles-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { usePermission } from '@/lib/use-permission';
 import {
@@ -147,6 +148,7 @@ export default function AccountSettingsPage() {
   const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
   const canUpdateMember = usePermission(accountId, 'member.update').allowed;
   const canCreateGroup = usePermission(accountId, 'group.create').allowed;
+  const canCreateRole = usePermission(accountId, 'role.create').allowed;
   const canReadAudit = usePermission(accountId, 'audit.read').allowed;
 
   return (
@@ -223,6 +225,7 @@ export default function AccountSettingsPage() {
               <TabsList>
                 <TabsTrigger value="members">All members</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
+                <TabsTrigger value="roles">Roles</TabsTrigger>
                 {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
@@ -245,6 +248,10 @@ export default function AccountSettingsPage() {
 
               <TabsContent value="groups" className="space-y-6">
                 <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
+              </TabsContent>
+
+              <TabsContent value="roles" className="space-y-6">
+                <RolesTab accountId={account.account_id} canCreate={canCreateRole} />
               </TabsContent>
 
               {canReadAudit && (

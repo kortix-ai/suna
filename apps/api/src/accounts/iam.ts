@@ -11,6 +11,8 @@ import { db } from '../shared/db';
 import type { AppEnv } from '../types';
 import {
   ACCOUNT_ACTIONS,
+  ACTION_CATALOG,
+  VALID_ACTIONS,
   assertAuthorized,
   authorize,
   resourceTypeForAction,
@@ -18,8 +20,11 @@ import {
 } from '../iam';
 import {
   addGroupMembers,
+  countPoliciesUsingRole,
+  createCustomRole,
   createGroup,
   createPolicy,
+  deleteCustomRole,
   deleteGroup,
   deletePolicy,
   getGroup,
@@ -32,6 +37,8 @@ import {
   listPolicies,
   listRoles,
   removeGroupMember,
+  replaceRolePermissions,
+  updateCustomRole,
   updateGroup,
   updatePolicy,
   type IamPolicy,
@@ -650,6 +657,281 @@ iamRouter.get('/:accountId/iam/roles/:roleId/permissions', async (c) => {
     key: role.key,
     actions,
   });
+});
+
+// Catalog of every valid action the system understands, grouped by resource
+// type for the Create/Edit role picker. Public to any reader of roles
+// (everyone with role.read) — there's nothing sensitive about knowing which
+// actions exist; we don't reveal who has them.
+iamRouter.get('/:accountId/iam/actions', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
+  return c.json({
+    actions: ACTION_CATALOG.map((e) => ({
+      action: e.action,
+      label: e.label,
+      resource_type: e.resourceType,
+    })),
+  });
+});
+
+// Usage count — drives the "in use by N policies" warning on the role
+// detail page so admins know before they try to delete a referenced role.
+iamRouter.get('/:accountId/iam/roles/:roleId/usage', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const roleId = c.req.param('roleId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
+
+  const role = await getRoleById(accountId, roleId);
+  if (!role) return c.json({ error: 'role not found' }, 404);
+  const policyCount = await countPoliciesUsingRole(accountId, roleId);
+  return c.json({ role_id: roleId, policy_count: policyCount });
+});
+
+// ─── Custom role mutations ────────────────────────────────────────────────
+// System roles (account_id IS NULL) are immutable — they're seeded from
+// code on every API boot, so mutations through this surface would be lost
+// anyway. We block them with a clear 403 instead of letting the user spend
+// minutes on a form before learning that.
+
+const ROLE_KEY_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
+
+function validateRoleKey(raw: unknown): { ok: true; key: string } | { ok: false; error: string } {
+  if (typeof raw !== 'string') return { ok: false, error: 'key is required' };
+  const key = raw.trim();
+  if (!ROLE_KEY_PATTERN.test(key)) {
+    return {
+      ok: false,
+      error:
+        'key must start with a letter and contain only lowercase letters, digits, or underscores (max 64 chars)',
+    };
+  }
+  return { ok: true, key };
+}
+
+function validateActionList(raw: unknown): { ok: true; actions: string[] } | { ok: false; error: string } {
+  if (!Array.isArray(raw)) return { ok: false, error: 'actions must be an array' };
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const a of raw) {
+    if (typeof a !== 'string') return { ok: false, error: 'each action must be a string' };
+    if (!VALID_ACTIONS.has(a)) return { ok: false, error: `unknown action: ${a}` };
+    if (seen.has(a)) continue;
+    seen.add(a);
+    out.push(a);
+  }
+  return { ok: true, actions: out };
+}
+
+iamRouter.post('/:accountId/iam/roles', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_CREATE);
+
+  const body = await readBody(c);
+
+  const keyCheck = validateRoleKey(body.key);
+  if (!keyCheck.ok) return c.json({ error: keyCheck.error }, 400);
+
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (name.length > 128) return c.json({ error: 'name too long (max 128)' }, 400);
+
+  const description = typeof body.description === 'string' ? body.description : null;
+
+  const resourceTypeRaw = body.resourceType ?? body.resource_type;
+  if (!isResourceType(resourceTypeRaw)) {
+    return c.json({ error: 'resourceType must be a valid resource type' }, 400);
+  }
+
+  const actionCheck = validateActionList(body.actions ?? []);
+  if (!actionCheck.ok) return c.json({ error: actionCheck.error }, 400);
+  if (actionCheck.actions.length === 0) {
+    return c.json({ error: 'at least one action is required' }, 400);
+  }
+
+  try {
+    const role = await createCustomRole({
+      accountId,
+      key: keyCheck.key,
+      name,
+      description,
+      resourceType: resourceTypeRaw,
+      actions: actionCheck.actions,
+    });
+
+    await auditIam(c, {
+      accountId,
+      action: 'iam.role.create',
+      resourceType: 'iam_role',
+      resourceId: role.roleId,
+      after: {
+        key: role.key,
+        name: role.name,
+        resource_type: role.resourceType,
+        actions: actionCheck.actions,
+      },
+    });
+
+    return c.json(
+      {
+        role_id: role.roleId,
+        key: role.key,
+        name: role.name,
+        description: role.description,
+        resource_type: role.resourceType,
+        is_system: role.isSystem,
+      },
+      201,
+    );
+  } catch (err: unknown) {
+    if (isUniqueViolation(err)) {
+      return c.json({ error: 'A role with this key already exists in the account' }, 409);
+    }
+    throw err;
+  }
+});
+
+iamRouter.patch('/:accountId/iam/roles/:roleId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const roleId = c.req.param('roleId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_UPDATE);
+
+  // System role guard — getRoleById returns it if accountId IS NULL, so
+  // check is_system explicitly and reject before any write attempt.
+  const existing = await getRoleById(accountId, roleId);
+  if (!existing) return c.json({ error: 'role not found' }, 404);
+  if (existing.isSystem) {
+    return c.json({ error: 'System roles cannot be edited' }, 403);
+  }
+
+  const body = await readBody(c);
+  const patch: { name?: string; description?: string | null } = {};
+  if (typeof body.name === 'string') {
+    const name = body.name.trim();
+    if (!name || name.length > 128) return c.json({ error: 'invalid name' }, 400);
+    patch.name = name;
+  }
+  if (body.description !== undefined) {
+    patch.description = typeof body.description === 'string' ? body.description : null;
+  }
+
+  const updated = await updateCustomRole(accountId, roleId, patch);
+  if (!updated) return c.json({ error: 'role not found' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.role.update',
+    resourceType: 'iam_role',
+    resourceId: roleId,
+    before: { name: existing.name, description: existing.description },
+    after: { name: updated.name, description: updated.description },
+  });
+
+  return c.json({
+    role_id: updated.roleId,
+    key: updated.key,
+    name: updated.name,
+    description: updated.description,
+    resource_type: updated.resourceType,
+    is_system: updated.isSystem,
+  });
+});
+
+iamRouter.put('/:accountId/iam/roles/:roleId/permissions', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const roleId = c.req.param('roleId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_UPDATE);
+
+  const existing = await getRoleById(accountId, roleId);
+  if (!existing) return c.json({ error: 'role not found' }, 404);
+  if (existing.isSystem) {
+    return c.json({ error: 'System role permissions cannot be edited' }, 403);
+  }
+
+  const body = await readBody(c);
+  const actionCheck = validateActionList(body.actions ?? []);
+  if (!actionCheck.ok) return c.json({ error: actionCheck.error }, 400);
+  if (actionCheck.actions.length === 0) {
+    return c.json({ error: 'a role must grant at least one action' }, 400);
+  }
+
+  const before = await getRolePermissions(roleId);
+  const result = await replaceRolePermissions(accountId, roleId, actionCheck.actions);
+  if (!result.updated) return c.json({ error: 'role not found' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.role.permissions.update',
+    resourceType: 'iam_role',
+    resourceId: roleId,
+    before: { actions: before },
+    after: { actions: actionCheck.actions, added: result.added, removed: result.removed },
+  });
+
+  return c.json({ role_id: roleId, actions: actionCheck.actions });
+});
+
+iamRouter.delete('/:accountId/iam/roles/:roleId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const roleId = c.req.param('roleId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_DELETE);
+
+  const existing = await getRoleById(accountId, roleId);
+  if (!existing) return c.json({ error: 'role not found' }, 404);
+  if (existing.isSystem) {
+    return c.json({ error: 'System roles cannot be deleted' }, 403);
+  }
+
+  // Friendly pre-flight: count policies referencing the role so we can
+  // return a clear message instead of relying on a DB FK error.
+  const usage = await countPoliciesUsingRole(accountId, roleId);
+  if (usage > 0) {
+    return c.json(
+      {
+        error: `Cannot delete: this role is attached to ${usage} ${usage === 1 ? 'policy' : 'policies'}. Remove those policies first.`,
+        policy_count: usage,
+      },
+      409,
+    );
+  }
+
+  try {
+    const ok = await deleteCustomRole(accountId, roleId);
+    if (!ok) return c.json({ error: 'role not found' }, 404);
+  } catch (err: unknown) {
+    // Race: a policy was created referencing this role between the count
+    // and the delete. ON DELETE RESTRICT (FK code 23503) catches it.
+    const cause = (err as { cause?: { code?: string } })?.cause;
+    if (cause?.code === '23503') {
+      return c.json(
+        {
+          error: 'Cannot delete: a policy was just created referencing this role.',
+        },
+        409,
+      );
+    }
+    throw err;
+  }
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.role.delete',
+    resourceType: 'iam_role',
+    resourceId: roleId,
+    before: {
+      key: existing.key,
+      name: existing.name,
+      resource_type: existing.resourceType,
+    },
+  });
+
+  return c.json({ deleted: true });
 });
 
 // ─── Super-admin promotion ─────────────────────────────────────────────────
