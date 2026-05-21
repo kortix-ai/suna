@@ -9,14 +9,15 @@ import { ChannelsDialog } from '@/components/channels/channels-dialog';
 import { useSlackInstall } from '@/hooks/channels/use-channels-installations';
 
 export default function ProjectChannelsPage() {
-  return <ChannelsView />;
-}
-
-export function ChannelsView() {
   const params = useParams<{ id: string }>();
   const projectId = params?.id ?? null;
+  return <ChannelsView projectId={projectId} />;
+}
+
+export function ChannelsView({ projectId }: { projectId: string | null }) {
   const [open, setOpen] = useState(false);
   const { data: install, isLoading } = useSlackInstall(projectId);
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
@@ -27,10 +28,10 @@ export function ChannelsView() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-2xl px-4 py-8">
           {isLoading ? (
-            <Skeleton className="h-28 w-full rounded-2xl" />
+            <Skeleton className="h-28 w-full rounded-lg" />
           ) : install ? (
             <div className="space-y-4">
-              <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
+              <div className="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
                 <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/15">
                   <Check className="h-3.5 w-3.5 text-emerald-500" />
                 </span>
@@ -48,7 +49,7 @@ export function ChannelsView() {
                 </Button>
               </div>
 
-              <div className="rounded-2xl border border-border/60 bg-card p-4">
+              <div className="rounded-lg border border-border/60 bg-card p-4">
                 <p className="text-sm font-medium text-foreground">Enable the bot for this project</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Add a <code className="font-mono text-xs">[[channels]]</code> entry with{' '}
@@ -61,7 +62,7 @@ export function ChannelsView() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="rounded-2xl border border-border/70 bg-card p-5">
+              <div className="rounded-lg border border-border/70 bg-card p-5">
                 <p className="text-sm font-medium text-foreground">Slack isn't connected yet</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Connect a Slack workspace to this project. Tokens are stored encrypted in this project's

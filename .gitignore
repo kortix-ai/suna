@@ -83,3 +83,10 @@ core/kortix-master/opencode/.kortix/
 .pulumi
 .pulumi/
 .vercel
+
+
+kortix
+kortix-darwin-arm64
+kortix-darwin-x64
+kortix-linux-x64
+kortix-linux-arm64

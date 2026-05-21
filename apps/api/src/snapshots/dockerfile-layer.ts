@@ -25,10 +25,18 @@ export interface BuildLayeredDockerfileOpts {
   agentBinaryPath: string;
   /** Path the snapshot builder will reference for the entrypoint script. */
   entrypointScriptPath: string;
+  /**
+   * Path the snapshot builder will reference for the agent-cli source tree
+   * (apps/sandbox/agent-cli). The layer COPYs it into /opt/kortix/agent-cli
+   * and runs install-shims.sh to wire each *.ts (excluding lib/) as a
+   * /usr/local/bin/<name> shim — that's how `slack`, `kchannel`, … land on
+   * PATH for the agent to invoke from inside the sandbox.
+   */
+  agentCliPath: string;
 }
 
 export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
-  const { userDockerfile, opencodeVersion, agentBinaryPath, entrypointScriptPath } = opts;
+  const { userDockerfile, opencodeVersion, agentBinaryPath, entrypointScriptPath, agentCliPath } = opts;
   const trimmed = userDockerfile.trimEnd();
 
   const kortixLayer = [
@@ -40,12 +48,19 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     'USER root',
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git nodejs npm \\',
+    '        ca-certificates curl git nodejs npm unzip \\',
     '    && rm -rf /var/lib/apt/lists/*',
     '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',
     '    && opencode --version',
+    '',
+    // bun runtime for the agent CLIs (slack, kchannel, …). The user\'s base
+    // image likely doesn\'t have it, so install via the official script and
+    // surface on PATH for all users.
+    'RUN curl -fsSL https://bun.com/install | bash \\',
+    '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
+    '    && bun --version',
     '',
     // Install the `kortix` CLI for in-sandbox use. Curls the platform's
     // install script which downloads the right binary for this image's
@@ -58,7 +73,10 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '',
     `COPY ${agentBinaryPath} /usr/local/bin/kortix-agent`,
     `COPY ${entrypointScriptPath} /usr/local/bin/kortix-entrypoint`,
-    'RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint',
+    `COPY ${agentCliPath}/ /opt/kortix/agent-cli/`,
+    'RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint \\',
+    '        /opt/kortix/agent-cli/install-shims.sh \\',
+    '    && bash /opt/kortix/agent-cli/install-shims.sh /opt/kortix/agent-cli',
     '',
     // Pre-seed /workspace with a sentinel file. Daytona\'s runtime appears
     // to clean up *empty* /workspace directories shortly after the

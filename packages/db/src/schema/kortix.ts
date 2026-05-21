@@ -448,8 +448,10 @@ export const projectTriggerEvents = kortixSchema.table(
   ],
 );
 
-export const chatPlatformEnum = kortixSchema.enum('chat_platform', ['slack']);
-
+// Tiny lookup table — only used in OAuth (multi-tenant Kortix Slack app) mode
+// so the shared /v1/webhooks/slack endpoint can translate Slack's team_id into
+// the Kortix project that owns the workspace. BYO mode routes by URL
+// (/v1/webhooks/slack/:projectId) and skips this table entirely.
 export const chatChannelBindings = kortixSchema.table(
   'chat_channel_bindings',
   {
@@ -457,35 +459,35 @@ export const chatChannelBindings = kortixSchema.table(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    platform: chatPlatformEnum('platform').notNull(),
+    platform: varchar('platform', { length: 32 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    installedAt: timestamp('installed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('idx_chat_channel_bindings_project_platform').on(table.projectId, table.platform),
-    index('idx_chat_channel_bindings_lookup').on(table.platform, table.workspaceId),
+    uniqueIndex('idx_chat_channel_bindings_workspace').on(table.platform, table.workspaceId),
+    index('idx_chat_channel_bindings_project').on(table.projectId),
   ],
 );
 
+// Thread → session mapping. First Slack/Telegram message in a thread spawns
+// a Kortix session and writes a row here. Follow-up messages in the same
+// thread look up the existing session and deliver the prompt as a follow-up
+// to opencode — same sandbox, same conversation, no fresh boot.
 export const chatThreads = kortixSchema.table(
   'chat_threads',
   {
-    rowId: uuid('row_id').defaultRandom().primaryKey(),
-    platform: chatPlatformEnum('platform').notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    channelId: varchar('channel_id', { length: 128 }).notNull(),
-    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    threadRowId: uuid('thread_row_id').defaultRandom().primaryKey(),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    sessionId: text('session_id').references(() => projectSessions.sessionId, {
-      onDelete: 'set null',
-    }),
-    openedBy: varchar('opened_by', { length: 256 }),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
     openedAt: timestamp('opened_at', { withTimezone: true }).defaultNow().notNull(),
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }).defaultNow().notNull(),
-    closedAt: timestamp('closed_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('idx_chat_threads_thread').on(
@@ -974,8 +976,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   triggerEvents: many(projectTriggerEvents),
   sessions: many(projectSessions),
   runtimeSnapshots: many(projectRuntimeSnapshots),
-  chatChannelBindings: many(chatChannelBindings),
-  chatThreads: many(chatThreads),
 }));
 
 export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
@@ -1046,24 +1046,6 @@ export const projectRuntimeSnapshotsRelations = relations(projectRuntimeSnapshot
   project: one(projects, {
     fields: [projectRuntimeSnapshots.projectId],
     references: [projects.projectId],
-  }),
-}));
-
-export const chatChannelBindingsRelations = relations(chatChannelBindings, ({ one }) => ({
-  project: one(projects, {
-    fields: [chatChannelBindings.projectId],
-    references: [projects.projectId],
-  }),
-}));
-
-export const chatThreadsRelations = relations(chatThreads, ({ one }) => ({
-  project: one(projects, {
-    fields: [chatThreads.projectId],
-    references: [projects.projectId],
-  }),
-  session: one(projectSessions, {
-    fields: [chatThreads.sessionId],
-    references: [projectSessions.sessionId],
   }),
 }));
 

@@ -248,7 +248,7 @@ function normalizeConfig(parsed: Partial<Config>): Config {
   for (const [name, value] of Object.entries(hosts)) {
     if (!value || typeof value !== 'object') continue;
     const h = value as Partial<Host>;
-    if (typeof h.token !== 'string' || !h.token) continue;
+    if (typeof h.token !== 'string') continue;
     cleaned[name] = {
       url: h.url ?? DEFAULT_API_BASE,
       token: h.token,

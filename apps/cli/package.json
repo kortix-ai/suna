@@ -9,7 +9,14 @@
   },
   "scripts": {
     "cli": "bun run src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bundle": "bash bundle/bundle-host.sh",
+    "bundle:all": "bash bundle/bundle-all.sh",
+    "bundle:darwin-arm64": "bash bundle/bundle-darwin-arm64.sh",
+    "bundle:darwin-x64": "bash bundle/bundle-darwin-x64.sh",
+    "bundle:linux-x64": "bash bundle/bundle-linux-x64.sh",
+    "bundle:linux-arm64": "bash bundle/bundle-linux-arm64.sh",
+    "bundle:clean": "rm -f bundle/kortix bundle/kortix-darwin-* bundle/kortix-linux-*"
   },
   "dependencies": {
     "@kortix/starter": "workspace:*",

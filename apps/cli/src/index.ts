@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { runChannels } from './commands/channels.ts';
 import { runCr } from './commands/cr.ts';
 import { runCreate } from './commands/create.ts';
 import { runEnv } from './commands/env.ts';
@@ -38,6 +39,7 @@ const COMMANDS: readonly Command[] = [
   { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
   { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
   { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
+  { name: 'channels', args: '<subcommand>', blurb: 'Connect Slack to this project (status/connect/disconnect/manifest)' },
   { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
   { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
   { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
@@ -125,6 +127,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));
+  }
+  if (argv[0] === 'channels') {
+    return runChannels(argv.slice(1));
   }
   if (argv[0] === 'cr') {
     return runCr(argv.slice(1));

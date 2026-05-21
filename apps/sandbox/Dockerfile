@@ -61,7 +61,14 @@ RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
 
 COPY --from=builder /agent/dist/kortix-agent /usr/local/bin/kortix-agent
 COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
-RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint
+# Agent CLIs. Source ships at /opt/kortix/agent-cli; install-shims.sh
+# generates a /usr/local/bin/<name> shim for every *.ts file (excluding
+# the shared lib/ dir) so opencode can invoke them by bare name. Adding a
+# new CLI: drop a .ts file under a category subdir, rebuild the image.
+# See apps/sandbox/agent-cli/README.md for the contract.
+COPY apps/sandbox/agent-cli/ /opt/kortix/agent-cli/
+RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint /opt/kortix/agent-cli/install-shims.sh \
+    && bash /opt/kortix/agent-cli/install-shims.sh /opt/kortix/agent-cli
 
 ENV KORTIX_WORKSPACE=/workspace
 WORKDIR /workspace

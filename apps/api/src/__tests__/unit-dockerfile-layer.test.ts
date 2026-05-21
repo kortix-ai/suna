@@ -9,6 +9,7 @@ const COMMON = {
   opencodeVersion: '1.14.28',
   agentBinaryPath: 'kortix-agent',
   entrypointScriptPath: 'kortix-entrypoint',
+  agentCliPath: 'kortix-agent-cli',
 };
 
 describe('buildLayeredDockerfile', () => {

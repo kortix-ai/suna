@@ -28,7 +28,7 @@
  */
 
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
-import { copyFile, rm, stat } from 'node:fs/promises';
+import { copyFile, cp, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Image } from '@daytonaio/sdk';
@@ -59,6 +59,8 @@ const AGENT_BIN_PATH = process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH
   || resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/dist/kortix-agent');
 const ENTRYPOINT_PATH = process.env.KORTIX_SNAPSHOT_ENTRYPOINT_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh');
+const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
+  || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
 import {
   materializeRepoContext,
   readRepoFile,
@@ -581,8 +583,10 @@ async function prepareBuildContext(
   );
   await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
+  await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
   await copyFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
+  await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
 
   const composedPath = join(contextDir, '.kortix-snapshot.Dockerfile');
   const composed = buildLayeredDockerfile({
@@ -590,6 +594,7 @@ async function prepareBuildContext(
     opencodeVersion: OPENCODE_VERSION,
     agentBinaryPath: 'kortix-agent',
     entrypointScriptPath: 'kortix-entrypoint',
+    agentCliPath: 'kortix-agent-cli',
   });
   await Bun.write(composedPath, composed);
 
@@ -618,6 +623,26 @@ async function assertExists(path: string, envVarHint: string): Promise<void> {
     if (err instanceof SnapshotBuildError) throw err;
     throw new SnapshotBuildError(
       `Required artifact missing: ${path}. Set ${envVarHint} or run \`bun run build\` in apps/kortix-sandbox-agent-server.`,
+      err,
+    );
+  }
+}
+
+async function assertExistsDir(path: string, envVarHint: string): Promise<void> {
+  if (!isAbsolute(path)) {
+    throw new SnapshotBuildError(
+      `${envVarHint} must be an absolute path (got "${path}")`,
+    );
+  }
+  try {
+    const s = await stat(path);
+    if (!s.isDirectory()) {
+      throw new SnapshotBuildError(`${envVarHint} (${path}) is not a directory`);
+    }
+  } catch (err) {
+    if (err instanceof SnapshotBuildError) throw err;
+    throw new SnapshotBuildError(
+      `Required directory missing: ${path}. Set ${envVarHint} or ship apps/sandbox/agent-cli.`,
       err,
     );
   }

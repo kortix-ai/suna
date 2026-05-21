@@ -18,6 +18,7 @@ import {
   kortixApiKeys,
   projects,
   projectMembers,
+  projectSecrets,
   projectTriggerEvents,
   projectTriggerRuntime,
   projectTriggers,
@@ -39,7 +40,6 @@ import {
   getDiffBetweenShas,
   getFileHistory,
   invalidateProjectMirror,
-  grepRepoFiles,
   listBranches,
   listCommits,
   listRepoFiles,
@@ -49,7 +49,6 @@ import {
   readRepoFile,
   resolveBranchTip,
   resolveCommitSha,
-  searchRepoFileNames,
 } from './git';
 import {
   getCrById,
@@ -72,13 +71,6 @@ import {
 } from './github';
 import { buildStarterFiles } from './starter';
 import {
-  createManagedRepo,
-  mintRepoPushToken,
-  deleteManagedRepo,
-  seedRepoWithFiles,
-  isFreestyleGitConfigured,
-} from './freestyle-git';
-import {
   ensureBuildForLatestCommit,
   listSnapshotsForProject,
 } from '../snapshots/builder';
@@ -88,17 +80,12 @@ import { config, type SandboxProviderName } from '../config';
 import { encodeSessionLlmToken } from '../shared/session-llm-token';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
 import { recordAuditEvent } from '../shared/audit';
-import { isValidSecretName } from './secrets';
 import {
-  resolveVaultForActor,
-  resolveProjectGlobalSecret,
-  upsertProjectItem,
-  listProjectItems,
-  deleteProjectItemByScope,
-  setItemGrants,
-  visibilityOf,
-  type VaultVisibility,
-} from '../vault';
+  encryptProjectSecret,
+  getProjectSecretValue,
+  isValidSecretName,
+  listProjectSecrets,
+} from './secrets';
 import {
   effectiveProjectRole,
   isAccountManager,
@@ -108,17 +95,6 @@ import {
   type ProjectAccessAction,
   type ProjectRole,
 } from './access';
-import {
-  ACCOUNT_ACTIONS,
-  assertAuthorized,
-  authorize,
-  listAccessibleResources,
-  PROJECT_ACTIONS,
-  syncProjectMemberPolicy,
-  removeProjectMemberPolicy,
-  syncMemberAccountPolicy,
-} from '../iam';
-import { lookupUserIdByEmail } from '../shared/users';
 import {
   KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
@@ -140,13 +116,6 @@ import {
   type AppSourceSpec,
   type AppSpec,
 } from './apps';
-import {
-  channelSpecToTomlEntry,
-  extractChannels,
-  type ChannelSpec,
-} from '../channels/manifest';
-import { loadProjectChannels } from '../channels/load';
-import { syncProjectChannelBindings } from '../channels/sync';
 import {
   deleteSlackInstall,
   loadSlackInstall,
@@ -212,12 +181,6 @@ function serializeSession(row: ProjectSessionRow) {
   };
 }
 
-/** Base URL of the web dashboard (NOT the API). Source of truth for any
- *  "open this in the browser" link the CLI/clients render. */
-function dashboardBaseUrl(): string {
-  return (config.KORTIX_DASHBOARD_URL || config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
-}
-
 function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole }) {
   return {
     project_id: row.projectId,
@@ -231,51 +194,9 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     last_opened_at: row.lastOpenedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
-    dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
   };
-}
-
-interface ProjectGitRemote {
-  /** freestyle | github | gitlab | bitbucket | generic */
-  provider: string;
-  /** managed | github_app | vault | none */
-  authMethod: string;
-  /** Freestyle repo id (managed repos). */
-  repoId: string | null;
-  /** Auth credential reference — Freestyle identity id for `managed`, a
-   *  vault_item id for `vault`, a GitHub installation id for `github_app`. */
-  ref: string | null;
-}
-
-/**
- * Normalize a project's git-remote reference from `metadata.git` (the canonical
- * typed shape), falling back to the legacy `metadata.freestyle` / `metadata.github`
- * blobs for rows created before the consolidation. This is the single place that
- * understands "how do I authenticate to this project's repo".
- */
-function getProjectGitRemote(metadata: unknown): ProjectGitRemote {
-  const meta = (metadata ?? {}) as Record<string, any>;
-  const git = meta.git;
-  if (git && typeof git === 'object') {
-    const method = String(git.auth?.method ?? 'none');
-    return {
-      provider: String(git.provider ?? 'generic'),
-      authMethod: method,
-      repoId: git.repo_id ?? null,
-      ref: git.auth?.ref ?? null,
-    };
-  }
-  // Legacy fallbacks.
-  if (meta.git_provider === 'freestyle' || meta.freestyle) {
-    const fs = meta.freestyle ?? {};
-    return { provider: 'freestyle', authMethod: 'managed', repoId: fs.repo_id ?? null, ref: fs.identity_id ?? null };
-  }
-  if (meta.github) {
-    return { provider: 'github', authMethod: 'github_app', repoId: null, ref: null };
-  }
-  return { provider: 'generic', authMethod: 'none', repoId: null, ref: null };
 }
 
 /**
@@ -422,6 +343,16 @@ async function checkConcurrentSessionCap(accountId: string, userId: string, requ
   };
 }
 
+function serializeProjectSecret(row: typeof projectSecrets.$inferSelect) {
+  return {
+    secret_id: row.secretId,
+    project_id: row.projectId,
+    name: row.name,
+    created_by: row.createdBy,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
 
 function serializeProjectTrigger(row: ProjectTriggerRow) {
   const publicConfig = { ...normalizeJsonObject(row.config) };
@@ -554,13 +485,6 @@ function deriveProjectName(repoUrl: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-/** True when a GitHub repo-create error is a name collision (HTTP 422). On
- *  POST /user/repos a 422 is, in practice, always "name already exists". */
-function isRepoNameTakenError(error: unknown): boolean {
-  const m = ((error as Error)?.message ?? '').toLowerCase();
-  return m.includes('already exists') || m.includes('name already') || m.includes('(422)');
-}
-
 async function readBody(c: Context) {
   try {
     return await c.req.json<Record<string, unknown>>();
@@ -688,24 +612,8 @@ function projectCreatedWithServerPat(project: ProjectRow): boolean {
 
 async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
-  authSource: 'app_installation' | 'pat' | 'managed' | 'none';
+  authSource: 'app_installation' | 'pat' | 'none';
 }> {
-  // Managed Freestyle repos: mint a fresh scoped token from the project's
-  // stored identity so the backend itself can clone/push (snapshot builds,
-  // session branches, CR merges). Without this the backend hits
-  // git.freestyle.sh unauthenticated and gets a 403.
-  const remote = getProjectGitRemote(project.metadata);
-  if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && remote.repoId) {
-    if (!(await isFreestyleGitConfigured())) return { authSource: 'none' };
-    try {
-      const push = await mintRepoPushToken({ repoId: remote.repoId, identityId: remote.ref });
-      return { auth: { token: push.token, source: 'managed' }, authSource: 'managed' };
-    } catch (err) {
-      console.warn(`[projects] failed to mint Freestyle token for ${project.projectId}:`, err);
-      return { authSource: 'none' };
-    }
-  }
-
   const installation = await getAccountGitHubInstallation(project.accountId);
   if (installation) {
     const token = await createInstallationToken(installation.installationId);
@@ -738,27 +646,6 @@ async function getProjectMemberRole(projectId: string, userId: string): Promise<
   return (row?.projectRole as ProjectRole | undefined) ?? null;
 }
 
-/**
- * Ensure a user is a member of the org (account). If they aren't, add them as a
- * plain Member (+ IAM baseline policy). Returns their account role. This makes
- * project access project-centric: "give X access to this project" auto-joins
- * them to the org instead of erroring.
- */
-async function ensureOrgMembership(
-  accountId: string,
-  userId: string,
-  grantedBy: string,
-): Promise<AccountRole> {
-  const existing = await getAccountMembership(userId, accountId);
-  if (existing) return existing.accountRole as AccountRole;
-  await db
-    .insert(accountMembers)
-    .values({ userId, accountId, accountRole: 'member' })
-    .onConflictDoNothing();
-  await syncMemberAccountPolicy({ accountId, userId, accountRole: 'member', createdBy: grantedBy });
-  return 'member';
-}
-
 async function grantProjectRole(input: {
   accountId: string;
   projectId: string;
@@ -785,13 +672,6 @@ async function grantProjectRole(input: {
         updatedAt: now,
       },
     });
-  await syncProjectMemberPolicy({
-    accountId: input.accountId,
-    projectId: input.projectId,
-    userId: input.userId,
-    projectRole: input.role,
-    createdBy: input.grantedBy,
-  });
 }
 
 async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
@@ -834,15 +714,6 @@ async function resolveProjectAccount(c: Context, body?: Record<string, unknown>)
   };
 }
 
-// Coarse legacy actions map onto representative IAM action strings.
-// `manage` is the strongest gate — only a full project admin grants
-// project.delete, which implies write and read.
-const LEGACY_ACTION_TO_IAM: Record<ProjectAccessAction, string> = {
-  read: PROJECT_ACTIONS.PROJECT_READ,
-  write: PROJECT_ACTIONS.PROJECT_WRITE,
-  manage: PROJECT_ACTIONS.PROJECT_DELETE,
-};
-
 async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   const [row] = await db
@@ -860,23 +731,9 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
   const accountRole = membership.accountRole as AccountRole;
   const projectRole = await getProjectMemberRole(projectId, userId);
   const effectiveRole = effectiveProjectRole(accountRole, projectRole);
-
-  // The IAM engine bridges existing account_role + project_members rows, so
-  // pre-IAM accounts behave identically; policies are additive on top. If
-  // the request came via a PAT with its own narrowing policies, the engine
-  // will evaluate those instead of inheriting the user's permissions.
-  const actingTokenId = (c as any).get('iamTokenId') as string | undefined;
-  const result = await authorize(
-    userId,
-    row.accountId,
-    LEGACY_ACTION_TO_IAM[action],
-    { type: 'project', id: projectId },
-    actingTokenId,
-  );
-  if (!result.allowed) {
+  if (!roleAllows(effectiveRole, action)) {
     throw new HTTPException(403, { message: 'You do not have access to this project' });
   }
-
   (c as any).set('accountId', row.accountId);
 
   return {
@@ -897,14 +754,13 @@ async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
+  gitAuthToken?: string | null;
 }): Promise<Record<string, string>> {
   // Project secrets + project-scoped CLI token funnel into the sandbox env.
   // Run them in parallel — the CLI token path mints a fresh token per session
   // boot so the in-container CLI works out of the box.
   const [runtimeSecrets, cliToken] = await Promise.all([
-    // Resolve the vault for the acting member: project-global env + this
-    // member's private/select-member items, most-specific-wins (see vault).
-    resolveVaultForActor({ projectId: input.projectId, userId: input.userId }),
+    listProjectSecrets(input.projectId),
     mintSessionCliToken(input.projectId, input.userId, input.accountId, input.sessionId),
   ]);
   const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
@@ -934,6 +790,10 @@ async function buildSessionSandboxEnvVars(input: {
     ...(cliToken ? { KORTIX_TOKEN: cliToken, KORTIX_CLI_TOKEN: cliToken } : {}),
     KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
+    // GitHub auth for the in-sandbox `git clone` — kortix-agent reads
+    // KORTIX_GITHUB_TOKEN to materialize the project repo on first boot.
+    // Required for private repos; harmless for public ones.
+    ...(input.gitAuthToken ? { KORTIX_GITHUB_TOKEN: input.gitAuthToken } : {}),
   };
 }
 
@@ -1067,6 +927,7 @@ export async function createProjectSession(input: {
         baseRef,
         agentName,
         initialPrompt,
+        gitAuthToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
@@ -1364,7 +1225,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
 
   const rawBody = await c.req.text();
   const secret = spec.secretEnv
-    ? await resolveProjectGlobalSecret(project.projectId, spec.secretEnv)
+    ? await getProjectSecretValue(project.projectId, spec.secretEnv)
     : null;
   if (!secret) {
     return c.json({ error: 'Webhook secret is not configured' }, 409);
@@ -1701,15 +1562,6 @@ export function startProjectTriggerScheduler(): void {
       });
     }
 
-    import('../channels/sweep').then(({ runChannelBindingSweep }) =>
-      runChannelBindingSweep().then((result) => {
-        if (result.inserted || result.updated || result.removed) {
-          console.log('[channels] binding sweep completed', result);
-        }
-      }),
-    ).catch((error) => {
-      console.error('[channels] binding sweep failed:', error);
-    });
   }, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
 }
@@ -1742,29 +1594,6 @@ projectsApp.get('/', async (c) => {
     })));
   }
 
-  // Non-manager: ask the IAM engine which project IDs they can read. The
-  // engine consults explicit policies (direct + via groups), denies, the
-  // legacy project_members bridge, and the (now-tightened) member bridge.
-  // Token requests are evaluated as the token's identity when narrowing
-  // policies exist on the PAT.
-  const actingTokenId = (c as any).get('iamTokenId') as string | undefined;
-  const accessible = await listAccessibleResources(
-    scope.userId,
-    scope.accountId,
-    PROJECT_ACTIONS.PROJECT_READ,
-    'project',
-    actingTokenId,
-  );
-
-  if (accessible.mode === 'none') return c.json([]);
-  // 'allow_only' with an empty set means no policy granted access yet.
-  if (accessible.mode === 'allow_only' && accessible.allowed.size === 0) {
-    return c.json([]);
-  }
-
-  // We still need project_members rows to compute project_role for the
-  // serializer, even though the engine already used them for the access
-  // decision. Cheap join — same accountId+userId.
   const grants = await db
     .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -1772,29 +1601,21 @@ projectsApp.get('/', async (c) => {
       eq(projectMembers.accountId, scope.accountId),
       eq(projectMembers.userId, scope.userId),
     ));
+
+  if (grants.length === 0) return c.json([]);
+
   const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
-
-  const baseWhere = and(
-    eq(projects.accountId, scope.accountId),
-    eq(projects.status, 'active'),
-  );
-  const idFilter =
-    accessible.mode === 'allow_only'
-      ? and(baseWhere, inArray(projects.projectId, Array.from(accessible.allowed)))
-      : baseWhere; // 'all_except' or 'all' — fetch every active project, filter below
-
   const rows = await db
     .select()
     .from(projects)
-    .where(idFilter)
+    .where(and(
+      eq(projects.accountId, scope.accountId),
+      eq(projects.status, 'active'),
+      inArray(projects.projectId, grants.map((g) => g.projectId)),
+    ))
     .orderBy(desc(projects.updatedAt));
 
-  const filtered =
-    accessible.mode === 'all_except'
-      ? rows.filter((r) => !accessible.denied.has(r.projectId))
-      : rows;
-
-  return c.json(filtered.map((row) => {
+  return c.json(rows.map((row) => {
     const projectRole = roleByProject.get(row.projectId) ?? null;
     return serializeProject(row, {
       projectRole,
@@ -1807,7 +1628,9 @@ projectsApp.get('/', async (c) => {
 projectsApp.post('/', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   let repoUrl: string | null;
   try {
@@ -1869,9 +1692,9 @@ projectsApp.post('/', async (c) => {
 // installation tokens are minted server-side at repo creation time.
 projectsApp.get('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  // Reading + minting an install URL is part of account admin — same gate
-  // as POST/DELETE on this endpoint.
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   const row = await getAccountGitHubInstallation(scope.accountId);
   const installUrl = row ? null : await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
@@ -1892,7 +1715,9 @@ projectsApp.post('/github/installation', async (c) => {
   }
 
   const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   const installationId = normalizeString(body.installation_id ?? body.installationId);
   if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
@@ -1960,7 +1785,9 @@ projectsApp.post('/github/installation', async (c) => {
 // DELETE /v1/projects/github/installation?account_id=...
 projectsApp.delete('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   await db
     .delete(accountGithubInstallations)
@@ -1975,7 +1802,9 @@ projectsApp.delete('/github/installation', async (c) => {
 projectsApp.post('/create-repo', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   const name = normalizeString(body.name);
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -2000,41 +1829,21 @@ projectsApp.post('/create-repo', async (c) => {
     return c.json({ error: message }, 503);
   }
 
-  // Create the GitHub repo. If the name is already taken on the account (422),
-  // transparently retry as `name-2`, `name-3`, … so creation "just works"
-  // instead of failing with a cryptic 502 (the way a managed Freestyle repo
-  // never collides). The user's typed name stays the project's display name;
-  // only the repo slug gets a suffix.
-  let repo: Awaited<ReturnType<typeof createRepo>> | undefined;
-  let lastRepoError: unknown = null;
-  for (let attempt = 0; attempt < 12 && !repo; attempt += 1) {
-    const candidate = attempt === 0 ? name : `${name}-${attempt + 1}`;
-    try {
-      repo = await createRepo({
-        name: candidate,
-        isPrivate,
-        description: description ?? undefined,
-        autoInit: true,
-        auth: githubAuth.auth,
-      });
-    } catch (error) {
-      lastRepoError = error;
-      if (isRepoNameTakenError(error)) continue; // name taken — try the next suffix
-      return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
-    }
-  }
-  if (!repo) {
-    return c.json(
-      {
-        error:
-          `Could not find an available repository name near "${name}" — too many already exist. ` +
-          `Pick a different name. ${(lastRepoError as Error)?.message ?? ''}`.trim(),
-      },
-      409,
-    );
+  let repo;
+  try {
+    repo = await createRepo({
+      name,
+      isPrivate,
+      description: description ?? undefined,
+      autoInit: true,
+      auth: githubAuth.auth,
+    });
+  } catch (error) {
+    const message = (error as Error).message || 'Failed to create GitHub repository';
+    return c.json({ error: message }, 502);
   }
 
-  const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(name);
+  const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);
   const defaultBranch = repo.default_branch || 'main';
   const now = new Date();
 
@@ -2114,176 +1923,6 @@ projectsApp.post('/create-repo', async (c) => {
   });
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
-});
-
-// POST /v1/projects/provision
-// Creates a *managed* project: a fresh Freestyle git repo on Kortix's own
-// Freestyle account (server FREESTYLE_API_KEY) + the project row + a scoped,
-// write-only push token. The repo is created empty; `kortix ship` pushes the
-// caller's local working tree as the first commit. This is the zero-setup
-// default for users who don't bring their own git origin — no GitHub account,
-// no OAuth dance, no questions at `kortix init`.
-projectsApp.post('/provision', async (c) => {
-  const body = await readBody(c);
-  const scope = await resolveProjectAccount(c, body);
-  if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-
-  const provider = normalizeString(body.provider) ?? 'freestyle';
-  if (provider !== 'freestyle') {
-    return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
-  }
-  if (!(await isFreestyleGitConfigured())) {
-    return c.json(
-      { error: 'Managed git is not configured on this server (FREESTYLE_API_KEY missing)' },
-      503,
-    );
-  }
-
-  const name = normalizeString(body.name) ?? normalizeString(body.project_name ?? body.projectName);
-  if (!name) return c.json({ error: 'name is required' }, 400);
-  if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
-    return c.json(
-      { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
-      400,
-    );
-  }
-  // Freestyle repo names are slug-ish; derive a safe slug from the display name.
-  const repoSlug =
-    name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
-    'kortix-project';
-  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
-
-  let repo: Awaited<ReturnType<typeof createManagedRepo>>;
-  let push: Awaited<ReturnType<typeof mintRepoPushToken>>;
-  try {
-    // Managed repos are always private (createManagedRepo defaults isPublic:false).
-    repo = await createManagedRepo({ name: repoSlug, defaultBranch });
-    push = await mintRepoPushToken({ repoId: repo.repoId });
-  } catch (error) {
-    return c.json({ error: (error as Error).message || 'Failed to provision managed repo' }, 502);
-  }
-
-  // Seed the starter into the empty repo when the caller has no local working
-  // tree to push (web "Create project"). The CLI leaves this false and pushes
-  // its own files on first `kortix ship`. If seeding fails we roll back the
-  // orphan repo so we never leave a half-created project behind.
-  const seedStarter = body.seed_starter === true || body.seedStarter === true;
-  let seeded = false;
-  if (seedStarter) {
-    try {
-      const starter = buildStarterFiles({ projectName: name, repoFullName: repoSlug });
-      await seedRepoWithFiles({
-        repoId: repo.repoId,
-        token: push.token,
-        files: starter,
-        branch: repo.defaultBranch,
-        commitMessage: 'chore: scaffold Kortix project',
-      });
-      seeded = true;
-    } catch (error) {
-      try { await deleteManagedRepo(repo.repoId); } catch { /* best effort */ }
-      return c.json({ error: (error as Error).message || 'Failed to seed project repo' }, 502);
-    }
-  }
-
-  const now = new Date();
-  const [row] = await db
-    .insert(projects)
-    .values({
-      accountId: scope.accountId,
-      name,
-      repoUrl: repo.gitUrl,
-      defaultBranch: repo.defaultBranch,
-      manifestPath: 'kortix.toml',
-      status: 'active',
-      metadata: {
-        git: {
-          url: repo.gitUrl,
-          default_branch: repo.defaultBranch,
-          provider: 'freestyle',
-          auth: { method: 'managed', ref: push.identityId },
-          repo_id: repo.repoId,
-        },
-      },
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projects.accountId, projects.repoUrl],
-      set: { name, defaultBranch: repo.defaultBranch, status: 'active', updatedAt: now },
-    })
-    .returning();
-
-  await grantProjectRole({
-    accountId: scope.accountId,
-    projectId: row.projectId,
-    userId: scope.userId,
-    role: 'manager',
-    grantedBy: scope.userId,
-  });
-
-  // Seeded repos have a Dockerfile now → kick the first snapshot build so
-  // sessions boot fast. Unseeded (CLI) repos build after the CLI's first push,
-  // keeping `kortix ship` a pure git sync.
-  if (seeded) {
-    void kickInitialSnapshotBuild(row, scope.accountId, { gitAuthToken: push.token });
-  }
-
-  return c.json(
-    {
-      ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
-      push_token: push.token,
-      repo_id: repo.repoId,
-      seeded,
-    },
-    201,
-  );
-});
-
-// POST /v1/projects/:projectId/git-token
-// Mint a fresh scoped push token for a *managed* (Freestyle) project so the
-// CLI can push on a later `kortix ship` without persisting credentials in
-// .git/config. Returns 409 for BYO projects — those push with the user's own
-// git remote auth, not a Kortix-minted token.
-projectsApp.post('/:projectId/git-token', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
-  const remote = getProjectGitRemote(meta);
-  if (remote.provider !== 'freestyle' || remote.authMethod !== 'managed' || !remote.repoId) {
-    return c.json({ error: 'Project is not a managed Freestyle repo' }, 409);
-  }
-  if (!(await isFreestyleGitConfigured())) {
-    return c.json({ error: 'Managed git is not configured on this server' }, 503);
-  }
-
-  let push: Awaited<ReturnType<typeof mintRepoPushToken>>;
-  try {
-    push = await mintRepoPushToken({ repoId: remote.repoId, identityId: remote.ref });
-  } catch (error) {
-    return c.json({ error: (error as Error).message || 'Failed to mint push token' }, 502);
-  }
-
-  // Persist the identity id into the canonical metadata.git when it changed
-  // (e.g. minted for a legacy row that had no identity yet).
-  if (push.identityId !== remote.ref) {
-    const nextGit = {
-      url: loaded.row.repoUrl,
-      default_branch: loaded.row.defaultBranch,
-      provider: 'freestyle',
-      auth: { method: 'managed', ref: push.identityId },
-      repo_id: remote.repoId,
-    };
-    await db
-      .update(projects)
-      .set({ metadata: { ...meta, git: nextGit }, updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId));
-  }
-
-  return c.json({ push_token: push.token, repo_id: remote.repoId, repo_url: loaded.row.repoUrl });
 });
 
 // ─── Snapshots ─────────────────────────────────────────────────────────────
@@ -2398,7 +2037,7 @@ projectsApp.post('/:projectId/cli-token', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
+  if (!isAccountManager(loaded.accountRole)) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -2442,7 +2081,7 @@ projectsApp.delete('/:projectId/cli-token/:tokenId', async (c) => {
   const tokenId = c.req.param('tokenId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
+  if (!isAccountManager(loaded.accountRole)) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
@@ -2458,7 +2097,7 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
+  if (!isAccountManager(loaded.accountRole)) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -2496,13 +2135,17 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
 // checklist alongside what's already configured.
 projectsApp.get('/:projectId/secrets', async (c) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
-  // Shared project items (everyone / select) + the caller's own private items.
-  const rows = (await listProjectItems(projectId))
-    .filter((it) => it.ownerUserId === null || it.ownerUserId === loaded.userId)
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  const rows = await db
+    .select()
+    .from(projectSecrets)
+    .where(eq(projectSecrets.projectId, projectId))
+    .orderBy(desc(projectSecrets.updatedAt));
 
   // Manifest is optional — a project without kortix.toml just gets empty
   // required/optional lists. We surface loaded/missing/error explicitly so the
@@ -2527,17 +2170,7 @@ projectsApp.get('/:projectId/secrets', async (c) => {
   }
 
   return c.json({
-    items: rows.map((it) => ({
-      secret_id: it.itemId,
-      project_id: it.projectId,
-      name: it.name,
-      visibility: visibilityOf(it, it.grantUserIds.length),
-      owner_user_id: it.ownerUserId,
-      grant_user_ids: it.grantUserIds,
-      created_by: it.createdBy,
-      created_at: it.createdAt.toISOString(),
-      updated_at: it.updatedAt.toISOString(),
-    })),
+    items: rows.map(serializeProjectSecret),
     required,
     optional,
     manifest_status: manifestStatus,
@@ -2547,14 +2180,15 @@ projectsApp.get('/:projectId/secrets', async (c) => {
 });
 
 // POST /v1/projects/:projectId/secrets
-// Upsert a project secret with a visibility: everyone | private (only me) |
-// select. Shared visibilities require project-manager access; "private" is any
-// project member's own. Response omits the value.
+// Upsert a project secret. The response intentionally omits value/value_enc.
 projectsApp.post('/:projectId/secrets', async (c) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'read');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   const name = normalizeString(body.name)?.toUpperCase();
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -2564,72 +2198,52 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   if (name.startsWith('KORTIX_')) {
     return c.json({ error: 'KORTIX_* names are reserved for platform runtime variables' }, 400);
   }
+
   const value = typeof body.value === 'string' ? body.value : null;
   if (value === null) return c.json({ error: 'value is required' }, 400);
 
-  const visibility = (normalizeString(body.visibility) ?? 'everyone') as VaultVisibility;
-  if (!['everyone', 'private', 'select'].includes(visibility)) {
-    return c.json({ error: 'visibility must be everyone | private | select' }, 400);
-  }
-  const grantUserIds = Array.isArray(body.grant_user_ids)
-    ? body.grant_user_ids.filter((x): x is string => typeof x === 'string')
-    : [];
+  const now = new Date();
+  const [row] = await db
+    .insert(projectSecrets)
+    .values({
+      projectId,
+      name,
+      valueEnc: encryptProjectSecret(projectId, value),
+      createdBy: loaded.userId,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [projectSecrets.projectId, projectSecrets.name],
+      set: {
+        valueEnc: encryptProjectSecret(projectId, value),
+        updatedAt: now,
+      },
+    })
+    .returning();
 
-  // Shared secrets (everyone/select) are project-manager-only; private is any member's own.
-  const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
-  if (visibility !== 'private' && !canManageShared) {
-    return c.json({ error: 'Only project managers can manage shared secrets' }, 403);
-  }
-
-  const item = await upsertProjectItem({
-    projectId,
-    name,
-    value,
-    kind: 'env',
-    ownerUserId: visibility === 'private' ? loaded.userId : null,
-    createdBy: loaded.userId,
-  });
-  if (visibility === 'select') await setItemGrants(item.itemId, grantUserIds);
-  else if (visibility === 'everyone') await setItemGrants(item.itemId, []);
-
-  return c.json(
-    {
-      secret_id: item.itemId,
-      project_id: item.projectId,
-      name: item.name,
-      visibility,
-      created_by: item.createdBy,
-      created_at: item.createdAt.toISOString(),
-      updated_at: item.updatedAt.toISOString(),
-    },
-    200,
-  );
+  return c.json(serializeProjectSecret(row), 200);
 });
 
 // DELETE /v1/projects/:projectId/secrets/:name
-// Deletes the caller's private secret of that name if present; otherwise the
-// shared one (which requires project-manager access).
 projectsApp.delete('/:projectId/secrets/:name', async (c) => {
   const projectId = c.req.param('projectId');
   const name = c.req.param('name')?.trim().toUpperCase();
-  const loaded = await loadProjectForUser(c, projectId, 'read');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  if (!isAccountManager(loaded.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
   if (!name || !isValidSecretName(name)) {
     return c.json({ error: 'Invalid secret name' }, 400);
   }
 
-  // Caller's own private item wins; else the shared one (manager-only).
-  const mine = (await listProjectItems(projectId)).find(
-    (it) => it.name === name && it.ownerUserId === loaded.userId,
-  );
-  if (mine) {
-    await deleteProjectItemByScope(projectId, name, loaded.userId);
-    return c.json({ ok: true });
-  }
-  if (!roleAllows(loaded.effectiveRole, 'manage')) {
-    return c.json({ error: 'Only project managers can delete shared secrets' }, 403);
-  }
-  await deleteProjectItemByScope(projectId, name, null);
+  await db
+    .delete(projectSecrets)
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, name),
+    ));
+
   return c.json({ ok: true });
 });
 
@@ -3036,151 +2650,6 @@ projectsApp.delete('/:projectId/triggers/:slug', async (c) => {
   return c.json({ ok: true });
 });
 
-// ─── Channels CRUD ───────────────────────────────────────────────────────
-// Channels are keyed by platform (one entry per platform per project). The
-// bot listens in any channel of the connected workspace, so the manifest
-// holds preferences (agent, prompt, events) — not channel ids.
-
-const SUPPORTED_CHANNEL_PLATFORMS = ['slack'] as const;
-
-function upsertChannelInManifest(manifest: ParsedManifest, spec: ChannelSpec): ParsedManifest {
-  const current = Array.isArray(manifest.raw.channels)
-    ? (manifest.raw.channels as Record<string, unknown>[])
-    : [];
-  const entry = channelSpecToTomlEntry(spec);
-  const idx = current.findIndex(
-    (e) => typeof e?.platform === 'string' && e.platform === spec.platform,
-  );
-  const next = current.slice();
-  if (idx >= 0) next[idx] = entry;
-  else next.push(entry);
-  return { ...manifest, raw: { ...manifest.raw, channels: next } };
-}
-
-function removeChannelFromManifest(manifest: ParsedManifest, platform: string): ParsedManifest {
-  const current = Array.isArray(manifest.raw.channels)
-    ? (manifest.raw.channels as Record<string, unknown>[])
-    : [];
-  const next = current.filter(
-    (e) => !(typeof e?.platform === 'string' && e.platform === platform),
-  );
-  return { ...manifest, raw: { ...manifest.raw, channels: next } };
-}
-
-function parseChannelDraft(
-  body: Record<string, unknown>,
-  opts: { existingPlatform: ChannelSpec['platform'] | null },
-): ChannelSpec | { error: string } {
-  const platformRaw = normalizeString(body.platform) ?? opts.existingPlatform ?? '';
-  if (!(SUPPORTED_CHANNEL_PLATFORMS as readonly string[]).includes(platformRaw)) {
-    return {
-      error: `Unsupported platform "${platformRaw || 'unset'}". Currently: ${SUPPORTED_CHANNEL_PLATFORMS.join(', ')}.`,
-    };
-  }
-  const platform = platformRaw as ChannelSpec['platform'];
-
-  const agent = normalizeString(body.agent ?? (body as any).agent_name);
-  const promptPrefix = normalizeString(body.prompt_prefix ?? (body as any).promptPrefix ?? body.prompt);
-  const enabled = body.enabled === undefined ? true : Boolean(body.enabled);
-
-  const validEvents = ['mention', 'dm', 'subscribed'] as const;
-  const eventsRaw = Array.isArray(body.events) ? body.events : null;
-  let events: ChannelSpec['events'];
-  if (eventsRaw === null) {
-    events = ['mention', 'dm'];
-  } else {
-    events = [];
-    for (const e of eventsRaw) {
-      if (typeof e !== 'string') continue;
-      const v = e.trim().toLowerCase();
-      if (validEvents.includes(v as never) && !events.includes(v as never)) {
-        events.push(v as never);
-      }
-    }
-    if (events.length === 0) events = ['mention', 'dm'];
-  }
-
-  return {
-    platform,
-    path: `${MANIFEST_FILENAME}#channels.${platform}`,
-    enabled,
-    agent: agent || null,
-    promptPrefix: promptPrefix || null,
-    events,
-  };
-}
-
-async function loadChannelsForResponse(project: ProjectRow) {
-  const { specs, errors } = await loadProjectChannels(project);
-  return { specs, errors };
-}
-
-// GET /v1/projects/:projectId/channels
-projectsApp.get('/:projectId/channels', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  return c.json(await loadChannelsForResponse(loaded.row));
-});
-
-// POST /v1/projects/:projectId/channels
-// Upserts the [[channels]] entry for the body's platform (one per platform).
-projectsApp.post('/:projectId/channels', async (c) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const draft = parseChannelDraft(body, { existingPlatform: null });
-  if ('error' in draft) return c.json({ error: draft.error }, 400);
-
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-
-  const next = upsertChannelInManifest(manifest, draft);
-  const result = await commitManifest(loaded.row, next, `chore: update channels (${draft.platform})`);
-  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
-
-  await syncProjectChannelBindings(loaded.row).catch((err) =>
-    console.warn('[channels] sync after POST failed', err),
-  );
-  return c.json(await loadChannelsForResponse(loaded.row), 201);
-});
-
-// DELETE /v1/projects/:projectId/channels/:platform
-projectsApp.delete('/:projectId/channels/:platform', async (c) => {
-  const projectId = c.req.param('projectId');
-  const platform = c.req.param('platform');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(SUPPORTED_CHANNEL_PLATFORMS as readonly string[]).includes(platform)) {
-    return c.json({ error: `Unknown platform "${platform}"` }, 400);
-  }
-
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-  if (!extractChannels(manifest).specs.some((s) => s.platform === platform)) {
-    return c.json({ error: 'Not found' }, 404);
-  }
-
-  const next = removeChannelFromManifest(manifest, platform);
-  const result = await commitManifest(loaded.row, next, `chore: remove ${platform} channel`);
-  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
-
-  await syncProjectChannelBindings(loaded.row).catch((err) =>
-    console.warn('[channels] sync after DELETE failed', err),
-  );
-  return c.json({ ok: true });
-});
-
 // ─── Slack install — per project, secrets live in project_secrets ────────
 
 interface SlackAuthTest {
@@ -3249,8 +2718,8 @@ projectsApp.post('/:projectId/channels/slack/connect', async (c) => {
   return c.json(summary);
 });
 
-// DELETE /v1/projects/:projectId/channels/slack
-projectsApp.delete('/:projectId/channels/slack', async (c) => {
+// DELETE /v1/projects/:projectId/channels/slack/installation
+projectsApp.delete('/:projectId/channels/slack/installation', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3762,42 +3231,6 @@ projectsApp.get('/:projectId/files', async (c) => {
   return c.json(files.slice(0, 1000));
 });
 
-// GET /v1/projects/:projectId/files/search?q=...&content=1&ref=...&limit=...
-// Filename search (git ls-tree + rank) or content search (git grep) over the
-// project's repo at the given ref.
-projectsApp.get('/:projectId/files/search', async (c) => {
-  const projectId = c.req.param('projectId');
-  const query = normalizeString(c.req.query('q'));
-  if (!query) return c.json({ error: 'q query param is required' }, 400);
-
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const contentSearch = c.req.query('content') === '1';
-  const ref = c.req.query('ref') || loaded.row.defaultBranch;
-  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 50, 1), 200);
-
-  try {
-    if (contentSearch) {
-      const matches = await grepRepoFiles(loaded.row, query, ref, limit);
-      return c.json({ query, ref, content_search: true, results: matches });
-    }
-    const files = await searchRepoFileNames(loaded.row, query, ref, limit);
-    return c.json({
-      query,
-      ref,
-      content_search: false,
-      results: files.map((f) => ({ path: f.path })),
-    });
-  } catch (error) {
-    console.warn('[projects] file search unavailable', {
-      projectId,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return c.json({ query, ref, content_search: contentSearch, results: [] });
-  }
-});
-
 // GET /v1/projects/:projectId/files/archive?path=...&ref=...
 // Streams a zip archive of the repo (or a subtree) at the given ref.
 projectsApp.get('/:projectId/files/archive', async (c) => {
@@ -4023,17 +3456,10 @@ projectsApp.patch('/:projectId', async (c) => {
 });
 
 // DELETE /v1/projects/:projectId
-// Archives the project (reversible). With ?purge=true, also deletes the
-// underlying *managed* Freestyle repo (irreversible) — BYO repos are never
-// touched, since they belong to the user.
 projectsApp.delete('/:projectId', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const purge = c.req.query('purge') === 'true' || c.req.query('purge') === '1';
-  const remote = getProjectGitRemote(loaded.row.metadata);
-  const isManaged = remote.provider === 'freestyle' && Boolean(remote.repoId);
 
   const [row] = await db
     .update(projects)
@@ -4042,18 +3468,7 @@ projectsApp.delete('/:projectId', async (c) => {
     .returning();
 
   if (!row) return c.json({ error: 'Not found' }, 404);
-
-  let repoDeleted = false;
-  if (purge && isManaged && remote.repoId && (await isFreestyleGitConfigured())) {
-    try {
-      await deleteManagedRepo(remote.repoId);
-      repoDeleted = true;
-    } catch (err) {
-      // Archive already succeeded; a failed repo delete is best-effort.
-      console.warn(`[projects] failed to delete managed repo for ${projectId}:`, err);
-    }
-  }
-  return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
+  return c.json({ ok: true });
 });
 
 // GET /v1/projects/:projectId/access
@@ -4133,13 +3548,12 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
   const role = parseProjectRole(body.role);
   if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
 
-  // Project-centric: if the target isn't in the org yet, auto-join them as a
-  // plain Member, then grant the project role.
-  const targetAccountRole = await ensureOrgMembership(
-    loaded.row.accountId,
-    targetUserId,
-    loaded.userId,
-  );
+  const targetMembership = await getAccountMembership(targetUserId, loaded.row.accountId);
+  if (!targetMembership) {
+    return c.json({ error: 'User is not a member of this account' }, 404);
+  }
+
+  const targetAccountRole = targetMembership.accountRole as AccountRole;
   if (isAccountManager(targetAccountRole)) {
     await db
       .delete(projectMembers)
@@ -4148,8 +3562,6 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
         eq(projectMembers.userId, targetUserId),
       ));
 
-    await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId);
-
     return c.json({
       user_id: targetUserId,
       account_role: targetAccountRole,
@@ -4169,58 +3581,6 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
 
   return c.json({
     user_id: targetUserId,
-    account_role: targetAccountRole,
-    project_role: role,
-    effective_project_role: role,
-    has_implicit_access: false,
-  });
-});
-
-// POST /v1/projects/:projectId/access/invite  { email, role }
-// Project-centric invite: add an existing Kortix user to this project (and the
-// org, as a Member, if they aren't already) in one step.
-projectsApp.post('/:projectId/access/invite', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const body = await readBody(c);
-  const email = (typeof body.email === 'string' ? body.email : '').trim().toLowerCase();
-  const role = parseProjectRole(body.role);
-  if (!email) return c.json({ error: 'email is required' }, 400);
-  if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
-
-  const targetUserId = await lookupUserIdByEmail(email);
-  if (!targetUserId) {
-    return c.json(
-      { error: 'No Kortix account for that email. Invite them to the organization first (Account → Members).' },
-      404,
-    );
-  }
-
-  const targetAccountRole = await ensureOrgMembership(loaded.row.accountId, targetUserId, loaded.userId);
-  if (isAccountManager(targetAccountRole)) {
-    return c.json({
-      user_id: targetUserId,
-      email,
-      account_role: targetAccountRole,
-      project_role: null,
-      effective_project_role: 'manager',
-      has_implicit_access: true,
-    });
-  }
-
-  await grantProjectRole({
-    accountId: loaded.row.accountId,
-    projectId,
-    userId: targetUserId,
-    role,
-    grantedBy: loaded.userId,
-  });
-
-  return c.json({
-    user_id: targetUserId,
-    email,
     account_role: targetAccountRole,
     project_role: role,
     effective_project_role: role,
@@ -4251,8 +3611,6 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
       eq(projectMembers.projectId, projectId),
       eq(projectMembers.userId, targetUserId),
     ));
-
-  await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId);
 
   return c.json({ ok: true });
 });
@@ -4624,6 +3982,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         initialPrompt,
+        gitAuthToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
