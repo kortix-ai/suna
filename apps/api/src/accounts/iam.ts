@@ -28,6 +28,7 @@ import {
   getRolePermissions,
   listGroupMembers,
   listGroups,
+  listGroupsForMember,
   listPolicies,
   listRoles,
   removeGroupMember,
@@ -700,6 +701,31 @@ iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
   return c.json({
     user_id: updated.userId,
     is_super_admin: updated.isSuperAdmin,
+  });
+});
+
+// ─── Member's group memberships ────────────────────────────────────────────
+// Used by the member detail page so admins can see "this person inherits
+// these policies via these groups".
+
+iamRouter.get('/:accountId/iam/members/:userId/groups', async (c) => {
+  const callerId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const targetUserId = c.req.param('userId');
+
+  // Users can always see their own group memberships; otherwise gate on
+  // member.read (same rule as the effective-permission probe).
+  if (callerId !== targetUserId) {
+    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+  }
+
+  const rows = await listGroupsForMember(accountId, targetUserId);
+  return c.json({
+    groups: rows.map((r) => ({
+      group_id: r.groupId,
+      name: r.name,
+      added_at: r.addedAt.toISOString(),
+    })),
   });
 });
 

@@ -197,6 +197,29 @@ export async function removeGroupMember(
   return rows.length > 0;
 }
 
+/**
+ * Groups a specific user belongs to within an account. Reverse of
+ * listGroupMembers — backs the "this member has these powers via groups"
+ * section on the member detail page.
+ */
+export async function listGroupsForMember(
+  accountId: string,
+  userId: string,
+): Promise<Array<{ groupId: string; name: string; addedAt: Date }>> {
+  return db
+    .select({
+      groupId: accountGroups.groupId,
+      name: accountGroups.name,
+      addedAt: accountGroupMembers.addedAt,
+    })
+    .from(accountGroupMembers)
+    .innerJoin(accountGroups, eq(accountGroups.groupId, accountGroupMembers.groupId))
+    .where(
+      and(eq(accountGroups.accountId, accountId), eq(accountGroupMembers.userId, userId)),
+    )
+    .orderBy(asc(accountGroups.name));
+}
+
 // ─── Roles ─────────────────────────────────────────────────────────────────
 
 export type IamRole = {

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Shield, ShieldOff } from 'lucide-react';
+import { ArrowLeft, Shield, ShieldOff, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -14,7 +14,11 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PoliciesTable } from '@/components/iam/policies-table';
-import { listGroups, setMemberSuperAdmin } from '@/lib/iam-client';
+import {
+  listMemberGroups,
+  setMemberSuperAdmin,
+  type MemberGroupSummary,
+} from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
 
@@ -48,13 +52,13 @@ export default function MemberDetailPage() {
     staleTime: 20_000,
   });
 
-  // We currently don't expose a per-member "list groups they belong to" API,
-  // so derive client-side by walking every group's members. Cheap because the
-  // groups list is small. (Move server-side if a large account hits this.)
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', accountId],
-    queryFn: () => listGroups(accountId!),
-    enabled: !!user && !!accountId,
+  // Server-side derivation of this member's group memberships. Drives the
+  // "Member of these groups" section so admins can see at a glance which
+  // policies the user inherits via group attachments.
+  const memberGroupsQuery = useQuery({
+    queryKey: ['member-groups', accountId, memberUserId],
+    queryFn: () => listMemberGroups(accountId!, memberUserId!),
+    enabled: !!user && !!accountId && !!memberUserId,
     staleTime: 30_000,
   });
 
@@ -198,6 +202,14 @@ export default function MemberDetailPage() {
           )}
 
           {account && member && (
+            <MemberGroupsCard
+              accountId={account.account_id}
+              memberGroups={memberGroupsQuery.data ?? []}
+              isLoading={memberGroupsQuery.isLoading}
+            />
+          )}
+
+          {account && member && (
             <PoliciesTable
               accountId={account.account_id}
               principalType="member"
@@ -241,5 +253,70 @@ export default function MemberDetailPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+// ─── Member groups card ───────────────────────────────────────────────────
+// Lists which account groups this member belongs to. Each chip is a link to
+// the group detail page so admins can jump straight to "what policies does
+// this group grant?" without rebuilding the mental model.
+
+function MemberGroupsCard({
+  accountId,
+  memberGroups,
+  isLoading,
+}: {
+  accountId: string;
+  memberGroups: MemberGroupSummary[];
+  isLoading: boolean;
+}) {
+  const router = useRouter();
+
+  return (
+    <section className="rounded-xl border border-border/70 bg-card">
+      <header className="border-b border-border/60 px-6 py-4">
+        <h2 className="text-base font-semibold text-foreground">
+          Member of {memberGroups.length}{' '}
+          {memberGroups.length === 1 ? 'group' : 'groups'}
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Any policy attached to one of these groups also applies to this member.
+        </p>
+      </header>
+
+      {isLoading && (
+        <div className="px-6 py-4">
+          <Skeleton className="h-6 w-48" />
+        </div>
+      )}
+
+      {!isLoading && memberGroups.length === 0 && (
+        <div className="px-6 py-6 text-center">
+          <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground">
+            <Users className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-foreground">Not a member of any groups</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Add them to a group to inherit its policies.
+          </p>
+        </div>
+      )}
+
+      {!isLoading && memberGroups.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-6 py-4">
+          {memberGroups.map((g) => (
+            <button
+              key={g.group_id}
+              type="button"
+              onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:border-foreground/30 hover:bg-muted/40"
+            >
+              <Users className="h-3 w-3 text-muted-foreground" />
+              {g.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

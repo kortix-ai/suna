@@ -138,6 +138,22 @@ export async function removeGroupMember(accountId: string, groupId: string, user
   );
 }
 
+export interface MemberGroupSummary {
+  group_id: string;
+  name: string;
+  added_at: string;
+}
+
+/** Groups the given user belongs to within the account. Reverse of
+ *  listGroupMembers — backs the "via groups" panel on member detail. */
+export async function listMemberGroups(accountId: string, userId: string) {
+  return unwrap(
+    await backendApi.get<{ groups: MemberGroupSummary[] }>(
+      `/accounts/${accountId}/iam/members/${userId}/groups`,
+    ),
+  ).groups;
+}
+
 // ─── Policies ──────────────────────────────────────────────────────────────
 
 export interface ListPoliciesFilter {
