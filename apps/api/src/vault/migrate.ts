@@ -1,12 +1,11 @@
-// One-time, idempotent migration of legacy kortix.project_secrets into the
-// unified vault as project-scoped, account-owned, global env items. Re-keys
-// each value from the legacy per-project envelope (v1) to the account envelope
-// (v2). Run at boot after seeding; skips rows already present in the vault.
+// Idempotent migration of legacy kortix.project_secrets into the vault as
+// project-owned "everyone" items, re-keyed from the legacy per-project envelope
+// (v1) to the project vault envelope (v3). Runs at boot; skips rows present.
 import { and, eq, isNull } from 'drizzle-orm';
-import { projectSecrets, projects, vaultItems } from '@kortix/db';
+import { projectSecrets, vaultItems } from '@kortix/db';
 import { db } from '../shared/db';
 import { decryptProjectSecret } from '../projects/secrets';
-import { upsertVaultItem } from './repository';
+import { upsertProjectItem } from './repository';
 
 export async function migrateProjectSecretsToVault(): Promise<void> {
   const rows = await db
@@ -15,26 +14,17 @@ export async function migrateProjectSecretsToVault(): Promise<void> {
       name: projectSecrets.name,
       valueEnc: projectSecrets.valueEnc,
       createdBy: projectSecrets.createdBy,
-      accountId: projects.accountId,
     })
-    .from(projectSecrets)
-    .innerJoin(projects, eq(projects.projectId, projectSecrets.projectId));
+    .from(projectSecrets);
 
   let migrated = 0;
   for (const r of rows) {
     const [existing] = await db
       .select({ itemId: vaultItems.itemId })
       .from(vaultItems)
-      .where(
-        and(
-          eq(vaultItems.ownerAccountId, r.accountId),
-          eq(vaultItems.projectId, r.projectId),
-          isNull(vaultItems.ownerUserId),
-          eq(vaultItems.name, r.name),
-        ),
-      )
+      .where(and(eq(vaultItems.projectId, r.projectId), eq(vaultItems.name, r.name), isNull(vaultItems.ownerUserId)))
       .limit(1);
-    if (existing) continue; // already migrated — don't clobber
+    if (existing) continue;
 
     let value: string;
     try {
@@ -43,14 +33,13 @@ export async function migrateProjectSecretsToVault(): Promise<void> {
       console.warn(`[vault-migrate] could not decrypt ${r.projectId}/${r.name} — skipping`);
       continue;
     }
-    await upsertVaultItem({
-      accountId: r.accountId,
+    await upsertProjectItem({
+      projectId: r.projectId,
       name: r.name,
       value,
       kind: 'env',
-      projectId: r.projectId,
       ownerUserId: null,
-      createdBy: r.createdBy ?? r.accountId,
+      createdBy: r.createdBy ?? r.projectId,
     });
     migrated++;
   }

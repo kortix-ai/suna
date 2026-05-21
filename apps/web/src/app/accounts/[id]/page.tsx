@@ -6,8 +6,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Clock,
+  Copy,
   ExternalLink,
   FolderGit2,
+  Globe2,
   KeyRound,
   Link as LinkIcon,
   Loader2,
@@ -15,6 +17,7 @@ import {
   MoreHorizontal,
   RefreshCw,
   Shield,
+  ShieldCheck,
   Trash2,
   UserPlus,
   Users,
@@ -61,19 +64,25 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { GroupsTab } from '@/components/iam/groups-tab';
-import { VaultTab } from '@/components/vault/vault-tab';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import {
   type AccountDetail,
   type AccountInvitation,
   type AccountMember,
   type AccountRole,
+  type AccountSsoConnection,
   type KortixProject,
+  addAccountVerifiedDomain,
   cancelAccountInvite,
+  createAccountSsoConnection,
+  deleteAccountSsoConnection,
+  deleteAccountVerifiedDomain,
   getAccount,
+  getAccountSsoSettings,
   inviteAccountMember,
   leaveAccount,
   listAccountInvites,
@@ -81,8 +90,10 @@ import {
   listProjectsForAccount,
   removeAccountMember,
   resendAccountInvite,
+  updateAccountSsoConnection,
   updateAccountMemberRole,
   updateAccountName,
+  verifyAccountDomain,
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 
@@ -244,7 +255,6 @@ export default function AccountSettingsPage() {
                 <TabsTrigger value="members">All members</TabsTrigger>
                 <TabsTrigger value="projects">Projects</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
-                <TabsTrigger value="vault">Vault</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
 
@@ -269,10 +279,6 @@ export default function AccountSettingsPage() {
 
               <TabsContent value="groups" className="space-y-6">
                 <GroupsTab accountId={account.account_id} canManage={isOwner || isAdmin} />
-              </TabsContent>
-
-              <TabsContent value="vault" className="space-y-6">
-                <VaultTab accountId={account.account_id} canManage={isOwner || isAdmin} />
               </TabsContent>
 
               <TabsContent value="settings" className="space-y-6">

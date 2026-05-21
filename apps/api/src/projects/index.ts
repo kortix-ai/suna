@@ -92,10 +92,12 @@ import { isValidSecretName } from './secrets';
 import {
   resolveVaultForActor,
   resolveProjectGlobalSecret,
-  upsertVaultItem,
-  listVaultItems,
-  deleteProjectGlobalSecret,
+  upsertProjectItem,
+  listProjectItems,
+  deleteProjectItemByScope,
+  setItemGrants,
   visibilityOf,
+  type VaultVisibility,
 } from '../vault';
 import {
   effectiveProjectRole,
@@ -889,7 +891,7 @@ async function buildSessionSandboxEnvVars(input: {
   const [runtimeSecrets, cliToken] = await Promise.all([
     // Resolve the vault for the acting member: project-global env + this
     // member's private/select-member items, most-specific-wins (see vault).
-    resolveVaultForActor({ accountId: input.accountId, projectId: input.projectId, userId: input.userId }),
+    resolveVaultForActor({ projectId: input.projectId, userId: input.userId }),
     mintSessionCliToken(input.projectId, input.userId, input.accountId, input.sessionId),
   ]);
   const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
@@ -1349,7 +1351,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
 
   const rawBody = await c.req.text();
   const secret = spec.secretEnv
-    ? await resolveProjectGlobalSecret(project.accountId, project.projectId, spec.secretEnv)
+    ? await resolveProjectGlobalSecret(project.projectId, spec.secretEnv)
     : null;
   if (!secret) {
     return c.json({ error: 'Webhook secret is not configured' }, 409);
@@ -2485,17 +2487,11 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
 // checklist alongside what's already configured.
 projectsApp.get('/:projectId/secrets', async (c) => {
   const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
 
-  // Project secrets are now vault items: project-scoped, shared (owner_user_id
-  // NULL). Member-private items are intentionally excluded from this admin view.
-  // Show shared project items (everyone-on-project / select-members) plus the
-  // caller's own private items for this project.
-  const rows = (await listVaultItems({ accountId: loaded.row.accountId, projectId }))
+  // Shared project items (everyone / select) + the caller's own private items.
+  const rows = (await listProjectItems(projectId))
     .filter((it) => it.ownerUserId === null || it.ownerUserId === loaded.userId)
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
@@ -2522,7 +2518,6 @@ projectsApp.get('/:projectId/secrets', async (c) => {
   }
 
   return c.json({
-    account_id: loaded.row.accountId,
     items: rows.map((it) => ({
       secret_id: it.itemId,
       project_id: it.projectId,
@@ -2543,15 +2538,14 @@ projectsApp.get('/:projectId/secrets', async (c) => {
 });
 
 // POST /v1/projects/:projectId/secrets
-// Upsert a project secret. The response intentionally omits value/value_enc.
+// Upsert a project secret with a visibility: everyone | private (only me) |
+// select. Shared visibilities require project-manager access; "private" is any
+// project member's own. Response omits the value.
 projectsApp.post('/:projectId/secrets', async (c) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
 
   const name = normalizeString(body.name)?.toUpperCase();
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -2561,26 +2555,40 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   if (name.startsWith('KORTIX_')) {
     return c.json({ error: 'KORTIX_* names are reserved for platform runtime variables' }, 400);
   }
-
   const value = typeof body.value === 'string' ? body.value : null;
   if (value === null) return c.json({ error: 'value is required' }, 400);
 
-  // Project-global env item in the vault (shared, owner_user_id NULL).
-  const item = await upsertVaultItem({
-    accountId: loaded.row.accountId,
+  const visibility = (normalizeString(body.visibility) ?? 'everyone') as VaultVisibility;
+  if (!['everyone', 'private', 'select'].includes(visibility)) {
+    return c.json({ error: 'visibility must be everyone | private | select' }, 400);
+  }
+  const grantUserIds = Array.isArray(body.grant_user_ids)
+    ? body.grant_user_ids.filter((x): x is string => typeof x === 'string')
+    : [];
+
+  // Shared secrets (everyone/select) are project-manager-only; private is any member's own.
+  const canManageShared = roleAllows(loaded.effectiveRole, 'manage');
+  if (visibility !== 'private' && !canManageShared) {
+    return c.json({ error: 'Only project managers can manage shared secrets' }, 403);
+  }
+
+  const item = await upsertProjectItem({
+    projectId,
     name,
     value,
     kind: 'env',
-    projectId,
-    ownerUserId: null,
+    ownerUserId: visibility === 'private' ? loaded.userId : null,
     createdBy: loaded.userId,
   });
+  if (visibility === 'select') await setItemGrants(item.itemId, grantUserIds);
+  else if (visibility === 'everyone') await setItemGrants(item.itemId, []);
 
   return c.json(
     {
       secret_id: item.itemId,
       project_id: item.projectId,
       name: item.name,
+      visibility,
       created_by: item.createdBy,
       created_at: item.createdAt.toISOString(),
       updated_at: item.updatedAt.toISOString(),
@@ -2590,20 +2598,29 @@ projectsApp.post('/:projectId/secrets', async (c) => {
 });
 
 // DELETE /v1/projects/:projectId/secrets/:name
+// Deletes the caller's private secret of that name if present; otherwise the
+// shared one (which requires project-manager access).
 projectsApp.delete('/:projectId/secrets/:name', async (c) => {
   const projectId = c.req.param('projectId');
   const name = c.req.param('name')?.trim().toUpperCase();
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
   if (!name || !isValidSecretName(name)) {
     return c.json({ error: 'Invalid secret name' }, 400);
   }
 
-  await deleteProjectGlobalSecret(loaded.row.accountId, projectId, name);
-
+  // Caller's own private item wins; else the shared one (manager-only).
+  const mine = (await listProjectItems(projectId)).find(
+    (it) => it.name === name && it.ownerUserId === loaded.userId,
+  );
+  if (mine) {
+    await deleteProjectItemByScope(projectId, name, loaded.userId);
+    return c.json({ ok: true });
+  }
+  if (!roleAllows(loaded.effectiveRole, 'manage')) {
+    return c.json({ error: 'Only project managers can delete shared secrets' }, 403);
+  }
+  await deleteProjectItemByScope(projectId, name, null);
   return c.json({ ok: true });
 });
 

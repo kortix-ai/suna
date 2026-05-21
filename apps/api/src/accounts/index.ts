@@ -15,6 +15,7 @@ import {
 import { sendAccountInviteEmail } from './email';
 import { config } from '../config';
 import { authorize, ACCOUNT_ACTIONS, syncMemberAccountPolicy, removeMemberPolicies, removeProjectPoliciesForMember } from '../iam';
+import { maybeJitProvisionSsoUser } from '../repositories/account-sso';
 
 // Public, share-anywhere invite URL. Matches the link generated inside the
 // email template (apps/api/src/accounts/email.ts), so an invite copied here
@@ -24,7 +25,7 @@ function buildInviteUrl(inviteId: string): string {
   return `${base}/invites/${inviteId}`;
 }
 import { iamRouter } from './iam';
-import { vaultRouter } from '../vault';
+import { accountSsoRouter } from './sso';
 
 export const accountsRouter = new Hono<AppEnv>();
 
@@ -34,8 +35,7 @@ accountsRouter.use('/*', supabaseAuth);
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
 // correct.
 accountsRouter.route('/', iamRouter);
-// Mount vault routes (/:accountId/vault/*).
-accountsRouter.route('/', vaultRouter);
+accountsRouter.route('/', accountSsoRouter);
 
 // ─── Static (non-parameterized) routes MUST come before /:accountId ────────
 // Hono matches routes in registration order, so anything declared after the
@@ -334,6 +334,26 @@ accountsRouter.get('/', async (c) => {
   const userEmail = c.get('userEmail') as string;
 
   await autoClaimPendingInvites(userId, userEmail);
+  try {
+    const jit = await maybeJitProvisionSsoUser({
+      userId,
+      email: userEmail,
+      authProvider: c.get('authProvider'),
+    });
+    if (jit?.created) {
+      await syncMemberAccountPolicy({
+        accountId: jit.accountId,
+        userId,
+        accountRole: jit.accountRole,
+        createdBy: userId,
+      });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/account_sso_connections|account_verified_domains|relation .* does not exist/i.test(msg)) {
+      throw err;
+    }
+  }
 
   try {
     const memberships = await db

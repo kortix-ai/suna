@@ -1,125 +1,76 @@
-// Resolve the effective set of vault values for an actor in a context, applying
-// most-specific-wins precedence (see docs/specs/unified-iam-vault-access.md §5).
-// Within the owner account A, for actor U, optional project P:
-//
-//   rank 6  private (owner_user_id=U) scoped to P
-//   rank 5  private (owner_user_id=U) account-wide
-//   rank 4  shared, scoped to P, granted to U  (select-members)
-//   rank 3  shared, scoped to P, no grants      (global)
-//   rank 2  shared, account-wide, granted to U
-//   rank 1  shared, account-wide, no grants      (global)
-//
-// Higher rank wins on a name collision — so a member's personal OPENAI_KEY
-// silently overrides the team's global one. No prompt.
+// Resolve the effective name→value map for a member running a session in a
+// project. Most-specific wins on a name collision:
+//   rank 3  only me      (owner_user_id = you)
+//   rank 2  select        (granted to you)
+//   rank 1  everyone      (shared, no grants)
+// Decryption key derives from the project_id.
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { vaultItemGrants, vaultItems } from '@kortix/db';
 import { db } from '../shared/db';
 import { decryptVaultValue } from './crypto';
 
-type Candidate = {
-  itemId: string;
-  name: string;
-  valueEnc: string;
-  projectId: string | null;
-  ownerUserId: string | null;
-};
-
-/**
- * Return the decrypted name→value map an actor should see when running in a
- * given (account, project) context. Used for sandbox env injection.
- */
 export async function resolveVaultForActor(args: {
-  accountId: string;
-  projectId: string | null;
+  projectId: string;
   userId: string;
 }): Promise<Record<string, string>> {
-  const { accountId, projectId, userId } = args;
+  const { projectId, userId } = args;
 
-  const scopeFilter = projectId
-    ? or(eq(vaultItems.projectId, projectId), isNull(vaultItems.projectId))
-    : isNull(vaultItems.projectId);
-
-  const rows: Candidate[] = await db
-    .select({
-      itemId: vaultItems.itemId,
-      name: vaultItems.name,
-      valueEnc: vaultItems.valueEnc,
-      projectId: vaultItems.projectId,
-      ownerUserId: vaultItems.ownerUserId,
-    })
+  // Items the actor could see: shared (owner_user_id null) + their own private.
+  const rows = await db
+    .select({ itemId: vaultItems.itemId, name: vaultItems.name, valueEnc: vaultItems.valueEnc, ownerUserId: vaultItems.ownerUserId })
     .from(vaultItems)
     .where(
       and(
-        eq(vaultItems.ownerAccountId, accountId),
-        scopeFilter,
-        // private-to-someone-else items are never visible
+        eq(vaultItems.projectId, projectId),
+        // shared (owner_user_id NULL) OR your own private
         or(isNull(vaultItems.ownerUserId), eq(vaultItems.ownerUserId, userId)),
       ),
     );
 
-  if (rows.length === 0) return {};
-
-  // Grants for the shared candidates (owner_user_id IS NULL).
   const sharedIds = rows.filter((r) => r.ownerUserId === null).map((r) => r.itemId);
-  const grantedToUser = new Set<string>(); // item_ids granted to this user
-  const hasAnyGrant = new Set<string>(); // item_ids that have ≥1 grant
+  const hasGrant = new Set<string>();
+  const grantedToUser = new Set<string>();
   if (sharedIds.length > 0) {
     const grants = await db
       .select({ itemId: vaultItemGrants.itemId, userId: vaultItemGrants.userId })
       .from(vaultItemGrants)
       .where(inArray(vaultItemGrants.itemId, sharedIds));
     for (const g of grants) {
-      hasAnyGrant.add(g.itemId);
+      hasGrant.add(g.itemId);
       if (g.userId === userId) grantedToUser.add(g.itemId);
     }
   }
 
-  const rankOf = (c: Candidate): number | null => {
-    const onProject = projectId != null && c.projectId === projectId;
-    if (c.ownerUserId === userId) return onProject ? 6 : 5; // private
-    if (c.ownerUserId !== null) return null; // someone else's private (defensive)
-    // shared
-    if (hasAnyGrant.has(c.itemId)) {
-      if (!grantedToUser.has(c.itemId)) return null; // restricted, not for us
-      return onProject ? 4 : 2;
-    }
-    return onProject ? 3 : 1; // global
+  const best = new Map<string, { rank: number; valueEnc: string }>();
+  const consider = (name: string, rank: number, valueEnc: string) => {
+    const cur = best.get(name);
+    if (!cur || rank > cur.rank) best.set(name, { rank, valueEnc });
   };
 
-  const best = new Map<string, { rank: number; valueEnc: string }>();
-  for (const c of rows) {
-    const rank = rankOf(c);
-    if (rank == null) continue;
-    const cur = best.get(c.name);
-    if (!cur || rank > cur.rank) best.set(c.name, { rank, valueEnc: c.valueEnc });
+  for (const r of rows) {
+    if (r.ownerUserId !== null) {
+      if (r.ownerUserId !== userId) continue; // someone else's private
+      consider(r.name, 3, r.valueEnc); // only me
+    } else if (hasGrant.has(r.itemId)) {
+      if (!grantedToUser.has(r.itemId)) continue; // select, not for us
+      consider(r.name, 2, r.valueEnc);
+    } else {
+      consider(r.name, 1, r.valueEnc); // everyone
+    }
   }
 
   const out: Record<string, string> = {};
-  for (const [name, { valueEnc }] of best) {
-    out[name] = decryptVaultValue(accountId, valueEnc);
-  }
+  for (const [name, { valueEnc }] of best) out[name] = decryptVaultValue(projectId, valueEnc);
   return out;
 }
 
-/** Look up a single project-scoped GLOBAL (shared, no-grants) env value by
- *  name. Used by server-side flows with no acting member (e.g. webhook secret
- *  verification). */
-export async function resolveProjectGlobalSecret(
-  accountId: string,
-  projectId: string,
-  name: string,
-): Promise<string | null> {
+/** A project's shared (everyone) secret by name — for server-side flows with no
+ *  acting member, e.g. webhook HMAC verification. */
+export async function resolveProjectGlobalSecret(projectId: string, name: string): Promise<string | null> {
   const [row] = await db
     .select({ valueEnc: vaultItems.valueEnc })
     .from(vaultItems)
-    .where(
-      and(
-        eq(vaultItems.ownerAccountId, accountId),
-        eq(vaultItems.projectId, projectId),
-        isNull(vaultItems.ownerUserId),
-        eq(vaultItems.name, name),
-      ),
-    )
+    .where(and(eq(vaultItems.projectId, projectId), eq(vaultItems.name, name), isNull(vaultItems.ownerUserId)))
     .limit(1);
-  return row ? decryptVaultValue(accountId, row.valueEnc) : null;
+  return row ? decryptVaultValue(projectId, row.valueEnc) : null;
 }

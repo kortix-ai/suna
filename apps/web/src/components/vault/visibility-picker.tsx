@@ -1,8 +1,8 @@
 'use client';
 
 // Reusable "Who can use this?" visibility picker. Controlled — owns no state
-// of its own beyond the member-search popover. Used by both the account Vault
-// tab and the project secrets page.
+// of its own beyond the member-search popover. Used by the project secrets
+// page; lists project members for the "select" option.
 
 import { useMemo, useState } from 'react';
 import { Check, ChevronsUpDown, Globe, Lock, Users, X } from 'lucide-react';
@@ -21,30 +21,34 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { cn } from '@/lib/utils';
-import type { VaultVisibility } from '@/lib/vault-client';
-import type { AccountMember } from '@/lib/projects-client';
+import type { ProjectSecretVisibility } from '@/lib/projects-client';
 
-function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
+/** Minimal member shape the picker needs — project members. */
+export interface VisibilityPickerMember {
+  user_id: string;
+  email: string | null;
+}
+
+function memberLabel(member: VisibilityPickerMember) {
   return member.email || member.user_id;
 }
 
 interface VisibilityPickerProps {
-  visibility: VaultVisibility;
-  onVisibilityChange: (visibility: VaultVisibility) => void;
+  visibility: ProjectSecretVisibility;
+  onVisibilityChange: (visibility: ProjectSecretVisibility) => void;
   grantUserIds: string[];
   onGrantsChange: (ids: string[]) => void;
-  members: AccountMember[];
-  disablePrivate?: boolean;
+  members: VisibilityPickerMember[];
 }
 
 const OPTIONS: {
-  value: VaultVisibility;
+  value: ProjectSecretVisibility;
   label: string;
   helper: string;
   icon: typeof Globe;
 }[] = [
   {
-    value: 'global',
+    value: 'everyone',
     label: 'Everyone on the project',
     helper: 'Anyone with access to this project can use it.',
     icon: Globe,
@@ -52,13 +56,13 @@ const OPTIONS: {
   {
     value: 'private',
     label: 'Only me',
-    helper: 'Just you. Nobody else can use or see this secret.',
+    helper: "Just you. Other project members can't use or see it.",
     icon: Lock,
   },
   {
     value: 'select',
     label: 'Select members…',
-    helper: 'Pick exactly who can use this secret.',
+    helper: 'Pick specific project members.',
     icon: Users,
   },
 ];
@@ -69,23 +73,20 @@ export function VisibilityPicker({
   grantUserIds,
   onGrantsChange,
   members,
-  disablePrivate = false,
 }: VisibilityPickerProps) {
   const [open, setOpen] = useState(false);
 
-  const options = useMemo(
-    () => (disablePrivate ? OPTIONS.filter((o) => o.value !== 'private') : OPTIONS),
-    [disablePrivate],
-  );
-
   const membersById = useMemo(() => {
-    const map = new Map<string, AccountMember>();
+    const map = new Map<string, VisibilityPickerMember>();
     for (const m of members) map.set(m.user_id, m);
     return map;
   }, [members]);
 
   const selectedMembers = useMemo(
-    () => grantUserIds.map((id) => membersById.get(id)).filter(Boolean) as AccountMember[],
+    () =>
+      grantUserIds
+        .map((id) => membersById.get(id))
+        .filter(Boolean) as VisibilityPickerMember[],
     [grantUserIds, membersById],
   );
 
@@ -101,10 +102,10 @@ export function VisibilityPicker({
     <div className="space-y-3">
       <RadioGroup
         value={visibility}
-        onValueChange={(v) => onVisibilityChange(v as VaultVisibility)}
+        onValueChange={(v) => onVisibilityChange(v as ProjectSecretVisibility)}
         className="gap-2"
       >
-        {options.map((opt) => {
+        {OPTIONS.map((opt) => {
           const Icon = opt.icon;
           const active = visibility === opt.value;
           return (

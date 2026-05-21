@@ -6,19 +6,21 @@ import {
   AlertTriangle,
   Check,
   FileWarning,
+  Globe,
   KeyRound,
   Loader2,
+  Lock,
   Pencil,
   Plug,
   Plus,
   Search,
   ShieldAlert,
   Trash2,
+  Users,
   X,
 } from 'lucide-react';
 
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
-import { VisibilityBadge } from '@/components/vault/vault-tab';
 import { VisibilityPicker } from '@/components/vault/visibility-picker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,16 +44,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
-  listAccountMembers,
+  deleteProjectSecret,
+  listProjectAccess,
   listProjectSecrets,
+  upsertProjectSecret,
   type ProjectSecret,
   type ProjectSecretsResponse,
+  type ProjectSecretVisibility,
 } from '@/lib/projects-client';
-import {
-  createVaultItem,
-  deleteVaultItem,
-  type VaultVisibility,
-} from '@/lib/vault-client';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
 
@@ -64,8 +64,41 @@ interface SecretRow {
   isSet: boolean;
   requirement: Requirement;
   updatedAt: string | null;
-  visibility: VaultVisibility | null;
+  visibility: ProjectSecretVisibility | null;
   grantUserIds: string[];
+}
+
+/** Per-row visibility badge. Replaces the one that lived in the deleted
+ *  account vault-tab; project secrets use 'everyone' | 'private' | 'select'. */
+function VisibilityBadge({
+  visibility,
+  grantCount,
+}: {
+  visibility: ProjectSecretVisibility;
+  grantCount: number;
+}) {
+  if (visibility === 'everyone') {
+    return (
+      <Badge variant="outline" size="sm" className="gap-1">
+        <Globe className="h-2.5 w-2.5" />
+        Everyone
+      </Badge>
+    );
+  }
+  if (visibility === 'private') {
+    return (
+      <Badge variant="outline" size="sm" className="gap-1">
+        <Lock className="h-2.5 w-2.5" />
+        Only me
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" size="sm" className="gap-1">
+      <Users className="h-2.5 w-2.5" />
+      Select {grantCount}
+    </Badge>
+  );
 }
 
 export default function ProjectSecretsPage({
@@ -140,7 +173,6 @@ function normalizeResponse(data: ProjectSecretsResponse | ProjectSecret[] | null
     return { items: data, required: [], optional: [] };
   }
   return {
-    account_id: data?.account_id,
     items: Array.isArray(data?.items) ? data!.items : [],
     required: Array.isArray(data?.required) ? data!.required : [],
     optional: Array.isArray(data?.optional) ? data!.optional : [],
@@ -207,7 +239,6 @@ function SecretsCard({
   const queryKey = ['project-secrets', projectId];
 
   const normalized = useMemo(() => normalizeResponse(data), [data]);
-  const accountId = normalized.account_id ?? null;
   const allRows = useMemo(() => buildRows(normalized), [normalized]);
 
   const missingRequired = allRows.filter((r) => r.requirement === 'required' && !r.isSet);
@@ -221,19 +252,23 @@ function SecretsCard({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogRow, setDialogRow] = useState<SecretRow | null>(null);
 
-  // Account members power the visibility picker. Only fetched once we know the
-  // owning account (returned by the secrets GET).
+  // Project members power the "select members" visibility option.
   const membersQuery = useQuery({
-    queryKey: ['account-members', accountId],
-    queryFn: () => listAccountMembers(accountId!),
-    enabled: !!accountId,
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
     staleTime: 30_000,
   });
-  const members = membersQuery.data ?? [];
+  const members = useMemo(
+    () =>
+      (membersQuery.data?.members ?? []).map((m) => ({
+        user_id: m.user_id,
+        email: m.email,
+      })),
+    [membersQuery.data],
+  );
 
   const remove = useMutation({
-    mutationFn: ({ secretId }: { secretId: string }) =>
-      deleteVaultItem(accountId!, secretId),
+    mutationFn: ({ name }: { name: string }) => deleteProjectSecret(projectId, name),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
 
@@ -258,15 +293,15 @@ function SecretsCard({
   const handleDelete = useCallback(
     async (row: SecretRow) => {
       setConfirmDeleteName(null);
-      if (!accountId || !row.secretId) return;
+      if (!row.isSet) return;
       try {
-        await remove.mutateAsync({ secretId: row.secretId });
+        await remove.mutateAsync({ name: row.name });
         toast.success(`Removed ${row.name}`);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to remove');
       }
     },
-    [remove, accountId],
+    [remove],
   );
 
   return (
@@ -324,7 +359,6 @@ function SecretsCard({
               size="sm"
               className="h-8 gap-1.5 text-xs"
               onClick={openCreate}
-              disabled={!accountId}
             >
               <Plus className="h-3.5 w-3.5" />
               Add
@@ -467,17 +501,14 @@ function SecretsCard({
         )}
       </SectionCard>
 
-      {accountId && (
-        <SecretDialog
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          accountId={accountId}
-          projectId={projectId}
-          row={dialogRow}
-          members={members}
-          onSaved={() => queryClient.invalidateQueries({ queryKey })}
-        />
-      )}
+      <SecretDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        projectId={projectId}
+        row={dialogRow}
+        members={members}
+        onSaved={() => queryClient.invalidateQueries({ queryKey })}
+      />
     </div>
   );
 }
@@ -487,7 +518,6 @@ function SecretsCard({
 function SecretDialog({
   open,
   onOpenChange,
-  accountId,
   projectId,
   row,
   members,
@@ -495,11 +525,10 @@ function SecretDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  accountId: string;
   projectId: string;
   /** null = create a brand-new secret; otherwise set/rotate this row. */
   row: SecretRow | null;
-  members: import('@/lib/projects-client').AccountMember[];
+  members: import('@/components/vault/visibility-picker').VisibilityPickerMember[];
   onSaved: () => void;
 }) {
   // For a manifest-declared row the name is fixed; only free-form adds let the
@@ -507,14 +536,14 @@ function SecretDialog({
   const fixedName = row?.name ?? null;
   const [name, setName] = useState('');
   const [value, setValue] = useState('');
-  const [visibility, setVisibility] = useState<VaultVisibility>('global');
+  const [visibility, setVisibility] = useState<ProjectSecretVisibility>('everyone');
   const [grantUserIds, setGrantUserIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
     setName(row?.name ?? '');
     setValue('');
-    setVisibility(row?.visibility ?? 'global');
+    setVisibility(row?.visibility ?? 'everyone');
     setGrantUserIds(row?.grantUserIds ?? []);
   }, [open, row]);
 
@@ -527,11 +556,10 @@ function SecretDialog({
       if (finalName.startsWith('KORTIX_')) {
         throw new Error('KORTIX_* names are reserved for platform variables');
       }
-      return createVaultItem(accountId, {
+      return upsertProjectSecret(projectId, {
         name: finalName,
         value,
         visibility,
-        project_id: projectId,
         grant_user_ids: visibility === 'select' ? grantUserIds : undefined,
       });
     },
@@ -569,7 +597,7 @@ function SecretDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             Injected as an environment variable into every new session sandbox.
-            Choose who on the account can use it.
+            Choose who on the project can use it.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">

@@ -108,6 +108,21 @@ export const accountRoleEnum = kortixSchema.enum('account_role', [
   'member',
 ]);
 
+export const accountSsoProtocolEnum = kortixSchema.enum('account_sso_protocol', [
+  'saml',
+  'oidc',
+]);
+
+export const accountSsoConnectionStatusEnum = kortixSchema.enum('account_sso_connection_status', [
+  'active',
+  'disabled',
+]);
+
+export const accountVerifiedDomainStatusEnum = kortixSchema.enum('account_verified_domain_status', [
+  'pending',
+  'verified',
+]);
+
 export const accounts = kortixSchema.table(
   'accounts',
   {
@@ -207,6 +222,53 @@ export const accountGithubInstallationStates = kortixSchema.table(
   ],
 );
 
+export const accountSsoConnections = kortixSchema.table(
+  'account_sso_connections',
+  {
+    connectionId: uuid('connection_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    providerId: text('provider_id').notNull(),
+    providerName: varchar('provider_name', { length: 255 }),
+    protocol: accountSsoProtocolEnum('protocol').default('saml').notNull(),
+    status: accountSsoConnectionStatusEnum('status').default('active').notNull(),
+    enforced: boolean('enforced').default(false).notNull(),
+    jitProvisioningEnabled: boolean('jit_provisioning_enabled').default(true).notNull(),
+    defaultRole: accountRoleEnum('default_role').default('member').notNull(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_account_sso_connections_account').on(table.accountId),
+    index('idx_account_sso_connections_provider').on(table.providerId),
+    uniqueIndex('idx_account_sso_connections_account_provider').on(table.accountId, table.providerId),
+  ],
+);
+
+export const accountVerifiedDomains = kortixSchema.table(
+  'account_verified_domains',
+  {
+    domainId: uuid('domain_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    domain: varchar('domain', { length: 255 }).notNull(),
+    status: accountVerifiedDomainStatusEnum('status').default('pending').notNull(),
+    verificationToken: text('verification_token').notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_account_verified_domains_account').on(table.accountId),
+    index('idx_account_verified_domains_domain').on(table.domain),
+  ],
+);
+
 // ─── Projects ───────────────────────────────────────────────────────────────
 // New project-first model. A project is the Git-backed source of truth for a
 // company/repo. Legacy sandboxes remain below as compute/runtime state.
@@ -292,17 +354,23 @@ export const vaultItemKindEnum = kortixSchema.enum('vault_item_kind', [
   'connection_secret',
 ]);
 
+// Secrets are 100% project-scoped. Every item belongs to a project; within it
+// the visibility is set by ownerUserId + grants:
+//   ownerUserId set                 → "only me" (private to that member)
+//   ownerUserId null, no grants      → "everyone on the project"
+//   ownerUserId null, has grants     → "select members"
+// There is no account- or user-global vault. Encryption key derives from
+// project_id.
 export const vaultItems = kortixSchema.table(
   'vault_items',
   {
     itemId: uuid('item_id').defaultRandom().primaryKey(),
-    ownerAccountId: uuid('owner_account_id')
+    projectId: uuid('project_id')
       .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
     kind: vaultItemKindEnum('kind').default('env').notNull(),
     name: varchar('name', { length: 128 }).notNull(),
     valueEnc: text('value_enc').notNull(),
-    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
     ownerUserId: uuid('owner_user_id'),
     providerId: varchar('provider_id', { length: 64 }),
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
@@ -311,11 +379,11 @@ export const vaultItems = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_vault_items_account').on(table.ownerAccountId),
     index('idx_vault_items_project').on(table.projectId),
     index('idx_vault_items_owner_user').on(table.ownerUserId),
-    // (account, project, owner_user, name) uniqueness is enforced by a
-    // COALESCE unique index created in SQL (NULLs would otherwise be distinct).
+    // Per-scope name uniqueness via partial unique indexes (created in SQL):
+    //   unique(project_id, name)                where owner_user_id is null  (shared)
+    //   unique(project_id, owner_user_id, name) where owner_user_id is not null (private)
   ],
 );
 
@@ -1094,6 +1162,8 @@ export const kortixApiKeysRelations = relations(kortixApiKeys, ({ one }) => ({
 export const accountsRelations = relations(accounts, ({ many }) => ({
   members: many(accountMembers),
   githubInstallations: many(accountGithubInstallations),
+  ssoConnections: many(accountSsoConnections),
+  verifiedDomains: many(accountVerifiedDomains),
   projectMembers: many(projectMembers),
   projects: many(projects),
   projectTriggers: many(projectTriggers),
@@ -1116,6 +1186,20 @@ export const accountMembersRelations = relations(accountMembers, ({ one }) => ({
 export const accountGithubInstallationsRelations = relations(accountGithubInstallations, ({ one }) => ({
   account: one(accounts, {
     fields: [accountGithubInstallations.accountId],
+    references: [accounts.accountId],
+  }),
+}));
+
+export const accountSsoConnectionsRelations = relations(accountSsoConnections, ({ one }) => ({
+  account: one(accounts, {
+    fields: [accountSsoConnections.accountId],
+    references: [accounts.accountId],
+  }),
+}));
+
+export const accountVerifiedDomainsRelations = relations(accountVerifiedDomains, ({ one }) => ({
+  account: one(accounts, {
+    fields: [accountVerifiedDomains.accountId],
     references: [accounts.accountId],
   }),
 }));

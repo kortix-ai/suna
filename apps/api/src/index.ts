@@ -47,6 +47,7 @@ import { channelsApp } from './channels';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { accountsRouter } from './accounts';
 import { accountInvitesRouter } from './accounts/invites';
+import { authSsoRouter } from './accounts/sso';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
 
@@ -247,6 +248,9 @@ app.get('/v1/system/status', (c) => {
 app.post('/v1/prewarm', (c) => {
   return c.json({ success: true });
 });
+
+// /v1/auth/sso/* — public SSO domain resolver + protected SSO login audit event.
+app.route('/v1/auth/sso', authSsoRouter);
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
