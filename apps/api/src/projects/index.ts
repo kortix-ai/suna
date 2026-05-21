@@ -778,12 +778,16 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
   const effectiveRole = effectiveProjectRole(accountRole, projectRole);
 
   // The IAM engine bridges existing account_role + project_members rows, so
-  // pre-IAM accounts behave identically; policies are additive on top.
+  // pre-IAM accounts behave identically; policies are additive on top. If
+  // the request came via a PAT with its own narrowing policies, the engine
+  // will evaluate those instead of inheriting the user's permissions.
+  const actingTokenId = (c as any).get('iamTokenId') as string | undefined;
   const result = await authorize(
     userId,
     row.accountId,
     LEGACY_ACTION_TO_IAM[action],
     { type: 'project', id: projectId },
+    actingTokenId,
   );
   if (!result.allowed) {
     throw new HTTPException(403, { message: 'You do not have access to this project' });
@@ -1658,11 +1662,15 @@ projectsApp.get('/', async (c) => {
   // Non-manager: ask the IAM engine which project IDs they can read. The
   // engine consults explicit policies (direct + via groups), denies, the
   // legacy project_members bridge, and the (now-tightened) member bridge.
+  // Token requests are evaluated as the token's identity when narrowing
+  // policies exist on the PAT.
+  const actingTokenId = (c as any).get('iamTokenId') as string | undefined;
   const accessible = await listAccessibleResources(
     scope.userId,
     scope.accountId,
     PROJECT_ACTIONS.PROJECT_READ,
     'project',
+    actingTokenId,
   );
 
   if (accessible.mode === 'none') return c.json([]);

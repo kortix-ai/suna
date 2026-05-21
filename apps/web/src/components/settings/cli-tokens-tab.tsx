@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Check, Copy, KeyRound, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { Check, Copy, KeyRound, Loader2, Plus, Shield, Trash2, X } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 
 import { toast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 import {
   accountTokensApi,
@@ -60,6 +62,8 @@ function CopyButton({ value }: { value: string }) {
 function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => void }) {
   const [confirming, setConfirming] = useState(false);
   const revoked = token.status !== 'active';
+  const router = useRouter();
+  const { selectedAccountId } = useCurrentAccountStore();
 
   const mutation = useMutation({
     mutationFn: () => accountTokensApi.revoke(token.token_id),
@@ -92,14 +96,29 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
         </div>
 
         {!revoked && !confirming && (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`Revoke ${token.name}`}
-            onClick={() => setConfirming(true)}
-          >
-            <Trash2 className="size-4 text-muted-foreground hover:text-destructive" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {selectedAccountId && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Manage policies for ${token.name}`}
+                title="Manage permission policies"
+                onClick={() =>
+                  router.push(`/accounts/${selectedAccountId}/tokens/${token.token_id}`)
+                }
+              >
+                <Shield className="size-4 text-muted-foreground hover:text-foreground" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Revoke ${token.name}`}
+              onClick={() => setConfirming(true)}
+            >
+              <Trash2 className="size-4 text-muted-foreground hover:text-destructive" />
+            </Button>
+          </div>
         )}
       </div>
 

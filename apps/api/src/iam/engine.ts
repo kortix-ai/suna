@@ -260,15 +260,113 @@ async function bridgeLegacyProjectRole(
 }
 
 /**
+ * Load policies attached directly to a PAT. Token policies are evaluated as
+ * a SELF-CONTAINED set — Cloudflare-style "API token" semantics. When a
+ * token has zero policies the engine falls back to the minter's permissions
+ * (back-compat with the current "PAT inherits user" model). When the token
+ * has ≥1 policy, ONLY those policies decide and the minter's permissions
+ * (including super-admin bypass and legacy bridges) are ignored.
+ */
+async function loadTokenPolicies(
+  accountId: string,
+  tokenId: string,
+  action: string,
+  requiredScopeType: ResourceType,
+): Promise<LoadedPolicy[]> {
+  const rows = await db
+    .select({
+      scopeType: iamPolicies.scopeType,
+      scopeId: iamPolicies.scopeId,
+      effect: iamPolicies.effect,
+    })
+    .from(iamPolicies)
+    .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
+    .innerJoin(
+      iamRolePermissions,
+      and(
+        eq(iamRolePermissions.roleId, iamRoles.roleId),
+        eq(iamRolePermissions.action, action),
+      ),
+    )
+    .where(
+      and(
+        eq(iamPolicies.accountId, accountId),
+        eq(iamPolicies.principalType, 'token'),
+        eq(iamPolicies.principalId, tokenId),
+        or(
+          eq(iamPolicies.scopeType, 'account'),
+          eq(iamPolicies.scopeType, requiredScopeType),
+        ),
+      ),
+    );
+  return rows.map((r) => ({
+    scopeType: r.scopeType as ResourceType,
+    scopeId: r.scopeId,
+    effect: r.effect as 'allow' | 'deny',
+  }));
+}
+
+/** Cheap count to decide: does this token have ANY narrowing policy attached
+ * (regardless of action)? Used by the engine to choose between "evaluate
+ * token policies only" vs "fall back to user". */
+async function tokenHasAnyPolicy(accountId: string, tokenId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ policyId: iamPolicies.policyId })
+    .from(iamPolicies)
+    .where(
+      and(
+        eq(iamPolicies.accountId, accountId),
+        eq(iamPolicies.principalType, 'token'),
+        eq(iamPolicies.principalId, tokenId),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
+/**
  * Core authorization check. Returns Allow/Deny with a brief reason for
- * logging.
+ * logging. When `actingTokenId` is set AND that token has at least one IAM
+ * policy attached, the engine evaluates ONLY those policies (the request is
+ * the token's identity, not the minter's). When the token has none, falls
+ * through to user-based evaluation for back-compat with existing PATs.
  */
 export async function authorize(
   userId: string,
   accountId: string,
   action: string,
   target?: AuthorizeTarget,
+  actingTokenId?: string,
 ): Promise<AuthorizeResult> {
+  const requiredScopeType = resourceTypeForAction(action);
+  const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
+
+  // ── Token-as-principal path (Cloudflare-style API tokens) ──────────────
+  // If the request came via a PAT AND that PAT has explicit narrowing
+  // policies, evaluate ONLY the token policies. No super-admin bypass, no
+  // legacy bridges, no inheritance from the minter. This is the safety
+  // contract: a narrowed token can NEVER do more than its policies allow.
+  if (actingTokenId && (await tokenHasAnyPolicy(accountId, actingTokenId))) {
+    const tokenPolicies = await loadTokenPolicies(
+      accountId,
+      actingTokenId,
+      action,
+      requiredScopeType,
+    );
+    let matchedAllow = false;
+    for (const p of tokenPolicies) {
+      if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+      if (p.effect === 'deny') {
+        return { allowed: false, reason: 'token_explicit_deny' };
+      }
+      matchedAllow = true;
+    }
+    return matchedAllow
+      ? { allowed: true, reason: 'token_policy' }
+      : { allowed: false, reason: 'token_no_matching_policy' };
+  }
+
+  // ── User-as-principal path (existing flow) ─────────────────────────────
   const actor = await resolveActor(userId, accountId);
   if (!actor) {
     return { allowed: false, reason: 'not_a_member' };
@@ -278,9 +376,6 @@ export async function authorize(
   if (actor.isSuperAdmin) {
     return { allowed: true, reason: 'super_admin' };
   }
-
-  const requiredScopeType = resourceTypeForAction(action);
-  const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
 
   // Sanity: if the action expects a specific resource and we got an
   // account-level target, only an account-Everything policy can satisfy it.
@@ -359,8 +454,9 @@ export async function assertAuthorized(
   accountId: string,
   action: string,
   target?: AuthorizeTarget,
+  actingTokenId?: string,
 ): Promise<void> {
-  const result = await authorize(userId, accountId, action, target);
+  const result = await authorize(userId, accountId, action, target, actingTokenId);
   if (!result.allowed) {
     const err = new Error(`forbidden: ${action} (${result.reason ?? 'denied'})`);
     (err as Error & { status?: number }).status = 403;
@@ -392,7 +488,35 @@ export async function listAccessibleResources(
   accountId: string,
   action: string,
   resourceType: ResourceType,
+  actingTokenId?: string,
 ): Promise<AccessibleResources> {
+  // Token-as-principal short-circuit. When a PAT with narrowing policies
+  // makes a list request, only its own policies decide what's visible —
+  // the minter's super-admin status / group memberships / legacy bridges
+  // are all ignored.
+  if (actingTokenId && (await tokenHasAnyPolicy(accountId, actingTokenId))) {
+    const rows = await loadTokenPolicies(accountId, actingTokenId, action, resourceType);
+    let allowEverything = false;
+    let denyEverything = false;
+    const allowedIds = new Set<string>();
+    const deniedIds = new Set<string>();
+    for (const r of rows) {
+      const matchesEverything =
+        r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
+      if (r.effect === 'deny') {
+        if (matchesEverything) denyEverything = true;
+        else if (r.scopeId) deniedIds.add(r.scopeId);
+      } else {
+        if (matchesEverything) allowEverything = true;
+        else if (r.scopeId) allowedIds.add(r.scopeId);
+      }
+    }
+    if (denyEverything) return { mode: 'none' };
+    if (allowEverything) return { mode: 'all_except', denied: deniedIds };
+    for (const denied of deniedIds) allowedIds.delete(denied);
+    return { mode: 'allow_only', allowed: allowedIds };
+  }
+
   const actor = await resolveActor(userId, accountId);
   if (!actor) return { mode: 'none' };
 

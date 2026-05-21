@@ -26,11 +26,15 @@ export async function authorizeCached(
     cache = new Map();
     c.set(CACHE_KEY, cache);
   }
-  const key = `${userId}|${accountId}|${cacheKey(action, target)}`;
+  // Token identity is per-request and set by the auth middleware. Include it
+  // in the cache key so two concurrent requests under different tokens never
+  // share an answer.
+  const actingTokenId = c.get('iamTokenId') as string | undefined;
+  const key = `${userId}|${accountId}|${actingTokenId ?? '-'}|${cacheKey(action, target)}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
-  const inflight = authorize(userId, accountId, action, target);
+  const inflight = authorize(userId, accountId, action, target, actingTokenId);
   cache.set(key, inflight);
   return inflight;
 }
