@@ -25,8 +25,12 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
+import type { Icon } from '@/components/ui/kortix-icons';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
@@ -119,9 +123,9 @@ export function SkillsView({ projectId }: { projectId: string }) {
           <Sparkles className="h-4 w-4 text-muted-foreground" />
           <h1 className="flex-1 text-sm font-semibold text-foreground">Skills</h1>
           {skills.length > 0 && (
-            <span className="rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+            <Badge variant="secondary" size="sm" className="tabular-nums">
               {skills.length}
-            </span>
+            </Badge>
           )}
         </div>
 
@@ -518,19 +522,11 @@ function DetailBodySkeleton() {
 
 function DetailEmpty() {
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="max-w-xs text-center">
-        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 bg-background">
-          <Sparkles className="h-5 w-5 text-muted-foreground" />
-        </div>
-        <p className="mt-3 text-sm font-medium text-foreground">
-          Select a skill
-        </p>
-        <p className="mt-1 text-[11.5px] text-muted-foreground">
-          Pick a SKILL.md from the list to preview it.
-        </p>
-      </div>
-    </div>
+    <EmptyState
+      icon={Sparkles}
+      title="Select a skill"
+      description="Pick a SKILL.md from the list to preview it."
+    />
   );
 }
 
@@ -546,48 +542,47 @@ function NoMatches({ query }: { query: string }) {
 }
 
 function EmptyList({
-  icon: Icon,
+  icon,
   label,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
+  icon: Icon;
   label: string;
 }) {
   return (
-    <div className="px-3 py-8 text-center">
-      <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 bg-background">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <p className="mt-2.5 text-[12.5px] font-medium text-foreground">{label}</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        Commit a{' '}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-          .kortix/opencode/skills/&lt;slug&gt;/SKILL.md
-        </code>{' '}
-        and it&apos;ll show up here.
-      </p>
-      <Button asChild variant="ghost" size="sm" className="mt-3 gap-1.5">
-        <a
-          href="https://opencode.ai/docs/skills/"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <ExternalLink className="h-3 w-3" />
-          OpenCode skills docs
-        </a>
-      </Button>
-    </div>
+    <EmptyState
+      icon={icon}
+      size="sm"
+      title={label}
+      description={
+        <>
+          Commit a{' '}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+            .kortix/opencode/skills/&lt;slug&gt;/SKILL.md
+          </code>{' '}
+          and it&apos;ll show up here.
+        </>
+      }
+      action={
+        <Button asChild variant="ghost" size="sm" className="gap-1.5">
+          <a
+            href="https://opencode.ai/docs/skills/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <ExternalLink className="h-3 w-3" />
+            OpenCode skills docs
+          </a>
+        </Button>
+      }
+    />
   );
 }
 
 function ForbiddenNotice() {
   return (
-    <div className="flex items-start gap-2 px-3 py-4">
-      <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
-      <div className="space-y-0.5 text-[11.5px]">
-        <p className="font-medium text-foreground">Access required</p>
-        <p className="text-muted-foreground">No permission to read this repo.</p>
-      </div>
-    </div>
+    <InfoBanner icon={ShieldAlert} title="Access required">
+      No permission to read this repo.
+    </InfoBanner>
   );
 }
 

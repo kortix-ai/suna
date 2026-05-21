@@ -4,9 +4,8 @@
  * AppHeader — the canonical top bar used outside the (dashboard) shell.
  *
  * Layout:
- *  - LEFT:  KortixLogo + optional `leading` slot (e.g. a back button).
- *  - RIGHT: optional `actions` slot + WorkspaceMenu (single widget that
- *           carries identity + workspace context + settings).
+ *  - LEFT:  KortixLogo + ProjectSwitcher (which project, scoped to account).
+ *  - RIGHT: optional `actions` slot + UserMenu (account · you + settings).
  *
  * Variants:
  *  - default  — renders as an in-flow header (use inside a flex column page).
@@ -20,11 +19,8 @@ import type { User } from '@supabase/supabase-js';
 import { ArrowLeftRight } from 'lucide-react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { WorkspaceMenu } from '@/components/sidebar/workspace-menu';
-import {
-  AccountSwitcher,
-  ProjectSwitcher,
-} from '@/components/layout/account-switcher';
+import { UserMenu } from '@/components/layout/user-menu';
+import { ProjectSwitcher } from '@/components/layout/project-switcher';
 import { cn } from '@/lib/utils';
 
 export function AppHeader({
@@ -75,14 +71,12 @@ export function AppHeader({
         >
           <KortixLogo size={20} />
         </Link>
-        {/* Vercel-style breadcrumb: pills separated by skewed dividers that
-            sit BETWEEN them — not inside the buttons themselves. */}
+        {/* Vercel-style breadcrumb: the project switcher (account context
+            lives in the Account·You menu), separated by a skewed divider. */}
         {onProjectsRoute && (
           <>
             <BreadcrumbDivider />
-            <AccountSwitcher />
-            <BreadcrumbDivider />
-            <ProjectSwitcher />
+            <ProjectSwitcher variant="header" />
           </>
         )}
         {leading}
@@ -94,7 +88,7 @@ export function AppHeader({
         )}
       >
         {actions}
-        <WorkspaceMenu
+        <UserMenu
           user={{ name: displayName, email: displayEmail, avatar: avatarUrl }}
           variant="header"
         />

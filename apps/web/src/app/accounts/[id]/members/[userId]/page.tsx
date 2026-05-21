@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Shield, ShieldOff } from 'lucide-react';
+import { ArrowLeft, Shield, ShieldOff, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -12,9 +12,11 @@ import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PoliciesTable } from '@/components/iam/policies-table';
-import { listGroups, setMemberSuperAdmin } from '@/lib/iam-client';
+import { setMemberSuperAdmin } from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -45,16 +47,6 @@ export default function MemberDetailPage() {
     queryFn: () => listAccountMembers(accountId!),
     enabled: !!user && !!accountId,
     staleTime: 20_000,
-  });
-
-  // We currently don't expose a per-member "list groups they belong to" API,
-  // so derive client-side by walking every group's members. Cheap because the
-  // groups list is small. (Move server-side if a large account hits this.)
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', accountId],
-    queryFn: () => listGroups(accountId!),
-    enabled: !!user && !!accountId,
-    staleTime: 30_000,
   });
 
   const setSuperAdminMutation = useMutation({
@@ -135,16 +127,22 @@ export default function MemberDetailPage() {
                   {memberLabel}
                 </h1>
                 {member && (
-                  <div className="mt-1 flex items-center gap-2">
-                    <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-normal">
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" size="sm">
                       {ROLE_LABEL[member.account_role] ?? member.account_role}
                     </Badge>
                     {member.is_super_admin && (
-                      <Badge className="h-5 gap-1 rounded-md px-1.5 text-[10px] font-normal">
-                        <Shield className="h-2.5 w-2.5" />
+                      <Badge size="sm" className="gap-1">
+                        <Shield />
                         Super-admin
                       </Badge>
                     )}
+                    {member.groups?.map((g) => (
+                      <Badge key={g.group_id} variant="secondary" size="sm">
+                        <Users />
+                        {g.name}
+                      </Badge>
+                    ))}
                     <span className="text-xs text-muted-foreground">
                       Joined {new Date(member.joined_at).toLocaleDateString()}
                     </span>
@@ -179,20 +177,22 @@ export default function MemberDetailPage() {
           </div>
 
           {membersQuery.isError && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-              <p className="text-sm font-medium text-destructive">Failed to load member</p>
-              <p className="mt-1 text-xs text-destructive/80">
-                {(membersQuery.error as Error).message}
-              </p>
-            </div>
+            <SectionCard
+              tone="destructive"
+              title="Failed to load member"
+              description={(membersQuery.error as Error).message}
+            />
           )}
 
           {!membersQuery.isLoading && !member && memberUserId && (
-            <div className="rounded-xl border border-border/70 bg-card p-6">
-              <p className="text-sm text-muted-foreground">
-                This user is not a member of this account.
-              </p>
-            </div>
+            <SectionCard flush>
+              <EmptyState
+                icon={Users}
+                size="sm"
+                title="Not a member"
+                description="This user is not a member of this account."
+              />
+            </SectionCard>
           )}
 
           {account && member && (

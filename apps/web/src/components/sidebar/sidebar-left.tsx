@@ -34,7 +34,7 @@ import { useLegacyThreads, useMigrateAllLegacyThreads, useMigrateAllStatus } fro
 import { useGlobalSandboxUpdate } from '@/hooks/platform/use-global-sandbox-update';
 import { useUpdateDialogStore } from '@/stores/update-dialog-store';
 
-import { UserMenu } from '@/components/sidebar/user-menu';
+import { UserMenu } from '@/components/layout/user-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ThreadIcon } from '@/components/sidebar/thread-icon';
 import {

@@ -7,12 +7,14 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { KeyRound, Loader2, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import { SectionCard } from '@/components/ui/section-card';
 import {
   Dialog,
   DialogContent,
@@ -157,22 +159,20 @@ export function PoliciesTable({
   const policies = policiesQuery.data ?? [];
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">Permission policies</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Policies grant {principalLabel} access to specific resources.
-          </p>
-        </div>
-        {canManage && (
-          <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            Create a policy
-          </Button>
-        )}
-      </header>
-
+    <>
+      <SectionCard
+        title="Permission policies"
+        description={`Policies grant ${principalLabel} access to specific resources.`}
+        action={
+          canManage && (
+            <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
+              <Plus className="h-4 w-4" />
+              Create a policy
+            </Button>
+          )
+        }
+        flush
+      >
       {policiesQuery.isError && (
         <div className="px-6 py-5">
           <p className="text-sm text-destructive">
@@ -192,14 +192,16 @@ export function PoliciesTable({
       )}
 
       {!policiesQuery.isLoading && policies.length === 0 && (
-        <div className="px-6 py-12 text-center">
-          <p className="text-sm font-medium text-foreground">No policies yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {canManage
+        <EmptyState
+          icon={KeyRound}
+          size="sm"
+          title="No policies yet"
+          description={
+            canManage
               ? 'Create a policy to grant access to specific scopes and resources.'
-              : 'No permission policies have been attached.'}
-          </p>
-        </div>
+              : 'No permission policies have been attached.'
+          }
+        />
       )}
 
       {!policiesQuery.isLoading && policies.length > 0 && (
@@ -231,7 +233,8 @@ export function PoliciesTable({
                   <td className="px-6 py-3">
                     <Badge
                       variant={isDeny ? 'destructive' : 'outline'}
-                      className="h-5 rounded-md px-1.5 text-[10px] font-normal uppercase tracking-wider"
+                      size="sm"
+                      className="uppercase tracking-wider"
                     >
                       {p.effect}
                     </Badge>
@@ -240,7 +243,7 @@ export function PoliciesTable({
                   <td className="px-3 py-3 text-muted-foreground">{appliesTo}</td>
                   <td className="px-3 py-3">
                     {role ? (
-                      <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-normal">
+                      <Badge variant="outline" size="sm">
                         {role.name}
                       </Badge>
                     ) : (
@@ -285,6 +288,7 @@ export function PoliciesTable({
           </tbody>
         </table>
       )}
+      </SectionCard>
 
       <CreatePolicyDialog
         open={createOpen || !!editTarget}
@@ -321,7 +325,7 @@ export function PoliciesTable({
           if (deleteTarget) deleteMutation.mutate(deleteTarget.policy_id);
         }}
       />
-    </section>
+    </>
   );
 }
 

@@ -41,12 +41,18 @@ export interface AccountDetail {
   updated_at: string;
 }
 
+export interface AccountMemberGroup {
+  group_id: string;
+  name: string;
+}
+
 export interface AccountMember {
   user_id: string;
   email: string | null;
   account_role: AccountRole;
   is_super_admin?: boolean;
   explicit_project_count?: number;
+  groups?: AccountMemberGroup[];
   joined_at: string;
 }
 
@@ -179,6 +185,13 @@ export interface CreateProjectRepoInput {
   description?: string;
 }
 
+export interface ProvisionProjectInput {
+  account_id?: string;
+  name: string;
+  /** Seed the managed repo with the Kortix starter so sessions can boot. */
+  seed_starter?: boolean;
+}
+
 export interface GitHubInstallationStatus {
   account_id: string;
   installed: boolean;
@@ -195,9 +208,14 @@ export interface GitHubInstallationStatus {
 }
 
 export interface ProjectSecret {
+  /** The underlying vault item_id. */
   secret_id: string;
   project_id: string;
   name: string;
+  /** Who can use this secret. See vault-client `VaultVisibility`. */
+  visibility?: 'global' | 'private' | 'select';
+  owner_user_id?: string | null;
+  grant_user_ids?: string[];
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -353,6 +371,8 @@ export async function revokeProjectAccess(projectId: string, userId: string) {
 }
 
 export interface ProjectSecretsResponse {
+  /** Account that owns this project — needed to write via the vault API. */
+  account_id?: string;
   items: ProjectSecret[];
   /** Env keys declared as required in the project's kortix.toml manifest. */
   required: string[];
@@ -438,83 +458,6 @@ export async function rebuildProjectSnapshot(projectId: string) {
     await backendApi.post<RebuildSnapshotResponse>(
       `/projects/${projectId}/snapshots/rebuild`,
       {},
-    ),
-  );
-}
-
-// ─── OAuth credentials (ChatGPT Pro/Plus headless + GitHub Copilot) ─────
-
-export type OauthProviderId = 'openai' | 'github-copilot';
-
-export interface ProjectOauthCredential {
-  provider_id: OauthProviderId;
-  account_id: string | null;
-  enterprise_url: string | null;
-  expires: number;
-  expires_in_ms: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface OauthCredentialsResponse {
-  items: ProjectOauthCredential[];
-  supported: OauthProviderId[];
-}
-
-export interface OauthStartResponse {
-  flow_id: string;
-  provider_id: OauthProviderId;
-  verification_url: string;
-  user_code: string;
-  interval_ms: number;
-  expires_at: number;
-}
-
-export type OauthPollResponse =
-  | { status: 'pending'; next_poll_ms: number }
-  | { status: 'success'; credential: ProjectOauthCredential }
-  | { status: 'expired' }
-  | { status: 'failed'; error: string };
-
-export async function listProjectOauthCredentials(projectId: string) {
-  return unwrap(
-    await backendApi.get<OauthCredentialsResponse>(`/projects/${projectId}/oauth`),
-  );
-}
-
-export async function startProjectOauthFlow(
-  projectId: string,
-  provider: OauthProviderId,
-  input?: { enterprise_url?: string },
-) {
-  return unwrap(
-    await backendApi.post<OauthStartResponse>(
-      `/projects/${projectId}/oauth/${provider}/start`,
-      input ?? {},
-    ),
-  );
-}
-
-export async function pollProjectOauthFlow(
-  projectId: string,
-  provider: OauthProviderId,
-  flowId: string,
-) {
-  return unwrap(
-    await backendApi.post<OauthPollResponse>(
-      `/projects/${projectId}/oauth/${provider}/poll`,
-      { flow_id: flowId },
-    ),
-  );
-}
-
-export async function deleteProjectOauthCredential(
-  projectId: string,
-  provider: OauthProviderId,
-) {
-  return unwrap(
-    await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/oauth/${encodeURIComponent(provider)}`,
     ),
   );
 }
@@ -1115,6 +1058,20 @@ export async function createProject(input: ProjectInput) {
 
 export async function createProjectRepo(input: CreateProjectRepoInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects/create-repo', input));
+}
+
+/**
+ * Create a project backed by a managed Kortix git repo (Freestyle) — the
+ * default. No GitHub account or repo-name uniqueness needed; the starter is
+ * seeded server-side so the project boots immediately.
+ */
+export async function provisionProject(input: ProvisionProjectInput) {
+  return unwrap(
+    await backendApi.post<KortixProject>('/projects/provision', {
+      seed_starter: true,
+      ...input,
+    }),
+  );
 }
 
 export async function getGitHubInstallation(accountId: string) {

@@ -40,10 +40,13 @@ const PUBLIC_ROUTES = [
   '/install.sh',
   '/careers',
   '/partnerships', // Partnerships page should be public
-  '/brand', // Brand guidelines should be public
+  '/brand', // Legacy brand path — redirects to /design-system
+  '/design-system', // Living design system / brand guidelines should be public
   '/pricing', // Pricing page should be public
   '/tutorials', // Tutorials page should be public
   '/enterprise', // Enterprise page should be public
+  '/use-cases', // Use-cases / solutions page should be public
+  '/technology', // Technology / framework page should be public
   '/exploration', // Exploration page should be public
   '/countryerror', // Country restriction error page should be public
   '/landing', // Three.js landing page should be public

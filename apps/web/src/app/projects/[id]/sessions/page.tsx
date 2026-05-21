@@ -52,6 +52,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ProjectShell } from '@/components/projects/project-shell';
+import { SectionCard } from '@/components/ui/section-card';
+import { List, ListRow } from '@/components/ui/list';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InlineMeta } from '@/components/ui/inline-meta';
+import { EmptyState } from '@/components/ui/empty-state';
 
 function relativeTime(input: string) {
   const seconds = Math.floor((Date.now() - new Date(input).getTime()) / 1000);
@@ -65,14 +70,17 @@ function relativeTime(input: string) {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
-const STATUS_TONE: Record<ProjectSessionStatus, string> = {
-  queued: 'bg-muted text-muted-foreground border-border',
-  branching: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  provisioning: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  running: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
-  stopped: 'bg-muted text-muted-foreground border-border',
-  failed: 'bg-destructive/10 text-destructive border-destructive/20',
-  completed: 'bg-muted text-muted-foreground border-border',
+const STATUS_VARIANT: Record<
+  ProjectSessionStatus,
+  'outline' | 'secondary' | 'success' | 'destructive'
+> = {
+  queued: 'outline',
+  branching: 'secondary',
+  provisioning: 'secondary',
+  running: 'success',
+  stopped: 'outline',
+  failed: 'destructive',
+  completed: 'outline',
 };
 
 function SessionRow({
@@ -94,67 +102,64 @@ function SessionRow({
 }) {
   const shortId = session.session_id.slice(0, 8);
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-card px-4 py-3 transition-colors hover:border-foreground/30">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background">
-        <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate font-mono text-xs font-medium text-foreground">
-            {shortId}
-          </span>
-          <Badge
-            variant="outline"
-            className={`rounded-md px-1.5 py-0 text-[10px] font-medium ${STATUS_TONE[session.status]}`}
-          >
-            {session.status}
-          </Badge>
-        </div>
-        <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span className="truncate font-mono">{session.branch_name}</span>
-          <span>·</span>
+    <ListRow
+      onClick={onOpen}
+      leading={<EntityAvatar icon={GitBranch} size="md" />}
+      title={<span className="font-mono">{shortId}</span>}
+      badges={
+        <Badge variant={STATUS_VARIANT[session.status]} size="sm">
+          {session.status}
+        </Badge>
+      }
+      subtitle={
+        <InlineMeta>
+          <span className="font-mono">{session.branch_name}</span>
           <span>{relativeTime(session.created_at)}</span>
+        </InlineMeta>
+      }
+      trailing={
+        <div onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuItem onSelect={onOpen} className="gap-2">
+                <Play className="h-3.5 w-3.5" />
+                Open
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onOpenChangeRequest} className="gap-2">
+                <GitPullRequest className="h-3.5 w-3.5" />
+                Open change request
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={onRestart}
+                disabled={restarting}
+                className="gap-2"
+              >
+                {restarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                Restart
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={onDelete}
+                disabled={deleting}
+                className="gap-2 text-destructive focus:text-destructive"
+              >
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-      </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onSelect={onOpen} className="gap-2">
-            <Play className="h-3.5 w-3.5" />
-            Open
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onOpenChangeRequest} className="gap-2">
-            <GitPullRequest className="h-3.5 w-3.5" />
-            Open change request
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={onRestart}
-            disabled={restarting}
-            className="gap-2"
-          >
-            {restarting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-            Restart
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={onDelete}
-            disabled={deleting}
-            className="gap-2 text-destructive focus:text-destructive"
-          >
-            {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+      }
+    />
   );
 }
 
@@ -319,7 +324,7 @@ function OpenCrFromSessionDialog({
           </div>
         </div>
 
-        <DialogFooter className="px-5 py-3 bg-muted/30 border-t border-border/40">
+        <DialogFooter variant="bar">
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
@@ -453,68 +458,101 @@ export default function ProjectSessionsPage({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-4xl space-y-2 px-4 py-6">
+        <div className="mx-auto w-full max-w-4xl px-4 py-6">
           {sessionsQuery.isLoading && (
-            <div className="space-y-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 rounded-lg" />
-              ))}
-            </div>
+            <SectionCard title="Sessions" flush>
+              <List>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <li key={i} className="flex items-center gap-3 px-6 py-3">
+                    <Skeleton className="size-8 shrink-0 rounded-lg" />
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Skeleton className="h-3.5 w-24" />
+                      <Skeleton className="h-3 w-40" />
+                    </div>
+                  </li>
+                ))}
+              </List>
+            </SectionCard>
           )}
 
           {sessionsQuery.isError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-              <p className="text-sm font-medium text-destructive">Failed to load sessions</p>
-              <p className="mt-1 text-xs text-destructive/80">
-                {(sessionsQuery.error as Error).message}
-              </p>
+            <SectionCard
+              tone="destructive"
+              title="Failed to load sessions"
+              description={(sessionsQuery.error as Error).message}
+            >
               <Button
                 variant="outline"
                 size="sm"
-                className="mt-3"
                 onClick={() => sessionsQuery.refetch()}
               >
                 Retry
               </Button>
-            </div>
+            </SectionCard>
           )}
 
           {!sessionsQuery.isLoading && !sessionsQuery.isError && sessions.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border/70 bg-card/40 p-12 text-center">
-              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg border border-border/70 bg-card">
-                <GitBranch className="h-5 w-5 text-muted-foreground" />
-              </div>
-              <h2 className="mt-4 text-base font-semibold text-foreground">No sessions yet</h2>
-              <p className="mx-auto mt-1.5 max-w-md text-sm text-muted-foreground">
-                Start one to spin up an isolated sandbox + branch.
-              </p>
-              <Button
-                onClick={() => createMutation.mutate()}
-                disabled={createMutation.isPending}
-                className="mt-5 gap-1.5"
-              >
-                {createMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Plus className="h-3.5 w-3.5" />
-                )}
-                New session
-              </Button>
-            </div>
+            <SectionCard flush>
+              <EmptyState
+                icon={GitBranch}
+                size="sm"
+                title="No sessions yet"
+                description="Start one to spin up an isolated sandbox + branch."
+                action={
+                  <Button
+                    onClick={() => createMutation.mutate()}
+                    disabled={createMutation.isPending}
+                    className="gap-1.5"
+                  >
+                    {createMutation.isPending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="h-3.5 w-3.5" />
+                    )}
+                    New session
+                  </Button>
+                }
+              />
+            </SectionCard>
           )}
 
-          {sessions.map((session) => (
-            <SessionRow
-              key={session.session_id}
-              session={session}
-              onOpen={() => router.push(`/projects/${projectId}/sessions/${session.session_id}`)}
-              onRestart={() => restartMutation.mutate(session.session_id)}
-              onDelete={() => deleteMutation.mutate(session.session_id)}
-              onOpenChangeRequest={() => setCrSession(session)}
-              deleting={deletingId === session.session_id}
-              restarting={restartingId === session.session_id}
-            />
-          ))}
+          {!sessionsQuery.isLoading && !sessionsQuery.isError && sessions.length > 0 && (
+            <SectionCard
+              title="Sessions"
+              count={sessions.length}
+              flush
+              action={
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => createMutation.mutate()}
+                  disabled={createMutation.isPending}
+                >
+                  {createMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plus className="h-3.5 w-3.5" />
+                  )}
+                  New session
+                </Button>
+              }
+            >
+              <List>
+                {sessions.map((session) => (
+                  <SessionRow
+                    key={session.session_id}
+                    session={session}
+                    onOpen={() => router.push(`/projects/${projectId}/sessions/${session.session_id}`)}
+                    onRestart={() => restartMutation.mutate(session.session_id)}
+                    onDelete={() => deleteMutation.mutate(session.session_id)}
+                    onOpenChangeRequest={() => setCrSession(session)}
+                    deleting={deletingId === session.session_id}
+                    restarting={restartingId === session.session_id}
+                  />
+                ))}
+              </List>
+            </SectionCard>
+          )}
         </div>
       </div>
 

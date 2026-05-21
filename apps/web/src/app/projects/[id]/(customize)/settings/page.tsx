@@ -9,7 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Label } from '@/components/ui/label';
+import { List, ListRow } from '@/components/ui/list';
+import { SectionCard } from '@/components/ui/section-card';
 import {
   Select,
   SelectContent,
@@ -18,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import {
   archiveProject,
   getProject,
@@ -28,7 +32,6 @@ import {
   type ProjectAccessMember,
   type ProjectRole,
 } from '@/lib/projects-client';
-import { cn } from '@/lib/utils';
 import { SandboxSnapshotCard } from '@/components/projects/sandbox-snapshot-card';
 
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
@@ -103,21 +106,21 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
       <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
         {projectQuery.isLoading && (
           <>
-            <Skeleton className="h-56 rounded-xl" />
-            <Skeleton className="h-72 rounded-xl" />
+            <Skeleton className="h-56 rounded-2xl" />
+            <Skeleton className="h-72 rounded-2xl" />
           </>
         )}
 
         {projectQuery.isError && (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-            <p className="text-sm font-medium text-destructive">Failed to load project</p>
-            <p className="mt-1 text-xs text-destructive/80">
-              {(projectQuery.error as Error).message}
-            </p>
-            <Button variant="outline" size="sm" className="mt-3" onClick={() => projectQuery.refetch()}>
+          <SectionCard
+            tone="destructive"
+            title="Failed to load project"
+            description={(projectQuery.error as Error).message}
+          >
+            <Button variant="outline" size="sm" onClick={() => projectQuery.refetch()}>
               Retry
             </Button>
-          </div>
+          </SectionCard>
         )}
 
         {project && (
@@ -135,11 +138,12 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
               onRetry={() => accessQuery.refetch()}
             />
             {canManage && (
-              <section className="rounded-xl border border-destructive/30 bg-destructive/5">
-                <header className="border-b border-destructive/20 px-6 py-4">
-                  <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
-                </header>
-                <div className="flex items-center justify-between gap-4 px-6 py-4">
+              <SectionCard
+                tone="destructive"
+                title="Danger zone"
+                description="Irreversible and destructive actions."
+              >
+                <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">Archive project</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
@@ -155,7 +159,7 @@ function ProjectSettingsBody({ projectId }: { projectId: string }) {
                     Archive
                   </Button>
                 </div>
-              </section>
+              </SectionCard>
             )}
           </>
         )}
@@ -185,14 +189,11 @@ function RepositoryCard({ repoUrl }: { repoUrl: string | null | undefined }) {
   const slug = webUrl?.replace('https://github.com/', '');
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">Repository</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          The Git repo backing this project — every session pushes a branch here.
-        </p>
-      </header>
-      <div className="flex items-center justify-between gap-4 px-6 py-4">
+    <SectionCard
+      title="Repository"
+      description="The Git repo backing this project — every session pushes a branch here."
+    >
+      <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex items-center gap-2.5">
           <Github className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="truncate text-sm font-mono text-foreground">
@@ -213,7 +214,7 @@ function RepositoryCard({ repoUrl }: { repoUrl: string | null | undefined }) {
           </Button>
         )}
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -262,11 +263,8 @@ function GeneralProjectCard({
   }
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">General</h2>
-      </header>
-      <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
+    <SectionCard title="General">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="project-name">Project name</Label>
           <Input
@@ -309,7 +307,7 @@ function GeneralProjectCard({
           </Button>
         </div>
       </form>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -381,19 +379,12 @@ function ProjectAccessCard({
   }
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">Project access</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Account owners and admins always have manager access.
-          </p>
-        </div>
-        <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-medium">
-          {members.length} members
-        </Badge>
-      </header>
-
+    <SectionCard
+      flush
+      title="Project access"
+      description="Account owners and admins always have manager access."
+      count={members.length}
+    >
       {isLoading && (
         <div className="divide-y divide-border/60">
           {Array.from({ length: 4 }).map((_, index) => (
@@ -419,23 +410,18 @@ function ProjectAccessCard({
       )}
 
       {!isLoading && !isError && (
-        <ul className="divide-y divide-border/60">
+        <List>
           {sortedMembers.map((member) => {
             const busy = pendingUserId === member.user_id;
             const value = member.project_role ?? (member.has_implicit_access ? 'manager' : 'none');
             return (
-              <li key={member.user_id} className="flex items-center gap-3 px-6 py-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-sm font-semibold text-foreground">
-                  {userLabel(member).charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {userLabel(member)}
-                    </span>
-                    <AccountRoleBadge role={member.account_role} />
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+              <ListRow
+                key={member.user_id}
+                leading={<UserAvatar email={member.email ?? ''} size="md" />}
+                title={userLabel(member)}
+                badges={<AccountRoleBadge role={member.account_role} />}
+                subtitle={
+                  <InlineMeta>
                     <span>
                       {member.has_implicit_access
                         ? 'Implicit account access'
@@ -443,39 +429,40 @@ function ProjectAccessCard({
                           ? `Granted ${formatDate(member.granted_at)}`
                           : 'No project access'}
                     </span>
-                  </div>
-                </div>
-
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                ) : member.has_implicit_access ? (
-                  <Badge variant="outline" className="h-7 rounded-md px-2 text-xs">
-                    <Shield className="mr-1 h-3.5 w-3.5" />
-                    Manager
-                  </Badge>
-                ) : (
-                  <Select
-                    value={value}
-                    onValueChange={(next) => setRole(member, next)}
-                    disabled={!canManage}
-                  >
-                    <SelectTrigger className="h-8 w-36">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No access</SelectItem>
-                      <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
-                      <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
-                      <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              </li>
+                  </InlineMeta>
+                }
+                trailing={
+                  busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : member.has_implicit_access ? (
+                    <Badge variant="outline" size="sm">
+                      <Shield className="mr-1 h-3.5 w-3.5" />
+                      Manager
+                    </Badge>
+                  ) : (
+                    <Select
+                      value={value}
+                      onValueChange={(next) => setRole(member, next)}
+                      disabled={!canManage}
+                    >
+                      <SelectTrigger className="h-8 w-36">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No access</SelectItem>
+                        <SelectItem value="viewer">{PROJECT_ROLE_LABEL.viewer}</SelectItem>
+                        <SelectItem value="editor">{PROJECT_ROLE_LABEL.editor}</SelectItem>
+                        <SelectItem value="manager">{PROJECT_ROLE_LABEL.manager}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )
+                }
+              />
             );
           })}
-        </ul>
+        </List>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -483,10 +470,8 @@ function AccountRoleBadge({ role }: { role: ProjectAccessMember['account_role'] 
   return (
     <Badge
       variant="outline"
-      className={cn(
-        'h-4 rounded-md px-1 text-[9px] font-normal capitalize',
-        role === 'owner' && 'border-foreground/30 text-foreground',
-      )}
+      size="sm"
+      className={role === 'owner' ? 'capitalize border-foreground/30 text-foreground' : 'capitalize'}
     >
       {role}
     </Badge>

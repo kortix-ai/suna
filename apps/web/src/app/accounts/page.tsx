@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, ChevronRight, Plus } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
@@ -10,15 +10,18 @@ import { AppHeader } from '@/components/layout/app-header';
 import { CreateAccountModal } from '@/components/accounts/create-account-modal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { List, ListRow } from '@/components/ui/list';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAccounts, type KortixAccount } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { cn } from '@/lib/utils';
 
 export default function AccountsPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
-  const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const { selectedAccountId } = useCurrentAccountStore();
   const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
@@ -65,9 +68,7 @@ export default function AccountsPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Accounts</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Accounts you belong to.
-              </p>
+              <p className="mt-1 text-sm text-muted-foreground">Accounts you belong to.</p>
             </div>
             <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />
@@ -75,27 +76,33 @@ export default function AccountsPage() {
             </Button>
           </div>
 
-          {accountsQuery.isLoading && (
-            <div className="space-y-3">
-              <Skeleton className="h-16 rounded-xl" />
-              <Skeleton className="h-16 rounded-xl" />
-            </div>
-          )}
-
-          {!accountsQuery.isLoading && sortedAccounts.length > 0 && (
-            <div className="space-y-2">
-              {sortedAccounts.map((account) => (
-                <AccountRow
-                  key={account.account_id}
-                  account={account}
-                  active={account.account_id === selectedAccountId}
-                  onClick={() => {
-                    setSelectedAccountId(account.account_id);
-                    router.push('/projects');
-                  }}
-                />
-              ))}
-            </div>
+          {accountsQuery.isLoading ? (
+            <SectionCard flush>
+              <List>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <li key={i} className="flex items-center gap-3 px-6 py-3">
+                    <Skeleton className="size-8 rounded-lg" />
+                    <div className="flex-1 space-y-1.5">
+                      <Skeleton className="h-3.5 w-40" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                  </li>
+                ))}
+              </List>
+            </SectionCard>
+          ) : (
+            <SectionCard flush>
+              <List>
+                {sortedAccounts.map((account) => (
+                  <AccountRow
+                    key={account.account_id}
+                    account={account}
+                    active={account.account_id === selectedAccountId}
+                    onClick={() => router.push(`/accounts/${account.account_id}`)}
+                  />
+                ))}
+              </List>
+            </SectionCard>
           )}
         </div>
       </main>
@@ -103,9 +110,10 @@ export default function AccountsPage() {
       <CreateAccountModal
         open={createOpen}
         onOpenChange={setCreateOpen}
-        onCreated={(account) => {
-          setSelectedAccountId(account.account_id);
-          router.push('/projects');
+        onCreated={() => {
+          // Stay on /accounts and refresh the list so the new account shows up
+          // immediately — no manual hard refresh, no redirect to /projects.
+          queryClient.invalidateQueries({ queryKey: ['accounts'] });
         }}
       />
     </div>
@@ -122,39 +130,34 @@ function AccountRow({
   onClick: () => void;
 }) {
   const label = account.name || (account.personal_account ? 'Personal' : 'Account');
-  const initial = label.charAt(0).toUpperCase();
   return (
-    <button
-      type="button"
+    <ListRow
       onClick={onClick}
-      className={cn(
-        'group flex w-full items-center gap-4 rounded-xl border border-border/70 bg-card px-4 py-3 text-left transition-colors',
-        'hover:border-foreground/30 hover:bg-muted/30',
-      )}
-    >
-      <div className="flex h-9 w-9 items-center justify-center rounded-md border border-border/70 bg-background text-sm font-semibold">
-        {initial}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{label}</span>
+      leading={<EntityAvatar label={label} />}
+      title={label}
+      badges={
+        <>
           {account.personal_account && (
-            <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+            <Badge variant="outline" size="sm">
               Personal
             </Badge>
           )}
           {active && (
-            <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal gap-0.5">
-              <Check className="h-2.5 w-2.5" />
+            <Badge variant="outline" size="sm">
+              <Check />
               Active
             </Badge>
           )}
-        </div>
-        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="capitalize">{account.account_role || 'owner'}</span>
-        </div>
-      </div>
-      <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-    </button>
+        </>
+      }
+      subtitle={
+        <span className="text-xs capitalize text-muted-foreground">
+          {account.account_role || 'owner'}
+        </span>
+      }
+      trailing={
+        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+      }
+    />
   );
 }

@@ -12,6 +12,11 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InlineMeta } from '@/components/ui/inline-meta';
+import { List, ListRow } from '@/components/ui/list';
+import { SectionCard } from '@/components/ui/section-card';
 import {
   Dialog,
   DialogContent,
@@ -76,128 +81,98 @@ export function GroupsTab({ accountId, canManage }: GroupsTabProps) {
   }, [groupsQuery.data, search]);
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">Groups</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Bundle members together and grant permission policies to the whole group.
-          </p>
-        </div>
-        {canManage && (
-          <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            Create a group
-          </Button>
-        )}
-      </header>
-
-      <div className="border-b border-border/60 px-6 py-3">
-        <div className="relative max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by user group name..."
-            className="h-9 pl-9"
-          />
-        </div>
-      </div>
-
-      {groupsQuery.isError && (
-        <div className="px-6 py-5">
-          <p className="text-sm text-destructive">
-            {(groupsQuery.error as Error)?.message || 'Failed to load groups'}
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={() => groupsQuery.refetch()}
-          >
-            Retry
-          </Button>
-        </div>
-      )}
-
-      {groupsQuery.isLoading && (
-        <div className="divide-y divide-border/60">
-          {Array.from({ length: 2 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 px-6 py-3">
-              <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-3.5 w-40" />
-                <Skeleton className="h-3 w-24" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {!groupsQuery.isLoading && !groupsQuery.isError && filtered.length === 0 && (
-        <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground">
-            <Users className="h-4 w-4" />
+    <>
+      <SectionCard
+        title="Groups"
+        description="Bundle members together and grant permission policies to the whole group."
+        action={
+          canManage && (
+            <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
+              <Plus className="h-4 w-4" />
+              Create a group
+            </Button>
+          )
+        }
+        flush
+      >
+        <div className="border-b border-border/60 px-6 py-3">
+          <div className="relative max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by user group name..."
+              className="h-9 pl-9"
+            />
           </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">
-              {search ? 'No groups match your search' : 'No groups yet'}
+        </div>
+
+        {groupsQuery.isError ? (
+          <div className="px-6 py-5">
+            <p className="text-sm text-destructive">
+              {(groupsQuery.error as Error)?.message || 'Failed to load groups'}
             </p>
-            {!search && canManage && (
-              <p className="text-xs text-muted-foreground">
-                Create a group to start attaching permission policies.
-              </p>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => groupsQuery.refetch()}
+            >
+              Retry
+            </Button>
           </div>
-        </div>
-      )}
-
-      {!groupsQuery.isLoading && filtered.length > 0 && (
-        <div className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border/60 bg-muted/20 text-left text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                <th className="px-6 py-2.5 font-medium">Name</th>
-                <th className="px-3 py-2.5 font-medium">Source</th>
-                <th className="px-3 py-2.5 font-medium">Members</th>
-                <th className="px-3 py-2.5 font-medium">Permission policies</th>
-                <th className="w-12 px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {filtered.map((g) => (
-                <tr
-                  key={g.group_id}
-                  className="cursor-pointer transition-colors hover:bg-muted/30"
-                  onClick={() =>
-                    router.push(`/accounts/${accountId}/groups/${g.group_id}`)
-                  }
-                >
-                  <td className="px-6 py-3 font-medium text-foreground">
-                    <div className="flex flex-col gap-0.5">
-                      <span>{g.name}</span>
-                      {g.description && (
-                        <span className="text-xs font-normal text-muted-foreground">
-                          {g.description}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-muted-foreground">
-                    <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-normal capitalize">
+        ) : groupsQuery.isLoading ? (
+          <div className="divide-y divide-border/60">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-6 py-3">
+                <Skeleton className="size-8 rounded-lg" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-40" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            size="sm"
+            title={search ? 'No groups match your search' : 'No groups yet'}
+            description={
+              !search && canManage
+                ? 'Create a group to start attaching permission policies.'
+                : undefined
+            }
+          />
+        ) : (
+          <List>
+            {filtered.map((g) => (
+              <ListRow
+                key={g.group_id}
+                onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
+                leading={<EntityAvatar icon={Users} />}
+                title={g.name}
+                badges={
+                  g.source !== 'manual' && (
+                    <Badge variant="outline" size="sm" className="capitalize">
                       {g.source}
                     </Badge>
-                  </td>
-                  <td className="px-3 py-3 text-muted-foreground">
-                    {g.member_count ?? 0}
-                  </td>
-                  <td className="px-3 py-3 text-muted-foreground">
-                    {g.policy_count ?? 0}
-                  </td>
-                  <td
-                    className="px-3 py-3 text-right"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {canManage && (
+                  )
+                }
+                subtitle={
+                  <InlineMeta>
+                    {g.description ? <span>{g.description}</span> : null}
+                    <span>
+                      {g.member_count ?? 0} member{(g.member_count ?? 0) === 1 ? '' : 's'}
+                    </span>
+                    <span>
+                      {g.policy_count ?? 0} polic{(g.policy_count ?? 0) === 1 ? 'y' : 'ies'}
+                    </span>
+                  </InlineMeta>
+                }
+                trailing={
+                  canManage && (
+                    <div onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
@@ -219,14 +194,14 @@ export function GroupsTab({ accountId, canManage }: GroupsTabProps) {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    </div>
+                  )
+                }
+              />
+            ))}
+          </List>
+        )}
+      </SectionCard>
 
       <CreateGroupDialog
         open={createOpen}
@@ -251,7 +226,7 @@ export function GroupsTab({ accountId, canManage }: GroupsTabProps) {
           if (deleteTarget) deleteMutation.mutate(deleteTarget.group_id);
         }}
       />
-    </section>
+    </>
   );
 }
 

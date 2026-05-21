@@ -251,11 +251,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               </ContextMenuSubContent>
             </ContextMenuSub>
             <ContextMenuItem
-              onClick={() => router.push('/brand')}
+              onClick={() => router.push('/design-system')}
               className="gap-2 text-[13px] cursor-pointer"
             >
               <Layers className="size-3.5 shrink-0" />
-              Brand assets
+              Design system
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
@@ -295,22 +295,19 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </span>
           </a>
 
+          <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+            <Link href="/enterprise">Request demo</Link>
+          </Button>
           {user ? (
-            <Button asChild size="default">
+            <Button asChild size="sm">
               <Link href="/projects">Projects</Link>
             </Button>
           ) : (
             <Button
               onClick={() => { trackCtaSignup(); router.push(ctaLink); }}
-              variant="ghost"
-              size="icon"
-              aria-label="Launch Kortix"
-              className="opacity-80 hover:opacity-100"
+              size="sm"
             >
-              <svg viewBox="0 0 24 24" className="size-[20px]" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
-                <path d="M7.19 5.54A8 8 0 1 0 16.83 5.5" />
-                <line x1="12" y1="2" x2="12" y2="12" />
-              </svg>
+              Get started
             </Button>
           )}
 

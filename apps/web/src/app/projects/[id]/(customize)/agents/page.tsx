@@ -30,6 +30,8 @@ import {
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -103,9 +105,9 @@ export function AgentsView({ projectId }: { projectId: string }) {
           <Bot className="h-4 w-4 text-muted-foreground" />
           <h1 className="flex-1 text-sm font-semibold text-foreground">Agents</h1>
           {agents.length > 0 && (
-            <span className="rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+            <Badge variant="secondary" size="sm" className="tabular-nums">
               {agents.length}
-            </span>
+            </Badge>
           )}
         </div>
 
@@ -267,7 +269,8 @@ function AgentDetail({
               {modeLabel && (
                 <Badge
                   variant="outline"
-                  className="h-5 rounded-md px-1.5 text-[10px] font-medium normal-case tracking-normal text-muted-foreground"
+                  size="sm"
+                  className="font-medium normal-case tracking-normal text-muted-foreground"
                 >
                   {modeLabel}
                 </Badge>
@@ -275,9 +278,10 @@ function AgentDetail({
               {isDefault && (
                 <Badge
                   variant="outline"
-                  className="h-5 gap-1 rounded-md px-1.5 text-[10px] font-medium normal-case tracking-normal text-muted-foreground"
+                  size="sm"
+                  className="font-medium normal-case tracking-normal text-muted-foreground"
                 >
-                  <Star className="h-2.5 w-2.5 fill-current" />
+                  <Star className="fill-current" />
                   Default
                 </Badge>
               )}
@@ -421,17 +425,11 @@ function DetailBodySkeleton() {
 
 function DetailEmpty() {
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="max-w-xs text-center">
-        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 bg-background">
-          <Bot className="h-5 w-5 text-muted-foreground" />
-        </div>
-        <p className="mt-3 text-sm font-medium text-foreground">Select an agent</p>
-        <p className="mt-1 text-[11.5px] text-muted-foreground">
-          Pick an agent from the list to preview it.
-        </p>
-      </div>
-    </div>
+    <EmptyState
+      icon={Bot}
+      title="Select an agent"
+      description="Pick an agent from the list to preview it."
+    />
   );
 }
 
@@ -448,31 +446,32 @@ function NoMatches({ query }: { query: string }) {
 
 function EmptyList() {
   return (
-    <div className="px-3 py-8 text-center">
-      <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg border border-border/60 bg-background">
-        <Bot className="h-4 w-4 text-muted-foreground" />
-      </div>
-      <p className="mt-2.5 text-[12.5px] font-medium text-foreground">
-        No agents yet
-      </p>
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        Commit a{' '}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-          .kortix/opencode/agents/&lt;name&gt;.md
-        </code>{' '}
-        and it&apos;ll show up here.
-      </p>
-      <Button asChild variant="ghost" size="sm" className="mt-3 gap-1.5">
-        <a
-          href="https://opencode.ai/docs/agents/"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <ExternalLink className="h-3 w-3" />
-          OpenCode agents docs
-        </a>
-      </Button>
-    </div>
+    <EmptyState
+      icon={Bot}
+      size="sm"
+      title="No agents yet"
+      description={
+        <>
+          Commit a{' '}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+            .kortix/opencode/agents/&lt;name&gt;.md
+          </code>{' '}
+          and it&apos;ll show up here.
+        </>
+      }
+      action={
+        <Button asChild variant="ghost" size="sm" className="gap-1.5">
+          <a
+            href="https://opencode.ai/docs/agents/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <ExternalLink className="h-3 w-3" />
+            OpenCode agents docs
+          </a>
+        </Button>
+      }
+    />
   );
 }
 
@@ -484,27 +483,25 @@ function DetailError({
   onRetry: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
-      <p className="text-sm font-medium text-destructive">
-        Couldn&apos;t load source
-      </p>
-      <p className="mt-1 text-xs text-destructive/80">{message}</p>
-      <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-        Retry
-      </Button>
-    </div>
+    <InfoBanner
+      tone="destructive"
+      title="Couldn't load source"
+      action={
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      }
+    >
+      {message}
+    </InfoBanner>
   );
 }
 
 function ForbiddenNotice() {
   return (
-    <div className="flex items-start gap-2 px-3 py-4">
-      <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
-      <div className="space-y-0.5 text-[11.5px]">
-        <p className="font-medium text-foreground">Access required</p>
-        <p className="text-muted-foreground">No permission to read this repo.</p>
-      </div>
-    </div>
+    <InfoBanner icon={ShieldAlert} title="Access required">
+      No permission to read this repo.
+    </InfoBanner>
   );
 }
 
