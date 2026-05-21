@@ -107,6 +107,7 @@ import {
   type ProjectRole,
 } from './access';
 import { authorize, listAccessibleResources, ACCOUNT_ACTIONS, PROJECT_ACTIONS, syncProjectMemberPolicy, removeProjectMemberPolicy, syncMemberAccountPolicy } from '../iam';
+import { lookupUserIdByEmail } from '../shared/users';
 import {
   KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
@@ -724,24 +725,6 @@ async function getProjectMemberRole(projectId: string, userId: string): Promise<
     .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
     .limit(1);
   return (row?.projectRole as ProjectRole | undefined) ?? null;
-}
-
-/** Resolve a Kortix user id from an email via the Supabase admin API. Local
- *  copy (kept here to avoid importing the accounts router module). */
-async function lookupUserIdByEmail(email: string): Promise<string | null> {
-  const supabase = getSupabase();
-  const target = email.trim().toLowerCase();
-  let page = 1;
-  while (page <= 50) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
-    if (error || !data) return null;
-    for (const u of data.users) {
-      if (u.email && u.email.trim().toLowerCase() === target) return u.id;
-    }
-    if (data.users.length < 200) return null;
-    page += 1;
-  }
-  return null;
 }
 
 /**

@@ -277,26 +277,60 @@ export const projectSecrets = kortixSchema.table(
   ],
 );
 
-export const projectOauthCredentials = kortixSchema.table(
-  'project_oauth_credentials',
+// ─── Vault: unified, account-owned secrets / credentials / logins ───────────
+// One store for env vars, API keys, and (future) OAuth logins. Owned by an
+// account (personal OR team). Scope falls out of (project_id, owner_user_id):
+//   owner_user_id set      → PRIVATE to that member
+//   project_id set         → scoped to that project (else account-wide)
+//   no grants on a shared item → everyone in scope; ≥1 grant → that allow-list
+// Resolution at use-time is most-specific-wins (see iam/vault.ts).
+export const vaultItemKindEnum = kortixSchema.enum('vault_item_kind', [
+  'env',
+  'api_key',
+  'oauth_token',
+  'oauth_client',
+  'connection_secret',
+]);
+
+export const vaultItems = kortixSchema.table(
+  'vault_items',
   {
-    credentialId: uuid('credential_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
+    itemId: uuid('item_id').defaultRandom().primaryKey(),
+    ownerAccountId: uuid('owner_account_id')
       .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    providerId: varchar('provider_id', { length: 64 }).notNull(),
-    refreshEnc: text('refresh_enc').notNull(),
-    accessEnc: text('access_enc').notNull(),
-    expires: bigint('expires', { mode: 'number' }).notNull(),
-    accountId: varchar('oauth_account_id', { length: 255 }),
-    enterpriseUrl: varchar('enterprise_url', { length: 255 }),
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    kind: vaultItemKindEnum('kind').default('env').notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    valueEnc: text('value_enc').notNull(),
+    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'cascade' }),
+    ownerUserId: uuid('owner_user_id'),
+    providerId: varchar('provider_id', { length: 64 }),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_project_oauth_creds_project').on(table.projectId),
-    uniqueIndex('idx_project_oauth_creds_project_provider').on(table.projectId, table.providerId),
+    index('idx_vault_items_account').on(table.ownerAccountId),
+    index('idx_vault_items_project').on(table.projectId),
+    index('idx_vault_items_owner_user').on(table.ownerUserId),
+    // (account, project, owner_user, name) uniqueness is enforced by a
+    // COALESCE unique index created in SQL (NULLs would otherwise be distinct).
+  ],
+);
+
+export const vaultItemGrants = kortixSchema.table(
+  'vault_item_grants',
+  {
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => vaultItems.itemId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.itemId, table.userId] }),
+    index('idx_vault_item_grants_user').on(table.userId),
   ],
 );
 
@@ -930,7 +964,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   members: many(projectMembers),
   secrets: many(projectSecrets),
-  oauthCredentials: many(projectOauthCredentials),
   triggers: many(projectTriggers),
   triggerEvents: many(projectTriggerEvents),
   sessions: many(projectSessions),
@@ -953,13 +986,6 @@ export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
 export const projectSecretsRelations = relations(projectSecrets, ({ one }) => ({
   project: one(projects, {
     fields: [projectSecrets.projectId],
-    references: [projects.projectId],
-  }),
-}));
-
-export const projectOauthCredentialsRelations = relations(projectOauthCredentials, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectOauthCredentials.projectId],
     references: [projects.projectId],
   }),
 }));

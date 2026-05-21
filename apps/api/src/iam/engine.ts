@@ -9,7 +9,8 @@
 // memoised behind a per-request cache (see authorizer.ts). The raw lookup is
 // also fast enough to call ad-hoc: one composite SELECT.
 
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
+import { HTTPException } from 'hono/http-exception';
 import {
   accountGroupMembers,
   accountGroups,
@@ -17,27 +18,9 @@ import {
   iamPolicies,
   iamRolePermissions,
   iamRoles,
-  projectMembers,
 } from '@kortix/db';
 import { db } from '../shared/db';
-import { ACCOUNT_ACTIONS, resourceTypeForAction, type ResourceType } from './actions';
-import { SYSTEM_ROLE_KEY } from './system-roles';
-
-// Account-level read actions the legacy 'member' role keeps via the bridge.
-// We intentionally exclude every project.*/sandbox.*/etc. read so a plain
-// member doesn't accidentally see every project in the account just because
-// the system role they bridge to bundled project.read. Resource access
-// comes from explicit IAM policies or project_members rows instead.
-const LEGACY_MEMBER_ACCOUNT_READS: ReadonlySet<string> = new Set([
-  ACCOUNT_ACTIONS.ACCOUNT_READ,
-  ACCOUNT_ACTIONS.MEMBER_READ,
-  ACCOUNT_ACTIONS.GROUP_READ,
-  ACCOUNT_ACTIONS.POLICY_READ,
-  ACCOUNT_ACTIONS.ROLE_READ,
-  ACCOUNT_ACTIONS.AUDIT_READ,
-  ACCOUNT_ACTIONS.TOKEN_READ,
-  ACCOUNT_ACTIONS.BILLING_READ,
-]);
+import { resourceTypeForAction, type ResourceType } from './actions';
 
 export type AuthorizeTarget =
   | { type: 'account'; id?: never }
@@ -61,46 +44,17 @@ type LoadedPolicy = {
 
 type ResolvedActor = {
   isSuperAdmin: boolean;
-  accountRole: 'owner' | 'admin' | 'member' | null;
   groupIds: string[];
 };
 
-const SYSTEM_ROLE_PERMISSION_CACHE = new Map<string, Set<string>>();
-
 /**
- * Look up the action-set of a system role by key, memoised.
- * Used by the legacy-role bridge to materialise the synthetic policies for
- * existing account_members rows without inserting them.
- */
-async function getSystemRoleActions(key: string): Promise<Set<string>> {
-  const cached = SYSTEM_ROLE_PERMISSION_CACHE.get(key);
-  if (cached) return cached;
-
-  const rows = await db
-    .select({ action: iamRolePermissions.action })
-    .from(iamRoles)
-    .innerJoin(iamRolePermissions, eq(iamRolePermissions.roleId, iamRoles.roleId))
-    .where(and(isNull(iamRoles.accountId), eq(iamRoles.key, key)));
-
-  const set = new Set(rows.map((r) => r.action));
-  SYSTEM_ROLE_PERMISSION_CACHE.set(key, set);
-  return set;
-}
-
-/** Bust the system-role permission cache. Called by seedSystemRoles after writes. */
-export function invalidateSystemRoleCache(): void {
-  SYSTEM_ROLE_PERMISSION_CACHE.clear();
-}
-
-/**
- * Resolve the actor's membership state in this account: super-admin flag,
- * legacy account role, and group memberships. One round-trip.
+ * Resolve the actor's membership state in this account: super-admin flag and
+ * group memberships. Returns null if the user is not a member. One round-trip.
  */
 async function resolveActor(userId: string, accountId: string): Promise<ResolvedActor | null> {
   const [member] = await db
     .select({
       isSuperAdmin: accountMembers.isSuperAdmin,
-      accountRole: accountMembers.accountRole,
     })
     .from(accountMembers)
     .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
@@ -121,7 +75,6 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
 
   return {
     isSuperAdmin: member.isSuperAdmin,
-    accountRole: member.accountRole as ResolvedActor['accountRole'],
     groupIds: groups.map((g) => g.groupId),
   };
 }
@@ -192,74 +145,6 @@ async function loadGrantingPolicies(
 }
 
 /**
- * Legacy account_role bridge. Until every member has explicit policies, we
- * synthesise them from the existing account_members.account_role enum so the
- * engine matches today's behaviour.
- *
- *   owner / admin → Administrator policy at account Everything scope
- *   member        → Administrator Read-Only at account Everything scope
- *
- * Super-admin short-circuits before this is consulted.
- */
-async function bridgeLegacyAccountRole(
-  actor: ResolvedActor,
-  action: string,
-): Promise<boolean> {
-  if (!actor.accountRole) return false;
-
-  // Owner/admin keep the full Administrator bridge — that's what they had
-  // before IAM and changing it would break every existing account.
-  if (actor.accountRole === 'owner' || actor.accountRole === 'admin') {
-    const actions = await getSystemRoleActions(SYSTEM_ROLE_KEY.ADMINISTRATOR);
-    return actions.has(action);
-  }
-
-  // Member: account-level reads only. NO blanket project / sandbox / trigger
-  // / channel access via the bridge — those come from explicit IAM policies
-  // or project_members rows. This is what makes "limit user to one project"
-  // actually work without requiring a deny policy on Everything.
-  if (actor.accountRole === 'member') {
-    return LEGACY_MEMBER_ACCOUNT_READS.has(action);
-  }
-
-  return false;
-}
-
-/**
- * Legacy project_members bridge. Pre-existing project access via the
- * project_members table is materialised as a synthetic Project Admin /
- * Editor / Viewer policy scoped to that project.
- */
-async function bridgeLegacyProjectRole(
-  accountId: string,
-  userId: string,
-  projectId: string,
-  action: string,
-): Promise<boolean> {
-  const [pm] = await db
-    .select({ projectRole: projectMembers.projectRole })
-    .from(projectMembers)
-    .where(
-      and(
-        eq(projectMembers.accountId, accountId),
-        eq(projectMembers.userId, userId),
-        eq(projectMembers.projectId, projectId),
-      ),
-    )
-    .limit(1);
-  if (!pm) return false;
-
-  const key =
-    pm.projectRole === 'manager'
-      ? SYSTEM_ROLE_KEY.PROJECT_ADMIN
-      : pm.projectRole === 'editor'
-        ? SYSTEM_ROLE_KEY.PROJECT_EDITOR
-        : SYSTEM_ROLE_KEY.PROJECT_VIEWER;
-  const actions = await getSystemRoleActions(key);
-  return actions.has(action);
-}
-
-/**
  * Core authorization check. Returns Allow/Deny with a brief reason for
  * logging.
  */
@@ -311,19 +196,6 @@ export async function authorize(
     return { allowed: true, reason: 'policy' };
   }
 
-  // 3. Legacy bridges (only consulted when no explicit policy matched).
-  //    Explicit denies above already short-circuited.
-  if (await bridgeLegacyAccountRole(actor, action)) {
-    return { allowed: true, reason: 'legacy_account_role' };
-  }
-
-  if (
-    effectiveTarget.type === 'project' &&
-    (await bridgeLegacyProjectRole(accountId, userId, effectiveTarget.id, action))
-  ) {
-    return { allowed: true, reason: 'legacy_project_role' };
-  }
-
   return { allowed: false, reason: 'no_matching_policy' };
 }
 
@@ -362,9 +234,11 @@ export async function assertAuthorized(
 ): Promise<void> {
   const result = await authorize(userId, accountId, action, target);
   if (!result.allowed) {
-    const err = new Error(`forbidden: ${action} (${result.reason ?? 'denied'})`);
-    (err as Error & { status?: number }).status = 403;
-    throw err;
+    // HTTPException (not a plain Error) so Hono's onError maps it to 403
+    // instead of falling through to a 500.
+    throw new HTTPException(403, {
+      message: `forbidden: ${action} (${result.reason ?? 'denied'})`,
+    });
   }
 }
 
@@ -397,15 +271,6 @@ export async function listAccessibleResources(
   if (!actor) return { mode: 'none' };
 
   if (actor.isSuperAdmin) return { mode: 'all' };
-
-  // Owner/admin legacy bridge always allows account-level reads/writes.
-  // Preserves today's "owners see everything" without enumerating policies.
-  if (
-    (actor.accountRole === 'owner' || actor.accountRole === 'admin') &&
-    (await bridgeLegacyAccountRole(actor, action))
-  ) {
-    return { mode: 'all' };
-  }
 
   // Single query: every policy attached to this user (direct or via group)
   // whose role grants `action` and whose scope matches Everything or this
@@ -462,32 +327,6 @@ export async function listAccessibleResources(
     } else {
       if (matchesEverything) allowEverything = true;
       else if (r.scopeId) allowedIds.add(r.scopeId);
-    }
-  }
-
-  // Legacy project_members bridge: any project_role row counts as an allow
-  // for actions the bridged Project Admin/Editor/Viewer role would grant.
-  // Only consulted for project listings.
-  if (resourceType === 'project') {
-    const memberRows = await db
-      .select({
-        projectId: projectMembers.projectId,
-        projectRole: projectMembers.projectRole,
-      })
-      .from(projectMembers)
-      .where(
-        and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, userId)),
-      );
-
-    for (const m of memberRows) {
-      const key =
-        m.projectRole === 'manager'
-          ? SYSTEM_ROLE_KEY.PROJECT_ADMIN
-          : m.projectRole === 'editor'
-            ? SYSTEM_ROLE_KEY.PROJECT_EDITOR
-            : SYSTEM_ROLE_KEY.PROJECT_VIEWER;
-      const actions = await getSystemRoleActions(key);
-      if (actions.has(action)) allowedIds.add(m.projectId);
     }
   }
 

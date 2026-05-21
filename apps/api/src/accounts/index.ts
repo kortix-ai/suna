@@ -5,6 +5,7 @@ import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
+import { lookupUserIdByEmail } from '../shared/users';
 import { resolveAccountId } from '../shared/resolve-account';
 import {
   createAccountToken,
@@ -246,22 +247,6 @@ async function countOwners(accountId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
-export async function lookupUserIdByEmail(email: string): Promise<string | null> {
-  const supabase = getSupabase();
-  let page = 1;
-  const perPage = 200;
-  // Cap pagination to avoid runaway loops on huge auth tables.
-  while (page <= 50) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
-    if (error || !data) return null;
-    for (const u of data.users) {
-      if (u.email && u.email.trim().toLowerCase() === email) return u.id;
-    }
-    if (data.users.length < perPage) return null;
-    page += 1;
-  }
-  return null;
-}
 
 async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
   const result = new Map<string, string | null>();

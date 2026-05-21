@@ -55,6 +55,13 @@ export const ACCOUNT_ACTIONS = {
   TOKEN_CREATE: 'token.create',
   TOKEN_REVOKE: 'token.revoke',
 
+  // Vault (account-owned secrets / credentials). Reading/using a specific
+  // item is governed by the vault's own grants (vault_item_grants), not these.
+  // These gate MANAGEMENT of shared items at the account level.
+  SECRET_READ: 'secret.read',
+  SECRET_WRITE: 'secret.write',
+  SECRET_SHARE: 'secret.share',
+
   // "Create a brand-new project" must live at account scope (the project
   // doesn't exist yet to scope to).
   PROJECT_CREATE: 'project.create',
@@ -147,6 +154,7 @@ export function resourceTypeForAction(action: string): ResourceType {
     action.startsWith('token.') ||
     action.startsWith('billing.') ||
     action.startsWith('audit.') ||
+    action.startsWith('secret.') ||
     action === 'project.create'
   ) {
     return 'account';

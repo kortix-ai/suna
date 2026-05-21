@@ -572,11 +572,16 @@ function SecretDialog({
             Choose who on the account can use it.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+          {/* Dummy fields absorb browser autofill so the real inputs below
+              aren't treated as a username/password login form. */}
+          <input type="text" name="username" autoComplete="username" className="hidden" tabIndex={-1} aria-hidden="true" />
+          <input type="password" name="password" autoComplete="new-password" className="hidden" tabIndex={-1} aria-hidden="true" />
           <div className="space-y-1.5">
             <Label htmlFor="secret-dialog-name">Name</Label>
             <Input
               id="secret-dialog-name"
+              name="vault-secret-name"
               value={fixedName ?? name}
               onChange={(e) =>
                 setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))
@@ -584,6 +589,10 @@ function SecretDialog({
               placeholder="KEY_NAME"
               className="font-mono"
               autoFocus={!fixedName}
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-form-type="other"
               disabled={!!fixedName || save.isPending}
               required
             />
@@ -604,12 +613,16 @@ function SecretDialog({
             </Label>
             <Input
               id="secret-dialog-value"
+              name="vault-secret-value"
               type="password"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               placeholder="••••••••"
               className="font-mono"
-              autoComplete="off"
+              autoComplete="new-password"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-form-type="other"
               autoFocus={!!fixedName}
               disabled={save.isPending}
             />

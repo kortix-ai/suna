@@ -83,6 +83,7 @@ const ADMINISTRATOR_READ_ONLY: SystemRoleSpec = {
     ACCOUNT_ACTIONS.POLICY_READ,
     ACCOUNT_ACTIONS.ROLE_READ,
     ACCOUNT_ACTIONS.TOKEN_READ,
+    ACCOUNT_ACTIONS.SECRET_READ,
     PROJECT_ACTIONS.PROJECT_READ,
     PROJECT_ACTIONS.PROJECT_SESSION_READ,
     PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
@@ -103,6 +104,27 @@ const BILLING_MANAGER: SystemRoleSpec = {
     ACCOUNT_ACTIONS.BILLING_READ,
     ACCOUNT_ACTIONS.BILLING_WRITE,
     ACCOUNT_ACTIONS.AUDIT_READ,
+  ],
+};
+
+// Baseline read access every account member has just by being a member. This
+// replaces the old account_role='member' bridge: instead of synthesising these
+// reads in the engine, every member gets an explicit policy with this role
+// (backfilled for existing members, created on member-add going forward).
+const MEMBER: SystemRoleSpec = {
+  key: 'member',
+  name: 'Member',
+  description: 'Baseline read access to the account that every member has.',
+  resourceType: 'account',
+  actions: [
+    ACCOUNT_ACTIONS.ACCOUNT_READ,
+    ACCOUNT_ACTIONS.MEMBER_READ,
+    ACCOUNT_ACTIONS.GROUP_READ,
+    ACCOUNT_ACTIONS.POLICY_READ,
+    ACCOUNT_ACTIONS.ROLE_READ,
+    ACCOUNT_ACTIONS.AUDIT_READ,
+    ACCOUNT_ACTIONS.TOKEN_READ,
+    ACCOUNT_ACTIONS.BILLING_READ,
   ],
 };
 
@@ -250,6 +272,7 @@ export const SYSTEM_ROLES: readonly SystemRoleSpec[] = [
   SUPER_ADMINISTRATOR,
   ADMINISTRATOR,
   ADMINISTRATOR_READ_ONLY,
+  MEMBER,
   BILLING_MANAGER,
   AUDITOR,
   PROJECT_ADMIN,
@@ -269,6 +292,7 @@ export const SYSTEM_ROLE_KEY = {
   SUPER_ADMINISTRATOR: SUPER_ADMINISTRATOR.key,
   ADMINISTRATOR: ADMINISTRATOR.key,
   ADMINISTRATOR_READ_ONLY: ADMINISTRATOR_READ_ONLY.key,
+  MEMBER: MEMBER.key,
   PROJECT_ADMIN: PROJECT_ADMIN.key,
   PROJECT_EDITOR: PROJECT_EDITOR.key,
   PROJECT_VIEWER: PROJECT_VIEWER.key,
