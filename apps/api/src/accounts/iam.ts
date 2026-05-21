@@ -23,6 +23,7 @@ import {
   deleteGroup,
   deletePolicy,
   getGroup,
+  getPolicyById,
   getRoleById,
   getRolePermissions,
   listGroupMembers,
@@ -32,8 +33,10 @@ import {
   removeGroupMember,
   updateGroup,
   updatePolicy,
+  type IamPolicy,
   type PolicyFilter,
 } from '../repositories/iam';
+import { recordAuditEvent } from '../shared/audit';
 
 export const iamRouter = new Hono<AppEnv>();
 
@@ -56,6 +59,61 @@ async function readBody(c: Context): Promise<Record<string, unknown>> {
     return (await c.req.json()) ?? {};
   } catch {
     return {};
+  }
+}
+
+// Compact snapshot shape for audit before/after fields. The full policy row
+// has timestamps and created_by which add noise to an audit diff — we keep
+// just the semantically-meaningful tuple.
+function snapshotPolicy(p: IamPolicy) {
+  return {
+    policy_id: p.policyId,
+    principal_type: p.principalType,
+    principal_id: p.principalId,
+    scope_type: p.scopeType,
+    scope_id: p.scopeId,
+    role_id: p.roleId,
+    effect: p.effect,
+  };
+}
+
+/**
+ * Audit helper bound to the request context. The global middleware already
+ * logs a coarse "POST /v1/accounts/.../iam/policies" row for every state
+ * change; these explicit calls add the before/after detail that makes "who
+ * granted X to Y on Z date" a single audit_events query.
+ */
+async function auditIam(
+  c: Context,
+  args: {
+    accountId: string;
+    action: string;
+    resourceType: string;
+    resourceId?: string | null;
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+  },
+) {
+  try {
+    await recordAuditEvent({
+      accountId: args.accountId,
+      actorUserId: c.get('userId') as string | undefined,
+      action: args.action,
+      resourceType: args.resourceType,
+      resourceId: args.resourceId ?? null,
+      before: args.before ?? null,
+      after: args.after ?? null,
+      ip:
+        c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+        c.req.header('x-real-ip') ||
+        null,
+      userAgent: c.req.header('user-agent') || null,
+    });
+  } catch (err) {
+    // Audit failures must not break the mutation that succeeded. Log loudly
+    // so it surfaces in monitoring; downgrade to console.warn if we end up
+    // alerting on console.error.
+    console.error('[iam audit] failed to write audit event', args.action, err);
   }
 }
 
@@ -111,6 +169,15 @@ iamRouter.post('/:accountId/iam/groups', async (c) => {
 
   try {
     const group = await createGroup({ accountId, name, description, createdBy: userId });
+
+    await auditIam(c, {
+      accountId,
+      action: 'iam.group.create',
+      resourceType: 'account_group',
+      resourceId: group.groupId,
+      after: { name: group.name, description: group.description, source: group.source },
+    });
+
     return c.json(
       {
         group_id: group.groupId,
@@ -169,8 +236,22 @@ iamRouter.patch('/:accountId/iam/groups/:groupId', async (c) => {
     patch.description = typeof body.description === 'string' ? body.description : null;
   }
 
+  const beforeGroup = await getGroup(accountId, groupId);
+
   const updated = await updateGroup(accountId, groupId, patch);
   if (!updated) return c.json({ error: 'group not found' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.group.update',
+    resourceType: 'account_group',
+    resourceId: groupId,
+    before: beforeGroup
+      ? { name: beforeGroup.name, description: beforeGroup.description }
+      : null,
+    after: { name: updated.name, description: updated.description },
+  });
+
   return c.json({
     group_id: updated.groupId,
     name: updated.name,
@@ -188,8 +269,21 @@ iamRouter.delete('/:accountId/iam/groups/:groupId', async (c) => {
     id: groupId,
   });
 
+  const beforeGroup = await getGroup(accountId, groupId);
+
   const ok = await deleteGroup(accountId, groupId);
   if (!ok) return c.json({ error: 'group not found' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.group.delete',
+    resourceType: 'account_group',
+    resourceId: groupId,
+    before: beforeGroup
+      ? { name: beforeGroup.name, description: beforeGroup.description, source: beforeGroup.source }
+      : null,
+  });
+
   return c.json({ deleted: true });
 });
 
@@ -232,6 +326,17 @@ iamRouter.post('/:accountId/iam/groups/:groupId/members', async (c) => {
   if (userIds.length === 0) return c.json({ error: 'userIds required' }, 400);
 
   const result = await addGroupMembers({ accountId, groupId, userIds, addedBy: userId });
+
+  if (result.added > 0) {
+    await auditIam(c, {
+      accountId,
+      action: 'iam.group.members.add',
+      resourceType: 'account_group',
+      resourceId: groupId,
+      after: { added_user_ids: userIds, added_count: result.added },
+    });
+  }
+
   return c.json({ added: result.added });
 });
 
@@ -250,6 +355,15 @@ iamRouter.delete('/:accountId/iam/groups/:groupId/members/:userId', async (c) =>
 
   const ok = await removeGroupMember(groupId, targetUserId);
   if (!ok) return c.json({ error: 'not a member of this group' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.group.members.remove',
+    resourceType: 'account_group',
+    resourceId: groupId,
+    before: { removed_user_id: targetUserId },
+  });
+
   return c.json({ removed: true });
 });
 
@@ -366,6 +480,14 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
     createdBy: userId,
   });
 
+  await auditIam(c, {
+    accountId,
+    action: 'iam.policy.create',
+    resourceType: 'iam_policy',
+    resourceId: policy.policyId,
+    after: snapshotPolicy(policy),
+  });
+
   return c.json(
     {
       policy_id: policy.policyId,
@@ -426,6 +548,10 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
     );
   }
 
+  // Capture the pre-state so the audit row carries a true before/after diff.
+  // If the row doesn't exist we let updatePolicy below return null and 404.
+  const beforePolicy = await getPolicyById(accountId, policyId);
+
   try {
     const updated = await updatePolicy(accountId, policyId, {
       scopeType,
@@ -434,6 +560,16 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
       effect,
     });
     if (!updated) return c.json({ error: 'policy not found' }, 404);
+
+    await auditIam(c, {
+      accountId,
+      action: 'iam.policy.update',
+      resourceType: 'iam_policy',
+      resourceId: policyId,
+      before: beforePolicy ? snapshotPolicy(beforePolicy) : null,
+      after: snapshotPolicy(updated),
+    });
+
     return c.json({
       policy_id: updated.policyId,
       principal_type: updated.principalType,
@@ -461,8 +597,20 @@ iamRouter.delete('/:accountId/iam/policies/:policyId', async (c) => {
   const policyId = c.req.param('policyId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
 
+  // Snapshot pre-state — once deletePolicy returns we can't reconstruct it.
+  const beforePolicy = await getPolicyById(accountId, policyId);
+
   const ok = await deletePolicy(accountId, policyId);
   if (!ok) return c.json({ error: 'policy not found' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.policy.delete',
+    resourceType: 'iam_policy',
+    resourceId: policyId,
+    before: beforePolicy ? snapshotPolicy(beforePolicy) : null,
+  });
+
   return c.json({ deleted: true });
 });
 
@@ -514,6 +662,17 @@ iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
   const body = await readBody(c);
   const isSuperAdmin = body.isSuperAdmin === true || body.is_super_admin === true;
 
+  // Snapshot the prior flag so an audit reader can see "Alice already had
+  // super-admin → no-op" vs "Alice was promoted on March 5". Cheap query
+  // since the row is small and the update runs against the same key.
+  const [before] = await db
+    .select({ isSuperAdmin: accountMembers.isSuperAdmin })
+    .from(accountMembers)
+    .where(
+      and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)),
+    )
+    .limit(1);
+
   const [updated] = await db
     .update(accountMembers)
     .set({ isSuperAdmin })
@@ -526,6 +685,18 @@ iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
     .returning({ userId: accountMembers.userId, isSuperAdmin: accountMembers.isSuperAdmin });
 
   if (!updated) return c.json({ error: 'member not found' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: updated.isSuperAdmin
+      ? 'iam.member.super_admin.grant'
+      : 'iam.member.super_admin.revoke',
+    resourceType: 'account_member',
+    resourceId: targetUserId,
+    before: { is_super_admin: before?.isSuperAdmin ?? false },
+    after: { is_super_admin: updated.isSuperAdmin },
+  });
+
   return c.json({
     user_id: updated.userId,
     is_super_admin: updated.isSuperAdmin,

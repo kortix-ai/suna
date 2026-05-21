@@ -305,6 +305,28 @@ export async function listPolicies(
   }));
 }
 
+/**
+ * Single-row policy fetch by id. Used by the audit log to snapshot the
+ * pre-state of update/delete events.
+ */
+export async function getPolicyById(
+  accountId: string,
+  policyId: string,
+): Promise<IamPolicy | null> {
+  const [row] = await db
+    .select()
+    .from(iamPolicies)
+    .where(and(eq(iamPolicies.accountId, accountId), eq(iamPolicies.policyId, policyId)))
+    .limit(1);
+  if (!row) return null;
+  return {
+    ...row,
+    principalType: row.principalType as IamPolicy['principalType'],
+    scopeType: row.scopeType as ResourceType,
+    effect: row.effect as IamPolicy['effect'],
+  };
+}
+
 export async function createPolicy(args: {
   accountId: string;
   principalType: 'member' | 'group' | 'token';
