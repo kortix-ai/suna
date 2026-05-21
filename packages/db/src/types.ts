@@ -1,4 +1,4 @@
-import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, projects, projectMembers, projectSecrets, projectTriggers, projectTriggerEvents, projectSessions, projectRuntimeSnapshots, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs } from './schema/kortix';
+import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, projects, projectMembers, projectSecrets, projectTriggers, projectTriggerEvents, projectSessions, projectRuntimeSnapshots, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatThreads } from './schema/kortix';
 import { apiKeys, accountUser } from './schema/public';
 
 // Select types (what you get back from queries)
@@ -47,6 +47,10 @@ export type NewApiKey = typeof apiKeys.$inferInsert;
 export type NewKortixApiKey = typeof kortixApiKeys.$inferInsert;
 export type ServerEntry = typeof serverEntries.$inferSelect;
 export type NewServerEntry = typeof serverEntries.$inferInsert;
+export type ChatChannelBinding = typeof chatChannelBindings.$inferSelect;
+export type NewChatChannelBinding = typeof chatChannelBindings.$inferInsert;
+export type ChatThread = typeof chatThreads.$inferSelect;
+export type NewChatThread = typeof chatThreads.$inferInsert;
 
 // Tunnel
 export type TunnelConnection = typeof tunnelConnections.$inferSelect;

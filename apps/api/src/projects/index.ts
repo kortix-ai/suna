@@ -776,6 +776,7 @@ async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
+  gitAuthToken?: string | null;
 }): Promise<Record<string, string>> {
   // Project secrets + OAuth credentials + project-scoped CLI token all
   // funnel into the sandbox env. Run them in parallel — the CLI token
@@ -814,6 +815,10 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
     ...(opencodeAuthContent ? { OPENCODE_AUTH_CONTENT: opencodeAuthContent } : {}),
+    // GitHub auth for the in-sandbox `git clone` — kortix-agent reads
+    // KORTIX_GITHUB_TOKEN to materialize the project repo on first boot.
+    // Required for private repos; harmless for public ones.
+    ...(input.gitAuthToken ? { KORTIX_GITHUB_TOKEN: input.gitAuthToken } : {}),
   };
 }
 
@@ -947,6 +952,7 @@ export async function createProjectSession(input: {
         baseRef,
         agentName,
         initialPrompt,
+        gitAuthToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
@@ -4157,6 +4163,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         initialPrompt,
+        gitAuthToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,

@@ -406,6 +406,58 @@ export const projectTriggerEvents = kortixSchema.table(
   ],
 );
 
+// Tiny lookup table — only used in OAuth (multi-tenant Kortix Slack app) mode
+// so the shared /v1/webhooks/slack endpoint can translate Slack's team_id into
+// the Kortix project that owns the workspace. BYO mode routes by URL
+// (/v1/webhooks/slack/:projectId) and skips this table entirely.
+export const chatChannelBindings = kortixSchema.table(
+  'chat_channel_bindings',
+  {
+    bindingId: uuid('binding_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    installedAt: timestamp('installed_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_chat_channel_bindings_workspace').on(table.platform, table.workspaceId),
+    index('idx_chat_channel_bindings_project').on(table.projectId),
+  ],
+);
+
+// Thread → session mapping. First Slack/Telegram message in a thread spawns
+// a Kortix session and writes a row here. Follow-up messages in the same
+// thread look up the existing session and deliver the prompt as a follow-up
+// to opencode — same sandbox, same conversation, no fresh boot.
+export const chatThreads = kortixSchema.table(
+  'chat_threads',
+  {
+    threadRowId: uuid('thread_row_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    openedAt: timestamp('opened_at', { withTimezone: true }).defaultNow().notNull(),
+    lastMessageAt: timestamp('last_message_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_chat_threads_thread').on(
+      table.platform,
+      table.workspaceId,
+      table.threadId,
+    ),
+    index('idx_chat_threads_project').on(table.projectId),
+    index('idx_chat_threads_session').on(table.sessionId),
+  ],
+);
+
 // Per-session sandbox runtime row. Decoupled from `kortix.sandboxes` (the
 // legacy /instances table) on purpose: project sessions carry no billing
 // state, no sandbox_members roster, and no team membership semantics — their

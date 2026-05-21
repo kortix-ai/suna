@@ -99,8 +99,11 @@ function renderAgentPrompt(update: TelegramUpdate, message: TelegramMessage): st
     'To reply, run:',
     `  telegram send --chat ${message.chat.id} --reply-to ${message.message_id} --text "..."`,
     '',
-    'Other commands: telegram edit, telegram delete, telegram typing, telegram me,',
-    'telegram get-chat, telegram file. Run `telegram help` for the full list.',
+    'Agent CLIs are installed in /usr/local/bin. Discover them:',
+    '  ls /usr/local/bin/            # see every CLI',
+    '  <cli> help                    # surface for any specific one',
+    '',
+    'Common starting points: `telegram help`, `slack help`, `kchannel help`.',
   ].join('\n');
 }
 

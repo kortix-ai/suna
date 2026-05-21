@@ -22,3 +22,5 @@ export {
 } from './slack-manifest';
 export { slackWebhookApp } from './slack-webhook';
 export { telegramWebhookApp } from './telegram-webhook';
+export { slackOauthApp, buildSlackInstallUrl } from './slack-oauth';
+export { slackOauthMode } from './slack-oauth-mode';

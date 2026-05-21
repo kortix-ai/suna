@@ -1,9 +1,17 @@
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { loadConfig, resolveOpencodeConfigDir } from './config'
 import { materializeRepo } from './git'
 import { logger } from './logger'
 import { createOpencodeSupervisor, waitForOpencodeReady } from './opencode'
 import { startProxy } from './proxy'
 import { installShutdownHandlers } from './shutdown'
+
+// Pin file for the opencode session created from KORTIX_INITIAL_PROMPT.
+// Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
+// prompts into the same opencode conversation instead of opening a fresh
+// session with no context.
+export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
 
 async function main() {
   const bootTime = Date.now()
@@ -46,12 +54,75 @@ async function main() {
     const ready = await waitForOpencodeReady(opencode)
     if (ready) {
       logger.info('[boot] opencode ready', { opencodePid: opencode.getPid() })
+      await maybeDeliverInitialPrompt(cfg.opencodeInternalPort).catch((err) => {
+        logger.warn('[boot] initial prompt delivery failed', err)
+      })
     } else {
       logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', {
         opencodePid: opencode.getPid(),
       })
     }
   })()
+}
+
+async function maybeDeliverInitialPrompt(opencodePort: number): Promise<void> {
+  const prompt = (process.env.KORTIX_INITIAL_PROMPT ?? '').trim()
+  if (!prompt) return
+
+  const baseUrl = `http://127.0.0.1:${opencodePort}`
+  const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
+
+  logger.info('[boot] delivering KORTIX_INITIAL_PROMPT to opencode', {
+    bytes: prompt.length,
+    workspace,
+  })
+
+  const sessionRes = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(workspace)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!sessionRes.ok) {
+    throw new Error(`opencode session create failed: ${sessionRes.status} ${await sessionRes.text()}`)
+  }
+  const session = (await sessionRes.json()) as { id?: string }
+  if (!session.id) throw new Error('opencode session create returned no id')
+
+  const promptRes = await fetch(
+    `${baseUrl}/session/${session.id}/prompt_async?directory=${encodeURIComponent(workspace)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        parts: [{ type: 'text', text: prompt }],
+      }),
+      signal: AbortSignal.timeout(15_000),
+    },
+  )
+  if (!promptRes.ok) {
+    throw new Error(`opencode prompt failed: ${promptRes.status} ${await promptRes.text()}`)
+  }
+  try {
+    mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
+    writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+  } catch (err) {
+    logger.warn('[boot] failed to pin opencode session id', err)
+  }
+  logger.info('[boot] initial prompt delivered', { sessionId: session.id })
+}
+
+/** Read the pinned opencode session id (set at boot when KORTIX_INITIAL_PROMPT
+ *  was delivered). Returns null if no session was pinned — caller decides
+ *  whether to fail or fall back to creating a fresh session. */
+export function readPinnedOpencodeSessionId(): string | null {
+  try {
+    if (!existsSync(OPENCODE_SESSION_PIN_PATH)) return null
+    const id = readFileSync(OPENCODE_SESSION_PIN_PATH, 'utf8').trim()
+    return id.length > 0 ? id : null
+  } catch {
+    return null
+  }
 }
 
 main().catch((err) => {

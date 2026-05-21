@@ -1,0 +1,60 @@
+{
+  "_comment": "Static manifest for the universal Kortix Slack App (OAuth mode). Paste at https://api.slack.com/apps → 'Create New App' → 'From a manifest'. Swap every occurrence of https://frugal-ranunculaceous-patrica.ngrok-free.dev for your production public URL (e.g. https://api.kortix.com) before going live.",
+  "display_information": {
+    "name": "Kortix",
+    "description": "Run Kortix project sessions from Slack — @-mention the bot in any invited channel and the agent replies in-thread.",
+    "background_color": "#0a0a0a"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Kortix",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "redirect_urls": [
+      "https://frugal-ranunculaceous-patrica.ngrok-free.dev/v1/webhooks/slack/oauth/callback"
+    ],
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "channels:history",
+        "channels:read",
+        "channels:join",
+        "chat:write",
+        "chat:write.public",
+        "files:read",
+        "files:write",
+        "groups:history",
+        "groups:read",
+        "im:history",
+        "im:read",
+        "im:write",
+        "mpim:history",
+        "mpim:read",
+        "reactions:read",
+        "reactions:write",
+        "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://frugal-ranunculaceous-patrica.ngrok-free.dev/v1/webhooks/slack",
+      "bot_events": [
+        "app_mention",
+        "message.im",
+        "message.channels",
+        "message.groups",
+        "message.mpim",
+        "reaction_added",
+        "reaction_removed",
+        "member_joined_channel",
+        "file_shared"
+      ]
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}
