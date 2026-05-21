@@ -126,6 +126,62 @@ export const ALL_ACTIONS = {
 
 export type Action = (typeof ALL_ACTIONS)[keyof typeof ALL_ACTIONS];
 
+// Set of every valid action string. Used to validate custom-role action
+// lists at the API boundary — unknown strings are rejected so a typo can't
+// create a role that grants nothing useful.
+export const VALID_ACTIONS: ReadonlySet<string> = new Set([
+  ...Object.values(ACCOUNT_ACTIONS),
+  ...Object.values(PROJECT_ACTIONS),
+  ...Object.values(SANDBOX_ACTIONS),
+  ...Object.values(TRIGGER_ACTIONS),
+  ...Object.values(CHANNEL_ACTIONS),
+]);
+
+/**
+ * Catalog grouped for the UI's action picker. Each item carries a human
+ * label so the frontend doesn't have to title-case dotted strings.
+ */
+export interface ActionCatalogEntry {
+  action: string;
+  label: string;
+  resourceType: ResourceType;
+}
+
+function label(action: string): string {
+  return action
+    .split('.')
+    .map((part) => part[0]?.toUpperCase() + part.slice(1).replace(/_/g, ' '))
+    .join(' · ');
+}
+
+export const ACTION_CATALOG: ActionCatalogEntry[] = [
+  ...Object.values(ACCOUNT_ACTIONS).map((a) => ({
+    action: a,
+    label: label(a),
+    resourceType: resourceTypeForAction(a),
+  })),
+  ...Object.values(PROJECT_ACTIONS).map((a) => ({
+    action: a,
+    label: label(a),
+    resourceType: resourceTypeForAction(a),
+  })),
+  ...Object.values(SANDBOX_ACTIONS).map((a) => ({
+    action: a,
+    label: label(a),
+    resourceType: resourceTypeForAction(a),
+  })),
+  ...Object.values(TRIGGER_ACTIONS).map((a) => ({
+    action: a,
+    label: label(a),
+    resourceType: resourceTypeForAction(a),
+  })),
+  ...Object.values(CHANNEL_ACTIONS).map((a) => ({
+    action: a,
+    label: label(a),
+    resourceType: resourceTypeForAction(a),
+  })),
+];
+
 /**
  * Returns the resource_type the engine should match against for a given
  * action. Derived from the dotted prefix.

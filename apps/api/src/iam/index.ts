@@ -16,9 +16,12 @@ export {
   TRIGGER_ACTIONS,
   CHANNEL_ACTIONS,
   ALL_ACTIONS,
+  ACTION_CATALOG,
+  VALID_ACTIONS,
   RESOURCE_TYPES,
   resourceTypeForAction,
   type Action,
+  type ActionCatalogEntry,
   type ResourceType,
 } from './actions';
 export { seedSystemRoles, SYSTEM_ROLES, SYSTEM_ROLE_KEY } from './system-roles';

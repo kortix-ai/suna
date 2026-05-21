@@ -33,6 +33,7 @@ import {
   updateGroup,
 } from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
+import { usePermission } from '@/lib/use-permission';
 
 export default function GroupDetailPage() {
   const router = useRouter();
@@ -61,7 +62,22 @@ export default function GroupDetailPage() {
 
   const account = accountQuery.data;
   const group = groupQuery.data;
-  const canManage = account?.role === 'owner' || account?.role === 'admin';
+
+  // Granular permissions, sourced from the IAM engine. Each sub-tab gates on
+  // the action it actually performs — no more single "admin or not" flag.
+  const canManageMembers = usePermission(accountId, 'group.members.manage', {
+    resourceType: 'group',
+    resourceId: groupId,
+  }).allowed;
+  const canManagePolicies = usePermission(accountId, 'policy.create').allowed;
+  const canEditGroup = usePermission(accountId, 'group.update', {
+    resourceType: 'group',
+    resourceId: groupId,
+  }).allowed;
+  const canDeleteGroup = usePermission(accountId, 'group.delete', {
+    resourceType: 'group',
+    resourceId: groupId,
+  }).allowed;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -141,7 +157,7 @@ export default function GroupDetailPage() {
                 <GroupMembersCard
                   accountId={account.account_id}
                   groupId={group.group_id}
-                  canManage={canManage}
+                  canManage={canManageMembers}
                 />
               </TabsContent>
 
@@ -151,7 +167,7 @@ export default function GroupDetailPage() {
                   principalType="group"
                   principalId={group.group_id}
                   principalLabel={`the "${group.name}" group`}
-                  canManage={canManage}
+                  canManage={canManagePolicies}
                 />
               </TabsContent>
 
@@ -161,7 +177,8 @@ export default function GroupDetailPage() {
                   groupId={group.group_id}
                   initialName={group.name}
                   initialDescription={group.description ?? ''}
-                  canManage={canManage}
+                  canEdit={canEditGroup}
+                  canDelete={canDeleteGroup}
                   onDeleted={() => router.push(`/accounts/${account.account_id}`)}
                 />
               </TabsContent>
@@ -442,14 +459,16 @@ function GroupSettingsCard({
   groupId,
   initialName,
   initialDescription,
-  canManage,
+  canEdit,
+  canDelete,
   onDeleted,
 }: {
   accountId: string;
   groupId: string;
   initialName: string;
   initialDescription: string;
-  canManage: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onDeleted: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -498,7 +517,7 @@ function GroupSettingsCard({
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={128}
-              disabled={!canManage || updateMutation.isPending}
+              disabled={!canEdit || updateMutation.isPending}
               className="max-w-md"
             />
           </div>
@@ -509,14 +528,14 @@ function GroupSettingsCard({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={256}
-              disabled={!canManage || updateMutation.isPending}
+              disabled={!canEdit || updateMutation.isPending}
               className="max-w-md"
             />
           </div>
           <div className="flex justify-end border-t border-border/60 pt-4">
             <Button
               onClick={() => updateMutation.mutate()}
-              disabled={!canManage || !dirty || !name.trim() || updateMutation.isPending}
+              disabled={!canEdit || !dirty || !name.trim() || updateMutation.isPending}
               className="gap-1.5"
             >
               {updateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -526,7 +545,7 @@ function GroupSettingsCard({
         </div>
       </section>
 
-      {canManage && (
+      {canDelete && (
         <section className="rounded-xl border border-destructive/30 bg-destructive/5">
           <header className="border-b border-destructive/20 px-6 py-4">
             <h2 className="text-base font-semibold text-destructive">Danger zone</h2>

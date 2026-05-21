@@ -52,6 +52,9 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
+import { RolesTab } from '@/components/iam/roles-tab';
+import { AuditTab } from '@/components/iam/audit-tab';
+import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
   type AccountInvitation,
@@ -134,9 +137,19 @@ export default function AccountSettingsPage() {
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
-  const isOwner = account?.role === 'owner';
-  const isAdmin = account?.role === 'admin';
   const isTeam = account ? !account.personal_account : false;
+
+  // Granular capabilities sourced from the IAM engine instead of raw
+  // account_role. A member granted "Administrator" via an explicit policy
+  // gets the same affordances an owner does, and vice-versa.
+  const canWriteAccount = usePermission(accountId, 'account.write').allowed;
+  const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
+  const canInviteMember = usePermission(accountId, 'member.invite').allowed;
+  const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
+  const canUpdateMember = usePermission(accountId, 'member.update').allowed;
+  const canCreateGroup = usePermission(accountId, 'group.create').allowed;
+  const canCreateRole = usePermission(accountId, 'role.create').allowed;
+  const canReadAudit = usePermission(accountId, 'audit.read').allowed;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -212,6 +225,8 @@ export default function AccountSettingsPage() {
               <TabsList>
                 <TabsTrigger value="members">All members</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
+                <TabsTrigger value="roles">Roles</TabsTrigger>
+                {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
 
@@ -225,22 +240,33 @@ export default function AccountSettingsPage() {
                   onRetry={() => membersQuery.refetch()}
                   queryClient={queryClient}
                   currentUserId={user.id}
-                  isOwner={isOwner}
-                  isAdmin={isAdmin}
+                  canInvite={canInviteMember}
+                  canRemove={canRemoveMember}
+                  canUpdateRole={canUpdateMember}
                 />
               </TabsContent>
 
               <TabsContent value="groups" className="space-y-6">
-                <GroupsTab accountId={account.account_id} canManage={isOwner || isAdmin} />
+                <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
               </TabsContent>
+
+              <TabsContent value="roles" className="space-y-6">
+                <RolesTab accountId={account.account_id} canCreate={canCreateRole} />
+              </TabsContent>
+
+              {canReadAudit && (
+                <TabsContent value="audit" className="space-y-6">
+                  <AuditTab accountId={account.account_id} />
+                </TabsContent>
+              )}
 
               <TabsContent value="settings" className="space-y-6">
                 <GeneralCard
                   account={account}
                   queryClient={queryClient}
-                  isOwner={isOwner}
+                  canWrite={canWriteAccount}
                 />
-                {isTeam && isOwner && <DangerZoneCard />}
+                {isTeam && canDeleteAccount && <DangerZoneCard />}
               </TabsContent>
             </Tabs>
           )}
@@ -255,11 +281,11 @@ export default function AccountSettingsPage() {
 function GeneralCard({
   account,
   queryClient,
-  isOwner,
+  canWrite,
 }: {
   account: AccountDetail;
   queryClient: ReturnType<typeof useQueryClient>;
-  isOwner: boolean;
+  canWrite: boolean;
 }) {
   const [name, setName] = useState(account.name);
 
@@ -278,7 +304,7 @@ function GeneralCard({
   });
 
   const trimmed = name.trim();
-  const canSubmit = isOwner && trimmed.length > 0 && trimmed !== account.name;
+  const canSubmit = canWrite && trimmed.length > 0 && trimmed !== account.name;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -302,13 +328,15 @@ function GeneralCard({
             id="account-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            disabled={!isOwner || renameMutation.isPending}
+            disabled={!canWrite || renameMutation.isPending}
             maxLength={120}
             className="max-w-md"
-            title={isOwner ? undefined : 'Only owners can rename'}
+            title={canWrite ? undefined : 'You do not have permission to rename this account.'}
           />
-          {!isOwner && (
-            <p className="text-xs text-muted-foreground">Only owners can rename this account.</p>
+          {!canWrite && (
+            <p className="text-xs text-muted-foreground">
+              You do not have permission to rename this account.
+            </p>
           )}
         </div>
 
@@ -337,8 +365,9 @@ function MembersCard({
   onRetry,
   queryClient,
   currentUserId,
-  isOwner,
-  isAdmin,
+  canInvite,
+  canRemove,
+  canUpdateRole,
 }: {
   account: AccountDetail;
   members: AccountMember[];
@@ -348,8 +377,9 @@ function MembersCard({
   onRetry: () => void;
   queryClient: ReturnType<typeof useQueryClient>;
   currentUserId: string;
-  isOwner: boolean;
-  isAdmin: boolean;
+  canInvite: boolean;
+  canRemove: boolean;
+  canUpdateRole: boolean;
 }) {
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -357,8 +387,8 @@ function MembersCard({
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
 
-  const canInvite = isOwner || isAdmin;
-  const canManage = isOwner;
+  // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
+  // at the page level). The row-level kebab respects each granularly.
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
@@ -529,7 +559,7 @@ function MembersCard({
                           <KeyRound className="h-3.5 w-3.5" />
                           View &amp; Edit permission policies
                         </DropdownMenuItem>
-                        {canManage && !isSelf && (
+                        {canUpdateRole && !isSelf && (
                           <>
                             <DropdownMenuSeparator />
                             <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -553,6 +583,10 @@ function MembersCard({
                                 )}
                               </DropdownMenuItem>
                             ))}
+                          </>
+                        )}
+                        {canRemove && !isSelf && (
+                          <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onSelect={() => setRemoveTarget(member)}

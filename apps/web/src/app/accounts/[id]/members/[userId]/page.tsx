@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Shield, ShieldOff } from 'lucide-react';
+import { ArrowLeft, Check, Shield, ShieldOff, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -14,8 +14,13 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PoliciesTable } from '@/components/iam/policies-table';
-import { listGroups, setMemberSuperAdmin } from '@/lib/iam-client';
+import {
+  listMemberGroups,
+  setMemberSuperAdmin,
+  type MemberGroupSummary,
+} from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
+import { usePermission, usePermissionFor } from '@/lib/use-permission';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',
@@ -47,13 +52,13 @@ export default function MemberDetailPage() {
     staleTime: 20_000,
   });
 
-  // We currently don't expose a per-member "list groups they belong to" API,
-  // so derive client-side by walking every group's members. Cheap because the
-  // groups list is small. (Move server-side if a large account hits this.)
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', accountId],
-    queryFn: () => listGroups(accountId!),
-    enabled: !!user && !!accountId,
+  // Server-side derivation of this member's group memberships. Drives the
+  // "Member of these groups" section so admins can see at a glance which
+  // policies the user inherits via group attachments.
+  const memberGroupsQuery = useQuery({
+    queryKey: ['member-groups', accountId, memberUserId],
+    queryFn: () => listMemberGroups(accountId!, memberUserId!),
+    enabled: !!user && !!accountId && !!memberUserId,
     staleTime: 30_000,
   });
 
@@ -79,12 +84,13 @@ export default function MemberDetailPage() {
     () => members.find((m) => m.user_id === memberUserId),
     [members, memberUserId],
   );
-  const canManage = account?.role === 'owner' || account?.role === 'admin';
-
-  // Owners can promote anyone; super-admin promotion needs MEMBER_SUPER_ADMIN_GRANT
-  // which the IAM engine only allows for Super Administrators (currently
-  // every owner). We just gate the button on isOwner to keep the UI honest.
-  const canPromoteSuperAdmin = account?.role === 'owner';
+  // Granular permissions from the IAM engine. canManage gates the policies
+  // table (create/edit/delete); canPromoteSuperAdmin gates the bypass toggle.
+  const canManage = usePermission(accountId, 'policy.create').allowed;
+  const canPromoteSuperAdmin = usePermission(
+    accountId,
+    'member.super_admin.grant',
+  ).allowed;
 
   // Note: we don't currently surface is_super_admin in listAccountMembers, so
   // we can't show a pre-existing on/off state. Wire the column once the
@@ -196,6 +202,21 @@ export default function MemberDetailPage() {
           )}
 
           {account && member && (
+            <MemberGroupsCard
+              accountId={account.account_id}
+              memberGroups={memberGroupsQuery.data ?? []}
+              isLoading={memberGroupsQuery.isLoading}
+            />
+          )}
+
+          {account && member && (
+            <CapabilitiesCard
+              accountId={account.account_id}
+              memberUserId={member.user_id}
+            />
+          )}
+
+          {account && member && (
             <PoliciesTable
               accountId={account.account_id}
               principalType="member"
@@ -239,5 +260,189 @@ export default function MemberDetailPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+// ─── Capabilities card ────────────────────────────────────────────────────
+// "What this member can actually do" — a curated grid of common account-level
+// capabilities, each probed via the IAM engine. Resolves the gap where an
+// admin sees explicit policies + groups but can't easily tell which broad
+// powers the union grants.
+
+const CAPABILITY_GROUPS: Array<{
+  heading: string;
+  items: Array<{ label: string; action: string }>;
+}> = [
+  {
+    heading: 'Account',
+    items: [
+      { label: 'Rename account', action: 'account.write' },
+      { label: 'Delete account', action: 'account.delete' },
+      { label: 'Manage billing', action: 'billing.write' },
+      { label: 'Read audit log', action: 'audit.read' },
+    ],
+  },
+  {
+    heading: 'Members & groups',
+    items: [
+      { label: 'Invite members', action: 'member.invite' },
+      { label: 'Change member roles', action: 'member.update' },
+      { label: 'Remove members', action: 'member.remove' },
+      { label: 'Grant super-admin', action: 'member.super_admin.grant' },
+      { label: 'Create groups', action: 'group.create' },
+      { label: 'Manage policies', action: 'policy.create' },
+    ],
+  },
+  {
+    heading: 'Projects',
+    items: [
+      { label: 'Create projects', action: 'project.create' },
+      { label: 'Read every project', action: 'project.read' },
+      { label: 'Write every project', action: 'project.write' },
+      { label: 'Delete every project', action: 'project.delete' },
+    ],
+  },
+];
+
+function CapabilitiesCard({
+  accountId,
+  memberUserId,
+}: {
+  accountId: string;
+  memberUserId: string;
+}) {
+  return (
+    <section className="rounded-xl border border-border/70 bg-card">
+      <header className="border-b border-border/60 px-6 py-4">
+        <h2 className="text-base font-semibold text-foreground">
+          What this member can do
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Computed by the IAM engine — sum of explicit policies, group inheritance,
+          super-admin bypass, and legacy role bridges.
+        </p>
+      </header>
+      <div className="divide-y divide-border/60">
+        {CAPABILITY_GROUPS.map((group) => (
+          <div key={group.heading} className="px-6 py-4">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              {group.heading}
+            </p>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              {group.items.map((item) => (
+                <CapabilityRow
+                  key={item.action}
+                  accountId={accountId}
+                  memberUserId={memberUserId}
+                  label={item.label}
+                  action={item.action}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CapabilityRow({
+  accountId,
+  memberUserId,
+  label,
+  action,
+}: {
+  accountId: string;
+  memberUserId: string;
+  label: string;
+  action: string;
+}) {
+  // Each row fires its own probe. The hook dedupes via react-query, so if
+  // the same (user, action) is asked elsewhere in the tree it's a cache hit.
+  const probe = usePermissionFor(accountId, memberUserId, action);
+
+  return (
+    <div
+      className="flex items-center justify-between gap-3 text-sm"
+      title={probe.reason ? `Reason: ${probe.reason}` : undefined}
+    >
+      <span className="truncate text-foreground">{label}</span>
+      {probe.isLoading ? (
+        <span className="h-3.5 w-3.5 animate-pulse rounded-full bg-muted-foreground/20" />
+      ) : probe.allowed ? (
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <Check className="h-3 w-3" />
+        </span>
+      ) : (
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <X className="h-3 w-3" />
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Member groups card ───────────────────────────────────────────────────
+// Lists which account groups this member belongs to. Each chip is a link to
+// the group detail page so admins can jump straight to "what policies does
+// this group grant?" without rebuilding the mental model.
+
+function MemberGroupsCard({
+  accountId,
+  memberGroups,
+  isLoading,
+}: {
+  accountId: string;
+  memberGroups: MemberGroupSummary[];
+  isLoading: boolean;
+}) {
+  const router = useRouter();
+
+  return (
+    <section className="rounded-xl border border-border/70 bg-card">
+      <header className="border-b border-border/60 px-6 py-4">
+        <h2 className="text-base font-semibold text-foreground">
+          Member of {memberGroups.length}{' '}
+          {memberGroups.length === 1 ? 'group' : 'groups'}
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Any policy attached to one of these groups also applies to this member.
+        </p>
+      </header>
+
+      {isLoading && (
+        <div className="px-6 py-4">
+          <Skeleton className="h-6 w-48" />
+        </div>
+      )}
+
+      {!isLoading && memberGroups.length === 0 && (
+        <div className="px-6 py-6 text-center">
+          <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground">
+            <Users className="h-4 w-4" />
+          </div>
+          <p className="text-sm text-foreground">Not a member of any groups</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Add them to a group to inherit its policies.
+          </p>
+        </div>
+      )}
+
+      {!isLoading && memberGroups.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-6 py-4">
+          {memberGroups.map((g) => (
+            <button
+              key={g.group_id}
+              type="button"
+              onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:border-foreground/30 hover:bg-muted/40"
+            >
+              <Users className="h-3 w-3 text-muted-foreground" />
+              {g.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

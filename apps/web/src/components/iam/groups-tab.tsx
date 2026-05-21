@@ -38,10 +38,13 @@ import {
 
 interface GroupsTabProps {
   accountId: string;
-  canManage: boolean;
+  /** Drives visibility of the "Create a group" button and the per-row
+   * delete option. Sourced from a usePermission(group.create) probe at
+   * the page level so plain admins with explicit policies see it too. */
+  canCreate: boolean;
 }
 
-export function GroupsTab({ accountId, canManage }: GroupsTabProps) {
+export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
@@ -84,7 +87,7 @@ export function GroupsTab({ accountId, canManage }: GroupsTabProps) {
             Bundle members together and grant permission policies to the whole group.
           </p>
         </div>
-        {canManage && (
+        {canCreate && (
           <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
             <Plus className="h-4 w-4" />
             Create a group
@@ -142,7 +145,7 @@ export function GroupsTab({ accountId, canManage }: GroupsTabProps) {
             <p className="text-sm font-medium text-foreground">
               {search ? 'No groups match your search' : 'No groups yet'}
             </p>
-            {!search && canManage && (
+            {!search && canCreate && (
               <p className="text-xs text-muted-foreground">
                 Create a group to start attaching permission policies.
               </p>
@@ -197,7 +200,7 @@ export function GroupsTab({ accountId, canManage }: GroupsTabProps) {
                     className="px-3 py-3 text-right"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {canManage && (
+                    {canCreate && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
