@@ -61,7 +61,11 @@ RUN npm install -g --no-audit --no-fund "opencode-ai@${OPENCODE_VERSION}" \
 
 COPY --from=builder /agent/dist/kortix-agent /usr/local/bin/kortix-agent
 COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
-RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint
+COPY apps/sandbox/channels/ /opt/kortix/channels/
+RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix-entrypoint \
+    && printf '#!/bin/sh\nexec bun /opt/kortix/channels/slack.ts "$@"\n' > /usr/local/bin/slack \
+    && printf '#!/bin/sh\nexec bun /opt/kortix/channels/telegram.ts "$@"\n' > /usr/local/bin/telegram \
+    && chmod +x /usr/local/bin/slack /usr/local/bin/telegram
 
 ENV KORTIX_WORKSPACE=/workspace
 WORKDIR /workspace

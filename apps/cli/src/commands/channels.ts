@@ -9,19 +9,19 @@ import { C, status } from '../style.ts';
 const HELP = `Usage: kortix channels <subcommand> [options]
 
 Manage the per-project Slack connection. Tokens are stored encrypted in
-the project's secrets manager — the same envelope every other secret
-uses. The bot listens in any channel of the connected workspace it's
-been invited to.
+the project's secrets manager (\`project_secrets\`). At session spawn they
+land in the sandbox as env vars, so the in-sandbox \`slack\` CLI can post
+back to your workspace.
 
 Subcommands:
-  status                  Show the current Slack connection for this project (default).
+  status                  Show the current Slack connection.
   connect                 Save bot token + signing secret to project_secrets.
-                          Both required; either pass --bot-token / --signing-secret
-                          or set SLACK_BOT_TOKEN / SLACK_SIGNING_SECRET env vars.
-                          \`-\` reads the value from stdin.
+                          Pass --bot-token / --signing-secret, set
+                          SLACK_BOT_TOKEN / SLACK_SIGNING_SECRET in env,
+                          or use \`-\` to read from stdin.
   disconnect              Drop the project's Slack secrets.
-  manifest                Print the Slack app manifest JSON (for "From a manifest"
-                          flow at api.slack.com/apps).
+  manifest                Print the Slack app manifest JSON (paste into
+                          api.slack.com/apps → "From a manifest").
 
 Global options:
   --project <id>          Operate on this project id (default: linked or
@@ -39,19 +39,6 @@ interface SlackInstallation {
   workspaceName: string | null;
   botUserId: string | null;
   installedAt: string;
-}
-
-interface ChannelSpec {
-  platform: 'slack';
-  enabled: boolean;
-  agent: string | null;
-  promptPrefix: string | null;
-  events: string[];
-}
-
-interface ChannelsList {
-  specs: ChannelSpec[];
-  errors: { platform: string; path: string; error: string }[];
 }
 
 export async function runChannels(argv: string[]): Promise<number> {
@@ -101,13 +88,9 @@ async function channelsStatus(
   const ctx = resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
   try {
-    const [install, list] = await Promise.all([
-      ctx.client.get<SlackInstallation | null>(
-        `/projects/${ctx.projectId}/channels/slack/installation`,
-      ),
-      ctx.client.get<ChannelsList>(`/projects/${ctx.projectId}/channels`),
-    ]);
-    const spec = list.specs.find((s) => s.platform === 'slack');
+    const install = await ctx.client.get<SlackInstallation | null>(
+      `/projects/${ctx.projectId}/channels/slack/installation`,
+    );
     if (!install) {
       process.stdout.write(
         `${C.dim}slack${C.reset}  not connected\n` +
@@ -116,34 +99,17 @@ async function channelsStatus(
       return 0;
     }
     const name = install.workspaceName ?? install.workspaceId;
+    const webhookUrl = `${ctx.client.apiBase.replace(/\/$/, '')}/v1/webhooks/slack/${ctx.projectId}`;
     process.stdout.write(
       `${status.ok('Slack')}  ${C.bold}${name}${C.reset}\n` +
         `         team       ${C.dim}${install.workspaceId}${C.reset}\n` +
         `         bot        ${C.dim}${install.botUserId ?? '—'}${C.reset}\n` +
-        `         manifest   ${manifestStatusLine(spec)}\n`,
+        `         webhook    ${C.dim}${webhookUrl}${C.reset}\n`,
     );
-    if (spec) {
-      if (spec.agent) {
-        process.stdout.write(`         agent      ${C.dim}${spec.agent}${C.reset}\n`);
-      }
-      if (spec.events?.length) {
-        process.stdout.write(`         events     ${C.dim}${spec.events.join(', ')}${C.reset}\n`);
-      }
-    }
     return 0;
   } catch (err) {
     return surfaceApiError(err);
   }
-}
-
-function manifestStatusLine(spec: ChannelSpec | undefined): string {
-  if (!spec) {
-    return `${C.yellow}missing${C.reset} ${C.dim}— no [[channels]] entry in kortix.toml${C.reset}`;
-  }
-  if (!spec.enabled) {
-    return `${C.yellow}disabled${C.reset} ${C.dim}— [[channels]] enabled = false${C.reset}`;
-  }
-  return `${C.green}enabled${C.reset}`;
 }
 
 async function channelsConnect(
@@ -176,31 +142,13 @@ async function channelsConnect(
     return surfaceApiError(err);
   }
 
-  // Idempotent commit of `[[channels]] platform = "slack"` to kortix.toml so
-  // the next binding sweep can route Slack events to this project. Without
-  // this, the secrets are saved but the bot still does nothing.
-  try {
-    await ctx.client.post<unknown>(`/projects/${ctx.projectId}/channels`, {
-      platform: 'slack',
-    });
-  } catch (err) {
-    const name = install.workspaceName ?? install.workspaceId;
-    process.stdout.write(
-      `${status.ok(`Connected to ${name}`)} ${C.dim}(secrets saved)${C.reset}\n`,
-    );
-    process.stderr.write(
-      `${status.warn('Could not commit [[channels]] to kortix.toml — add it manually:')}\n` +
-        `\n  [[channels]]\n  platform = "slack"\n\n`,
-    );
-    return surfaceApiError(err);
-  }
-
   const name = install.workspaceName ?? install.workspaceId;
+  const webhookUrl = `${ctx.client.apiBase.replace(/\/$/, '')}/v1/webhooks/slack/${ctx.projectId}`;
   process.stdout.write(
     `${status.ok(`Connected to ${name}`)}\n` +
       `         team       ${C.dim}${install.workspaceId}${C.reset}\n` +
       `         bot        ${C.dim}${install.botUserId ?? '—'}${C.reset}\n` +
-      `         manifest   ${C.green}enabled${C.reset} ${C.dim}— [[channels]] committed to kortix.toml${C.reset}\n`,
+      `         webhook    ${C.dim}${webhookUrl}${C.reset}\n`,
   );
   return 0;
 }
@@ -210,28 +158,12 @@ async function channelsDisconnect(
 ): Promise<number> {
   const ctx = resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
-  // Drop secrets first. If that succeeds but the manifest commit fails, the
-  // user is still effectively disconnected (no creds = no events).
   try {
     await ctx.client.delete(`/projects/${ctx.projectId}/channels/slack/installation`);
   } catch (err) {
     return surfaceApiError(err);
   }
-  let manifestRemoved = true;
-  try {
-    await ctx.client.delete(`/projects/${ctx.projectId}/channels/slack`);
-  } catch {
-    manifestRemoved = false;
-  }
-  process.stdout.write(
-    `${status.ok('Disconnected')}\n` +
-      `         secrets    ${C.dim}removed${C.reset}\n` +
-      `         manifest   ${
-        manifestRemoved
-          ? `${C.dim}[[channels]] entry removed${C.reset}`
-          : `${C.yellow}still present${C.reset} ${C.dim}— remove manually if you don't want it${C.reset}`
-      }\n`,
-  );
+  process.stdout.write(`${status.ok('Disconnected')} ${C.dim}— secrets removed${C.reset}\n`);
   return 0;
 }
 
@@ -240,37 +172,77 @@ async function channelsManifest(
 ): Promise<number> {
   const ctx = resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
-  try {
-    const manifest = await ctx.client.get<unknown>('/webhooks/chat/slack/manifest');
-    process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
-    return 0;
-  } catch (err) {
-    return surfaceApiError(err);
-  }
+
+  const baseUrl = ctx.client.apiBase.replace(/\/$/, '');
+  const requestUrl = `${baseUrl}/v1/webhooks/slack/${ctx.projectId}`;
+
+  const manifest = {
+    display_information: {
+      name: 'Kortix',
+      description: 'Run a Kortix project from Slack',
+      background_color: '#0a0a0a',
+    },
+    features: { bot_user: { display_name: 'kortix', always_online: true } },
+    oauth_config: {
+      scopes: {
+        bot: [
+          'app_mentions:read',
+          'channels:history',
+          'channels:read',
+          'channels:join',
+          'chat:write',
+          'chat:write.public',
+          'files:read',
+          'files:write',
+          'groups:history',
+          'groups:read',
+          'im:history',
+          'im:read',
+          'im:write',
+          'mpim:history',
+          'mpim:read',
+          'reactions:read',
+          'reactions:write',
+          'users:read',
+        ],
+      },
+    },
+    settings: {
+      event_subscriptions: {
+        request_url: requestUrl,
+        bot_events: [
+          'app_mention',
+          'message.im',
+          'message.channels',
+          'message.groups',
+          'message.mpim',
+          'reaction_added',
+          'reaction_removed',
+          'member_joined_channel',
+          'file_shared',
+        ],
+      },
+      org_deploy_enabled: false,
+      socket_mode_enabled: false,
+      token_rotation_enabled: false,
+    },
+  };
+  process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+  return 0;
 }
 
 function resolveSecret(label: string, flagValue: string | undefined, envName: string): string | null {
   let value = flagValue?.trim() ?? '';
   if (value === '-') {
-    value = readStdin().trim();
-  }
-  if (!value) {
-    const env = process.env[envName];
-    if (env && env.trim()) value = env.trim();
+    value = readFileSync(0, 'utf-8').trim();
+  } else if (!value) {
+    value = (process.env[envName] ?? '').trim();
   }
   if (!value) {
     process.stderr.write(
-      `${status.err(`${label} is required`)} — pass ${C.cyan}--${label.replace(' ', '-')}${C.reset} or set ${C.cyan}${envName}${C.reset}.\n`,
+      `${status.err(`Missing ${label}. Pass --${label.replace(' ', '-')} or set ${envName}.`)}\n`,
     );
     return null;
   }
   return value;
-}
-
-function readStdin(): string {
-  try {
-    return readFileSync(0, 'utf8');
-  } catch {
-    return '';
-  }
 }

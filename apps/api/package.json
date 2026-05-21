@@ -13,9 +13,6 @@
     "test:all": "bun run test"
   },
   "dependencies": {
-    "@chat-adapter/slack": "^4.29.0",
-    "@chat-adapter/state-memory": "^4.29.0",
-    "@chat-adapter/state-pg": "^4.29.0",
     "@daytonaio/sdk": "^0.143.0",
     "@kortix/db": "workspace:*",
     "@kortix/shared": "workspace:*",
@@ -24,7 +21,6 @@
     "@sentry/bun": "^10.47.0",
     "@supabase/supabase-js": "^2.95.3",
     "agent-tunnel": "workspace:@kortix/agent-tunnel@*",
-    "chat": "^4.29.0",
     "croner": "^9.0.0",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",

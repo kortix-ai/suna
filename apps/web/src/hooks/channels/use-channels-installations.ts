@@ -48,14 +48,6 @@ export function useConnectSlack() {
       if (!res.success || !res.data) {
         throw new Error(res.error?.message ?? 'Failed to connect');
       }
-      // Auto-enable: write [[channels]] platform = "slack" into kortix.toml
-      // so the binding sweep can route Slack events to this project. POST is
-      // upsert so this is safe to retry / no-op if the user already has it.
-      await backendApi.post(
-        `/projects/${encodeURIComponent(projectId)}/channels`,
-        { platform: 'slack' },
-        { showErrors: false },
-      );
       return res.data;
     },
     onSuccess: (_data, { projectId }) => {
@@ -73,12 +65,6 @@ export function useDisconnectSlack() {
         { showErrors: false },
       );
       if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');
-      // Best-effort: also drop the [[channels]] entry from kortix.toml so the
-      // sweep stops trying to upsert a binding for a now-credentialless project.
-      await backendApi.delete(
-        `/projects/${encodeURIComponent(projectId)}/channels/slack`,
-        { showErrors: false },
-      );
     },
     onSuccess: (_data, projectId) => {
       qc.invalidateQueries({ queryKey: key(projectId) });

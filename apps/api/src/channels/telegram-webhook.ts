@@ -1,0 +1,119 @@
+import { Hono } from 'hono';
+import { eq } from 'drizzle-orm';
+import { projects } from '@kortix/db';
+import { db } from '../shared/db';
+import {
+  createProjectSession,
+  resolveGitTriggerActor,
+} from '../projects';
+import { loadTelegramWebhookSecretForProject } from './install-store';
+
+export const telegramWebhookApp = new Hono();
+
+telegramWebhookApp.post('/:projectId', async (c) => {
+  const projectId = c.req.param('projectId');
+  const expected = await loadTelegramWebhookSecretForProject(projectId);
+  if (!expected) return c.json({ error: 'Not configured' }, 404);
+
+  const presented = c.req.header('x-telegram-bot-api-secret-token') ?? '';
+  if (presented !== expected) return c.json({ error: 'Invalid secret' }, 401);
+
+  let update: TelegramUpdate;
+  try {
+    update = (await c.req.json()) as TelegramUpdate;
+  } catch {
+    return c.json({ error: 'Invalid JSON' }, 400);
+  }
+
+  const message = update.message ?? update.edited_message;
+  if (!message || !message.chat) return c.json({ ok: true });
+
+  spawnAgentTurn(projectId, update, message).catch((err) =>
+    console.error('[telegram-webhook] spawn failed', err),
+  );
+  return c.json({ ok: true });
+});
+
+async function spawnAgentTurn(
+  projectId: string,
+  update: TelegramUpdate,
+  message: TelegramMessage,
+): Promise<void> {
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project) return;
+
+  const userId = await resolveGitTriggerActor(project.accountId);
+  if (!userId) {
+    console.warn('[telegram-webhook] no actor for project', projectId);
+    return;
+  }
+
+  const initialPrompt = renderAgentPrompt(update, message);
+
+  const result = await createProjectSession({
+    project,
+    userId,
+    body: {
+      base_ref: project.defaultBranch,
+      agent_name: 'default',
+      initial_prompt: initialPrompt,
+    },
+    enforceAccountCap: false,
+    metadata: {
+      source: 'telegram',
+      telegram: {
+        chat_id: message.chat.id,
+        chat_type: message.chat.type,
+        from_id: message.from?.id,
+        message_id: message.message_id,
+      },
+    },
+  });
+
+  if (result.error) {
+    console.error('[telegram-webhook] createProjectSession failed', result.error.body);
+  }
+}
+
+function renderAgentPrompt(update: TelegramUpdate, message: TelegramMessage): string {
+  const from = message.from?.username
+    ? `@${message.from.username}`
+    : message.from?.id
+      ? String(message.from.id)
+      : 'unknown';
+
+  return [
+    'You received a message on Telegram.',
+    '',
+    `Chat:        ${message.chat.id} (${message.chat.type})`,
+    `From:        ${from}`,
+    `Message id:  ${message.message_id}`,
+    '',
+    'Message:',
+    message.text ?? message.caption ?? '(non-text payload)',
+    '',
+    'To reply, run:',
+    `  telegram send --chat ${message.chat.id} --reply-to ${message.message_id} --text "..."`,
+    '',
+    'Other commands: telegram edit, telegram delete, telegram typing, telegram me,',
+    'telegram get-chat, telegram file. Run `telegram help` for the full list.',
+  ].join('\n');
+}
+
+interface TelegramUpdate {
+  update_id: number;
+  message?: TelegramMessage;
+  edited_message?: TelegramMessage;
+}
+
+interface TelegramMessage {
+  message_id: number;
+  chat: { id: number; type: string };
+  from?: { id?: number; username?: string };
+  text?: string;
+  caption?: string;
+}

@@ -406,56 +406,6 @@ export const projectTriggerEvents = kortixSchema.table(
   ],
 );
 
-export const chatPlatformEnum = kortixSchema.enum('chat_platform', ['slack']);
-
-export const chatChannelBindings = kortixSchema.table(
-  'chat_channel_bindings',
-  {
-    bindingId: uuid('binding_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    platform: chatPlatformEnum('platform').notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('idx_chat_channel_bindings_project_platform').on(table.projectId, table.platform),
-    index('idx_chat_channel_bindings_lookup').on(table.platform, table.workspaceId),
-  ],
-);
-
-export const chatThreads = kortixSchema.table(
-  'chat_threads',
-  {
-    rowId: uuid('row_id').defaultRandom().primaryKey(),
-    platform: chatPlatformEnum('platform').notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    channelId: varchar('channel_id', { length: 128 }).notNull(),
-    threadId: varchar('thread_id', { length: 256 }).notNull(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    sessionId: text('session_id').references(() => projectSessions.sessionId, {
-      onDelete: 'set null',
-    }),
-    openedBy: varchar('opened_by', { length: 256 }),
-    openedAt: timestamp('opened_at', { withTimezone: true }).defaultNow().notNull(),
-    lastMessageAt: timestamp('last_message_at', { withTimezone: true }).defaultNow().notNull(),
-    closedAt: timestamp('closed_at', { withTimezone: true }),
-  },
-  (table) => [
-    uniqueIndex('idx_chat_threads_thread').on(
-      table.platform,
-      table.workspaceId,
-      table.threadId,
-    ),
-    index('idx_chat_threads_project').on(table.projectId),
-    index('idx_chat_threads_session').on(table.sessionId),
-  ],
-);
-
 // Per-session sandbox runtime row. Decoupled from `kortix.sandboxes` (the
 // legacy /instances table) on purpose: project sessions carry no billing
 // state, no sandbox_members roster, and no team membership semantics — their
@@ -933,8 +883,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   triggerEvents: many(projectTriggerEvents),
   sessions: many(projectSessions),
   runtimeSnapshots: many(projectRuntimeSnapshots),
-  chatChannelBindings: many(chatChannelBindings),
-  chatThreads: many(chatThreads),
 }));
 
 export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
@@ -1012,24 +960,6 @@ export const projectRuntimeSnapshotsRelations = relations(projectRuntimeSnapshot
   project: one(projects, {
     fields: [projectRuntimeSnapshots.projectId],
     references: [projects.projectId],
-  }),
-}));
-
-export const chatChannelBindingsRelations = relations(chatChannelBindings, ({ one }) => ({
-  project: one(projects, {
-    fields: [chatChannelBindings.projectId],
-    references: [projects.projectId],
-  }),
-}));
-
-export const chatThreadsRelations = relations(chatThreads, ({ one }) => ({
-  project: one(projects, {
-    fields: [chatThreads.projectId],
-    references: [projects.projectId],
-  }),
-  session: one(projectSessions, {
-    fields: [chatThreads.sessionId],
-    references: [projectSessions.sessionId],
   }),
 }));
 

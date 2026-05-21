@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, Copy, ExternalLink, Loader2, Slack, X } from 'lucide-react';
 import {
   Dialog,
@@ -13,20 +13,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { backendApi } from '@/lib/api-client';
+import { getEnv } from '@/lib/env-config';
 import {
   useSlackInstall,
   useConnectSlack,
   useDisconnectSlack,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-
-interface ChannelsHealth {
-  mode: 'off' | 'single' | 'multi' | 'both';
-  single_ready: boolean;
-  multi_ready: boolean;
-  errors: string[];
-}
 
 interface ChannelsDialogProps {
   open: boolean;
@@ -35,35 +28,7 @@ interface ChannelsDialogProps {
 }
 
 export function ChannelsDialog({ open, onOpenChange, projectId }: ChannelsDialogProps) {
-  const [health, setHealth] = useState<ChannelsHealth | null>(null);
-  const [manifest, setManifest] = useState<string | null>(null);
-  const [loadingMeta, setLoadingMeta] = useState(false);
-  const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoadingMeta(true);
-    setHealth(null);
-    setManifest(null);
-    (async () => {
-      const [healthRes, manifestRes] = await Promise.all([
-        backendApi.get<ChannelsHealth>('/webhooks/chat/health', { showErrors: false }),
-        backendApi.get<unknown>('/webhooks/chat/slack/manifest', { showErrors: false }),
-      ]);
-      if (cancelled) return;
-      if (healthRes.success && healthRes.data) setHealth(healthRes.data);
-      if (manifestRes.success && manifestRes.data) {
-        setManifest(JSON.stringify(manifestRes.data, null, 2));
-      }
-      setLoadingMeta(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
-
-  const loading = loadingMeta || loadingInstall;
+  const { data: install, isLoading } = useSlackInstall(projectId);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -74,7 +39,7 @@ export function ChannelsDialog({ open, onOpenChange, projectId }: ChannelsDialog
             Channels
           </DialogTitle>
           <DialogDescription>
-            Connect Slack so the agent can run from a workspace channel — per project.
+            Connect Slack so the agent can post into a workspace channel — per project.
           </DialogDescription>
         </DialogHeader>
 
@@ -83,16 +48,14 @@ export function ChannelsDialog({ open, onOpenChange, projectId }: ChannelsDialog
             Open a project to manage its Slack connection. Each project has its own Slack install stored in
             that project's secrets.
           </div>
-        ) : loading ? (
+        ) : isLoading ? (
           <div className="flex items-center gap-2 py-10 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading…
           </div>
         ) : install ? (
           <Connected projectId={projectId} installation={install} />
-        ) : !health || health.mode === 'off' ? (
-          <NotConfigured errors={health?.errors ?? []} />
         ) : (
-          <SelfInstall projectId={projectId} manifest={manifest} />
+          <SelfInstall projectId={projectId} />
         )}
       </DialogContent>
     </Dialog>
@@ -149,10 +112,9 @@ function Connected({
       <div className="rounded-md border border-border/70 bg-card px-4 py-3 text-sm">
         <p className="font-medium text-foreground">Next: enable for this project</p>
         <p className="mt-1 text-muted-foreground">
-          Add a <code className="font-mono text-xs">[[channels]]</code> entry with{' '}
-          <code className="font-mono text-xs">platform = "slack"</code> to this project's{' '}
-          <code className="font-mono text-xs">kortix.toml</code>, invite the bot to a channel, and{' '}
-          <code className="font-mono text-xs">@kortix</code> — replies stream right here.
+          Invite the bot to a channel and <code className="font-mono text-xs">@mention</code> it. A session
+          spawns in this project's sandbox; the agent posts replies back to the thread using the in-sandbox{' '}
+          <code className="font-mono text-xs">slack</code> CLI.
         </p>
       </div>
 
@@ -190,13 +152,15 @@ function Connected({
   );
 }
 
-function SelfInstall({ projectId, manifest }: { projectId: string; manifest: string | null }) {
+function SelfInstall({ projectId }: { projectId: string }) {
   const [step, setStep] = useState<1 | 2>(1);
   const [copied, setCopied] = useState(false);
   const [botToken, setBotToken] = useState('');
   const [signingSecret, setSigningSecret] = useState('');
   const [error, setError] = useState<string | null>(null);
   const connect = useConnectSlack();
+
+  const manifest = useMemo(() => buildSlackManifest(projectId), [projectId]);
 
   const copyManifest = async () => {
     if (!manifest) return;
@@ -237,7 +201,6 @@ function SelfInstall({ projectId, manifest }: { projectId: string; manifest: str
                 variant="ghost"
                 size="sm"
                 onClick={copyManifest}
-                disabled={!manifest}
                 className="h-7 gap-1.5"
               >
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -261,7 +224,7 @@ function SelfInstall({ projectId, manifest }: { projectId: string; manifest: str
               'max-h-64 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed',
             )}
           >
-            {manifest ?? '…'}
+            {manifest}
           </pre>
         </div>
 
@@ -347,4 +310,63 @@ function SelfInstall({ projectId, manifest }: { projectId: string; manifest: str
       </div>
     </div>
   );
+}
+
+function buildSlackManifest(projectId: string): string {
+  const backendUrl = (getEnv().BACKEND_URL ?? '').replace(/\/$/, '');
+  const requestUrl = backendUrl
+    ? `${backendUrl}/v1/webhooks/slack/${projectId}`
+    : `<set BACKEND_URL in env>/v1/webhooks/slack/${projectId}`;
+  const manifest = {
+    display_information: {
+      name: 'Kortix',
+      description: 'Run a Kortix project from Slack',
+      background_color: '#0a0a0a',
+    },
+    features: { bot_user: { display_name: 'kortix', always_online: true } },
+    oauth_config: {
+      scopes: {
+        bot: [
+          'app_mentions:read',
+          'channels:history',
+          'channels:read',
+          'channels:join',
+          'chat:write',
+          'chat:write.public',
+          'files:read',
+          'files:write',
+          'groups:history',
+          'groups:read',
+          'im:history',
+          'im:read',
+          'im:write',
+          'mpim:history',
+          'mpim:read',
+          'reactions:read',
+          'reactions:write',
+          'users:read',
+        ],
+      },
+    },
+    settings: {
+      event_subscriptions: {
+        request_url: requestUrl,
+        bot_events: [
+          'app_mention',
+          'message.im',
+          'message.channels',
+          'message.groups',
+          'message.mpim',
+          'reaction_added',
+          'reaction_removed',
+          'member_joined_channel',
+          'file_shared',
+        ],
+      },
+      org_deploy_enabled: false,
+      socket_mode_enabled: false,
+      token_rotation_enabled: false,
+    },
+  };
+  return JSON.stringify(manifest, null, 2);
 }

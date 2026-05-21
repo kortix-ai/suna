@@ -139,13 +139,6 @@ import {
   type AppSpec,
 } from './apps';
 import {
-  channelSpecToTomlEntry,
-  extractChannels,
-  type ChannelSpec,
-} from '../channels/manifest';
-import { loadProjectChannels } from '../channels/load';
-import { syncProjectChannelBindings } from '../channels/sync';
-import {
   deleteSlackInstall,
   loadSlackInstall,
   saveSlackInstall,
@@ -1588,15 +1581,6 @@ export function startProjectTriggerScheduler(): void {
       });
     }
 
-    import('../channels/sweep').then(({ runChannelBindingSweep }) =>
-      runChannelBindingSweep().then((result) => {
-        if (result.inserted || result.updated || result.removed) {
-          console.log('[channels] binding sweep completed', result);
-        }
-      }),
-    ).catch((error) => {
-      console.error('[channels] binding sweep failed:', error);
-    });
   }, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
 }
@@ -2838,151 +2822,6 @@ projectsApp.delete('/:projectId/triggers/:slug', async (c) => {
       eq(projectTriggerRuntime.slug, slug),
     ));
 
-  return c.json({ ok: true });
-});
-
-// ─── Channels CRUD ───────────────────────────────────────────────────────
-// Channels are keyed by platform (one entry per platform per project). The
-// bot listens in any channel of the connected workspace, so the manifest
-// holds preferences (agent, prompt, events) — not channel ids.
-
-const SUPPORTED_CHANNEL_PLATFORMS = ['slack'] as const;
-
-function upsertChannelInManifest(manifest: ParsedManifest, spec: ChannelSpec): ParsedManifest {
-  const current = Array.isArray(manifest.raw.channels)
-    ? (manifest.raw.channels as Record<string, unknown>[])
-    : [];
-  const entry = channelSpecToTomlEntry(spec);
-  const idx = current.findIndex(
-    (e) => typeof e?.platform === 'string' && e.platform === spec.platform,
-  );
-  const next = current.slice();
-  if (idx >= 0) next[idx] = entry;
-  else next.push(entry);
-  return { ...manifest, raw: { ...manifest.raw, channels: next } };
-}
-
-function removeChannelFromManifest(manifest: ParsedManifest, platform: string): ParsedManifest {
-  const current = Array.isArray(manifest.raw.channels)
-    ? (manifest.raw.channels as Record<string, unknown>[])
-    : [];
-  const next = current.filter(
-    (e) => !(typeof e?.platform === 'string' && e.platform === platform),
-  );
-  return { ...manifest, raw: { ...manifest.raw, channels: next } };
-}
-
-function parseChannelDraft(
-  body: Record<string, unknown>,
-  opts: { existingPlatform: ChannelSpec['platform'] | null },
-): ChannelSpec | { error: string } {
-  const platformRaw = normalizeString(body.platform) ?? opts.existingPlatform ?? '';
-  if (!(SUPPORTED_CHANNEL_PLATFORMS as readonly string[]).includes(platformRaw)) {
-    return {
-      error: `Unsupported platform "${platformRaw || 'unset'}". Currently: ${SUPPORTED_CHANNEL_PLATFORMS.join(', ')}.`,
-    };
-  }
-  const platform = platformRaw as ChannelSpec['platform'];
-
-  const agent = normalizeString(body.agent ?? (body as any).agent_name);
-  const promptPrefix = normalizeString(body.prompt_prefix ?? (body as any).promptPrefix ?? body.prompt);
-  const enabled = body.enabled === undefined ? true : Boolean(body.enabled);
-
-  const validEvents = ['mention', 'dm', 'subscribed'] as const;
-  const eventsRaw = Array.isArray(body.events) ? body.events : null;
-  let events: ChannelSpec['events'];
-  if (eventsRaw === null) {
-    events = ['mention', 'dm'];
-  } else {
-    events = [];
-    for (const e of eventsRaw) {
-      if (typeof e !== 'string') continue;
-      const v = e.trim().toLowerCase();
-      if (validEvents.includes(v as never) && !events.includes(v as never)) {
-        events.push(v as never);
-      }
-    }
-    if (events.length === 0) events = ['mention', 'dm'];
-  }
-
-  return {
-    platform,
-    path: `${MANIFEST_FILENAME}#channels.${platform}`,
-    enabled,
-    agent: agent || null,
-    promptPrefix: promptPrefix || null,
-    events,
-  };
-}
-
-async function loadChannelsForResponse(project: ProjectRow) {
-  const { specs, errors } = await loadProjectChannels(project);
-  return { specs, errors };
-}
-
-// GET /v1/projects/:projectId/channels
-projectsApp.get('/:projectId/channels', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  return c.json(await loadChannelsForResponse(loaded.row));
-});
-
-// POST /v1/projects/:projectId/channels
-// Upserts the [[channels]] entry for the body's platform (one per platform).
-projectsApp.post('/:projectId/channels', async (c) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const draft = parseChannelDraft(body, { existingPlatform: null });
-  if ('error' in draft) return c.json({ error: draft.error }, 400);
-
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-
-  const next = upsertChannelInManifest(manifest, draft);
-  const result = await commitManifest(loaded.row, next, `chore: update channels (${draft.platform})`);
-  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
-
-  await syncProjectChannelBindings(loaded.row).catch((err) =>
-    console.warn('[channels] sync after POST failed', err),
-  );
-  return c.json(await loadChannelsForResponse(loaded.row), 201);
-});
-
-// DELETE /v1/projects/:projectId/channels/:platform
-projectsApp.delete('/:projectId/channels/:platform', async (c) => {
-  const projectId = c.req.param('projectId');
-  const platform = c.req.param('platform');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(SUPPORTED_CHANNEL_PLATFORMS as readonly string[]).includes(platform)) {
-    return c.json({ error: `Unknown platform "${platform}"` }, 400);
-  }
-
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-  if (!extractChannels(manifest).specs.some((s) => s.platform === platform)) {
-    return c.json({ error: 'Not found' }, 404);
-  }
-
-  const next = removeChannelFromManifest(manifest, platform);
-  const result = await commitManifest(loaded.row, next, `chore: remove ${platform} channel`);
-  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
-
-  await syncProjectChannelBindings(loaded.row).catch((err) =>
-    console.warn('[channels] sync after DELETE failed', err),
-  );
   return c.json({ ok: true });
 });
 
