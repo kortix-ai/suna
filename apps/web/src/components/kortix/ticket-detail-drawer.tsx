@@ -207,7 +207,7 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                       <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/55 font-semibold">Activity</span>
                       <span className="text-[10px] text-muted-foreground/30 tabular-nums ml-auto">{events?.length ?? 0}</span>
                     </div>
-                    <div className="rounded-xl border border-border/40 bg-card divide-y divide-border/30 overflow-hidden">
+                    <div className="rounded-2xl border border-border/40 bg-card divide-y divide-border/30 overflow-hidden">
                       {(events ?? []).length === 0 ? (
                         <div className="text-[12px] text-muted-foreground/40 py-5 text-center">No activity yet.</div>
                       ) : (
@@ -225,7 +225,7 @@ export function TicketDetailDrawer({ ticketId, onClose, columns, fields, agents,
                     </div>
 
                     {/* Comment composer */}
-                    <div className="mt-3 rounded-xl border border-border/40 bg-card focus-within:border-border transition-colors">
+                    <div className="mt-3 rounded-2xl border border-border/40 bg-card focus-within:border-border transition-colors">
                       <MentionTextarea
                         value={comment}
                         onChange={setComment}

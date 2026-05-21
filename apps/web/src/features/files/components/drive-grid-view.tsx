@@ -163,7 +163,7 @@ function FolderCard({
           onDrop={handleDrop}
           onClick={isRenaming ? undefined : onClick}
           className={cn(
-            'group flex items-center gap-2.5 h-10 px-3 rounded-lg border border-border/50 cursor-pointer select-none',
+            'group flex items-center gap-2.5 h-10 px-3 rounded-2xl border border-border/50 cursor-pointer select-none',
             'transition-colors duration-150',
             'hover:bg-muted/50 hover:border-border',
             'active:scale-[0.98]',
@@ -330,7 +330,7 @@ function FileCard({
           onClick={isRenaming ? undefined : onClick}
           onDoubleClick={isRenaming ? undefined : onDoubleClick}
           className={cn(
-            'group relative flex flex-col rounded-lg border border-border/50 cursor-pointer select-none overflow-hidden',
+            'group relative flex flex-col rounded-2xl border border-border/50 cursor-pointer select-none overflow-hidden',
             'transition-colors duration-150',
             'hover:bg-muted/30 hover:border-border hover:shadow-sm',
             'active:scale-[0.98]',
@@ -509,7 +509,7 @@ export function DriveGridView({
                   onClick={() => onNavigateToDir(node)}
                   title={meta?.description}
                   className={cn(
-                    'group flex h-10 cursor-pointer select-none items-center gap-2.5 rounded-lg border border-border/50 px-3',
+                    'group flex h-10 cursor-pointer select-none items-center gap-2.5 rounded-2xl border border-border/50 px-3',
                     'transition-colors duration-150',
                     'hover:bg-muted/50 hover:border-border',
                     'active:scale-[0.98]',

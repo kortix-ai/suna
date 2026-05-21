@@ -220,9 +220,9 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
         {isLoading ? (
           <div className="space-y-3">{[...Array(8)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
         ) : list.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground border border-foreground/[0.08] rounded-xl"><Server className="h-10 w-10 mx-auto mb-3 opacity-30" /><p className="text-sm">No instances match your filters</p></div>
+          <div className="text-center py-16 text-muted-foreground border border-foreground/[0.08] rounded-2xl"><Server className="h-10 w-10 mx-auto mb-3 opacity-30" /><p className="text-sm">No instances match your filters</p></div>
         ) : (
-          <div className={cn('border border-foreground/[0.08] rounded-xl overflow-hidden transition-opacity', isFetching ? 'opacity-60' : '')}>
+          <div className={cn('border border-foreground/[0.08] rounded-2xl overflow-hidden transition-opacity', isFetching ? 'opacity-60' : '')}>
             <Table>
               <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="w-[90px]">ID</TableHead><TableHead>Name</TableHead><TableHead>Account / Email</TableHead><TableHead>Provider</TableHead><TableHead>Status</TableHead><TableHead>Created</TableHead><TableHead className="w-[150px]">Actions</TableHead></TableRow></TableHeader>
               <TableBody>
@@ -262,7 +262,7 @@ export function AdminInstancesSection({ embedded = false }: { embedded?: boolean
         <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
           <DialogContent>
             <DialogHeader><DialogTitle>Delete Instance</DialogTitle><DialogDescription>Permanently delete <span className="font-mono text-foreground">{confirmDelete?.sandboxId.slice(0, 8)}</span>{confirmDelete?.provider === 'justavps' && ' and terminate the JustaVPS machine'}. This cannot be undone.</DialogDescription></DialogHeader>
-            {confirmDelete && <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-lg px-4 py-3 space-y-1.5 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Account</span><span>{confirmDelete.accountName ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Provider</span><span className="capitalize">{confirmDelete.provider ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Status</span><span>{confirmDelete.status ?? '—'}</span></div></div>}
+            {confirmDelete && <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-3 space-y-1.5 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">Account</span><span>{confirmDelete.accountName ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Provider</span><span className="capitalize">{confirmDelete.provider ?? '—'}</span></div><div className="flex justify-between"><span className="text-muted-foreground">Status</span><span>{confirmDelete.status ?? '—'}</span></div></div>}
             <DialogFooter><Button variant="outline" onClick={() => setConfirmDelete(null)} disabled={deleteMutation.isPending}>Cancel</Button><Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>{deleteMutation.isPending ? 'Deleting…' : 'Delete'}</Button></DialogFooter>
           </DialogContent>
         </Dialog>
@@ -329,7 +329,7 @@ export function AdminAccountsSection({ embedded = false }: { embedded?: boolean 
         {accountsQuery.isLoading ? (
           <div className="space-y-3">{[...Array(8)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
         ) : (
-          <div className="border border-foreground/[0.08] rounded-xl overflow-hidden divide-y divide-border/60">
+          <div className="border border-foreground/[0.08] rounded-2xl overflow-hidden divide-y divide-border/60">
             {(accountsQuery.data?.accounts ?? []).map((account) => (
               <button key={account.accountId} type="button" onClick={() => setSelected(account)} className="w-full text-left px-4 py-3 hover:bg-muted/20 transition-colors">
                 <div className="flex items-center justify-between gap-4"><div className="min-w-0"><div className="text-sm font-medium truncate">{account.name || 'Unnamed account'}</div><div className="text-xs text-muted-foreground truncate">{account.ownerEmail || 'No owner email'} · {account.accountId}</div></div><div className="flex items-center gap-4 text-xs text-muted-foreground shrink-0"><span>{account.memberCount} users</span><span>{account.tier || 'free'}</span><span className="font-mono text-foreground">{formatCredits(account.balance)} cr</span></div></div>
@@ -345,28 +345,28 @@ export function AdminAccountsSection({ embedded = false }: { embedded?: boolean 
             {selected && (
               <div className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="rounded-lg border p-3"><div className="text-xs text-muted-foreground">Total credits</div><div className="text-lg font-semibold">{formatCredits(selected.balance)}</div></div>
-                  <div className="rounded-lg border p-3"><div className="text-xs text-muted-foreground">Expiring</div><div className="text-lg font-semibold">{formatCredits(selected.expiringCredits)}</div></div>
-                  <div className="rounded-lg border p-3"><div className="text-xs text-muted-foreground">Permanent</div><div className="text-lg font-semibold">{formatCredits(selected.nonExpiringCredits)}</div></div>
-                  <div className="rounded-lg border p-3"><div className="text-xs text-muted-foreground">Daily</div><div className="text-lg font-semibold">{formatCredits(selected.dailyCreditsBalance)}</div></div>
+                  <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Total credits</div><div className="text-lg font-semibold">{formatCredits(selected.balance)}</div></div>
+                  <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Expiring</div><div className="text-lg font-semibold">{formatCredits(selected.expiringCredits)}</div></div>
+                  <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Permanent</div><div className="text-lg font-semibold">{formatCredits(selected.nonExpiringCredits)}</div></div>
+                  <div className="rounded-2xl border p-3"><div className="text-xs text-muted-foreground">Daily</div><div className="text-lg font-semibold">{formatCredits(selected.dailyCreditsBalance)}</div></div>
                 </div>
                 <div className="grid md:grid-cols-[1.2fr,0.8fr] gap-6">
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-medium"><Users className="h-4 w-4" /> Users</div>
-                    <div className="border rounded-lg divide-y">
+                    <div className="border rounded-2xl divide-y">
                       {usersQuery.isLoading ? <div className="p-4 text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Loading users…</div> : (usersQuery.data?.users ?? []).map((user) => <div key={user.user_id} className="px-4 py-3 text-sm flex items-center justify-between gap-3"><div className="min-w-0"><div className="truncate">{user.email}</div><div className="text-xs text-muted-foreground font-mono truncate">{user.user_id}</div></div><div className="text-xs text-muted-foreground uppercase tracking-wide">{user.account_role}</div></div>)}
                     </div>
                   </div>
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm font-medium"><CreditCard className="h-4 w-4" /> Billing & credits</div>
-                    <div className="rounded-lg border p-4 space-y-3 text-sm">
+                    <div className="rounded-2xl border p-4 space-y-3 text-sm">
                       <div><span className="text-muted-foreground">Tier:</span> <span className="font-medium ml-1">{selected.tier || 'free'}</span></div>
                       <div><span className="text-muted-foreground">Provider:</span> <span className="font-medium ml-1">{selected.provider || '—'}</span></div>
                       <div><span className="text-muted-foreground">Payment status:</span> <span className="font-medium ml-1">{selected.paymentStatus || '—'}</span></div>
                       <div><span className="text-muted-foreground">Plan:</span> <span className="font-medium ml-1">{selected.planType || '—'}</span></div>
                       <div><span className="text-muted-foreground">Billing email:</span> <span className="font-medium ml-1 break-all">{selected.billingCustomerEmail || '—'}</span></div>
                     </div>
-                    <div className="rounded-lg border p-4 space-y-3">
+                    <div className="rounded-2xl border p-4 space-y-3">
                       <div className="text-sm font-medium">Grant credits</div>
                       <Input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount (e.g. 25)" />
                       <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Reason / note" />
@@ -437,9 +437,9 @@ export function AdminAccessRequestsSection({ embedded = false }: { embedded?: bo
             </div>
             <div className="flex items-center gap-2"><Button variant="outline" onClick={() => router.push('/admin')}>Admin Home</Button><Button variant="outline" onClick={() => router.push('/instances')} className="gap-2"><ArrowLeft className="h-4 w-4" />Back to Instances</Button></div>
             <div className="flex gap-3">
-              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-lg px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-amber-500">{summary.pending}</p><p className="text-[11px] text-muted-foreground">Pending</p></div>
-              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-lg px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-green-500">{summary.approved}</p><p className="text-[11px] text-muted-foreground">Approved</p></div>
-              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-lg px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-red-500">{summary.rejected}</p><p className="text-[11px] text-muted-foreground">Rejected</p></div>
+              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-amber-500">{summary.pending}</p><p className="text-[11px] text-muted-foreground">Pending</p></div>
+              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-green-500">{summary.approved}</p><p className="text-[11px] text-muted-foreground">Approved</p></div>
+              <div className="bg-foreground/[0.04] border border-foreground/[0.08] rounded-2xl px-4 py-2 text-center min-w-[80px]"><p className="text-lg font-semibold text-red-500">{summary.rejected}</p><p className="text-[11px] text-muted-foreground">Rejected</p></div>
             </div>
           </div>
         )}
@@ -456,9 +456,9 @@ export function AdminAccessRequestsSection({ embedded = false }: { embedded?: bo
         {isLoading ? (
           <div className="space-y-3">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
         ) : requests.length === 0 ? (
-          <div className="rounded-xl border border-border/60 bg-muted/10 py-16 text-center text-sm text-muted-foreground">No requests found for this filter.</div>
+          <div className="rounded-2xl border border-border/60 bg-muted/10 py-16 text-center text-sm text-muted-foreground">No requests found for this filter.</div>
         ) : (
-          <div className="border border-foreground/[0.08] rounded-xl overflow-hidden">
+          <div className="border border-foreground/[0.08] rounded-2xl overflow-hidden">
             <Table>
               <TableHeader><TableRow><TableHead>Email</TableHead><TableHead>Status</TableHead><TableHead>Requested</TableHead><TableHead className="w-[180px]">Actions</TableHead></TableRow></TableHeader>
               <TableBody>

@@ -896,7 +896,7 @@ export function CreateDeploymentDialog({
               <label className={labelClass}>
                 Select Folder <span className="text-red-500">*</span>
               </label>
-              <div className="rounded-xl border overflow-hidden">
+              <div className="rounded-2xl border overflow-hidden">
                 {/* Selected folder indicator */}
                 {workspacePath && (
                   <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b">
@@ -944,7 +944,7 @@ export function CreateDeploymentDialog({
                   <summary className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
                     Preview files ({workspaceFiles.length})
                   </summary>
-                  <div className="mt-2 rounded-lg border bg-muted/20 max-h-[160px] overflow-y-auto">
+                  <div className="mt-2 rounded-2xl border bg-muted/20 max-h-[160px] overflow-y-auto">
                     <div className="p-2 space-y-0.5">
                       {workspaceFiles.map((f) => (
                         <div
@@ -1029,7 +1029,7 @@ export function CreateDeploymentDialog({
               </div>
               <div className="space-y-3">
                 {files.map((file, i) => (
-                  <div key={i} className="rounded-xl border p-3 space-y-2">
+                  <div key={i} className="rounded-2xl border p-3 space-y-2">
                     <div className="flex items-center gap-2">
                       <input
                         type="text"

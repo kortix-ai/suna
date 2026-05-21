@@ -123,7 +123,7 @@ export function TunnelPermissionRequestDialog() {
           </div>
 
           {currentRequest.reason && (
-            <div className="rounded-lg bg-muted/50 p-3 text-sm">
+            <div className="rounded-2xl bg-muted/50 p-3 text-sm">
               {currentRequest.reason}
             </div>
           )}
@@ -245,7 +245,7 @@ function ModeOption({
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left rounded-lg border px-3 py-2.5 transition-colors',
+        'w-full text-left rounded-2xl border px-3 py-2.5 transition-colors',
         active
           ? 'border-primary bg-primary/5'
           : 'border-border hover:border-border/80 hover:bg-muted/30',

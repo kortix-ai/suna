@@ -374,7 +374,7 @@ export function InstanceSwitcherPopover() {
           align="start"
           sideOffset={6}
           className={cn(
-            'w-[280px] p-0 overflow-hidden rounded-xl border-0',
+            'w-[280px] p-0 overflow-hidden rounded-2xl border-0',
             // Same dark slab surface as the unified dropdown system —
             // bg-card with hairline white inner border, soft drop, top-edge
             // gradient highlight. Identical material to DropdownMenuContent.

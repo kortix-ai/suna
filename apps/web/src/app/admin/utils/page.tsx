@@ -144,7 +144,7 @@ export default function AdminUtilsPage() {
         <div className="max-w-4xl mx-auto px-6 pb-6">
           {/* Current status summary */}
           {currentLevel !== "none" && config && (
-            <div className="mb-6 rounded-xl border bg-muted/30 p-4">
+            <div className="mb-6 rounded-2xl border bg-muted/30 p-4">
               <div className="flex items-center gap-2 text-sm font-medium mb-2">
                 {currentLevelDef && (
                   <currentLevelDef.icon className={`w-4 h-4 ${currentLevelDef.color}`} />

@@ -122,7 +122,7 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
 
   const toggle = () => setExpanded((v) => !v);
   return (
-    <div className={cn('rounded-lg border overflow-hidden transition-colors', expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60')}>
+    <div className={cn('rounded-2xl border overflow-hidden transition-colors', expanded ? 'border-primary/30 bg-primary/5' : 'border-border/40 hover:border-border/60')}>
       <div
         role="button"
         tabIndex={0}

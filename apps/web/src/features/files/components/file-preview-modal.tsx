@@ -131,7 +131,7 @@ export function FilePreviewModal() {
       {/* Modal container */}
       <div className="fixed inset-0 z-50 flex flex-col pointer-events-none animate-in fade-in-0 zoom-in-95 duration-200">
         {/* Top bar - floating */}
-        <div className="pointer-events-auto mx-auto mt-3 flex items-center justify-between gap-4 px-4 h-12 bg-background/90 backdrop-blur-xl border border-border/50 rounded-xl shadow-lg max-w-3xl w-[calc(100%-2rem)]">
+        <div className="pointer-events-auto mx-auto mt-3 flex items-center justify-between gap-4 px-4 h-12 bg-background/90 backdrop-blur-xl border border-border/50 rounded-2xl shadow-lg max-w-3xl w-[calc(100%-2rem)]">
           {/* Left: back + file info */}
           <div className="flex items-center gap-2.5 min-w-0">
             <Button
@@ -237,7 +237,7 @@ export function FilePreviewModal() {
           )}
 
           {/* File renderer in a card */}
-          <div className="h-full bg-background rounded-xl border border-border/50 shadow-xl overflow-hidden">
+          <div className="h-full bg-background rounded-2xl border border-border/50 shadow-xl overflow-hidden">
             <FileContentRenderer
               filePath={selectedFilePath}
               showHeader={false}
@@ -249,7 +249,7 @@ export function FilePreviewModal() {
 
           {/* History popover - floating inside modal */}
           {historyPath && (
-            <div className="absolute bottom-4 right-4 z-30 bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+            <div className="absolute bottom-4 right-4 z-30 bg-popover border border-border rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
               <FileHistoryPopoverContent
                 filePath={historyPath}
                 onClose={() => setHistoryPath(null)}

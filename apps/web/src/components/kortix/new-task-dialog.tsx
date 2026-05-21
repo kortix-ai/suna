@@ -266,7 +266,7 @@ export function NewTaskDialog({
                 const preview = previews[i];
                 return (
                   <div key={i} className="relative group">
-                    <div className="flex flex-col rounded-lg border border-border/50 overflow-hidden w-[120px] bg-card hover:bg-muted/30 hover:border-border transition-colors">
+                    <div className="flex flex-col rounded-2xl border border-border/50 overflow-hidden w-[120px] bg-card hover:bg-muted/30 hover:border-border transition-colors">
                       {/* Thumbnail */}
                       <div className="h-[72px] relative flex items-center justify-center overflow-hidden bg-muted/20">
                         {preview ? (

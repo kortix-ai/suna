@@ -85,7 +85,7 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
   return (
     <div className="space-y-6">
       {/* Header with Filters */}
-      <div className="rounded-xl border bg-card">
+      <div className="rounded-2xl border bg-card">
         <div className="p-5 border-b flex items-center justify-between">
           <div>
             <h2 className="text-sm font-medium">Recurring Users</h2>

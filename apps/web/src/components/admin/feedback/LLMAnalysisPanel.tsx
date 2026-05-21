@@ -126,7 +126,7 @@ export function LLMAnalysisPanel() {
           <ScrollArea className="h-[600px] pr-4">
             <div className="space-y-6">
               {/* Summary Card */}
-              <div className="rounded-xl border bg-secondary/5 p-5">
+              <div className="rounded-2xl border bg-secondary/5 p-5">
                 <div className="flex items-start gap-3">
                   <div className="p-2 rounded-lg bg-secondary/10">
                     <Target className="h-5 w-5 text-secondary" />
@@ -169,7 +169,7 @@ export function LLMAnalysisPanel() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Positive Highlights */}
                 {analysis.positive_highlights.length > 0 && (
-                  <div className="rounded-xl border bg-secondary/5 p-4">
+                  <div className="rounded-2xl border bg-secondary/5 p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <CheckCircle2 className="h-5 w-5 text-secondary" />
                       <h4 className="font-semibold">What's Working</h4>
@@ -187,7 +187,7 @@ export function LLMAnalysisPanel() {
 
                 {/* Issues Summary */}
                 {analysis.improvement_areas.length > 0 && (
-                  <div className="rounded-xl border bg-destructive/5 p-4">
+                  <div className="rounded-2xl border bg-destructive/5 p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <AlertTriangle className="h-5 w-5 text-destructive" />
                       <h4 className="font-semibold">Needs Attention</h4>
@@ -217,7 +217,7 @@ export function LLMAnalysisPanel() {
                     {analysis.improvement_areas.map((area, i) => (
                       <div 
                         key={i} 
-                        className={cn('rounded-lg border-l-4 p-4', getSeverityStyles(area.severity))}
+                        className={cn('rounded-2xl border-l-4 p-4', getSeverityStyles(area.severity))}
                       >
                         <div className="flex items-start justify-between gap-4 mb-2">
                           <div>
@@ -263,7 +263,7 @@ export function LLMAnalysisPanel() {
                     {analysis.actionable_recommendations.map((rec, i) => (
                       <div 
                         key={i} 
-                        className="group rounded-xl border bg-card p-4 hover:border-secondary/50 transition-colors"
+                        className="group rounded-2xl border bg-card p-4 hover:border-secondary/50 transition-colors"
                       >
                         <div className="flex items-start gap-4">
                           <div className={cn('p-2 rounded-lg shrink-0', 
@@ -302,7 +302,7 @@ export function LLMAnalysisPanel() {
             </div>
           </ScrollArea>
         ) : (
-          <div className="h-[300px] flex flex-col items-center justify-center text-center border-2 border-dashed rounded-xl">
+          <div className="h-[300px] flex flex-col items-center justify-center text-center border-2 border-dashed rounded-2xl">
             <div className="p-4 rounded-full bg-secondary/10 mb-4">
               <Sparkles className="h-8 w-8 text-secondary/50" />
             </div>

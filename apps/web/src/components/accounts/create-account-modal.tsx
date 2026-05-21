@@ -67,8 +67,8 @@ export function CreateAccountModal({
             Group people, projects, and billing under one account.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
-          <div className="space-y-1.5">
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-1.5 px-6 py-5">
             <Label htmlFor="create-account-name">Account name</Label>
             <Input
               id="create-account-name"
@@ -81,7 +81,7 @@ export function CreateAccountModal({
               You can invite members and add projects after creation.
             </p>
           </div>
-          <div className="-mx-6 mt-4 flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+          <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
             <Button
               type="button"
               variant="ghost"

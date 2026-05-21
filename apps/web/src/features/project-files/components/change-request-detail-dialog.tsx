@@ -266,7 +266,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             {cr?.status === 'open' && preview && (
               <div
                 className={cn(
-                  'rounded-md border px-3 py-2 text-xs flex items-start gap-2',
+                  'rounded-2xl border px-3 py-2 text-xs flex items-start gap-2',
                   preview.is_up_to_date
                     ? 'border-border bg-muted/40 text-muted-foreground'
                     : preview.can_merge
@@ -307,7 +307,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             )}
 
             {cr?.status === 'merged' && (
-              <div className="rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2 text-xs text-violet-700 dark:text-violet-400 flex items-center gap-2">
+              <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 px-3 py-2 text-xs text-violet-700 dark:text-violet-400 flex items-center gap-2">
                 <GitMerge className="h-3.5 w-3.5" />
                 <span>
                   Merged
@@ -326,7 +326,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             {diffQuery.isLoading ? (
               <Skeleton className="h-32 w-full rounded-md" />
             ) : diff && diff.files.length > 0 ? (
-              <div className="rounded-md border border-border/60 bg-card overflow-hidden">
+              <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
                 <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
                   <h3 className="text-xs font-medium text-foreground">
                     {diff.files.length} file{diff.files.length === 1 ? '' : 's'} changed
@@ -367,7 +367,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 )}
               </div>
             ) : (
-              <p className="rounded-md border border-dashed border-border/60 p-5 text-center text-xs text-muted-foreground">
+              <p className="rounded-2xl border border-dashed border-border/60 p-5 text-center text-xs text-muted-foreground">
                 No changes detected.
               </p>
             )}

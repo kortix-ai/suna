@@ -82,10 +82,10 @@ export function useChangeRequestDiff(crId: string | null) {
  */
 export function useVersionDiff(
   input: { from: string; into: string } | null,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; projectId?: string },
 ) {
   const ctx = useProjectContext();
-  const projectId = ctx?.projectId ?? '';
+  const projectId = options?.projectId ?? ctx?.projectId ?? '';
   const canRun = Boolean(projectId && input?.from && input?.into);
   return useQuery<VersionDiffPreview>({
     queryKey: canRun
@@ -114,10 +114,10 @@ export function useChangeRequestMergePreview(crId: string | null, enabled = true
  * Invalidates every CR query for the active project — used after open / merge
  * / close / reopen so all panels and detail views re-fetch.
  */
-function useInvalidateAll() {
+function useInvalidateAll(projectIdArg?: string) {
   const qc = useQueryClient();
   const ctx = useProjectContext();
-  const projectId = ctx?.projectId ?? '';
+  const projectId = projectIdArg ?? ctx?.projectId ?? '';
   return () => {
     qc.invalidateQueries({ queryKey: ['project-files', 'change-requests', projectId] });
     // Branches list shows ahead/behind that may shift after a merge.
@@ -127,10 +127,10 @@ function useInvalidateAll() {
   };
 }
 
-export function useOpenChangeRequest() {
+export function useOpenChangeRequest(options?: { projectId?: string }) {
   const ctx = useProjectContext();
-  const projectId = ctx?.projectId ?? '';
-  const invalidate = useInvalidateAll();
+  const projectId = options?.projectId ?? ctx?.projectId ?? '';
+  const invalidate = useInvalidateAll(projectId);
   return useMutation<
     ChangeRequest,
     Error,

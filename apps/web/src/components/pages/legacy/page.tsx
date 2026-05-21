@@ -184,7 +184,7 @@ function LegacyToolCard({ tool }: { tool: ParsedToolCall }) {
 			<CollapsibleTrigger asChild>
 				<div
 					className={cn(
-						'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
+						'flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl',
 						'bg-muted/20 border border-border/40',
 						'text-xs transition-colors select-none',
 						'cursor-pointer hover:bg-muted/40',
@@ -204,7 +204,7 @@ function LegacyToolCard({ tool }: { tool: ParsedToolCall }) {
 				</div>
 			</CollapsibleTrigger>
 			<CollapsibleContent>
-				<div className="mt-1 rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
+				<div className="mt-1 rounded-2xl border border-border/40 bg-muted/10 overflow-hidden">
 					{tool.result && (
 						<div className="p-3 text-xs font-mono whitespace-pre-wrap break-all text-muted-foreground max-h-[300px] overflow-y-auto">
 							{tool.result.length > 2000

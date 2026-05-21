@@ -1,10 +1,11 @@
 import { Context, Hono } from 'hono';
 import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
-import { accountInvitations, accountMembers, accounts, accountUser, projectMembers, projects } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, accountUser, projectMembers, projects } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
+import { lookupUserIdByEmail } from '../shared/users';
 import { resolveAccountId } from '../shared/resolve-account';
 import {
   createAccountToken,
@@ -12,10 +13,28 @@ import {
   revokeAccountToken,
 } from '../repositories/account-tokens';
 import { sendAccountInviteEmail } from './email';
+import { config } from '../config';
+import { authorize, ACCOUNT_ACTIONS, assertAuthorized, syncMemberAccountPolicy, removeMemberPolicies, removeProjectPoliciesForMember } from '../iam';
+
+// Public, share-anywhere invite URL. Matches the link generated inside the
+// email template (apps/api/src/accounts/email.ts), so an invite copied here
+// works exactly like one received via email.
+function buildInviteUrl(inviteId: string): string {
+  const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  return `${base}/invites/${inviteId}`;
+}
+import { iamRouter } from './iam';
+import { auditRouter } from './audit';
 
 export const accountsRouter = new Hono<AppEnv>();
 
 accountsRouter.use('/*', supabaseAuth);
+
+// Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
+// declares its own paths under /:accountId/iam/*, so mounting at '/' here is
+// correct.
+accountsRouter.route('/', iamRouter);
+accountsRouter.route('/', auditRouter);
 
 // ─── Static (non-parameterized) routes MUST come before /:accountId ────────
 // Hono matches routes in registration order, so anything declared after the
@@ -50,7 +69,13 @@ async function resolveAccountForUser(
 // GET /v1/accounts/me — identity probe for CLI + dashboard nav
 accountsRouter.get('/me', async (c) => {
   const userId = c.get('userId') as string;
-  const userEmail = (c.get('userEmail') as string) || '';
+  let userEmail = (c.get('userEmail') as string) || '';
+  // CLI PAT requests carry no email in context (the auth middleware sets it
+  // empty for PATs), so resolve it from the user record — otherwise whoami
+  // and friends only ever see the user id.
+  if (!userEmail) {
+    userEmail = (await lookupEmailsByUserIds([userId])).get(userId) || '';
+  }
 
   let memberships: Array<{
     accountId: string;
@@ -135,6 +160,8 @@ accountsRouter.post('/tokens', async (c) => {
     return c.json({ error: (err as Error).message }, 403);
   }
 
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_CREATE);
+
   const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
   const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
   if (expiresAt && Number.isNaN(expiresAt.getTime())) {
@@ -168,6 +195,8 @@ accountsRouter.delete('/tokens/:tokenId', async (c) => {
   } catch (err) {
     return c.json({ error: (err as Error).message }, 403);
   }
+
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_REVOKE);
 
   const ok = await revokeAccountToken(tokenId, accountId);
   if (!ok) {
@@ -221,22 +250,6 @@ async function countOwners(accountId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
-async function lookupUserIdByEmail(email: string): Promise<string | null> {
-  const supabase = getSupabase();
-  let page = 1;
-  const perPage = 200;
-  // Cap pagination to avoid runaway loops on huge auth tables.
-  while (page <= 50) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
-    if (error || !data) return null;
-    for (const u of data.users) {
-      if (u.email && u.email.trim().toLowerCase() === email) return u.id;
-    }
-    if (data.users.length < perPage) return null;
-    page += 1;
-  }
-  return null;
-}
 
 async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
   const result = new Map<string, string | null>();
@@ -299,6 +312,12 @@ async function autoClaimPendingInvites(userId: string, email: string): Promise<v
           .onConflictDoNothing({
             target: [accountMembers.userId, accountMembers.accountId],
           });
+        await syncMemberAccountPolicy({
+          accountId: invite.accountId,
+          userId,
+          accountRole: invite.initialRole,
+          createdBy: userId,
+        });
         await db
           .update(accountInvitations)
           .set({ acceptedAt: new Date() })
@@ -388,6 +407,7 @@ accountsRouter.get('/', async (c) => {
       userId,
       accountId: created.accountId,
       accountRole: 'owner',
+      isSuperAdmin: true,
     });
     return c.json([
       {
@@ -434,6 +454,7 @@ accountsRouter.post('/', async (c) => {
     userId,
     accountId: account.accountId,
     accountRole: 'owner',
+    isSuperAdmin: true,
   });
 
   return c.json(
@@ -487,14 +508,14 @@ accountsRouter.get('/:accountId', async (c) => {
   });
 });
 
-// PATCH /v1/accounts/:accountId — owner-only rename.
+// PATCH /v1/accounts/:accountId — rename. Gated on account.write via IAM.
 accountsRouter.patch('/:accountId', async (c) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (membership.accountRole !== 'owner') return c.json({ error: 'Owner role required' }, 403);
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const body = await readBody(c);
   const name = normalizeString(body.name);
@@ -523,6 +544,7 @@ accountsRouter.get('/:accountId/members', async (c) => {
     .select({
       userId: accountMembers.userId,
       accountRole: accountMembers.accountRole,
+      isSuperAdmin: accountMembers.isSuperAdmin,
       joinedAt: accountMembers.joinedAt,
     })
     .from(accountMembers)
@@ -539,12 +561,38 @@ accountsRouter.get('/:accountId/members', async (c) => {
     .groupBy(projectMembers.userId);
   const projectGrantCountByUser = new Map(projectGrantRows.map((r) => [r.userId, Number(r.n ?? 0)]));
 
+  // Group memberships for every member, in one query — so the member list can
+  // show which groups each person belongs to without N round-trips. Wrapped so
+  // a missing/drifted groups table degrades to "no chips" instead of 500-ing
+  // the whole member list.
+  const groupsByUser = new Map<string, Array<{ group_id: string; name: string }>>();
+  try {
+    const groupRows = await db
+      .select({
+        userId: accountGroupMembers.userId,
+        groupId: accountGroups.groupId,
+        name: accountGroups.name,
+      })
+      .from(accountGroupMembers)
+      .innerJoin(accountGroups, eq(accountGroupMembers.groupId, accountGroups.groupId))
+      .where(eq(accountGroups.accountId, accountId));
+    for (const g of groupRows) {
+      const list = groupsByUser.get(g.userId) ?? [];
+      list.push({ group_id: g.groupId, name: g.name });
+      groupsByUser.set(g.userId, list);
+    }
+  } catch {
+    /* groups table unavailable — return members without group chips */
+  }
+
   return c.json(
     rows.map((r) => ({
       user_id: r.userId,
       email: emails.get(r.userId) ?? null,
       account_role: r.accountRole,
+      is_super_admin: r.isSuperAdmin,
       explicit_project_count: projectGrantCountByUser.get(r.userId) ?? 0,
+      groups: groupsByUser.get(r.userId) ?? [],
       joined_at: r.joinedAt.toISOString(),
     })),
   );
@@ -560,9 +608,7 @@ accountsRouter.post('/:accountId/members', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (membership.accountRole !== 'owner' && membership.accountRole !== 'admin') {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
 
   const body = await readBody(c);
   const email = normalizeEmail(body.email);
@@ -590,6 +636,13 @@ accountsRouter.post('/:accountId/members', async (c) => {
       userId: targetUserId,
       accountId,
       accountRole: role,
+    });
+
+    await syncMemberAccountPolicy({
+      accountId,
+      userId: targetUserId,
+      accountRole: role,
+      createdBy: userId,
     });
 
     return c.json(
@@ -628,7 +681,7 @@ accountsRouter.post('/:accountId/members', async (c) => {
     })
     .returning();
 
-  void sendAccountInviteEmail({
+  const delivery = await sendAccountInviteEmail({
     email,
     accountName: accountRow.name,
     inviterEmail: callerEmail,
@@ -643,6 +696,11 @@ accountsRouter.post('/:accountId/members', async (c) => {
       email,
       account_role: invite.initialRole,
       expires_at: invite.expiresAt.toISOString(),
+      invite_url: buildInviteUrl(invite.inviteId),
+      // false = email skipped or failed; UI surfaces the link so admin can share manually.
+      email_sent: delivery.ok === true,
+      email_skip_reason:
+        delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
     },
     201,
   );
@@ -675,6 +733,7 @@ accountsRouter.get('/:accountId/invites', async (c) => {
       invited_by: r.invitedBy,
       created_at: r.createdAt.toISOString(),
       expires_at: r.expiresAt.toISOString(),
+      invite_url: buildInviteUrl(r.inviteId),
     })),
   );
 });
@@ -687,9 +746,8 @@ accountsRouter.delete('/:accountId/invites/:inviteId', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (membership.accountRole !== 'owner' && membership.accountRole !== 'admin') {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  // Cancelling a pending invite is part of invite admin — same capability.
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
 
   await db
     .delete(accountInvitations)
@@ -713,9 +771,7 @@ accountsRouter.post('/:accountId/invites/:inviteId/resend', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (membership.accountRole !== 'owner' && membership.accountRole !== 'admin') {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
 
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
   const [updated] = await db
@@ -738,8 +794,9 @@ accountsRouter.post('/:accountId/invites/:inviteId/resend', async (c) => {
     .where(eq(accounts.accountId, accountId))
     .limit(1);
 
+  let delivery: Awaited<ReturnType<typeof sendAccountInviteEmail>> | null = null;
   if (accountRow) {
-    void sendAccountInviteEmail({
+    delivery = await sendAccountInviteEmail({
       email: updated.email,
       accountName: accountRow.name,
       inviterEmail: callerEmail,
@@ -748,7 +805,14 @@ accountsRouter.post('/:accountId/invites/:inviteId/resend', async (c) => {
     });
   }
 
-  return c.json({ ok: true, expires_at: updated.expiresAt.toISOString() });
+  return c.json({
+    ok: true,
+    expires_at: updated.expiresAt.toISOString(),
+    invite_url: buildInviteUrl(updated.inviteId),
+    email_sent: delivery?.ok === true,
+    email_skip_reason:
+      delivery && delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
+  });
 });
 
 // DELETE /v1/accounts/:accountId/members/:userId — remove a member.
@@ -759,14 +823,12 @@ accountsRouter.delete('/:accountId/members/:userId', async (c) => {
 
   const callerMembership = await getMembership(callerUserId, accountId);
   if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-  if (callerMembership.accountRole !== 'owner' && callerMembership.accountRole !== 'admin') {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE);
 
   const targetMembership = await getMembership(targetUserId, accountId);
   if (!targetMembership) return c.json({ error: 'Member not found' }, 404);
 
-  // Admin cannot remove an owner.
+  // Admin cannot remove an owner — invariant preserved on top of IAM.
   if (callerMembership.accountRole === 'admin' && targetMembership.accountRole === 'owner') {
     return c.json({ error: 'Admins cannot remove owners' }, 403);
   }
@@ -786,6 +848,8 @@ accountsRouter.delete('/:accountId/members/:userId', async (c) => {
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)));
 
+  await removeMemberPolicies(accountId, targetUserId);
+
   return c.json({ ok: true });
 });
 
@@ -797,9 +861,7 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
 
   const callerMembership = await getMembership(callerUserId, accountId);
   if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-  if (callerMembership.accountRole !== 'owner') {
-    return c.json({ error: 'Owner role required' }, 403);
-  }
+  await assertAuthorized(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_UPDATE);
 
   const body = await readBody(c);
   const newRole = parseRole(body.role, ['owner', 'admin', 'member']);
@@ -808,12 +870,25 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
   const targetMembership = await getMembership(targetUserId, accountId);
   if (!targetMembership) return c.json({ error: 'Member not found' }, 404);
 
+  // Only an owner may assign or change the owner role.
+  if ((newRole === 'owner' || targetMembership.accountRole === 'owner') &&
+      !(await authorize(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT)).allowed) {
+    return c.json({ error: 'Only an owner can assign or change the owner role' }, 403);
+  }
+
   if (targetMembership.accountRole === newRole) {
     return c.json({
       user_id: targetUserId,
       account_role: newRole,
       unchanged: true,
     });
+  }
+
+  // Preserved invariant: only an owner can grant the owner role. Otherwise
+  // an admin with member.update could escalate any teammate to owner and
+  // bypass every other restriction.
+  if (newRole === 'owner' && callerMembership.accountRole !== 'owner') {
+    return c.json({ error: 'Only owners can grant the owner role' }, 403);
   }
 
   if (targetMembership.accountRole === 'owner' && newRole !== 'owner') {
@@ -832,7 +907,15 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
     await db
       .delete(projectMembers)
       .where(and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, targetUserId)));
+    await removeProjectPoliciesForMember(accountId, targetUserId);
   }
+
+  await syncMemberAccountPolicy({
+    accountId,
+    userId: targetUserId,
+    accountRole: newRole,
+    createdBy: callerUserId,
+  });
 
   return c.json({
     user_id: targetUserId,
@@ -873,6 +956,8 @@ accountsRouter.post('/:accountId/leave', async (c) => {
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+
+  await removeMemberPolicies(accountId, userId);
 
   return c.json({ ok: true });
 });

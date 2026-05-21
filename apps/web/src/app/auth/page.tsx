@@ -194,14 +194,14 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
       </div>
 
       {errorMessage && (
-        <div className="mb-4 p-3 rounded-xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
+        <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           <span className="text-[13px]">{errorMessage}</span>
         </div>
       )}
 
       {info && (
-        <div className="mb-4 p-3 rounded-xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
+        <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           <span className="text-[13px]">{info}</span>
         </div>

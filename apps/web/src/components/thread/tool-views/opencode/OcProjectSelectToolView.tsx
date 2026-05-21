@@ -100,14 +100,14 @@ export function OcProjectSelectToolView({
 
           {/* Path */}
           {data.path && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground/70 bg-muted/30 rounded-lg p-3 font-mono truncate">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/70 bg-muted/30 rounded-2xl p-3 font-mono truncate">
               <Folder className="size-3.5 flex-shrink-0" />
               <span className="truncate" title={data.path}>{data.path}</span>
             </div>
           )}
 
           {/* Next step hint */}
-          <div className="flex items-center gap-2 text-xs text-muted-foreground/60 bg-muted/20 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground/60 bg-muted/20 rounded-2xl p-3">
             <ArrowRight className="size-3.5 flex-shrink-0" />
             <span>You can now use file, bash, and edit tools</span>
           </div>

@@ -118,12 +118,21 @@ function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
   );
 }
 
-function DialogFooter({ className, ...props }: React.ComponentProps<'div'>) {
+function DialogFooter({
+  className,
+  variant = 'default',
+  ...props
+}: React.ComponentProps<'div'> & { variant?: 'default' | 'bar' }) {
   return (
     <div
       data-slot="dialog-footer"
       className={cn(
-        'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
+        // `bar` is the flush, full-width footer for modals built with a p-0
+        // DialogContent (header / body / footer stack). `default` is the
+        // inline Radix-style footer.
+        variant === 'bar'
+          ? 'flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3'
+          : 'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
         className,
       )}
       {...props}

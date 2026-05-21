@@ -48,7 +48,7 @@ export function OcSessionMessageToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-4 space-y-3">
             {message && (
-              <div className="rounded-lg bg-muted/30 border border-border/50 p-3">
+              <div className="rounded-2xl bg-muted/30 border border-border/50 p-3">
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mb-1.5 font-medium">Message</div>
                 <p className="text-sm text-foreground/80 whitespace-pre-wrap">{message}</p>
               </div>

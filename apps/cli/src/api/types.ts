@@ -27,6 +27,8 @@ export interface ProjectSummary {
   last_opened_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Web dashboard URL for this project (server-provided; not the API host). */
+  dashboard_url?: string;
 }
 
 // ── Secrets ───────────────────────────────────────────────────────────────

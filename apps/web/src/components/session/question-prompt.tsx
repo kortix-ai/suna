@@ -262,7 +262,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 	// -----------------------------------------------------------------------
 
 	return (
-		<div className="rounded-xl border border-border/40 bg-muted/40 overflow-hidden">
+		<div className="rounded-2xl border border-border/40 bg-muted/40 overflow-hidden">
 			{/* Header row */}
 			<div className="flex items-center gap-2 w-full px-3 py-1.5">
 				<MessageCircle className="size-3.5 text-muted-foreground flex-shrink-0" />
@@ -406,7 +406,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 												key={i}
 												onClick={() => selectOption(i)}
 												className={cn(
-													"w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left cursor-pointer group border transition-colors duration-150 ease-out active:scale-[0.998]",
+													"w-full flex items-center gap-2 px-2 py-1.5 rounded-2xl text-left cursor-pointer group border transition-colors duration-150 ease-out active:scale-[0.998]",
 													isPicked
 														? "bg-primary/10 border-primary/30"
 														: "border-transparent hover:bg-muted/40",

@@ -53,7 +53,7 @@ export function StatPill({ label, value, hint, tone = 'default', className }: St
   return (
     <div
       className={cn(
-        'rounded-xl border border-border/60 bg-card p-4 min-w-0',
+        'rounded-2xl border border-border/60 bg-card p-4 min-w-0',
         className,
       )}
     >

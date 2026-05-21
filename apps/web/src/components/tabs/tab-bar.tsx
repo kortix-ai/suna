@@ -208,7 +208,7 @@ function TabContextMenu({ tab, position, onAction, onClose }: ContextMenuProps) 
   return (
     <div
       ref={menuRef}
-      className="fixed z-[100] min-w-[180px] rounded-lg border border-border/60 bg-popover/98 backdrop-blur-sm shadow-xl shadow-black/10 py-1 animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-100"
+      className="fixed z-[100] min-w-[180px] rounded-2xl border border-border/60 bg-popover/98 backdrop-blur-sm shadow-xl shadow-black/10 py-1 animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 duration-100"
       style={{ left: position.x, top: position.y }}
     >
       {tab.pinned

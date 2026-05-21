@@ -83,7 +83,7 @@ interface StatCardProps {
 export function StatCard({ title, value, description, icon, trend, className }: StatCardProps) {
   return (
     <div className={cn(
-      'relative overflow-hidden rounded-xl border bg-card p-5',
+      'relative overflow-hidden rounded-2xl border bg-card p-5',
       'transition-colors duration-200 hover:shadow-md hover:border-border/80',
       className
     )}>

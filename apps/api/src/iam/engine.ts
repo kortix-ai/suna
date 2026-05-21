@@ -1,0 +1,625 @@
+// IAM authorization engine.
+//
+// `authorize(userId, accountId, action, target?)` is the single chokepoint for
+// permission checks. It collects every policy that applies to the user
+// (direct + via groups) plus the legacy account_members.account_role bridge,
+// matches them against the request's target, and unions the granted actions.
+//
+// Designed to be called once per (user, accountId) within a request and
+// memoised behind a per-request cache (see authorizer.ts). The raw lookup is
+// also fast enough to call ad-hoc: one composite SELECT.
+
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import {
+  accountGroupMembers,
+  accountGroups,
+  accountMembers,
+  iamPolicies,
+  iamRolePermissions,
+  iamRoles,
+  projectMembers,
+} from '@kortix/db';
+import { db } from '../shared/db';
+import { ACCOUNT_ACTIONS, resourceTypeForAction, type ResourceType } from './actions';
+import { SYSTEM_ROLE_KEY } from './system-roles';
+
+// Account-level read actions the legacy 'member' role keeps via the bridge.
+// We intentionally exclude every project.*/sandbox.*/etc. read so a plain
+// member doesn't accidentally see every project in the account just because
+// the system role they bridge to bundled project.read. Resource access
+// comes from explicit IAM policies or project_members rows instead.
+const LEGACY_MEMBER_ACCOUNT_READS: ReadonlySet<string> = new Set([
+  ACCOUNT_ACTIONS.ACCOUNT_READ,
+  ACCOUNT_ACTIONS.MEMBER_READ,
+  ACCOUNT_ACTIONS.GROUP_READ,
+  ACCOUNT_ACTIONS.POLICY_READ,
+  ACCOUNT_ACTIONS.ROLE_READ,
+  ACCOUNT_ACTIONS.AUDIT_READ,
+  ACCOUNT_ACTIONS.TOKEN_READ,
+  ACCOUNT_ACTIONS.BILLING_READ,
+]);
+
+export type AuthorizeTarget =
+  | { type: 'account'; id?: never }
+  | { type: 'project'; id: string }
+  | { type: 'sandbox'; id: string }
+  | { type: 'trigger'; id: string }
+  | { type: 'channel'; id: string }
+  | { type: 'member'; id: string }
+  | { type: 'group'; id: string };
+
+export type AuthorizeResult = {
+  allowed: boolean;
+  reason?: string;
+};
+
+type LoadedPolicy = {
+  scopeType: ResourceType;
+  scopeId: string | null;
+  effect: 'allow' | 'deny';
+};
+
+type ResolvedActor = {
+  isSuperAdmin: boolean;
+  accountRole: 'owner' | 'admin' | 'member' | null;
+  groupIds: string[];
+};
+
+const SYSTEM_ROLE_PERMISSION_CACHE = new Map<string, Set<string>>();
+
+/**
+ * Look up the action-set of a system role by key, memoised.
+ * Used by the legacy-role bridge to materialise the synthetic policies for
+ * existing account_members rows without inserting them.
+ */
+async function getSystemRoleActions(key: string): Promise<Set<string>> {
+  const cached = SYSTEM_ROLE_PERMISSION_CACHE.get(key);
+  if (cached) return cached;
+
+  const rows = await db
+    .select({ action: iamRolePermissions.action })
+    .from(iamRoles)
+    .innerJoin(iamRolePermissions, eq(iamRolePermissions.roleId, iamRoles.roleId))
+    .where(and(isNull(iamRoles.accountId), eq(iamRoles.key, key)));
+
+  const set = new Set(rows.map((r) => r.action));
+  SYSTEM_ROLE_PERMISSION_CACHE.set(key, set);
+  return set;
+}
+
+/** Bust the system-role permission cache. Called by seedSystemRoles after writes. */
+export function invalidateSystemRoleCache(): void {
+  SYSTEM_ROLE_PERMISSION_CACHE.clear();
+}
+
+/**
+ * Resolve the actor's membership state in this account: super-admin flag,
+ * legacy account role, and group memberships. One round-trip.
+ */
+async function resolveActor(userId: string, accountId: string): Promise<ResolvedActor | null> {
+  const [member] = await db
+    .select({
+      isSuperAdmin: accountMembers.isSuperAdmin,
+      accountRole: accountMembers.accountRole,
+    })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
+    .limit(1);
+
+  if (!member) return null;
+
+  const groups = await db
+    .select({ groupId: accountGroupMembers.groupId })
+    .from(accountGroupMembers)
+    .innerJoin(accountGroups, eq(accountGroups.groupId, accountGroupMembers.groupId))
+    .where(
+      and(
+        eq(accountGroupMembers.userId, userId),
+        eq(accountGroups.accountId, accountId),
+      ),
+    );
+
+  return {
+    isSuperAdmin: member.isSuperAdmin,
+    accountRole: member.accountRole as ResolvedActor['accountRole'],
+    groupIds: groups.map((g) => g.groupId),
+  };
+}
+
+/**
+ * Load every policy that applies to the actor for the requested action,
+ * already filtered to policies whose role grants `action` and whose scope
+ * could match the target resource type.
+ *
+ * Returns the list of (scopeType, scopeId) pairs — the caller decides whether
+ * the target's id matches.
+ */
+async function loadGrantingPolicies(
+  accountId: string,
+  actor: ResolvedActor,
+  userId: string,
+  action: string,
+  requiredScopeType: ResourceType,
+): Promise<LoadedPolicy[]> {
+  // Principal filter: this user directly, OR any group they belong to.
+  const principalConditions = [
+    and(
+      eq(iamPolicies.principalType, 'member'),
+      eq(iamPolicies.principalId, userId),
+    ),
+  ];
+  if (actor.groupIds.length > 0) {
+    principalConditions.push(
+      and(
+        eq(iamPolicies.principalType, 'group'),
+        inArray(iamPolicies.principalId, actor.groupIds),
+      ),
+    );
+  }
+
+  const rows = await db
+    .select({
+      scopeType: iamPolicies.scopeType,
+      scopeId: iamPolicies.scopeId,
+      effect: iamPolicies.effect,
+    })
+    .from(iamPolicies)
+    .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
+    .innerJoin(
+      iamRolePermissions,
+      and(
+        eq(iamRolePermissions.roleId, iamRoles.roleId),
+        eq(iamRolePermissions.action, action),
+      ),
+    )
+    .where(
+      and(
+        eq(iamPolicies.accountId, accountId),
+        or(...principalConditions),
+        // Scope must be 'account' (Everything) or match the required type.
+        or(
+          eq(iamPolicies.scopeType, 'account'),
+          eq(iamPolicies.scopeType, requiredScopeType),
+        ),
+      ),
+    );
+
+  return rows.map((r) => ({
+    scopeType: r.scopeType as ResourceType,
+    scopeId: r.scopeId,
+    effect: r.effect as 'allow' | 'deny',
+  }));
+}
+
+/**
+ * Legacy account_role bridge. Until every member has explicit policies, we
+ * synthesise them from the existing account_members.account_role enum so the
+ * engine matches today's behaviour.
+ *
+ *   owner / admin → Administrator policy at account Everything scope
+ *   member        → Administrator Read-Only at account Everything scope
+ *
+ * Super-admin short-circuits before this is consulted.
+ */
+async function bridgeLegacyAccountRole(
+  actor: ResolvedActor,
+  action: string,
+): Promise<boolean> {
+  if (!actor.accountRole) return false;
+
+  // Owner/admin keep the full Administrator bridge — that's what they had
+  // before IAM and changing it would break every existing account.
+  if (actor.accountRole === 'owner' || actor.accountRole === 'admin') {
+    const actions = await getSystemRoleActions(SYSTEM_ROLE_KEY.ADMINISTRATOR);
+    return actions.has(action);
+  }
+
+  // Member: account-level reads only. NO blanket project / sandbox / trigger
+  // / channel access via the bridge — those come from explicit IAM policies
+  // or project_members rows. This is what makes "limit user to one project"
+  // actually work without requiring a deny policy on Everything.
+  if (actor.accountRole === 'member') {
+    return LEGACY_MEMBER_ACCOUNT_READS.has(action);
+  }
+
+  return false;
+}
+
+/**
+ * Legacy project_members bridge. Pre-existing project access via the
+ * project_members table is materialised as a synthetic Project Admin /
+ * Editor / Viewer policy scoped to that project.
+ */
+async function bridgeLegacyProjectRole(
+  accountId: string,
+  userId: string,
+  projectId: string,
+  action: string,
+): Promise<boolean> {
+  const [pm] = await db
+    .select({ projectRole: projectMembers.projectRole })
+    .from(projectMembers)
+    .where(
+      and(
+        eq(projectMembers.accountId, accountId),
+        eq(projectMembers.userId, userId),
+        eq(projectMembers.projectId, projectId),
+      ),
+    )
+    .limit(1);
+  if (!pm) return false;
+
+  const key =
+    pm.projectRole === 'manager'
+      ? SYSTEM_ROLE_KEY.PROJECT_ADMIN
+      : pm.projectRole === 'editor'
+        ? SYSTEM_ROLE_KEY.PROJECT_EDITOR
+        : SYSTEM_ROLE_KEY.PROJECT_VIEWER;
+  const actions = await getSystemRoleActions(key);
+  return actions.has(action);
+}
+
+/**
+ * Load policies attached directly to a PAT. Token policies are evaluated as
+ * a SELF-CONTAINED set — Cloudflare-style "API token" semantics. When a
+ * token has zero policies the engine falls back to the minter's permissions
+ * (back-compat with the current "PAT inherits user" model). When the token
+ * has ≥1 policy, ONLY those policies decide and the minter's permissions
+ * (including super-admin bypass and legacy bridges) are ignored.
+ */
+async function loadTokenPolicies(
+  accountId: string,
+  tokenId: string,
+  action: string,
+  requiredScopeType: ResourceType,
+): Promise<LoadedPolicy[]> {
+  const rows = await db
+    .select({
+      scopeType: iamPolicies.scopeType,
+      scopeId: iamPolicies.scopeId,
+      effect: iamPolicies.effect,
+    })
+    .from(iamPolicies)
+    .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
+    .innerJoin(
+      iamRolePermissions,
+      and(
+        eq(iamRolePermissions.roleId, iamRoles.roleId),
+        eq(iamRolePermissions.action, action),
+      ),
+    )
+    .where(
+      and(
+        eq(iamPolicies.accountId, accountId),
+        eq(iamPolicies.principalType, 'token'),
+        eq(iamPolicies.principalId, tokenId),
+        or(
+          eq(iamPolicies.scopeType, 'account'),
+          eq(iamPolicies.scopeType, requiredScopeType),
+        ),
+      ),
+    );
+  return rows.map((r) => ({
+    scopeType: r.scopeType as ResourceType,
+    scopeId: r.scopeId,
+    effect: r.effect as 'allow' | 'deny',
+  }));
+}
+
+/** Cheap count to decide: does this token have ANY narrowing policy attached
+ * (regardless of action)? Used by the engine to choose between "evaluate
+ * token policies only" vs "fall back to user". */
+async function tokenHasAnyPolicy(accountId: string, tokenId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ policyId: iamPolicies.policyId })
+    .from(iamPolicies)
+    .where(
+      and(
+        eq(iamPolicies.accountId, accountId),
+        eq(iamPolicies.principalType, 'token'),
+        eq(iamPolicies.principalId, tokenId),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * Core authorization check. Returns Allow/Deny with a brief reason for
+ * logging. When `actingTokenId` is set AND that token has at least one IAM
+ * policy attached, the engine evaluates ONLY those policies (the request is
+ * the token's identity, not the minter's). When the token has none, falls
+ * through to user-based evaluation for back-compat with existing PATs.
+ */
+export async function authorize(
+  userId: string,
+  accountId: string,
+  action: string,
+  target?: AuthorizeTarget,
+  actingTokenId?: string,
+): Promise<AuthorizeResult> {
+  const requiredScopeType = resourceTypeForAction(action);
+  const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
+
+  // ── Token-as-principal path (Cloudflare-style API tokens) ──────────────
+  // If the request came via a PAT AND that PAT has explicit narrowing
+  // policies, evaluate ONLY the token policies. No super-admin bypass, no
+  // legacy bridges, no inheritance from the minter. This is the safety
+  // contract: a narrowed token can NEVER do more than its policies allow.
+  if (actingTokenId && (await tokenHasAnyPolicy(accountId, actingTokenId))) {
+    const tokenPolicies = await loadTokenPolicies(
+      accountId,
+      actingTokenId,
+      action,
+      requiredScopeType,
+    );
+    let matchedAllow = false;
+    for (const p of tokenPolicies) {
+      if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+      if (p.effect === 'deny') {
+        return { allowed: false, reason: 'token_explicit_deny' };
+      }
+      matchedAllow = true;
+    }
+    return matchedAllow
+      ? { allowed: true, reason: 'token_policy' }
+      : { allowed: false, reason: 'token_no_matching_policy' };
+  }
+
+  // ── User-as-principal path (existing flow) ─────────────────────────────
+  const actor = await resolveActor(userId, accountId);
+  if (!actor) {
+    return { allowed: false, reason: 'not_a_member' };
+  }
+
+  // 1. Super-admin bypasses everything.
+  if (actor.isSuperAdmin) {
+    return { allowed: true, reason: 'super_admin' };
+  }
+
+  // Sanity: if the action expects a specific resource and we got an
+  // account-level target, only an account-Everything policy can satisfy it.
+  // That's fine — the SQL filter handles it. No early-out needed.
+
+  // 2. Explicit policies (direct + via groups). Partition by effect; deny
+  //    wins over allow on a per-action+scope basis.
+  const policies = await loadGrantingPolicies(
+    accountId,
+    actor,
+    userId,
+    action,
+    requiredScopeType,
+  );
+
+  let matchedAllow = false;
+  for (const p of policies) {
+    if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+    if (p.effect === 'deny') {
+      // Explicit deny is final. Short-circuit immediately so a single deny
+      // overrides any number of allows on the same action+scope.
+      return { allowed: false, reason: 'explicit_deny' };
+    }
+    matchedAllow = true;
+  }
+
+  if (matchedAllow) {
+    return { allowed: true, reason: 'policy' };
+  }
+
+  // 3. Legacy bridges (only consulted when no explicit policy matched).
+  //    Explicit denies above already short-circuited.
+  if (await bridgeLegacyAccountRole(actor, action)) {
+    return { allowed: true, reason: 'legacy_account_role' };
+  }
+
+  if (
+    effectiveTarget.type === 'project' &&
+    (await bridgeLegacyProjectRole(accountId, userId, effectiveTarget.id, action))
+  ) {
+    return { allowed: true, reason: 'legacy_project_role' };
+  }
+
+  return { allowed: false, reason: 'no_matching_policy' };
+}
+
+/**
+ * Does a policy's (scopeType, scopeId) cover the request's target?
+ *
+ *   - scope_type='account' → always matches (Everything)
+ *   - scope_type=requiredType AND scope_id=NULL → matches every resource of that type
+ *   - scope_type=requiredType AND scope_id=target.id → exact match
+ *
+ * Exported for unit tests.
+ */
+export function policyMatchesTarget(
+  policy: LoadedPolicy,
+  requiredScopeType: ResourceType,
+  target: AuthorizeTarget,
+): boolean {
+  if (policy.scopeType === 'account') return true;
+  if (policy.scopeType !== requiredScopeType) return false;
+  // For account-level actions targeting the account itself, the only valid
+  // policy scope is 'account' (handled above).
+  if (target.type === 'account') return false;
+  if (policy.scopeId === null) return true; // "all resources of this type"
+  return policy.scopeId === target.id;
+}
+
+/**
+ * Thin assertion wrapper for route handlers. Throws a 403-friendly error if
+ * the action is denied.
+ */
+export async function assertAuthorized(
+  userId: string,
+  accountId: string,
+  action: string,
+  target?: AuthorizeTarget,
+  actingTokenId?: string,
+): Promise<void> {
+  const result = await authorize(userId, accountId, action, target, actingTokenId);
+  if (!result.allowed) {
+    const err = new Error(`forbidden: ${action} (${result.reason ?? 'denied'})`);
+    (err as Error & { status?: number }).status = 403;
+    throw err;
+  }
+}
+
+/**
+ * Returns which resource IDs (of `resourceType`) the user can perform
+ * `action` on. Used by list endpoints to filter a candidate set without
+ * N×authorize() round-trips.
+ *
+ *   all          – include every candidate
+ *   none         – include nothing
+ *   allow_only   – include only those whose id is in `allowed`
+ *   all_except   – include every candidate except those in `denied`
+ *
+ * Reads (in the worst case): actor + policies + project_members. That's
+ * three queries regardless of how many candidates the caller has.
+ */
+export type AccessibleResources =
+  | { mode: 'all' }
+  | { mode: 'none' }
+  | { mode: 'allow_only'; allowed: Set<string> }
+  | { mode: 'all_except'; denied: Set<string> };
+
+export async function listAccessibleResources(
+  userId: string,
+  accountId: string,
+  action: string,
+  resourceType: ResourceType,
+  actingTokenId?: string,
+): Promise<AccessibleResources> {
+  // Token-as-principal short-circuit. When a PAT with narrowing policies
+  // makes a list request, only its own policies decide what's visible —
+  // the minter's super-admin status / group memberships / legacy bridges
+  // are all ignored.
+  if (actingTokenId && (await tokenHasAnyPolicy(accountId, actingTokenId))) {
+    const rows = await loadTokenPolicies(accountId, actingTokenId, action, resourceType);
+    let allowEverything = false;
+    let denyEverything = false;
+    const allowedIds = new Set<string>();
+    const deniedIds = new Set<string>();
+    for (const r of rows) {
+      const matchesEverything =
+        r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
+      if (r.effect === 'deny') {
+        if (matchesEverything) denyEverything = true;
+        else if (r.scopeId) deniedIds.add(r.scopeId);
+      } else {
+        if (matchesEverything) allowEverything = true;
+        else if (r.scopeId) allowedIds.add(r.scopeId);
+      }
+    }
+    if (denyEverything) return { mode: 'none' };
+    if (allowEverything) return { mode: 'all_except', denied: deniedIds };
+    for (const denied of deniedIds) allowedIds.delete(denied);
+    return { mode: 'allow_only', allowed: allowedIds };
+  }
+
+  const actor = await resolveActor(userId, accountId);
+  if (!actor) return { mode: 'none' };
+
+  if (actor.isSuperAdmin) return { mode: 'all' };
+
+  // Owner/admin legacy bridge always allows account-level reads/writes.
+  // Preserves today's "owners see everything" without enumerating policies.
+  if (
+    (actor.accountRole === 'owner' || actor.accountRole === 'admin') &&
+    (await bridgeLegacyAccountRole(actor, action))
+  ) {
+    return { mode: 'all' };
+  }
+
+  // Single query: every policy attached to this user (direct or via group)
+  // whose role grants `action` and whose scope matches Everything or this
+  // resource type. Partitioned by effect in-memory.
+  const principalConditions = [
+    and(
+      eq(iamPolicies.principalType, 'member'),
+      eq(iamPolicies.principalId, userId),
+    ),
+  ];
+  if (actor.groupIds.length > 0) {
+    principalConditions.push(
+      and(
+        eq(iamPolicies.principalType, 'group'),
+        inArray(iamPolicies.principalId, actor.groupIds),
+      ),
+    );
+  }
+
+  const rows = await db
+    .select({
+      scopeType: iamPolicies.scopeType,
+      scopeId: iamPolicies.scopeId,
+      effect: iamPolicies.effect,
+    })
+    .from(iamPolicies)
+    .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
+    .innerJoin(
+      iamRolePermissions,
+      and(
+        eq(iamRolePermissions.roleId, iamRoles.roleId),
+        eq(iamRolePermissions.action, action),
+      ),
+    )
+    .where(
+      and(
+        eq(iamPolicies.accountId, accountId),
+        or(...principalConditions),
+        or(eq(iamPolicies.scopeType, 'account'), eq(iamPolicies.scopeType, resourceType)),
+      ),
+    );
+
+  let allowEverything = false;
+  let denyEverything = false;
+  const allowedIds = new Set<string>();
+  const deniedIds = new Set<string>();
+
+  for (const r of rows) {
+    const matchesEverything =
+      r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
+    if (r.effect === 'deny') {
+      if (matchesEverything) denyEverything = true;
+      else if (r.scopeId) deniedIds.add(r.scopeId);
+    } else {
+      if (matchesEverything) allowEverything = true;
+      else if (r.scopeId) allowedIds.add(r.scopeId);
+    }
+  }
+
+  // Legacy project_members bridge: any project_role row counts as an allow
+  // for actions the bridged Project Admin/Editor/Viewer role would grant.
+  // Only consulted for project listings.
+  if (resourceType === 'project') {
+    const memberRows = await db
+      .select({
+        projectId: projectMembers.projectId,
+        projectRole: projectMembers.projectRole,
+      })
+      .from(projectMembers)
+      .where(
+        and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, userId)),
+      );
+
+    for (const m of memberRows) {
+      const key =
+        m.projectRole === 'manager'
+          ? SYSTEM_ROLE_KEY.PROJECT_ADMIN
+          : m.projectRole === 'editor'
+            ? SYSTEM_ROLE_KEY.PROJECT_EDITOR
+            : SYSTEM_ROLE_KEY.PROJECT_VIEWER;
+      const actions = await getSystemRoleActions(key);
+      if (actions.has(action)) allowedIds.add(m.projectId);
+    }
+  }
+
+  // Decide the mode. Deny-everything wins; otherwise allow-everything just
+  // shaves off the specific denies; otherwise we have an explicit allow list.
+  if (denyEverything) return { mode: 'none' };
+  if (allowEverything) return { mode: 'all_except', denied: deniedIds };
+  // Strip any allowed entries that also have a per-id deny.
+  for (const denied of deniedIds) allowedIds.delete(denied);
+  return { mode: 'allow_only', allowed: allowedIds };
+}

@@ -1,16 +1,27 @@
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 
 /**
- * Legacy file-browser route. Files now live as a section inside the
- * full-screen Customize modal — this redirect keeps existing bookmarks and
- * deep links working by jumping to /sessions and letting the modal auto-open
- * on the Files tab via the `?customize=files` search param.
+ * Files route — opens the Cmd+K File Search (git-backed search over the
+ * project's repo) and drops the user on the sessions view as the backdrop.
+ * The full file browser still lives in the Customize modal's Files section.
  */
-export default async function ProjectFilesRedirect({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  redirect(`/projects/${id}/customize?section=files`);
+export default function ProjectFilesPage() {
+  const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
+
+  useEffect(() => {
+    if (!id) return;
+    router.replace(`/projects/${id}/sessions`);
+    // Let the palette (mounted in the shell) mount/settle before opening it.
+    const t = setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('kortix:open-file-search'));
+    }, 50);
+    return () => clearTimeout(t);
+  }, [id, router]);
+
+  return null;
 }

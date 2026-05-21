@@ -222,7 +222,7 @@ export function OcPtySpawnToolView({
           <div className="p-3 space-y-3">
             {/* Error banner */}
             {isError && errorMessage && (
-              <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
+              <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/15">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                   <span className="text-xs font-medium text-red-400">Error</span>
@@ -237,7 +237,7 @@ export function OcPtySpawnToolView({
 
             {/* Command display */}
             {fullCommand && (
-              <div className="rounded-lg border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
+              <div className="rounded-2xl border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
                 <div className="px-3 py-2.5">
                   <pre className="font-mono text-xs text-emerald-400 leading-relaxed">
                     <span className="text-muted-foreground">$ </span>
@@ -248,7 +248,7 @@ export function OcPtySpawnToolView({
             )}
 
             {/* Info section */}
-            <div className="rounded-lg border border-border overflow-hidden bg-card">
+            <div className="rounded-2xl border border-border overflow-hidden bg-card">
               <div className="divide-y divide-border">
                 {workdir && (
                   <InfoRow icon={FolderOpen} label="Working Directory" value={workdir} mono />
@@ -359,7 +359,7 @@ export function OcPtyReadToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-3">
             {isError && (
-              <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
+              <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                   <span className="text-xs font-medium text-red-400">
@@ -370,7 +370,7 @@ export function OcPtyReadToolView({
             )}
 
             {parsed.content && (
-              <div className="rounded-lg border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
+              <div className="rounded-2xl border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
                 <PreWithPaths
                   text={parsed.content}
                   className="p-3 font-mono text-xs leading-relaxed text-zinc-300 whitespace-pre-wrap break-words"
@@ -460,7 +460,7 @@ export function OcPtyWriteToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-3">
             {isError && errorMessage && (
-              <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
+              <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                   <span className="text-xs font-medium text-red-400">{errorMessage}</span>
@@ -469,7 +469,7 @@ export function OcPtyWriteToolView({
             )}
 
             {ptyInput && (
-              <div className="rounded-lg border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
+              <div className="rounded-2xl border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
                 <div className="px-3 py-2.5">
                   <pre className="font-mono text-xs text-amber-400 leading-relaxed">
                     <span className="text-muted-foreground">&gt; </span>
@@ -480,7 +480,7 @@ export function OcPtyWriteToolView({
             )}
 
             {ptyId && (
-              <div className="rounded-lg border border-border overflow-hidden bg-card">
+              <div className="rounded-2xl border border-border overflow-hidden bg-card">
                 <InfoRow icon={Hash} label="Terminal ID" value={ptyId} mono />
               </div>
             )}
@@ -570,7 +570,7 @@ export function OcPtyKillToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-3">
             {isError && errorMessage && (
-              <div className="rounded-md border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
+              <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
                 <div className="flex items-center gap-2 px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
                   <span className="text-xs font-medium text-red-400">{errorMessage}</span>
@@ -579,13 +579,13 @@ export function OcPtyKillToolView({
             )}
 
             {ptyId && (
-              <div className="rounded-lg border border-border overflow-hidden bg-card">
+              <div className="rounded-2xl border border-border overflow-hidden bg-card">
                 <InfoRow icon={Hash} label="Terminal ID" value={ptyId} mono />
               </div>
             )}
 
             {cleanOutput && (
-              <div className="rounded-lg border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
+              <div className="rounded-2xl border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
                 <PreWithPaths
                   text={cleanOutput}
                   className="p-3 font-mono text-xs leading-relaxed text-zinc-300 whitespace-pre-wrap break-words"

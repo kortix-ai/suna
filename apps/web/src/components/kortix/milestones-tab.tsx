@@ -59,7 +59,7 @@ export function MilestonesTab({ projectId }: { projectId: string }) {
             </Button>
           </div>
 
-          <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+          <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
             {isLoading ? (
               <div className="py-8 text-center text-[12px] text-muted-foreground/50">Loading…</div>
             ) : open.length === 0 ? (
@@ -91,7 +91,7 @@ export function MilestonesTab({ projectId }: { projectId: string }) {
               <span className="text-[10px] text-muted-foreground/30 tabular-nums">{closed.length}</span>
             </div>
 
-            <div className="rounded-xl border border-border/30 divide-y divide-border/20 overflow-hidden bg-card/60">
+            <div className="rounded-2xl border border-border/30 divide-y divide-border/20 overflow-hidden bg-card/60">
               {closed.map((m) => (
                 <MilestoneRow
                   key={m.id}

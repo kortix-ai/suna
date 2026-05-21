@@ -126,7 +126,7 @@ function SkillFiles({ files }: { files: string[] }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="border border-border/50 rounded-lg overflow-hidden">
+    <div className="border border-border/50 rounded-2xl overflow-hidden">
       <button
         className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
         onClick={() => setOpen(!open)}

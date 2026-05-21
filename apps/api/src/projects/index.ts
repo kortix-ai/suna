@@ -87,28 +87,6 @@ import {
   listProjectSecrets,
 } from './secrets';
 import {
-  SUPPORTED_OAUTH_PROVIDERS,
-  buildOpencodeAuthContent,
-  deleteOauthCredential,
-  isSupportedOauthProvider,
-  listOauthCredentials,
-  summarizeCredential,
-  upsertOauthCredential,
-  type OauthProviderId,
-} from './oauth';
-import {
-  pollOnceCopilot,
-  pollOnceOpenAi,
-  startCopilotDeviceFlow,
-  startOpenAiDeviceFlow,
-} from './oauth-flow';
-import {
-  bumpInterval,
-  createFlow,
-  deleteFlow,
-  getFlow,
-} from './oauth-flow-store';
-import {
   effectiveProjectRole,
   isAccountManager,
   parseProjectRole,
@@ -778,13 +756,11 @@ async function buildSessionSandboxEnvVars(input: {
   initialPrompt?: string | null;
   gitAuthToken?: string | null;
 }): Promise<Record<string, string>> {
-  // Project secrets + OAuth credentials + project-scoped CLI token all
-  // funnel into the sandbox env. Run them in parallel — the CLI token
-  // path mints a fresh token per session boot so the in-container CLI
-  // works out of the box.
-  const [runtimeSecrets, opencodeAuthContent, cliToken] = await Promise.all([
+  // Project secrets + project-scoped CLI token funnel into the sandbox env.
+  // Run them in parallel — the CLI token path mints a fresh token per session
+  // boot so the in-container CLI works out of the box.
+  const [runtimeSecrets, cliToken] = await Promise.all([
     listProjectSecrets(input.projectId),
-    buildOpencodeAuthContent(input.projectId),
     mintSessionCliToken(input.projectId, input.userId, input.accountId, input.sessionId),
   ]);
   const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
@@ -2268,162 +2244,6 @@ projectsApp.delete('/:projectId/secrets/:name', async (c) => {
       eq(projectSecrets.name, name),
     ));
 
-  return c.json({ ok: true });
-});
-
-// ─── OAuth provider credentials ────────────────────────────────────────────
-//
-// Mirrors the opencode auth flow (codex.ts / github-copilot/copilot.ts) but
-// persists tokens as encrypted per-project rows instead of opencode's local
-// auth.json. At session boot, all connected providers are bundled into the
-// `OPENCODE_AUTH_CONTENT` env var which opencode reads natively.
-
-// GET /v1/projects/:projectId/oauth
-projectsApp.get('/:projectId/oauth', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-
-  const creds = await listOauthCredentials(projectId);
-  return c.json({
-    items: creds.map(summarizeCredential),
-    supported: SUPPORTED_OAUTH_PROVIDERS,
-  });
-});
-
-// POST /v1/projects/:projectId/oauth/:provider/start
-projectsApp.post('/:projectId/oauth/:provider/start', async (c) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!isSupportedOauthProvider(provider)) {
-    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
-  }
-
-  const body = await readBody(c);
-  const enterpriseUrl = normalizeString(body.enterprise_url ?? body.enterpriseUrl);
-
-  try {
-    const flowStart = provider === 'openai'
-      ? await startOpenAiDeviceFlow()
-      : await startCopilotDeviceFlow({ enterpriseUrl: enterpriseUrl ?? undefined });
-
-    const { flowId } = createFlow({
-      projectId,
-      providerId: provider,
-      handle: flowStart.handle,
-      intervalMs: flowStart.interval_ms,
-      expiresAt: flowStart.expires_at,
-    });
-
-    return c.json({
-      flow_id: flowId,
-      provider_id: provider,
-      verification_url: flowStart.verification_url,
-      user_code: flowStart.user_code,
-      interval_ms: flowStart.interval_ms,
-      expires_at: flowStart.expires_at,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('[projects] oauth start failed', { projectId, provider, error: msg });
-    return c.json({ error: msg }, 502);
-  }
-});
-
-// POST /v1/projects/:projectId/oauth/:provider/poll
-// Body: { flow_id: string }
-// Returns one of:
-//   { status: 'pending', next_poll_ms }
-//   { status: 'success', credential: {...} }
-//   { status: 'expired' }
-//   { status: 'failed', error }
-projectsApp.post('/:projectId/oauth/:provider/poll', async (c) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!isSupportedOauthProvider(provider)) {
-    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
-  }
-
-  const body = await readBody(c);
-  const flowId = normalizeString(body.flow_id ?? body.flowId);
-  if (!flowId) return c.json({ error: 'flow_id is required' }, 400);
-
-  const flow = getFlow(flowId);
-  if (!flow) return c.json({ status: 'expired' });
-  if (flow.projectId !== projectId) return c.json({ error: 'Flow not found' }, 404);
-  if (flow.providerId !== provider) return c.json({ error: 'Provider mismatch' }, 400);
-  if (flow.expiresAt < Date.now()) {
-    deleteFlow(flowId);
-    return c.json({ status: 'expired' });
-  }
-
-  try {
-    const result = provider === 'openai'
-      ? await pollOnceOpenAi(flow.handle)
-      : await pollOnceCopilot(flow.handle);
-
-    if (result.status === 'pending') {
-      return c.json({ status: 'pending', next_poll_ms: flow.recommendedIntervalMs });
-    }
-    if (result.status === 'slow_down') {
-      bumpInterval(flowId, result.new_interval_ms);
-      return c.json({ status: 'pending', next_poll_ms: result.new_interval_ms });
-    }
-    if (result.status === 'failed') {
-      deleteFlow(flowId);
-      return c.json({ status: 'failed', error: result.error });
-    }
-
-    const credential = await upsertOauthCredential({
-      projectId,
-      providerId: provider as OauthProviderId,
-      refresh: result.refresh,
-      access: result.access,
-      expires: result.expires,
-      accountId: result.accountId,
-      enterpriseUrl: result.enterpriseUrl,
-      createdBy: loaded.userId,
-    });
-    deleteFlow(flowId);
-
-    return c.json({
-      status: 'success',
-      credential: summarizeCredential(credential),
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('[projects] oauth poll failed', { projectId, provider, error: msg });
-    return c.json({ status: 'failed', error: msg }, 502);
-  }
-});
-
-// DELETE /v1/projects/:projectId/oauth/:provider
-projectsApp.delete('/:projectId/oauth/:provider', async (c) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!isSupportedOauthProvider(provider)) {
-    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
-  }
-
-  await deleteOauthCredential(projectId, provider);
   return c.json({ ok: true });
 });
 

@@ -129,6 +129,8 @@ export const accountMembers = kortixSchema.table(
       .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     accountRole: accountRoleEnum('account_role').default('owner').notNull(),
+    // Super-admin bypasses all IAM policy evaluation. Distinct from accountRole.
+    isSuperAdmin: boolean('is_super_admin').default(false).notNull(),
     joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -275,26 +277,66 @@ export const projectSecrets = kortixSchema.table(
   ],
 );
 
-export const projectOauthCredentials = kortixSchema.table(
-  'project_oauth_credentials',
+// ─── Vault: unified, account-owned secrets / credentials / logins ───────────
+// One store for env vars, API keys, and (future) OAuth logins. Owned by an
+// account (personal OR team). Scope falls out of (project_id, owner_user_id):
+//   owner_user_id set      → PRIVATE to that member
+//   project_id set         → scoped to that project (else account-wide)
+//   no grants on a shared item → everyone in scope; ≥1 grant → that allow-list
+// Resolution at use-time is most-specific-wins (see iam/vault.ts).
+export const vaultItemKindEnum = kortixSchema.enum('vault_item_kind', [
+  'env',
+  'api_key',
+  'oauth_token',
+  'oauth_client',
+  'connection_secret',
+]);
+
+// Secrets are 100% project-scoped. Every item belongs to a project; within it
+// the visibility is set by ownerUserId + grants:
+//   ownerUserId set                 → "only me" (private to that member)
+//   ownerUserId null, no grants      → "everyone on the project"
+//   ownerUserId null, has grants     → "select members"
+// There is no account- or user-global vault. Encryption key derives from
+// project_id.
+export const vaultItems = kortixSchema.table(
+  'vault_items',
   {
-    credentialId: uuid('credential_id').defaultRandom().primaryKey(),
+    itemId: uuid('item_id').defaultRandom().primaryKey(),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    providerId: varchar('provider_id', { length: 64 }).notNull(),
-    refreshEnc: text('refresh_enc').notNull(),
-    accessEnc: text('access_enc').notNull(),
-    expires: bigint('expires', { mode: 'number' }).notNull(),
-    accountId: varchar('oauth_account_id', { length: 255 }),
-    enterpriseUrl: varchar('enterprise_url', { length: 255 }),
+    kind: vaultItemKindEnum('kind').default('env').notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    valueEnc: text('value_enc').notNull(),
+    ownerUserId: uuid('owner_user_id'),
+    providerId: varchar('provider_id', { length: 64 }),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_project_oauth_creds_project').on(table.projectId),
-    uniqueIndex('idx_project_oauth_creds_project_provider').on(table.projectId, table.providerId),
+    index('idx_vault_items_project').on(table.projectId),
+    index('idx_vault_items_owner_user').on(table.ownerUserId),
+    // Per-scope name uniqueness via partial unique indexes (created in SQL):
+    //   unique(project_id, name)                where owner_user_id is null  (shared)
+    //   unique(project_id, owner_user_id, name) where owner_user_id is not null (private)
+  ],
+);
+
+export const vaultItemGrants = kortixSchema.table(
+  'vault_item_grants',
+  {
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => vaultItems.itemId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.itemId, table.userId] }),
+    index('idx_vault_item_grants_user').on(table.userId),
   ],
 );
 
@@ -930,7 +972,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   members: many(projectMembers),
   secrets: many(projectSecrets),
-  oauthCredentials: many(projectOauthCredentials),
   triggers: many(projectTriggers),
   triggerEvents: many(projectTriggerEvents),
   sessions: many(projectSessions),
@@ -951,13 +992,6 @@ export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
 export const projectSecretsRelations = relations(projectSecrets, ({ one }) => ({
   project: one(projects, {
     fields: [projectSecrets.projectId],
-    references: [projects.projectId],
-  }),
-}));
-
-export const projectOauthCredentialsRelations = relations(projectOauthCredentials, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectOauthCredentials.projectId],
     references: [projects.projectId],
   }),
 }));
@@ -1055,6 +1089,9 @@ export const accountsRelations = relations(accounts, ({ many }) => ({
   projectSessions: many(projectSessions),
   projectRuntimeSnapshots: many(projectRuntimeSnapshots),
   sandboxes: many(sandboxes),
+  groups: many(accountGroups),
+  iamRoles: many(iamRoles),
+  iamPolicies: many(iamPolicies),
 }));
 
 export const accountMembersRelations = relations(accountMembers, ({ one }) => ({
@@ -1634,5 +1671,227 @@ export const changeRequestsRelations = relations(changeRequests, ({ one }) => ({
   originSession: one(projectSessions, {
     fields: [changeRequests.originSessionId],
     references: [projectSessions.sessionId],
+  }),
+}));
+
+// ─── IAM (Cloudflare-style groups + policies) ──────────────────────────────
+// Layered on top of account_members. A user's effective permissions are the
+// union of: super-admin bypass, the legacy account_role bridge, direct policies
+// on the member, and policies on any group the member belongs to.
+
+export const accountGroupSourceEnum = kortixSchema.enum('account_group_source', [
+  'manual',
+  'scim',
+]);
+
+export const iamPrincipalTypeEnum = kortixSchema.enum('iam_principal_type', [
+  'member',
+  'group',
+  'token',
+]);
+
+export const iamPolicyEffectEnum = kortixSchema.enum('iam_policy_effect', [
+  'allow',
+  'deny',
+]);
+
+export const iamScopeTypeEnum = kortixSchema.enum('iam_scope_type', [
+  'account',
+  'project',
+  'sandbox',
+  'trigger',
+  'channel',
+  'member',
+  'group',
+]);
+
+export const iamResourceTypeEnum = kortixSchema.enum('iam_resource_type', [
+  'account',
+  'project',
+  'sandbox',
+  'trigger',
+  'channel',
+  'member',
+  'group',
+]);
+
+export const accountGroups = kortixSchema.table(
+  'account_groups',
+  {
+    groupId: uuid('group_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 128 }).notNull(),
+    description: text('description'),
+    source: accountGroupSourceEnum('source').default('manual').notNull(),
+    externalId: text('external_id'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_account_groups_account').on(table.accountId),
+    uniqueIndex('idx_account_groups_account_name').on(table.accountId, table.name),
+  ],
+);
+
+export const accountGroupMembers = kortixSchema.table(
+  'account_group_members',
+  {
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => accountGroups.groupId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    addedBy: uuid('added_by'),
+    addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.groupId, table.userId] }),
+    index('idx_account_group_members_user').on(table.userId),
+  ],
+);
+
+export const iamRoles = kortixSchema.table(
+  'iam_roles',
+  {
+    roleId: uuid('role_id').defaultRandom().primaryKey(),
+    // NULL accountId means a built-in system role available to every account.
+    accountId: uuid('account_id').references(() => accounts.accountId, {
+      onDelete: 'cascade',
+    }),
+    key: varchar('key', { length: 64 }).notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    description: text('description'),
+    resourceType: iamResourceTypeEnum('resource_type').notNull(),
+    isSystem: boolean('is_system').default(false).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_iam_roles_account').on(table.accountId),
+    index('idx_iam_roles_resource_type').on(table.resourceType),
+    // System roles (account_id IS NULL) must have globally unique keys.
+    uniqueIndex('idx_iam_roles_system_key')
+      .on(table.key)
+      .where(sql`${table.accountId} IS NULL`),
+    // Per-account custom roles unique within the account.
+    uniqueIndex('idx_iam_roles_account_key')
+      .on(table.accountId, table.key)
+      .where(sql`${table.accountId} IS NOT NULL`),
+  ],
+);
+
+export const iamRolePermissions = kortixSchema.table(
+  'iam_role_permissions',
+  {
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => iamRoles.roleId, { onDelete: 'cascade' }),
+    action: varchar('action', { length: 128 }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.roleId, table.action] }),
+    index('idx_iam_role_permissions_action').on(table.action),
+  ],
+);
+
+export const iamPolicies = kortixSchema.table(
+  'iam_policies',
+  {
+    policyId: uuid('policy_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    principalType: iamPrincipalTypeEnum('principal_type').notNull(),
+    // For 'member' → auth.users.id; for 'group' → account_groups.group_id;
+    // for 'token' → account_tokens.token_id. Not a FK because target table varies.
+    principalId: uuid('principal_id').notNull(),
+    scopeType: iamScopeTypeEnum('scope_type').notNull(),
+    // NULL = "all resources of this scope_type within the account".
+    // For scope_type='account' this column must be NULL (the Everything scope).
+    scopeId: uuid('scope_id'),
+    roleId: uuid('role_id')
+      .notNull()
+      .references(() => iamRoles.roleId, { onDelete: 'restrict' }),
+    // 'allow' grants the role's actions; 'deny' subtracts them and wins over
+    // any allow on the same action+scope. Engine handles precedence.
+    effect: iamPolicyEffectEnum('effect').default('allow').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_iam_policies_account').on(table.accountId),
+    index('idx_iam_policies_principal').on(table.accountId, table.principalType, table.principalId),
+    index('idx_iam_policies_scope').on(table.accountId, table.scopeType, table.scopeId),
+    index('idx_iam_policies_role').on(table.roleId),
+    // Dedupe policies. Split into two partial indexes because Postgres treats
+    // NULLs as distinct by default and we want them treated as equal. Effect
+    // is part of the key so an allow + deny on the same (principal, scope,
+    // role) can coexist — useful for "grant role, then carve out exception".
+    uniqueIndex('idx_iam_policies_unique_with_scope')
+      .on(
+        table.accountId,
+        table.principalType,
+        table.principalId,
+        table.scopeType,
+        table.scopeId,
+        table.roleId,
+        table.effect,
+      )
+      .where(sql`${table.scopeId} IS NOT NULL`),
+    uniqueIndex('idx_iam_policies_unique_no_scope')
+      .on(
+        table.accountId,
+        table.principalType,
+        table.principalId,
+        table.scopeType,
+        table.roleId,
+        table.effect,
+      )
+      .where(sql`${table.scopeId} IS NULL`),
+  ],
+);
+
+export const accountGroupsRelations = relations(accountGroups, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [accountGroups.accountId],
+    references: [accounts.accountId],
+  }),
+  members: many(accountGroupMembers),
+}));
+
+export const accountGroupMembersRelations = relations(accountGroupMembers, ({ one }) => ({
+  group: one(accountGroups, {
+    fields: [accountGroupMembers.groupId],
+    references: [accountGroups.groupId],
+  }),
+}));
+
+export const iamRolesRelations = relations(iamRoles, ({ one, many }) => ({
+  account: one(accounts, {
+    fields: [iamRoles.accountId],
+    references: [accounts.accountId],
+  }),
+  permissions: many(iamRolePermissions),
+  policies: many(iamPolicies),
+}));
+
+export const iamRolePermissionsRelations = relations(iamRolePermissions, ({ one }) => ({
+  role: one(iamRoles, {
+    fields: [iamRolePermissions.roleId],
+    references: [iamRoles.roleId],
+  }),
+}));
+
+export const iamPoliciesRelations = relations(iamPolicies, ({ one }) => ({
+  account: one(accounts, {
+    fields: [iamPolicies.accountId],
+    references: [accounts.accountId],
+  }),
+  role: one(iamRoles, {
+    fields: [iamPolicies.roleId],
+    references: [iamRoles.roleId],
   }),
 }));

@@ -85,7 +85,7 @@ export function PresentationSlideCard({
 
   if (!slidePreviewUrl) {
     return (
-      <div className={cn('group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden', className)}>
+      <div className={cn('group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden', className)}>
         <div className="px-3 py-2 bg-muted/20 border-b border-border/40 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="h-6 px-2 text-xs font-mono">
@@ -110,7 +110,7 @@ export function PresentationSlideCard({
 
   return (
     <div 
-      className={cn('group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden hover:shadow-lg hover:shadow-black/5 dark:hover:shadow-black/20 hover:scale-[1.01] transition-colors duration-200', className)}
+      className={cn('group relative bg-background border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden hover:shadow-lg hover:shadow-black/5 dark:hover:shadow-black/20 hover:scale-[1.01] transition-colors duration-200', className)}
     >
       {/* Slide header */}
       <div className="px-3 py-2 bg-muted/20 border-b border-border/40 flex items-center justify-between">

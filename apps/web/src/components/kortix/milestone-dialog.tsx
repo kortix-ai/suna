@@ -258,7 +258,7 @@ function EditPanel({
                 No tickets yet. TL links sub-tickets during decomposition; you can also set a ticket's milestone from its detail view.
               </p>
             ) : (
-              <ul className="rounded-md border border-border/40 divide-y divide-border/30 overflow-hidden">
+              <ul className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden">
                 {tickets.map((t) => (
                   <li key={t.id} className="flex items-center justify-between gap-3 px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0">

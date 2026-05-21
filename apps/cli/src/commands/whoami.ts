@@ -81,6 +81,9 @@ export async function runWhoami(argv: string[]): Promise<number> {
   const active = me.accounts.find((a) => a.account_id === auth.account_id) ?? me.accounts[0];
 
   process.stdout.write(`\n  ${C.bold}${me.email || me.user_id}${C.reset}\n`);
+  if (me.email) {
+    process.stdout.write(`  ${C.dim}email     ${C.reset}${me.email}\n`);
+  }
   process.stdout.write(`  ${C.dim}user_id   ${C.reset}${me.user_id}\n`);
   if (active) {
     process.stdout.write(
@@ -89,7 +92,7 @@ export async function runWhoami(argv: string[]): Promise<number> {
   }
   if (me.accounts.length > 1) {
     process.stdout.write(
-      `  ${C.dim}${me.accounts.length} accounts total — switch with \`kortix accounts use <slug>\`${C.reset}\n`,
+      `  ${C.dim}${me.accounts.length} accounts total — target one with ${C.reset}${C.cyan}kortix ship --account <slug>${C.reset}\n`,
     );
   }
   process.stdout.write(`  ${C.dim}host      ${C.reset}${resolvedHost ?? '—'} ${C.faded}(${auth.api_base})${C.reset}\n`);

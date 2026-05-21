@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  FolderGit2,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -23,7 +24,10 @@ import {
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   DropdownMenu,
@@ -49,15 +53,6 @@ function relativeTime(input: string) {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-function projectInitial(name: string) {
-  const trimmed = name.trim();
-  if (!trimmed) return 'K';
-  // First letter of each of the first two words, or first two letters.
-  const words = trimmed.split(/[\s_\-./]+/).filter(Boolean);
-  if (words.length >= 2) return (words[0]![0]! + words[1]![0]!).toUpperCase();
-  return trimmed.slice(0, 2).toUpperCase();
-}
-
 function ProjectCard({
   project,
   onOpen,
@@ -76,18 +71,16 @@ function ProjectCard({
     <div
       className={cn(
         'group relative flex flex-col rounded-2xl border border-border/60 bg-card',
-        'transition-all duration-150 hover:border-foreground/20 hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.12)]',
+        'transition-all duration-150 hover:border-foreground/30 hover:bg-muted/30 hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
       )}
     >
       <button
         type="button"
         onClick={onOpen}
-        className="flex flex-1 flex-col items-start gap-4 p-5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-2xl"
+        className="flex flex-1 cursor-pointer flex-col items-start gap-4 p-5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-2xl"
       >
         <div className="flex w-full items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-muted/40 text-sm font-semibold text-foreground">
-            {projectInitial(project.name)}
-          </div>
+          <EntityAvatar label={project.name} size="lg" />
           <div className="min-w-0 flex-1">
             <h3 className="truncate text-[15px] font-semibold leading-tight text-foreground">
               {project.name}
@@ -254,47 +247,47 @@ export default function ProjectsPage() {
           )}
 
           {projectsQuery.isError && (
-            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
-              <p className="text-sm font-medium text-destructive">Failed to load projects</p>
-              <p className="mt-1 text-xs text-destructive/80">
-                {(projectsQuery.error as Error).message}
-              </p>
-              <Button variant="outline" size="sm" className="mt-3" onClick={() => projectsQuery.refetch()}>
+            <SectionCard
+              tone="destructive"
+              title="Failed to load projects"
+              description={(projectsQuery.error as Error).message}
+            >
+              <Button variant="outline" size="sm" onClick={() => projectsQuery.refetch()}>
                 Retry
               </Button>
-            </div>
+            </SectionCard>
           )}
 
           {showEmptyState && (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 px-6 py-16 text-center">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-border/70 bg-muted/40 text-base font-semibold text-foreground">
-                K
-              </div>
-              <h2 className="mt-5 text-base font-semibold text-foreground">
-                Create your first project
-              </h2>
-              <p className="mx-auto mt-1.5 max-w-md text-sm text-muted-foreground">
-                A project is a workspace for one company or idea. We&apos;ll set it up in seconds — no
-                Git account required.
-              </p>
-              <Button
-                onClick={() => setModalOpen(true)}
-                disabled={!selectedAccountId || !canCreateProjects}
-                size="sm"
-                className="mt-6 h-9 gap-1.5"
-              >
-                <Plus className="h-4 w-4" />
-                New project
-              </Button>
-            </div>
+            <SectionCard flush>
+              <EmptyState
+                icon={FolderGit2}
+                title="Create your first project"
+                description="A project is a workspace for one company or idea. We'll set it up in seconds — no Git account required."
+                action={
+                  <Button
+                    onClick={() => setModalOpen(true)}
+                    disabled={!selectedAccountId || !canCreateProjects}
+                    size="sm"
+                    className="gap-1.5"
+                  >
+                    <Plus className="h-4 w-4" />
+                    New project
+                  </Button>
+                }
+              />
+            </SectionCard>
           )}
 
           {showNoResults && (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 p-10 text-center">
-              <Search className="mx-auto h-5 w-5 text-muted-foreground" />
-              <h2 className="mt-3 text-sm font-medium text-foreground">No matches for &ldquo;{query}&rdquo;</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Try a different search term.</p>
-            </div>
+            <SectionCard flush>
+              <EmptyState
+                icon={Search}
+                size="sm"
+                title={`No matches for "${query}"`}
+                description="Try a different search term."
+              />
+            </SectionCard>
           )}
 
           {filtered.length > 0 && (

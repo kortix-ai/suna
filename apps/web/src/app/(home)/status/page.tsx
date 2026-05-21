@@ -126,7 +126,7 @@ function StatusPageContent() {
         {technicalIssue?.enabled && (
           <div className="relative z-10 px-4 sm:px-6 mb-8">
             <div className="max-w-4xl mx-auto">
-              <div className="relative overflow-hidden rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-border backdrop-blur-sm">
+              <div className="relative overflow-hidden rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-border backdrop-blur-sm">
                 <div className="relative p-4">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 p-2 rounded-full bg-destructive/20">
@@ -190,7 +190,7 @@ function StatusPageContent() {
                   {statusItems.map((item) => (
                     <div
                       key={item.service}
-                      className="flex items-center justify-between p-3 rounded-xl border bg-card/30 hover:bg-card/50 transition-colors"
+                      className="flex items-center justify-between p-3 rounded-2xl border bg-card/30 hover:bg-card/50 transition-colors"
                     >
                       <div className="flex items-center gap-3">
                         <div className="p-2 rounded-xl border bg-primary/10">

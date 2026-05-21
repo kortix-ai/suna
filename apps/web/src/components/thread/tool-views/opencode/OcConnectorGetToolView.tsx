@@ -92,7 +92,7 @@ export function OcConnectorGetToolView({
 
               {/* Notes */}
               {data.notes && (
-                <div className="rounded-lg border border-border/50 overflow-hidden">
+                <div className="rounded-2xl border border-border/50 overflow-hidden">
                   <div className="px-3 py-2 bg-muted/30 border-b border-border/30 text-xs font-medium text-muted-foreground/70">
                     Notes
                   </div>

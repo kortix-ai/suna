@@ -62,7 +62,7 @@ function ShimmerBox({ className }: { className?: string }) {
   const colorClass = useMemo(() => BLOB_COLORS[Math.floor(Math.random() * BLOB_COLORS.length)], []);
 
   return (
-    <div className={cn("relative rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700", className)}>
+    <div className={cn("relative rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-700", className)}>
       <div className={`absolute inset-[-50%] bg-gradient-to-br ${colorClass} blur-2xl rounded-lg`} />
       <div className="absolute inset-0 bg-zinc-100/30 dark:bg-zinc-900/30 backdrop-blur-sm rounded-lg" />
       <div

@@ -138,7 +138,7 @@ function CollapsibleSection({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-lg border border-border/50 overflow-hidden">
+    <div className="rounded-2xl border border-border/50 overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-3 py-2 hover:bg-muted/30 transition-colors text-left"

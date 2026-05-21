@@ -318,7 +318,7 @@ export function ShowContentRenderer({
           href={safeExternalUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="group flex items-center gap-4 p-4 rounded-xl border border-border/30 bg-muted/5 hover:bg-muted/20 transition-colors"
+          className="group flex items-center gap-4 p-4 rounded-2xl border border-border/30 bg-muted/5 hover:bg-muted/20 transition-colors"
         >
           <div className="flex items-center justify-center size-10 rounded-lg bg-muted/30 flex-shrink-0 overflow-hidden">
             {favicon ? (

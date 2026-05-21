@@ -145,7 +145,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
           className="space-y-4"
         >
           <motion.div 
-            className="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden shadow-2xl shadow-zinc-200/50 dark:shadow-zinc-900/50"
+            className="rounded-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden shadow-2xl shadow-zinc-200/50 dark:shadow-zinc-900/50"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.1 }}

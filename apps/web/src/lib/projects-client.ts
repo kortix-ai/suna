@@ -41,11 +41,18 @@ export interface AccountDetail {
   updated_at: string;
 }
 
+export interface AccountMemberGroup {
+  group_id: string;
+  name: string;
+}
+
 export interface AccountMember {
   user_id: string;
   email: string | null;
   account_role: AccountRole;
+  is_super_admin?: boolean;
   explicit_project_count?: number;
+  groups?: AccountMemberGroup[];
   joined_at: string;
 }
 
@@ -83,6 +90,9 @@ export type InviteMemberResult =
       email: string;
       account_role: AccountRole;
       expires_at: string;
+      invite_url: string;
+      email_sent: boolean;
+      email_skip_reason: string | null;
     };
 
 export interface AccountInvitation {
@@ -92,6 +102,15 @@ export interface AccountInvitation {
   invited_by: string;
   created_at: string;
   expires_at: string;
+  invite_url: string;
+}
+
+export interface ResendInviteResult {
+  ok: boolean;
+  expires_at: string;
+  invite_url: string;
+  email_sent: boolean;
+  email_skip_reason: string | null;
 }
 
 export interface AccountInviteDescribeFull {
@@ -166,6 +185,13 @@ export interface CreateProjectRepoInput {
   description?: string;
 }
 
+export interface ProvisionProjectInput {
+  account_id?: string;
+  name: string;
+  /** Seed the managed repo with the Kortix starter so sessions can boot. */
+  seed_starter?: boolean;
+}
+
 export interface GitHubInstallationStatus {
   account_id: string;
   installed: boolean;
@@ -181,10 +207,19 @@ export interface GitHubInstallationStatus {
   updated_at: string | null;
 }
 
+/** Who can use a project secret.
+ *  - 'everyone' → anyone with access to the project
+ *  - 'private'  → only the owner (creator)
+ *  - 'select'   → specific project members (grant_user_ids) */
+export type ProjectSecretVisibility = 'everyone' | 'private' | 'select';
+
 export interface ProjectSecret {
   secret_id: string;
   project_id: string;
   name: string;
+  visibility: ProjectSecretVisibility;
+  owner_user_id: string | null;
+  grant_user_ids: string[];
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -254,7 +289,7 @@ export async function cancelAccountInvite(accountId: string, inviteId: string) {
 
 export async function resendAccountInvite(accountId: string, inviteId: string) {
   return unwrap(
-    await backendApi.post<{ ok: boolean; expires_at: string }>(
+    await backendApi.post<ResendInviteResult>(
       `/accounts/${accountId}/invites/${inviteId}/resend`,
       {},
     ),
@@ -339,6 +374,19 @@ export async function revokeProjectAccess(projectId: string, userId: string) {
   );
 }
 
+export async function inviteProjectMember(
+  projectId: string,
+  email: string,
+  role: ProjectRole,
+) {
+  return unwrap(
+    await backendApi.post<ProjectAccessMember>(
+      `/projects/${projectId}/access/invite`,
+      { email, role },
+    ),
+  );
+}
+
 export interface ProjectSecretsResponse {
   items: ProjectSecret[];
   /** Env keys declared as required in the project's kortix.toml manifest. */
@@ -365,7 +413,12 @@ export async function listProjectSecrets(projectId: string) {
 
 export async function upsertProjectSecret(
   projectId: string,
-  input: { name: string; value: string },
+  input: {
+    name: string;
+    value: string;
+    visibility?: ProjectSecretVisibility;
+    grant_user_ids?: string[];
+  },
 ) {
   return unwrap(
     await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input),
@@ -429,83 +482,6 @@ export async function rebuildProjectSnapshot(projectId: string) {
   );
 }
 
-// ─── OAuth credentials (ChatGPT Pro/Plus headless + GitHub Copilot) ─────
-
-export type OauthProviderId = 'openai' | 'github-copilot';
-
-export interface ProjectOauthCredential {
-  provider_id: OauthProviderId;
-  account_id: string | null;
-  enterprise_url: string | null;
-  expires: number;
-  expires_in_ms: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface OauthCredentialsResponse {
-  items: ProjectOauthCredential[];
-  supported: OauthProviderId[];
-}
-
-export interface OauthStartResponse {
-  flow_id: string;
-  provider_id: OauthProviderId;
-  verification_url: string;
-  user_code: string;
-  interval_ms: number;
-  expires_at: number;
-}
-
-export type OauthPollResponse =
-  | { status: 'pending'; next_poll_ms: number }
-  | { status: 'success'; credential: ProjectOauthCredential }
-  | { status: 'expired' }
-  | { status: 'failed'; error: string };
-
-export async function listProjectOauthCredentials(projectId: string) {
-  return unwrap(
-    await backendApi.get<OauthCredentialsResponse>(`/projects/${projectId}/oauth`),
-  );
-}
-
-export async function startProjectOauthFlow(
-  projectId: string,
-  provider: OauthProviderId,
-  input?: { enterprise_url?: string },
-) {
-  return unwrap(
-    await backendApi.post<OauthStartResponse>(
-      `/projects/${projectId}/oauth/${provider}/start`,
-      input ?? {},
-    ),
-  );
-}
-
-export async function pollProjectOauthFlow(
-  projectId: string,
-  provider: OauthProviderId,
-  flowId: string,
-) {
-  return unwrap(
-    await backendApi.post<OauthPollResponse>(
-      `/projects/${projectId}/oauth/${provider}/poll`,
-      { flow_id: flowId },
-    ),
-  );
-}
-
-export async function deleteProjectOauthCredential(
-  projectId: string,
-  provider: OauthProviderId,
-) {
-  return unwrap(
-    await backendApi.delete<{ ok: boolean }>(
-      `/projects/${projectId}/oauth/${encodeURIComponent(provider)}`,
-    ),
-  );
-}
-
 export async function listProjectFiles(
   projectId: string,
   options?: { ref?: string; path?: string },
@@ -515,6 +491,38 @@ export async function listProjectFiles(
   if (options?.path) params.set('path', options.path);
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(await backendApi.get<ProjectFileEntry[]>(`/projects/${projectId}/files${query}`));
+}
+
+export interface ProjectFileSearchMatch {
+  path: string;
+  /** Present for content search (git grep). */
+  line_number?: number;
+  line_text?: string;
+}
+
+export interface ProjectFileSearchResponse {
+  query: string;
+  ref: string;
+  content_search: boolean;
+  results: ProjectFileSearchMatch[];
+}
+
+/** Search the project's git repo — filenames by default, contents when
+ *  `content` is true (server-side `git grep`). */
+export async function searchProjectFiles(
+  projectId: string,
+  query: string,
+  options?: { content?: boolean; ref?: string; limit?: number },
+) {
+  const params = new URLSearchParams({ q: query });
+  if (options?.content) params.set('content', '1');
+  if (options?.ref) params.set('ref', options.ref);
+  if (options?.limit) params.set('limit', String(options.limit));
+  return unwrap(
+    await backendApi.get<ProjectFileSearchResponse>(
+      `/projects/${projectId}/files/search?${params.toString()}`,
+    ),
+  );
 }
 
 export async function readProjectFile(
@@ -1102,6 +1110,20 @@ export async function createProject(input: ProjectInput) {
 
 export async function createProjectRepo(input: CreateProjectRepoInput) {
   return unwrap(await backendApi.post<KortixProject>('/projects/create-repo', input));
+}
+
+/**
+ * Create a project backed by a managed Kortix git repo (Freestyle) — the
+ * default. No GitHub account or repo-name uniqueness needed; the starter is
+ * seeded server-side so the project boots immediately.
+ */
+export async function provisionProject(input: ProvisionProjectInput) {
+  return unwrap(
+    await backendApi.post<KortixProject>('/projects/provision', {
+      seed_starter: true,
+      ...input,
+    }),
+  );
 }
 
 export async function getGitHubInstallation(accountId: string) {

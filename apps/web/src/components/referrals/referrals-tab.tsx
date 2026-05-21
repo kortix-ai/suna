@@ -35,7 +35,7 @@ export function ReferralsTab({ isActive = true }: ReferralsTabProps) {
       </div>
 
       {/* Credit Info */}
-      <div className="bg-muted/30 rounded-lg sm:rounded-xl p-3 sm:p-4">
+      <div className="bg-muted/30 rounded-2xl p-3 sm:p-4">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs text-muted-foreground mb-1">{t('youEarn')}</p>

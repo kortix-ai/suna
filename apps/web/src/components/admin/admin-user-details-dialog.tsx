@@ -327,7 +327,7 @@ export function AdminUserDetailsDialog({
                         {userThreads.data.map((thread) => (
                           <div
                             key={thread.thread_id}
-                            className="flex items-start justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                            className="flex items-start justify-between p-3 border rounded-2xl hover:bg-muted/50 transition-colors"
                           >
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
@@ -417,7 +417,7 @@ export function AdminUserDetailsDialog({
                         {userTransactions.data.map((transaction: any) => (
                           <div
                             key={transaction.id}
-                            className="flex items-center justify-between p-3 border rounded-lg"
+                            className="flex items-center justify-between p-3 border rounded-2xl"
                           >
                             <div>
                               <p className="text-sm font-medium">{transaction.description}</p>
@@ -486,7 +486,7 @@ export function AdminUserDetailsDialog({
                         {userActivity.data.map((activity: any) => (
                           <div
                             key={activity.id}
-                            className="flex items-center justify-between p-3 border rounded-lg"
+                            className="flex items-center justify-between p-3 border rounded-2xl"
                           >
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
@@ -556,7 +556,7 @@ export function AdminUserDetailsDialog({
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      <div className="p-3 border border-red-200 dark:border-red-950 bg-red-50 dark:bg-red-950/20 rounded-lg">
+                      <div className="p-3 border border-red-200 dark:border-red-950 bg-red-50 dark:bg-red-950/20 rounded-2xl">
                         <div className="flex items-start gap-2">
                           <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
                           <p className="text-sm text-red-700">
@@ -585,7 +585,7 @@ export function AdminUserDetailsDialog({
                           rows={3}
                         />
                       </div>
-                      <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/50">
+                      <div className="flex items-center justify-between p-3 border rounded-2xl bg-muted/50">
                         <div className="flex items-center gap-2">
                           <Label htmlFor="refund-expiring" className="cursor-pointer flex items-center gap-2">
                             {refundIsExpiring ? (

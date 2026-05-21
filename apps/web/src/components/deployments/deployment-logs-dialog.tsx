@@ -57,7 +57,7 @@ export function DeploymentLogsDialog({
 
         <div
           ref={scrollRef}
-          className="flex-1 min-h-0 overflow-y-auto rounded-lg bg-muted/30 border"
+          className="flex-1 min-h-0 overflow-y-auto rounded-2xl bg-muted/30 border"
         >
           {isLoading && (
             <div className="flex items-center justify-center py-16">

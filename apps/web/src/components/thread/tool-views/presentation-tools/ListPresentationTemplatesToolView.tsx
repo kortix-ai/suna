@@ -183,7 +183,7 @@ export function ListPresentationTemplatesToolView({
                     <div
                       key={template.id}
                       onClick={() => handleTemplateClick(template.id)}
-                      className="group rounded-lg cursor-pointer transition-colors duration-200 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-lg hover:scale-[1.01]"
+                      className="group rounded-2xl cursor-pointer transition-colors duration-200 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-lg hover:scale-[1.01]"
                     >
                       <div className="relative rounded-t-lg overflow-hidden bg-muted">
                         {imageUrl ? (

@@ -53,7 +53,7 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
   return (
     <div
       className={cn(
-        'flex flex-col gap-2.5 px-3 py-2.5 rounded-md border',
+        'flex flex-col gap-2.5 px-3 py-2.5 rounded-2xl border',
         'bg-amber-500/[0.04] dark:bg-amber-500/[0.06]',
         'border-amber-500/30',
         className,
@@ -131,7 +131,7 @@ export function TurnErrorDisplay({ errorText, className }: TurnErrorDisplayProps
   return (
     <div
       className={cn(
-        'flex items-start gap-2 px-3 py-2 rounded-md border',
+        'flex items-start gap-2 px-3 py-2 rounded-2xl border',
         'bg-muted/40 dark:bg-muted/30',
         'border-border/60',
         className,
@@ -165,7 +165,7 @@ export function SessionRetryDisplay({
   return (
     <div
       className={cn(
-        'flex items-start gap-2 px-3 py-2 rounded-md border',
+        'flex items-start gap-2 px-3 py-2 rounded-2xl border',
         'bg-muted/40 dark:bg-muted/30',
         'border-border/60',
         className,

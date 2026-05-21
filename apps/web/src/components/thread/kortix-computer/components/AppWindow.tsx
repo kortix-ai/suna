@@ -151,7 +151,7 @@ export const AppWindow = memo(function AppWindow({
       onMouseDown={onFocus}
       style={{ zIndex }}
       className={cn(
-        "absolute flex flex-col rounded-xl overflow-hidden",
+        "absolute flex flex-col rounded-2xl overflow-hidden",
         "border border-border/60",
         isActive ? "shadow-2xl shadow-black/20" : "shadow-xl shadow-black/10"
       )}

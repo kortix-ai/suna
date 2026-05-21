@@ -12,7 +12,7 @@ import { ProviderLogo } from './provider-branding';
 // never produces a visual jump.
 
 export const PROVIDER_CARD_CHROME =
-  'group flex h-auto w-full items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35';
+  'group flex h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35';
 
 export function GroupHeading({ children, className }: { children: ReactNode; className?: string }) {
   return (

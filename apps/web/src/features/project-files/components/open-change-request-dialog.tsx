@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -23,32 +24,63 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import type { ProjectBranch, ProjectSession } from '@/lib/projects-client';
 
 import { useBranches } from '../hooks/use-branches';
-import { useProjectContext } from '../context';
 import { useOpenChangeRequest, useVersionDiff } from '../hooks/use-change-requests';
 import { DiffPreviewBanner } from './diff-preview-banner';
-import type { ProjectBranch } from '@/lib/projects-client';
 
 interface OpenChangeRequestDialogProps {
   open: boolean;
-  onOpenChange: (v: boolean) => void;
-  /** Optional preselected head branch (used by the toolbar shortcut). */
+  onOpenChange: (open: boolean) => void;
+  /** The project the change request belongs to. */
+  projectId: string;
+  /** The branch a change request merges into by default (e.g. `main`). */
+  defaultBranch: string;
+  /**
+   * When set, the dialog opens a change request straight from an agent
+   * session: the head is the session's branch and the base is `defaultBranch`,
+   * both fixed — so there's no version picker, just a read-only summary.
+   * Leaving this unset shows the From / Into branch picker.
+   */
+  session?: ProjectSession | null;
+  /** Picker mode only — preselect the head version (toolbar shortcut). */
   initialHeadRef?: string;
-  /** Optional callback invoked with the new CR id so the caller can open the detail dialog. */
+  /** Invoked with the new CR id so the caller can deep-link to it. */
   onCreated?: (crId: string) => void;
 }
 
 // Branch names from agent sessions are UUIDs (`a1b2c3d4-...`) — too long for a
 // dropdown trigger. We collapse anything matching the UUID shape down to the
-// first 8 chars (which is enough to disambiguate). Human-named branches
-// (`feature/...`, `fix/...`) keep their full name.
+// first 8 chars (enough to disambiguate). Human-named branches keep their name.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function displayBranchName(name: string): string {
   return UUID_RE.test(name) ? name.slice(0, 8) : name;
 }
 
+/** A labelled row inside the From / Into block — one shape for both modes. */
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5">
+      <Label className="w-12 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Label>
+      {children}
+    </div>
+  );
+}
+
+/** Read-only branch value (session mode). */
+function BranchValue({ name }: { name: string }) {
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+      <span className="truncate font-mono text-xs text-foreground">{name}</span>
+    </div>
+  );
+}
+
+/** Branch option inside the picker dropdown (picker mode). */
 function BranchRow({ branch }: { branch: ProjectBranch }) {
   return (
     <div className="flex flex-col gap-0.5 py-0.5">
@@ -72,23 +104,33 @@ function BranchRow({ branch }: { branch: ProjectBranch }) {
   );
 }
 
+const PICKER_TRIGGER_CLASS =
+  'h-10 flex-1 min-w-0 border-0 bg-transparent px-2 hover:bg-muted/40 focus:ring-0';
+
 export function OpenChangeRequestDialog({
   open,
   onOpenChange,
+  projectId,
+  defaultBranch,
+  session = null,
   initialHeadRef,
   onCreated,
 }: OpenChangeRequestDialogProps) {
-  const ctx = useProjectContext();
-  const defaultBranch = ctx?.defaultBranch ?? 'main';
+  // Callers clear `session` at the same moment they close the dialog; keep the
+  // last one so the read-only summary doesn't flip to the picker mid-close.
+  const lastSessionRef = useRef<ProjectSession | null>(session);
+  if (session) lastSessionRef.current = session;
+  const activeSession = session ?? lastSessionRef.current;
+  const sessionMode = activeSession !== null;
 
-  const branchesQuery = useBranches({ enabled: open });
+  // Branches are only needed for the picker — skip the fetch in session mode.
+  const branchesQuery = useBranches({ enabled: open && !sessionMode, projectId });
   const branches = branchesQuery.data?.branches ?? [];
   const branchMap = useMemo(() => {
     const m = new Map<string, ProjectBranch>();
     for (const b of branches) m.set(b.name, b);
     return m;
   }, [branches]);
-
   const headOptions = useMemo(
     () => branches.filter((b) => b.name !== defaultBranch),
     [branches, defaultBranch],
@@ -96,47 +138,56 @@ export function OpenChangeRequestDialog({
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [headRef, setHeadRef] = useState<string>('');
-  const [baseRef, setBaseRef] = useState<string>(defaultBranch);
+  const [pickedHeadRef, setPickedHeadRef] = useState('');
+  const [pickedBaseRef, setPickedBaseRef] = useState(defaultBranch);
 
+  // In session mode head/base are fixed; in picker mode they come from state.
+  const headRef = sessionMode ? activeSession!.branch_name : pickedHeadRef;
+  const baseRef = sessionMode ? defaultBranch : pickedBaseRef;
+
+  // Reset the form (and picker defaults) each time the dialog opens so drafts
+  // don't leak between sessions / branches.
   useEffect(() => {
     if (!open) return;
     setTitle('');
     setDescription('');
-    setBaseRef(defaultBranch);
+    if (sessionMode) return;
+    setPickedBaseRef(defaultBranch);
     if (initialHeadRef && initialHeadRef !== defaultBranch) {
-      setHeadRef(initialHeadRef);
+      setPickedHeadRef(initialHeadRef);
     } else if (headOptions.length === 1) {
-      setHeadRef(headOptions[0].name);
+      setPickedHeadRef(headOptions[0].name);
     } else {
-      setHeadRef('');
+      setPickedHeadRef('');
     }
-  }, [open, initialHeadRef, defaultBranch, headOptions.length]);
+  }, [open, sessionMode, session?.session_id, initialHeadRef, defaultBranch, headOptions.length]);
 
   useEffect(() => {
-    if (!open) return;
-    if (headRef || headOptions.length === 0) return;
-    setHeadRef(headOptions[0].name);
-  }, [open, headRef, headOptions]);
+    if (!open || sessionMode) return;
+    if (pickedHeadRef || headOptions.length === 0) return;
+    setPickedHeadRef(headOptions[0].name);
+  }, [open, sessionMode, pickedHeadRef, headOptions]);
 
-  const openMutation = useOpenChangeRequest();
+  const openMutation = useOpenChangeRequest({ projectId });
 
-  // Live diff between the two selected versions. The user sees the file-count
-  // and +/- before submitting, and we block submit when there's nothing to
-  // merge (avoids creating empty CRs).
-  const diffPreviewQuery = useVersionDiff(
-    headRef && baseRef && headRef !== baseRef ? { from: headRef, into: baseRef } : null,
-    { enabled: open },
+  // Live diff between the two refs — the user sees the file-count and +/- before
+  // submitting, and we block submit when there's nothing to merge.
+  const diffQuery = useVersionDiff(
+    open && headRef && baseRef && headRef !== baseRef ? { from: headRef, into: baseRef } : null,
+    { enabled: open, projectId },
   );
-  const diffPreview = diffPreviewQuery.data;
+  const diffPreview = diffQuery.data;
   const hasChanges =
-    Boolean(diffPreview) && !diffPreview!.is_same_ref && !diffPreview!.is_up_to_date && diffPreview!.files_changed > 0;
+    Boolean(diffPreview) &&
+    !diffPreview!.is_same_ref &&
+    !diffPreview!.is_up_to_date &&
+    diffPreview!.files_changed > 0;
 
   const canSubmit =
     Boolean(title.trim()) &&
     Boolean(headRef) &&
     headRef !== baseRef &&
-    !diffPreviewQuery.isLoading &&
+    !diffQuery.isLoading &&
     hasChanges;
 
   const handleSubmit = () => {
@@ -147,6 +198,7 @@ export function OpenChangeRequestDialog({
         description: description.trim() || undefined,
         head_ref: headRef,
         base_ref: baseRef,
+        session_id: sessionMode ? activeSession!.session_id : undefined,
       },
       {
         onSuccess: (cr) => {
@@ -159,7 +211,8 @@ export function OpenChangeRequestDialog({
     );
   };
 
-  const hasOnlyDefaultBranch = !branchesQuery.isLoading && headOptions.length === 0;
+  const hasOnlyDefaultBranch =
+    !sessionMode && !branchesQuery.isLoading && headOptions.length === 0;
   const selectedHeadBranch = headRef ? branchMap.get(headRef) : undefined;
   const selectedBaseBranch = branchMap.get(baseRef);
 
@@ -172,20 +225,27 @@ export function OpenChangeRequestDialog({
             Open change request
           </DialogTitle>
           <DialogDescription className="text-[12px]">
-            Propose merging one version into another. The merge runs through
-            Kortix against your project's git host.
+            {sessionMode ? (
+              <>
+                Propose merging this session&apos;s work into{' '}
+                <span className="font-mono text-foreground">{defaultBranch}</span>. The
+                session needs to have committed and pushed for there to be a diff.
+              </>
+            ) : (
+              <>
+                Propose merging one version into another. The merge runs through
+                Kortix against your project&apos;s git host.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
         {hasOnlyDefaultBranch ? (
           <div className="px-5 pb-5 space-y-3">
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-              <p className="font-medium">No non-default versions yet.</p>
-              <p className="mt-1">
-                Start a session — each session lives on its own branch — and
-                you'll be able to open a change request from it.
-              </p>
-            </div>
+            <InfoBanner tone="warning" title="No non-default versions yet.">
+              Start a session — each session lives on its own branch — and you&apos;ll
+              be able to open a change request from it.
+            </InfoBanner>
             <div className="flex justify-end">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Close
@@ -204,7 +264,11 @@ export function OpenChangeRequestDialog({
                   id="cr-title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="What does this change do?"
+                  placeholder={
+                    sessionMode
+                      ? activeSession?.name || 'What did this session change?'
+                      : 'What does this change do?'
+                  }
                   autoFocus
                   className="h-9"
                   onKeyDown={(e) => {
@@ -213,94 +277,87 @@ export function OpenChangeRequestDialog({
                 />
               </div>
 
-              {/* Branch picker — From / Into laid out as two clearly-separated
-                  rows of (label, dropdown). The trigger renders the branch
-                  name in a mono font and (when available) the head commit
-                  subject in a secondary line. */}
-              <div className="rounded-md border border-border/60 divide-y divide-border/40">
-                <div className="px-3 py-2.5 flex items-center gap-3">
-                  <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide w-12 shrink-0">
-                    From
-                  </Label>
-                  <Select
-                    value={headRef || undefined}
-                    onValueChange={setHeadRef}
-                    disabled={branchesQuery.isLoading || headOptions.length === 0}
-                  >
-                    <SelectTrigger
-                      className={cn(
-                        'h-10 flex-1 min-w-0 border-0 bg-transparent px-2 hover:bg-muted/40 focus:ring-0',
-                      )}
-                    >
-                      {selectedHeadBranch ? (
-                        <BranchRow branch={selectedHeadBranch} />
-                      ) : (
-                        <SelectValue placeholder="Pick a version" />
-                      )}
-                    </SelectTrigger>
-                    <SelectContent className="w-[420px] max-h-[260px]">
-                      {headOptions.map((b) => (
-                        <SelectItem key={b.name} value={b.name} className="py-1.5">
-                          <BranchRow branch={b} />
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="px-3 py-2.5 flex items-center gap-3">
-                  <Label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide w-12 shrink-0">
-                    Into
-                  </Label>
-                  <Select
-                    value={baseRef}
-                    onValueChange={setBaseRef}
-                    disabled={branchesQuery.isLoading}
-                  >
-                    <SelectTrigger
-                      className={cn(
-                        'h-10 flex-1 min-w-0 border-0 bg-transparent px-2 hover:bg-muted/40 focus:ring-0',
-                      )}
-                    >
-                      {selectedBaseBranch ? (
-                        <BranchRow branch={selectedBaseBranch} />
-                      ) : (
-                        <SelectValue />
-                      )}
-                    </SelectTrigger>
-                    <SelectContent className="w-[420px] max-h-[260px]">
-                      {branches.map((b) => (
-                        <SelectItem key={b.name} value={b.name} className="py-1.5">
-                          <BranchRow branch={b} />
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* From / Into — read-only summary in session mode, branch pickers
+                  in picker mode. Same container shape either way. */}
+              <div className="rounded-2xl border border-border/60 divide-y divide-border/40">
+                {sessionMode ? (
+                  <>
+                    <FieldRow label="From">
+                      <BranchValue name={`${displayBranchName(headRef)} (session)`} />
+                    </FieldRow>
+                    <FieldRow label="Into">
+                      <BranchValue name={baseRef} />
+                    </FieldRow>
+                  </>
+                ) : (
+                  <>
+                    <FieldRow label="From">
+                      <Select
+                        value={headRef || undefined}
+                        onValueChange={setPickedHeadRef}
+                        disabled={branchesQuery.isLoading || headOptions.length === 0}
+                      >
+                        <SelectTrigger className={PICKER_TRIGGER_CLASS}>
+                          {selectedHeadBranch ? (
+                            <BranchRow branch={selectedHeadBranch} />
+                          ) : (
+                            <SelectValue placeholder="Pick a version" />
+                          )}
+                        </SelectTrigger>
+                        <SelectContent className="w-[420px] max-h-[260px]">
+                          {headOptions.map((b) => (
+                            <SelectItem key={b.name} value={b.name} className="py-1.5">
+                              <BranchRow branch={b} />
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FieldRow>
+                    <FieldRow label="Into">
+                      <Select
+                        value={baseRef}
+                        onValueChange={setPickedBaseRef}
+                        disabled={branchesQuery.isLoading}
+                      >
+                        <SelectTrigger className={PICKER_TRIGGER_CLASS}>
+                          {selectedBaseBranch ? (
+                            <BranchRow branch={selectedBaseBranch} />
+                          ) : (
+                            <SelectValue />
+                          )}
+                        </SelectTrigger>
+                        <SelectContent className="w-[420px] max-h-[260px]">
+                          {branches.map((b) => (
+                            <SelectItem key={b.name} value={b.name} className="py-1.5">
+                              <BranchRow branch={b} />
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FieldRow>
+                  </>
+                )}
               </div>
 
-              {/* Live diff preview — shows the user whether there's anything
-                  to merge BEFORE they click submit. */}
+              {/* Live diff preview — shows whether there's anything to merge
+                  BEFORE submit. */}
               {headRef && baseRef && headRef !== baseRef && (
                 <DiffPreviewBanner
-                  loading={diffPreviewQuery.isLoading}
-                  error={diffPreviewQuery.error as Error | null}
+                  loading={diffQuery.isLoading}
+                  error={diffQuery.error as Error | null}
                   preview={diffPreview}
                 />
               )}
-              {headRef && baseRef && headRef === baseRef && (
-                <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                  Pick two different versions — you can't merge a version into
+              {!sessionMode && headRef && baseRef && headRef === baseRef && (
+                <InfoBanner tone="warning">
+                  Pick two different versions — you can&apos;t merge a version into
                   itself.
-                </div>
+                </InfoBanner>
               )}
 
               {/* Description */}
               <div className="space-y-1.5">
-                <Label
-                  htmlFor="cr-description"
-                  className="text-xs font-medium text-foreground"
-                >
+                <Label htmlFor="cr-description" className="text-xs font-medium text-foreground">
                   Description{' '}
                   <span className="font-normal text-muted-foreground">(optional)</span>
                 </Label>
@@ -310,22 +367,21 @@ export function OpenChangeRequestDialog({
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Context for reviewers — what changed and why."
                   rows={3}
-                  className="text-sm resize-none"
+                  className="resize-none"
                 />
               </div>
             </div>
 
-            <DialogFooter className="px-5 py-3 bg-muted/30 border-t border-border/40">
-              <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            <DialogFooter variant="bar">
+              <Button
+                variant="ghost"
+                onClick={() => onOpenChange(false)}
+                disabled={openMutation.isPending}
+              >
                 Cancel
               </Button>
-              <Button
-                disabled={!canSubmit || openMutation.isPending}
-                onClick={handleSubmit}
-              >
-                {openMutation.isPending && (
-                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                )}
+              <Button disabled={!canSubmit || openMutation.isPending} onClick={handleSubmit}>
+                {openMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
                 Open change request
               </Button>
             </DialogFooter>

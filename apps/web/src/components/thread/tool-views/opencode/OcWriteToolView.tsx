@@ -68,7 +68,7 @@ export function OcWriteToolView({
       <ToolViewBody padded={false}>
         {content ? (
           <div className="px-4 py-3">
-            <div className="rounded-md border border-border/50 overflow-hidden bg-foreground/[0.02]">
+            <div className="rounded-2xl border border-border/50 overflow-hidden bg-foreground/[0.02]">
               <CodeHighlight
                 code={content}
                 language={ext || 'text'}

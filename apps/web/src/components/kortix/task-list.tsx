@@ -78,7 +78,7 @@ export function TaskList({
           emptyAction={
             <button
               onClick={() => onNewTask('todo')}
-              className="w-full py-6 rounded-xl border border-dashed border-border/50 text-[13px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
+              className="w-full py-6 rounded-2xl border border-dashed border-border/50 text-[13px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
             >
               + Create your first task
             </button>
@@ -230,13 +230,13 @@ function Section({
         {action && <div className="ml-auto">{action}</div>}
       </div>
       {items.length > 0 ? (
-        <div className="rounded-xl border border-border/40 overflow-hidden divide-y divide-border/30 bg-card">
+        <div className="rounded-2xl border border-border/40 overflow-hidden divide-y divide-border/30 bg-card">
           {items.map(renderRow)}
         </div>
       ) : emptyAction ? (
         emptyAction
       ) : (
-        <div className="py-4 text-center text-[12px] text-muted-foreground/25 rounded-xl border border-dashed border-border/30">
+        <div className="py-4 text-center text-[12px] text-muted-foreground/25 rounded-2xl border border-dashed border-border/30">
           {emptyText}
         </div>
       )}

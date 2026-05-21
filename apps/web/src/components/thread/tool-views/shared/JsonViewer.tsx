@@ -92,7 +92,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
   };
 
   return (
-    <div className={cn('border border-border rounded-lg', className)}>
+    <div className={cn('border border-border rounded-2xl', className)}>
       <div className="flex items-center justify-between p-3 border-b border-border bg-muted/30">
         <div className="flex items-center gap-2">
           <Button
@@ -128,7 +128,7 @@ export const JsonViewer: React.FC<JsonViewerProps> = ({
       
       {isExpanded && (
         <div className="p-3">
-          <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto bg-background/50 p-3 rounded-lg border max-h-24 md:max-h-48">
+          <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto bg-background/50 p-3 rounded-2xl border max-h-24 md:max-h-48">
             {formatJson(data)}
           </pre>
         </div>

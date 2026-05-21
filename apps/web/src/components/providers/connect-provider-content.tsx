@@ -631,7 +631,7 @@ export function ConnectProviderContent({
 
       {/* Selected provider summary for connect view */}
       {view.type === 'connect' && selectedProviderData && (
-        <div className="mb-5 flex items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-4 py-3.5">
+        <div className="mb-5 flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-4 py-3.5">
           <ProviderLogo
             providerID={selectedProviderData.id}
             name={selectedProviderData.name}
@@ -751,7 +751,7 @@ export function ConnectProviderContent({
               Learn more <ExternalLink className="h-3 w-3" />
             </a>
           </p>
-          <div className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-4">
+          <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-4">
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
                 Provider ID
@@ -842,7 +842,7 @@ export function ConnectProviderContent({
             </div>
           </div>
           {error && (
-            <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2">
+            <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-2xl px-3 py-2">
               <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -872,7 +872,7 @@ export function ConnectProviderContent({
                   view.providerID}
                 .
               </p>
-              <div className="rounded-xl border border-border/50 bg-muted/20 p-2 space-y-0.5">
+              <div className="rounded-2xl border border-border/50 bg-muted/20 p-2 space-y-0.5">
                 {authMethods.map((method, i) => {
                   const Icon = methodIcon(method);
                   const desc = methodDescription(method);
@@ -910,7 +910,7 @@ export function ConnectProviderContent({
           {showApiKeyForm && (
             <form
               onSubmit={handleApiKeySubmit}
-              className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-4"
+              className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-4"
             >
               <p className="text-sm text-muted-foreground">
                 Enter your {selectedProviderData?.name || view.providerID} API
@@ -930,7 +930,7 @@ export function ConnectProviderContent({
                 />
               </div>
               {error && (
-                <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2">
+                <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-2xl px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
@@ -965,7 +965,7 @@ export function ConnectProviderContent({
           {showOAuthCode && (
             <form
               onSubmit={handleOAuthCodeSubmit}
-              className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-5"
+              className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5"
             >
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-foreground">
@@ -1035,7 +1035,7 @@ export function ConnectProviderContent({
                 />
               </div>
               {error && (
-                <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-lg px-3 py-2">
+                <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-2xl px-3 py-2">
                   <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
@@ -1059,7 +1059,7 @@ export function ConnectProviderContent({
           )}
 
           {showOAuthAuto && (
-            <div className="space-y-4 rounded-xl border border-border/50 bg-muted/20 p-5">
+            <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5">
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p>
                   A browser tab should have opened automatically. Complete the
@@ -1067,7 +1067,7 @@ export function ConnectProviderContent({
                 </p>
               </div>
               {oauthInstructions && (
-                <div className="px-3 py-2.5 rounded-lg bg-background border border-border/30 font-mono text-sm select-all break-all text-center font-semibold tracking-widest">
+                <div className="px-3 py-2.5 rounded-2xl bg-background border border-border/30 font-mono text-sm select-all break-all text-center font-semibold tracking-widest">
                   {oauthInstructions.includes(':')
                     ? oauthInstructions.split(':')[1]?.trim()
                     : oauthInstructions}
@@ -1094,7 +1094,7 @@ export function ConnectProviderContent({
 
           {showOAuthError && (
             <div className="space-y-3">
-              <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/5 rounded-lg px-4 py-3">
+              <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/5 rounded-2xl px-4 py-3">
                 <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                 <span>{error || 'Authorization failed'}</span>
               </div>

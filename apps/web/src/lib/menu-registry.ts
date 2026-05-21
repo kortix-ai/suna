@@ -33,6 +33,12 @@ import {
   Rocket,
   Coins,
   LayoutTemplate,
+  // Projects / app navigation (new project shell)
+  FolderGit2,
+  MessagesSquare,
+  SlidersHorizontal,
+  Webhook,
+  Hash,
 
   // Actions
   Plus,
@@ -193,6 +199,9 @@ export interface MenuItemDef {
   requiresAdmin?: boolean;
   /** If true, item is only shown when there's an active session */
   requiresSession?: boolean;
+  /** If true, item is only shown when a project is active (new project shell).
+   *  Project-scoped hrefs use the `{projectId}` token, resolved at render. */
+  requiresProject?: boolean;
   /** If true, item is only shown when the project / project-paradigm
    *  feature flag (NEXT_PUBLIC_ENABLE_PROJECTS) is on. Used to gate
    *  project-paradigm surfaces (Board today; Milestones, Team later). */
@@ -276,6 +285,142 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'action',
     actionId: 'restartFull',
     keywords: 'reload restart full services kill nuclear',
+  },
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // PROJECT & APP NAVIGATION (command palette — new project shell)
+  // App-level items always show; project-level items use the {projectId} token
+  // and only show when a project is active (requiresProject).
+  // ──────────────────────────────────────────────────────────────────────────
+  {
+    id: 'nav-projects',
+    label: 'Projects',
+    icon: FolderGit2,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects',
+    keywords: 'projects list all workspaces switch',
+  },
+  {
+    id: 'nav-accounts',
+    label: 'Accounts',
+    icon: Users,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/accounts',
+    keywords: 'accounts teams organizations members switch manage',
+  },
+  {
+    id: 'proj-sessions',
+    label: 'Sessions',
+    icon: MessagesSquare,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/sessions',
+    requiresProject: true,
+    keywords: 'sessions runs threads project conversations',
+  },
+  {
+    id: 'proj-customize',
+    label: 'Customize',
+    icon: SlidersHorizontal,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize',
+    requiresProject: true,
+    keywords: 'customize configure project agents skills commands',
+  },
+  {
+    id: 'proj-agents',
+    label: 'Customize · Agents',
+    icon: Bot,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/agents',
+    requiresProject: true,
+    keywords: 'agents subagents project customize ai',
+  },
+  {
+    id: 'proj-skills',
+    label: 'Customize · Skills',
+    icon: Blocks,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/skills',
+    requiresProject: true,
+    keywords: 'skills project customize abilities',
+  },
+  {
+    id: 'proj-commands',
+    label: 'Customize · Commands',
+    icon: TerminalSquare,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/commands',
+    requiresProject: true,
+    keywords: 'commands slash project customize',
+  },
+  {
+    id: 'proj-secrets',
+    label: 'Customize · Secrets',
+    icon: KeyRound,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/secrets',
+    requiresProject: true,
+    keywords: 'secrets env environment variables project customize',
+  },
+  {
+    id: 'proj-schedules',
+    label: 'Customize · Schedules',
+    icon: Calendar,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/schedules',
+    requiresProject: true,
+    keywords: 'schedules cron triggers timed project customize',
+  },
+  {
+    id: 'proj-webhooks',
+    label: 'Customize · Webhooks',
+    icon: Webhook,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/webhooks',
+    requiresProject: true,
+    keywords: 'webhooks triggers http project customize',
+  },
+  {
+    id: 'proj-channels',
+    label: 'Customize · Channels',
+    icon: Hash,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/channels',
+    requiresProject: true,
+    keywords: 'channels slack integrations project customize',
+  },
+  {
+    id: 'proj-settings',
+    label: 'Project settings',
+    icon: SettingsIcon,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/settings',
+    requiresProject: true,
+    keywords: 'project settings repository general danger zone',
   },
 
   // ──────────────────────────────────────────────────────────────────────────

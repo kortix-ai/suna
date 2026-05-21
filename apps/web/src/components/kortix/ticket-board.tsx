@@ -292,7 +292,7 @@ export function TicketBoard({ tickets, columns, agents, onOpenTicket, onNewTicke
                   {rows.length === 0 ? (
                     <button
                       onClick={() => onNewTicket(col.key)}
-                      className="w-full py-6 rounded-xl border border-dashed border-border/40 text-[12px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
+                      className="w-full py-6 rounded-2xl border border-dashed border-border/40 text-[12px] text-muted-foreground/30 hover:text-foreground hover:border-border hover:bg-muted/20 transition-all cursor-pointer"
                     >
                       + Add ticket
                     </button>
@@ -373,7 +373,7 @@ function Column({ column, count, onAdd, isActiveDrag, children }: {
       <div
         ref={setNodeRef}
         className={cn(
-          'flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 pb-4 rounded-xl transition-colors',
+          'flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 pb-4 rounded-2xl transition-colors',
           isActiveDrag && 'bg-muted/10',
           isOver && 'bg-primary/[0.04] ring-1 ring-inset ring-primary/30',
         )}
@@ -491,7 +491,7 @@ function TicketCardInner({
     <div
       onClick={onSelect}
       className={cn(
-        'group rounded-xl border border-border/50 bg-card p-3 cursor-pointer select-none',
+        'group rounded-2xl border border-border/50 bg-card p-3 cursor-pointer select-none',
         'transition-colors hover:border-border/80 hover:bg-muted/20',
         dragging && 'shadow-xl border-primary/40',
       )}

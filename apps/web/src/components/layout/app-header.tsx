@@ -4,9 +4,8 @@
  * AppHeader — the canonical top bar used outside the (dashboard) shell.
  *
  * Layout:
- *  - LEFT:  KortixLogo + optional `leading` slot (e.g. a back button).
- *  - RIGHT: optional `actions` slot + WorkspaceMenu (single widget that
- *           carries identity + workspace context + settings).
+ *  - LEFT:  KortixLogo + ProjectSwitcher (which project, scoped to account).
+ *  - RIGHT: optional `actions` slot + UserMenu (account · you + settings).
  *
  * Variants:
  *  - default  — renders as an in-flow header (use inside a flex column page).
@@ -14,16 +13,15 @@
  *               sitting over a full-screen loader / shell.
  */
 
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { ArrowLeftRight } from 'lucide-react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { WorkspaceMenu } from '@/components/sidebar/workspace-menu';
-import {
-  AccountSwitcher,
-  ProjectSwitcher,
-} from '@/components/layout/account-switcher';
+import { UserMenu } from '@/components/layout/user-menu';
+import { ProjectSwitcher } from '@/components/layout/project-switcher';
+import { CommandPalette } from '@/components/command-palette';
 import { cn } from '@/lib/utils';
 
 export function AppHeader({
@@ -31,11 +29,15 @@ export function AppHeader({
   leading,
   actions,
   variant = 'default',
+  logoHref = '/projects',
 }: {
   user: User;
   leading?: React.ReactNode;
   actions?: React.ReactNode;
   variant?: 'default' | 'overlay';
+  /** Where the logo navigates on click. Defaults to /projects (the main app
+   * landing). Pass an explicit href to override on a specific surface. */
+  logoHref?: string;
 }) {
   const pathname = usePathname();
   const onProjectsRoute = pathname?.startsWith('/projects') ?? false;
@@ -51,6 +53,7 @@ export function AppHeader({
     '';
 
   return (
+    <>
     <header
       className={cn(
         'flex shrink-0 items-center justify-between gap-3 px-6 py-4',
@@ -63,15 +66,19 @@ export function AppHeader({
           variant === 'overlay' && 'pointer-events-auto',
         )}
       >
-        <KortixLogo size={20} className="mr-1" />
-        {/* Vercel-style breadcrumb: pills separated by skewed dividers that
-            sit BETWEEN them — not inside the buttons themselves. */}
+        <Link
+          href={logoHref}
+          aria-label="Kortix home"
+          className="mr-1 inline-flex cursor-pointer items-center rounded-md transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <KortixLogo size={20} />
+        </Link>
+        {/* Vercel-style breadcrumb: the project switcher (account context
+            lives in the Account·You menu), separated by a skewed divider. */}
         {onProjectsRoute && (
           <>
             <BreadcrumbDivider />
-            <AccountSwitcher />
-            <BreadcrumbDivider />
-            <ProjectSwitcher />
+            <ProjectSwitcher variant="header" />
           </>
         )}
         {leading}
@@ -83,12 +90,15 @@ export function AppHeader({
         )}
       >
         {actions}
-        <WorkspaceMenu
+        <UserMenu
           user={{ name: displayName, email: displayEmail, avatar: avatarUrl }}
           variant="header"
         />
       </div>
     </header>
+    {/* Cmd+K — available on every header page, not just the project shell. */}
+    <CommandPalette />
+    </>
   );
 }
 

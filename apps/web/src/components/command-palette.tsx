@@ -1,8 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, usePathname, useParams } from 'next/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { normalizeAppPathname } from '@/lib/instance-routes';
+import {
+  createProjectSession,
+  listAccounts,
+  listProjectsForAccount,
+  listProjectSessions,
+  searchProjectFiles,
+  type KortixAccount,
+  type KortixProject,
+  type ProjectSession,
+} from '@/lib/projects-client';
+import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   Loader2,
   MessageCircle,
@@ -19,8 +32,11 @@ import {
   ArrowLeft,
   Check,
   Folder,
+  FolderGit2,
+  FileText,
   Hash,
   Globe,
+  Users,
 } from 'lucide-react';
 
 import {
@@ -39,7 +55,7 @@ import {
   CommandFooter,
   CommandKbd,
 } from '@/components/ui/command';
-import { useSidebar } from '@/components/ui/sidebar';
+import { SidebarContext } from '@/components/ui/sidebar';
 import {
   useOpenCodeSessions,
   useOpenCodeAgents,
@@ -69,14 +85,11 @@ import {
   ProviderLogo,
   MODEL_SELECTOR_PROVIDER_IDS,
 } from '@/components/providers/provider-branding';
-import { useWorkspaceSearch, useFilesStore } from '@/features/files';
 import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { groupMessagesIntoTurns, isTextPart, type TextPart } from '@/ui';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 
-import { getFileIcon } from '@/features/files/components/file-icon';
-import type { FindMatch } from '@/features/files';
 import {
   parseLocalhostUrl,
   toInternalUrl,
@@ -90,7 +103,7 @@ import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 // Types
 // ============================================================================
 
-type PalettePage = 'root' | 'agents' | 'models' | 'files' | 'messages';
+type PalettePage = 'root' | 'agents' | 'models' | 'messages' | 'projects' | 'accounts' | 'sessions' | 'files';
 
 // ============================================================================
 // Helpers
@@ -118,139 +131,154 @@ function sanitizeCmdkValue(value: string): string {
   return value.replace(/["'\\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// (File search logic lives in useWorkspaceSearch hook — features/files/hooks)
+// Legacy global-workspace registry items that don't belong in the new
+// project-shell palette (they point at the old tabbed shell routes). The new
+// project + app nav items (proj-*, nav-*) replace them. Kept in the registry
+// because the legacy right/left sidebars still render them.
+const LEGACY_PALETTE_HIDDEN = new Set([
+  'workspace', 'dashboard', 'scheduled-tasks', 'files', 'tunnel',
+  'running-services-cmd', 'agent-browser-cmd', 'internal-browser-cmd', 'desktop-cmd',
+  'templates', 'changelog', 'credits-explained', 'secrets-manager', 'api-keys',
+  'llm-providers', 'open-terminal', 'restart-config', 'restart-full', 'ssh-quick',
+]);
+
+// Registry nav items that open a sub-picker page instead of navigating directly.
+const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
+  'nav-projects': 'projects',
+  'nav-accounts': 'accounts',
+  'proj-sessions': 'sessions',
+};
 
 // ============================================================================
-// FileSearchPage — uses standalone useWorkspaceSearch hook
+// FileSearchPage — git-backed search over the active project's repo.
+// Filenames by default; prefix with ">" to grep file contents (server-side
+// `git grep`). Replaces the legacy sandbox /workspace search.
 // ============================================================================
 
 function FileSearchPage({
+  projectId,
   query,
   onSelect,
 }: {
+  projectId: string;
   query: string;
-  onSelect: (filePath: string, isDir?: boolean) => void;
+  onSelect: (filePath: string, lineNumber?: number) => void;
 }) {
-  const search = useWorkspaceSearch(query);
+  const isContent = query.trimStart().startsWith('>');
+  const effectiveQuery = (isContent ? query.replace(/^\s*>\s*/, '') : query).trim();
+  const enabled = effectiveQuery.length >= 2;
 
-  // Idle: show hint
-  if (!search.effectiveQuery) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['project-file-search', projectId, effectiveQuery, isContent],
+    queryFn: () => searchProjectFiles(projectId, effectiveQuery, { content: isContent, limit: 50 }),
+    enabled,
+    staleTime: 15_000,
+  });
+
+  if (!enabled) {
     return (
       <div className="flex flex-col items-center gap-3 py-12">
-        <div className="flex items-center justify-center h-10 w-10 rounded-full bg-muted/30">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted/30">
           <Search className="h-4 w-4 text-muted-foreground/40" />
         </div>
-        <div className="text-center space-y-1">
-          <p className="text-sm text-muted-foreground/60">Type to search files in /workspace</p>
+        <div className="space-y-1 text-center">
+          <p className="text-sm text-muted-foreground/60">Search files in this project&apos;s repo</p>
           <p className="text-[11px] text-muted-foreground/30">
-            Prefix with <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">&gt;</kbd> to search file contents
+            Prefix with{' '}
+            <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">&gt;</kbd> to search
+            file contents
           </p>
         </div>
       </div>
     );
   }
 
-  // Loading
-  if (search.isLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-10">
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
         <span className="text-sm text-muted-foreground/50">
-          {search.isContentSearch ? 'Searching file contents...' : 'Searching files...'}
+          {isContent ? 'Searching file contents…' : 'Searching files…'}
         </span>
       </div>
     );
   }
 
-  // No results
-  if (!search.hasResults && search.searchedQuery) {
+  const results = data?.results ?? [];
+  if (results.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-12">
-        <div className="flex items-center justify-center h-10 w-10 rounded-full bg-muted/30">
+      <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted/30">
           <Search className="h-4 w-4 text-muted-foreground/30" />
         </div>
-        <div className="text-center">
-          <span className="text-sm text-muted-foreground/60">
-            No {search.isContentSearch ? 'content matches' : 'files found'} for &ldquo;{search.searchedQuery}&rdquo;
-          </span>
-          {!search.isContentSearch && (
-            <p className="text-[11px] text-muted-foreground/30 mt-1">
-              Try a shorter query or prefix with &gt; for content search
-            </p>
-          )}
-        </div>
+        <span className="text-sm text-muted-foreground/60">
+          No {isContent ? 'content matches' : 'files'} for &ldquo;{effectiveQuery}&rdquo;
+        </span>
       </div>
     );
   }
 
-  // Content search results
-  if (search.isContentSearch && search.textResults.length > 0) {
-    const grouped = new Map<string, FindMatch[]>();
-    for (const match of search.textResults) {
-      const existing = grouped.get(match.path);
-      if (existing) existing.push(match);
-      else grouped.set(match.path, [match]);
+  if (isContent) {
+    const grouped = new Map<string, typeof results>();
+    for (const r of results) {
+      const arr = grouped.get(r.path) ?? [];
+      arr.push(r);
+      grouped.set(r.path, arr);
     }
-
     return (
       <>
-        {Array.from(grouped.entries()).map(([filePath, matches]) => {
-          const fileName = filePath.split('/').pop() || filePath;
-          return (
-            <CommandGroup
-              key={filePath}
-              heading={
-                <span className="inline-flex items-center gap-1.5 font-mono text-[10px]">
-                  {getFileIcon(fileName, { className: 'h-3 w-3 shrink-0' })}
-                  {filePath}
+        {Array.from(grouped.entries()).map(([filePath, matches]) => (
+          <CommandGroup
+            key={filePath}
+            heading={
+              <span className="inline-flex items-center gap-1.5 font-mono text-[10px]">
+                <FileText className="h-3 w-3 shrink-0" />
+                {filePath}
+              </span>
+            }
+            forceMount
+          >
+            {matches.map((match, i) => (
+              <CommandItem
+                key={`${filePath}:${match.line_number}:${i}`}
+                value={sanitizeCmdkValue(`content ${filePath} ${match.line_text} ${match.line_number}`)}
+                onSelect={() => onSelect(filePath, match.line_number)}
+              >
+                <Hash className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+                <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground/50">
+                  {match.line_number}
                 </span>
-              }
-              forceMount
-            >
-              {matches.slice(0, 5).map((match, i) => (
-                <CommandItem
-                  key={`${filePath}:${match.line_number}:${i}`}
-                  value={sanitizeCmdkValue(`content ${filePath} ${match.lines} ${match.line_number}`)}
-                  onSelect={() => onSelect(filePath)}
-                >
-                  <Hash className="h-3.5 w-3.5 text-muted-foreground/40 flex-shrink-0" />
-                  <span className="text-[11px] text-muted-foreground/50 tabular-nums w-8 text-right flex-shrink-0">
-                    {match.line_number}
-                  </span>
-                  <span className="truncate text-sm font-mono text-muted-foreground/80 flex-1">
-                    {match.lines.trim()}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          );
-        })}
+                <span className="flex-1 truncate font-mono text-sm text-muted-foreground/80">
+                  {(match.line_text || '').trim()}
+                </span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        ))}
       </>
     );
   }
 
-  // Mixed results — ranked by relevance, files and folders interleaved
   return (
-    <CommandGroup heading={`Results (${search.results.length})`} forceMount>
-      {search.results.map((item) => (
-        <CommandItem
-          key={item.path}
-          value={sanitizeCmdkValue(`${item.isDir ? 'dir' : 'file'} ${item.name} ${item.path}`)}
-          onSelect={() => onSelect(item.path, item.isDir)}
-        >
-          {item.isDir ? (
-            <Folder className="h-4 w-4 shrink-0 text-blue-400" />
-          ) : (
-            getFileIcon(item.name, { className: 'h-4 w-4 shrink-0' })
-          )}
-          <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
-            <span className="truncate text-sm font-medium">{item.name}</span>
-            <span className="text-[10px] text-muted-foreground/35 font-mono truncate flex-shrink min-w-0">
-              {item.path}
-            </span>
-          </div>
-        </CommandItem>
-      ))}
+    <CommandGroup heading={`Files (${results.length})`} forceMount>
+      {results.map((item) => {
+        const name = item.path.split('/').pop() || item.path;
+        return (
+          <CommandItem
+            key={item.path}
+            value={sanitizeCmdkValue(`file ${name} ${item.path}`)}
+            onSelect={() => onSelect(item.path)}
+          >
+            <FileText className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+              <span className="truncate text-sm font-medium">{name}</span>
+              <span className="min-w-0 flex-shrink truncate font-mono text-[10px] text-muted-foreground/35">
+                {item.path}
+              </span>
+            </div>
+          </CommandItem>
+        );
+      })}
     </CommandGroup>
   );
 }
@@ -354,12 +382,24 @@ export function CommandPalette() {
   const openNewInstanceModal = useNewInstanceModalStore((s) => s.openNewInstanceModal);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
-  const pathname = normalizeAppPathname(usePathname());
+  const rawPathname = usePathname();
+  const pathname = normalizeAppPathname(rawPathname);
+  const params = useParams<{ id?: string; sessionId?: string }>();
+  const queryClient = useQueryClient();
+  const openProjectTab = useProjectSessionTabsStore((s) => s.openTab);
+  // New project shell: /projects/[id]/... scopes navigation + "new session" to
+  // the active project. Null in the legacy global shell.
+  const projectId = rawPathname?.startsWith('/projects/') ? (params?.id ?? null) : null;
   const currentSessionId = useMemo(() => {
-    const match = pathname?.match(/^\/sessions\/([^/]+)/);
+    if (params?.sessionId) return params.sessionId; // /projects/[id]/sessions/[sessionId]
+    const match = pathname?.match(/^\/sessions\/([^/]+)/); // legacy global shell
     return match ? match[1] : null;
-  }, [pathname]);
-  const { toggleSidebar, open: sidebarOpen } = useSidebar();
+  }, [params?.sessionId, pathname]);
+  // Read the sidebar context directly so the palette can mount anywhere
+  // (AppHeader pages have no SidebarProvider). Sidebar actions no-op there.
+  const sidebarCtx = useContext(SidebarContext);
+  const toggleSidebar = sidebarCtx?.toggleSidebar ?? (() => {});
+  const sidebarOpen = sidebarCtx?.open ?? false;
   const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
   const createSession = useCreateOpenCodeSession();
   const createPty = useCreatePty();
@@ -370,6 +410,27 @@ export function CommandPalette() {
   const { data: sessions } = useOpenCodeSessions();
   const { data: agents } = useOpenCodeAgents();
   const { data: providers } = useOpenCodeProviders();
+
+  // ── Project / account data for the switch sub-pickers ──
+  const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
+  const { data: accountsList } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: listAccounts,
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const { data: projectsList } = useQuery({
+    queryKey: ['projects', selectedAccountId],
+    queryFn: () => listProjectsForAccount(selectedAccountId || undefined),
+    enabled: open && !!selectedAccountId,
+    staleTime: 30_000,
+  });
+  const { data: projectSessionsList } = useQuery({
+    queryKey: ['project-sessions', projectId],
+    queryFn: () => listProjectSessions(projectId!),
+    enabled: open && !!projectId,
+    staleTime: 15_000,
+  });
 
   // ── Derived: flat models ──
   const allModels = useMemo(() => flattenModels(providers), [providers]);
@@ -445,6 +506,17 @@ export function CommandPalette() {
     }
   }, [open]);
 
+  // Open straight to File Search (e.g. from the /files route).
+  useEffect(() => {
+    const openFileSearch = () => {
+      setQuery('');
+      setPage('files');
+      setOpen(true);
+    };
+    window.addEventListener('kortix:open-file-search', openFileSearch);
+    return () => window.removeEventListener('kortix:open-file-search', openFileSearch);
+  }, []);
+
   // Backspace on empty query goes back to root
   useEffect(() => {
     if (page === 'root') return;
@@ -490,12 +562,22 @@ export function CommandPalette() {
   const hasSessionResults = filteredSessions.length > 0;
   // ── Palette items ──
   const allPaletteItems = useMemo(() => {
-    return getItemsForSurface('commandPalette').filter((item) => {
-      if (item.requiresBilling && !billingEnabled) return false;
-      if (item.requiresSession && !currentSessionId) return false;
-      return true;
-    });
-  }, [billingEnabled, currentSessionId]);
+    return getItemsForSurface('commandPalette')
+      .filter((item) => {
+        if (LEGACY_PALETTE_HIDDEN.has(item.id)) return false;
+        if (item.id === 'toggle-sidebar' && !sidebarCtx) return false;
+        if (item.requiresBilling && !billingEnabled) return false;
+        if (item.requiresSession && !currentSessionId) return false;
+        if (item.requiresProject && !projectId) return false;
+        return true;
+      })
+      // Resolve the {projectId} token in project-scoped hrefs.
+      .map((item) =>
+        item.href?.includes('{projectId}') && projectId
+          ? { ...item, href: item.href.replaceAll('{projectId}', projectId) }
+          : item,
+      );
+  }, [billingEnabled, currentSessionId, projectId, sidebarCtx]);
 
   // Filter navigation items client-side
   const filteredNavItems = useMemo(() => {
@@ -622,23 +704,85 @@ export function CommandPalette() {
     if (isCreating) return;
     setIsCreating(true);
     try {
-      const session = await createSession.mutateAsync();
-      openTabAndNavigate({
-        id: session.id,
-        title: 'New session',
-        type: 'session',
-        href: `/sessions/${session.id}`,
-      });
-      requestAnimationFrame(() => {
-        window.dispatchEvent(new CustomEvent('focus-session-textarea'));
-      });
-      close();
+      if (projectId) {
+        // New project shell — create a project session and route to it; the
+        // tab bar picks it up from the URL.
+        const session = await createProjectSession(projectId);
+        queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+        openProjectTab(projectId, session.session_id);
+        router.push(`/projects/${projectId}/sessions/${session.session_id}`);
+        close();
+      } else {
+        const session = await createSession.mutateAsync();
+        openTabAndNavigate({
+          id: session.id,
+          title: 'New session',
+          type: 'session',
+          href: `/sessions/${session.id}`,
+        });
+        requestAnimationFrame(() => {
+          window.dispatchEvent(new CustomEvent('focus-session-textarea'));
+        });
+        close();
+      }
     } catch {
       toast.error('Failed to create session');
     } finally {
       setIsCreating(false);
     }
-  }, [isCreating, createSession, close]);
+  }, [isCreating, projectId, createSession, queryClient, openProjectTab, router, close]);
+
+  // ── Switch sub-pickers: select handlers + filtered lists ──
+  const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
+
+  const handleSelectProject = useCallback((p: KortixProject) => {
+    router.push(`/projects/${p.project_id}/sessions`);
+    close();
+  }, [router, close]);
+
+  const handleSelectAccount = useCallback((a: KortixAccount) => {
+    setSelectedAccountId(a.account_id);
+    router.push('/projects');
+    close();
+  }, [setSelectedAccountId, router, close]);
+
+  const handleSelectProjectSession = useCallback((s: ProjectSession) => {
+    if (!projectId) return close();
+    openProjectTab(projectId, s.session_id);
+    router.push(`/projects/${projectId}/sessions/${s.session_id}`);
+    close();
+  }, [projectId, openProjectTab, router, close]);
+
+  const sessionName = (s: ProjectSession) =>
+    (typeof s.metadata?.session_name === 'string' ? s.metadata.session_name : '') ||
+    s.branch_name ||
+    s.session_id.slice(0, 8);
+
+  const filteredProjectsList = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const sorted = [...(projectsList ?? [])].sort((a, b) =>
+      (b.last_opened_at || b.updated_at).localeCompare(a.last_opened_at || a.updated_at),
+    );
+    return (q ? sorted.filter((p) => p.name.toLowerCase().includes(q)) : sorted).slice(0, 50);
+  }, [projectsList, query]);
+
+  const filteredAccountsList = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const sorted = [...(accountsList ?? [])].sort((a, b) => {
+      if (a.personal_account && !b.personal_account) return -1;
+      if (!a.personal_account && b.personal_account) return 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    return q ? sorted.filter((a) => (a.name || '').toLowerCase().includes(q)) : sorted;
+  }, [accountsList, query]);
+
+  const filteredProjectSessionsList = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const sorted = [...(projectSessionsList ?? [])].sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+    );
+    return (q ? sorted.filter((s) => sessionName(s).toLowerCase().includes(q)) : sorted).slice(0, 50);
+  }, [projectSessionsList, query]);
 
   const handleNavigate = useCallback(
     (path: string, label?: string) => {
@@ -670,30 +814,15 @@ export function CommandPalette() {
   );
 
   const handleSelectFile = useCallback(
-    (filePath: string, isDir?: boolean) => {
-      if (isDir) {
-        // Directory: open the Files page and navigate to that path
-        const { navigateToPath } = useFilesStore.getState();
-        navigateToPath(filePath);
-        openTabAndNavigate({
-          id: 'page:/files',
-          title: 'Files',
-          type: 'page',
-          href: '/files',
-        });
-      } else {
-        // File: open in a file viewer tab
-        const fileName = filePath.split('/').pop() || filePath;
-        openTabAndNavigate({
-          id: `file:${filePath}`,
-          title: fileName,
-          type: 'file',
-          href: `/files/${encodeURIComponent(filePath)}`,
-        });
-      }
+    (filePath: string, lineNumber?: number) => {
+      if (!projectId) return close();
+      // Open the project Files view focused on the selected file (+ line).
+      const params = new URLSearchParams({ section: 'files', path: filePath });
+      if (lineNumber) params.set('line', String(lineNumber));
+      router.push(`/projects/${projectId}/customize?${params.toString()}`);
       close();
     },
-    [close],
+    [projectId, router, close],
   );
 
   const jumpToMessage = useMessageJumpStore((s) => s.jumpToMessage);
@@ -894,15 +1023,23 @@ export function CommandPalette() {
   const handleRegistryItem = useCallback((item: MenuItemDef) => {
     switch (item.kind) {
       case 'navigate': {
-        // Use registry tabType/tabId when available (browser, preview, desktop, etc.)
-        const tabType = (item.tabType || (item.href?.startsWith('/settings') ? 'settings' : 'page')) as any;
-        const tabId = item.tabId || `page:${item.href}`;
+        const href = item.href || '';
+        // New project/account routes use the Next router directly — the project
+        // tab bar auto-syncs from the URL. The legacy tabbed shell is bypassed.
+        if (href.startsWith('/projects') || href.startsWith('/accounts')) {
+          router.push(href);
+          close();
+          break;
+        }
+        // Legacy global-shell tabbed navigation (browser, preview, desktop, etc.)
+        const tabType = (item.tabType || (href.startsWith('/settings') ? 'settings' : 'page')) as any;
+        const tabId = item.tabId || `page:${href}`;
         openTabAndNavigate(
           {
             id: tabId,
-            title: item.label || item.href!.split('/').pop() || '',
+            title: item.label || href.split('/').pop() || '',
             type: tabType,
-            href: item.href!,
+            href,
             ...(item.tabType === 'preview' ? { metadata: { url: '', port: 0, originalUrl: '', path: '/' } } : {}),
           },
           router,
@@ -945,17 +1082,23 @@ export function CommandPalette() {
   const totalSearchResults = useMemo(() => {
     if (page === 'agents') return filteredAgents.length;
     if (page === 'models') return visibleModels.length;
+    if (page === 'projects') return filteredProjectsList.length;
+    if (page === 'accounts') return filteredAccountsList.length;
+    if (page === 'sessions') return filteredProjectSessionsList.length;
     if (page === 'messages') return 0; // count is shown inline by MessagesPage
     if (!hasQuery) return 0;
     return filteredNavItems.length + filteredSessions.length + sessionActionItems.length;
-  }, [page, hasQuery, filteredNavItems, filteredSessions, sessionActionItems, filteredAgents, visibleModels]);
+  }, [page, hasQuery, filteredNavItems, filteredSessions, sessionActionItems, filteredAgents, visibleModels, filteredProjectsList, filteredAccountsList, filteredProjectSessionsList]);
 
   // ── Placeholder text ──
   const placeholder = useMemo(() => {
     if (page === 'agents') return 'Search agents...';
     if (page === 'models') return 'Search models...';
-    if (page === 'files') return 'Search files in /workspace...';
+    if (page === 'files') return 'Search files in this project...';
     if (page === 'messages') return 'Search messages...';
+    if (page === 'projects') return 'Search projects...';
+    if (page === 'accounts') return 'Search accounts...';
+    if (page === 'sessions') return 'Search sessions...';
     return 'Search commands, sessions...';
   }, [page]);
 
@@ -965,6 +1108,9 @@ export function CommandPalette() {
     if (page === 'models') return 'Change Model';
     if (page === 'files') return 'Search Files';
     if (page === 'messages') return 'Jump to Message';
+    if (page === 'projects') return 'Switch Project';
+    if (page === 'accounts') return 'Switch Account';
+    if (page === 'sessions') return 'Open Session';
     return null;
   }, [page]);
 
@@ -1025,11 +1171,14 @@ export function CommandPalette() {
                             : 'Expand Sidebar'
                           : item.label;
 
+                        const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
                         return (
                           <CommandItem
                             key={item.id}
                             value={sanitizeCmdkValue(`suggestion ${item.label} ${item.keywords || ''}`)}
-                            onSelect={() => handleRegistryItem(item)}
+                            onSelect={() =>
+                              submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
+                            }
                             disabled={item.id === 'new-session' && isCreating}
                           >
                             {item.id === 'new-session' && isCreating ? (
@@ -1040,6 +1189,9 @@ export function CommandPalette() {
                             <span className="flex-1">{displayLabel}</span>
                             {item.shortcut && (
                               <CommandShortcut>{item.shortcut}</CommandShortcut>
+                            )}
+                            {submenuPage && (
+                              <ChevronRight className="h-3 w-3 text-muted-foreground/30" />
                             )}
                           </CommandItem>
                         );
@@ -1085,18 +1237,20 @@ export function CommandPalette() {
                       </>
                     )}
 
-                    {/* File search entry point — always available */}
-                    <CommandItem
-                      value="suggestion search files find file open workspace"
-                      onSelect={() => goToPage('files')}
-                    >
-                      <Search className="h-4 w-4" />
-                      <span className="flex-1">Search Files</span>
-                      <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10px] font-mono text-muted-foreground/55 leading-none">
-                        /workspace
-                      </span>
-                      <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
-                    </CommandItem>
+                    {/* File search entry point — searches the project's git repo */}
+                    {projectId && (
+                      <CommandItem
+                        value="suggestion search files find file grep repo content"
+                        onSelect={() => goToPage('files')}
+                      >
+                        <Search className="h-4 w-4" />
+                        <span className="flex-1">Search Files</span>
+                        <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10px] font-mono text-muted-foreground/55 leading-none">
+                          repo
+                        </span>
+                        <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
+                      </CommandItem>
+                    )}
                   </CommandGroup>
 
                   {/* Recent Sessions */}
@@ -1160,12 +1314,15 @@ export function CommandPalette() {
                           ? (sidebarOpen ? 'Collapse Sidebar' : 'Expand Sidebar')
                           : item.label;
                         const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
+                        const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
 
                         return (
                         <CommandItem
                           key={item.id}
                           value={sanitizeCmdkValue(item.keywords || `${item.group} ${item.label} ${item.id}`)}
-                          onSelect={() => handleRegistryItem(item)}
+                          onSelect={() =>
+                            submenuPage ? goToPage(submenuPage) : handleRegistryItem(item)
+                          }
                             disabled={item.id === 'new-session' && isCreating}
                           >
                             {item.id === 'new-session' && isCreating ? (
@@ -1181,6 +1338,9 @@ export function CommandPalette() {
                             )}
                             {isActiveTheme && (
                               <span className="text-[10px] text-primary/60 font-medium">Active</span>
+                            )}
+                            {submenuPage && (
+                              <ChevronRight className="h-3 w-3 text-muted-foreground/30" />
                             )}
                           </CommandItem>
                         );
@@ -1257,11 +1417,11 @@ export function CommandPalette() {
                     </CommandGroup>
                   )}
 
-                  {/* Search files action — always shown when typing */}
-                  {queryLongEnough && !detectedUrl && (
+                  {/* Search files action — searches the project's git repo */}
+                  {queryLongEnough && !detectedUrl && projectId && (
                     <CommandGroup heading="File Search" forceMount>
                       <CommandItem
-                        value={sanitizeCmdkValue(`search files ${query.trim()} workspace find open`)}
+                        value={sanitizeCmdkValue(`search files ${query.trim()} repo grep find open`)}
                         onSelect={() => goToPage('files', true)}
                       >
                         <Search className="h-4 w-4" />
@@ -1269,7 +1429,7 @@ export function CommandPalette() {
                           Search files for &ldquo;{query.trim()}&rdquo;
                         </span>
                         <span className="px-1.5 py-0.5 rounded-[5px] bg-foreground/[0.04] border border-border/40 text-[10px] font-mono text-muted-foreground/55 leading-none">
-                          /workspace
+                          repo
                         </span>
                         <ChevronRight className="h-3 w-3 text-muted-foreground/40" />
                       </CommandItem>
@@ -1436,7 +1596,108 @@ export function CommandPalette() {
           {/* ============================================================ */}
           {/* PAGE: FILES                                                   */}
           {/* ============================================================ */}
-          {page === 'files' && <FileSearchPage query={query} onSelect={handleSelectFile} />}
+          {page === 'files' && projectId && (
+            <FileSearchPage projectId={projectId} query={query} onSelect={handleSelectFile} />
+          )}
+
+          {/* ============================================================ */}
+          {/* PAGE: PROJECTS                                                */}
+          {/* ============================================================ */}
+          {page === 'projects' && (
+            filteredProjectsList.length > 0 ? (
+              <CommandGroup heading={`Projects (${filteredProjectsList.length})`} forceMount>
+                {filteredProjectsList.map((project) => (
+                  <CommandItem
+                    key={project.project_id}
+                    value={sanitizeCmdkValue(`project ${project.name} ${project.project_id}`)}
+                    onSelect={() => handleSelectProject(project)}
+                  >
+                    <FolderGit2 className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                    <span className="flex-1 truncate">{project.name}</span>
+                    {project.project_id === params?.id && (
+                      <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : (
+              <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                <FolderGit2 className="h-5 w-5 text-muted-foreground/30" />
+                <span className="text-sm text-muted-foreground/60">
+                  {query ? `No projects matching "${query}"` : 'No projects yet'}
+                </span>
+              </div>
+            )
+          )}
+
+          {/* ============================================================ */}
+          {/* PAGE: ACCOUNTS                                                */}
+          {/* ============================================================ */}
+          {page === 'accounts' && (
+            filteredAccountsList.length > 0 ? (
+              <CommandGroup heading={`Accounts (${filteredAccountsList.length})`} forceMount>
+                {filteredAccountsList.map((account) => {
+                  const label = account.name || (account.personal_account ? 'Personal' : 'Account');
+                  return (
+                    <CommandItem
+                      key={account.account_id}
+                      value={sanitizeCmdkValue(`account ${label} ${account.account_id}`)}
+                      onSelect={() => handleSelectAccount(account)}
+                    >
+                      <Users className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                      <span className="flex-1 truncate">{label}</span>
+                      {account.personal_account && (
+                        <span className="text-[10px] text-muted-foreground/40">Personal</span>
+                      )}
+                      {account.account_id === selectedAccountId && (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      )}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            ) : (
+              <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                <Users className="h-5 w-5 text-muted-foreground/30" />
+                <span className="text-sm text-muted-foreground/60">
+                  {query ? `No accounts matching "${query}"` : 'No accounts'}
+                </span>
+              </div>
+            )
+          )}
+
+          {/* ============================================================ */}
+          {/* PAGE: SESSIONS (project)                                      */}
+          {/* ============================================================ */}
+          {page === 'sessions' && (
+            filteredProjectSessionsList.length > 0 ? (
+              <CommandGroup heading={`Sessions (${filteredProjectSessionsList.length})`} forceMount>
+                {filteredProjectSessionsList.map((session) => (
+                  <CommandItem
+                    key={session.session_id}
+                    value={sanitizeCmdkValue(`session ${sessionName(session)} ${session.session_id}`)}
+                    onSelect={() => handleSelectProjectSession(session)}
+                  >
+                    <MessageCircle className="h-4 w-4 shrink-0 text-muted-foreground/70" />
+                    <span className="flex-1 truncate">{sessionName(session)}</span>
+                    <span className="text-[10px] text-muted-foreground/30 tabular-nums shrink-0">
+                      {formatRelativeTime(new Date(session.updated_at).getTime())}
+                    </span>
+                    {session.session_id === params?.sessionId && (
+                      <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ) : (
+              <div className="flex flex-col items-center gap-2 py-12" cmdk-empty="">
+                <MessageCircle className="h-5 w-5 text-muted-foreground/30" />
+                <span className="text-sm text-muted-foreground/60">
+                  {query ? `No sessions matching "${query}"` : 'No sessions yet'}
+                </span>
+              </div>
+            )
+          )}
 
           {/* ============================================================ */}
           {/* PAGE: MESSAGES                                                */}

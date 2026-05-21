@@ -103,7 +103,7 @@ export function OcMemSearchToolView({
                 return (
                   <div
                     key={`${hit.source}-${hit.id}`}
-                    className="rounded-lg border border-border/60 bg-card p-3"
+                    className="rounded-2xl border border-border/60 bg-card p-3"
                   >
                     <div className="flex items-center gap-2 mb-1.5">
                       <Icon className="size-3.5 text-muted-foreground/60 flex-shrink-0" />

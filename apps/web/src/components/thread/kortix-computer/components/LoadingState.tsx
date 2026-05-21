@@ -17,9 +17,9 @@ function LoadingSkeleton() {
     <div className="flex-1 p-4 overflow-auto">
       <div className="space-y-4">
         <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-20 w-full rounded-md" />
-        <Skeleton className="h-40 w-full rounded-md" />
-        <Skeleton className="h-20 w-full rounded-md" />
+        <Skeleton className="h-20 w-full rounded-2xl" />
+        <Skeleton className="h-40 w-full rounded-2xl" />
+        <Skeleton className="h-20 w-full rounded-2xl" />
       </div>
     </div>
   );

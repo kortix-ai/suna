@@ -236,7 +236,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                     type="button"
                     onClick={() => setSourceType('cron')}
                     className={cn(
-                      'group flex h-auto w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                      'group flex h-auto w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors',
                       sourceType === 'cron'
                         ? 'border-primary/50 bg-primary/[0.04]'
                         : 'border-border/50 bg-muted/20 hover:bg-muted/35',
@@ -254,7 +254,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                     type="button"
                     onClick={() => setSourceType('webhook')}
                     className={cn(
-                      'group flex h-auto w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                      'group flex h-auto w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors',
                       sourceType === 'webhook'
                         ? 'border-primary/50 bg-primary/[0.04]'
                         : 'border-border/50 bg-muted/20 hover:bg-muted/35',
@@ -285,11 +285,11 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                 <div className="space-y-3 pt-2">
                   <div className="space-y-2">
                     <Label>Path</Label>
-                    <Input type="text" value={webhookPath} onChange={(e) => setWebhookPath(e.target.value)} placeholder="/hooks/my-endpoint" className="rounded-xl" />
+                    <Input type="text" value={webhookPath} onChange={(e) => setWebhookPath(e.target.value)} placeholder="/hooks/my-endpoint" />
                   </div>
 
                    {/* Full URL preview */}
-                  <div className="rounded-xl bg-muted/50 border p-3 space-y-1.5">
+                  <div className="rounded-2xl bg-muted/50 border p-3 space-y-1.5">
                     <div className="text-xs font-medium text-muted-foreground">External URL</div>
                     <code className="text-xs font-mono text-foreground break-all block">
                       {webhookBaseUrl}{webhookPath || '/hooks/...'}
@@ -303,7 +303,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
 
                   <div className="space-y-2">
                     <Label>Secret (optional)</Label>
-                    <Input value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} placeholder="shared-secret" type="password" className="rounded-xl" />
+                    <Input value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} placeholder="shared-secret" type="password" />
                   </div>
                 </div>
               )}
@@ -345,7 +345,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                       disabled={isDisabled}
                       title={isDisabled && 'disabledHint' in action ? action.disabledHint : undefined}
                       className={cn(
-                        'group flex h-auto w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                        'group flex h-auto w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors',
                         isActive
                           ? 'border-primary/50 bg-primary/[0.04]'
                           : 'border-border/50 bg-muted/20 hover:bg-muted/35',
@@ -371,7 +371,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
             <div className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="task-name">Name</Label>
-                <Input type="text" id="task-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Daily Report" className="rounded-xl" />
+                <Input type="text" id="task-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Daily Report" />
               </div>
 
               {/* Ticket binding — only when scoped to a project. Binding makes
@@ -381,7 +381,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                 <div className="space-y-2">
                   <Label>Bind to ticket (optional)</Label>
                   <Select value={ticketId || '__none__'} onValueChange={(v) => setTicketId(v === '__none__' ? '' : v)}>
-                    <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
+                    <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
                       <SelectValue placeholder="No ticket" />
                     </SelectTrigger>
                     <SelectContent>
@@ -415,7 +415,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                   <div className="space-y-2">
                     <Label>Session Mode</Label>
                     <Select value={sessionMode} onValueChange={(v) => setSessionMode(v as SessionMode)}>
-                      <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
+                      <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -428,7 +428,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                   {/* Agent — shared CommandPopover component from ChatInput */}
                   <div className="space-y-2">
                     <Label>Agent</Label>
-                    <div className="rounded-xl border bg-card px-2 py-1">
+                    <div className="rounded-2xl border bg-card px-2 py-1">
                       <AgentSelector
                         agents={agents}
                         selectedAgent={agentName}
@@ -445,7 +445,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                         <Loader2 className="h-3 w-3 animate-spin" /> Loading models...
                       </div>
                     ) : (
-                      <div className="rounded-xl border bg-card px-2 py-1">
+                      <div className="rounded-2xl border bg-card px-2 py-1">
                         <ModelSelector
                           models={models}
                           selectedModel={selectedModel}
@@ -461,16 +461,16 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                 <>
                   <div className="space-y-2">
                     <Label>Command</Label>
-                    <Input type="text" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="bash" className="rounded-xl" />
+                    <Input type="text" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="bash" />
                   </div>
                   <div className="space-y-2">
                     <Label>Arguments</Label>
-                    <Input type="text" value={commandArgs} onChange={(e) => setCommandArgs(e.target.value)} placeholder='["-c", "./scripts/backup.sh"]' className="rounded-xl" />
+                    <Input type="text" value={commandArgs} onChange={(e) => setCommandArgs(e.target.value)} placeholder='["-c", "./scripts/backup.sh"]' />
                     <p className="text-xs text-muted-foreground">JSON array or space-separated</p>
                   </div>
                   <div className="space-y-2">
                     <Label>Working Directory (optional)</Label>
-                    <Input type="text" value={workdir} onChange={(e) => setWorkdir(e.target.value)} placeholder="/workspace" className="rounded-xl" />
+                    <Input type="text" value={workdir} onChange={(e) => setWorkdir(e.target.value)} placeholder="/workspace" />
                   </div>
                 </>
               )}
@@ -479,12 +479,12 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                 <>
                   <div className="space-y-2">
                     <Label>URL</Label>
-                    <Input type="text" value={httpUrl} onChange={(e) => setHttpUrl(e.target.value)} placeholder="https://hooks.slack.com/services/XXX" className="rounded-xl" />
+                    <Input type="text" value={httpUrl} onChange={(e) => setHttpUrl(e.target.value)} placeholder="https://hooks.slack.com/services/XXX" />
                   </div>
                   <div className="space-y-2">
                     <Label>Method</Label>
                     <Select value={httpMethod} onValueChange={setHttpMethod}>
-                      <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
+                      <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -498,7 +498,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                   </div>
                   <div className="space-y-2">
                     <Label>Body Template (optional)</Label>
-                    <Textarea value={httpBody} onChange={(e) => setHttpBody(e.target.value)} placeholder='{"text": "Alert: {{ message }}"}' rows={3} className="rounded-xl" />
+                    <Textarea value={httpBody} onChange={(e) => setHttpBody(e.target.value)} placeholder='{"text": "Alert: {{ message }}"}' rows={3} />
                     <p className="text-xs text-muted-foreground">{'Use {{ var }} for template variables from webhook payloads'}</p>
                   </div>
                 </>
@@ -531,7 +531,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                     <div className="space-y-2">
                       <Label>Land in column</Label>
                       <Select value={newTicketColumn || '__default__'} onValueChange={(v) => setNewTicketColumn(v === '__default__' ? '' : v)}>
-                        <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
+                        <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
                           <SelectValue placeholder="Backlog (default)" />
                         </SelectTrigger>
                         <SelectContent>

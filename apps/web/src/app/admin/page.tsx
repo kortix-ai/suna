@@ -92,7 +92,7 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="group relative flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/30"
+      className="group relative flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/30"
     >
       <div className="flex items-center justify-between">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">

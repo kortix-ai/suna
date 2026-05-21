@@ -494,7 +494,7 @@ export default function TemplateSharePage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="px-0">
-                <div className="rounded-lg border bg-muted/10 p-6">
+                <div className="rounded-2xl border bg-muted/10 p-6">
                   <div className="relative">
                     <div className={cn(
                       "transition-colors duration-300 overflow-hidden",
@@ -546,7 +546,7 @@ export default function TemplateSharePage() {
                     {integrations.map((integration: any, index: number) => (
                       <div
                         key={index}
-                        className="flex items-center gap-3 p-3 rounded-lg border bg-background"
+                        className="flex items-center gap-3 p-3 rounded-2xl border bg-background"
                       >
                         <IntegrationIcon
                           qualifiedName={integration.qualified_name}
@@ -586,7 +586,7 @@ export default function TemplateSharePage() {
                     {customTools.map((tool: any, index: number) => (
                       <div
                         key={index}
-                        className="flex items-center gap-3 p-3 rounded-lg border bg-background"
+                        className="flex items-center gap-3 p-3 rounded-2xl border bg-background"
                       >
                         <IntegrationIcon
                           qualifiedName={tool.qualified_name}

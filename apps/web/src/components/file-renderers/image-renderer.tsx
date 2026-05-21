@@ -225,7 +225,7 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
           showControls || showInfo ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"
         )}
       >
-        <div className="flex items-center gap-1 bg-card border border-border rounded-xl px-2 py-1.5 shadow-lg">
+        <div className="flex items-center gap-1 bg-card border border-border rounded-2xl px-2 py-1.5 shadow-lg">
           <Button
             variant="ghost"
             size="sm"
@@ -293,7 +293,7 @@ export function ImageRenderer({ url, className, fileName }: ImageRendererProps) 
 
       {/* Image info overlay */}
       {showInfo && imgInfo && (
-        <div className="absolute top-16 right-4 z-10 bg-card p-4 rounded-xl shadow-lg border border-border text-sm min-w-[180px]">
+        <div className="absolute top-16 right-4 z-10 bg-card p-4 rounded-2xl shadow-lg border border-border text-sm min-w-[180px]">
           <div className="space-y-2">
             <div className="flex justify-between gap-6">
               <span className="text-muted-foreground">Type</span>

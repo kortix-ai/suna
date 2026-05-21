@@ -25,8 +25,8 @@ import { listProjectSessions, type ProjectSession } from '@/lib/projects-client'
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { UserMenu } from '@/components/sidebar/user-menu';
-import { ProjectSelector } from '@/components/projects/project-selector';
+import { UserMenu } from '@/components/layout/user-menu';
+import { ProjectSwitcher } from '@/components/layout/project-switcher';
 import { ProjectSessionList } from '@/components/projects/project-session-list';
 import {
   Sidebar,
@@ -370,9 +370,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       className="bg-sidebar [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
     >
       {/* ====================================================================
-          HEADER — logo + collapse toggle, with the ProjectSelector
-          (account / project switcher only) pinned directly below.
-          User identity + settings live in the footer (see UserMenu).
+          HEADER — logo + collapse toggle, with the ProjectSwitcher pinned
+          directly below. Account switching + user identity + settings live in
+          the footer Account·You menu (see UserMenu).
          ==================================================================== */}
       <SidebarHeader className="pb-1 pt-3">
         <div className="flex h-7 shrink-0 items-center justify-between px-2 group-data-[collapsible=icon]:justify-center">
@@ -403,7 +403,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           </button>
         </div>
         <div className="pt-2 group-data-[collapsible=icon]:hidden">
-          <ProjectSelector />
+          <ProjectSwitcher variant="sidebar" />
         </div>
       </SidebarHeader>
 
@@ -521,12 +521,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       </SidebarContent>
 
       {/* ====================================================================
-          FOOTER — user identity + settings + theme + log out. Kept
-          separate from the ProjectSelector at the top so the two concerns
-          (which project am I in vs. who am I) don't share one widget.
+          FOOTER — the Account·You menu: account switching + account settings
+          + identity + settings + theme + log out. Kept separate from the
+          ProjectSwitcher at the top so the two concerns (which project vs.
+          which account / who am I) don't share one widget.
          ==================================================================== */}
       <SidebarFooter className="pb-2 pt-1 group-data-[collapsible=icon]:px-0">
-        <UserMenu user={user} />
+        <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 
       <SidebarRail />

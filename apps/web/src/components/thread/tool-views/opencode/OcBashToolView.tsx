@@ -225,7 +225,7 @@ export function OcBashToolView({
               {output.lang === 'json' ? (
                 <CodeBlock lang="json">{output.content}</CodeBlock>
               ) : (
-                <div className="rounded-md border border-border/50 bg-foreground/[0.025] overflow-hidden">
+                <div className="rounded-2xl border border-border/50 bg-foreground/[0.025] overflow-hidden">
                   <PreWithPaths
                     text={output.content}
                     className="p-3 font-mono text-[12px] leading-relaxed text-foreground/85 whitespace-pre-wrap break-words overflow-x-auto"
@@ -242,7 +242,7 @@ export function OcBashToolView({
                 <div
                   key={i}
                   className={cn(
-                    'flex items-start gap-2 px-3 py-2 rounded-md border text-[11.5px] tracking-tight',
+                    'flex items-start gap-2 px-3 py-2 rounded-2xl border text-[11.5px] tracking-tight',
                     m.isTimeout
                       ? 'border-red-500/25 bg-red-500/[0.04] text-red-500/90'
                       : 'border-border/50 bg-foreground/[0.02] text-muted-foreground/80',

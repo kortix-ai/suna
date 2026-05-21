@@ -125,7 +125,7 @@ export default function AdminStressTestPage() {
               </div>
               
               {/* Visual Timeline Diagram */}
-              <div className="relative bg-muted/50 rounded-lg p-4 overflow-x-auto">
+              <div className="relative bg-muted/50 rounded-2xl p-4 overflow-x-auto">
                 <div className="min-w-[600px]">
                   {/* Timeline header */}
                   <div className="flex items-center gap-2 mb-4 text-xs text-muted-foreground">
@@ -214,11 +214,11 @@ export default function AdminStressTestPage() {
               
               {/* Formulas */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                <div className="bg-muted/50 rounded-lg p-3 border border-border">
+                <div className="bg-muted/50 rounded-2xl p-3 border border-border">
                   <p className="text-muted-foreground mb-1">Key Formula:</p>
                   <p className="font-mono text-purple-600 dark:text-purple-400">Total TTFT = Request Time + First Response</p>
                 </div>
-                <div className="bg-muted/50 rounded-lg p-3 border border-border">
+                <div className="bg-muted/50 rounded-2xl p-3 border border-border">
                   <p className="text-muted-foreground mb-1">Agent Overhead:</p>
                   <p className="font-mono text-orange-600 dark:text-orange-400">Agent Overhead = First Response - LLM TTFT</p>
                 </div>
@@ -329,7 +329,7 @@ export default function AdminStressTestPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border overflow-x-auto">
+                <div className="rounded-2xl border overflow-x-auto">
                   <table className="w-full">
                     <thead>
                       <tr className="border-b bg-muted/50">

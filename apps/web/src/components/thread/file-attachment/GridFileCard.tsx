@@ -21,7 +21,7 @@ export function GridFileCard({ filePath, fileName, onClick, className }: GridFil
     <div
       onClick={onClick}
       className={cn(
-        'group relative flex flex-col rounded-lg border border-border/50 cursor-pointer select-none overflow-hidden',
+        'group relative flex flex-col rounded-2xl border border-border/50 cursor-pointer select-none overflow-hidden',
         'transition-colors duration-150',
         'hover:bg-muted/30 hover:border-border hover:shadow-sm',
         'active:scale-[0.98]',

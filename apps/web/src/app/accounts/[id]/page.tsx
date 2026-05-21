@@ -6,6 +6,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Clock,
+  KeyRound,
+  Link as LinkIcon,
   Loader2,
   Mail,
   MoreHorizontal,
@@ -48,6 +50,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { GroupsTab } from '@/components/iam/groups-tab';
+import { RolesTab } from '@/components/iam/roles-tab';
+import { AuditTab } from '@/components/iam/audit-tab';
+import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
   type AccountInvitation,
@@ -87,6 +94,18 @@ function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;
 }
 
+/** Copy an invite URL to the clipboard with a friendly toast either way. */
+async function copyInviteLink(url: string) {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast.success('Invite link copied to clipboard');
+  } catch {
+    // Older browsers / blocked clipboard — show the link in a toast so the
+    // admin can copy it by hand.
+    toast.message('Copy this invite link', { description: url, duration: 15_000 });
+  }
+}
+
 export default function AccountSettingsPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -118,9 +137,19 @@ export default function AccountSettingsPage() {
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
-  const isOwner = account?.role === 'owner';
-  const isAdmin = account?.role === 'admin';
   const isTeam = account ? !account.personal_account : false;
+
+  // Granular capabilities sourced from the IAM engine instead of raw
+  // account_role. A member granted "Administrator" via an explicit policy
+  // gets the same affordances an owner does, and vice-versa.
+  const canWriteAccount = usePermission(accountId, 'account.write').allowed;
+  const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
+  const canInviteMember = usePermission(accountId, 'member.invite').allowed;
+  const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
+  const canUpdateMember = usePermission(accountId, 'member.update').allowed;
+  const canCreateGroup = usePermission(accountId, 'group.create').allowed;
+  const canCreateRole = usePermission(accountId, 'role.create').allowed;
+  const canReadAudit = usePermission(accountId, 'audit.read').allowed;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -130,14 +159,20 @@ export default function AccountSettingsPage() {
           <div className="space-y-3">
             <button
               type="button"
-              onClick={() => router.push('/accounts')}
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              onClick={() => router.push('/projects')}
+              className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              All accounts
+              Back to projects
             </button>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>Accounts</span>
+              <button
+                type="button"
+                onClick={() => router.push('/accounts')}
+                className="cursor-pointer transition-colors hover:text-foreground"
+              >
+                Accounts
+              </button>
               <span className="text-muted-foreground/40">/</span>
               {accountQuery.isLoading ? (
                 <Skeleton className="h-4 w-32" />
@@ -186,26 +221,54 @@ export default function AccountSettingsPage() {
           )}
 
           {account && (
-            <>
-              <GeneralCard
-                account={account}
-                queryClient={queryClient}
-                isOwner={isOwner}
-              />
-              <MembersCard
-                account={account}
-                members={members}
-                isLoading={membersQuery.isLoading}
-                isError={membersQuery.isError}
-                error={membersQuery.error as Error | null}
-                onRetry={() => membersQuery.refetch()}
-                queryClient={queryClient}
-                currentUserId={user.id}
-                isOwner={isOwner}
-                isAdmin={isAdmin}
-              />
-              {isTeam && isOwner && <DangerZoneCard />}
-            </>
+            <Tabs defaultValue="members" className="space-y-6">
+              <TabsList>
+                <TabsTrigger value="members">All members</TabsTrigger>
+                <TabsTrigger value="groups">Groups</TabsTrigger>
+                <TabsTrigger value="roles">Roles</TabsTrigger>
+                {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
+                <TabsTrigger value="settings">Settings</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="members" className="space-y-6">
+                <MembersCard
+                  account={account}
+                  members={members}
+                  isLoading={membersQuery.isLoading}
+                  isError={membersQuery.isError}
+                  error={membersQuery.error as Error | null}
+                  onRetry={() => membersQuery.refetch()}
+                  queryClient={queryClient}
+                  currentUserId={user.id}
+                  canInvite={canInviteMember}
+                  canRemove={canRemoveMember}
+                  canUpdateRole={canUpdateMember}
+                />
+              </TabsContent>
+
+              <TabsContent value="groups" className="space-y-6">
+                <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
+              </TabsContent>
+
+              <TabsContent value="roles" className="space-y-6">
+                <RolesTab accountId={account.account_id} canCreate={canCreateRole} />
+              </TabsContent>
+
+              {canReadAudit && (
+                <TabsContent value="audit" className="space-y-6">
+                  <AuditTab accountId={account.account_id} />
+                </TabsContent>
+              )}
+
+              <TabsContent value="settings" className="space-y-6">
+                <GeneralCard
+                  account={account}
+                  queryClient={queryClient}
+                  canWrite={canWriteAccount}
+                />
+                {isTeam && canDeleteAccount && <DangerZoneCard />}
+              </TabsContent>
+            </Tabs>
           )}
         </div>
       </main>
@@ -218,11 +281,11 @@ export default function AccountSettingsPage() {
 function GeneralCard({
   account,
   queryClient,
-  isOwner,
+  canWrite,
 }: {
   account: AccountDetail;
   queryClient: ReturnType<typeof useQueryClient>;
-  isOwner: boolean;
+  canWrite: boolean;
 }) {
   const [name, setName] = useState(account.name);
 
@@ -241,7 +304,7 @@ function GeneralCard({
   });
 
   const trimmed = name.trim();
-  const canSubmit = isOwner && trimmed.length > 0 && trimmed !== account.name;
+  const canSubmit = canWrite && trimmed.length > 0 && trimmed !== account.name;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -265,13 +328,15 @@ function GeneralCard({
             id="account-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            disabled={!isOwner || renameMutation.isPending}
+            disabled={!canWrite || renameMutation.isPending}
             maxLength={120}
             className="max-w-md"
-            title={isOwner ? undefined : 'Only owners can rename'}
+            title={canWrite ? undefined : 'You do not have permission to rename this account.'}
           />
-          {!isOwner && (
-            <p className="text-xs text-muted-foreground">Only owners can rename this account.</p>
+          {!canWrite && (
+            <p className="text-xs text-muted-foreground">
+              You do not have permission to rename this account.
+            </p>
           )}
         </div>
 
@@ -300,8 +365,9 @@ function MembersCard({
   onRetry,
   queryClient,
   currentUserId,
-  isOwner,
-  isAdmin,
+  canInvite,
+  canRemove,
+  canUpdateRole,
 }: {
   account: AccountDetail;
   members: AccountMember[];
@@ -311,8 +377,9 @@ function MembersCard({
   onRetry: () => void;
   queryClient: ReturnType<typeof useQueryClient>;
   currentUserId: string;
-  isOwner: boolean;
-  isAdmin: boolean;
+  canInvite: boolean;
+  canRemove: boolean;
+  canUpdateRole: boolean;
 }) {
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -320,8 +387,8 @@ function MembersCard({
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
 
-  const canInvite = isOwner || isAdmin;
-  const canManage = isOwner;
+  // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
+  // at the page level). The row-level kebab respects each granularly.
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
@@ -429,8 +496,9 @@ function MembersCard({
               member.account_role === 'owner' &&
               sorted.filter((m) => m.account_role === 'owner').length === 1;
             const pending = pendingUserId === member.user_id;
-            const showKebab =
-              !pending && (canManage || isSelf); // owners manage everyone; self can leave
+            // Kebab is always available — "View & Edit permission policies"
+            // is open to anyone who can view the member; backend gates writes.
+            const showKebab = !pending;
 
             return (
               <li
@@ -479,9 +547,21 @@ function MembersCard({
                           <MoreHorizontal className="h-3.5 w-3.5" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-52">
-                        {canManage && !isSelf && (
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            router.push(
+                              `/accounts/${account.account_id}/members/${member.user_id}`,
+                            )
+                          }
+                          className="gap-2"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                          View &amp; Edit permission policies
+                        </DropdownMenuItem>
+                        {canUpdateRole && !isSelf && (
                           <>
+                            <DropdownMenuSeparator />
                             <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                               Change role
                             </DropdownMenuLabel>
@@ -503,6 +583,10 @@ function MembersCard({
                                 )}
                               </DropdownMenuItem>
                             ))}
+                          </>
+                        )}
+                        {canRemove && !isSelf && (
+                          <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
                               onSelect={() => setRemoveTarget(member)}
@@ -515,14 +599,17 @@ function MembersCard({
                           </>
                         )}
                         {isSelf && !account.personal_account && (
-                          <DropdownMenuItem
-                            onSelect={() => setLeaveConfirmOpen(true)}
-                            disabled={isLastOwner}
-                            className="gap-2 text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            Leave team
-                          </DropdownMenuItem>
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => setLeaveConfirmOpen(true)}
+                              disabled={isLastOwner}
+                              className="gap-2 text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Leave team
+                            </DropdownMenuItem>
+                          </>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -617,7 +704,19 @@ function InviteMemberModal({
     mutationFn: () => inviteAccountMember(accountId, { email: email.trim(), role }),
     onSuccess: (res) => {
       if (res.status === 'pending') {
-        toast.success(`Invite sent to ${res.email} — they'll see it when they sign up`);
+        if (res.email_sent) {
+          toast.success(`Invite sent to ${res.email} — they'll see it when they sign up`);
+        } else {
+          // Email delivery was skipped (e.g. Mailtrap not configured locally).
+          // Surface the link so the admin can share it manually.
+          toast.warning(`Invite created — email skipped. Share the link manually.`, {
+            action: {
+              label: 'Copy link',
+              onClick: () => copyInviteLink(res.invite_url),
+            },
+            duration: 10_000,
+          });
+        }
       } else {
         toast.success(`Added ${res.email}`);
       }
@@ -790,8 +889,20 @@ function PendingInvitesSection({
     mutationFn: (inviteId: string) => resendAccountInvite(accountId, inviteId),
     onMutate: (id) => setPendingId(id),
     onSettled: () => setPendingId(null),
-    onSuccess: () => {
-      toast.success('Invite refreshed');
+    onSuccess: (res) => {
+      if (res.email_sent) {
+        toast.success('Invite email sent');
+      } else {
+        // Mailtrap not configured (local dev or unconfigured prod). Hand the
+        // admin the link directly so they can share it manually.
+        toast.warning('Email skipped — copy invite link to share manually', {
+          action: {
+            label: 'Copy link',
+            onClick: () => copyInviteLink(res.invite_url),
+          },
+          duration: 8_000,
+        });
+      }
       invalidate();
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to resend invite'),
@@ -852,13 +963,20 @@ function PendingInvitesSection({
                         <MoreHorizontal className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-44">
+                    <DropdownMenuContent align="end" className="w-52">
                       <DropdownMenuItem
                         onSelect={() => resendMutation.mutate(invite.invite_id)}
                         className="gap-2"
                       >
                         <RefreshCw className="h-3.5 w-3.5" />
                         Resend invite
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => copyInviteLink(invite.invite_url)}
+                        className="gap-2"
+                      >
+                        <LinkIcon className="h-3.5 w-3.5" />
+                        Copy invitation link
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem

@@ -134,7 +134,7 @@ export function OcProjectCreateToolView({
 
           {/* Path */}
           {data.path && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground/70 bg-muted/30 rounded-lg p-3 font-mono">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/70 bg-muted/30 rounded-2xl p-3 font-mono">
               <Folder className="size-3.5 flex-shrink-0" />
               <span className="truncate" title={data.path}>{data.path}</span>
             </div>
@@ -148,7 +148,7 @@ export function OcProjectCreateToolView({
           )}
 
           {/* Workspace hint */}
-          <div className="text-xs text-muted-foreground/60 bg-muted/20 rounded-lg p-3">
+          <div className="text-xs text-muted-foreground/60 bg-muted/20 rounded-2xl p-3">
             Workspace context and .kortix metadata are available
           </div>
         </div>

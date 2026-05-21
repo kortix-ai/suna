@@ -57,7 +57,7 @@ export const DesktopContextMenu = memo(function DesktopContextMenu({
       <ContextMenuTrigger asChild>
         {children}
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-56 bg-background/60 backdrop-blur-xl border-border/20 rounded-xl overflow-hidden">
+      <ContextMenuContent className="w-56 bg-background/60 backdrop-blur-xl border-border/20 rounded-2xl overflow-hidden">
         <ContextMenuItem 
           onClick={onOpenFiles}
           className="focus:bg-background/10 focus:backdrop-blur-xl rounded-lg gap-2"
