@@ -8,39 +8,10 @@ import { getSupabase } from '../shared/supabase';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
-import { isSsoAuthProvider, resolveSsoPolicyForDomain } from '../repositories/account-sso';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-
-function authProviderFromMetadata(appMetadata: Record<string, unknown> | undefined): unknown {
-  if (!appMetadata) return null;
-  return appMetadata.providers ?? appMetadata.provider ?? null;
-}
-
-function isMissingSsoTableError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return /account_sso_connections|account_verified_domains|relation .* does not exist/i.test(msg);
-}
-
-async function enforceManagedDomainSso(email: string, authProvider: unknown) {
-  if (!email || isSsoAuthProvider(authProvider)) return;
-  try {
-    const policy = await resolveSsoPolicyForDomain(email);
-    if (policy.ssoRequired) {
-      throw new HTTPException(403, {
-        message: 'SSO is required for this email domain',
-      });
-    }
-  } catch (err) {
-    if (err instanceof HTTPException) throw err;
-    // During deploys or local development the SSO migration may not exist yet.
-    // Auth must remain available until the schema gate catches up.
-    if (isMissingSsoTableError(err)) return;
-    throw err;
-  }
-}
 // Auth Middleware (3 middlewares — one per auth strategy)
 //
 //   1. apiKeyAuth      — Kortix API keys only (header)
@@ -150,11 +121,8 @@ export async function supabaseAuth(c: Context, next: Next) {
   // Fast path: verify JWT locally (no network roundtrip)
   const local = await verifySupabaseJwt(token);
   if (local.ok) {
-    const authProvider = authProviderFromMetadata(local.payload.app_metadata);
-    await enforceManagedDomainSso(local.email, authProvider);
     c.set('userId', local.userId);
     c.set('userEmail', local.email);
-    c.set('authProvider', authProvider);
     c.set('authType', 'supabase');
     setSentryUser({ id: local.userId, email: local.email });
     setContextField('userId', local.userId);
@@ -180,11 +148,8 @@ export async function supabaseAuth(c: Context, next: Next) {
       throw new HTTPException(401, { message: 'Invalid or expired token' });
     }
 
-    const authProvider = authProviderFromMetadata(user.app_metadata as Record<string, unknown> | undefined);
-    await enforceManagedDomainSso(user.email || '', authProvider);
     c.set('userId', user.id);
     c.set('userEmail', user.email || '');
-    c.set('authProvider', authProvider);
     c.set('authType', 'supabase');
     setSentryUser({ id: user.id, email: user.email || undefined });
     setContextField('userId', user.id);

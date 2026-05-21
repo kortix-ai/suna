@@ -80,7 +80,6 @@ export interface AppContext {
 export interface AuthVariables {
   userId: string;
   userEmail: string;
-  authProvider?: unknown;
   accountId?: string;
   authType?: 'supabase' | 'pat' | 'apiKey';
   apiKeyType?: 'user' | 'sandbox';
@@ -93,7 +92,6 @@ export type AppEnv = {
   Variables: {
     userId: string;
     userEmail: string;
-    authProvider?: unknown;
   };
 };
 

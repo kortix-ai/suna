@@ -1,4 +1,4 @@
-import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, accountSsoConnections, accountVerifiedDomains, auditEvents, usageEvents, projects, projectMembers, projectSecrets, projectTriggers, projectTriggerEvents, projectSessions, projectRuntimeSnapshots, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatThreads } from './schema/kortix';
+import { sandboxes, deployments, kortixApiKeys, serverEntries, accounts, accountMembers, accountInvitations, accountGithubInstallations, auditEvents, usageEvents, projects, projectMembers, projectSecrets, projectTriggers, projectTriggerEvents, projectSessions, projectRuntimeSnapshots, sessionSandboxes, legacySandboxMigrations, creditAccounts, tunnelConnections, tunnelPermissions, tunnelPermissionRequests, tunnelAuditLogs, chatChannelBindings, chatThreads } from './schema/kortix';
 import { apiKeys, accountUser } from './schema/public';
 
 // Select types (what you get back from queries)
@@ -6,16 +6,12 @@ export type Account = typeof accounts.$inferSelect;
 export type AccountMember = typeof accountMembers.$inferSelect;
 export type AccountInvitation = typeof accountInvitations.$inferSelect;
 export type AccountGithubInstallation = typeof accountGithubInstallations.$inferSelect;
-export type AccountSsoConnection = typeof accountSsoConnections.$inferSelect;
-export type AccountVerifiedDomain = typeof accountVerifiedDomains.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
 export type NewAccountMember = typeof accountMembers.$inferInsert;
 export type NewAccountInvitation = typeof accountInvitations.$inferInsert;
 export type NewAccountGithubInstallation = typeof accountGithubInstallations.$inferInsert;
-export type NewAccountSsoConnection = typeof accountSsoConnections.$inferInsert;
-export type NewAccountVerifiedDomain = typeof accountVerifiedDomains.$inferInsert;
 export type NewAuditEvent = typeof auditEvents.$inferInsert;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;
 export type Project = typeof projects.$inferSelect;

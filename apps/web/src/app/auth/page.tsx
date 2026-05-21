@@ -13,7 +13,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertCircle, ChevronRight, Loader2, ShieldCheck } from 'lucide-react';
+import { AlertCircle, ChevronRight } from 'lucide-react';
 
 import { signInWithPassword, signUpWithPassword } from './actions';
 import { useAuth } from '@/components/AuthProvider';
@@ -28,8 +28,6 @@ import { toast } from '@/lib/toast';
 import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
 import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
 import { getEnv } from '@/lib/env-config';
-import { authRedirectUrl } from '@/lib/desktop';
-import { resolveSsoDomainPolicy } from '@/lib/sso-client';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 
@@ -70,28 +68,12 @@ function LiveClock() {
 
 /* ─── Form inside the frosted-glass card ───────────────────────────────── */
 
-function AuthCardForm({
-  returnUrl,
-  initialEmail = '',
-  initialError = null,
-}: {
-  returnUrl: string;
-  initialEmail?: string;
-  initialError?: string | null;
-}) {
+function AuthCardForm({ returnUrl }: { returnUrl: string }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>('signin');
   const [pending, setPending] = useState(false);
-  const [ssoPending, setSsoPending] = useState(false);
-  const [email, setEmail] = useState(initialEmail);
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (initialError) setErrorMessage(initialError);
-  }, [initialError]);
 
   const enabledProviders = useMemo(() => {
     const raw = getEnv().AUTH_PROVIDERS || '';
@@ -101,46 +83,6 @@ function AuthCardForm({
       .filter(Boolean);
   }, []);
   const googleEnabled = enabledProviders.includes('google');
-  const ssoEnabled = enabledProviders.includes('sso') || enabledProviders.includes('saml');
-
-  const handleSsoSignIn = async () => {
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail || !trimmedEmail.includes('@')) {
-      setErrorMessage('Enter your work email to continue with SSO');
-      return;
-    }
-
-    setErrorMessage(null);
-    setInfo(null);
-    setSsoPending(true);
-    try {
-      const policy = await resolveSsoDomainPolicy(trimmedEmail);
-      if (!policy.sso_available || (!policy.provider_id && !policy.domain)) {
-        const msg = 'SSO is not configured for this email domain';
-        setErrorMessage(msg);
-        toast.error(msg);
-        return;
-      }
-
-      const callbackPath = `/auth/callback${returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''}`;
-      const supabase = createBrowserSupabaseClient();
-      const provider = policy.provider_id
-        ? { providerId: policy.provider_id }
-        : { domain: policy.domain || '' };
-      const { error } = await supabase.auth.signInWithSSO({
-        ...provider,
-        options: {
-          redirectTo: authRedirectUrl(callbackPath),
-        },
-      });
-      if (error) throw error;
-    } catch (err: any) {
-      const msg = err?.message || 'Failed to start SSO sign-in';
-      setErrorMessage(msg);
-      toast.error(msg);
-      setSsoPending(false);
-    }
-  };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -154,14 +96,6 @@ function AuthCardForm({
     formData.set('origin', window.location.origin);
 
     try {
-      const policy = await resolveSsoDomainPolicy(email.trim());
-      if (policy.sso_required) {
-        const msg = `${policy.account_name || policy.domain} requires SSO. Continue with SSO to sign in.`;
-        setErrorMessage(msg);
-        toast.error(msg);
-        return;
-      }
-
       const result =
         mode === 'signup'
           ? await signUpWithPassword(null, formData)
@@ -279,8 +213,6 @@ function AuthCardForm({
           name="email"
           type="email"
           placeholder="Email address"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
           required
           autoComplete="email"
           className="h-11 text-[15px] bg-foreground/[0.04] border-foreground/[0.08] rounded-xl shadow-none"
@@ -290,8 +222,6 @@ function AuthCardForm({
           name="password"
           type="password"
           placeholder="Password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
           required
           autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
           className="h-11 text-[15px] bg-foreground/[0.04] border-foreground/[0.08] rounded-xl shadow-none"
@@ -302,8 +232,6 @@ function AuthCardForm({
             name="confirmPassword"
             type="password"
             placeholder="Confirm password"
-            value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
             required
             autoComplete="new-password"
             className="h-11 text-[15px] bg-foreground/[0.04] border-foreground/[0.08] rounded-xl shadow-none"
@@ -326,35 +254,16 @@ function AuthCardForm({
       </form>
 
       {/* Social providers — only when configured */}
-      {(googleEnabled || ssoEnabled) && (
+      {googleEnabled && (
         <>
           <div className="my-5 flex items-center gap-3">
             <div className="flex-1 h-px bg-foreground/[0.08]" />
             <span className="text-[11px] uppercase tracking-wider text-foreground/40">or</span>
             <div className="flex-1 h-px bg-foreground/[0.08]" />
           </div>
-          {ssoEnabled && (
-            <Button
-              onClick={handleSsoSignIn}
-              disabled={pending || ssoPending}
-              variant="outline"
-              size="lg"
-              className="mb-3 w-full h-11 rounded-xl"
-              type="button"
-            >
-              {ssoPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ShieldCheck className="h-4 w-4" />
-              )}
-              <span>{ssoPending ? 'Starting SSO...' : 'Continue with SSO'}</span>
-            </Button>
-          )}
-          {googleEnabled && (
-            <Suspense fallback={null}>
-              <GoogleSignIn returnUrl={returnUrl} />
-            </Suspense>
-          )}
+          <Suspense fallback={null}>
+            <GoogleSignIn returnUrl={returnUrl} />
+          </Suspense>
         </>
       )}
 
@@ -381,11 +290,6 @@ function AuthContent() {
   const returnUrl = sanitizeAuthReturnUrl(
     searchParams.get('returnUrl') || searchParams.get('redirect'),
   );
-  const initialEmail = searchParams.get('email') || '';
-  const initialError =
-    searchParams.get('error') === 'sso_required'
-      ? 'SSO is required for this email domain. Continue with SSO to sign in.'
-      : null;
   const [phase, setPhase] = useState<'lock' | 'form'>('lock');
 
   // After auth, leave the auth flow.
@@ -488,11 +392,7 @@ function AuthContent() {
               transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
             >
               <div className="bg-background/75 dark:bg-background/70 backdrop-blur-2xl border border-foreground/[0.08] rounded-2xl p-7 max-h-[calc(100vh-4rem)] overflow-y-auto">
-                    <AuthCardForm
-                      returnUrl={returnUrl}
-                      initialEmail={initialEmail}
-                      initialError={initialError}
-                    />
+                <AuthCardForm returnUrl={returnUrl} />
               </div>
             </motion.div>
           </motion.div>

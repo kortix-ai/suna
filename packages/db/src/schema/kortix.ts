@@ -108,21 +108,6 @@ export const accountRoleEnum = kortixSchema.enum('account_role', [
   'member',
 ]);
 
-export const accountSsoProtocolEnum = kortixSchema.enum('account_sso_protocol', [
-  'saml',
-  'oidc',
-]);
-
-export const accountSsoConnectionStatusEnum = kortixSchema.enum('account_sso_connection_status', [
-  'active',
-  'disabled',
-]);
-
-export const accountVerifiedDomainStatusEnum = kortixSchema.enum('account_verified_domain_status', [
-  'pending',
-  'verified',
-]);
-
 export const accounts = kortixSchema.table(
   'accounts',
   {
@@ -219,53 +204,6 @@ export const accountGithubInstallationStates = kortixSchema.table(
   (table) => [
     index('idx_account_github_installation_states_account').on(table.accountId),
     index('idx_account_github_installation_states_expires_at').on(table.expiresAt),
-  ],
-);
-
-export const accountSsoConnections = kortixSchema.table(
-  'account_sso_connections',
-  {
-    connectionId: uuid('connection_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    providerId: text('provider_id').notNull(),
-    providerName: varchar('provider_name', { length: 255 }),
-    protocol: accountSsoProtocolEnum('protocol').default('saml').notNull(),
-    status: accountSsoConnectionStatusEnum('status').default('active').notNull(),
-    enforced: boolean('enforced').default(false).notNull(),
-    jitProvisioningEnabled: boolean('jit_provisioning_enabled').default(true).notNull(),
-    defaultRole: accountRoleEnum('default_role').default('member').notNull(),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    createdBy: uuid('created_by'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_account_sso_connections_account').on(table.accountId),
-    index('idx_account_sso_connections_provider').on(table.providerId),
-    uniqueIndex('idx_account_sso_connections_account_provider').on(table.accountId, table.providerId),
-  ],
-);
-
-export const accountVerifiedDomains = kortixSchema.table(
-  'account_verified_domains',
-  {
-    domainId: uuid('domain_id').defaultRandom().primaryKey(),
-    accountId: uuid('account_id')
-      .notNull()
-      .references(() => accounts.accountId, { onDelete: 'cascade' }),
-    domain: varchar('domain', { length: 255 }).notNull(),
-    status: accountVerifiedDomainStatusEnum('status').default('pending').notNull(),
-    verificationToken: text('verification_token').notNull(),
-    verifiedAt: timestamp('verified_at', { withTimezone: true }),
-    createdBy: uuid('created_by'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_account_verified_domains_account').on(table.accountId),
-    index('idx_account_verified_domains_domain').on(table.domain),
   ],
 );
 
@@ -1162,8 +1100,6 @@ export const kortixApiKeysRelations = relations(kortixApiKeys, ({ one }) => ({
 export const accountsRelations = relations(accounts, ({ many }) => ({
   members: many(accountMembers),
   githubInstallations: many(accountGithubInstallations),
-  ssoConnections: many(accountSsoConnections),
-  verifiedDomains: many(accountVerifiedDomains),
   projectMembers: many(projectMembers),
   projects: many(projects),
   projectTriggers: many(projectTriggers),
@@ -1186,20 +1122,6 @@ export const accountMembersRelations = relations(accountMembers, ({ one }) => ({
 export const accountGithubInstallationsRelations = relations(accountGithubInstallations, ({ one }) => ({
   account: one(accounts, {
     fields: [accountGithubInstallations.accountId],
-    references: [accounts.accountId],
-  }),
-}));
-
-export const accountSsoConnectionsRelations = relations(accountSsoConnections, ({ one }) => ({
-  account: one(accounts, {
-    fields: [accountSsoConnections.accountId],
-    references: [accounts.accountId],
-  }),
-}));
-
-export const accountVerifiedDomainsRelations = relations(accountVerifiedDomains, ({ one }) => ({
-  account: one(accounts, {
-    fields: [accountVerifiedDomains.accountId],
     references: [accounts.accountId],
   }),
 }));

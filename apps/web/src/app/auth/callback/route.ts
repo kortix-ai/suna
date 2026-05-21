@@ -5,18 +5,6 @@ import type { NextRequest } from 'next/server'
 import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes'
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url'
 
-function isSsoProvider(provider: unknown): boolean {
-  if (Array.isArray(provider)) return provider.some((item) => isSsoProvider(item))
-  if (typeof provider !== 'string') return false
-  const normalized = provider.toLowerCase()
-  return normalized === 'sso' || normalized === 'saml' || normalized.includes('saml')
-}
-
-function apiBaseUrl(raw: string): string {
-  const base = raw.replace(/\/+$/, '')
-  return base.endsWith('/v1') ? base : `${base}/v1`
-}
-
 /**
  * Auth Callback Route - Web Handler
  * 
@@ -174,10 +162,7 @@ export async function GET(request: NextRequest) {
         const now = Date.now();
         const isNewUser = (now - createdAt) < 60000; // Created within last 60 seconds
         authEvent = isNewUser ? 'signup' : 'login';
-        const providerMetadata = data.user.app_metadata?.providers ?? data.user.app_metadata?.provider;
-        authMethod = Array.isArray(providerMetadata)
-          ? (providerMetadata[0] as string | undefined) || 'email'
-          : (providerMetadata as string | undefined) || 'email';
+        authMethod = data.user.app_metadata?.provider || 'email';
         
         const pendingReferralCode = request.cookies.get('pending-referral-code')?.value
         if (pendingReferralCode) {
@@ -215,41 +200,6 @@ export async function GET(request: NextRequest) {
         const backendUrl = process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '';
         const { data: sessionData } = await supabase.auth.getSession();
         const accessToken = sessionData?.session?.access_token;
-        const backendApiUrl = backendUrl ? apiBaseUrl(backendUrl) : '';
-
-        if (backendApiUrl && accessToken) {
-          try {
-            if (isSsoProvider(providerMetadata)) {
-              await fetch(`${backendApiUrl}/auth/sso/login-event`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${accessToken}`,
-                  'Content-Type': 'application/json',
-                },
-                body: '{}',
-                signal: AbortSignal.timeout(5000),
-              });
-            } else if (data.user.email) {
-              const ssoPolicyRes = await fetch(
-                `${backendApiUrl}/auth/sso/resolve-domain?email=${encodeURIComponent(data.user.email)}`,
-                { signal: AbortSignal.timeout(5000) },
-              );
-              if (ssoPolicyRes.ok) {
-                const ssoPolicy = await ssoPolicyRes.json();
-                if (ssoPolicy?.sso_required) {
-                  await supabase.auth.signOut();
-                  const ssoUrl = new URL(`${baseUrl}/auth`);
-                  ssoUrl.searchParams.set('error', 'sso_required');
-                  ssoUrl.searchParams.set('email', data.user.email);
-                  if (next) ssoUrl.searchParams.set('returnUrl', next);
-                  return NextResponse.redirect(ssoUrl);
-                }
-              }
-            }
-          } catch (err) {
-            console.warn('⚠️ Could not evaluate SSO policy:', err);
-          }
-        }
 
         const billingEnabled = runtimeEnv.ENV_MODE === 'cloud';
         if (billingEnabled && backendUrl && accessToken) {

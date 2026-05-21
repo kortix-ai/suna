@@ -41,37 +41,6 @@ export interface AccountDetail {
   updated_at: string;
 }
 
-export interface AccountVerifiedDomain {
-  domain_id: string;
-  account_id: string;
-  domain: string;
-  status: 'pending' | 'verified';
-  verification_token: string;
-  verification_txt: string;
-  verified_at: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AccountSsoConnection {
-  connection_id: string;
-  account_id: string;
-  provider_id: string;
-  provider_name: string | null;
-  protocol: 'saml' | 'oidc';
-  status: 'active' | 'disabled';
-  enforced: boolean;
-  jit_provisioning_enabled: boolean;
-  default_role: 'admin' | 'member';
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AccountSsoSettings {
-  domains: AccountVerifiedDomain[];
-  connections: AccountSsoConnection[];
-}
-
 export interface AccountMemberGroup {
   group_id: string;
   name: string;
@@ -286,90 +255,6 @@ export async function getAccount(accountId: string) {
 
 export async function updateAccountName(accountId: string, name: string) {
   return unwrap(await backendApi.patch<AccountDetail>(`/accounts/${accountId}`, { name }));
-}
-
-export async function getAccountSsoSettings(accountId: string) {
-  return unwrap(
-    await backendApi.get<AccountSsoSettings>(`/accounts/${accountId}/security/sso`),
-  );
-}
-
-export async function addAccountVerifiedDomain(accountId: string, domain: string) {
-  return unwrap(
-    await backendApi.post<AccountVerifiedDomain>(
-      `/accounts/${accountId}/security/sso/domains`,
-      { domain },
-      { showErrors: false },
-    ),
-  );
-}
-
-export async function verifyAccountDomain(accountId: string, domainId: string) {
-  return unwrap(
-    await backendApi.post<AccountVerifiedDomain>(
-      `/accounts/${accountId}/security/sso/domains/${domainId}/verify`,
-      {},
-      { showErrors: false },
-    ),
-  );
-}
-
-export async function deleteAccountVerifiedDomain(accountId: string, domainId: string) {
-  return unwrap(
-    await backendApi.delete<{ deleted: boolean }>(
-      `/accounts/${accountId}/security/sso/domains/${domainId}`,
-    ),
-  );
-}
-
-export async function createAccountSsoConnection(
-  accountId: string,
-  input: {
-    provider_id: string;
-    provider_name?: string | null;
-    protocol?: 'saml' | 'oidc';
-    enforced?: boolean;
-    jit_provisioning_enabled?: boolean;
-    default_role?: 'admin' | 'member';
-  },
-) {
-  return unwrap(
-    await backendApi.post<AccountSsoConnection>(
-      `/accounts/${accountId}/security/sso/connections`,
-      input,
-      { showErrors: false },
-    ),
-  );
-}
-
-export async function updateAccountSsoConnection(
-  accountId: string,
-  connectionId: string,
-  input: Partial<{
-    provider_id: string;
-    provider_name: string | null;
-    protocol: 'saml' | 'oidc';
-    status: 'active' | 'disabled';
-    enforced: boolean;
-    jit_provisioning_enabled: boolean;
-    default_role: 'admin' | 'member';
-  }>,
-) {
-  return unwrap(
-    await backendApi.patch<AccountSsoConnection>(
-      `/accounts/${accountId}/security/sso/connections/${connectionId}`,
-      input,
-      { showErrors: false },
-    ),
-  );
-}
-
-export async function deleteAccountSsoConnection(accountId: string, connectionId: string) {
-  return unwrap(
-    await backendApi.delete<{ deleted: boolean }>(
-      `/accounts/${accountId}/security/sso/connections/${connectionId}`,
-    ),
-  );
 }
 
 export async function listAccountMembers(accountId: string) {
