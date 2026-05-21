@@ -16,6 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PoliciesTable } from '@/components/iam/policies-table';
 import { listGroups, setMemberSuperAdmin } from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
+import { usePermission } from '@/lib/use-permission';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',
@@ -79,12 +80,13 @@ export default function MemberDetailPage() {
     () => members.find((m) => m.user_id === memberUserId),
     [members, memberUserId],
   );
-  const canManage = account?.role === 'owner' || account?.role === 'admin';
-
-  // Owners can promote anyone; super-admin promotion needs MEMBER_SUPER_ADMIN_GRANT
-  // which the IAM engine only allows for Super Administrators (currently
-  // every owner). We just gate the button on isOwner to keep the UI honest.
-  const canPromoteSuperAdmin = account?.role === 'owner';
+  // Granular permissions from the IAM engine. canManage gates the policies
+  // table (create/edit/delete); canPromoteSuperAdmin gates the bypass toggle.
+  const canManage = usePermission(accountId, 'policy.create').allowed;
+  const canPromoteSuperAdmin = usePermission(
+    accountId,
+    'member.super_admin.grant',
+  ).allowed;
 
   // Note: we don't currently surface is_super_admin in listAccountMembers, so
   // we can't show a pre-existing on/off state. Wire the column once the
