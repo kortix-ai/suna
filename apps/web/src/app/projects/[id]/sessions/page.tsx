@@ -4,9 +4,11 @@ import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowLeft,
   GitBranch,
   GitPullRequest,
   Loader2,
+  Lock,
   MoreHorizontal,
   Play,
   Plus,
@@ -399,6 +401,36 @@ export default function ProjectSessionsPage({
   });
 
   const sessions = sessionsQuery.data ?? [];
+
+  // The project meta call is the canonical gate — if it 403s the API has
+  // told us this user can't see anything about this project. Short-circuit
+  // to a friendly empty state instead of rendering a half-broken shell.
+  const projectError = projectQuery.error as (Error & { status?: number }) | null;
+  if (projectQuery.isError && projectError?.status === 403) {
+    return (
+      <div className="flex h-full min-h-screen flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border bg-muted/30 text-muted-foreground">
+          <Lock className="h-5 w-5" />
+        </div>
+        <div className="space-y-1">
+          <h1 className="text-base font-semibold text-foreground">No access to this project</h1>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Your account doesn&apos;t have permission to view this project. Ask an
+            administrator to grant you access or pick a different project.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => router.push('/projects')}
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to projects
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <ProjectShell projectId={projectId}>

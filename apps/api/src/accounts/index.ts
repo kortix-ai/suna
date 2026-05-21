@@ -12,10 +12,25 @@ import {
   revokeAccountToken,
 } from '../repositories/account-tokens';
 import { sendAccountInviteEmail } from './email';
+import { config } from '../config';
+
+// Public, share-anywhere invite URL. Matches the link generated inside the
+// email template (apps/api/src/accounts/email.ts), so an invite copied here
+// works exactly like one received via email.
+function buildInviteUrl(inviteId: string): string {
+  const base = (config.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  return `${base}/invites/${inviteId}`;
+}
+import { iamRouter } from './iam';
 
 export const accountsRouter = new Hono<AppEnv>();
 
 accountsRouter.use('/*', supabaseAuth);
+
+// Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
+// declares its own paths under /:accountId/iam/*, so mounting at '/' here is
+// correct.
+accountsRouter.route('/', iamRouter);
 
 // ─── Static (non-parameterized) routes MUST come before /:accountId ────────
 // Hono matches routes in registration order, so anything declared after the
@@ -523,6 +538,7 @@ accountsRouter.get('/:accountId/members', async (c) => {
     .select({
       userId: accountMembers.userId,
       accountRole: accountMembers.accountRole,
+      isSuperAdmin: accountMembers.isSuperAdmin,
       joinedAt: accountMembers.joinedAt,
     })
     .from(accountMembers)
@@ -544,6 +560,7 @@ accountsRouter.get('/:accountId/members', async (c) => {
       user_id: r.userId,
       email: emails.get(r.userId) ?? null,
       account_role: r.accountRole,
+      is_super_admin: r.isSuperAdmin,
       explicit_project_count: projectGrantCountByUser.get(r.userId) ?? 0,
       joined_at: r.joinedAt.toISOString(),
     })),
@@ -628,7 +645,7 @@ accountsRouter.post('/:accountId/members', async (c) => {
     })
     .returning();
 
-  void sendAccountInviteEmail({
+  const delivery = await sendAccountInviteEmail({
     email,
     accountName: accountRow.name,
     inviterEmail: callerEmail,
@@ -643,6 +660,11 @@ accountsRouter.post('/:accountId/members', async (c) => {
       email,
       account_role: invite.initialRole,
       expires_at: invite.expiresAt.toISOString(),
+      invite_url: buildInviteUrl(invite.inviteId),
+      // false = email skipped or failed; UI surfaces the link so admin can share manually.
+      email_sent: delivery.ok === true,
+      email_skip_reason:
+        delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
     },
     201,
   );
@@ -675,6 +697,7 @@ accountsRouter.get('/:accountId/invites', async (c) => {
       invited_by: r.invitedBy,
       created_at: r.createdAt.toISOString(),
       expires_at: r.expiresAt.toISOString(),
+      invite_url: buildInviteUrl(r.inviteId),
     })),
   );
 });
@@ -738,8 +761,9 @@ accountsRouter.post('/:accountId/invites/:inviteId/resend', async (c) => {
     .where(eq(accounts.accountId, accountId))
     .limit(1);
 
+  let delivery: Awaited<ReturnType<typeof sendAccountInviteEmail>> | null = null;
   if (accountRow) {
-    void sendAccountInviteEmail({
+    delivery = await sendAccountInviteEmail({
       email: updated.email,
       accountName: accountRow.name,
       inviterEmail: callerEmail,
@@ -748,7 +772,14 @@ accountsRouter.post('/:accountId/invites/:inviteId/resend', async (c) => {
     });
   }
 
-  return c.json({ ok: true, expires_at: updated.expiresAt.toISOString() });
+  return c.json({
+    ok: true,
+    expires_at: updated.expiresAt.toISOString(),
+    invite_url: buildInviteUrl(updated.inviteId),
+    email_sent: delivery?.ok === true,
+    email_skip_reason:
+      delivery && delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
+  });
 });
 
 // DELETE /v1/accounts/:accountId/members/:userId — remove a member.

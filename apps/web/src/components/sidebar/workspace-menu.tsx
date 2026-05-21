@@ -337,7 +337,11 @@ export function WorkspaceMenu({
           <QuietAction
             label="Account settings"
             icon={<SettingsIcon className="h-3 w-3" />}
-            onSelect={() => openAccountSettings('billing')}
+            onSelect={() => {
+              if (!activeAccount) return;
+              close();
+              router.push(`/accounts/${activeAccount.account_id}`);
+            }}
           />
           <QuietAction
             label="Billing"
@@ -345,7 +349,7 @@ export function WorkspaceMenu({
             onSelect={() => openAccountSettings('billing')}
           />
           <QuietAction
-            label="Manage accounts"
+            label="Switch account"
             icon={<Users className="h-3 w-3" />}
             onSelect={() => {
               close();

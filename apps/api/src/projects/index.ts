@@ -117,6 +117,7 @@ import {
   type ProjectAccessAction,
   type ProjectRole,
 } from './access';
+import { authorize, listAccessibleResources, PROJECT_ACTIONS } from '../iam';
 import {
   KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
@@ -743,6 +744,15 @@ async function resolveProjectAccount(c: Context, body?: Record<string, unknown>)
   };
 }
 
+// Coarse legacy actions map onto representative IAM action strings.
+// `manage` is the strongest gate — only a full project admin grants
+// project.delete, which implies write and read.
+const LEGACY_ACTION_TO_IAM: Record<ProjectAccessAction, string> = {
+  read: PROJECT_ACTIONS.PROJECT_READ,
+  write: PROJECT_ACTIONS.PROJECT_WRITE,
+  manage: PROJECT_ACTIONS.PROJECT_DELETE,
+};
+
 async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   const [row] = await db
@@ -760,9 +770,19 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
   const accountRole = membership.accountRole as AccountRole;
   const projectRole = await getProjectMemberRole(projectId, userId);
   const effectiveRole = effectiveProjectRole(accountRole, projectRole);
-  if (!roleAllows(effectiveRole, action)) {
+
+  // The IAM engine bridges existing account_role + project_members rows, so
+  // pre-IAM accounts behave identically; policies are additive on top.
+  const result = await authorize(
+    userId,
+    row.accountId,
+    LEGACY_ACTION_TO_IAM[action],
+    { type: 'project', id: projectId },
+  );
+  if (!result.allowed) {
     throw new HTTPException(403, { message: 'You do not have access to this project' });
   }
+
   (c as any).set('accountId', row.accountId);
 
   return {
@@ -1629,6 +1649,25 @@ projectsApp.get('/', async (c) => {
     })));
   }
 
+  // Non-manager: ask the IAM engine which project IDs they can read. The
+  // engine consults explicit policies (direct + via groups), denies, the
+  // legacy project_members bridge, and the (now-tightened) member bridge.
+  const accessible = await listAccessibleResources(
+    scope.userId,
+    scope.accountId,
+    PROJECT_ACTIONS.PROJECT_READ,
+    'project',
+  );
+
+  if (accessible.mode === 'none') return c.json([]);
+  // 'allow_only' with an empty set means no policy granted access yet.
+  if (accessible.mode === 'allow_only' && accessible.allowed.size === 0) {
+    return c.json([]);
+  }
+
+  // We still need project_members rows to compute project_role for the
+  // serializer, even though the engine already used them for the access
+  // decision. Cheap join — same accountId+userId.
   const grants = await db
     .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -1636,21 +1675,29 @@ projectsApp.get('/', async (c) => {
       eq(projectMembers.accountId, scope.accountId),
       eq(projectMembers.userId, scope.userId),
     ));
-
-  if (grants.length === 0) return c.json([]);
-
   const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
+
+  const baseWhere = and(
+    eq(projects.accountId, scope.accountId),
+    eq(projects.status, 'active'),
+  );
+  const idFilter =
+    accessible.mode === 'allow_only'
+      ? and(baseWhere, inArray(projects.projectId, Array.from(accessible.allowed)))
+      : baseWhere; // 'all_except' or 'all' — fetch every active project, filter below
+
   const rows = await db
     .select()
     .from(projects)
-    .where(and(
-      eq(projects.accountId, scope.accountId),
-      eq(projects.status, 'active'),
-      inArray(projects.projectId, grants.map((g) => g.projectId)),
-    ))
+    .where(idFilter)
     .orderBy(desc(projects.updatedAt));
 
-  return c.json(rows.map((row) => {
+  const filtered =
+    accessible.mode === 'all_except'
+      ? rows.filter((r) => !accessible.denied.has(r.projectId))
+      : rows;
+
+  return c.json(filtered.map((row) => {
     const projectRole = roleByProject.get(row.projectId) ?? null;
     return serializeProject(row, {
       projectRole,
