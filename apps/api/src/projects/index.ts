@@ -18,7 +18,6 @@ import {
   kortixApiKeys,
   projects,
   projectMembers,
-  projectSecrets,
   projectTriggerEvents,
   projectTriggerRuntime,
   projectTriggers,
@@ -40,6 +39,7 @@ import {
   getDiffBetweenShas,
   getFileHistory,
   invalidateProjectMirror,
+  grepRepoFiles,
   listBranches,
   listCommits,
   listRepoFiles,
@@ -49,6 +49,7 @@ import {
   readRepoFile,
   resolveBranchTip,
   resolveCommitSha,
+  searchRepoFileNames,
 } from './git';
 import {
   getCrById,
@@ -71,6 +72,13 @@ import {
 } from './github';
 import { buildStarterFiles } from './starter';
 import {
+  createManagedRepo,
+  mintRepoPushToken,
+  deleteManagedRepo,
+  seedRepoWithFiles,
+  isFreestyleGitConfigured,
+} from './freestyle-git';
+import {
   ensureBuildForLatestCommit,
   listSnapshotsForProject,
 } from '../snapshots/builder';
@@ -80,34 +88,15 @@ import { config, type SandboxProviderName } from '../config';
 import { encodeSessionLlmToken } from '../shared/session-llm-token';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
 import { recordAuditEvent } from '../shared/audit';
+import { isValidSecretName } from './secrets';
 import {
-  encryptProjectSecret,
-  getProjectSecretValue,
-  isValidSecretName,
-  listProjectSecrets,
-} from './secrets';
-import {
-  SUPPORTED_OAUTH_PROVIDERS,
-  buildOpencodeAuthContent,
-  deleteOauthCredential,
-  isSupportedOauthProvider,
-  listOauthCredentials,
-  summarizeCredential,
-  upsertOauthCredential,
-  type OauthProviderId,
-} from './oauth';
-import {
-  pollOnceCopilot,
-  pollOnceOpenAi,
-  startCopilotDeviceFlow,
-  startOpenAiDeviceFlow,
-} from './oauth-flow';
-import {
-  bumpInterval,
-  createFlow,
-  deleteFlow,
-  getFlow,
-} from './oauth-flow-store';
+  resolveVaultForActor,
+  resolveProjectGlobalSecret,
+  upsertVaultItem,
+  listVaultItems,
+  deleteProjectGlobalSecret,
+  visibilityOf,
+} from '../vault';
 import {
   effectiveProjectRole,
   isAccountManager,
@@ -117,7 +106,7 @@ import {
   type ProjectAccessAction,
   type ProjectRole,
 } from './access';
-import { authorize, listAccessibleResources, PROJECT_ACTIONS } from '../iam';
+import { authorize, listAccessibleResources, ACCOUNT_ACTIONS, PROJECT_ACTIONS, syncProjectMemberPolicy, removeProjectMemberPolicy, syncMemberAccountPolicy } from '../iam';
 import {
   KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
@@ -211,6 +200,12 @@ function serializeSession(row: ProjectSessionRow) {
   };
 }
 
+/** Base URL of the web dashboard (NOT the API). Source of truth for any
+ *  "open this in the browser" link the CLI/clients render. */
+function dashboardBaseUrl(): string {
+  return (config.KORTIX_DASHBOARD_URL || config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+}
+
 function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole | null; effectiveRole: ProjectRole }) {
   return {
     project_id: row.projectId,
@@ -224,9 +219,51 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     last_opened_at: row.lastOpenedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
+    dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
   };
+}
+
+interface ProjectGitRemote {
+  /** freestyle | github | gitlab | bitbucket | generic */
+  provider: string;
+  /** managed | github_app | vault | none */
+  authMethod: string;
+  /** Freestyle repo id (managed repos). */
+  repoId: string | null;
+  /** Auth credential reference — Freestyle identity id for `managed`, a
+   *  vault_item id for `vault`, a GitHub installation id for `github_app`. */
+  ref: string | null;
+}
+
+/**
+ * Normalize a project's git-remote reference from `metadata.git` (the canonical
+ * typed shape), falling back to the legacy `metadata.freestyle` / `metadata.github`
+ * blobs for rows created before the consolidation. This is the single place that
+ * understands "how do I authenticate to this project's repo".
+ */
+function getProjectGitRemote(metadata: unknown): ProjectGitRemote {
+  const meta = (metadata ?? {}) as Record<string, any>;
+  const git = meta.git;
+  if (git && typeof git === 'object') {
+    const method = String(git.auth?.method ?? 'none');
+    return {
+      provider: String(git.provider ?? 'generic'),
+      authMethod: method,
+      repoId: git.repo_id ?? null,
+      ref: git.auth?.ref ?? null,
+    };
+  }
+  // Legacy fallbacks.
+  if (meta.git_provider === 'freestyle' || meta.freestyle) {
+    const fs = meta.freestyle ?? {};
+    return { provider: 'freestyle', authMethod: 'managed', repoId: fs.repo_id ?? null, ref: fs.identity_id ?? null };
+  }
+  if (meta.github) {
+    return { provider: 'github', authMethod: 'github_app', repoId: null, ref: null };
+  }
+  return { provider: 'generic', authMethod: 'none', repoId: null, ref: null };
 }
 
 /**
@@ -373,16 +410,6 @@ async function checkConcurrentSessionCap(accountId: string, userId: string, requ
   };
 }
 
-function serializeProjectSecret(row: typeof projectSecrets.$inferSelect) {
-  return {
-    secret_id: row.secretId,
-    project_id: row.projectId,
-    name: row.name,
-    created_by: row.createdBy,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  };
-}
 
 function serializeProjectTrigger(row: ProjectTriggerRow) {
   const publicConfig = { ...normalizeJsonObject(row.config) };
@@ -515,6 +542,13 @@ function deriveProjectName(repoUrl: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+/** True when a GitHub repo-create error is a name collision (HTTP 422). On
+ *  POST /user/repos a 422 is, in practice, always "name already exists". */
+function isRepoNameTakenError(error: unknown): boolean {
+  const m = ((error as Error)?.message ?? '').toLowerCase();
+  return m.includes('already exists') || m.includes('name already') || m.includes('(422)');
+}
+
 async function readBody(c: Context) {
   try {
     return await c.req.json<Record<string, unknown>>();
@@ -642,8 +676,24 @@ function projectCreatedWithServerPat(project: ProjectRow): boolean {
 
 async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
-  authSource: 'app_installation' | 'pat' | 'none';
+  authSource: 'app_installation' | 'pat' | 'managed' | 'none';
 }> {
+  // Managed Freestyle repos: mint a fresh scoped token from the project's
+  // stored identity so the backend itself can clone/push (snapshot builds,
+  // session branches, CR merges). Without this the backend hits
+  // git.freestyle.sh unauthenticated and gets a 403.
+  const remote = getProjectGitRemote(project.metadata);
+  if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && remote.repoId) {
+    if (!(await isFreestyleGitConfigured())) return { authSource: 'none' };
+    try {
+      const push = await mintRepoPushToken({ repoId: remote.repoId, identityId: remote.ref });
+      return { auth: { token: push.token, source: 'managed' }, authSource: 'managed' };
+    } catch (err) {
+      console.warn(`[projects] failed to mint Freestyle token for ${project.projectId}:`, err);
+      return { authSource: 'none' };
+    }
+  }
+
   const installation = await getAccountGitHubInstallation(project.accountId);
   if (installation) {
     const token = await createInstallationToken(installation.installationId);
@@ -676,6 +726,45 @@ async function getProjectMemberRole(projectId: string, userId: string): Promise<
   return (row?.projectRole as ProjectRole | undefined) ?? null;
 }
 
+/** Resolve a Kortix user id from an email via the Supabase admin API. Local
+ *  copy (kept here to avoid importing the accounts router module). */
+async function lookupUserIdByEmail(email: string): Promise<string | null> {
+  const supabase = getSupabase();
+  const target = email.trim().toLowerCase();
+  let page = 1;
+  while (page <= 50) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
+    if (error || !data) return null;
+    for (const u of data.users) {
+      if (u.email && u.email.trim().toLowerCase() === target) return u.id;
+    }
+    if (data.users.length < 200) return null;
+    page += 1;
+  }
+  return null;
+}
+
+/**
+ * Ensure a user is a member of the org (account). If they aren't, add them as a
+ * plain Member (+ IAM baseline policy). Returns their account role. This makes
+ * project access project-centric: "give X access to this project" auto-joins
+ * them to the org instead of erroring.
+ */
+async function ensureOrgMembership(
+  accountId: string,
+  userId: string,
+  grantedBy: string,
+): Promise<AccountRole> {
+  const existing = await getAccountMembership(userId, accountId);
+  if (existing) return existing.accountRole as AccountRole;
+  await db
+    .insert(accountMembers)
+    .values({ userId, accountId, accountRole: 'member' })
+    .onConflictDoNothing();
+  await syncMemberAccountPolicy({ accountId, userId, accountRole: 'member', createdBy: grantedBy });
+  return 'member';
+}
+
 async function grantProjectRole(input: {
   accountId: string;
   projectId: string;
@@ -702,6 +791,13 @@ async function grantProjectRole(input: {
         updatedAt: now,
       },
     });
+  await syncProjectMemberPolicy({
+    accountId: input.accountId,
+    projectId: input.projectId,
+    userId: input.userId,
+    projectRole: input.role,
+    createdBy: input.grantedBy,
+  });
 }
 
 async function lookupEmailsByUserIds(userIds: string[]): Promise<Map<string, string | null>> {
@@ -804,13 +900,13 @@ async function buildSessionSandboxEnvVars(input: {
   agentName: string;
   initialPrompt?: string | null;
 }): Promise<Record<string, string>> {
-  // Project secrets + OAuth credentials + project-scoped CLI token all
-  // funnel into the sandbox env. Run them in parallel — the CLI token
-  // path mints a fresh token per session boot so the in-container CLI
-  // works out of the box.
-  const [runtimeSecrets, opencodeAuthContent, cliToken] = await Promise.all([
-    listProjectSecrets(input.projectId),
-    buildOpencodeAuthContent(input.projectId),
+  // Project secrets + project-scoped CLI token funnel into the sandbox env.
+  // Run them in parallel — the CLI token path mints a fresh token per session
+  // boot so the in-container CLI works out of the box.
+  const [runtimeSecrets, cliToken] = await Promise.all([
+    // Resolve the vault for the acting member: project-global env + this
+    // member's private/select-member items, most-specific-wins (see vault).
+    resolveVaultForActor({ accountId: input.accountId, projectId: input.projectId, userId: input.userId }),
     mintSessionCliToken(input.projectId, input.userId, input.accountId, input.sessionId),
   ]);
   const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
@@ -840,7 +936,6 @@ async function buildSessionSandboxEnvVars(input: {
     ...(cliToken ? { KORTIX_TOKEN: cliToken, KORTIX_CLI_TOKEN: cliToken } : {}),
     KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    ...(opencodeAuthContent ? { OPENCODE_AUTH_CONTENT: opencodeAuthContent } : {}),
   };
 }
 
@@ -1271,7 +1366,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
 
   const rawBody = await c.req.text();
   const secret = spec.secretEnv
-    ? await getProjectSecretValue(project.projectId, spec.secretEnv)
+    ? await resolveProjectGlobalSecret(project.accountId, project.projectId, spec.secretEnv)
     : null;
   if (!secret) {
     return c.json({ error: 'Webhook secret is not configured' }, 409);
@@ -1710,7 +1805,7 @@ projectsApp.get('/', async (c) => {
 projectsApp.post('/', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  if (!isAccountManager(scope.accountRole)) {
+  if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -1774,7 +1869,7 @@ projectsApp.post('/', async (c) => {
 // installation tokens are minted server-side at repo creation time.
 projectsApp.get('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  if (!isAccountManager(scope.accountRole)) {
+  if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -1797,7 +1892,7 @@ projectsApp.post('/github/installation', async (c) => {
   }
 
   const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
-  if (!isAccountManager(scope.accountRole)) {
+  if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -1867,7 +1962,7 @@ projectsApp.post('/github/installation', async (c) => {
 // DELETE /v1/projects/github/installation?account_id=...
 projectsApp.delete('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  if (!isAccountManager(scope.accountRole)) {
+  if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -1884,7 +1979,7 @@ projectsApp.delete('/github/installation', async (c) => {
 projectsApp.post('/create-repo', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  if (!isAccountManager(scope.accountRole)) {
+  if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -1911,21 +2006,41 @@ projectsApp.post('/create-repo', async (c) => {
     return c.json({ error: message }, 503);
   }
 
-  let repo;
-  try {
-    repo = await createRepo({
-      name,
-      isPrivate,
-      description: description ?? undefined,
-      autoInit: true,
-      auth: githubAuth.auth,
-    });
-  } catch (error) {
-    const message = (error as Error).message || 'Failed to create GitHub repository';
-    return c.json({ error: message }, 502);
+  // Create the GitHub repo. If the name is already taken on the account (422),
+  // transparently retry as `name-2`, `name-3`, … so creation "just works"
+  // instead of failing with a cryptic 502 (the way a managed Freestyle repo
+  // never collides). The user's typed name stays the project's display name;
+  // only the repo slug gets a suffix.
+  let repo: Awaited<ReturnType<typeof createRepo>> | undefined;
+  let lastRepoError: unknown = null;
+  for (let attempt = 0; attempt < 12 && !repo; attempt += 1) {
+    const candidate = attempt === 0 ? name : `${name}-${attempt + 1}`;
+    try {
+      repo = await createRepo({
+        name: candidate,
+        isPrivate,
+        description: description ?? undefined,
+        autoInit: true,
+        auth: githubAuth.auth,
+      });
+    } catch (error) {
+      lastRepoError = error;
+      if (isRepoNameTakenError(error)) continue; // name taken — try the next suffix
+      return c.json({ error: (error as Error).message || 'Failed to create GitHub repository' }, 502);
+    }
+  }
+  if (!repo) {
+    return c.json(
+      {
+        error:
+          `Could not find an available repository name near "${name}" — too many already exist. ` +
+          `Pick a different name. ${(lastRepoError as Error)?.message ?? ''}`.trim(),
+      },
+      409,
+    );
   }
 
-  const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);
+  const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(name);
   const defaultBranch = repo.default_branch || 'main';
   const now = new Date();
 
@@ -2005,6 +2120,176 @@ projectsApp.post('/create-repo', async (c) => {
   });
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
+});
+
+// POST /v1/projects/provision
+// Creates a *managed* project: a fresh Freestyle git repo on Kortix's own
+// Freestyle account (server FREESTYLE_API_KEY) + the project row + a scoped,
+// write-only push token. The repo is created empty; `kortix ship` pushes the
+// caller's local working tree as the first commit. This is the zero-setup
+// default for users who don't bring their own git origin — no GitHub account,
+// no OAuth dance, no questions at `kortix init`.
+projectsApp.post('/provision', async (c) => {
+  const body = await readBody(c);
+  const scope = await resolveProjectAccount(c, body);
+  if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  const provider = normalizeString(body.provider) ?? 'freestyle';
+  if (provider !== 'freestyle') {
+    return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
+  }
+  if (!(await isFreestyleGitConfigured())) {
+    return c.json(
+      { error: 'Managed git is not configured on this server (FREESTYLE_API_KEY missing)' },
+      503,
+    );
+  }
+
+  const name = normalizeString(body.name) ?? normalizeString(body.project_name ?? body.projectName);
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
+    return c.json(
+      { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
+      400,
+    );
+  }
+  // Freestyle repo names are slug-ish; derive a safe slug from the display name.
+  const repoSlug =
+    name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
+    'kortix-project';
+  const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
+
+  let repo: Awaited<ReturnType<typeof createManagedRepo>>;
+  let push: Awaited<ReturnType<typeof mintRepoPushToken>>;
+  try {
+    // Managed repos are always private (createManagedRepo defaults isPublic:false).
+    repo = await createManagedRepo({ name: repoSlug, defaultBranch });
+    push = await mintRepoPushToken({ repoId: repo.repoId });
+  } catch (error) {
+    return c.json({ error: (error as Error).message || 'Failed to provision managed repo' }, 502);
+  }
+
+  // Seed the starter into the empty repo when the caller has no local working
+  // tree to push (web "Create project"). The CLI leaves this false and pushes
+  // its own files on first `kortix ship`. If seeding fails we roll back the
+  // orphan repo so we never leave a half-created project behind.
+  const seedStarter = body.seed_starter === true || body.seedStarter === true;
+  let seeded = false;
+  if (seedStarter) {
+    try {
+      const starter = buildStarterFiles({ projectName: name, repoFullName: repoSlug });
+      await seedRepoWithFiles({
+        repoId: repo.repoId,
+        token: push.token,
+        files: starter,
+        branch: repo.defaultBranch,
+        commitMessage: 'chore: scaffold Kortix project',
+      });
+      seeded = true;
+    } catch (error) {
+      try { await deleteManagedRepo(repo.repoId); } catch { /* best effort */ }
+      return c.json({ error: (error as Error).message || 'Failed to seed project repo' }, 502);
+    }
+  }
+
+  const now = new Date();
+  const [row] = await db
+    .insert(projects)
+    .values({
+      accountId: scope.accountId,
+      name,
+      repoUrl: repo.gitUrl,
+      defaultBranch: repo.defaultBranch,
+      manifestPath: 'kortix.toml',
+      status: 'active',
+      metadata: {
+        git: {
+          url: repo.gitUrl,
+          default_branch: repo.defaultBranch,
+          provider: 'freestyle',
+          auth: { method: 'managed', ref: push.identityId },
+          repo_id: repo.repoId,
+        },
+      },
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [projects.accountId, projects.repoUrl],
+      set: { name, defaultBranch: repo.defaultBranch, status: 'active', updatedAt: now },
+    })
+    .returning();
+
+  await grantProjectRole({
+    accountId: scope.accountId,
+    projectId: row.projectId,
+    userId: scope.userId,
+    role: 'manager',
+    grantedBy: scope.userId,
+  });
+
+  // Seeded repos have a Dockerfile now → kick the first snapshot build so
+  // sessions boot fast. Unseeded (CLI) repos build after the CLI's first push,
+  // keeping `kortix ship` a pure git sync.
+  if (seeded) {
+    void kickInitialSnapshotBuild(row, scope.accountId, { gitAuthToken: push.token });
+  }
+
+  return c.json(
+    {
+      ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+      push_token: push.token,
+      repo_id: repo.repoId,
+      seeded,
+    },
+    201,
+  );
+});
+
+// POST /v1/projects/:projectId/git-token
+// Mint a fresh scoped push token for a *managed* (Freestyle) project so the
+// CLI can push on a later `kortix ship` without persisting credentials in
+// .git/config. Returns 409 for BYO projects — those push with the user's own
+// git remote auth, not a Kortix-minted token.
+projectsApp.post('/:projectId/git-token', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'write');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
+  const remote = getProjectGitRemote(meta);
+  if (remote.provider !== 'freestyle' || remote.authMethod !== 'managed' || !remote.repoId) {
+    return c.json({ error: 'Project is not a managed Freestyle repo' }, 409);
+  }
+  if (!(await isFreestyleGitConfigured())) {
+    return c.json({ error: 'Managed git is not configured on this server' }, 503);
+  }
+
+  let push: Awaited<ReturnType<typeof mintRepoPushToken>>;
+  try {
+    push = await mintRepoPushToken({ repoId: remote.repoId, identityId: remote.ref });
+  } catch (error) {
+    return c.json({ error: (error as Error).message || 'Failed to mint push token' }, 502);
+  }
+
+  // Persist the identity id into the canonical metadata.git when it changed
+  // (e.g. minted for a legacy row that had no identity yet).
+  if (push.identityId !== remote.ref) {
+    const nextGit = {
+      url: loaded.row.repoUrl,
+      default_branch: loaded.row.defaultBranch,
+      provider: 'freestyle',
+      auth: { method: 'managed', ref: push.identityId },
+      repo_id: remote.repoId,
+    };
+    await db
+      .update(projects)
+      .set({ metadata: { ...meta, git: nextGit }, updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId));
+  }
+
+  return c.json({ push_token: push.token, repo_id: remote.repoId, repo_url: loaded.row.repoUrl });
 });
 
 // ─── Snapshots ─────────────────────────────────────────────────────────────
@@ -2119,7 +2404,7 @@ projectsApp.post('/:projectId/cli-token', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
+  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -2163,7 +2448,7 @@ projectsApp.delete('/:projectId/cli-token/:tokenId', async (c) => {
   const tokenId = c.req.param('tokenId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
+  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
@@ -2179,7 +2464,7 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
+  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -2219,15 +2504,17 @@ projectsApp.get('/:projectId/secrets', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
+  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
-  const rows = await db
-    .select()
-    .from(projectSecrets)
-    .where(eq(projectSecrets.projectId, projectId))
-    .orderBy(desc(projectSecrets.updatedAt));
+  // Project secrets are now vault items: project-scoped, shared (owner_user_id
+  // NULL). Member-private items are intentionally excluded from this admin view.
+  // Show shared project items (everyone-on-project / select-members) plus the
+  // caller's own private items for this project.
+  const rows = (await listVaultItems({ accountId: loaded.row.accountId, projectId }))
+    .filter((it) => it.ownerUserId === null || it.ownerUserId === loaded.userId)
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
 
   // Manifest is optional — a project without kortix.toml just gets empty
   // required/optional lists. We surface loaded/missing/error explicitly so the
@@ -2252,7 +2539,18 @@ projectsApp.get('/:projectId/secrets', async (c) => {
   }
 
   return c.json({
-    items: rows.map(serializeProjectSecret),
+    account_id: loaded.row.accountId,
+    items: rows.map((it) => ({
+      secret_id: it.itemId,
+      project_id: it.projectId,
+      name: it.name,
+      visibility: visibilityOf(it, it.grantUserIds.length),
+      owner_user_id: it.ownerUserId,
+      grant_user_ids: it.grantUserIds,
+      created_by: it.createdBy,
+      created_at: it.createdAt.toISOString(),
+      updated_at: it.updatedAt.toISOString(),
+    })),
     required,
     optional,
     manifest_status: manifestStatus,
@@ -2268,7 +2566,7 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
+  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -2284,26 +2582,28 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   const value = typeof body.value === 'string' ? body.value : null;
   if (value === null) return c.json({ error: 'value is required' }, 400);
 
-  const now = new Date();
-  const [row] = await db
-    .insert(projectSecrets)
-    .values({
-      projectId,
-      name,
-      valueEnc: encryptProjectSecret(projectId, value),
-      createdBy: loaded.userId,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projectSecrets.projectId, projectSecrets.name],
-      set: {
-        valueEnc: encryptProjectSecret(projectId, value),
-        updatedAt: now,
-      },
-    })
-    .returning();
+  // Project-global env item in the vault (shared, owner_user_id NULL).
+  const item = await upsertVaultItem({
+    accountId: loaded.row.accountId,
+    name,
+    value,
+    kind: 'env',
+    projectId,
+    ownerUserId: null,
+    createdBy: loaded.userId,
+  });
 
-  return c.json(serializeProjectSecret(row), 200);
+  return c.json(
+    {
+      secret_id: item.itemId,
+      project_id: item.projectId,
+      name: item.name,
+      created_by: item.createdBy,
+      created_at: item.createdAt.toISOString(),
+      updated_at: item.updatedAt.toISOString(),
+    },
+    200,
+  );
 });
 
 // DELETE /v1/projects/:projectId/secrets/:name
@@ -2312,176 +2612,15 @@ projectsApp.delete('/:projectId/secrets/:name', async (c) => {
   const name = c.req.param('name')?.trim().toUpperCase();
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
+  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
   if (!name || !isValidSecretName(name)) {
     return c.json({ error: 'Invalid secret name' }, 400);
   }
 
-  await db
-    .delete(projectSecrets)
-    .where(and(
-      eq(projectSecrets.projectId, projectId),
-      eq(projectSecrets.name, name),
-    ));
+  await deleteProjectGlobalSecret(loaded.row.accountId, projectId, name);
 
-  return c.json({ ok: true });
-});
-
-// ─── OAuth provider credentials ────────────────────────────────────────────
-//
-// Mirrors the opencode auth flow (codex.ts / github-copilot/copilot.ts) but
-// persists tokens as encrypted per-project rows instead of opencode's local
-// auth.json. At session boot, all connected providers are bundled into the
-// `OPENCODE_AUTH_CONTENT` env var which opencode reads natively.
-
-// GET /v1/projects/:projectId/oauth
-projectsApp.get('/:projectId/oauth', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-
-  const creds = await listOauthCredentials(projectId);
-  return c.json({
-    items: creds.map(summarizeCredential),
-    supported: SUPPORTED_OAUTH_PROVIDERS,
-  });
-});
-
-// POST /v1/projects/:projectId/oauth/:provider/start
-projectsApp.post('/:projectId/oauth/:provider/start', async (c) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!isSupportedOauthProvider(provider)) {
-    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
-  }
-
-  const body = await readBody(c);
-  const enterpriseUrl = normalizeString(body.enterprise_url ?? body.enterpriseUrl);
-
-  try {
-    const flowStart = provider === 'openai'
-      ? await startOpenAiDeviceFlow()
-      : await startCopilotDeviceFlow({ enterpriseUrl: enterpriseUrl ?? undefined });
-
-    const { flowId } = createFlow({
-      projectId,
-      providerId: provider,
-      handle: flowStart.handle,
-      intervalMs: flowStart.interval_ms,
-      expiresAt: flowStart.expires_at,
-    });
-
-    return c.json({
-      flow_id: flowId,
-      provider_id: provider,
-      verification_url: flowStart.verification_url,
-      user_code: flowStart.user_code,
-      interval_ms: flowStart.interval_ms,
-      expires_at: flowStart.expires_at,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('[projects] oauth start failed', { projectId, provider, error: msg });
-    return c.json({ error: msg }, 502);
-  }
-});
-
-// POST /v1/projects/:projectId/oauth/:provider/poll
-// Body: { flow_id: string }
-// Returns one of:
-//   { status: 'pending', next_poll_ms }
-//   { status: 'success', credential: {...} }
-//   { status: 'expired' }
-//   { status: 'failed', error }
-projectsApp.post('/:projectId/oauth/:provider/poll', async (c) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!isSupportedOauthProvider(provider)) {
-    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
-  }
-
-  const body = await readBody(c);
-  const flowId = normalizeString(body.flow_id ?? body.flowId);
-  if (!flowId) return c.json({ error: 'flow_id is required' }, 400);
-
-  const flow = getFlow(flowId);
-  if (!flow) return c.json({ status: 'expired' });
-  if (flow.projectId !== projectId) return c.json({ error: 'Flow not found' }, 404);
-  if (flow.providerId !== provider) return c.json({ error: 'Provider mismatch' }, 400);
-  if (flow.expiresAt < Date.now()) {
-    deleteFlow(flowId);
-    return c.json({ status: 'expired' });
-  }
-
-  try {
-    const result = provider === 'openai'
-      ? await pollOnceOpenAi(flow.handle)
-      : await pollOnceCopilot(flow.handle);
-
-    if (result.status === 'pending') {
-      return c.json({ status: 'pending', next_poll_ms: flow.recommendedIntervalMs });
-    }
-    if (result.status === 'slow_down') {
-      bumpInterval(flowId, result.new_interval_ms);
-      return c.json({ status: 'pending', next_poll_ms: result.new_interval_ms });
-    }
-    if (result.status === 'failed') {
-      deleteFlow(flowId);
-      return c.json({ status: 'failed', error: result.error });
-    }
-
-    const credential = await upsertOauthCredential({
-      projectId,
-      providerId: provider as OauthProviderId,
-      refresh: result.refresh,
-      access: result.access,
-      expires: result.expires,
-      accountId: result.accountId,
-      enterpriseUrl: result.enterpriseUrl,
-      createdBy: loaded.userId,
-    });
-    deleteFlow(flowId);
-
-    return c.json({
-      status: 'success',
-      credential: summarizeCredential(credential),
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('[projects] oauth poll failed', { projectId, provider, error: msg });
-    return c.json({ status: 'failed', error: msg }, 502);
-  }
-});
-
-// DELETE /v1/projects/:projectId/oauth/:provider
-projectsApp.delete('/:projectId/oauth/:provider', async (c) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!isSupportedOauthProvider(provider)) {
-    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
-  }
-
-  await deleteOauthCredential(projectId, provider);
   return c.json({ ok: true });
 });
 
@@ -3614,6 +3753,42 @@ projectsApp.get('/:projectId/files', async (c) => {
   return c.json(files.slice(0, 1000));
 });
 
+// GET /v1/projects/:projectId/files/search?q=...&content=1&ref=...&limit=...
+// Filename search (git ls-tree + rank) or content search (git grep) over the
+// project's repo at the given ref.
+projectsApp.get('/:projectId/files/search', async (c) => {
+  const projectId = c.req.param('projectId');
+  const query = normalizeString(c.req.query('q'));
+  if (!query) return c.json({ error: 'q query param is required' }, 400);
+
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const contentSearch = c.req.query('content') === '1';
+  const ref = c.req.query('ref') || loaded.row.defaultBranch;
+  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 50, 1), 200);
+
+  try {
+    if (contentSearch) {
+      const matches = await grepRepoFiles(loaded.row, query, ref, limit);
+      return c.json({ query, ref, content_search: true, results: matches });
+    }
+    const files = await searchRepoFileNames(loaded.row, query, ref, limit);
+    return c.json({
+      query,
+      ref,
+      content_search: false,
+      results: files.map((f) => ({ path: f.path })),
+    });
+  } catch (error) {
+    console.warn('[projects] file search unavailable', {
+      projectId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return c.json({ query, ref, content_search: contentSearch, results: [] });
+  }
+});
+
 // GET /v1/projects/:projectId/files/archive?path=...&ref=...
 // Streams a zip archive of the repo (or a subtree) at the given ref.
 projectsApp.get('/:projectId/files/archive', async (c) => {
@@ -3839,10 +4014,17 @@ projectsApp.patch('/:projectId', async (c) => {
 });
 
 // DELETE /v1/projects/:projectId
+// Archives the project (reversible). With ?purge=true, also deletes the
+// underlying *managed* Freestyle repo (irreversible) — BYO repos are never
+// touched, since they belong to the user.
 projectsApp.delete('/:projectId', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const purge = c.req.query('purge') === 'true' || c.req.query('purge') === '1';
+  const remote = getProjectGitRemote(loaded.row.metadata);
+  const isManaged = remote.provider === 'freestyle' && Boolean(remote.repoId);
 
   const [row] = await db
     .update(projects)
@@ -3851,7 +4033,18 @@ projectsApp.delete('/:projectId', async (c) => {
     .returning();
 
   if (!row) return c.json({ error: 'Not found' }, 404);
-  return c.json({ ok: true });
+
+  let repoDeleted = false;
+  if (purge && isManaged && remote.repoId && (await isFreestyleGitConfigured())) {
+    try {
+      await deleteManagedRepo(remote.repoId);
+      repoDeleted = true;
+    } catch (err) {
+      // Archive already succeeded; a failed repo delete is best-effort.
+      console.warn(`[projects] failed to delete managed repo for ${projectId}:`, err);
+    }
+  }
+  return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
 });
 
 // GET /v1/projects/:projectId/access
@@ -3931,12 +4124,13 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
   const role = parseProjectRole(body.role);
   if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
 
-  const targetMembership = await getAccountMembership(targetUserId, loaded.row.accountId);
-  if (!targetMembership) {
-    return c.json({ error: 'User is not a member of this account' }, 404);
-  }
-
-  const targetAccountRole = targetMembership.accountRole as AccountRole;
+  // Project-centric: if the target isn't in the org yet, auto-join them as a
+  // plain Member, then grant the project role.
+  const targetAccountRole = await ensureOrgMembership(
+    loaded.row.accountId,
+    targetUserId,
+    loaded.userId,
+  );
   if (isAccountManager(targetAccountRole)) {
     await db
       .delete(projectMembers)
@@ -3944,6 +4138,8 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
         eq(projectMembers.projectId, projectId),
         eq(projectMembers.userId, targetUserId),
       ));
+
+    await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId);
 
     return c.json({
       user_id: targetUserId,
@@ -3964,6 +4160,58 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
 
   return c.json({
     user_id: targetUserId,
+    account_role: targetAccountRole,
+    project_role: role,
+    effective_project_role: role,
+    has_implicit_access: false,
+  });
+});
+
+// POST /v1/projects/:projectId/access/invite  { email, role }
+// Project-centric invite: add an existing Kortix user to this project (and the
+// org, as a Member, if they aren't already) in one step.
+projectsApp.post('/:projectId/access/invite', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const body = await readBody(c);
+  const email = (typeof body.email === 'string' ? body.email : '').trim().toLowerCase();
+  const role = parseProjectRole(body.role);
+  if (!email) return c.json({ error: 'email is required' }, 400);
+  if (!role) return c.json({ error: 'role must be one of manager|editor|viewer' }, 400);
+
+  const targetUserId = await lookupUserIdByEmail(email);
+  if (!targetUserId) {
+    return c.json(
+      { error: 'No Kortix account for that email. Invite them to the organization first (Account → Members).' },
+      404,
+    );
+  }
+
+  const targetAccountRole = await ensureOrgMembership(loaded.row.accountId, targetUserId, loaded.userId);
+  if (isAccountManager(targetAccountRole)) {
+    return c.json({
+      user_id: targetUserId,
+      email,
+      account_role: targetAccountRole,
+      project_role: null,
+      effective_project_role: 'manager',
+      has_implicit_access: true,
+    });
+  }
+
+  await grantProjectRole({
+    accountId: loaded.row.accountId,
+    projectId,
+    userId: targetUserId,
+    role,
+    grantedBy: loaded.userId,
+  });
+
+  return c.json({
+    user_id: targetUserId,
+    email,
     account_role: targetAccountRole,
     project_role: role,
     effective_project_role: role,
@@ -3994,6 +4242,8 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
       eq(projectMembers.projectId, projectId),
       eq(projectMembers.userId, targetUserId),
     ));
+
+  await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId);
 
   return c.json({ ok: true });
 });

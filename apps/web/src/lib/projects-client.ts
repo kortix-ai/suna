@@ -370,6 +370,19 @@ export async function revokeProjectAccess(projectId: string, userId: string) {
   );
 }
 
+export async function inviteProjectMember(
+  projectId: string,
+  email: string,
+  role: ProjectRole,
+) {
+  return unwrap(
+    await backendApi.post<ProjectAccessMember>(
+      `/projects/${projectId}/access/invite`,
+      { email, role },
+    ),
+  );
+}
+
 export interface ProjectSecretsResponse {
   /** Account that owns this project — needed to write via the vault API. */
   account_id?: string;
@@ -471,6 +484,38 @@ export async function listProjectFiles(
   if (options?.path) params.set('path', options.path);
   const query = params.toString() ? `?${params.toString()}` : '';
   return unwrap(await backendApi.get<ProjectFileEntry[]>(`/projects/${projectId}/files${query}`));
+}
+
+export interface ProjectFileSearchMatch {
+  path: string;
+  /** Present for content search (git grep). */
+  line_number?: number;
+  line_text?: string;
+}
+
+export interface ProjectFileSearchResponse {
+  query: string;
+  ref: string;
+  content_search: boolean;
+  results: ProjectFileSearchMatch[];
+}
+
+/** Search the project's git repo — filenames by default, contents when
+ *  `content` is true (server-side `git grep`). */
+export async function searchProjectFiles(
+  projectId: string,
+  query: string,
+  options?: { content?: boolean; ref?: string; limit?: number },
+) {
+  const params = new URLSearchParams({ q: query });
+  if (options?.content) params.set('content', '1');
+  if (options?.ref) params.set('ref', options.ref);
+  if (options?.limit) params.set('limit', String(options.limit));
+  return unwrap(
+    await backendApi.get<ProjectFileSearchResponse>(
+      `/projects/${projectId}/files/search?${params.toString()}`,
+    ),
+  );
 }
 
 export async function readProjectFile(

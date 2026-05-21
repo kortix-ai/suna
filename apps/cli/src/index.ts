@@ -9,6 +9,7 @@ import { runLogout } from './commands/logout.ts';
 import { runProjects } from './commands/projects.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSessions } from './commands/sessions.ts';
+import { runShip } from './commands/ship.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -27,6 +28,7 @@ interface Command {
 const COMMANDS: readonly Command[] = [
   { name: 'init', blurb: 'Scaffold a Kortix project in the current directory' },
   { name: '<project-name>', blurb: 'Create a new directory and scaffold it' },
+  { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
   { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
   { name: 'logout', blurb: 'Remove the stored auth token' },
   { name: 'whoami', blurb: 'Show the currently authenticated user' },
@@ -93,6 +95,10 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'init') {
     return runInit(argv.slice(1));
   }
+  // `deploy` is kept as a familiar alias for `ship`.
+  if (argv[0] === 'ship' || argv[0] === 'deploy') {
+    return runShip(argv.slice(1));
+  }
   if (argv[0] === 'login') {
     return runLogin(argv.slice(1));
   }
@@ -133,7 +139,6 @@ async function main(argv: string[]): Promise<number> {
   // through to the legacy scaffold (`kortix <new-project-name>`), which
   // would otherwise create a directory called `deploy/`, etc.
   const RESERVED_FUTURE_COMMANDS = new Set([
-    'deploy',
     'apps',
     'accounts',
     'mcp',

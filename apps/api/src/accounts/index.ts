@@ -1,6 +1,6 @@
 import { Context, Hono } from 'hono';
 import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
-import { accountInvitations, accountMembers, accounts, accountUser, projectMembers, projects } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, accountUser, projectMembers, projects } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
@@ -13,6 +13,7 @@ import {
 } from '../repositories/account-tokens';
 import { sendAccountInviteEmail } from './email';
 import { config } from '../config';
+import { authorize, ACCOUNT_ACTIONS, syncMemberAccountPolicy, removeMemberPolicies, removeProjectPoliciesForMember } from '../iam';
 
 // Public, share-anywhere invite URL. Matches the link generated inside the
 // email template (apps/api/src/accounts/email.ts), so an invite copied here
@@ -22,6 +23,7 @@ function buildInviteUrl(inviteId: string): string {
   return `${base}/invites/${inviteId}`;
 }
 import { iamRouter } from './iam';
+import { vaultRouter } from '../vault';
 
 export const accountsRouter = new Hono<AppEnv>();
 
@@ -31,6 +33,8 @@ accountsRouter.use('/*', supabaseAuth);
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
 // correct.
 accountsRouter.route('/', iamRouter);
+// Mount vault routes (/:accountId/vault/*).
+accountsRouter.route('/', vaultRouter);
 
 // ─── Static (non-parameterized) routes MUST come before /:accountId ────────
 // Hono matches routes in registration order, so anything declared after the
@@ -65,7 +69,13 @@ async function resolveAccountForUser(
 // GET /v1/accounts/me — identity probe for CLI + dashboard nav
 accountsRouter.get('/me', async (c) => {
   const userId = c.get('userId') as string;
-  const userEmail = (c.get('userEmail') as string) || '';
+  let userEmail = (c.get('userEmail') as string) || '';
+  // CLI PAT requests carry no email in context (the auth middleware sets it
+  // empty for PATs), so resolve it from the user record — otherwise whoami
+  // and friends only ever see the user id.
+  if (!userEmail) {
+    userEmail = (await lookupEmailsByUserIds([userId])).get(userId) || '';
+  }
 
   let memberships: Array<{
     accountId: string;
@@ -236,7 +246,7 @@ async function countOwners(accountId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
-async function lookupUserIdByEmail(email: string): Promise<string | null> {
+export async function lookupUserIdByEmail(email: string): Promise<string | null> {
   const supabase = getSupabase();
   let page = 1;
   const perPage = 200;
@@ -314,6 +324,12 @@ async function autoClaimPendingInvites(userId: string, email: string): Promise<v
           .onConflictDoNothing({
             target: [accountMembers.userId, accountMembers.accountId],
           });
+        await syncMemberAccountPolicy({
+          accountId: invite.accountId,
+          userId,
+          accountRole: invite.initialRole,
+          createdBy: userId,
+        });
         await db
           .update(accountInvitations)
           .set({ acceptedAt: new Date() })
@@ -403,6 +419,7 @@ accountsRouter.get('/', async (c) => {
       userId,
       accountId: created.accountId,
       accountRole: 'owner',
+      isSuperAdmin: true,
     });
     return c.json([
       {
@@ -449,6 +466,7 @@ accountsRouter.post('/', async (c) => {
     userId,
     accountId: account.accountId,
     accountRole: 'owner',
+    isSuperAdmin: true,
   });
 
   return c.json(
@@ -509,7 +527,7 @@ accountsRouter.patch('/:accountId', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (membership.accountRole !== 'owner') return c.json({ error: 'Owner role required' }, 403);
+  if (!(await authorize(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) return c.json({ error: 'Owner role required' }, 403);
 
   const body = await readBody(c);
   const name = normalizeString(body.name);
@@ -555,6 +573,30 @@ accountsRouter.get('/:accountId/members', async (c) => {
     .groupBy(projectMembers.userId);
   const projectGrantCountByUser = new Map(projectGrantRows.map((r) => [r.userId, Number(r.n ?? 0)]));
 
+  // Group memberships for every member, in one query — so the member list can
+  // show which groups each person belongs to without N round-trips. Wrapped so
+  // a missing/drifted groups table degrades to "no chips" instead of 500-ing
+  // the whole member list.
+  const groupsByUser = new Map<string, Array<{ group_id: string; name: string }>>();
+  try {
+    const groupRows = await db
+      .select({
+        userId: accountGroupMembers.userId,
+        groupId: accountGroups.groupId,
+        name: accountGroups.name,
+      })
+      .from(accountGroupMembers)
+      .innerJoin(accountGroups, eq(accountGroupMembers.groupId, accountGroups.groupId))
+      .where(eq(accountGroups.accountId, accountId));
+    for (const g of groupRows) {
+      const list = groupsByUser.get(g.userId) ?? [];
+      list.push({ group_id: g.groupId, name: g.name });
+      groupsByUser.set(g.userId, list);
+    }
+  } catch {
+    /* groups table unavailable — return members without group chips */
+  }
+
   return c.json(
     rows.map((r) => ({
       user_id: r.userId,
@@ -562,6 +604,7 @@ accountsRouter.get('/:accountId/members', async (c) => {
       account_role: r.accountRole,
       is_super_admin: r.isSuperAdmin,
       explicit_project_count: projectGrantCountByUser.get(r.userId) ?? 0,
+      groups: groupsByUser.get(r.userId) ?? [],
       joined_at: r.joinedAt.toISOString(),
     })),
   );
@@ -577,7 +620,7 @@ accountsRouter.post('/:accountId/members', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (membership.accountRole !== 'owner' && membership.accountRole !== 'admin') {
+  if (!(await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -607,6 +650,13 @@ accountsRouter.post('/:accountId/members', async (c) => {
       userId: targetUserId,
       accountId,
       accountRole: role,
+    });
+
+    await syncMemberAccountPolicy({
+      accountId,
+      userId: targetUserId,
+      accountRole: role,
+      createdBy: userId,
     });
 
     return c.json(
@@ -710,7 +760,7 @@ accountsRouter.delete('/:accountId/invites/:inviteId', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (membership.accountRole !== 'owner' && membership.accountRole !== 'admin') {
+  if (!(await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -736,7 +786,7 @@ accountsRouter.post('/:accountId/invites/:inviteId/resend', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (membership.accountRole !== 'owner' && membership.accountRole !== 'admin') {
+  if (!(await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -790,7 +840,7 @@ accountsRouter.delete('/:accountId/members/:userId', async (c) => {
 
   const callerMembership = await getMembership(callerUserId, accountId);
   if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-  if (callerMembership.accountRole !== 'owner' && callerMembership.accountRole !== 'admin') {
+  if (!(await authorize(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE)).allowed) {
     return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
@@ -817,6 +867,8 @@ accountsRouter.delete('/:accountId/members/:userId', async (c) => {
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUserId)));
 
+  await removeMemberPolicies(accountId, targetUserId);
+
   return c.json({ ok: true });
 });
 
@@ -828,8 +880,8 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
 
   const callerMembership = await getMembership(callerUserId, accountId);
   if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-  if (callerMembership.accountRole !== 'owner') {
-    return c.json({ error: 'Owner role required' }, 403);
+  if (!(await authorize(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_UPDATE)).allowed) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
   }
 
   const body = await readBody(c);
@@ -838,6 +890,12 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
 
   const targetMembership = await getMembership(targetUserId, accountId);
   if (!targetMembership) return c.json({ error: 'Member not found' }, 404);
+
+  // Only an owner may assign or change the owner role.
+  if ((newRole === 'owner' || targetMembership.accountRole === 'owner') &&
+      !(await authorize(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT)).allowed) {
+    return c.json({ error: 'Only an owner can assign or change the owner role' }, 403);
+  }
 
   if (targetMembership.accountRole === newRole) {
     return c.json({
@@ -863,7 +921,15 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
     await db
       .delete(projectMembers)
       .where(and(eq(projectMembers.accountId, accountId), eq(projectMembers.userId, targetUserId)));
+    await removeProjectPoliciesForMember(accountId, targetUserId);
   }
+
+  await syncMemberAccountPolicy({
+    accountId,
+    userId: targetUserId,
+    accountRole: newRole,
+    createdBy: callerUserId,
+  });
 
   return c.json({
     user_id: targetUserId,
@@ -904,6 +970,8 @@ accountsRouter.post('/:accountId/leave', async (c) => {
   await db
     .delete(accountMembers)
     .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)));
+
+  await removeMemberPolicies(accountId, userId);
 
   return c.json({ ok: true });
 });
