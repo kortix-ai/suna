@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -19,15 +19,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { EmptyState } from '@/components/ui/empty-state';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import { PoliciesTable } from '@/components/iam/policies-table';
 import {
   addGroupMembers,
@@ -38,12 +33,7 @@ import {
   updateGroup,
 } from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
-
-function formatShortDate(input: string) {
-  const d = new Date(input);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
+import { usePermission } from '@/lib/use-permission';
 
 export default function GroupDetailPage() {
   const router = useRouter();
@@ -72,7 +62,22 @@ export default function GroupDetailPage() {
 
   const account = accountQuery.data;
   const group = groupQuery.data;
-  const canManage = account?.role === 'owner' || account?.role === 'admin';
+
+  // Granular permissions, sourced from the IAM engine. Each sub-tab gates on
+  // the action it actually performs — no more single "admin or not" flag.
+  const canManageMembers = usePermission(accountId, 'group.members.manage', {
+    resourceType: 'group',
+    resourceId: groupId,
+  }).allowed;
+  const canManagePolicies = usePermission(accountId, 'policy.create').allowed;
+  const canEditGroup = usePermission(accountId, 'group.update', {
+    resourceType: 'group',
+    resourceId: groupId,
+  }).allowed;
+  const canDeleteGroup = usePermission(accountId, 'group.delete', {
+    resourceType: 'group',
+    resourceId: groupId,
+  }).allowed;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -124,15 +129,20 @@ export default function GroupDetailPage() {
           </div>
 
           {groupQuery.isError && (
-            <SectionCard
-              tone="destructive"
-              title="Failed to load group"
-              description={(groupQuery.error as Error).message}
-            >
-              <Button variant="outline" size="sm" onClick={() => groupQuery.refetch()}>
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+              <p className="text-sm font-medium text-destructive">Failed to load group</p>
+              <p className="mt-1 text-xs text-destructive/80">
+                {(groupQuery.error as Error).message}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => groupQuery.refetch()}
+              >
                 Retry
               </Button>
-            </SectionCard>
+            </div>
           )}
 
           {group && account && (
@@ -147,7 +157,7 @@ export default function GroupDetailPage() {
                 <GroupMembersCard
                   accountId={account.account_id}
                   groupId={group.group_id}
-                  canManage={canManage}
+                  canManage={canManageMembers}
                 />
               </TabsContent>
 
@@ -157,7 +167,7 @@ export default function GroupDetailPage() {
                   principalType="group"
                   principalId={group.group_id}
                   principalLabel={`the "${group.name}" group`}
-                  canManage={canManage}
+                  canManage={canManagePolicies}
                 />
               </TabsContent>
 
@@ -167,7 +177,8 @@ export default function GroupDetailPage() {
                   groupId={group.group_id}
                   initialName={group.name}
                   initialDescription={group.description ?? ''}
-                  canManage={canManage}
+                  canEdit={canEditGroup}
+                  canDelete={canDeleteGroup}
                   onDeleted={() => router.push(`/accounts/${account.account_id}`)}
                 />
               </TabsContent>
@@ -228,77 +239,77 @@ function GroupMembersCard({
   const members = membersQuery.data ?? [];
 
   return (
-    <>
-      <SectionCard
-        title="Group members"
-        count={members.length}
-        description="Members of this group inherit every policy attached to it."
-        action={
-          canManage && (
-            <Button onClick={() => setAddOpen(true)} size="sm" className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              Add members
-            </Button>
-          )
-        }
-        flush
-      >
-        {membersQuery.isLoading ? (
-          <div className="divide-y divide-border/60">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-6 py-3">
-                <Skeleton className="size-8 rounded-full" />
-                <div className="flex-1 space-y-1.5">
-                  <Skeleton className="h-3.5 w-48" />
-                  <Skeleton className="h-3 w-24" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : members.length === 0 ? (
-          <EmptyState
-            icon={Users}
-            size="sm"
-            title="No members in this group"
-            description={
-              canManage
-                ? "Add account members to grant them this group's policies."
-                : undefined
-            }
-          />
-        ) : (
-          <List>
-            {members.map((m) => {
-              const label = emailByUserId.get(m.user_id) ?? m.user_id;
-              return (
-                <ListRow
-                  key={m.user_id}
-                  leading={<UserAvatar email={emailByUserId.get(m.user_id) ?? ''} name={label} />}
-                  title={label}
-                  subtitle={
-                    <InlineMeta>
-                      <span>Added {formatShortDate(m.added_at)}</span>
-                    </InlineMeta>
-                  }
-                  trailing={
-                    canManage && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => setRemoveTarget(m.user_id)}
-                        aria-label="Remove from group"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )
-                  }
-                />
-              );
-            })}
-          </List>
+    <section className="rounded-xl border border-border/70 bg-card">
+      <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">
+            Group members{' '}
+            <span className="font-normal text-muted-foreground">({members.length})</span>
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Members of this group inherit every policy attached to it.
+          </p>
+        </div>
+        {canManage && (
+          <Button onClick={() => setAddOpen(true)} size="sm" className="gap-1.5">
+            <Plus className="h-4 w-4" />
+            Add members
+          </Button>
         )}
-      </SectionCard>
+      </header>
+
+      {membersQuery.isLoading && (
+        <div className="divide-y divide-border/60">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="px-6 py-3">
+              <Skeleton className="h-4 w-48" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!membersQuery.isLoading && members.length === 0 && (
+        <div className="px-6 py-12 text-center">
+          <p className="text-sm font-medium text-foreground">No members in this group</p>
+          {canManage && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Add account members to grant them this group&apos;s policies.
+            </p>
+          )}
+        </div>
+      )}
+
+      {!membersQuery.isLoading && members.length > 0 && (
+        <ul className="divide-y divide-border/60">
+          {members.map((m) => {
+            const label = emailByUserId.get(m.user_id) ?? m.user_id;
+            return (
+              <li key={m.user_id} className="flex items-center gap-3 px-6 py-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-xs font-semibold text-foreground">
+                  {(label[0] ?? '?').toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">{label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Added {new Date(m.added_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
+                </div>
+                {canManage && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    onClick={() => setRemoveTarget(m.user_id)}
+                    aria-label="Remove from group"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       <AddGroupMembersDialog
         open={addOpen}
@@ -322,7 +333,7 @@ function GroupMembersCard({
           if (removeTarget) removeMutation.mutate(removeTarget);
         }}
       />
-    </>
+    </section>
   );
 }
 
@@ -387,11 +398,11 @@ function AddGroupMembersDialog({
           </DialogDescription>
         </DialogHeader>
         {eligible.length === 0 ? (
-          <p className="rounded-2xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
+          <p className="rounded-md border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
             Every account member is already in this group.
           </p>
         ) : (
-          <div className="max-h-72 space-y-1 overflow-y-auto rounded-2xl border border-border/60 p-2">
+          <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border border-border/60 p-2">
             {eligible.map((m) => {
               const checked = selected.has(m.user_id);
               const label = m.email ?? m.user_id;
@@ -448,14 +459,16 @@ function GroupSettingsCard({
   groupId,
   initialName,
   initialDescription,
-  canManage,
+  canEdit,
+  canDelete,
   onDeleted,
 }: {
   accountId: string;
   groupId: string;
   initialName: string;
   initialDescription: string;
-  canManage: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onDeleted: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -492,8 +505,11 @@ function GroupSettingsCard({
 
   return (
     <div className="space-y-6">
-      <SectionCard title="Group details">
-        <div className="space-y-4">
+      <section className="rounded-xl border border-border/70 bg-card">
+        <header className="border-b border-border/60 px-6 py-4">
+          <h2 className="text-base font-semibold text-foreground">Group details</h2>
+        </header>
+        <div className="space-y-4 px-6 py-5">
           <div className="space-y-1.5">
             <Label htmlFor="group-name">Name</Label>
             <Input
@@ -501,7 +517,7 @@ function GroupSettingsCard({
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={128}
-              disabled={!canManage || updateMutation.isPending}
+              disabled={!canEdit || updateMutation.isPending}
               className="max-w-md"
             />
           </div>
@@ -512,14 +528,14 @@ function GroupSettingsCard({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={256}
-              disabled={!canManage || updateMutation.isPending}
+              disabled={!canEdit || updateMutation.isPending}
               className="max-w-md"
             />
           </div>
           <div className="flex justify-end border-t border-border/60 pt-4">
             <Button
               onClick={() => updateMutation.mutate()}
-              disabled={!canManage || !dirty || !name.trim() || updateMutation.isPending}
+              disabled={!canEdit || !dirty || !name.trim() || updateMutation.isPending}
               className="gap-1.5"
             >
               {updateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -527,21 +543,24 @@ function GroupSettingsCard({
             </Button>
           </div>
         </div>
-      </SectionCard>
+      </section>
 
-      {canManage && (
-        <SectionCard
-          tone="destructive"
-          title="Danger zone"
-          description="Deleting a group removes every permission policy attached to it. Members keep their account membership."
-        >
-          <div className="flex items-center justify-between gap-4">
+      {canDelete && (
+        <section className="rounded-xl border border-destructive/30 bg-destructive/5">
+          <header className="border-b border-destructive/20 px-6 py-4">
+            <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
+            <p className="mt-0.5 text-xs text-destructive/80">
+              Deleting a group removes every permission policy attached to it. Members
+              keep their account membership.
+            </p>
+          </header>
+          <div className="flex items-center justify-between px-6 py-4">
             <p className="text-sm text-foreground">Delete this group</p>
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)} className="shrink-0">
+            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
               Delete group
             </Button>
           </div>
-        </SectionCard>
+        </section>
       )}
 
       <ConfirmDialog

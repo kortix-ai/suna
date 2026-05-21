@@ -138,6 +138,22 @@ export async function removeGroupMember(accountId: string, groupId: string, user
   );
 }
 
+export interface MemberGroupSummary {
+  group_id: string;
+  name: string;
+  added_at: string;
+}
+
+/** Groups the given user belongs to within the account. Reverse of
+ *  listGroupMembers — backs the "via groups" panel on member detail. */
+export async function listMemberGroups(accountId: string, userId: string) {
+  return unwrap(
+    await backendApi.get<{ groups: MemberGroupSummary[] }>(
+      `/accounts/${accountId}/iam/members/${userId}/groups`,
+    ),
+  ).groups;
+}
+
 // ─── Policies ──────────────────────────────────────────────────────────────
 
 export interface ListPoliciesFilter {
@@ -224,6 +240,82 @@ export async function getRolePermissions(accountId: string, roleId: string) {
   );
 }
 
+export interface ActionCatalogEntry {
+  action: string;
+  label: string;
+  resource_type: ResourceType;
+}
+
+export async function listActions(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ actions: ActionCatalogEntry[] }>(
+      `/accounts/${accountId}/iam/actions`,
+    ),
+  ).actions;
+}
+
+export async function getRoleUsage(accountId: string, roleId: string) {
+  return unwrap(
+    await backendApi.get<{ role_id: string; policy_count: number }>(
+      `/accounts/${accountId}/iam/roles/${roleId}/usage`,
+    ),
+  );
+}
+
+export async function createRole(
+  accountId: string,
+  input: {
+    key: string;
+    name: string;
+    description?: string;
+    resourceType: ResourceType;
+    actions: string[];
+  },
+) {
+  return unwrap(
+    await backendApi.post<IamRole>(`/accounts/${accountId}/iam/roles`, input, {
+      showErrors: false,
+    }),
+  );
+}
+
+export async function updateRole(
+  accountId: string,
+  roleId: string,
+  patch: { name?: string; description?: string | null },
+) {
+  return unwrap(
+    await backendApi.patch<IamRole>(
+      `/accounts/${accountId}/iam/roles/${roleId}`,
+      patch,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function updateRolePermissions(
+  accountId: string,
+  roleId: string,
+  actions: string[],
+) {
+  return unwrap(
+    await backendApi.put<{ role_id: string; actions: string[] }>(
+      `/accounts/${accountId}/iam/roles/${roleId}/permissions`,
+      { actions },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function deleteRole(accountId: string, roleId: string) {
+  return unwrap(
+    await backendApi.delete<{ deleted: boolean }>(
+      `/accounts/${accountId}/iam/roles/${roleId}`,
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── Super-admin promotion ─────────────────────────────────────────────────
 
 export async function setMemberSuperAdmin(
@@ -235,6 +327,48 @@ export async function setMemberSuperAdmin(
     await backendApi.patch<{ user_id: string; is_super_admin: boolean }>(
       `/accounts/${accountId}/iam/members/${userId}/super-admin`,
       { isSuperAdmin },
+    ),
+  );
+}
+
+// ─── Audit log ─────────────────────────────────────────────────────────────
+
+export interface AuditEvent {
+  event_id: string;
+  occurred_at: string;
+  actor_user_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  ip: string | null;
+  user_agent: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ListAuditFilter {
+  /** Prefix or exact match on action string ("iam.policy" matches every
+   *  iam.policy.* event; "iam.policy.create" matches exact). */
+  action?: string;
+  /** ISO datetime — events at or after. */
+  since?: string;
+  /** Cursor from a previous response's next_cursor. */
+  cursor?: string;
+  /** 1..200, default 50. */
+  limit?: number;
+}
+
+export async function listAuditEvents(accountId: string, filter: ListAuditFilter = {}) {
+  const params = new URLSearchParams();
+  if (filter.action) params.set('action', filter.action);
+  if (filter.since) params.set('since', filter.since);
+  if (filter.cursor) params.set('cursor', filter.cursor);
+  if (filter.limit) params.set('limit', String(filter.limit));
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<{ events: AuditEvent[]; next_cursor: string | null }>(
+      `/accounts/${accountId}/audit${qs ? `?${qs}` : ''}`,
     ),
   );
 }

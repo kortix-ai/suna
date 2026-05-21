@@ -6,10 +6,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Clock,
-  Copy,
-  ExternalLink,
-  FolderGit2,
-  Globe2,
   KeyRound,
   Link as LinkIcon,
   Loader2,
@@ -17,10 +13,8 @@ import {
   MoreHorizontal,
   RefreshCw,
   Shield,
-  ShieldCheck,
   Trash2,
   UserPlus,
-  Users,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -44,9 +38,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -58,42 +49,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { EmptyState } from '@/components/ui/empty-state';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import { List, ListRow } from '@/components/ui/list';
-import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import { GroupsTab } from '@/components/iam/groups-tab';
-import { addGroupMembers, listGroups } from '@/lib/iam-client';
+import { RolesTab } from '@/components/iam/roles-tab';
+import { AuditTab } from '@/components/iam/audit-tab';
+import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
   type AccountInvitation,
   type AccountMember,
   type AccountRole,
-  type AccountSsoConnection,
-  type KortixProject,
-  addAccountVerifiedDomain,
   cancelAccountInvite,
-  createAccountSsoConnection,
-  deleteAccountSsoConnection,
-  deleteAccountVerifiedDomain,
   getAccount,
-  getAccountSsoSettings,
   inviteAccountMember,
   leaveAccount,
   listAccountInvites,
   listAccountMembers,
-  listProjectsForAccount,
   removeAccountMember,
   resendAccountInvite,
-  updateAccountSsoConnection,
   updateAccountMemberRole,
   updateAccountName,
-  verifyAccountDomain,
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 
@@ -110,32 +86,12 @@ function formatDate(input: string | null | undefined) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
-  return member.email || member.user_id;
+function getInitial(text: string) {
+  return (text.trim().charAt(0) || '?').toUpperCase();
 }
 
-/** Loading placeholder for a <List>. `leadingClassName` shapes the avatar
- *  slot — rounded-full for people, rounded-lg for entity tiles. */
-function RowSkeletons({
-  count = 3,
-  leadingClassName = 'rounded-full',
-}: {
-  count?: number;
-  leadingClassName?: string;
-}) {
-  return (
-    <div className="divide-y divide-border/60">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-6 py-3">
-          <Skeleton className={cn('size-8', leadingClassName)} />
-          <div className="flex-1 space-y-1.5">
-            <Skeleton className="h-3.5 w-48" />
-            <Skeleton className="h-3 w-24" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
+  return member.email || member.user_id;
 }
 
 /** Copy an invite URL to the clipboard with a friendly toast either way. */
@@ -181,9 +137,19 @@ export default function AccountSettingsPage() {
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
-  const isOwner = account?.role === 'owner';
-  const isAdmin = account?.role === 'admin';
   const isTeam = account ? !account.personal_account : false;
+
+  // Granular capabilities sourced from the IAM engine instead of raw
+  // account_role. A member granted "Administrator" via an explicit policy
+  // gets the same affordances an owner does, and vice-versa.
+  const canWriteAccount = usePermission(accountId, 'account.write').allowed;
+  const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
+  const canInviteMember = usePermission(accountId, 'member.invite').allowed;
+  const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
+  const canUpdateMember = usePermission(accountId, 'member.update').allowed;
+  const canCreateGroup = usePermission(accountId, 'group.create').allowed;
+  const canCreateRole = usePermission(accountId, 'role.create').allowed;
+  const canReadAudit = usePermission(accountId, 'audit.read').allowed;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -231,21 +197,26 @@ export default function AccountSettingsPage() {
           </div>
 
           {accountQuery.isError && (
-            <SectionCard
-              tone="destructive"
-              title="Failed to load account"
-              description={(accountQuery.error as Error).message}
-            >
-              <Button variant="outline" size="sm" onClick={() => accountQuery.refetch()}>
+            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+              <p className="text-sm font-medium text-destructive">Failed to load account</p>
+              <p className="mt-1 text-xs text-destructive/80">
+                {(accountQuery.error as Error).message}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-3"
+                onClick={() => accountQuery.refetch()}
+              >
                 Retry
               </Button>
-            </SectionCard>
+            </div>
           )}
 
           {accountQuery.isLoading && (
             <>
-              <Skeleton className="h-48 w-full rounded-2xl" />
-              <Skeleton className="h-64 w-full rounded-2xl" />
+              <Skeleton className="h-48 w-full rounded-xl" />
+              <Skeleton className="h-64 w-full rounded-xl" />
             </>
           )}
 
@@ -253,8 +224,9 @@ export default function AccountSettingsPage() {
             <Tabs defaultValue="members" className="space-y-6">
               <TabsList>
                 <TabsTrigger value="members">All members</TabsTrigger>
-                <TabsTrigger value="projects">Projects</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
+                <TabsTrigger value="roles">Roles</TabsTrigger>
+                {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
 
@@ -268,26 +240,33 @@ export default function AccountSettingsPage() {
                   onRetry={() => membersQuery.refetch()}
                   queryClient={queryClient}
                   currentUserId={user.id}
-                  isOwner={isOwner}
-                  isAdmin={isAdmin}
+                  canInvite={canInviteMember}
+                  canRemove={canRemoveMember}
+                  canUpdateRole={canUpdateMember}
                 />
               </TabsContent>
 
-              <TabsContent value="projects" className="space-y-6">
-                <ProjectsTab account={account} />
+              <TabsContent value="groups" className="space-y-6">
+                <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
               </TabsContent>
 
-              <TabsContent value="groups" className="space-y-6">
-                <GroupsTab accountId={account.account_id} canManage={isOwner || isAdmin} />
+              <TabsContent value="roles" className="space-y-6">
+                <RolesTab accountId={account.account_id} canCreate={canCreateRole} />
               </TabsContent>
+
+              {canReadAudit && (
+                <TabsContent value="audit" className="space-y-6">
+                  <AuditTab accountId={account.account_id} />
+                </TabsContent>
+              )}
 
               <TabsContent value="settings" className="space-y-6">
                 <GeneralCard
                   account={account}
                   queryClient={queryClient}
-                  isOwner={isOwner}
+                  canWrite={canWriteAccount}
                 />
-                {isTeam && isOwner && <DangerZoneCard />}
+                {isTeam && canDeleteAccount && <DangerZoneCard />}
               </TabsContent>
             </Tabs>
           )}
@@ -302,11 +281,11 @@ export default function AccountSettingsPage() {
 function GeneralCard({
   account,
   queryClient,
-  isOwner,
+  canWrite,
 }: {
   account: AccountDetail;
   queryClient: ReturnType<typeof useQueryClient>;
-  isOwner: boolean;
+  canWrite: boolean;
 }) {
   const [name, setName] = useState(account.name);
 
@@ -325,7 +304,7 @@ function GeneralCard({
   });
 
   const trimmed = name.trim();
-  const canSubmit = isOwner && trimmed.length > 0 && trimmed !== account.name;
+  const canSubmit = canWrite && trimmed.length > 0 && trimmed !== account.name;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -334,21 +313,30 @@ function GeneralCard({
   }
 
   return (
-    <SectionCard title="General" description="Basic information about this account.">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <section className="rounded-xl border border-border/70 bg-card">
+      <header className="border-b border-border/60 px-6 py-4">
+        <h2 className="text-base font-semibold text-foreground">General</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Basic information about this account.
+        </p>
+      </header>
+
+      <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="account-name">Account name</Label>
           <Input
             id="account-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            disabled={!isOwner || renameMutation.isPending}
+            disabled={!canWrite || renameMutation.isPending}
             maxLength={120}
             className="max-w-md"
-            title={isOwner ? undefined : 'Only owners can rename'}
+            title={canWrite ? undefined : 'You do not have permission to rename this account.'}
           />
-          {!isOwner && (
-            <p className="text-xs text-muted-foreground">Only owners can rename this account.</p>
+          {!canWrite && (
+            <p className="text-xs text-muted-foreground">
+              You do not have permission to rename this account.
+            </p>
           )}
         </div>
 
@@ -362,84 +350,7 @@ function GeneralCard({
           </Button>
         </div>
       </form>
-    </SectionCard>
-  );
-}
-
-// ============================== PROJECTS ==============================
-
-function ProjectsTab({ account }: { account: AccountDetail }) {
-  const router = useRouter();
-  const projectsQuery = useQuery({
-    queryKey: ['projects', account.account_id],
-    queryFn: () => listProjectsForAccount(account.account_id),
-    staleTime: 20_000,
-  });
-
-  const projects = projectsQuery.data ?? [];
-  const sorted = useMemo(
-    () =>
-      [...projects].sort((a, b) =>
-        (b.last_opened_at || b.updated_at).localeCompare(a.last_opened_at || a.updated_at),
-      ),
-    [projects],
-  );
-
-  return (
-    <SectionCard
-      title="Projects"
-      count={account.project_count}
-      description="Projects that belong to this account."
-      flush
-    >
-      {projectsQuery.isError ? (
-        <div className="px-6 py-5">
-          <p className="text-sm text-destructive">
-            {(projectsQuery.error as Error)?.message || 'Failed to load projects'}
-          </p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={() => projectsQuery.refetch()}>
-            Retry
-          </Button>
-        </div>
-      ) : projectsQuery.isLoading ? (
-        <RowSkeletons leadingClassName="rounded-lg" />
-      ) : sorted.length === 0 ? (
-        <EmptyState icon={FolderGit2} size="sm" title="No projects yet" description="Projects created in this account will show up here." />
-      ) : (
-        <List>
-          {sorted.map((project) => (
-            <ProjectRow
-              key={project.project_id}
-              project={project}
-              onOpen={() => router.push(`/projects/${project.project_id}`)}
-            />
-          ))}
-        </List>
-      )}
-    </SectionCard>
-  );
-}
-
-function ProjectRow({ project, onOpen }: { project: KortixProject; onOpen: () => void }) {
-  return (
-    <ListRow
-      onClick={onOpen}
-      leading={<EntityAvatar icon={FolderGit2} />}
-      title={project.name}
-      badges={
-        project.status === 'archived' && (
-          <Badge variant="outline" size="sm">
-            Archived
-          </Badge>
-        )
-      }
-      subtitle={
-        <span className="text-xs text-muted-foreground">Created {formatDate(project.created_at)}</span>
-      }
-      trailing={
-        <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-      }
-    />
+    </section>
   );
 }
 
@@ -454,8 +365,9 @@ function MembersCard({
   onRetry,
   queryClient,
   currentUserId,
-  isOwner,
-  isAdmin,
+  canInvite,
+  canRemove,
+  canUpdateRole,
 }: {
   account: AccountDetail;
   members: AccountMember[];
@@ -465,8 +377,9 @@ function MembersCard({
   onRetry: () => void;
   queryClient: ReturnType<typeof useQueryClient>;
   currentUserId: string;
-  isOwner: boolean;
-  isAdmin: boolean;
+  canInvite: boolean;
+  canRemove: boolean;
+  canUpdateRole: boolean;
 }) {
   const router = useRouter();
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -474,8 +387,8 @@ function MembersCard({
   const [removeTarget, setRemoveTarget] = useState<AccountMember | null>(null);
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
 
-  const canInvite = isOwner || isAdmin;
-  const canManage = isOwner;
+  // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
+  // at the page level). The row-level kebab respects each granularly.
 
   const sorted = useMemo(() => {
     const rank: Record<AccountRole, number> = { owner: 0, admin: 1, member: 2 };
@@ -528,230 +441,190 @@ function MembersCard({
     onError: (err: Error) => toast.error(err.message || 'Failed to leave team'),
   });
 
-  // Groups power the per-member group chips and the "Add to group" submenu.
-  // Same query key the Groups tab uses, so the two views stay in sync.
-  const canManageGroups = isOwner || isAdmin;
-  const groupsQuery = useQuery({
-    queryKey: ['account-groups', account.account_id],
-    queryFn: () => listGroups(account.account_id),
-    enabled: canManageGroups,
-    staleTime: 30_000,
-  });
-  const groups = groupsQuery.data ?? [];
-
-  const addToGroupMutation = useMutation({
-    mutationFn: ({ userId, groupId }: { userId: string; groupId: string }) =>
-      addGroupMembers(account.account_id, groupId, [userId]),
-    onMutate: ({ userId }) => setPendingUserId(userId),
-    onSettled: () => setPendingUserId(null),
-    onSuccess: () => {
-      toast.success('Added to group');
-      queryClient.invalidateQueries({ queryKey: ['account-members', account.account_id] });
-      queryClient.invalidateQueries({ queryKey: ['account-groups', account.account_id] });
-    },
-    onError: (err: Error) => toast.error(err.message || 'Failed to add to group'),
-  });
-
   return (
-    <>
-      <SectionCard
-        title="Members"
-        count={account.member_count}
-        description="People with access to this account."
-        action={
-          canInvite && (
-            <Button onClick={() => setInviteOpen(true)} size="sm" className="gap-1.5">
-              <UserPlus className="h-4 w-4" />
-              Invite member
-            </Button>
-          )
-        }
-        flush
-      >
-        {isError ? (
-          <div className="px-6 py-5">
-            <p className="text-sm text-destructive">{error?.message || 'Failed to load members'}</p>
-            <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-              Retry
-            </Button>
-          </div>
-        ) : isLoading ? (
-          <RowSkeletons />
-        ) : (
-          <>
-            <PendingInvitesSection accountId={account.account_id} canManage={canInvite} />
-            {sorted.length === 0 ? (
-              <EmptyState icon={UserPlus} size="sm" title="No members yet" description="Invite teammates to collaborate on this account." />
-            ) : (
-              <List>
-                {sorted.map((member) => {
-                  const isSelf = member.user_id === currentUserId;
-                  const isLastOwner =
-                    member.account_role === 'owner' &&
-                    sorted.filter((m) => m.account_role === 'owner').length === 1;
-                  const pending = pendingUserId === member.user_id;
-                  const memberGroupIds = new Set((member.groups ?? []).map((g) => g.group_id));
-                  const availableGroups = groups.filter((g) => !memberGroupIds.has(g.group_id));
-
-                  return (
-                    <ListRow
-                      key={member.user_id}
-                      leading={<UserAvatar email={member.email ?? ''} />}
-                      title={memberLabel(member)}
-                      badges={
-                        isSelf && (
-                          <Badge variant="outline" size="sm">
-                            You
-                          </Badge>
-                        )
-                      }
-                      subtitle={
-                        <div className="space-y-1.5">
-                          <InlineMeta>
-                            <span>Joined {formatDate(member.joined_at)}</span>
-                            {member.account_role === 'member' &&
-                            typeof member.explicit_project_count === 'number' ? (
-                              <span>
-                                {member.explicit_project_count} project
-                                {member.explicit_project_count === 1 ? '' : 's'}
-                              </span>
-                            ) : null}
-                          </InlineMeta>
-                          {member.groups && member.groups.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-1">
-                              {member.groups.map((g) => (
-                                <Badge key={g.group_id} variant="secondary" size="sm">
-                                  <Users />
-                                  {g.name}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      }
-                      trailing={
-                        <>
-                          <RoleBadge role={member.account_role} />
-                          <div className="w-7">
-                            {pending ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                            ) : (
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                    aria-label={`Actions for ${memberLabel(member)}`}
-                                  >
-                                    <MoreHorizontal className="h-3.5 w-3.5" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-56">
-                                  <DropdownMenuItem
-                                    onSelect={() =>
-                                      router.push(
-                                        `/accounts/${account.account_id}/members/${member.user_id}`,
-                                      )
-                                    }
-                                    className="gap-2"
-                                  >
-                                    <KeyRound className="h-3.5 w-3.5" />
-                                    View &amp; Edit permission policies
-                                  </DropdownMenuItem>
-                                  {canManageGroups && (
-                                    <DropdownMenuSub>
-                                      <DropdownMenuSubTrigger className="gap-2">
-                                        <Users className="h-3.5 w-3.5" />
-                                        Add to group
-                                      </DropdownMenuSubTrigger>
-                                      <DropdownMenuSubContent className="w-52">
-                                        {groups.length === 0 ? (
-                                          <DropdownMenuItem disabled>No groups yet</DropdownMenuItem>
-                                        ) : availableGroups.length === 0 ? (
-                                          <DropdownMenuItem disabled>In every group</DropdownMenuItem>
-                                        ) : (
-                                          availableGroups.map((g) => (
-                                            <DropdownMenuItem
-                                              key={g.group_id}
-                                              onSelect={() =>
-                                                addToGroupMutation.mutate({
-                                                  userId: member.user_id,
-                                                  groupId: g.group_id,
-                                                })
-                                              }
-                                              className="gap-2"
-                                            >
-                                              <Users className="h-3.5 w-3.5" />
-                                              {g.name}
-                                            </DropdownMenuItem>
-                                          ))
-                                        )}
-                                      </DropdownMenuSubContent>
-                                    </DropdownMenuSub>
-                                  )}
-                                  {canManage && !isSelf && (
-                                    <>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                                        Change role
-                                      </DropdownMenuLabel>
-                                      {(['owner', 'admin', 'member'] as AccountRole[]).map((role) => (
-                                        <DropdownMenuItem
-                                          key={role}
-                                          disabled={role === member.account_role}
-                                          onSelect={() =>
-                                            roleMutation.mutate({ userId: member.user_id, role })
-                                          }
-                                          className="gap-2"
-                                        >
-                                          <Shield className="h-3.5 w-3.5" />
-                                          {ROLE_LABEL[role]}
-                                          {role === member.account_role && (
-                                            <span className="ml-auto text-[10px] text-muted-foreground">
-                                              Current
-                                            </span>
-                                          )}
-                                        </DropdownMenuItem>
-                                      ))}
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem
-                                        onSelect={() => setRemoveTarget(member)}
-                                        disabled={isLastOwner}
-                                        className="gap-2 text-destructive focus:text-destructive"
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                        Remove from team
-                                      </DropdownMenuItem>
-                                    </>
-                                  )}
-                                  {isSelf && !account.personal_account && (
-                                    <>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem
-                                        onSelect={() => setLeaveConfirmOpen(true)}
-                                        disabled={isLastOwner}
-                                        className="gap-2 text-destructive focus:text-destructive"
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                        Leave team
-                                      </DropdownMenuItem>
-                                    </>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
-                          </div>
-                        </>
-                      }
-                    />
-                  );
-                })}
-              </List>
-            )}
-          </>
+    <section className="rounded-xl border border-border/70 bg-card">
+      <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">
+            Members{' '}
+            <span className="font-normal text-muted-foreground">({account.member_count})</span>
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            People with access to this account.
+          </p>
+        </div>
+        {canInvite && (
+          <Button onClick={() => setInviteOpen(true)} size="sm" className="gap-1.5">
+            <UserPlus className="h-4 w-4" />
+            Invite member
+          </Button>
         )}
-      </SectionCard>
+      </header>
+
+      {isError && (
+        <div className="px-6 py-5">
+          <p className="text-sm text-destructive">{error?.message || 'Failed to load members'}</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="divide-y divide-border/60">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-6 py-3">
+              <Skeleton className="h-9 w-9 rounded-full" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-3.5 w-48" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isLoading && !isError && (
+        <PendingInvitesSection accountId={account.account_id} canManage={canInvite} />
+      )}
+
+      {!isLoading && !isError && (
+        <ul className="divide-y divide-border/60">
+          {sorted.map((member) => {
+            const isSelf = member.user_id === currentUserId;
+            const isLastOwner =
+              member.account_role === 'owner' &&
+              sorted.filter((m) => m.account_role === 'owner').length === 1;
+            const pending = pendingUserId === member.user_id;
+            // Kebab is always available — "View & Edit permission policies"
+            // is open to anyone who can view the member; backend gates writes.
+            const showKebab = !pending;
+
+            return (
+              <li
+                key={member.user_id}
+                className="flex items-center gap-3 px-6 py-3"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-sm font-semibold text-foreground">
+                  {getInitial(memberLabel(member))}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {memberLabel(member)}
+                    </span>
+                    {isSelf && (
+                      <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                        You
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Joined {formatDate(member.joined_at)}</span>
+                    {member.account_role === 'member' && typeof member.explicit_project_count === 'number' && (
+                      <>
+                        <span className="text-muted-foreground/40">/</span>
+                        <span>{member.explicit_project_count} project{member.explicit_project_count === 1 ? '' : 's'}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <RoleBadge role={member.account_role} />
+
+                <div className="ml-1 w-7 shrink-0">
+                  {pending ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  ) : showKebab ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          aria-label={`Actions for ${memberLabel(member)}`}
+                        >
+                          <MoreHorizontal className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            router.push(
+                              `/accounts/${account.account_id}/members/${member.user_id}`,
+                            )
+                          }
+                          className="gap-2"
+                        >
+                          <KeyRound className="h-3.5 w-3.5" />
+                          View &amp; Edit permission policies
+                        </DropdownMenuItem>
+                        {canUpdateRole && !isSelf && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Change role
+                            </DropdownMenuLabel>
+                            {(['owner', 'admin', 'member'] as AccountRole[]).map((role) => (
+                              <DropdownMenuItem
+                                key={role}
+                                disabled={role === member.account_role}
+                                onSelect={() =>
+                                  roleMutation.mutate({ userId: member.user_id, role })
+                                }
+                                className="gap-2"
+                              >
+                                <Shield className="h-3.5 w-3.5" />
+                                {ROLE_LABEL[role]}
+                                {role === member.account_role && (
+                                  <span className="ml-auto text-[10px] text-muted-foreground">
+                                    Current
+                                  </span>
+                                )}
+                              </DropdownMenuItem>
+                            ))}
+                          </>
+                        )}
+                        {canRemove && !isSelf && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => setRemoveTarget(member)}
+                              disabled={isLastOwner}
+                              className="gap-2 text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Remove from team
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        {isSelf && !account.personal_account && (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onSelect={() => setLeaveConfirmOpen(true)}
+                              disabled={isLastOwner}
+                              className="gap-2 text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Leave team
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+          {sorted.length === 0 && (
+            <li className="px-6 py-8 text-center text-sm text-muted-foreground">
+              No members yet.
+            </li>
+          )}
+        </ul>
+      )}
 
       <InviteMemberModal
         open={inviteOpen}
@@ -792,7 +665,7 @@ function MembersCard({
         onConfirm={() => leaveMutation.mutate()}
         isPending={leaveMutation.isPending}
       />
-    </>
+    </section>
   );
 }
 
@@ -800,8 +673,10 @@ function RoleBadge({ role }: { role: AccountRole }) {
   return (
     <Badge
       variant="outline"
-      size="sm"
-      className={cn(role === 'owner' && 'border-foreground/30 text-foreground')}
+      className={cn(
+        'h-5 rounded-md px-1.5 text-[10px] font-medium',
+        role === 'owner' && 'border-foreground/30 text-foreground',
+      )}
     >
       {ROLE_LABEL[role]}
     </Badge>
@@ -894,53 +769,51 @@ function InviteMemberModal({
             Invite by email. If they don&apos;t have a Kortix account yet, they&apos;ll get access when they sign up.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-4 px-6 py-5">
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-email">Email</Label>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  id="invite-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (inlineError) setInlineError(null);
-                  }}
-                  placeholder="teammate@company.com"
-                  autoFocus
-                  className="pl-9"
-                  disabled={mutation.isPending}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-role">Role</Label>
-              <Select
-                value={role}
-                onValueChange={(v) => setRole(v as AccountRole)}
+        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-email">Email</Label>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="invite-email"
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (inlineError) setInlineError(null);
+                }}
+                placeholder="teammate@company.com"
+                autoFocus
+                className="pl-9"
                 disabled={mutation.isPending}
-              >
-                <SelectTrigger id="invite-role">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="member">Member — can use assigned projects</SelectItem>
-                  <SelectItem value="admin">Admin — can invite members</SelectItem>
-                </SelectContent>
-              </Select>
+              />
             </div>
-
-            {inlineError && (
-              <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-                {inlineError}
-              </div>
-            )}
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="invite-role">Role</Label>
+            <Select
+              value={role}
+              onValueChange={(v) => setRole(v as AccountRole)}
+              disabled={mutation.isPending}
+            >
+              <SelectTrigger id="invite-role">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="member">Member — can use assigned projects</SelectItem>
+                <SelectItem value="admin">Admin — can invite members</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {inlineError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              {inlineError}
+            </div>
+          )}
+
+          <div className="-mx-6 mt-4 flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
             <Button
               type="button"
               variant="ghost"
@@ -968,12 +841,14 @@ function InviteMemberModal({
 
 function DangerZoneCard() {
   return (
-    <SectionCard
-      tone="destructive"
-      title="Danger zone"
-      description="Irreversible actions for this team."
-    >
-      <div className="flex items-center justify-between gap-4">
+    <section className="rounded-xl border border-destructive/30 bg-destructive/5">
+      <header className="border-b border-destructive/20 px-6 py-4">
+        <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
+        <p className="mt-0.5 text-xs text-destructive/80">
+          Irreversible actions for this team.
+        </p>
+      </header>
+      <div className="flex items-center justify-between gap-4 px-6 py-4">
         <div>
           <p className="text-sm font-medium text-foreground">Delete account</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -984,7 +859,7 @@ function DangerZoneCard() {
           Coming soon
         </Button>
       </div>
-    </SectionCard>
+    </section>
   );
 }
 
@@ -1052,78 +927,73 @@ function PendingInvitesSection({
       <div className="px-6 pt-3 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         Pending invites · {invites.length}
       </div>
-      <List>
+      <ul className="divide-y divide-border/60">
         {invites.map((invite) => {
           const busy = pendingId === invite.invite_id;
           return (
-            <ListRow
-              key={invite.invite_id}
-              leading={<UserAvatar email={invite.email} />}
-              title={invite.email}
-              badges={
-                <Badge variant="outline" size="sm">
-                  Pending
-                </Badge>
-              }
-              subtitle={
-                <InlineMeta>
-                  <span className="inline-flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    Expires {formatDate(invite.expires_at)}
-                  </span>
-                </InlineMeta>
-              }
-              trailing={
-                <>
-                  <RoleBadge role={invite.initial_role} />
-                  <div className="w-7">
-                    {busy ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    ) : canManage ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                            aria-label={`Actions for ${invite.email}`}
-                          >
-                            <MoreHorizontal className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-52">
-                          <DropdownMenuItem
-                            onSelect={() => resendMutation.mutate(invite.invite_id)}
-                            className="gap-2"
-                          >
-                            <RefreshCw className="h-3.5 w-3.5" />
-                            Resend invite
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onSelect={() => copyInviteLink(invite.invite_url)}
-                            className="gap-2"
-                          >
-                            <LinkIcon className="h-3.5 w-3.5" />
-                            Copy invitation link
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onSelect={() => setCancelTarget(invite)}
-                            className="gap-2 text-destructive focus:text-destructive"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                            Cancel invite
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
-                  </div>
-                </>
-              }
-            />
+            <li key={invite.invite_id} className="flex items-center gap-3 px-6 py-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-border bg-background text-muted-foreground">
+                <Mail className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm text-foreground">{invite.email}</span>
+                  <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                    Pending
+                  </Badge>
+                </div>
+                <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                  <Clock className="h-3 w-3" />
+                  <span>Expires {formatDate(invite.expires_at)}</span>
+                </div>
+              </div>
+              <RoleBadge role={invite.initial_role} />
+              <div className="ml-1 w-7 shrink-0">
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                ) : canManage ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                        aria-label={`Actions for ${invite.email}`}
+                      >
+                        <MoreHorizontal className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem
+                        onSelect={() => resendMutation.mutate(invite.invite_id)}
+                        className="gap-2"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Resend invite
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => copyInviteLink(invite.invite_url)}
+                        className="gap-2"
+                      >
+                        <LinkIcon className="h-3.5 w-3.5" />
+                        Copy invitation link
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={() => setCancelTarget(invite)}
+                        className="gap-2 text-destructive focus:text-destructive"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Cancel invite
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+              </div>
+            </li>
           );
         })}
-      </List>
+      </ul>
 
       <ConfirmDialog
         open={!!cancelTarget}

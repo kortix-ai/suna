@@ -14,7 +14,7 @@ import {
 } from '../repositories/account-tokens';
 import { sendAccountInviteEmail } from './email';
 import { config } from '../config';
-import { authorize, ACCOUNT_ACTIONS, syncMemberAccountPolicy, removeMemberPolicies, removeProjectPoliciesForMember } from '../iam';
+import { authorize, ACCOUNT_ACTIONS, assertAuthorized, syncMemberAccountPolicy, removeMemberPolicies, removeProjectPoliciesForMember } from '../iam';
 import { maybeJitProvisionSsoUser } from '../repositories/account-sso';
 
 // Public, share-anywhere invite URL. Matches the link generated inside the
@@ -26,6 +26,7 @@ function buildInviteUrl(inviteId: string): string {
 }
 import { iamRouter } from './iam';
 import { accountSsoRouter } from './sso';
+import { auditRouter } from './audit';
 
 export const accountsRouter = new Hono<AppEnv>();
 
@@ -36,6 +37,7 @@ accountsRouter.use('/*', supabaseAuth);
 // correct.
 accountsRouter.route('/', iamRouter);
 accountsRouter.route('/', accountSsoRouter);
+accountsRouter.route('/', auditRouter);
 
 // ─── Static (non-parameterized) routes MUST come before /:accountId ────────
 // Hono matches routes in registration order, so anything declared after the
@@ -161,6 +163,8 @@ accountsRouter.post('/tokens', async (c) => {
     return c.json({ error: (err as Error).message }, 403);
   }
 
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_CREATE);
+
   const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at.trim() : '';
   const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
   if (expiresAt && Number.isNaN(expiresAt.getTime())) {
@@ -194,6 +198,8 @@ accountsRouter.delete('/tokens/:tokenId', async (c) => {
   } catch (err) {
     return c.json({ error: (err as Error).message }, 403);
   }
+
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_REVOKE);
 
   const ok = await revokeAccountToken(tokenId, accountId);
   if (!ok) {
@@ -525,14 +531,14 @@ accountsRouter.get('/:accountId', async (c) => {
   });
 });
 
-// PATCH /v1/accounts/:accountId — owner-only rename.
+// PATCH /v1/accounts/:accountId — rename. Gated on account.write via IAM.
 accountsRouter.patch('/:accountId', async (c) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (!(await authorize(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) return c.json({ error: 'Owner role required' }, 403);
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const body = await readBody(c);
   const name = normalizeString(body.name);
@@ -625,9 +631,7 @@ accountsRouter.post('/:accountId/members', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (!(await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
 
   const body = await readBody(c);
   const email = normalizeEmail(body.email);
@@ -765,9 +769,8 @@ accountsRouter.delete('/:accountId/invites/:inviteId', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (!(await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  // Cancelling a pending invite is part of invite admin — same capability.
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
 
   await db
     .delete(accountInvitations)
@@ -791,9 +794,7 @@ accountsRouter.post('/:accountId/invites/:inviteId/resend', async (c) => {
 
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
-  if (!(await authorize(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
 
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
   const [updated] = await db
@@ -845,14 +846,12 @@ accountsRouter.delete('/:accountId/members/:userId', async (c) => {
 
   const callerMembership = await getMembership(callerUserId, accountId);
   if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-  if (!(await authorize(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE);
 
   const targetMembership = await getMembership(targetUserId, accountId);
   if (!targetMembership) return c.json({ error: 'Member not found' }, 404);
 
-  // Admin cannot remove an owner.
+  // Admin cannot remove an owner — invariant preserved on top of IAM.
   if (callerMembership.accountRole === 'admin' && targetMembership.accountRole === 'owner') {
     return c.json({ error: 'Admins cannot remove owners' }, 403);
   }
@@ -885,9 +884,7 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
 
   const callerMembership = await getMembership(callerUserId, accountId);
   if (!callerMembership) return c.json({ error: 'Forbidden' }, 403);
-  if (!(await authorize(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_UPDATE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(callerUserId, accountId, ACCOUNT_ACTIONS.MEMBER_UPDATE);
 
   const body = await readBody(c);
   const newRole = parseRole(body.role, ['owner', 'admin', 'member']);
@@ -908,6 +905,13 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
       account_role: newRole,
       unchanged: true,
     });
+  }
+
+  // Preserved invariant: only an owner can grant the owner role. Otherwise
+  // an admin with member.update could escalate any teammate to owner and
+  // bypass every other restriction.
+  if (newRole === 'owner' && callerMembership.accountRole !== 'owner') {
+    return c.json({ error: 'Only owners can grant the owner role' }, 403);
   }
 
   if (targetMembership.accountRole === 'owner' && newRole !== 'owner') {

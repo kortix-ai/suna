@@ -136,6 +136,10 @@ export async function supabaseAuth(c: Context, next: Next) {
     c.set('authType', 'pat');
     if (result.accountId) c.set('accountId', result.accountId);
     if (result.projectId) c.set('tokenProjectId', result.projectId);
+    // Token identity for the IAM engine. When the PAT has narrowing
+    // policies attached, authorize() evaluates only the token's policies
+    // instead of inheriting the minter's permissions.
+    if (result.tokenId) c.set('iamTokenId', result.tokenId);
     setSentryUser({ id: result.userId, accountId: result.accountId });
     setContextField('userId', result.userId);
     if (result.accountId) setContextField('accountId', result.accountId);
