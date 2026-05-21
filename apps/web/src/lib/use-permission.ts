@@ -26,18 +26,23 @@ export interface UsePermissionResult {
   /** True only when the probe has resolved AND the API said yes.
    * While loading or on error, this is false — UI defaults to hidden/disabled. */
   allowed: boolean;
+  /** Engine's verdict reason: super_admin, policy, legacy_account_role,
+   *  legacy_project_role, explicit_deny, no_matching_policy, not_a_member.
+   *  Useful for "why does Alice have this?" tooltips on the capabilities panel. */
+  reason: string | null;
   isLoading: boolean;
   isError: boolean;
 }
 
-export function usePermission(
+/** Shared query factory used by both the current-user and explicit-user
+ * variants. Identical queryKey shape so the cache dedupes when the same
+ * (user, action, target) is asked from multiple places. */
+function useProbeQuery(
   accountId: string | undefined,
+  userId: string | undefined,
   action: string,
   target?: UsePermissionTarget,
 ): UsePermissionResult {
-  const { user } = useAuth();
-  const userId = user?.id;
-
   const query = useQuery({
     queryKey: [
       'iam-permission',
@@ -54,14 +59,35 @@ export function usePermission(
         resourceId: target?.resourceId,
       }),
     enabled: !!accountId && !!userId,
-    // Permissions change rarely; cache for the SPA's lifetime so route
-    // transitions don't refetch. React Query still revalidates on focus.
     staleTime: 5 * 60_000,
   });
 
   return {
     allowed: query.data?.allowed === true,
+    reason: query.data?.reason ?? null,
     isLoading: query.isLoading,
     isError: query.isError,
   };
+}
+
+/** Probe "can the CURRENT user perform this action?" — drives UI gating. */
+export function usePermission(
+  accountId: string | undefined,
+  action: string,
+  target?: UsePermissionTarget,
+): UsePermissionResult {
+  const { user } = useAuth();
+  return useProbeQuery(accountId, user?.id, action, target);
+}
+
+/** Probe "can THIS member perform this action?" — drives admin views like
+ *  the "what can this user actually do" capability panel. Caller must have
+ *  member.read on the account (enforced by the backend probe endpoint). */
+export function usePermissionFor(
+  accountId: string | undefined,
+  memberUserId: string | undefined,
+  action: string,
+  target?: UsePermissionTarget,
+): UsePermissionResult {
+  return useProbeQuery(accountId, memberUserId, action, target);
 }

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Shield, ShieldOff, Users } from 'lucide-react';
+import { ArrowLeft, Check, Shield, ShieldOff, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@/components/AuthProvider';
@@ -20,7 +20,7 @@ import {
   type MemberGroupSummary,
 } from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
-import { usePermission } from '@/lib/use-permission';
+import { usePermission, usePermissionFor } from '@/lib/use-permission';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',
@@ -210,6 +210,13 @@ export default function MemberDetailPage() {
           )}
 
           {account && member && (
+            <CapabilitiesCard
+              accountId={account.account_id}
+              memberUserId={member.user_id}
+            />
+          )}
+
+          {account && member && (
             <PoliciesTable
               accountId={account.account_id}
               principalType="member"
@@ -252,6 +259,125 @@ export default function MemberDetailPage() {
           />
         </div>
       </main>
+    </div>
+  );
+}
+
+// ─── Capabilities card ────────────────────────────────────────────────────
+// "What this member can actually do" — a curated grid of common account-level
+// capabilities, each probed via the IAM engine. Resolves the gap where an
+// admin sees explicit policies + groups but can't easily tell which broad
+// powers the union grants.
+
+const CAPABILITY_GROUPS: Array<{
+  heading: string;
+  items: Array<{ label: string; action: string }>;
+}> = [
+  {
+    heading: 'Account',
+    items: [
+      { label: 'Rename account', action: 'account.write' },
+      { label: 'Delete account', action: 'account.delete' },
+      { label: 'Manage billing', action: 'billing.write' },
+      { label: 'Read audit log', action: 'audit.read' },
+    ],
+  },
+  {
+    heading: 'Members & groups',
+    items: [
+      { label: 'Invite members', action: 'member.invite' },
+      { label: 'Change member roles', action: 'member.update' },
+      { label: 'Remove members', action: 'member.remove' },
+      { label: 'Grant super-admin', action: 'member.super_admin.grant' },
+      { label: 'Create groups', action: 'group.create' },
+      { label: 'Manage policies', action: 'policy.create' },
+    ],
+  },
+  {
+    heading: 'Projects',
+    items: [
+      { label: 'Create projects', action: 'project.create' },
+      { label: 'Read every project', action: 'project.read' },
+      { label: 'Write every project', action: 'project.write' },
+      { label: 'Delete every project', action: 'project.delete' },
+    ],
+  },
+];
+
+function CapabilitiesCard({
+  accountId,
+  memberUserId,
+}: {
+  accountId: string;
+  memberUserId: string;
+}) {
+  return (
+    <section className="rounded-xl border border-border/70 bg-card">
+      <header className="border-b border-border/60 px-6 py-4">
+        <h2 className="text-base font-semibold text-foreground">
+          What this member can do
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Computed by the IAM engine — sum of explicit policies, group inheritance,
+          super-admin bypass, and legacy role bridges.
+        </p>
+      </header>
+      <div className="divide-y divide-border/60">
+        {CAPABILITY_GROUPS.map((group) => (
+          <div key={group.heading} className="px-6 py-4">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              {group.heading}
+            </p>
+            <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              {group.items.map((item) => (
+                <CapabilityRow
+                  key={item.action}
+                  accountId={accountId}
+                  memberUserId={memberUserId}
+                  label={item.label}
+                  action={item.action}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CapabilityRow({
+  accountId,
+  memberUserId,
+  label,
+  action,
+}: {
+  accountId: string;
+  memberUserId: string;
+  label: string;
+  action: string;
+}) {
+  // Each row fires its own probe. The hook dedupes via react-query, so if
+  // the same (user, action) is asked elsewhere in the tree it's a cache hit.
+  const probe = usePermissionFor(accountId, memberUserId, action);
+
+  return (
+    <div
+      className="flex items-center justify-between gap-3 text-sm"
+      title={probe.reason ? `Reason: ${probe.reason}` : undefined}
+    >
+      <span className="truncate text-foreground">{label}</span>
+      {probe.isLoading ? (
+        <span className="h-3.5 w-3.5 animate-pulse rounded-full bg-muted-foreground/20" />
+      ) : probe.allowed ? (
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <Check className="h-3 w-3" />
+        </span>
+      ) : (
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
+          <X className="h-3 w-3" />
+        </span>
+      )}
     </div>
   );
 }
