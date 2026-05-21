@@ -814,7 +814,6 @@ async function buildSessionSandboxEnvVars(input: {
     ...(cliToken ? { KORTIX_TOKEN: cliToken, KORTIX_CLI_TOKEN: cliToken } : {}),
     KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    ...(opencodeAuthContent ? { OPENCODE_AUTH_CONTENT: opencodeAuthContent } : {}),
     // GitHub auth for the in-sandbox `git clone` — kortix-agent reads
     // KORTIX_GITHUB_TOKEN to materialize the project repo on first boot.
     // Required for private repos; harmless for public ones.
