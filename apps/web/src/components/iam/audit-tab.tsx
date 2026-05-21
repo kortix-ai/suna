@@ -11,6 +11,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listAuditEvents, type AuditEvent } from '@/lib/iam-client';
 import { listAccountMembers } from '@/lib/projects-client';
@@ -85,15 +86,11 @@ export function AuditTab({ accountId }: AuditTabProps) {
   );
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">Audit log</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Every state-changing API hit, plus before/after snapshots for IAM
-          mutations. Read-only.
-        </p>
-      </header>
-
+    <SectionCard
+      title="Audit log"
+      description="Every state-changing API hit, plus before/after snapshots for IAM mutations. Read-only."
+      flush
+    >
       <div className="flex flex-wrap gap-1.5 border-b border-border/60 px-6 py-3">
         {QUICK_FILTERS.map((f, i) => (
           <button
@@ -173,7 +170,7 @@ export function AuditTab({ accountId }: AuditTabProps) {
           </Button>
         </div>
       )}
-    </section>
+    </SectionCard>
   );
 }
 

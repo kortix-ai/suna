@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PoliciesTable } from '@/components/iam/policies-table';
@@ -239,25 +240,20 @@ function GroupMembersCard({
   const members = membersQuery.data ?? [];
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">
-            Group members{' '}
-            <span className="font-normal text-muted-foreground">({members.length})</span>
-          </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Members of this group inherit every policy attached to it.
-          </p>
-        </div>
-        {canManage && (
+    <SectionCard
+      title="Group members"
+      count={members.length}
+      description="Members of this group inherit every policy attached to it."
+      action={
+        canManage && (
           <Button onClick={() => setAddOpen(true)} size="sm" className="gap-1.5">
             <Plus className="h-4 w-4" />
             Add members
           </Button>
-        )}
-      </header>
-
+        )
+      }
+      flush
+    >
       {membersQuery.isLoading && (
         <div className="divide-y divide-border/60">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -333,7 +329,7 @@ function GroupMembersCard({
           if (removeTarget) removeMutation.mutate(removeTarget);
         }}
       />
-    </section>
+    </SectionCard>
   );
 }
 
@@ -505,11 +501,8 @@ function GroupSettingsCard({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-border/70 bg-card">
-        <header className="border-b border-border/60 px-6 py-4">
-          <h2 className="text-base font-semibold text-foreground">Group details</h2>
-        </header>
-        <div className="space-y-4 px-6 py-5">
+      <SectionCard title="Group details">
+        <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="group-name">Name</Label>
             <Input
@@ -543,24 +536,22 @@ function GroupSettingsCard({
             </Button>
           </div>
         </div>
-      </section>
+      </SectionCard>
 
       {canDelete && (
-        <section className="rounded-xl border border-destructive/30 bg-destructive/5">
-          <header className="border-b border-destructive/20 px-6 py-4">
-            <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
-            <p className="mt-0.5 text-xs text-destructive/80">
-              Deleting a group removes every permission policy attached to it. Members
-              keep their account membership.
-            </p>
-          </header>
+        <SectionCard
+          tone="destructive"
+          title="Danger zone"
+          description="Deleting a group removes every permission policy attached to it. Members keep their account membership."
+          flush
+        >
           <div className="flex items-center justify-between px-6 py-4">
             <p className="text-sm text-foreground">Delete this group</p>
             <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
               Delete group
             </Button>
           </div>
-        </section>
+        </SectionCard>
       )}
 
       <ConfirmDialog

@@ -167,7 +167,7 @@ export function PoliciesTable({
           canManage && (
             <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
               <Plus className="h-4 w-4" />
-              Create a policy
+              Grant access
             </Button>
           )
         }
@@ -195,10 +195,10 @@ export function PoliciesTable({
         <EmptyState
           icon={KeyRound}
           size="sm"
-          title="No policies yet"
+          title="No access granted yet"
           description={
             canManage
-              ? 'Create a policy to grant access to specific scopes and resources.'
+              ? `Grant ${principalLabel} access to a project or the whole account.`
               : 'No permission policies have been attached.'
           }
         />
