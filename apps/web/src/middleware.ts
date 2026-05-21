@@ -52,6 +52,7 @@ const PUBLIC_ROUTES = [
   '/landing', // Three.js landing page should be public
   '/variant-2', // Landing page variant should be public
   '/home-wip', // WIP landing page draft should be public
+  '/home2', // Design-system homepage draft should be public
   '/maintenance', // Maintenance page must be accessible without auth
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
