@@ -21,6 +21,7 @@ import { ArrowLeftRight } from 'lucide-react';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { UserMenu } from '@/components/layout/user-menu';
 import { ProjectSwitcher } from '@/components/layout/project-switcher';
+import { CommandPalette } from '@/components/command-palette';
 import { cn } from '@/lib/utils';
 
 export function AppHeader({
@@ -52,6 +53,7 @@ export function AppHeader({
     '';
 
   return (
+    <>
     <header
       className={cn(
         'flex shrink-0 items-center justify-between gap-3 px-6 py-4',
@@ -94,6 +96,9 @@ export function AppHeader({
         />
       </div>
     </header>
+    {/* Cmd+K — available on every header page, not just the project shell. */}
+    <CommandPalette />
+    </>
   );
 }
 
