@@ -331,6 +331,46 @@ export async function setMemberSuperAdmin(
   );
 }
 
+// ─── Strict IAM mode ──────────────────────────────────────────────────────
+
+export interface StrictModeStatus {
+  enabled: boolean;
+}
+
+export interface StrictModePreview {
+  /** Members who derive ALL their access from legacy bridges today and
+   *  would therefore be locked out the instant strict mode flips on. */
+  losers: Array<{ user_id: string; account_role: 'owner' | 'admin' | 'member' }>;
+  /** True when nobody (no super-admin, no explicit policies) would retain
+   *  access. The API refuses the flip in this case; included so the UI can
+   *  warn the admin BEFORE they click. */
+  will_lock_out_account: boolean;
+}
+
+export async function getStrictMode(accountId: string) {
+  return unwrap(
+    await backendApi.get<StrictModeStatus>(`/accounts/${accountId}/iam/strict-mode`),
+  );
+}
+
+export async function previewStrictMode(accountId: string) {
+  return unwrap(
+    await backendApi.get<StrictModePreview>(
+      `/accounts/${accountId}/iam/strict-mode/preview`,
+    ),
+  );
+}
+
+export async function setStrictMode(accountId: string, enabled: boolean) {
+  return unwrap(
+    await backendApi.patch<{ enabled: boolean; unchanged?: boolean }>(
+      `/accounts/${accountId}/iam/strict-mode`,
+      { enabled },
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── Audit log ─────────────────────────────────────────────────────────────
 
 export interface AuditEvent {

@@ -14,6 +14,7 @@ import {
   accountGroupMembers,
   accountGroups,
   accountMembers,
+  accounts,
   iamPolicies,
   iamRolePermissions,
   iamRoles,
@@ -63,6 +64,9 @@ type ResolvedActor = {
   isSuperAdmin: boolean;
   accountRole: 'owner' | 'admin' | 'member' | null;
   groupIds: string[];
+  /** When true the engine refuses to fall back to legacy bridges — only
+   * super-admin bypass + explicit policies decide. Account-wide setting. */
+  iamStrictMode: boolean;
 };
 
 const SYSTEM_ROLE_PERMISSION_CACHE = new Map<string, Set<string>>();
@@ -97,12 +101,16 @@ export function invalidateSystemRoleCache(): void {
  * legacy account role, and group memberships. One round-trip.
  */
 async function resolveActor(userId: string, accountId: string): Promise<ResolvedActor | null> {
+  // Single round-trip: join account → account_member so we get the strict
+  // mode flag alongside membership without a second query.
   const [member] = await db
     .select({
       isSuperAdmin: accountMembers.isSuperAdmin,
       accountRole: accountMembers.accountRole,
+      iamStrictMode: accounts.iamStrictMode,
     })
     .from(accountMembers)
+    .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
     .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
     .limit(1);
 
@@ -123,6 +131,7 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
     isSuperAdmin: member.isSuperAdmin,
     accountRole: member.accountRole as ResolvedActor['accountRole'],
     groupIds: groups.map((g) => g.groupId),
+    iamStrictMode: member.iamStrictMode,
   };
 }
 
@@ -205,6 +214,10 @@ async function bridgeLegacyAccountRole(
   actor: ResolvedActor,
   action: string,
 ): Promise<boolean> {
+  // Strict mode: refuse to fall back to the legacy bridge. Only super-admin
+  // bypass + explicit IAM policies decide. This is the opt-in "IAM is the
+  // single source of truth" mode.
+  if (actor.iamStrictMode) return false;
   if (!actor.accountRole) return false;
 
   // Owner/admin keep the full Administrator bridge — that's what they had
@@ -228,14 +241,17 @@ async function bridgeLegacyAccountRole(
 /**
  * Legacy project_members bridge. Pre-existing project access via the
  * project_members table is materialised as a synthetic Project Admin /
- * Editor / Viewer policy scoped to that project.
+ * Editor / Viewer policy scoped to that project. In strict mode the bridge
+ * is disabled entirely.
  */
 async function bridgeLegacyProjectRole(
+  actor: ResolvedActor,
   accountId: string,
   userId: string,
   projectId: string,
   action: string,
 ): Promise<boolean> {
+  if (actor.iamStrictMode) return false;
   const [pm] = await db
     .select({ projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -414,7 +430,7 @@ export async function authorize(
 
   if (
     effectiveTarget.type === 'project' &&
-    (await bridgeLegacyProjectRole(accountId, userId, effectiveTarget.id, action))
+    (await bridgeLegacyProjectRole(actor, accountId, userId, effectiveTarget.id, action))
   ) {
     return { allowed: true, reason: 'legacy_project_role' };
   }
@@ -591,8 +607,8 @@ export async function listAccessibleResources(
 
   // Legacy project_members bridge: any project_role row counts as an allow
   // for actions the bridged Project Admin/Editor/Viewer role would grant.
-  // Only consulted for project listings.
-  if (resourceType === 'project') {
+  // Only consulted for project listings AND only when strict mode is off.
+  if (resourceType === 'project' && !actor.iamStrictMode) {
     const memberRows = await db
       .select({
         projectId: projectMembers.projectId,

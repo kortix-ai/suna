@@ -5,8 +5,14 @@
 // action via assertAuthorized().
 
 import { Context, Hono } from 'hono';
-import { and, eq } from 'drizzle-orm';
-import { accountMembers } from '@kortix/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import {
+  accountGroupMembers,
+  accountMembers,
+  accounts,
+  iamPolicies,
+  projectMembers,
+} from '@kortix/db';
 import { db } from '../shared/db';
 import type { AppEnv } from '../types';
 import {
@@ -1155,3 +1161,184 @@ iamRouter.post('/:accountId/iam/members/:userId/effective:batch', async (c) => {
 
   return c.json({ results });
 });
+
+// ─── Strict IAM mode (per-account flag) ───────────────────────────────────
+// Flipping strict mode on instructs the engine to STOP falling back to the
+// legacy account_role / project_members bridges. Only super-admin bypass
+// and explicit IAM policies grant access.
+//
+// Safety: we refuse to flip ON if doing so would lock the account out
+// (zero super-admins AND zero members with explicit Administrator policies).
+// We also expose a preview endpoint that returns the members who would lose
+// access RIGHT NOW so admins can stage policy changes before the flip.
+
+iamRouter.get('/:accountId/iam/strict-mode', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const [row] = await db
+    .select({ iamStrictMode: accounts.iamStrictMode })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!row) return c.json({ error: 'account not found' }, 404);
+  return c.json({ enabled: row.iamStrictMode });
+});
+
+// Returns the impact preview: members who derive access SOLELY from
+// legacy bridges (no explicit IAM policies, not super-admin) and would
+// therefore lose all access the moment strict mode flips on. UI shows this
+// above the confirm dialog.
+iamRouter.get('/:accountId/iam/strict-mode/preview', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  // Pull every member of the account along with their flags.
+  const members = await db
+    .select({
+      userId: accountMembers.userId,
+      accountRole: accountMembers.accountRole,
+      isSuperAdmin: accountMembers.isSuperAdmin,
+    })
+    .from(accountMembers)
+    .where(eq(accountMembers.accountId, accountId));
+
+  // Users with at least one explicit IAM policy attached to them directly.
+  // (Group-attached policies also keep access; included below.)
+  const memberIds = members.map((m) => m.userId);
+  const directPolicyRows = memberIds.length === 0
+    ? []
+    : await db
+        .selectDistinct({ principalId: iamPolicies.principalId })
+        .from(iamPolicies)
+        .where(
+          and(
+            eq(iamPolicies.accountId, accountId),
+            eq(iamPolicies.principalType, 'member'),
+            inArray(iamPolicies.principalId, memberIds),
+          ),
+        );
+  const directlyCovered = new Set(directPolicyRows.map((r) => r.principalId));
+
+  // Users covered by any group policy = users in any group that has at
+  // least one policy. Two-step lookup: groups-with-policies, then their
+  // members.
+  const groupsWithPolicies = await db
+    .selectDistinct({ principalId: iamPolicies.principalId })
+    .from(iamPolicies)
+    .where(
+      and(
+        eq(iamPolicies.accountId, accountId),
+        eq(iamPolicies.principalType, 'group'),
+      ),
+    );
+  const groupIds = groupsWithPolicies.map((g) => g.principalId);
+  const groupCovered = groupIds.length === 0
+    ? new Set<string>()
+    : new Set(
+        (
+          await db
+            .select({ userId: accountGroupMembers.userId })
+            .from(accountGroupMembers)
+            .where(inArray(accountGroupMembers.groupId, groupIds))
+        ).map((r) => r.userId),
+      );
+
+  // Members at risk: not super-admin AND no direct policy AND no group policy.
+  // Project_members access doesn't count — those bridges go away too.
+  const losers = members
+    .filter(
+      (m) =>
+        !m.isSuperAdmin &&
+        !directlyCovered.has(m.userId) &&
+        !groupCovered.has(m.userId),
+    )
+    .map((m) => ({
+      user_id: m.userId,
+      account_role: m.accountRole,
+    }));
+
+  // Safety: is there at least one principal who will keep access?
+  const willKeepAccess = members.some(
+    (m) =>
+      m.isSuperAdmin ||
+      directlyCovered.has(m.userId) ||
+      groupCovered.has(m.userId),
+  );
+
+  return c.json({
+    losers,
+    will_lock_out_account: !willKeepAccess,
+  });
+});
+
+iamRouter.patch('/:accountId/iam/strict-mode', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  // Flipping strict mode is account-config-level — gate on account.write.
+  // Tied to the same capability as renaming the account so we don't invent
+  // a new role action that nobody has yet.
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  const enabled = body.enabled === true;
+
+  const [before] = await db
+    .select({ iamStrictMode: accounts.iamStrictMode })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!before) return c.json({ error: 'account not found' }, 404);
+  if (before.iamStrictMode === enabled) {
+    return c.json({ enabled, unchanged: true });
+  }
+
+  // Lockout guard: if enabling, require at least one super-admin OR one
+  // member/group with an explicit policy. We refuse rather than write a
+  // state we can't undo through the same UI.
+  if (enabled) {
+    const [superAdmin] = await db
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(
+        and(eq(accountMembers.accountId, accountId), eq(accountMembers.isSuperAdmin, true)),
+      )
+      .limit(1);
+    if (!superAdmin) {
+      const [anyPolicy] = await db
+        .select({ policyId: iamPolicies.policyId })
+        .from(iamPolicies)
+        .where(eq(iamPolicies.accountId, accountId))
+        .limit(1);
+      if (!anyPolicy) {
+        return c.json(
+          {
+            error:
+              'Cannot enable strict mode: no super-admins and no explicit policies exist. ' +
+              'Promote a super-admin or create at least one policy first.',
+          },
+          409,
+        );
+      }
+    }
+  }
+
+  await db
+    .update(accounts)
+    .set({ iamStrictMode: enabled, updatedAt: new Date() })
+    .where(eq(accounts.accountId, accountId));
+
+  await auditIam(c, {
+    accountId,
+    action: enabled ? 'iam.strict_mode.enable' : 'iam.strict_mode.disable',
+    resourceType: 'account',
+    resourceId: accountId,
+    before: { iam_strict_mode: before.iamStrictMode },
+    after: { iam_strict_mode: enabled },
+  });
+
+  return c.json({ enabled });
+});
+

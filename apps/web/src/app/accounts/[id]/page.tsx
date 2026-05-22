@@ -54,6 +54,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
+import { StrictModeCard } from '@/components/iam/strict-mode-card';
 import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
@@ -265,6 +266,10 @@ export default function AccountSettingsPage() {
                   account={account}
                   queryClient={queryClient}
                   canWrite={canWriteAccount}
+                />
+                <StrictModeCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
                 />
                 {isTeam && canDeleteAccount && <DangerZoneCard />}
               </TabsContent>
