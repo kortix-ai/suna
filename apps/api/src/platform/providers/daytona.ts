@@ -62,10 +62,12 @@ export class DaytonaProvider implements SandboxProvider {
     // INTERNAL_SERVICE_KEY (api → sandbox) is the same value so the proxy can auth.
     const serviceKey = opts.envVars?.KORTIX_TOKEN || '';
 
-    // Strip /v1/router suffix — opencode.jsonc appends it already.
-    // KORTIX_URL may be "https://new-api.kortix.com/v1/router" but the
-    // sandbox expects the base: "https://new-api.kortix.com".
-    const sandboxApiBase = config.KORTIX_URL.replace(/\/v1\/router\/?$/, '');
+    // KORTIX_URL is the public API base URL. Strip legacy route suffixes so
+    // older env files that used /v1 or /v1/router still provision correctly.
+    const sandboxApiBase = config.KORTIX_URL
+      .replace(/\/+$/, '')
+      .replace(/\/v1\/router$/, '')
+      .replace(/\/v1$/, '');
     const routerBase = `${sandboxApiBase}/v1/router`;
 
     const daytonaSandbox = await daytona.create(
@@ -100,7 +102,7 @@ export class DaytonaProvider implements SandboxProvider {
     );
 
     const externalId = daytonaSandbox.id;
-    const apiBase = config.KORTIX_URL.replace(/\/v1\/router\/?$/, '').replace(/\/v1\/?$/, '');
+    const apiBase = sandboxApiBase;
     const baseUrl = `${apiBase}/v1/p/${externalId}/8000`;
 
     return {

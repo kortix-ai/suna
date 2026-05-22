@@ -165,6 +165,7 @@ export interface ProjectConfigSummary {
 
 export interface ProjectDetail {
   project: KortixProject;
+  git_connection?: ProjectGitConnection | null;
   config: ProjectConfigSummary;
   file_count: number;
   files: ProjectFileEntry[];
@@ -190,6 +191,61 @@ export interface ProvisionProjectInput {
   name: string;
   /** Seed the managed repo with the Kortix starter so sessions can boot. */
   seed_starter?: boolean;
+}
+
+export interface ProjectGitConnection {
+  connection_id: string;
+  account_id: string;
+  project_id: string;
+  provider: string;
+  repo_url: string;
+  repo_owner: string | null;
+  repo_name: string | null;
+  external_repo_id: string | null;
+  default_branch: string;
+  auth_method: string;
+  installation_id: string | null;
+  visibility: string | null;
+  status: string;
+  last_validated_at: string | null;
+  last_error_code: string | null;
+  last_error_message: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitHubRepository {
+  id: string;
+  name: string;
+  full_name: string;
+  private: boolean;
+  html_url: string;
+  clone_url: string;
+  ssh_url: string;
+  default_branch: string;
+  description: string | null;
+}
+
+export interface GitHubRepositoriesResponse {
+  account_id: string;
+  installation_id: string;
+  owner_login: string;
+  repositories: GitHubRepository[];
+}
+
+export interface LinkRepositoryInput {
+  account_id?: string;
+  repo_url?: string;
+  repo_full_name?: string;
+  name?: string;
+  default_branch?: string;
+  manifest_path?: string;
+}
+
+export interface LinkRepositoryResponse {
+  project: KortixProject;
+  git_connection: ProjectGitConnection | null;
 }
 
 export interface GitHubInstallationStatus {
@@ -425,7 +481,10 @@ export async function upsertProjectGitCredential(
   input: { token: string },
 ) {
   return unwrap(
-    await backendApi.put<ProjectSecret>(`/projects/${projectId}/git-credential`, input),
+    await backendApi.put<{ configured: boolean; provider: string; git_connection: ProjectGitConnection }>(
+      `/projects/${projectId}/git-credential`,
+      input,
+    ),
   );
 }
 
@@ -1130,10 +1189,27 @@ export async function provisionProject(input: ProvisionProjectInput) {
   );
 }
 
+export async function linkRepository(input: LinkRepositoryInput) {
+  return unwrap(
+    await backendApi.post<LinkRepositoryResponse>('/projects/link-repository', input, {
+      showErrors: false,
+    }),
+  );
+}
+
 export async function getGitHubInstallation(accountId: string) {
   return unwrap(
     await backendApi.get<GitHubInstallationStatus>(
       `/projects/github/installation?account_id=${encodeURIComponent(accountId)}`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listGitHubRepositories(accountId: string) {
+  return unwrap(
+    await backendApi.get<GitHubRepositoriesResponse>(
+      `/projects/github/repositories?account_id=${encodeURIComponent(accountId)}`,
       { showErrors: false },
     ),
   );

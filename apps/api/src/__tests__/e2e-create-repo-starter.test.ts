@@ -6,6 +6,7 @@ import {
   accountGithubInstallations,
   accountGithubInstallationStates,
   accountMembers,
+  projectGitConnections,
   projectMembers,
   projects,
 } from '@kortix/db';
@@ -49,6 +50,7 @@ let commitCalls: any[];
 let insertedProject: any | null;
 let grantedProjectRole: any | null;
 let installationRow: typeof accountGithubInstallations.$inferSelect | null;
+let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 
 function setTestAuth(userId = USER_ID, userEmail = 'starter@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -65,6 +67,7 @@ function resetState() {
   commitCalls = [];
   insertedProject = null;
   grantedProjectRole = null;
+  gitConnectionRows = [];
   installationRow = {
     accountId: ACCOUNT_ID,
     installationId: '42',
@@ -165,6 +168,18 @@ mock.module('../projects/github', () => ({
     repository_selection: 'all',
     permissions: { contents: 'write' },
   }),
+  getRepo: async () => ({
+    id: 7,
+    name: 'company-os',
+    full_name: 'kortix-org/company-os',
+    private: true,
+    html_url: 'https://github.com/kortix-org/company-os',
+    clone_url: 'https://github.com/kortix-org/company-os.git',
+    ssh_url: 'git@github.com:kortix-org/company-os.git',
+    default_branch: 'main',
+    description: null,
+  }),
+  listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => true,
   isGithubPatConfigured: () => false,
 }));
@@ -230,6 +245,38 @@ mock.module('../shared/db', () => ({
                   updatedAt: values.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
                 };
                 return [installationRow];
+              }
+              if (table === projectGitConnections) {
+                const existingIndex = gitConnectionRows.findIndex((row) => row.projectId === values.projectId);
+                const row = {
+                  connectionId: existingIndex >= 0
+                    ? gitConnectionRows[existingIndex]!.connectionId
+                    : '00000000-0000-4000-a000-000000000501',
+                  accountId: values.accountId,
+                  projectId: values.projectId,
+                  provider: values.provider,
+                  repoUrl: values.repoUrl,
+                  repoOwner: values.repoOwner ?? null,
+                  repoName: values.repoName ?? null,
+                  externalRepoId: values.externalRepoId ?? null,
+                  defaultBranch: values.defaultBranch,
+                  authMethod: values.authMethod,
+                  installationId: values.installationId ?? null,
+                  credentialRef: values.credentialRef ?? null,
+                  permissions: values.permissions ?? {},
+                  visibility: values.visibility ?? null,
+                  webhookId: values.webhookId ?? null,
+                  status: values.status ?? 'connected',
+                  lastValidatedAt: values.lastValidatedAt ?? new Date('2026-01-01T00:00:00Z'),
+                  lastErrorCode: values.lastErrorCode ?? null,
+                  lastErrorMessage: values.lastErrorMessage ?? null,
+                  metadata: values.metadata ?? {},
+                  createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : new Date('2026-01-01T00:00:00Z'),
+                  updatedAt: values.updatedAt ?? new Date('2026-01-01T00:00:00Z'),
+                } as typeof projectGitConnections.$inferSelect;
+                if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
+                else gitConnectionRows.push(row);
+                return [row];
               }
               if (table !== projects) return [];
               insertedProject = values;
@@ -435,6 +482,18 @@ describe('create-repo starter scaffold contract', () => {
         },
       },
     });
+    expect(gitConnectionRows).toContainEqual(expect.objectContaining({
+      projectId: PROJECT_ID,
+      provider: 'github',
+      repoUrl: 'https://github.com/kortix-org/company-os.git',
+      repoOwner: 'kortix-org',
+      repoName: 'company-os',
+      externalRepoId: '7',
+      authMethod: 'github_app',
+      installationId: '42',
+      visibility: 'private',
+      status: 'connected',
+    }));
     expect(grantedProjectRole).toMatchObject({
       accountId: ACCOUNT_ID,
       projectId: PROJECT_ID,

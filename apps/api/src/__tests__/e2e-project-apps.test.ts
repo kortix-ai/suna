@@ -179,6 +179,18 @@ mock.module('../projects/github', () => ({
   deleteFile: async () => {},
   getFileSha: async (opts: { path: string }) => (repoFiles.has(opts.path) ? `sha-${opts.path}` : null),
   getGitHubAppInstallation: async () => ({ account: { login: 'x', type: 'Organization' }, repository_selection: 'all', permissions: {} }),
+  getRepo: async () => ({
+    id: 1,
+    name: 'apps-project',
+    full_name: 'kortix-org/apps-project',
+    private: true,
+    html_url: 'https://github.com/kortix-org/apps-project',
+    clone_url: 'https://github.com/kortix-org/apps-project.git',
+    ssh_url: 'git@github.com:kortix-org/apps-project.git',
+    default_branch: 'main',
+    description: null,
+  }),
+  listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
 }));

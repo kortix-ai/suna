@@ -202,22 +202,27 @@ export async function buildSnapshotForCommit(
     }
   }
   if (existing?.status === 'building' || existing?.status === 'queued') {
-    // Another build is in flight for this exact commit. Don't race it.
-    throw new SnapshotBuildError(
-      `Snapshot build for commit ${commitSha.slice(0, 8)} is already in progress`,
-    );
-  }
-  if (existing?.status === 'failed') {
-    // Retry from scratch — failures shouldn't pin a project forever.
-    await db
-      .delete(projectRuntimeSnapshots)
-      .where(
-        and(
-          eq(projectRuntimeSnapshots.projectId, project.projectId),
-          eq(projectRuntimeSnapshots.commitSha, commitSha),
-          eq(projectRuntimeSnapshots.provider, provider),
-        ),
+    const recovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
+    if (recovered) {
+      return {
+        daytonaName: recovered.daytonaName,
+        commitSha,
+        contentHash: recovered.contentHash,
+        runtimeFingerprint: recovered.runtimeFingerprint,
+        built: false,
+      };
+    }
+    if (isInProgressSnapshotStale(existing)) {
+      await deleteSnapshotRow(project.projectId, commitSha, provider);
+    } else {
+      // Another build is in flight for this exact commit. Don't race it.
+      throw new SnapshotBuildError(
+        `Snapshot build for commit ${commitSha.slice(0, 8)} is already in progress`,
       );
+    }
+  } else if (existing?.status === 'failed') {
+    // Retry from scratch — failures shouldn't pin a project forever.
+    await deleteSnapshotRow(project.projectId, commitSha, provider);
   }
 
   // Claim the build by inserting `queued`. The unique (projectId,
@@ -324,6 +329,49 @@ async function findActiveRowForCommit(
   return row ?? null;
 }
 
+export async function getSnapshotForCommit(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName = 'daytona',
+): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
+  const [row] = await db
+    .select()
+    .from(projectRuntimeSnapshots)
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.commitSha, commitSha),
+        eq(projectRuntimeSnapshots.provider, provider),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+function isInProgressSnapshotStale(row: typeof projectRuntimeSnapshots.$inferSelect): boolean {
+  const updatedAt = row.updatedAt instanceof Date
+    ? row.updatedAt.getTime()
+    : new Date(row.updatedAt).getTime();
+  if (!Number.isFinite(updatedAt)) return false;
+  return Date.now() - updatedAt > BUILD_TIMEOUT_MS;
+}
+
+async function deleteSnapshotRow(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName,
+): Promise<void> {
+  await db
+    .delete(projectRuntimeSnapshots)
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.commitSha, commitSha),
+        eq(projectRuntimeSnapshots.provider, provider),
+      ),
+    );
+}
+
 /**
  * Fire-and-forget: ensure a snapshot exists for the current tip of
  * `branch`. Returns immediately if one is already present (`ready` or
@@ -376,7 +424,13 @@ export async function ensureBuildForLatestCommit(
     }
   }
   if (existing && existing.status !== 'ready') {
-    return { status: 'already-building', commitSha };
+    const recovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
+    if (recovered) return { status: 'already-ready', commitSha };
+    if (isInProgressSnapshotStale(existing)) {
+      await deleteSnapshotRow(project.projectId, commitSha, provider);
+    } else {
+      return { status: 'already-building', commitSha };
+    }
   }
 
   // Detach the build — we promised the caller this is non-blocking.
@@ -587,6 +641,39 @@ async function runBuild(
       runtimeFingerprint: ctx.runtimeFingerprint,
       built: true,
     };
+  } finally {
+    await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function recoverInProgressSnapshotRow(
+  project: GitBackedProject,
+  commitSha: string,
+  provider: SandboxProviderName,
+  source: SnapshotBuildSource,
+  row: typeof projectRuntimeSnapshots.$inferSelect,
+): Promise<BuildOutcome | null> {
+  if (provider !== 'daytona') return null;
+
+  const ctx = await prepareBuildContext(project, commitSha);
+  try {
+    const expectedName = ctx.snapshotName;
+    const rowSnapshotId = row.snapshotId?.trim();
+    if (rowSnapshotId && rowSnapshotId !== expectedName) return null;
+
+    const daytona = getDaytona();
+    const existing = await daytona.snapshot.get(expectedName).catch(() => null);
+    if (!existing) return null;
+
+    const outcome: BuildOutcome = {
+      daytonaName: expectedName,
+      contentHash: ctx.contentHash,
+      shortHash: ctx.shortHash,
+      runtimeFingerprint: ctx.runtimeFingerprint,
+      built: false,
+    };
+    await updateSnapshotRow(project.projectId, commitSha, provider, source, outcome);
+    return outcome;
   } finally {
     await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
   }

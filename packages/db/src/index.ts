@@ -32,6 +32,8 @@ export {
   usageEvents,
   // Kortix tables
   projects,
+  projectGitConnections,
+  projectGitCredentials,
   projectMembers,
   projectSecrets,
   projectTriggers,
@@ -55,6 +57,8 @@ export {
   serverEntries,
   // Relations
   projectsRelations,
+  projectGitConnectionsRelations,
+  projectGitCredentialsRelations,
   projectMembersRelations,
   projectSecretsRelations,
   projectTriggersRelations,

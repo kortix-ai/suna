@@ -125,6 +125,18 @@ mock.module('../projects/github', () => ({
   commitFile: async () => undefined,
   deleteFile: async () => undefined,
   getFileSha: async () => null,
+  getRepo: async () => ({
+    id: 1,
+    name: 'snap-test',
+    full_name: 'kortix-org/snap-test',
+    private: true,
+    html_url: 'https://github.com/kortix-org/snap-test',
+    clone_url: 'https://github.com/kortix-org/snap-test.git',
+    ssh_url: 'git@github.com:kortix-org/snap-test.git',
+    default_branch: 'main',
+    description: null,
+  }),
+  listInstallationRepositories: async () => [],
 }));
 
 mock.module('../snapshots/builder', () => ({

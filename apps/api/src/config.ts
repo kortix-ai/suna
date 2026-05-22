@@ -155,7 +155,7 @@ const envSchema = z.object({
   DAYTONA_TARGET:              optStr,
 
   // ── Sandbox Platform ──────────────────────────────────────────────────────
-  // KORTIX_URL is auto-derived from PORT if not explicitly set (see validateEnv).
+  // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
   KORTIX_YOLO_URL:             optUrl('https://api-yolo.kortix.com/v1'),
   // Legacy: kept so old .env files don't fail validation. Value is ignored —
@@ -289,8 +289,9 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (envMode === 'cloud') {
       issues.push({ var: 'KORTIX_URL', message: 'Required in cloud mode — sandbox routing and health checks will break', level: 'error' });
     } else {
-      // Auto-derive for local mode so it "just works"
-      const derived = `http://localhost:${port}/v1/router`;
+      // Auto-derive for local mode so it "just works". KORTIX_URL is the
+      // public API origin/base; individual callers append /v1, /v1/router, etc.
+      const derived = `http://localhost:${port}`;
       process.env.KORTIX_URL = derived;
       if (result.success) (result.data as any).KORTIX_URL = derived;
       console.warn(`[config] KORTIX_URL not set — auto-derived: ${derived}`);

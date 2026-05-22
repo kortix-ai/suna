@@ -236,6 +236,67 @@ export const projects = kortixSchema.table(
   ],
 );
 
+export const projectGitConnections = kortixSchema.table(
+  'project_git_connections',
+  {
+    connectionId: uuid('connection_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    repoUrl: text('repo_url').notNull(),
+    repoOwner: varchar('repo_owner', { length: 255 }),
+    repoName: varchar('repo_name', { length: 255 }),
+    externalRepoId: text('external_repo_id'),
+    defaultBranch: varchar('default_branch', { length: 255 }).default('main').notNull(),
+    authMethod: varchar('auth_method', { length: 64 }).notNull(),
+    installationId: text('installation_id'),
+    credentialRef: text('credential_ref'),
+    permissions: jsonb('permissions').default({}).$type<Record<string, unknown>>(),
+    visibility: varchar('visibility', { length: 32 }),
+    webhookId: text('webhook_id'),
+    status: varchar('status', { length: 32 }).default('connected').notNull(),
+    lastValidatedAt: timestamp('last_validated_at', { withTimezone: true }),
+    lastErrorCode: varchar('last_error_code', { length: 64 }),
+    lastErrorMessage: text('last_error_message'),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_git_connections_account').on(table.accountId),
+    uniqueIndex('idx_project_git_connections_project').on(table.projectId),
+    index('idx_project_git_connections_provider_repo').on(table.provider, table.externalRepoId),
+    index('idx_project_git_connections_status').on(table.status),
+  ],
+);
+
+export const projectGitCredentials = kortixSchema.table(
+  'project_git_credentials',
+  {
+    credentialId: uuid('credential_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    authMethod: varchar('auth_method', { length: 64 }).default('token').notNull(),
+    valueEnc: text('value_enc').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_git_credentials_account').on(table.accountId),
+    uniqueIndex('idx_project_git_credentials_project_provider').on(table.projectId, table.provider),
+  ],
+);
+
 export const projectMembers = kortixSchema.table(
   'project_members',
   {
@@ -907,12 +968,36 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     fields: [projects.accountId],
     references: [accounts.accountId],
   }),
+  gitConnections: many(projectGitConnections),
+  gitCredentials: many(projectGitCredentials),
   members: many(projectMembers),
   secrets: many(projectSecrets),
   triggers: many(projectTriggers),
   triggerEvents: many(projectTriggerEvents),
   sessions: many(projectSessions),
   runtimeSnapshots: many(projectRuntimeSnapshots),
+}));
+
+export const projectGitConnectionsRelations = relations(projectGitConnections, ({ one }) => ({
+  account: one(accounts, {
+    fields: [projectGitConnections.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectGitConnections.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
+export const projectGitCredentialsRelations = relations(projectGitCredentials, ({ one }) => ({
+  account: one(accounts, {
+    fields: [projectGitCredentials.accountId],
+    references: [accounts.accountId],
+  }),
+  project: one(projects, {
+    fields: [projectGitCredentials.projectId],
+    references: [projects.projectId],
+  }),
 }));
 
 export const projectMembersRelations = relations(projectMembers, ({ one }) => ({

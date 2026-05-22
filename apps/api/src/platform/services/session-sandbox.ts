@@ -31,6 +31,7 @@ import {
 import {
   ensureBuildForLatestCommit,
   getLatestReadySnapshot,
+  getSnapshotForCommit,
 } from '../../snapshots/builder';
 import { config } from '../../config';
 import type { GitBackedProject } from '../../projects/git';
@@ -58,6 +59,7 @@ async function waitForLatestReadySnapshot(
   projectId: string,
   branch: string,
   providerName: ProviderName,
+  commitSha?: string,
 ): Promise<NonNullable<Awaited<ReturnType<typeof getLatestReadySnapshot>>> | null> {
   const waitMs = snapshotReadyWaitMs();
   const deadline = Date.now() + waitMs;
@@ -66,6 +68,16 @@ async function waitForLatestReadySnapshot(
   for (;;) {
     const latest = await getLatestReadySnapshot(projectId, branch, providerName);
     if (latest?.snapshotId) return latest;
+    if (commitSha) {
+      const attempted = await getSnapshotForCommit(projectId, commitSha, providerName);
+      if (attempted?.status === 'failed') {
+        throw new Error(
+          attempted.error
+            ? `Project sandbox build failed: ${attempted.error}`
+            : `Project sandbox build failed for commit ${commitSha.slice(0, 8)}`,
+        );
+      }
+    }
     const remaining = deadline - Date.now();
     if (remaining <= 0) return null;
     await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, remaining)));
@@ -206,7 +218,12 @@ export async function provisionSessionSandbox(opts: {
         if (build.status === 'failed-to-start') {
           throw new Error(`Project sandbox build failed to start: ${build.error ?? 'unknown error'}`);
         }
-        latest = await waitForLatestReadySnapshot(opts.gitProject.projectId, branch, providerName);
+        latest = await waitForLatestReadySnapshot(
+          opts.gitProject.projectId,
+          branch,
+          providerName,
+          build.commitSha,
+        );
         if (!latest?.snapshotId) {
           throw new Error(
             `Project sandbox is still building. ` +

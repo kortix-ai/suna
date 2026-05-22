@@ -100,6 +100,18 @@ mock.module('../projects/github', () => ({
   deleteFile: async () => {},
   getFileSha: async () => null,
   getGitHubAppInstallation: async () => ({ account: { login: 'x', type: 'Organization' }, repository_selection: 'all', permissions: {} }),
+  getRepo: async () => ({
+    id: 1,
+    name: 'gate-project',
+    full_name: 'kortix-org/gate-project',
+    private: true,
+    html_url: 'https://github.com/kortix-org/gate-project',
+    clone_url: 'https://github.com/kortix-org/gate-project.git',
+    ssh_url: 'git@github.com:kortix-org/gate-project.git',
+    default_branch: 'main',
+    description: null,
+  }),
+  listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
 }));

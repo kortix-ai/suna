@@ -59,6 +59,34 @@ async function gitWithAuth(
   return execGit([...buildGitAuthArgs(repoUrl, token), ...args], opts)
 }
 
+async function resolveCloneToken(cfg: Config): Promise<string | undefined> {
+  if (!cfg.apiUrl || !cfg.projectId || !cfg.kortixToken) return undefined
+
+  const rawBase = cfg.apiUrl.replace(/\/+$/, '')
+  const base = rawBase.endsWith('/v1/router')
+    ? rawBase.replace(/\/router$/, '')
+    : rawBase.endsWith('/v1')
+      ? rawBase
+      : `${rawBase}/v1`
+  const url = `${base}/projects/${encodeURIComponent(cfg.projectId)}/git/clone-credential`
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${cfg.kortixToken}`,
+      Accept: 'application/json',
+    },
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`failed to fetch git clone credential (${res.status}): ${text || res.statusText}`)
+  }
+  const body = await res.json().catch(() => null) as
+    | { auth?: { token?: string | null } | null }
+    | null
+  const token = body?.auth?.token?.trim()
+  return token || undefined
+}
+
 async function pathExists(path: string): Promise<boolean> {
   try {
     await stat(path)
@@ -72,13 +100,18 @@ export async function isRepoMaterialized(target: string): Promise<boolean> {
   return pathExists(`${target}/.git`)
 }
 
-async function checkoutSessionBranch(cfg: Config, target: string, branch: string): Promise<void> {
+async function checkoutSessionBranch(
+  cfg: Config,
+  target: string,
+  branch: string,
+  token: string | undefined,
+): Promise<void> {
   const refSpec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`
   const delayMs = Math.max(1, Math.floor(cfg.branchFetchDelaySec * 1000))
   let lastErr: string | null = null
 
   for (let attempt = 1; attempt <= cfg.branchFetchAttempts; attempt++) {
-    const fetched = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+    const fetched = await gitWithAuth(token, cfg.repoUrl, [
       '-C',
       target,
       'fetch',
@@ -86,7 +119,7 @@ async function checkoutSessionBranch(cfg: Config, target: string, branch: string
       refSpec,
     ])
     if (fetched.code === 0) {
-      const checkout = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+      const checkout = await gitWithAuth(token, cfg.repoUrl, [
         '-C',
         target,
         'checkout',
@@ -121,11 +154,12 @@ export async function materializeRepo(cfg: Config): Promise<void> {
 
   const target = cfg.projectTarget
   const base = cfg.defaultBranch
+  const cloneToken = await resolveCloneToken(cfg)
   await mkdir(dirname(target), { recursive: true })
 
   if (await pathExists(`${target}/.git`)) {
     logger.info('[git] refreshing existing repo', { target })
-    const setUrl = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+    const setUrl = await gitWithAuth(cloneToken, cfg.repoUrl, [
       '-C',
       target,
       'remote',
@@ -135,7 +169,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     ])
     if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
 
-    const fetched = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+    const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
       '-C',
       target,
       'fetch',
@@ -148,7 +182,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', { repoUrl: cfg.repoUrl, base, target })
-    const cloned = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+    const cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [
       'clone',
       '--branch',
       base,
@@ -164,7 +198,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     await rename(tmpTarget, target)
   }
 
-  const fetchBase = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+  const fetchBase = await gitWithAuth(cloneToken, cfg.repoUrl, [
     '-C',
     target,
     'fetch',
@@ -173,7 +207,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   ])
   if (fetchBase.code !== 0) throw new Error(`git fetch base failed: ${fetchBase.stderr}`)
 
-  const reset = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+  const reset = await gitWithAuth(cloneToken, cfg.repoUrl, [
     '-C',
     target,
     'reset',
@@ -183,7 +217,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   if (reset.code !== 0) throw new Error(`git reset --hard failed: ${reset.stderr}`)
 
   if (cfg.branchName) {
-    await checkoutSessionBranch(cfg, target, cfg.branchName)
+    await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
   }
 }
 
@@ -214,8 +248,9 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
     throw new Error('project repo is not materialized')
   }
 
+  const cloneToken = await resolveCloneToken(cfg)
   if (cfg.repoUrl) {
-    const setUrl = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+    const setUrl = await gitWithAuth(cloneToken, cfg.repoUrl, [
       '-C',
       target,
       'remote',
@@ -228,7 +263,7 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
 
   const authRepoUrl = cfg.repoUrl ?? before.remoteUrl ?? undefined
   const branch = cfg.branchName || before.branch || cfg.defaultBranch
-  const fetched = await gitWithAuth(cfg.githubToken, authRepoUrl, [
+  const fetched = await gitWithAuth(cloneToken, authRepoUrl, [
     '-C',
     target,
     'fetch',
@@ -238,7 +273,7 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
   ])
   if (fetched.code !== 0) throw new Error(`git fetch refresh failed: ${fetched.stderr}`)
 
-  const pulled = await gitWithAuth(cfg.githubToken, authRepoUrl, [
+  const pulled = await gitWithAuth(cloneToken, authRepoUrl, [
     '-C',
     target,
     'pull',

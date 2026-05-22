@@ -10,7 +10,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Cron } from 'croner';
 import { Context, Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import {
   accountGithubInstallations,
   accountGithubInstallationStates,
@@ -18,6 +18,8 @@ import {
   kortixApiKeys,
   projects,
   projectMembers,
+  projectGitConnections,
+  projectGitCredentials,
   projectSecrets,
   projectTriggerEvents,
   projectTriggerRuntime,
@@ -64,11 +66,14 @@ import {
   createRepo,
   deleteFile,
   getFileSha,
+  getRepo,
   getGitHubAppInstallation,
   getGitHubPatAuthContext,
   isGithubAppConfigured,
   isGithubPatConfigured,
+  listInstallationRepositories,
   type GitHubAuthContext,
+  type GitHubRepo,
   verifyGitHubAppInstallStatePayload,
 } from './github';
 import { buildStarterFiles } from './starter';
@@ -100,6 +105,7 @@ import { encodeSessionLlmToken } from '../shared/session-llm-token';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
 import { recordAuditEvent } from '../shared/audit';
 import {
+  decryptProjectSecret,
   encryptProjectSecret,
   getProjectSecretValue,
   isValidSecretName,
@@ -160,6 +166,8 @@ export const projectWebhooksApp = new Hono<AppEnv>();
 projectsApp.use('/*', supabaseAuth);
 
 type ProjectRow = typeof projects.$inferSelect;
+type ProjectGitConnectionRow = typeof projectGitConnections.$inferSelect;
+type ProjectGitCredentialRow = typeof projectGitCredentials.$inferSelect;
 type ProjectSessionRow = typeof projectSessions.$inferSelect;
 type ProjectTriggerRow = typeof projectTriggers.$inferSelect;
 type ProjectTriggerEventRow = typeof projectTriggerEvents.$inferSelect;
@@ -228,6 +236,48 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
     dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
+  };
+}
+
+function serializeProjectGitConnection(row: ProjectGitConnectionRow | null) {
+  if (!row) return null;
+  return {
+    connection_id: row.connectionId,
+    account_id: row.accountId,
+    project_id: row.projectId,
+    provider: row.provider,
+    repo_url: row.repoUrl,
+    repo_owner: row.repoOwner,
+    repo_name: row.repoName,
+    external_repo_id: row.externalRepoId,
+    default_branch: row.defaultBranch,
+    auth_method: row.authMethod,
+    installation_id: row.installationId,
+    credential_ref: row.credentialRef,
+    permissions: row.permissions ?? {},
+    visibility: row.visibility,
+    webhook_id: row.webhookId,
+    status: row.status,
+    last_validated_at: row.lastValidatedAt?.toISOString() ?? null,
+    last_error_code: row.lastErrorCode,
+    last_error_message: row.lastErrorMessage,
+    metadata: row.metadata ?? {},
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+function serializeGitHubRepo(repo: GitHubRepo) {
+  return {
+    id: String(repo.id),
+    name: repo.name,
+    full_name: repo.full_name,
+    private: repo.private,
+    html_url: repo.html_url,
+    clone_url: repo.clone_url,
+    ssh_url: repo.ssh_url,
+    default_branch: repo.default_branch,
+    description: repo.description,
   };
 }
 
@@ -394,32 +444,6 @@ function serializeProjectSecret(row: typeof projectSecrets.$inferSelect) {
   };
 }
 
-function serializeVirtualProjectSecret(input: {
-  projectId: string;
-  name: string;
-  createdAt: Date;
-  updatedAt: Date;
-  purpose: string;
-  configured: boolean;
-  canRotate: boolean;
-  managedBy: string;
-}) {
-  return {
-    secret_id: `system:${input.name}`,
-    project_id: input.projectId,
-    name: input.name,
-    created_by: null,
-    created_at: input.createdAt.toISOString(),
-    updated_at: input.updatedAt.toISOString(),
-    system: true,
-    readonly: true,
-    purpose: input.purpose,
-    configured: input.configured,
-    can_rotate: input.canRotate,
-    managed_by: input.managedBy,
-  };
-}
-
 function isSystemProjectSecretName(name: string): boolean {
   return name.toUpperCase().startsWith('KORTIX_');
 }
@@ -447,6 +471,12 @@ function serializeProjectTrigger(row: ProjectTriggerRow) {
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
+}
+
+function serializeSessionSandboxConfig(configValue: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  const config = { ...(configValue ?? {}) };
+  delete config.serviceKey;
+  return config;
 }
 
 function serializeProjectTriggerEvent(row: ProjectTriggerEventRow) {
@@ -546,6 +576,13 @@ export function buildProjectLlmBaseUrl(kortixUrl: string): string {
   return `${base}/v1/router/llm`;
 }
 
+function deriveKortixApiRoot(kortixUrl: string): string {
+  return (kortixUrl || 'https://api.kortix.com')
+    .replace(/\/+$/, '')
+    .replace(/\/v1\/router$/, '')
+    .replace(/\/v1$/, '');
+}
+
 function deriveProjectName(repoUrl: string): string {
   const cleaned = repoUrl.replace(/\/+$/, '').replace(/\.git$/, '');
   const tail = cleaned.split(/[/:]/).filter(Boolean).pop();
@@ -612,8 +649,8 @@ async function consumeGitHubInstallationState(input: {
       eq(accountGithubInstallationStates.stateNonce, input.nonce),
       eq(accountGithubInstallationStates.accountId, input.accountId),
       eq(accountGithubInstallationStates.userId, input.userId),
-      sql`${accountGithubInstallationStates.consumedAt} is null`,
-      sql`${accountGithubInstallationStates.expiresAt} > ${now}`,
+      isNull(accountGithubInstallationStates.consumedAt),
+      gt(accountGithubInstallationStates.expiresAt, now),
     ))
     .returning({ stateNonce: accountGithubInstallationStates.stateNonce });
 
@@ -629,6 +666,7 @@ class GitHubInstallationRequiredError extends Error {
 async function resolveGitHubRepoAuth(accountId: string): Promise<{
   auth?: GitHubAuthContext;
   authSource: 'app_installation' | 'pat';
+  installation?: typeof accountGithubInstallations.$inferSelect;
 }> {
   const installation = await getAccountGitHubInstallation(accountId);
   if (installation) {
@@ -642,6 +680,7 @@ async function resolveGitHubRepoAuth(accountId: string): Promise<{
         installationId: installation.installationId,
       },
       authSource: 'app_installation',
+      installation,
     };
   }
 
@@ -683,16 +722,153 @@ function projectCreatedWithServerPat(project: ProjectRow): boolean {
 interface ProjectGitRemote {
   /** freestyle | github | gitlab | bitbucket | generic */
   provider: string;
-  /** managed | github_app | vault | none */
+  /** managed | freestyle_identity | github_app | pat | project_credential | none */
   authMethod: string;
   /** Freestyle repo id (managed repos). */
   repoId: string | null;
   /** Auth credential reference — Freestyle identity id for `managed`. */
   ref: string | null;
+  installationId: string | null;
+  repoOwner: string | null;
+  repoName: string | null;
+  externalRepoId: string | null;
 }
 
-function getProjectGitRemote(metadata: unknown): ProjectGitRemote {
-  const meta = (metadata ?? {}) as Record<string, any>;
+async function getProjectGitConnection(projectId: string): Promise<ProjectGitConnectionRow | null> {
+  const [row] = await db
+    .select()
+    .from(projectGitConnections)
+    .where(eq(projectGitConnections.projectId, projectId))
+    .limit(1);
+  return row ?? null;
+}
+
+async function upsertProjectGitConnection(input: {
+  accountId: string;
+  projectId: string;
+  provider: string;
+  repoUrl: string;
+  repoOwner?: string | null;
+  repoName?: string | null;
+  externalRepoId?: string | number | null;
+  defaultBranch: string;
+  authMethod: string;
+  installationId?: string | null;
+  credentialRef?: string | null;
+  permissions?: Record<string, unknown> | null;
+  visibility?: string | null;
+  webhookId?: string | null;
+  status?: string;
+  lastValidatedAt?: Date | null;
+  lastErrorCode?: string | null;
+  lastErrorMessage?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): Promise<ProjectGitConnectionRow> {
+  const now = new Date();
+  const values = {
+    accountId: input.accountId,
+    projectId: input.projectId,
+    provider: input.provider,
+    repoUrl: input.repoUrl,
+    repoOwner: input.repoOwner ?? null,
+    repoName: input.repoName ?? null,
+    externalRepoId: input.externalRepoId == null ? null : String(input.externalRepoId),
+    defaultBranch: input.defaultBranch,
+    authMethod: input.authMethod,
+    installationId: input.installationId ?? null,
+    credentialRef: input.credentialRef ?? null,
+    permissions: input.permissions ?? {},
+    visibility: input.visibility ?? null,
+    webhookId: input.webhookId ?? null,
+    status: input.status ?? 'connected',
+    lastValidatedAt: input.lastValidatedAt ?? now,
+    lastErrorCode: input.lastErrorCode ?? null,
+    lastErrorMessage: input.lastErrorMessage ?? null,
+    metadata: input.metadata ?? {},
+    updatedAt: now,
+  };
+  const [row] = await db
+    .insert(projectGitConnections)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [projectGitConnections.projectId],
+      set: values,
+    })
+    .returning();
+  return row;
+}
+
+async function getProjectGitCredential(
+  projectId: string,
+  provider: string,
+): Promise<ProjectGitCredentialRow | null> {
+  const [row] = await db
+    .select()
+    .from(projectGitCredentials)
+    .where(and(
+      eq(projectGitCredentials.projectId, projectId),
+      eq(projectGitCredentials.provider, provider),
+    ))
+    .limit(1);
+  return row ?? null;
+}
+
+async function upsertProjectGitCredential(input: {
+  accountId: string;
+  projectId: string;
+  provider: string;
+  token: string;
+  createdBy: string;
+}): Promise<ProjectGitCredentialRow> {
+  const now = new Date();
+  const values = {
+    accountId: input.accountId,
+    projectId: input.projectId,
+    provider: input.provider,
+    authMethod: 'token',
+    valueEnc: encryptProjectSecret(input.projectId, input.token),
+    createdBy: input.createdBy,
+    updatedAt: now,
+  };
+  const [row] = await db
+    .insert(projectGitCredentials)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [projectGitCredentials.projectId, projectGitCredentials.provider],
+      set: values,
+    })
+    .returning();
+  return row;
+}
+
+function emptyGitRemote(): ProjectGitRemote {
+  return {
+    provider: 'generic',
+    authMethod: 'none',
+    repoId: null,
+    ref: null,
+    installationId: null,
+    repoOwner: null,
+    repoName: null,
+    externalRepoId: null,
+  };
+}
+
+function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnectionRow | null): ProjectGitRemote {
+  if (connection) {
+    return {
+      provider: connection.provider,
+      authMethod: connection.authMethod,
+      repoId: connection.provider === 'freestyle' ? connection.externalRepoId : null,
+      ref: connection.credentialRef,
+      installationId: connection.installationId,
+      repoOwner: connection.repoOwner,
+      repoName: connection.repoName,
+      externalRepoId: connection.externalRepoId,
+    };
+  }
+
+  const meta = (project.metadata ?? {}) as Record<string, any>;
   const git = meta.git;
   if (git && typeof git === 'object') {
     const method = String(git.auth?.method ?? 'none');
@@ -701,20 +877,44 @@ function getProjectGitRemote(metadata: unknown): ProjectGitRemote {
       authMethod: method,
       repoId: git.repo_id ?? null,
       ref: git.auth?.ref ?? null,
+      installationId: git.auth?.installation_id ?? git.installation_id ?? null,
+      repoOwner: git.owner ?? null,
+      repoName: git.name ?? null,
+      externalRepoId: git.external_repo_id ?? git.repo_id ?? null,
     };
   }
   if (meta.git_provider === 'freestyle' || meta.freestyle) {
     const fs = meta.freestyle ?? {};
-    return { provider: 'freestyle', authMethod: 'managed', repoId: fs.repo_id ?? null, ref: fs.identity_id ?? null };
+    return {
+      provider: 'freestyle',
+      authMethod: 'managed',
+      repoId: fs.repo_id ?? null,
+      ref: fs.identity_id ?? null,
+      installationId: null,
+      repoOwner: null,
+      repoName: null,
+      externalRepoId: fs.repo_id ?? null,
+    };
   }
   if (meta.github) {
-    return { provider: 'github', authMethod: 'github_app', repoId: null, ref: null };
+    const repo = parseGitHubRepoUrl(project.repoUrl);
+    const github = normalizeJsonObject(meta.github);
+    return {
+      provider: 'github',
+      authMethod: github.auth_source === 'pat' ? 'pat' : 'github_app',
+      repoId: null,
+      ref: null,
+      installationId: normalizeString(github.installation_id),
+      repoOwner: repo?.owner ?? null,
+      repoName: repo?.repo ?? null,
+      externalRepoId: normalizeString(github.repo_id),
+    };
   }
-  return { provider: 'generic', authMethod: 'none', repoId: null, ref: null };
+  return emptyGitRemote();
 }
 
-function hasServerManagedGitAuth(project: ProjectRow): boolean {
-  const remote = getProjectGitRemote(project.metadata);
+async function hasServerManagedGitAuth(project: ProjectRow): Promise<boolean> {
+  const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
   if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && !!remote.repoId) {
     return true;
   }
@@ -726,12 +926,12 @@ function hasServerManagedGitAuth(project: ProjectRow): boolean {
 
 async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
-  authSource: 'app_installation' | 'pat' | 'managed' | 'project_secret' | 'none';
+  authSource: 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
 }> {
   // Managed Freestyle repos: mint a fresh scoped token from the project's
   // stored identity so the backend can clone/push (snapshot builds, session
   // branches, CR merges). Without this it hits git.freestyle.sh unauthed (403).
-  const remote = getProjectGitRemote(project.metadata);
+  const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
   if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && remote.repoId) {
     if (!(await isFreestyleGitConfigured())) return { authSource: 'none' };
     try {
@@ -743,8 +943,23 @@ async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     }
   }
 
-  const installation = await getAccountGitHubInstallation(project.accountId);
-  if (installation) {
+  if (remote.provider === 'github' && remote.authMethod === 'github_app') {
+    const repo = parseGitHubRepoUrl(project.repoUrl);
+    if (!repo) return { authSource: 'none' };
+    const installation = await getAccountGitHubInstallation(project.accountId);
+    if (!installation) return { authSource: 'none' };
+    if (remote.installationId && remote.installationId !== installation.installationId) {
+      return { authSource: 'none' };
+    }
+    if (repo.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
+      return { authSource: 'none' };
+    }
+    if (remote.repoOwner && remote.repoOwner.toLowerCase() !== repo.owner.toLowerCase()) {
+      return { authSource: 'none' };
+    }
+    if (remote.repoName && remote.repoName.toLowerCase() !== repo.repo.toLowerCase()) {
+      return { authSource: 'none' };
+    }
     const token = await createInstallationToken(installation.installationId);
     return {
       auth: {
@@ -758,12 +973,27 @@ async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     };
   }
 
-  const projectSecretToken = await getProjectSecretValue(project.projectId, PROJECT_GIT_AUTH_SECRET_NAME);
-  if (projectSecretToken) {
-    return {
-      auth: { token: projectSecretToken, source: 'project_secret' },
-      authSource: 'project_secret',
-    };
+  if (remote.authMethod === 'project_credential') {
+    const credential = await getProjectGitCredential(project.projectId, remote.provider);
+    if (credential) {
+      return {
+        auth: {
+          token: decryptProjectSecret(project.projectId, credential.valueEnc),
+          source: 'project_credential',
+        },
+        authSource: 'project_credential',
+      };
+    }
+  }
+
+  if (remote.provider === 'github' && remote.authMethod === 'pat' && projectCreatedWithServerPat(project)) {
+    const auth = getGitHubPatAuthContext();
+    if (auth) {
+      return {
+        auth,
+        authSource: 'pat',
+      };
+    }
   }
 
   if (projectCreatedWithServerPat(project)) {
@@ -772,6 +1002,14 @@ async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   }
 
   return { authSource: 'none' };
+}
+
+async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & { gitAuthToken: string | null }> {
+  const gitAuth = await resolveProjectGitAuth(project);
+  return {
+    ...project,
+    gitAuthToken: gitAuth.auth?.token ?? null,
+  };
 }
 
 async function getProjectMemberRole(projectId: string, userId: string): Promise<ProjectRole | null> {
@@ -873,6 +1111,139 @@ async function resolveProjectAccount(c: Context, body?: Record<string, unknown>)
   };
 }
 
+async function resolveGitHubImport(input: {
+  accountId: string;
+  repoUrl: string;
+  defaultBranch?: string | null;
+}): Promise<{
+  repo: GitHubRepo;
+  installation: typeof accountGithubInstallations.$inferSelect;
+  auth: GitHubAuthContext;
+  defaultBranch: string;
+}> {
+  const parsed = parseGitHubRepoUrl(input.repoUrl);
+  if (!parsed) {
+    throw new Error('repo_url must be a GitHub repository URL');
+  }
+
+  const installation = await getAccountGitHubInstallation(input.accountId);
+  if (!installation) {
+    throw new GitHubInstallationRequiredError(input.accountId);
+  }
+  if (parsed.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
+    throw new Error(
+      `GitHub App installation is for ${installation.ownerLogin}; install Kortix on ${parsed.owner} to link this repo`,
+    );
+  }
+
+  const token = await createInstallationToken(installation.installationId);
+  const auth: GitHubAuthContext = {
+    token: token.token,
+    source: 'app_installation',
+    owner: installation.ownerLogin,
+    ownerType: installation.ownerType,
+    installationId: installation.installationId,
+  };
+  const repo = await getRepo({ owner: parsed.owner, repo: parsed.repo, auth });
+  return {
+    repo,
+    installation,
+    auth,
+    defaultBranch: input.defaultBranch ?? repo.default_branch ?? 'main',
+  };
+}
+
+async function registerGitHubLinkedProject(input: {
+  accountId: string;
+  userId: string;
+  repo: GitHubRepo;
+  installation: typeof accountGithubInstallations.$inferSelect;
+  name?: string | null;
+  defaultBranch: string;
+  manifestPath: string;
+}): Promise<ProjectRow> {
+  const projectName = input.name ?? deriveProjectName(input.repo.full_name);
+  const now = new Date();
+  const metadata = {
+    git: {
+      url: input.repo.clone_url,
+      default_branch: input.defaultBranch,
+      provider: 'github',
+      owner: input.repo.full_name.split('/')[0] ?? null,
+      name: input.repo.name,
+      external_repo_id: String(input.repo.id),
+      auth: {
+        method: 'github_app',
+        installation_id: input.installation.installationId,
+      },
+    },
+    github: {
+      repo_id: String(input.repo.id),
+      full_name: input.repo.full_name,
+      html_url: input.repo.html_url,
+      private: input.repo.private,
+      auth_source: 'app_installation',
+      installation_id: input.installation.installationId,
+    },
+  };
+
+  const [row] = await db
+    .insert(projects)
+    .values({
+      accountId: input.accountId,
+      name: projectName,
+      repoUrl: input.repo.clone_url,
+      defaultBranch: input.defaultBranch,
+      manifestPath: input.manifestPath,
+      status: 'active',
+      metadata,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [projects.accountId, projects.repoUrl],
+      set: {
+        name: projectName,
+        defaultBranch: input.defaultBranch,
+        manifestPath: input.manifestPath,
+        status: 'active',
+        metadata,
+        updatedAt: now,
+      },
+    })
+    .returning();
+
+  await upsertProjectGitConnection({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    provider: 'github',
+    repoUrl: input.repo.clone_url,
+    repoOwner: input.repo.full_name.split('/')[0] ?? null,
+    repoName: input.repo.name,
+    externalRepoId: input.repo.id,
+    defaultBranch: input.defaultBranch,
+    authMethod: 'github_app',
+    installationId: input.installation.installationId,
+    permissions: input.installation.permissions ?? {},
+    visibility: input.repo.private ? 'private' : 'public',
+    status: 'connected',
+    metadata: {
+      full_name: input.repo.full_name,
+      html_url: input.repo.html_url,
+      ssh_url: input.repo.ssh_url,
+    },
+  });
+
+  await grantProjectRole({
+    accountId: input.accountId,
+    projectId: row.projectId,
+    userId: input.userId,
+    role: 'manager',
+    grantedBy: input.userId,
+  });
+
+  return row;
+}
+
 const LEGACY_ACTION_TO_IAM: Record<ProjectAccessAction, string> = {
   read: PROJECT_ACTIONS.PROJECT_READ,
   write: PROJECT_ACTIONS.PROJECT_WRITE,
@@ -930,15 +1301,11 @@ async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
-  gitAuthToken?: string | null;
 }): Promise<Record<string, string>> {
-  // Project secrets + project-scoped CLI token funnel into the sandbox env.
-  // Run them in parallel — the CLI token path mints a fresh token per session
-  // boot so the in-container CLI works out of the box.
-  const [runtimeSecrets, cliToken] = await Promise.all([
-    listProjectSecrets(input.projectId),
-    mintSessionCliToken(input.projectId, input.userId, input.accountId, input.sessionId),
-  ]);
+  // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
+  // minted by provisionSessionSandbox() and injected at the provider boundary,
+  // then reused by the daemon for both API calls and proxy HMAC validation.
+  const runtimeSecrets = await listProjectSecrets(input.projectId);
   const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
   const llmToken = encodeSessionLlmToken({
     accountId: input.accountId,
@@ -959,58 +1326,14 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_LLM_TOKEN: llmToken,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
-    // The project-scoped CLI token. `kortix login`-less auth for any
-    // shell inside the sandbox. The CLI reads KORTIX_CLI_TOKEN; we set
-    // both names so `kortix` works without configuration AND user code
-    // that already reads $KORTIX_TOKEN (e.g. older agents) keeps working.
-    ...(cliToken ? { KORTIX_TOKEN: cliToken, KORTIX_CLI_TOKEN: cliToken } : {}),
     KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    // Provider-neutral git auth for the in-sandbox clone. KORTIX_GITHUB_TOKEN
-    // stays as a legacy alias for older snapshots; new agents read
-    // KORTIX_GIT_AUTH_TOKEN and scope it to KORTIX_REPO_URL's host.
-    ...(input.gitAuthToken
-      ? {
-        KORTIX_GIT_AUTH_TOKEN: input.gitAuthToken,
-        KORTIX_GITHUB_TOKEN: input.gitAuthToken,
-      }
-      : {}),
   };
 }
 
-/** Mint a project-scoped CLI token at session boot. Stored hashed
- *  alongside user-scoped tokens; auth middleware enforces the project
- *  scope based on the `project_id` column. */
-async function mintSessionCliToken(
-  projectId: string,
-  userId: string,
-  accountId: string,
-  sessionId: string,
-): Promise<string | null> {
-  try {
-    const result = await createAccountToken({
-      accountId,
-      userId,
-      projectId,
-      name: `session ${sessionId.slice(0, 8)}`,
-    });
-    return result.secretKey;
-  } catch (err) {
-    console.warn(
-      `[mintSessionCliToken] could not mint CLI token for session ${sessionId}:`,
-      err,
-    );
-    return null;
-  }
-}
-
-/** Best-effort derivation of the API base URL we want sandboxes to
- *  call as `$KORTIX_API_URL`. KORTIX_URL is the platform's router URL
- *  with `/v1/router` suffix; we strip that to get the API root. */
+/** Derive the API v1 base URL sandboxes call as `$KORTIX_API_URL`. */
 function deriveKortixApiBase(): string {
-  const url = config.KORTIX_URL;
-  if (!url) return 'https://api.kortix.com';
-  return url.replace(/\/v1\/router\/?$/, '');
+  return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1`;
 }
 
 export async function createProjectSession(input: {
@@ -1117,7 +1440,6 @@ export async function createProjectSession(input: {
         baseRef,
         agentName,
         initialPrompt,
-        gitAuthToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
@@ -1833,44 +2155,39 @@ projectsApp.post('/', async (c) => {
   const name = normalizeString(body.name) ?? deriveProjectName(repoUrl);
   const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
   const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
-  const now = new Date();
 
-  const [row] = await db
-    .insert(projects)
-    .values({
+  let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
+  try {
+    imported = await resolveGitHubImport({
       accountId: scope.accountId,
-      name,
       repoUrl,
       defaultBranch,
-      manifestPath,
-      status: 'active',
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projects.accountId, projects.repoUrl],
-      set: {
-        name,
-        defaultBranch,
-        manifestPath,
-        status: 'active',
-        updatedAt: now,
-      },
-    })
-    .returning();
+    });
+  } catch (error) {
+    if (error instanceof GitHubInstallationRequiredError) {
+      return c.json({
+        error: error.message,
+        install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+      }, 409);
+    }
+    return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
+  }
 
-  await grantProjectRole({
+  const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
-    projectId: row.projectId,
     userId: scope.userId,
-    role: 'manager',
-    grantedBy: scope.userId,
+    repo: imported.repo,
+    installation: imported.installation,
+    name,
+    defaultBranch: imported.defaultBranch,
+    manifestPath,
   });
 
   // Kick off the first snapshot build for this project's default branch.
   // Fire-and-forget: snapshot builds take minutes, the API response must
   // not wait. The dashboard's Sandbox Snapshot panel polls the row
   // until it flips to `ready`. See apps/api/src/snapshots/builder.ts.
-  void kickInitialSnapshotBuild(row, scope.accountId);
+  void kickInitialSnapshotBuild(row, scope.accountId, { gitAuthToken: imported.auth.token });
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 });
@@ -1979,6 +2296,19 @@ projectsApp.post('/provision', async (c) => {
     role: 'manager',
     grantedBy: scope.userId,
   });
+  await upsertProjectGitConnection({
+    accountId: scope.accountId,
+    projectId: row.projectId,
+    provider: 'freestyle',
+    repoUrl: repo.gitUrl,
+    externalRepoId: repo.repoId,
+    defaultBranch: repo.defaultBranch,
+    authMethod: 'managed',
+    credentialRef: push.identityId,
+    visibility: 'private',
+    status: 'connected',
+    metadata: { seeded },
+  });
 
   // Seeded repos have a Dockerfile now -> kick the first snapshot build so
   // sessions boot fast. Unseeded (CLI) repos build after the CLI's first push.
@@ -2007,7 +2337,8 @@ projectsApp.post('/:projectId/git-token', async (c) => {
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
-  const remote = getProjectGitRemote(meta);
+  const connection = await getProjectGitConnection(projectId);
+  const remote = getProjectGitRemote(loaded.row, connection);
   if (remote.provider !== 'freestyle' || remote.authMethod !== 'managed' || !remote.repoId) {
     return c.json({ error: 'Project is not a managed Freestyle repo' }, 409);
   }
@@ -2034,6 +2365,21 @@ projectsApp.post('/:projectId/git-token', async (c) => {
       .update(projects)
       .set({ metadata: { ...meta, git: nextGit }, updatedAt: new Date() })
       .where(eq(projects.projectId, projectId));
+    if (connection) {
+      await upsertProjectGitConnection({
+        accountId: loaded.row.accountId,
+        projectId,
+        provider: 'freestyle',
+        repoUrl: loaded.row.repoUrl,
+        externalRepoId: remote.repoId,
+        defaultBranch: loaded.row.defaultBranch,
+        authMethod: 'managed',
+        credentialRef: push.identityId,
+        visibility: connection.visibility,
+        status: connection.status,
+        metadata: normalizeJsonObject(connection.metadata),
+      });
+    }
   }
 
   return c.json({ push_token: push.token, repo_id: remote.repoId, repo_url: loaded.row.repoUrl });
@@ -2142,6 +2488,86 @@ projectsApp.delete('/github/installation', async (c) => {
   return c.json({ ok: true });
 });
 
+// GET /v1/projects/github/repositories?account_id=...
+// Vercel-style import surface: list repos available to the account's GitHub App
+// installation without exposing an installation token to the browser.
+projectsApp.get('/github/repositories', async (c) => {
+  const scope = await resolveProjectAccount(c);
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+
+  const installation = await getAccountGitHubInstallation(scope.accountId);
+  if (!installation) {
+    return c.json({
+      error: 'Install the Kortix GitHub App before importing repositories',
+      install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
+    }, 409);
+  }
+
+  try {
+    const repos = await listInstallationRepositories(installation.installationId);
+    return c.json({
+      account_id: scope.accountId,
+      installation_id: installation.installationId,
+      owner_login: installation.ownerLogin,
+      repositories: repos.map(serializeGitHubRepo),
+    });
+  } catch (error) {
+    const message = (error as Error).message || 'Failed to list GitHub repositories';
+    return c.json({ error: message }, 502);
+  }
+});
+
+// POST /v1/projects/link-repository
+// Import an existing GitHub repo through the account GitHub App installation.
+// This validates repo access up front and stores a typed project_git_connection.
+projectsApp.post('/link-repository', async (c) => {
+  const body = await readBody(c);
+  const scope = await resolveProjectAccount(c, body);
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+
+  const repoFullName = normalizeString(body.repo_full_name ?? body.repoFullName);
+  const repoUrlInput = normalizeString(body.repo_url ?? body.repoUrl);
+  const repoUrl = repoFullName
+    ? `https://github.com/${repoFullName.replace(/\.git$/i, '')}.git`
+    : repoUrlInput;
+  if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
+
+  let imported: Awaited<ReturnType<typeof resolveGitHubImport>>;
+  try {
+    imported = await resolveGitHubImport({
+      accountId: scope.accountId,
+      repoUrl,
+      defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
+    });
+  } catch (error) {
+    if (error instanceof GitHubInstallationRequiredError) {
+      return c.json({
+        error: error.message,
+        install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
+      }, 409);
+    }
+    return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
+  }
+
+  const manifestPath = normalizeString(body.manifest_path ?? body.manifestPath) ?? 'kortix.toml';
+  const row = await registerGitHubLinkedProject({
+    accountId: scope.accountId,
+    userId: scope.userId,
+    repo: imported.repo,
+    installation: imported.installation,
+    name: normalizeString(body.name),
+    defaultBranch: imported.defaultBranch,
+    manifestPath,
+  });
+
+  void kickInitialSnapshotBuild(row, scope.accountId, { gitAuthToken: imported.auth.token });
+
+  return c.json({
+    project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+    git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
+  }, 201);
+});
+
 // POST /v1/projects/create-repo
 // Creates a new GitHub repository using the account's GitHub App installation,
 // then registers it as a Kortix project.
@@ -2166,11 +2592,17 @@ projectsApp.post('/create-repo', async (c) => {
     if (error instanceof GitHubInstallationRequiredError) {
       return c.json({
         error: error.message,
-        install_url: buildGitHubAppInstallUrl(error.accountId),
+        install_url: await createGitHubInstallationInstallUrl(error.accountId, scope.userId),
       }, 409);
     }
     const message = (error as Error).message || 'GitHub is not configured on the server';
     return c.json({ error: message }, 503);
+  }
+  if (!githubAuth.installation || !githubAuth.auth) {
+    return c.json({
+      error: 'Install the Kortix GitHub App before creating GitHub-backed projects',
+      install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
+    }, 409);
   }
 
   // Auto-dedupe name collisions: GitHub 422s when the repo name is taken, so
@@ -2206,7 +2638,6 @@ projectsApp.post('/create-repo', async (c) => {
 
   const projectName = normalizeString(body.project_name ?? body.projectName) ?? deriveProjectName(repo.full_name);
   const defaultBranch = repo.default_branch || 'main';
-  const now = new Date();
 
   // Commit the minimal Kortix starter (kortix.toml + .opencode runtime +
   // default agent + README + .gitignore) into the fresh repo so users land
@@ -2238,42 +2669,14 @@ projectsApp.post('/create-repo', async (c) => {
     }
   }
 
-  const [row] = await db
-    .insert(projects)
-    .values({
-      accountId: scope.accountId,
-      name: projectName,
-      repoUrl: repo.clone_url,
-      defaultBranch,
-      manifestPath: 'kortix.toml',
-      status: 'active',
-      metadata: {
-        github: {
-          full_name: repo.full_name,
-          html_url: repo.html_url,
-          private: repo.private,
-          auth_source: githubAuth.authSource,
-        },
-      },
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projects.accountId, projects.repoUrl],
-      set: {
-        name: projectName,
-        defaultBranch,
-        status: 'active',
-        updatedAt: now,
-      },
-    })
-    .returning();
-
-  await grantProjectRole({
+  const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
-    projectId: row.projectId,
     userId: scope.userId,
-    role: 'manager',
-    grantedBy: scope.userId,
+    repo,
+    installation: githubAuth.installation,
+    name: projectName,
+    defaultBranch,
+    manifestPath: 'kortix.toml',
   });
 
   // Kick off the first snapshot build (same fire-and-forget contract as the
@@ -2450,6 +2853,79 @@ projectsApp.delete('/:projectId/cli-token/:tokenId', async (c) => {
   return c.json({ ok: true });
 });
 
+// GET /v1/projects/:projectId/git/clone-credential
+// Runtime-only clone credential fetch. A session sandbox calls this endpoint
+// with its sandbox-scoped KORTIX_TOKEN and gets a fresh provider credential
+// just-in-time. Browser sessions must not receive raw Git tokens.
+projectsApp.get('/:projectId/git/clone-credential', async (c) => {
+  const projectId = c.req.param('projectId');
+  const authType = (c as any).get('authType') as string | undefined;
+  const tokenProjectId = (c as any).get('tokenProjectId') as string | undefined;
+
+  let projectRow: typeof projects.$inferSelect | null = null;
+
+  if (authType === 'pat') {
+    if (tokenProjectId !== projectId) {
+      return c.json({ error: 'clone credentials require a project-scoped runtime token' }, 403);
+    }
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    projectRow = loaded.row;
+  } else if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    const accountId = (c as any).get('accountId') as string | undefined;
+    const sandboxId = (c as any).get('sandboxId') as string | undefined;
+    if (!accountId || !sandboxId) {
+      return c.json({ error: 'clone credentials require a sandbox token' }, 403);
+    }
+    const [sandbox] = await db
+      .select({ sandboxId: sessionSandboxes.sandboxId })
+      .from(sessionSandboxes)
+      .where(and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        eq(sessionSandboxes.projectId, projectId),
+        eq(sessionSandboxes.accountId, accountId),
+        inArray(sessionSandboxes.status, ['provisioning', 'active']),
+      ))
+      .limit(1);
+    if (!sandbox) {
+      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+    }
+    const [row] = await db
+      .select()
+      .from(projects)
+      .where(and(
+        eq(projects.projectId, projectId),
+        eq(projects.accountId, accountId),
+      ))
+      .limit(1);
+    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+    projectRow = row;
+  } else {
+    return c.json({ error: 'clone credentials are only available to runtime tokens' }, 403);
+  }
+  if (!projectRow) return c.json({ error: 'Not found' }, 404);
+
+  const gitAuth = await resolveProjectGitAuth(projectRow);
+  if (!gitAuth.auth?.token) {
+    return c.json({
+      repo_url: projectRow.repoUrl,
+      auth: null,
+      source: gitAuth.authSource,
+    });
+  }
+
+  return c.json({
+    repo_url: projectRow.repoUrl,
+    auth: {
+      username: 'x-access-token',
+      token: gitAuth.auth.token,
+      type: 'basic',
+    },
+    source: gitAuth.authSource,
+    expires_at: null,
+  });
+});
+
 // POST /v1/projects/:projectId/snapshots/rebuild
 // Manually kick off a build for the current HEAD of the project's default
 // branch. Idempotent: if a `ready` snapshot already exists for that
@@ -2491,18 +2967,17 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
 });
 
 // PUT /v1/projects/:projectId/git-credential
-// Stores the provider-neutral git token in the same encrypted project secret
-// table as user env vars, but keeps the key system-owned and non-deletable.
-// Managed providers (Freestyle, GitHub App, server PAT starter repos) mint
-// credentials server-side, so this route is for BYO/private remotes and future
-// providers like GitLab/Bitbucket.
+// Stores provider-neutral BYO git credentials as platform credentials, not as
+// user-readable/injectable runtime secrets. Managed providers (Freestyle and
+// GitHub App) mint credentials server-side; this exists for generic future
+// providers such as GitLab/Bitbucket until they have first-class adapters.
 projectsApp.put('/:projectId/git-credential', async (c) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  if (hasServerManagedGitAuth(loaded.row)) {
+  if (await hasServerManagedGitAuth(loaded.row)) {
     return c.json({ error: 'Git auth is already managed by Kortix for this project' }, 409);
   }
 
@@ -2514,26 +2989,37 @@ projectsApp.put('/:projectId/git-credential', async (c) => {
         : '';
   if (!token) return c.json({ error: 'token is required' }, 400);
 
-  const now = new Date();
-  const [row] = await db
-    .insert(projectSecrets)
-    .values({
-      projectId,
-      name: PROJECT_GIT_AUTH_SECRET_NAME,
-      valueEnc: encryptProjectSecret(projectId, token),
-      createdBy: loaded.userId,
-      updatedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: [projectSecrets.projectId, projectSecrets.name],
-      set: {
-        valueEnc: encryptProjectSecret(projectId, token),
-        updatedAt: now,
-      },
-    })
-    .returning();
+  const existingConnection = await getProjectGitConnection(projectId);
+  const remote = getProjectGitRemote(loaded.row, existingConnection);
+  const provider = normalizeString(body.provider) ?? (remote.provider === 'github' ? 'generic' : remote.provider);
+  if (provider === 'github') {
+    return c.json({ error: 'GitHub credentials are managed through the GitHub App connection' }, 409);
+  }
 
-  return c.json(serializeProjectSecret(row), 200);
+  const credential = await upsertProjectGitCredential({
+    accountId: loaded.row.accountId,
+    projectId,
+    provider,
+    token,
+    createdBy: loaded.userId,
+  });
+  const connection = await upsertProjectGitConnection({
+    accountId: loaded.row.accountId,
+    projectId,
+    provider,
+    repoUrl: loaded.row.repoUrl,
+    defaultBranch: loaded.row.defaultBranch,
+    authMethod: 'project_credential',
+    credentialRef: credential.credentialId,
+    status: 'connected',
+    metadata: { credential_kind: 'token' },
+  });
+
+  return c.json({
+    configured: true,
+    provider,
+    git_connection: serializeProjectGitConnection(connection),
+  }, 200);
 });
 
 // GET /v1/projects/:projectId/secrets
@@ -2559,7 +3045,7 @@ projectsApp.get('/:projectId/secrets', async (c) => {
   let manifestStatus: 'loaded' | 'missing' | 'error' = 'missing';
   let manifestError: string | null = null;
   try {
-    const projectConfig = await loadProjectConfig(loaded.row, []);
+    const projectConfig = await loadProjectConfig(await withProjectGitAuth(loaded.row), []);
     required = projectConfig?.env?.required ?? [];
     optional = projectConfig?.env?.optional ?? [];
     manifestStatus = projectConfig?.manifest_raw ? 'loaded' : 'missing';
@@ -2573,20 +3059,9 @@ projectsApp.get('/:projectId/secrets', async (c) => {
     });
   }
 
-  const items = rows.map(serializeProjectSecret);
-  if (!items.some((item) => item.name === PROJECT_GIT_AUTH_SECRET_NAME)) {
-    const serverManagedGitAuth = hasServerManagedGitAuth(loaded.row);
-    items.push(serializeVirtualProjectSecret({
-      projectId,
-      name: PROJECT_GIT_AUTH_SECRET_NAME,
-      createdAt: loaded.row.createdAt,
-      updatedAt: loaded.row.updatedAt,
-      purpose: 'git_auth',
-      configured: serverManagedGitAuth,
-      canRotate: !serverManagedGitAuth,
-      managedBy: serverManagedGitAuth ? 'kortix' : 'project_secret',
-    }));
-  }
+  const items = rows
+    .filter((row) => !isSystemProjectSecretName(row.name))
+    .map(serializeProjectSecret);
 
   return c.json({
     items,
@@ -2678,12 +3153,7 @@ projectsApp.get('/:projectId/triggers', async (c) => {
 });
 
 function buildPublicWebhookUrl(projectId: string, slug: string): string {
-  const base = (config.KORTIX_URL || '').replace(/\/+$/, '');
-  // Server-side webhooks are mounted at /v1/webhooks/projects/:projectId/:slug.
-  // KORTIX_URL typically ends in `/v1/router`; we strip the trailing `/v1*`
-  // segments and reattach `/v1/webhooks/...` so the URL is clean.
-  const stripped = base.replace(/\/v1(\/.*)?$/, '');
-  const root = stripped || base;
+  const root = deriveKortixApiRoot(config.KORTIX_URL);
   return `${root}/v1/webhooks/projects/${projectId}/${slug}`;
 }
 
@@ -2858,7 +3328,7 @@ function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
  * scaffold it on save.
  */
 async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
-  const existing = await readManifest(project);
+  const existing = await readManifest(await withProjectGitAuth(project));
   if (existing) return existing;
   return {
     schemaVersion: KNOWN_SCHEMA_VERSION,
@@ -3379,7 +3849,7 @@ function serializeDeploymentRow(row: typeof deployments.$inferSelect) {
 }
 
 async function loadAppsForResponse(projectId: string, project: ProjectRow) {
-  const { specs, errors } = await loadProjectApps(project);
+  const { specs, errors } = await loadProjectApps(await withProjectGitAuth(project));
   const apps = await Promise.all(
     specs.map(async (spec) => {
       const latest = await getLatestDeployment(projectId, spec.slug);
@@ -3508,7 +3978,7 @@ projectsApp.post('/:projectId/apps/:slug/deploy', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const { specs } = await loadProjectApps(loaded.row);
+  const { specs } = await loadProjectApps(await withProjectGitAuth(loaded.row));
   const spec = specs.find((s) => s.slug === slug);
   if (!spec) return c.json({ error: 'Not found' }, 404);
 
@@ -3606,9 +4076,10 @@ projectsApp.get('/:projectId/detail', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
+  const gitProject = await withProjectGitAuth(loaded.row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {
-    files = await listRepoFiles(loaded.row, loaded.row.defaultBranch);
+    files = await listRepoFiles(gitProject, loaded.row.defaultBranch);
   } catch (error) {
     console.warn('[projects] repo detail listing unavailable', {
       projectId,
@@ -3616,12 +4087,13 @@ projectsApp.get('/:projectId/detail', async (c) => {
     });
     c.header('X-Kortix-Repo-Status', 'unavailable');
   }
-  const config = await loadProjectConfig(loaded.row, files);
+  const config = await loadProjectConfig(gitProject, files);
   return c.json({
     project: serializeProject(loaded.row, {
       projectRole: loaded.projectRole,
       effectiveRole: loaded.effectiveRole,
     }),
+    git_connection: serializeProjectGitConnection(await getProjectGitConnection(projectId)),
     config,
     file_count: files.length,
     files: files.slice(0, 300),
@@ -3634,9 +4106,10 @@ projectsApp.get('/:projectId/files', async (c) => {
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
+  const gitProject = await withProjectGitAuth(loaded.row);
   let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
   try {
-    files = await listRepoFiles(loaded.row, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'));
+    files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'));
   } catch (error) {
     console.warn('[projects] repo file listing unavailable', {
       projectId,
@@ -3658,7 +4131,7 @@ projectsApp.get('/:projectId/files/archive', async (c) => {
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
 
   try {
-    const stream = await archiveRepoSubtree(loaded.row, ref, path);
+    const stream = await archiveRepoSubtree(await withProjectGitAuth(loaded.row), ref, path);
     const fileName = (path?.split('/').filter(Boolean).pop() || 'workspace') + '.zip';
     return new Response(stream, {
       status: 200,
@@ -3688,11 +4161,12 @@ projectsApp.get('/:projectId/files/search', async (c) => {
   const limit = Math.min(Math.max(Number(c.req.query('limit')) || 50, 1), 200);
 
   try {
+    const gitProject = await withProjectGitAuth(loaded.row);
     if (contentSearch) {
-      const matches = await grepRepoFiles(loaded.row, query, ref, limit);
+      const matches = await grepRepoFiles(gitProject, query, ref, limit);
       return c.json({ query, ref, content_search: true, results: matches });
     }
-    const files = await searchRepoFileNames(loaded.row, query, ref, limit);
+    const files = await searchRepoFileNames(gitProject, query, ref, limit);
     return c.json({
       query,
       ref,
@@ -3716,7 +4190,7 @@ projectsApp.get('/:projectId/files/content', async (c) => {
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
-  const content = await readRepoFile(loaded.row, path, ref);
+  const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
   return c.json({ path, ref, content });
 });
 
@@ -3732,7 +4206,7 @@ projectsApp.get('/:projectId/files/history', async (c) => {
   const limit = Number(c.req.query('limit') || '50');
   const skip = Number(c.req.query('skip') || '0');
   try {
-    const result = await getFileHistory(loaded.row, path, { ref, limit, skip });
+    const result = await getFileHistory(await withProjectGitAuth(loaded.row), path, { ref, limit, skip });
     return c.json({ path, ref, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load history';
@@ -3747,7 +4221,7 @@ projectsApp.get('/:projectId/branches', async (c) => {
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   try {
-    const branches = await listBranches(loaded.row);
+    const branches = await listBranches(await withProjectGitAuth(loaded.row));
     return c.json({
       default_branch: loaded.row.defaultBranch,
       branches,
@@ -3773,7 +4247,7 @@ projectsApp.get('/:projectId/commits', async (c) => {
   const limit = Number(c.req.query('limit') || '50');
   const skip = Number(c.req.query('skip') || '0');
   try {
-    const result = await listCommits(loaded.row, { ref, path, limit, skip });
+    const result = await listCommits(await withProjectGitAuth(loaded.row), { ref, path, limit, skip });
     return c.json({ ref, path: path ?? null, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load commits';
@@ -3789,7 +4263,7 @@ projectsApp.get('/:projectId/commits/:sha', async (c) => {
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   try {
-    const commit = await getCommit(loaded.row, sha);
+    const commit = await getCommit(await withProjectGitAuth(loaded.row), sha);
     if (!commit) return c.json({ error: 'Commit not found' }, 404);
     return c.json(commit);
   } catch (error) {
@@ -3807,7 +4281,7 @@ projectsApp.get('/:projectId/commits/:sha/diff', async (c) => {
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   try {
-    const diff = await getCommitDiff(loaded.row, sha, { path });
+    const diff = await getCommitDiff(await withProjectGitAuth(loaded.row), sha, { path });
     return c.json({ path: path ?? null, ...diff });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load diff';
@@ -3846,16 +4320,7 @@ projectsApp.get('/:projectId/version-diff', async (c) => {
   }
 
   try {
-    const diff = await getBranchDiff(
-      {
-        projectId: loaded.row.projectId,
-        repoUrl: loaded.row.repoUrl,
-        defaultBranch: loaded.row.defaultBranch,
-        manifestPath: loaded.row.manifestPath,
-      },
-      intoRef,
-      fromRef,
-    );
+    const diff = await getBranchDiff(await withProjectGitAuth(loaded.row), intoRef, fromRef);
     return c.json({
       from: fromRef,
       into: intoRef,
@@ -4355,7 +4820,7 @@ projectsApp.get('/:projectId/sessions/:sessionId/sandbox', async (c) => {
     external_id: row.externalId,
     base_url: row.baseUrl,
     status: row.status,
-    config: row.config ?? {},
+    config: serializeSessionSandboxConfig(row.config),
     metadata: row.metadata ?? {},
     last_used_at: row.lastUsedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
@@ -4486,7 +4951,6 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         initialPrompt,
-        gitAuthToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
@@ -4628,25 +5092,10 @@ projectsApp.post('/:projectId/change-requests', async (c) => {
   let baseSha: string | null = null;
   let headSha: string | null = null;
   try {
+    const projectForGit = await withProjectGitAuth(loaded.row);
     [baseSha, headSha] = await Promise.all([
-      resolveBranchTip(
-        {
-          projectId: loaded.row.projectId,
-          repoUrl: loaded.row.repoUrl,
-          defaultBranch: loaded.row.defaultBranch,
-          manifestPath: loaded.row.manifestPath,
-        },
-        baseRef,
-      ),
-      resolveBranchTip(
-        {
-          projectId: loaded.row.projectId,
-          repoUrl: loaded.row.repoUrl,
-          defaultBranch: loaded.row.defaultBranch,
-          manifestPath: loaded.row.manifestPath,
-        },
-        headRef,
-      ),
+      resolveBranchTip(projectForGit, baseRef),
+      resolveBranchTip(projectForGit, headRef),
     ]);
   } catch (error) {
     return c.json({
@@ -4702,12 +5151,7 @@ projectsApp.get('/:projectId/change-requests/:crId', async (c) => {
 
   await refreshCrTips({
     cr,
-    project: {
-      projectId: loaded.row.projectId,
-      repoUrl: loaded.row.repoUrl,
-      defaultBranch: loaded.row.defaultBranch,
-      manifestPath: loaded.row.manifestPath,
-    },
+    project: await withProjectGitAuth(loaded.row),
   });
   cr = (await getCrById(crId, projectId))!;
 
@@ -4755,12 +5199,7 @@ projectsApp.get('/:projectId/change-requests/:crId/diff', async (c) => {
   const cr = await getCrById(crId, projectId);
   if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
-  const projectForGit = {
-    projectId: loaded.row.projectId,
-    repoUrl: loaded.row.repoUrl,
-    defaultBranch: loaded.row.defaultBranch,
-    manifestPath: loaded.row.manifestPath,
-  };
+  const projectForGit = await withProjectGitAuth(loaded.row);
 
   try {
     const useSnapshot = cr.status === 'merged' && cr.baseCommitSha && cr.headCommitSha;
@@ -4798,16 +5237,7 @@ projectsApp.get('/:projectId/change-requests/:crId/merge-preview', async (c) => 
   if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
   try {
-    const preview = await previewMerge(
-      {
-        projectId: loaded.row.projectId,
-        repoUrl: loaded.row.repoUrl,
-        defaultBranch: loaded.row.defaultBranch,
-        manifestPath: loaded.row.manifestPath,
-      },
-      cr.baseRef,
-      cr.headRef,
-    );
+    const preview = await previewMerge(await withProjectGitAuth(loaded.row), cr.baseRef, cr.headRef);
     return c.json(preview);
   } catch (error) {
     return c.json({
@@ -4832,12 +5262,7 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
   }
 
   const customMessage = normalizeString(body.message);
-  const projectForGit = {
-    projectId: loaded.row.projectId,
-    repoUrl: loaded.row.repoUrl,
-    defaultBranch: loaded.row.defaultBranch,
-    manifestPath: loaded.row.manifestPath,
-  };
+  const projectForGit = await withProjectGitAuth(loaded.row);
 
   let result: Awaited<ReturnType<typeof mergeBranches>>;
   try {

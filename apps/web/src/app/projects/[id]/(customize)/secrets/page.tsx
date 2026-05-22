@@ -42,14 +42,12 @@ import { cn } from '@/lib/utils';
 import {
   deleteProjectSecret,
   listProjectSecrets,
-  upsertProjectGitCredential,
   upsertProjectSecret,
   type ProjectSecret,
   type ProjectSecretsResponse,
 } from '@/lib/projects-client';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
-const GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 
 type Requirement = 'required' | 'optional' | null;
 
@@ -537,9 +535,6 @@ function SecretDialog({
       if (!value.trim()) {
         throw new Error('Value is required.');
       }
-      if (finalName === GIT_AUTH_SECRET_NAME) {
-        return upsertProjectGitCredential(projectId, { token: value });
-      }
       if (finalName.startsWith('KORTIX_')) {
         throw new Error('KORTIX_* names are reserved for platform variables');
       }
@@ -577,7 +572,7 @@ function SecretDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            Injected as an environment variable into every new session sandbox.
+            Runtime environment variable for new session sandboxes.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
@@ -722,9 +717,7 @@ function ManifestStatusBanner({
       >
         {error && <p className="opacity-80 break-all">{error}</p>}
         <p className="opacity-80">
-          Check the repo is reachable and the server has{' '}
-          <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">KORTIX_GITHUB_TOKEN</code>{' '}
-          set if it's private.
+          Check the repo is reachable and linked through Project settings.
         </p>
       </InfoBanner>
     );

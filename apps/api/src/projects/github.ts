@@ -4,10 +4,11 @@ import { getTraceHeaders } from '../lib/request-context';
 const GITHUB_API = 'https://api.github.com';
 
 // 'managed' = a Kortix-managed Freestyle git token (not GitHub).
-// 'project_secret' = provider-neutral git credential stored as a project secret.
+// 'project_credential' = provider-neutral git credential stored outside
+// user-readable runtime secrets.
 // Both ride this auth context because callers only consume `.token` for git
 // transport; GitHub API calls (ghFetch) are only made for actual GitHub repos.
-export type GitHubAuthSource = 'app_installation' | 'pat' | 'managed' | 'project_secret';
+export type GitHubAuthSource = 'app_installation' | 'pat' | 'managed' | 'project_credential';
 
 export interface GitHubAuthContext {
   token: string;
@@ -27,6 +28,11 @@ export interface GitHubRepo {
   ssh_url: string;
   default_branch: string;
   description: string | null;
+}
+
+export interface GitHubInstallationRepositories {
+  total_count: number;
+  repositories: GitHubRepo[];
 }
 
 export function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
@@ -277,6 +283,30 @@ export async function createInstallationToken(installationId: string): Promise<G
     `/app/installations/${encodeURIComponent(id)}/access_tokens`,
     { method: 'POST' },
     { token: createGitHubAppJwt() },
+  );
+}
+
+export async function listInstallationRepositories(
+  installationId: string,
+): Promise<GitHubRepo[]> {
+  const token = await createInstallationToken(installationId);
+  const body = await ghFetch<GitHubInstallationRepositories>(
+    '/installation/repositories?per_page=100',
+    { method: 'GET' },
+    { token: token.token },
+  );
+  return body.repositories ?? [];
+}
+
+export async function getRepo(opts: {
+  owner: string;
+  repo: string;
+  auth?: Pick<GitHubAuthContext, 'token'>;
+}): Promise<GitHubRepo> {
+  return ghFetch<GitHubRepo>(
+    `/repos/${encodeURIComponent(opts.owner)}/${encodeURIComponent(opts.repo)}`,
+    { method: 'GET' },
+    opts.auth,
   );
 }
 

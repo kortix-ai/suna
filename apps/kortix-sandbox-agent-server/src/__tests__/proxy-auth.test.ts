@@ -15,7 +15,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
-import type { Config } from '../config'
+import { loadConfig, type Config } from '../config'
 import type { Opencode } from '../opencode'
 import { buildOpencodeApp } from '../proxy'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
@@ -34,9 +34,10 @@ function baseConfig(over: Partial<Config> = {}): Config {
     branchFetchDelaySec: 0.25,
     defaultOpencodeConfigDir: '/ephemeral/opencode',
     autoClone: false,
+    projectId: undefined,
+    apiUrl: undefined,
     repoUrl: undefined,
     branchName: undefined,
-    githubToken: undefined,
     kortixToken: TEST_TOKEN,
     ...over,
   }
@@ -89,6 +90,16 @@ function git(args: string[], cwd?: string) {
 }
 
 describe('daemon proxy auth gate', () => {
+  it('uses KORTIX_TOKEN as the only sandbox auth token', () => {
+    const cfg = loadConfig({
+      KORTIX_TOKEN: TEST_TOKEN,
+      KORTIX_CLI_TOKEN: 'legacy-project-pat-that-must-not-shadow',
+    } as NodeJS.ProcessEnv)
+
+    expect(cfg.kortixToken).toBe(TEST_TOKEN)
+    expect('apiToken' in cfg).toBe(false)
+  })
+
   it('scopes git auth headers to the project repo host', () => {
     const encoded = Buffer.from('x-access-token:secret-token').toString('base64')
 
@@ -101,6 +112,51 @@ describe('daemon proxy auth gate', () => {
       '-c',
       `http.https://github.com/.extraheader=AUTHORIZATION: basic ${encoded}`,
     ])
+  })
+
+  it('fetches clone credentials from the API v1 project endpoint', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-clone-credential-'))
+    const originalFetch = globalThis.fetch
+    const requests: Array<{ url: string; init?: RequestInit }> = []
+    try {
+      const remote = join(root, 'remote.git')
+      const seed = join(root, 'seed')
+      const target = join(root, 'workspace')
+      git(['init', '--bare', remote])
+      mkdirSync(seed)
+      git(['init'], seed)
+      git(['checkout', '-b', 'main'], seed)
+      writeFileSync(join(seed, 'README.md'), 'v1\n')
+      git(['add', 'README.md'], seed)
+      git(['-c', 'user.email=test@kortix.dev', '-c', 'user.name=Kortix Test', 'commit', '-m', 'v1'], seed)
+      git(['remote', 'add', 'origin', remote], seed)
+      git(['push', '-u', 'origin', 'main'], seed)
+
+      globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+        const href = typeof url === 'string' || url instanceof URL ? String(url) : url.url
+        requests.push({ url: href, init })
+        return new Response(JSON.stringify({ auth: { token: 'clone-token' } }), {
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }) as unknown as typeof fetch
+
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectId: 'project-123',
+        apiUrl: 'http://api.local/v1/router',
+        projectTarget: target,
+        repoUrl: remote,
+        defaultBranch: 'main',
+      }))
+
+      expect(requests).toHaveLength(1)
+      expect(requests[0]!.url).toBe('http://api.local/v1/projects/project-123/git/clone-credential')
+      expect((requests[0]!.init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${TEST_TOKEN}`)
+      expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
+    } finally {
+      globalThis.fetch = originalFetch
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('lets /kortix/health through with no header', async () => {

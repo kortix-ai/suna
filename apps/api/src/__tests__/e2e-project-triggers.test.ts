@@ -162,6 +162,18 @@ mock.module('../projects/github', () => ({
     repository_selection: 'all',
     permissions: {},
   }),
+  getRepo: async () => ({
+    id: 1,
+    name: 'contract-project',
+    full_name: 'kortix-org/contract-project',
+    private: true,
+    html_url: 'https://github.com/kortix-org/contract-project',
+    clone_url: 'https://github.com/kortix-org/contract-project.git',
+    ssh_url: 'git@github.com:kortix-org/contract-project.git',
+    default_branch: 'main',
+    description: null,
+  }),
+  listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
 }));

@@ -63,8 +63,9 @@ export function decryptProjectSecret(projectId: string, valueEnc: string): strin
 }
 
 /**
- * Decrypted key→value map of every secret on the project.
- * Used to build the env-var payload injected into a sandbox on creation.
+ * Decrypted key->value map of user runtime secrets on the project.
+ * Platform-reserved KORTIX_* rows are intentionally excluded so legacy system
+ * secrets can never leak into the sandbox as user-controlled env vars.
  */
 export async function listProjectSecrets(projectId: string): Promise<Record<string, string>> {
   const rows = await db
@@ -77,6 +78,7 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
 
   const env: Record<string, string> = {};
   for (const row of rows) {
+    if (row.name.toUpperCase().startsWith('KORTIX_')) continue;
     env[row.name] = decryptProjectSecret(projectId, row.valueEnc);
   }
   return env;
