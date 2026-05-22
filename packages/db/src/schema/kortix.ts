@@ -136,6 +136,10 @@ export const accountMembers = kortixSchema.table(
     accountRole: accountRoleEnum('account_role').default('owner').notNull(),
     // Super-admin bypasses all IAM policy evaluation. Distinct from accountRole.
     isSuperAdmin: boolean('is_super_admin').default(false).notNull(),
+    // External identifier set by an upstream IdP via SCIM. Null = managed
+    // locally (invited via UI or API). When set, the IdP "owns" this row —
+    // deactivating the user there should mirror here.
+    scimExternalId: text('scim_external_id'),
     joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -1900,3 +1904,36 @@ export const iamPoliciesRelations = relations(iamPolicies, ({ one }) => ({
     references: [iamRoles.roleId],
   }),
 }));
+
+// ─── SCIM 2.0 provisioning tokens ──────────────────────────────────────────
+// Long-lived bearer tokens used by external IdPs (Okta, Azure AD, etc.) to
+// drive the /scim/v2/accounts/:accountId/* endpoints. Separate from PATs
+// because the lifecycle is different: rotated by IT admins, never
+// individual users; not subject to per-user MFA; not used for human auth.
+
+export const scimTokens = kortixSchema.table(
+  'scim_tokens',
+  {
+    tokenId: uuid('token_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 128 }).notNull(),
+    // SHA-256 hex of the plaintext token (kortix_scim_*). We never store
+    // the plaintext, only the hash. Same approach as account_tokens.
+    secretHash: text('secret_hash').notNull(),
+    // Optional public prefix so admins can recognise tokens in a list
+    // ("kortix_scim_abcd…"). Display-only; not used for lookup.
+    publicPrefix: varchar('public_prefix', { length: 32 }).notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('idx_scim_tokens_account').on(table.accountId),
+    // Hash is globally unique; the validate path looks up by hash alone.
+    uniqueIndex('idx_scim_tokens_secret_hash').on(table.secretHash),
+  ],
+);

@@ -55,6 +55,7 @@ import { GroupsTab } from '@/components/iam/groups-tab';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { StrictModeCard } from '@/components/iam/strict-mode-card';
+import { ScimCard } from '@/components/iam/scim-card';
 import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
@@ -268,6 +269,10 @@ export default function AccountSettingsPage() {
                   canWrite={canWriteAccount}
                 />
                 <StrictModeCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <ScimCard
                   accountId={account.account_id}
                   canManage={canWriteAccount}
                 />

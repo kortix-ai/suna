@@ -45,6 +45,7 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { accountsRouter } from './accounts';
+import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
@@ -249,6 +250,9 @@ app.post('/v1/prewarm', (c) => {
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
+// SCIM 2.0 — separate auth (per-account bearer tokens, not Supabase JWT).
+// Mounted outside /v1 so IdPs configure the documented protocol URL.
+app.route('/scim/v2', scimRouter);
 
 // /v1/account-invites/* — accept/decline/describe pending team invitations.
 app.route('/v1/account-invites', accountInvitesRouter);

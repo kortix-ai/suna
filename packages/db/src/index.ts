@@ -127,6 +127,8 @@ export {
   iamRolesRelations,
   iamRolePermissionsRelations,
   iamPoliciesRelations,
+  // SCIM
+  scimTokens,
 } from './schema/kortix';
 
 export type {
