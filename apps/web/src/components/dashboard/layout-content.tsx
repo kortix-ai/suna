@@ -1088,8 +1088,15 @@ export default function DashboardLayoutContent({
 
 					<div
 						className={cn(
-							"flex-1 min-h-0 flex flex-col overflow-hidden relative",
-							"md:border md:border-b-0 md:border-border/50 md:rounded-t-xl",
+							// White panel fill so every state (error, loading, active
+							// chat) reads as the content card — not the gray sidebar
+							// showing through.
+							"flex-1 min-h-0 flex flex-col overflow-hidden relative bg-background",
+							// Floats off the top (strip above) and the right (sidebar-
+							// colored gap), but stays anchored to the bottom edge — no
+							// bottom border, bottom corners square. Left stays flush with
+							// the sidebar rail.
+							"md:border md:border-b-0 md:border-border/50 md:rounded-t-xl md:mr-3",
 						)}
 					>
 						<SessionTabsContainer>{children}</SessionTabsContainer>

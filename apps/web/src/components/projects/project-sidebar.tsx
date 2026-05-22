@@ -408,7 +408,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             )}
           </button>
         </div>
-        <div className="pt-2 group-data-[collapsible=icon]:hidden">
+        {/* Project selector stays visible when collapsed — ProjectSwitcher
+            renders avatar-only + centered in the icon rail (label/chevron
+            self-hide via its own group-data-[collapsible=icon] classes). */}
+        <div className="pt-2">
           <ProjectSwitcher variant="sidebar" />
         </div>
       </SidebarHeader>

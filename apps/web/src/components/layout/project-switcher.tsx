@@ -196,7 +196,7 @@ export function ProjectSwitcher({
         sideOffset={6}
         className={cn(
           'overflow-hidden rounded-2xl border-border/60 p-0',
-          variant === 'sidebar' ? 'w-(--radix-dropdown-menu-trigger-width) shadow-none' : 'w-64',
+          variant === 'sidebar' ? 'w-(--radix-dropdown-menu-trigger-width) min-w-56 shadow-none' : 'w-64',
         )}
       >
         {showSearch && (

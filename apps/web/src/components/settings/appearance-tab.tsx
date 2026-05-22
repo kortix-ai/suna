@@ -1,10 +1,9 @@
 'use client';
 
 import * as React from 'react';
-import { Check, Monitor, Sun, Moon, Palette, ImageIcon, LayoutPanelTop } from 'lucide-react';
+import { Check, Monitor, Sun, Moon, Palette, ImageIcon } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { transitionFromElement } from '@/lib/view-transition';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
@@ -84,10 +83,6 @@ export function AppearanceTab() {
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID
   );
   const setWallpaperId = useUserPreferencesStore((s) => s.setWallpaperId);
-  const disableTabSelector = useUserPreferencesStore(
-    (s) => s.preferences.disableTabSelector ?? false,
-  );
-  const setDisableTabSelector = useUserPreferencesStore((s) => s.setDisableTabSelector);
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -165,31 +160,6 @@ export function AppearanceTab() {
               />
             ))}
           </div>
-        </div>
-
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <LayoutPanelTop className="size-4 text-muted-foreground" />
-            <label className="text-xs font-medium text-muted-foreground">
-              Interface
-            </label>
-          </div>
-          <label
-            htmlFor="disable-tab-selector"
-            className="flex items-center justify-between gap-4 rounded-2xl border border-border/50 px-3 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
-          >
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-foreground">Show tabs</div>
-              <div className="text-xs text-muted-foreground">
-                When off, the tab bar is hidden and content extends to the top.
-              </div>
-            </div>
-            <Switch
-              id="disable-tab-selector"
-              checked={!disableTabSelector}
-              onCheckedChange={(checked) => setDisableTabSelector(!checked)}
-            />
-          </label>
         </div>
 
       </div>

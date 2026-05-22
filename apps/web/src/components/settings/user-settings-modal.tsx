@@ -28,6 +28,7 @@ import {
     Key,
     Camera,
     Upload,
+    type LucideIcon,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
@@ -118,7 +119,7 @@ type TabId = SettingsTabId;
 interface Tab {
     id: TabId;
     label: string;
-    icon: React.ComponentType<{ className?: string }>;
+    icon: LucideIcon;
     disabled?: boolean;
 }
 
@@ -158,11 +159,15 @@ export function UserSettingsModal({
     // Tab definitions from the central menu registry (single source of truth).
     // Account-level tabs (Billing, Transactions) now live in AccountSettingsModal —
     // this modal is for user preferences and the currently-scoped instance.
-    const preferenceTabs: Tab[] = getPreferenceTabs();
-    const instanceTabs: Tab[] = hasInstance ? getInstanceTabs() : [];
-    const accountTabs: Tab[] = [
-        { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
-    ];
+    const preferenceTabs: Tab[] = React.useMemo(() => getPreferenceTabs(), []);
+    const instanceTabs: Tab[] = React.useMemo(
+        () => (hasInstance ? getInstanceTabs() : []),
+        [hasInstance],
+    );
+    const accountTabs: Tab[] = React.useMemo(
+        () => [{ id: 'tokens', label: 'CLI tokens', icon: KeyRound }],
+        [],
+    );
 
     const instanceLoading =
         open && !!currentInstanceId && !hasInstance && instanceSandboxQuery.isLoading;
@@ -178,20 +183,23 @@ export function UserSettingsModal({
               : []),
     ];
 
-    const allTabs = [...preferenceTabs, ...accountTabs, ...instanceTabs];
+    const allTabs = React.useMemo(
+        () => [...preferenceTabs, ...accountTabs, ...instanceTabs],
+        [preferenceTabs, accountTabs, instanceTabs],
+    );
+    const activeContentTab: TabId = allTabs.some((tab) => tab.id === activeTab)
+        ? activeTab
+        : 'general';
 
     useEffect(() => {
         setActiveTab(defaultTab);
     }, [defaultTab]);
 
     useEffect(() => {
-        if (
-            activeTab === 'instance-members' &&
-            !hasInstance
-        ) {
+        if (!allTabs.some((tab) => tab.id === activeTab)) {
             setActiveTab('general');
         }
-    }, [activeTab, hasInstance]);
+    }, [activeTab, allTabs]);
 
     const handleTabClick = (tabId: TabId) => {
         setActiveTab(tabId);
@@ -238,7 +246,7 @@ export function UserSettingsModal({
                                 ) : null}
                                 {allTabs.map((tab) => {
                                     const Icon = tab.icon;
-                                    const isActive = activeTab === tab.id;
+                                    const isActive = activeContentTab === tab.id;
 
                                     return (
                                         <Button
@@ -262,13 +270,13 @@ export function UserSettingsModal({
                         {/* Mobile Content - Scrollable */}
                         <div className="flex-1 overflow-x-hidden overflow-y-auto">
                             <div className="w-full max-w-full">
-                                {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                                {activeTab === 'appearance' && <AppearanceTab />}
-                                {activeTab === 'sounds' && <SoundsTab />}
-                                {activeTab === 'notifications' && <NotificationsTab />}
-                                {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
-                                {activeTab === 'tokens' && <CliTokensTab />}
-                                {activeTab === 'instance-members' && instanceSandbox && (
+                                {activeContentTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                                {activeContentTab === 'appearance' && <AppearanceTab />}
+                                {activeContentTab === 'sounds' && <SoundsTab />}
+                                {activeContentTab === 'notifications' && <NotificationsTab />}
+                                {activeContentTab === 'shortcuts' && <KeyboardShortcutsTab />}
+                                {activeContentTab === 'tokens' && <CliTokensTab />}
+                                {activeContentTab === 'instance-members' && instanceSandbox && (
                                     <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                                 )}
                             </div>
@@ -310,7 +318,7 @@ export function UserSettingsModal({
                                             ) : (
                                                 group.tabs.map((tab) => {
                                                 const Icon = tab.icon;
-                                                const isActive = activeTab === tab.id;
+                                                const isActive = activeContentTab === tab.id;
 
                                                 return (
                                                     <Button
@@ -339,13 +347,13 @@ export function UserSettingsModal({
 
                         {/* Desktop Content */}
                         <div className="flex-1 overflow-y-auto min-h-0 w-full max-w-full">
-                            {activeTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
-                            {activeTab === 'appearance' && <AppearanceTab />}
-                            {activeTab === 'sounds' && <SoundsTab />}
-                            {activeTab === 'notifications' && <NotificationsTab />}
-                            {activeTab === 'shortcuts' && <KeyboardShortcutsTab />}
-                            {activeTab === 'tokens' && <CliTokensTab />}
-                            {activeTab === 'instance-members' && instanceSandbox && (
+                            {activeContentTab === 'general' && <GeneralTab onClose={() => onOpenChange(false)} />}
+                            {activeContentTab === 'appearance' && <AppearanceTab />}
+                            {activeContentTab === 'sounds' && <SoundsTab />}
+                            {activeContentTab === 'notifications' && <NotificationsTab />}
+                            {activeContentTab === 'shortcuts' && <KeyboardShortcutsTab />}
+                            {activeContentTab === 'tokens' && <CliTokensTab />}
+                            {activeContentTab === 'instance-members' && instanceSandbox && (
                                 <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
                             )}
                         </div>
@@ -1176,7 +1184,7 @@ function NotificationsTab() {
 }
 
 interface NotificationToggleProps {
-    icon: React.ComponentType<{ className?: string }>;
+    icon: LucideIcon;
     label: string;
     description: string;
     enabled: boolean;
