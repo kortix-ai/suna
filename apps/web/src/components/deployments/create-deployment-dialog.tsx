@@ -11,6 +11,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   GitBranch,
   FileCode2,
@@ -813,10 +815,6 @@ export function CreateDeploymentDialog({
     setEnvVars((prev) => prev.map((e, i) => (i === index ? { ...e, [field]: value } : e)));
   };
 
-  const inputClass =
-    'h-9 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
-  const textareaClass =
-    'w-full rounded-xl border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 font-mono min-h-[100px] resize-y';
   const labelClass = 'block text-sm font-medium text-foreground mb-1.5';
 
   return (
@@ -865,15 +863,15 @@ export function CreateDeploymentDialog({
           {/* Domain */}
           <div>
             <label className={labelClass}>
-              Domain <span className="text-red-500">*</span>
+              Domain <span className="text-destructive">*</span>
             </label>
             <div className="flex gap-2">
-              <input
+              <Input
                 type="text"
                 value={domains}
                 onChange={(e) => setDomains(e.target.value)}
                 placeholder="my-app.style.dev"
-                className={cn(inputClass, 'flex-1')}
+                className="flex-1"
               />
               <Button
                 type="button"
@@ -894,7 +892,7 @@ export function CreateDeploymentDialog({
           {sourceType === 'workspace' && (
             <div>
               <label className={labelClass}>
-                Select Folder <span className="text-red-500">*</span>
+                Select Folder <span className="text-destructive">*</span>
               </label>
               <div className="rounded-2xl border overflow-hidden">
                 {/* Selected folder indicator */}
@@ -966,35 +964,32 @@ export function CreateDeploymentDialog({
             <div className="space-y-4">
               <div>
                 <label className={labelClass}>
-                  Repository URL <span className="text-red-500">*</span>
+                  Repository URL <span className="text-destructive">*</span>
                 </label>
-                <input
+                <Input
                   type="text"
                   value={sourceRef}
                   onChange={(e) => setSourceRef(e.target.value)}
                   placeholder="https://github.com/user/repo.git"
-                  className={inputClass}
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Branch</label>
-                  <input
+                  <Input
                     type="text"
                     value={branch}
                     onChange={(e) => setBranch(e.target.value)}
                     placeholder="main"
-                    className={inputClass}
                   />
                 </div>
                 <div>
                   <label className={labelClass}>Root Path</label>
-                  <input
+                  <Input
                     type="text"
                     value={rootPath}
                     onChange={(e) => setRootPath(e.target.value)}
                     placeholder="/"
-                    className={inputClass}
                   />
                 </div>
               </div>
@@ -1004,13 +999,13 @@ export function CreateDeploymentDialog({
           {sourceType === 'code' && (
             <div>
               <label className={labelClass}>
-                Code <span className="text-red-500">*</span>
+                Code <span className="text-destructive">*</span>
               </label>
-              <textarea
+              <Textarea
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder={'// Your application code\nconsole.log("Hello, World!");'}
-                className={textareaClass}
+                className="min-h-[100px] resize-y font-mono"
                 rows={8}
               />
             </div>
@@ -1020,7 +1015,7 @@ export function CreateDeploymentDialog({
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className={labelClass}>
-                  Files <span className="text-red-500">*</span>
+                  Files <span className="text-destructive">*</span>
                 </label>
                 <Button type="button" variant="ghost" size="sm" onClick={addFile}>
                   <Plus className="h-3 w-3 mr-1" />
@@ -1031,12 +1026,12 @@ export function CreateDeploymentDialog({
                 {files.map((file, i) => (
                   <div key={i} className="rounded-2xl border p-3 space-y-2">
                     <div className="flex items-center gap-2">
-                      <input
+                      <Input
                         type="text"
                         value={file.path}
                         onChange={(e) => updateFile(i, 'path', e.target.value)}
                         placeholder="index.ts"
-                        className={cn(inputClass, 'flex-1')}
+                        className="flex-1"
                       />
                       {files.length > 1 && (
                         <Button
@@ -1044,17 +1039,16 @@ export function CreateDeploymentDialog({
                           onClick={() => removeFile(i)}
                           variant="ghost"
                           size="icon"
-                          className="hover:text-red-500 hover:bg-red-500/10"
                           >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       )}
                     </div>
-                    <textarea
+                    <Textarea
                       value={file.content}
                       onChange={(e) => updateFile(i, 'content', e.target.value)}
                       placeholder="File content..."
-                      className={cn(textareaClass, 'min-h-[60px]')}
+                      className="min-h-[60px] resize-y font-mono"
                       rows={4}
                     />
                   </div>
@@ -1066,14 +1060,13 @@ export function CreateDeploymentDialog({
           {sourceType === 'tar' && (
             <div>
               <label className={labelClass}>
-                Tarball URL <span className="text-red-500">*</span>
+                Tarball URL <span className="text-destructive">*</span>
               </label>
-              <input
+              <Input
                 type="text"
                 value={tarUrl}
                 onChange={(e) => setTarUrl(e.target.value)}
                 placeholder="https://example.com/app.tar.gz"
-                className={inputClass}
               />
             </div>
           )}
@@ -1104,44 +1097,40 @@ export function CreateDeploymentDialog({
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Entrypoint</label>
-                    <input
+                    <Input
                       type="text"
                       value={entrypoint}
                       onChange={(e) => setEntrypoint(e.target.value)}
                       placeholder="server.js"
-                      className={inputClass}
                     />
                   </div>
                   <div>
                     <label className={labelClass}>Framework</label>
-                    <input
+                    <Input
                       type="text"
                       value={framework}
                       onChange={(e) => setFramework(e.target.value)}
                       placeholder="nextjs, vite, etc."
-                      className={inputClass}
                     />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className={labelClass}>Build Command</label>
-                    <input
+                    <Input
                       type="text"
                       value={buildCommand}
                       onChange={(e) => setBuildCommand(e.target.value)}
                       placeholder="npm run build"
-                      className={inputClass}
                     />
                   </div>
                   <div>
                     <label className={labelClass}>Build Output Dir</label>
-                    <input
+                    <Input
                       type="text"
                       value={buildOutDir}
                       onChange={(e) => setBuildOutDir(e.target.value)}
                       placeholder="dist"
-                      className={inputClass}
                     />
                   </div>
                 </div>
@@ -1171,26 +1160,25 @@ export function CreateDeploymentDialog({
                     <div className="space-y-2">
                       {envVars.map((ev, i) => (
                         <div key={i} className="flex items-center gap-2">
-                          <input
+                          <Input
                             type="text"
                             value={ev.key}
                             onChange={(e) => updateEnvVar(i, 'key', e.target.value)}
                             placeholder="KEY"
-                            className={cn(inputClass, 'flex-1')}
+                            className="flex-1"
                           />
-                          <input
+                          <Input
                             type="text"
                             value={ev.value}
                             onChange={(e) => updateEnvVar(i, 'value', e.target.value)}
                             placeholder="value"
-                            className={cn(inputClass, 'flex-1')}
+                            className="flex-1"
                           />
                           <Button
                             type="button"
                             onClick={() => removeEnvVar(i)}
                             variant="ghost"
                             size="icon"
-                            className="hover:text-red-500 hover:bg-red-500/10"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

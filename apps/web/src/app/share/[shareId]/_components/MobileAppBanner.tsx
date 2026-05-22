@@ -81,7 +81,7 @@ export function MobileAppBanner({ shareId }: MobileAppBannerProps) {
       <div className="bg-background/95 backdrop-blur-md border-b border-border/50 px-3 py-2.5 safe-area-top">
         <div className="flex items-center gap-3">
           {/* App icon */}
-          <div className="shrink-0 w-10 h-10 rounded-xl bg-foreground flex items-center justify-center">
+          <div className="shrink-0 w-10 h-10 rounded-2xl bg-foreground flex items-center justify-center">
             <KortixLogo size={20} className="invert dark:invert-0" />
           </div>
 

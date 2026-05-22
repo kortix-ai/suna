@@ -118,7 +118,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
               placeholder="Search agents"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-8 rounded-md border-border/60 bg-background pl-7 text-[12.5px] placeholder:text-muted-foreground/60"
+              className="h-8 pl-8 text-[12.5px] placeholder:text-muted-foreground/60"
             />
           </div>
         </div>
@@ -189,7 +189,7 @@ function AgentRow({
       type="button"
       onClick={onSelect}
       className={cn(
-        'group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors',
+        'group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
         active
           ? 'bg-muted/70 text-foreground'
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',

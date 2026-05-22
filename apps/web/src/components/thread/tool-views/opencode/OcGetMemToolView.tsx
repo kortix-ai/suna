@@ -67,17 +67,17 @@ export function OcGetMemToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-2">
             {(source || memoryId) && (
-              <div className="rounded-2xl border border-sky-200/50 dark:border-sky-900/50 bg-gradient-to-r from-sky-50/60 via-background to-background dark:from-sky-950/20 p-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-sky-700/80 dark:text-sky-300/80 mb-2">Request</p>
+              <div className="rounded-2xl border border-border/70 bg-muted/30 p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground mb-2">Request</p>
                 <div className="flex flex-wrap items-center gap-2">
                   {source && (
-                    <Badge variant="secondary" className="h-6 text-[11px] font-medium bg-sky-100/70 text-sky-800 dark:bg-sky-900/30 dark:text-sky-200 border border-sky-200/70 dark:border-sky-800/50">
+                    <Badge variant="info" className="h-6 text-[11px] font-medium">
                       <Target className="h-3.5 w-3.5" />
                       Source: {source}
                     </Badge>
                   )}
                   {memoryId && (
-                    <Badge variant="secondary" className="h-6 text-[11px] font-semibold font-mono bg-background border border-sky-200/80 dark:border-sky-800/60">
+                    <Badge variant="secondary" className="h-6 text-[11px] font-semibold font-mono">
                       <Fingerprint className="h-3.5 w-3.5" />
                       ID: {memoryId}
                     </Badge>

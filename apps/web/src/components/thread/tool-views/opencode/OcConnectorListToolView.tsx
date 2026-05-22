@@ -10,12 +10,12 @@ import {
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { List, ListRow } from '@/components/ui/list';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { parseConnectorListOutput, type ConnectorEntry } from '@/lib/utils/kortix-tool-output';
-import { cn } from '@/lib/utils';
 
 export function OcConnectorListToolView({
   toolCall,
@@ -59,35 +59,27 @@ export function OcConnectorListToolView({
       <CardContent className="p-0 h-full flex-1 overflow-hidden">
         {connectors.length > 0 ? (
           <ScrollArea className="h-full w-full">
-            <div className="divide-y divide-border/40">
+            <List className="divide-border/40">
               {connectors.map((conn: ConnectorEntry) => (
-                <div key={conn.name} className="px-4 py-3 hover:bg-muted/20 transition-colors">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-medium text-foreground truncate flex-1">
-                      {conn.name}
-                    </span>
-                    <Badge 
-                      variant="outline" 
-                      className={cn(
-                        "h-4 py-0 text-[0.5625rem] font-normal capitalize",
-                        conn.source === 'api-key' && 'border-amber-500/50 text-amber-600 dark:text-amber-400',
-                        conn.source === 'cli' && 'border-gray-500/50 text-gray-600 dark:text-gray-400',
-                        conn.source === 'channel' && 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400',
-                        conn.source === 'custom' && 'border-purple-500/50 text-purple-600 dark:text-purple-400',
-                        conn.source === 'file' && 'border-slate-500/50 text-slate-600 dark:text-slate-400',
-                      )}
-                    >
+                <ListRow
+                  key={conn.name}
+                  className="px-4 py-3"
+                  title={conn.name}
+                  badges={
+                    <Badge size="sm" variant="outline" className="font-normal capitalize">
                       {conn.source}
                     </Badge>
-                  </div>
-                  {conn.description && (
-                    <div className="text-[11px] text-muted-foreground/60">
-                      {conn.description}
-                    </div>
-                  )}
-                </div>
+                  }
+                  subtitle={
+                    conn.description ? (
+                      <div className="text-[11px] text-muted-foreground/60">
+                        {conn.description}
+                      </div>
+                    ) : undefined
+                  }
+                />
               ))}
-            </div>
+            </List>
           </ScrollArea>
         ) : output && !isError ? (
           <ScrollArea className="h-full w-full">

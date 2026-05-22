@@ -30,7 +30,7 @@ export function MaintenanceLevelCard({ level, isSelected, onClick }: Maintenance
         <div className="flex items-center gap-3">
           <div
             className={cn(
-              'flex items-center justify-center w-10 h-10 rounded-xl border',
+              'flex items-center justify-center w-10 h-10 rounded-2xl border',
               isSelected ? `${config.bgColor} ${config.borderColor}` : 'bg-muted border-border',
             )}
           >

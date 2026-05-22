@@ -44,6 +44,7 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
@@ -192,9 +193,9 @@ export function UserMenu({
             <div className="mt-0.5 truncate text-[11px] text-muted-foreground/80">{user.email}</div>
           </div>
           {user.planName && (
-            <span className="shrink-0 rounded-md border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/80">
+            <Badge size="sm" variant="secondary" className="shrink-0 font-semibold uppercase tracking-[0.06em]">
               {user.planName}
-            </span>
+            </Badge>
           )}
         </div>
 
@@ -215,7 +216,7 @@ export function UserMenu({
           />
 
           {/* Theme — inline segmented control, pill radius (on-brand). */}
-          <div className="flex h-8 items-center justify-between rounded-md px-2">
+          <div className="flex h-8 items-center justify-between rounded-lg px-2">
             <span className="text-[12.5px] font-medium text-foreground/85">Theme</span>
             <div
               role="radiogroup"
@@ -301,7 +302,7 @@ function ActionRow({
     <DropdownMenuItem
       onSelect={onSelect}
       className={cn(
-        'flex h-8 cursor-pointer items-center gap-2.5 rounded-md px-2 py-0 text-left',
+        'flex h-8 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-0 text-left',
         '[&_svg:not([class*=size-])]:size-3.5 [&_svg]:!text-muted-foreground/70',
       )}
     >

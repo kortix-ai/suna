@@ -388,7 +388,7 @@ function SecretsCard({
                         className={cn(
                           'text-xs italic',
                           row.requirement === 'required'
-                            ? 'text-amber-700 dark:text-amber-500'
+                            ? 'text-amber-600 dark:text-amber-400'
                             : 'text-muted-foreground/60',
                         )}
                       >
@@ -711,7 +711,7 @@ function ManifestStatusBanner({
         title={
           <>
             Couldn't read{' '}
-            <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>
+            <code className="rounded bg-background px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>
           </>
         }
       >
@@ -729,8 +729,8 @@ function ManifestStatusBanner({
     <InfoBanner tone="warning" icon={AlertTriangle} title="Manifest status unavailable">
       <p className="opacity-80">
         The API isn't returning manifest info — restart the API server
-        (<code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">apps/api</code>) to pick up
-        required/optional keys from your <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">kortix.toml</code>.
+        (<code className="rounded bg-background px-1 py-0.5 font-mono">apps/api</code>) to pick up
+        required/optional keys from your <code className="rounded bg-background px-1 py-0.5 font-mono">kortix.toml</code>.
       </p>
     </InfoBanner>
   );

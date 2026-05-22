@@ -157,7 +157,7 @@ function RailButton({
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex items-center gap-2 rounded-md text-[12.5px] font-medium transition-colors',
+        'group relative flex items-center gap-2 rounded-lg text-[12.5px] font-medium transition-colors',
         horizontal
           ? 'whitespace-nowrap px-3 py-2'
           : 'w-full gap-2.5 px-2.5 py-1.5 text-left',

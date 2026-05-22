@@ -22,7 +22,7 @@ export function ReferralsTab({ isActive = true }: ReferralsTabProps) {
     <div className="p-4 sm:p-6 space-y-6 overflow-y-auto max-h-[85vh] sm:max-h-none">
       {/* Header */}
       <div className="flex flex-col items-center text-center mb-4 sm:mb-6">
-        <div className="mb-2 sm:mb-4 p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-muted/50">
+        <div className="mb-2 sm:mb-4 p-2 sm:p-3 rounded-2xl bg-muted/50">
           <KortixLogo size={24} variant="symbol" className="sm:hidden" />
           <KortixLogo size={32} variant="symbol" className="hidden sm:block" />
         </div>

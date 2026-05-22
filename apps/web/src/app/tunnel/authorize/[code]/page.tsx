@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
@@ -119,7 +120,7 @@ function DeviceAuthorize() {
   if (info.status === 'expired' || remaining <= 0) {
     return (
       <StatusScreen
-        icon={<Clock className="h-6 w-6 text-amber-500" />}
+        icon={<Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />}
         iconClassName="bg-amber-500/10 border-amber-500/20"
         title="Request Expired"
         description="This authorization request has expired. Run the connect command again."
@@ -133,7 +134,7 @@ function DeviceAuthorize() {
     return (
       <StatusScreen
         icon={isApproved
-          ? <Check className="h-6 w-6 text-emerald-500" />
+          ? <Check className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
           : <X className="h-6 w-6 text-destructive" />
         }
         iconClassName={isApproved
@@ -158,7 +159,7 @@ function DeviceAuthorize() {
 
       <div className="relative z-10 flex flex-col items-center justify-center h-full px-4">
         <div className="w-full max-w-[380px]">
-          <div className="bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-[20px] px-7 py-8">
+          <div className="bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-2xl px-7 py-8">
             {/* Header */}
             <div className="flex flex-col items-center gap-1 mb-6">
               <KortixLogo size={24} />
@@ -170,7 +171,7 @@ function DeviceAuthorize() {
             {/* Device code hero */}
             <div className="flex items-center justify-between rounded-2xl bg-foreground/[0.04] border border-foreground/[0.06] px-4 py-3 mb-6">
               <div className="flex items-center gap-3">
-                <div className="size-2 rounded-full bg-amber-400 animate-pulse" />
+                <div className="size-2 rounded-full bg-amber-500 animate-pulse" />
                 <span className="font-mono text-lg font-medium tracking-[0.15em]">
                   {info.deviceCode}
                 </span>
@@ -190,11 +191,11 @@ function DeviceAuthorize() {
 
             {/* Connection name */}
             <div className="mb-5">
-              <input type="text"
+              <Input
+                type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={info.machineHostname || 'Connection name'}
-                className="w-full h-11 text-sm bg-foreground/[0.03] border border-foreground/[0.08] rounded-xl px-3.5 shadow-none focus-visible:outline-none focus-visible:border-foreground/20 transition-colors placeholder:text-foreground/25"
               />
             </div>
 
@@ -221,7 +222,7 @@ function DeviceAuthorize() {
                     type="button"
                     onClick={() => toggleCap(cap.key)}
                     className={cn(
-                      'flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left transition-colors',
+                      'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-left transition-colors',
                       selected
                         ? 'bg-foreground/[0.06]'
                         : 'hover:bg-foreground/[0.03]',
@@ -249,7 +250,8 @@ function DeviceAuthorize() {
             {/* Actions */}
             <div className="space-y-2">
               <Button
-                className="w-full h-11 text-[13px] font-medium rounded-xl shadow-none"
+                size="lg"
+                className="w-full text-[13px] font-medium"
                 onClick={handleApprove}
                 disabled={approve.isPending || deny.isPending}
               >

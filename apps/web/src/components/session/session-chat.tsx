@@ -6336,7 +6336,7 @@ export function SessionChat({
                               queueClearSession(sessionId);
                             }
                           }}
-                          className="inline-flex items-center justify-center size-5 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                          className="inline-flex items-center justify-center size-5 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-colors"
                         >
                           <X className="size-3" />
                         </span>
@@ -6406,7 +6406,7 @@ export function SessionChat({
                                   onClick={() => queueRemove(sessionId, qm.id)}
                                   variant="ghost"
                                   size="icon-xs"
-                                  className="hover:text-destructive hover:bg-destructive/10"
+                                  className="hover:text-foreground hover:bg-muted"
                                 >
                                   <X className="size-2.5" />
                                 </Button>

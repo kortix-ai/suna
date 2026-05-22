@@ -247,7 +247,7 @@ function DiffPane({ label, data }: { label: string; data: Record<string, unknown
       <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
-      <pre className="max-h-48 overflow-auto rounded-md border border-border/60 bg-background px-2.5 py-2 text-[11px] leading-relaxed text-foreground">
+      <pre className="max-h-48 overflow-auto rounded-2xl border border-border/60 bg-background px-2.5 py-2 text-[11px] leading-relaxed text-foreground">
         {data === null ? <span className="text-muted-foreground">— (none)</span> : JSON.stringify(data, null, 2)}
       </pre>
     </div>

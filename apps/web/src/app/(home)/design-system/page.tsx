@@ -2263,7 +2263,10 @@ export default function BrandPage() {
                   surface needs: title, muted count, description, trailing
                   action. Use <code>flush</code> to seat a List edge-to-edge, and{' '}
                   <code>tone=&quot;destructive&quot;</code> for danger zones — no
-                  separate component.
+                  separate component. A danger zone stays calm: a neutral panel
+                  with a faint warm edge and a <strong>neutral</strong> trigger.
+                  Red is the brake, not the paint — it shows up only on the final
+                  confirm (the ConfirmDialog button), never on the panel.
                 </ComponentDesc>
                 <DemoContainer className="space-y-4">
                   <SectionCard
@@ -2287,8 +2290,15 @@ export default function BrandPage() {
                     description="Irreversible actions live here."
                   >
                     <div className="flex items-center justify-between gap-4">
-                      <p className="text-sm text-foreground">Delete this account</p>
-                      <Button variant="destructive" size="sm" className="shrink-0">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">
+                          Delete this account
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Permanently removes the account and all its data.
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" className="shrink-0">
                         Delete
                       </Button>
                     </div>

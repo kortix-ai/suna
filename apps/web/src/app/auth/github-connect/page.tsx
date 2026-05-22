@@ -114,7 +114,7 @@ export default function GitHubConnectPopup() {
         {status !== 'error' && <KortixLoader size="large" />}
         <div className="space-y-1">
           <h1 className="text-base font-medium">Connect GitHub</h1>
-          <p className={status === 'error' ? 'text-sm text-red-500' : 'text-sm text-muted-foreground'}>
+          <p className={status === 'error' ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
             {statusMessage}
           </p>
         </div>

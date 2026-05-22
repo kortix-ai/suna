@@ -131,11 +131,11 @@ export function RolesTab({ accountId, canCreate }: RolesTabProps) {
                           {r.name}
                         </span>
                         {r.is_system ? (
-                          <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                          <Badge variant="outline" size="sm" className="font-normal">
                             system
                           </Badge>
                         ) : (
-                          <Badge className="h-4 rounded-md px-1 text-[9px] font-normal">
+                          <Badge size="sm" className="font-normal">
                             custom
                           </Badge>
                         )}

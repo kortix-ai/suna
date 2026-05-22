@@ -281,7 +281,7 @@ export const QuestionPrompt = React.forwardRef<QuestionPromptHandle, QuestionPro
 							reject();
 						}
 					}}
-					className="inline-flex items-center justify-center size-5 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer shrink-0"
+					className="inline-flex items-center justify-center size-5 rounded-md text-muted-foreground/40 hover:text-foreground hover:bg-muted transition-colors cursor-pointer shrink-0"
 				>
 					<X className="size-3" />
 				</span>

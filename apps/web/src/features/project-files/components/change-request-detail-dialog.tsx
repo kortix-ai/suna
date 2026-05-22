@@ -29,8 +29,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { DiffRenderer } from './diff-renderer';
-import { cn } from '@/lib/utils';
 import {
   useChangeRequest,
   useChangeRequestDiff,
@@ -54,29 +54,29 @@ function relativeTime(iso: string): string {
 }
 
 function StatusBadge({ status }: { status: ChangeRequestStatus }) {
-  const map: Record<ChangeRequestStatus, { icon: React.ReactNode; label: string; className: string }> = {
+  const map: Record<
+    ChangeRequestStatus,
+    { icon: React.ReactNode; label: string; variant: React.ComponentProps<typeof Badge>['variant'] }
+  > = {
     open: {
       icon: <GitPullRequest className="h-3 w-3" />,
       label: 'Open',
-      className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
+      variant: 'success',
     },
     merged: {
       icon: <GitMerge className="h-3 w-3" />,
       label: 'Merged',
-      className: 'bg-violet-500/10 text-violet-600 border-violet-500/20',
+      variant: 'info',
     },
     closed: {
       icon: <GitPullRequestClosed className="h-3 w-3" />,
       label: 'Closed',
-      className: 'bg-muted text-muted-foreground border-border',
+      variant: 'secondary',
     },
   };
   const m = map[status];
   return (
-    <Badge
-      variant="outline"
-      className={cn('gap-1 rounded-md px-1.5 py-0 text-[10px] font-medium', m.className)}
-    >
+    <Badge variant={m.variant} size="sm">
       {m.icon}
       {m.label}
     </Badge>
@@ -264,67 +264,52 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
 
             {/* Merge state banner */}
             {cr?.status === 'open' && preview && (
-              <div
-                className={cn(
-                  'rounded-2xl border px-3 py-2 text-xs flex items-start gap-2',
-                  preview.is_up_to_date
-                    ? 'border-border bg-muted/40 text-muted-foreground'
-                    : preview.can_merge
-                      ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
-                      : 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400',
-                )}
-              >
-                {preview.is_up_to_date ? (
-                  <>
-                    <RefreshCcw className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span>This version is already at the base — nothing to merge.</span>
-                  </>
-                ) : preview.can_merge ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span>
-                      Mergeable cleanly
-                      {preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <div className="min-w-0">
-                      <div className="font-medium">
-                        Conflicts in {preview.conflicts.length} file
-                        {preview.conflicts.length === 1 ? '' : 's'}
-                      </div>
-                      <ul className="mt-1 list-disc pl-5 font-mono">
-                        {preview.conflicts.map((p) => (
-                          <li key={p}>{p}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </>
-                )}
-              </div>
+              preview.is_up_to_date ? (
+                <InfoBanner tone="neutral" icon={RefreshCcw} className="px-3 py-2">
+                  This version is already at the base — nothing to merge.
+                </InfoBanner>
+              ) : preview.can_merge ? (
+                <InfoBanner tone="success" icon={Check} className="px-3 py-2">
+                  Mergeable cleanly
+                  {preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
+                </InfoBanner>
+              ) : (
+                <InfoBanner
+                  tone="warning"
+                  icon={AlertTriangle}
+                  className="px-3 py-2"
+                  title={
+                    <>
+                      Conflicts in {preview.conflicts.length} file
+                      {preview.conflicts.length === 1 ? '' : 's'}
+                    </>
+                  }
+                >
+                  <ul className="mt-1 list-disc pl-5 font-mono">
+                    {preview.conflicts.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                </InfoBanner>
+              )
             )}
 
             {cr?.status === 'merged' && (
-              <div className="rounded-2xl border border-violet-500/30 bg-violet-500/5 px-3 py-2 text-xs text-violet-700 dark:text-violet-400 flex items-center gap-2">
-                <GitMerge className="h-3.5 w-3.5" />
-                <span>
-                  Merged
-                  {cr.merge_commit_sha && (
-                    <>
-                      {' as '}
-                      <span className="font-mono">{cr.merge_commit_sha.slice(0, 7)}</span>
-                    </>
-                  )}
-                  {cr.merged_at && <> · {relativeTime(cr.merged_at)}</>}
-                </span>
-              </div>
+              <InfoBanner tone="neutral" icon={GitMerge} className="items-center px-3 py-2">
+                Merged
+                {cr.merge_commit_sha && (
+                  <>
+                    {' as '}
+                    <span className="font-mono">{cr.merge_commit_sha.slice(0, 7)}</span>
+                  </>
+                )}
+                {cr.merged_at && <> · {relativeTime(cr.merged_at)}</>}
+              </InfoBanner>
             )}
 
             {/* Files changed list + unified diff */}
             {diffQuery.isLoading ? (
-              <Skeleton className="h-32 w-full rounded-md" />
+              <Skeleton className="h-32 w-full rounded-2xl" />
             ) : diff && diff.files.length > 0 ? (
               <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
                 <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">

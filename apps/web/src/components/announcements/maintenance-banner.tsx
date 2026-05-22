@@ -26,25 +26,25 @@ const levelConfig: Record<
 > = {
   info: {
     icon: Info,
-    iconBg: 'bg-blue-500/10 dark:bg-blue-500/20',
-    iconBorder: 'border-blue-500/20 dark:border-blue-500/30',
-    iconColor: 'text-blue-500',
+    iconBg: 'bg-blue-500/10',
+    iconBorder: 'border-blue-500/25',
+    iconColor: 'text-blue-600 dark:text-blue-400',
     dismissible: true,
     defaultTitle: 'Notice',
   },
   warning: {
     icon: AlertTriangle,
-    iconBg: 'bg-amber-500/20 dark:bg-amber-500/20',
-    iconBorder: 'border-amber-500/60 dark:border-amber-500/30',
-    iconColor: 'text-amber-500',
+    iconBg: 'bg-amber-500/10',
+    iconBorder: 'border-amber-500/30',
+    iconColor: 'text-amber-600 dark:text-amber-400',
     dismissible: true,
     defaultTitle: 'Scheduled Maintenance',
   },
   critical: {
     icon: AlertCircle,
-    iconBg: 'bg-red-500/10 dark:bg-red-500/20',
-    iconBorder: 'border-red-500/20 dark:border-red-500/30',
-    iconColor: 'text-red-500',
+    iconBg: 'bg-destructive/10',
+    iconBorder: 'border-destructive/25',
+    iconColor: 'text-destructive',
     dismissible: false,
     defaultTitle: 'Service Disruption',
   },
@@ -157,21 +157,21 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
         <div className="relative bg-muted rounded-2xl overflow-hidden border">
           {lc.dismissible && (
             <Button variant="ghost" size="icon-sm" onClick={handleDismiss} className="absolute top-2 right-2 z-10">
-              <X className="h-3 w-3 text-foreground dark:text-white" />
+              <X className="h-3 w-3 text-foreground" />
             </Button>
           )}
 
           <div
             className={cn(
-              'p-4 bg-muted/50 dark:bg-[#161618] transition-colors',
-              config.statusUrl && 'cursor-pointer hover:bg-muted dark:hover:bg-[#1a1a1c]',
+              'p-4 bg-muted/50 transition-colors',
+              config.statusUrl && 'cursor-pointer hover:bg-muted',
             )}
             onClick={config.statusUrl ? handleStatusClick : undefined}
           >
             <div className="flex items-start gap-3">
               <div
                 className={cn(
-                  'w-12 h-12 rounded-xl border flex items-center justify-center flex-shrink-0',
+                  'w-12 h-12 rounded-2xl border flex items-center justify-center flex-shrink-0',
                   lc.iconBg,
                   lc.iconBorder,
                 )}
@@ -179,10 +179,10 @@ export function MaintenanceBanner({ config }: MaintenanceBannerProps) {
                 <Icon className={cn('h-5 w-5', lc.iconColor)} />
               </div>
               <div className="flex-1 min-w-0 pr-4">
-                <h3 className="text-foreground dark:text-white text-sm font-semibold mb-1">
+                <h3 className="text-foreground text-sm font-semibold mb-1">
                   {title}
                 </h3>
-                <p className="text-muted-foreground dark:text-white/60 text-xs leading-relaxed line-clamp-2">
+                <p className="text-muted-foreground text-xs leading-relaxed line-clamp-2">
                   {config.message}
                 </p>
                 {countdown && (

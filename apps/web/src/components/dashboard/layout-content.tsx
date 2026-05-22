@@ -430,10 +430,10 @@ function OnboardingSkipButton({ onConfirm }: { onConfirm: () => void }) {
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter className="gap-2 sm:gap-2">
-					<AlertDialogCancel className="rounded-xl text-[13px]">Continue</AlertDialogCancel>
+					<AlertDialogCancel className="rounded-full text-[13px]">Continue</AlertDialogCancel>
 					<AlertDialogAction
 						onClick={onConfirm}
-						className="rounded-xl text-[13px] bg-foreground text-background hover:bg-foreground/90"
+						className="rounded-full text-[13px] bg-foreground text-background hover:bg-foreground/90"
 					>
 						Skip onboarding
 					</AlertDialogAction>

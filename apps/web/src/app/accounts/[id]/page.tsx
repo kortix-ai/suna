@@ -232,28 +232,27 @@ export default function AccountSettingsPage() {
           </div>
 
           {accountQuery.isError && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-              <p className="text-sm font-medium text-destructive">
-                Failed to load account
-              </p>
-              <p className="mt-1 text-xs text-destructive/80">
-                {(accountQuery.error as Error).message}
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="mt-3"
-                onClick={() => accountQuery.refetch()}
-              >
-                Retry
-              </Button>
-            </div>
+            <InfoBanner
+              tone="destructive"
+              title="Failed to load account"
+              action={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => accountQuery.refetch()}
+                >
+                  Retry
+                </Button>
+              }
+            >
+              {(accountQuery.error as Error).message}
+            </InfoBanner>
           )}
 
           {accountQuery.isLoading && (
             <>
-              <Skeleton className="h-48 w-full rounded-xl" />
-              <Skeleton className="h-64 w-full rounded-xl" />
+              <Skeleton className="h-48 w-full rounded-2xl" />
+              <Skeleton className="h-64 w-full rounded-2xl" />
             </>
           )}
 
@@ -611,14 +610,11 @@ function GeneralCard({
   }
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">General</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Basic information about this account.
-        </p>
-      </header>
-
+    <SectionCard
+      title="General"
+      description="Basic information about this account."
+      flush
+    >
       <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="account-name">Account name</Label>
@@ -658,7 +654,7 @@ function GeneralCard({
           </Button>
         </div>
       </form>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -759,20 +755,12 @@ function MembersCard({
   });
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">
-            Members{' '}
-            <span className="font-normal text-muted-foreground">
-              ({account.member_count})
-            </span>
-          </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            People with access to this account.
-          </p>
-        </div>
-        {canInvite && (
+    <SectionCard
+      title="Members"
+      count={account.member_count}
+      description="People with access to this account."
+      action={
+        canInvite && (
           <Button
             onClick={() => setInviteOpen(true)}
             size="sm"
@@ -781,37 +769,38 @@ function MembersCard({
             <UserPlus className="h-4 w-4" />
             Invite member
           </Button>
-        )}
-      </header>
-
+        )
+      }
+      flush
+    >
       {isError && (
         <div className="px-6 py-5">
-          <p className="text-sm text-destructive">
-            {error?.message || 'Failed to load members'}
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={onRetry}
+          <InfoBanner
+            tone="destructive"
+            title="Failed to load members"
+            action={
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                Retry
+              </Button>
+            }
           >
-            Retry
-          </Button>
+            {error?.message}
+          </InfoBanner>
         </div>
       )}
 
       {isLoading && (
-        <div className="divide-y divide-border/60">
+        <List>
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 px-6 py-3">
+            <li key={i} className="flex items-center gap-3 px-6 py-3">
               <Skeleton className="size-8 rounded-full" />
               <div className="flex-1 space-y-1.5">
                 <Skeleton className="h-3.5 w-48" />
                 <Skeleton className="h-3 w-24" />
               </div>
-            </div>
+            </li>
           ))}
-        </div>
+        </List>
       )}
 
       {!isLoading && !isError && (
@@ -822,7 +811,7 @@ function MembersCard({
       )}
 
       {!isLoading && !isError && (
-        <ul className="divide-y divide-border/60">
+        <List>
           {sorted.map((member) => {
             const isSelf = member.user_id === currentUserId;
             const isLastOwner =
@@ -834,132 +823,129 @@ function MembersCard({
             const showKebab = !pending;
 
             return (
-              <li
+              <ListRow
                 key={member.user_id}
-                className="flex items-center gap-3 px-6 py-3"
-              >
-                <UserAvatar
-                  email={member.email ?? member.user_id}
-                  name={member.email ?? undefined}
-                  size="md"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-foreground">
-                      {memberLabel(member)}
-                    </span>
-                    {isSelf && (
-                      <Badge variant="secondary" size="sm">
-                        You
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                leading={
+                  <UserAvatar
+                    email={member.email ?? member.user_id}
+                    name={member.email ?? undefined}
+                    size="md"
+                  />
+                }
+                title={memberLabel(member)}
+                badges={
+                  isSelf && (
+                    <Badge variant="secondary" size="sm">
+                      You
+                    </Badge>
+                  )
+                }
+                subtitle={
+                  <InlineMeta>
                     <span>Joined {formatDate(member.joined_at)}</span>
                     {member.account_role === 'member' &&
-                      typeof member.explicit_project_count === 'number' && (
-                        <>
-                          <span className="text-muted-foreground/40">/</span>
-                          <span>
-                            {member.explicit_project_count} project
-                            {member.explicit_project_count === 1 ? '' : 's'}
-                          </span>
-                        </>
-                      )}
-                  </div>
-                </div>
-
-                <RoleBadge role={member.account_role} />
-
-                <div className="ml-1 w-7 shrink-0">
-                  {pending ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : showKebab ? (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          aria-label={`Actions for ${memberLabel(member)}`}
-                        >
-                          <MoreHorizontal className="h-3.5 w-3.5" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-56">
-                        <DropdownMenuItem
-                          onSelect={() =>
-                            router.push(
-                              `/accounts/${account.account_id}/members/${member.user_id}`,
-                            )
-                          }
-                          className="gap-2"
-                        >
-                          <KeyRound className="h-3.5 w-3.5" />
-                          View &amp; Edit permission policies
-                        </DropdownMenuItem>
-                        {canUpdateRole && !isSelf && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                              Change role
-                            </DropdownMenuLabel>
-                            {(
-                              ['owner', 'admin', 'member'] as AccountRole[]
-                            ).map((role) => (
-                              <DropdownMenuItem
-                                key={role}
-                                disabled={role === member.account_role}
-                                onSelect={() =>
-                                  roleMutation.mutate({
-                                    userId: member.user_id,
-                                    role,
-                                  })
-                                }
-                                className="gap-2"
-                              >
-                                <Shield className="h-3.5 w-3.5" />
-                                {ROLE_LABEL[role]}
-                                {role === member.account_role && (
-                                  <span className="ml-auto text-[10px] text-muted-foreground">
-                                    Current
-                                  </span>
-                                )}
-                              </DropdownMenuItem>
-                            ))}
-                          </>
-                        )}
-                        {canRemove && !isSelf && (
-                          <>
-                            <DropdownMenuSeparator />
+                    typeof member.explicit_project_count === 'number' ? (
+                      <span>
+                        {member.explicit_project_count} project
+                        {member.explicit_project_count === 1 ? '' : 's'}
+                      </span>
+                    ) : null}
+                  </InlineMeta>
+                }
+                trailing={
+                  <>
+                    <RoleBadge role={member.account_role} />
+                    <div className="ml-1 w-7 shrink-0">
+                      {pending ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : showKebab ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              aria-label={`Actions for ${memberLabel(member)}`}
+                            >
+                              <MoreHorizontal className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
                             <DropdownMenuItem
-                              onSelect={() => setRemoveTarget(member)}
-                              disabled={isLastOwner}
+                              onSelect={() =>
+                                router.push(
+                                  `/accounts/${account.account_id}/members/${member.user_id}`,
+                                )
+                              }
                               className="gap-2"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Remove from team
+                              <KeyRound className="h-3.5 w-3.5" />
+                              View &amp; Edit permission policies
                             </DropdownMenuItem>
-                          </>
-                        )}
-                        {isSelf && !account.personal_account && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onSelect={() => setLeaveConfirmOpen(true)}
-                              disabled={isLastOwner}
-                              className="gap-2"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              Leave team
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  ) : null}
-                </div>
-              </li>
+                            {canUpdateRole && !isSelf && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                                  Change role
+                                </DropdownMenuLabel>
+                                {(
+                                  ['owner', 'admin', 'member'] as AccountRole[]
+                                ).map((role) => (
+                                  <DropdownMenuItem
+                                    key={role}
+                                    disabled={role === member.account_role}
+                                    onSelect={() =>
+                                      roleMutation.mutate({
+                                        userId: member.user_id,
+                                        role,
+                                      })
+                                    }
+                                    className="gap-2"
+                                  >
+                                    <Shield className="h-3.5 w-3.5" />
+                                    {ROLE_LABEL[role]}
+                                    {role === member.account_role && (
+                                      <span className="ml-auto text-[10px] text-muted-foreground">
+                                        Current
+                                      </span>
+                                    )}
+                                  </DropdownMenuItem>
+                                ))}
+                              </>
+                            )}
+                            {canRemove && !isSelf && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onSelect={() => setRemoveTarget(member)}
+                                  disabled={isLastOwner}
+                                  className="gap-2"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Remove from team
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {isSelf && !account.personal_account && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onSelect={() => setLeaveConfirmOpen(true)}
+                                  disabled={isLastOwner}
+                                  className="gap-2"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Leave team
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+                    </div>
+                  </>
+                }
+              />
             );
           })}
           {sorted.length === 0 && (
@@ -967,7 +953,7 @@ function MembersCard({
               No members yet.
             </li>
           )}
-        </ul>
+        </List>
       )}
 
       <InviteMemberModal
@@ -1016,7 +1002,7 @@ function MembersCard({
         onConfirm={() => leaveMutation.mutate()}
         isPending={leaveMutation.isPending}
       />
-    </section>
+    </SectionCard>
   );
 }
 
@@ -1127,7 +1113,8 @@ function InviteMemberModal({
             they&apos;ll get access when they sign up.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+        <form onSubmit={handleSubmit}>
+          <div className="px-6 py-5 space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="invite-email">Email</Label>
             <div className="relative">
@@ -1170,12 +1157,11 @@ function InviteMemberModal({
           </div>
 
           {inlineError && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-              {inlineError}
-            </div>
+            <InfoBanner tone="destructive">{inlineError}</InfoBanner>
           )}
+          </div>
 
-          <div className="-mx-6 mt-4 flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+          <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
             <Button
               type="button"
               variant="ghost"
@@ -1207,16 +1193,12 @@ function InviteMemberModal({
 
 function DangerZoneCard() {
   return (
-    <section className="rounded-xl border border-destructive/30 bg-destructive/5">
-      <header className="border-b border-destructive/20 px-6 py-4">
-        <h2 className="text-base font-semibold text-destructive">
-          Danger zone
-        </h2>
-        <p className="mt-0.5 text-xs text-destructive/80">
-          Irreversible actions for this team.
-        </p>
-      </header>
-      <div className="flex items-center justify-between gap-4 px-6 py-4">
+    <SectionCard
+      tone="destructive"
+      title="Danger zone"
+      description="Irreversible actions for this team."
+    >
+      <div className="flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-foreground">Delete account</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -1232,7 +1214,7 @@ function DangerZoneCard() {
           Coming soon
         </Button>
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -1304,76 +1286,80 @@ function PendingInvitesSection({
       <div className="px-6 pt-3 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         Pending invites · {invites.length}
       </div>
-      <ul className="divide-y divide-border/60">
+      <List>
         {invites.map((invite) => {
           const busy = pendingId === invite.invite_id;
           return (
-            <li
+            <ListRow
               key={invite.invite_id}
-              className="flex items-center gap-3 px-6 py-2.5"
-            >
-              <UserAvatar email={invite.email} size="md" />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm text-foreground">
-                    {invite.email}
+              leading={<UserAvatar email={invite.email} size="md" />}
+              title={invite.email}
+              badges={
+                <Badge variant="secondary" size="sm">
+                  Pending
+                </Badge>
+              }
+              subtitle={
+                <InlineMeta>
+                  <span className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Expires {formatDate(invite.expires_at)}
                   </span>
-                  <Badge variant="secondary" size="sm">
-                    Pending
-                  </Badge>
-                </div>
-                <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  <span>Expires {formatDate(invite.expires_at)}</span>
-                </div>
-              </div>
-              <RoleBadge role={invite.initial_role} />
-              <div className="ml-1 w-7 shrink-0">
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                ) : canManage ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                        aria-label={`Actions for ${invite.email}`}
-                      >
-                        <MoreHorizontal className="h-3.5 w-3.5" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuItem
-                        onSelect={() => resendMutation.mutate(invite.invite_id)}
-                        className="gap-2"
-                      >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        Resend invite
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => copyInviteLink(invite.invite_url)}
-                        className="gap-2"
-                      >
-                        <LinkIcon className="h-3.5 w-3.5" />
-                        Copy invitation link
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onSelect={() => setCancelTarget(invite)}
-                        className="gap-2"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        Cancel invite
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
-              </div>
-            </li>
+                </InlineMeta>
+              }
+              trailing={
+                <>
+                  <RoleBadge role={invite.initial_role} />
+                  <div className="ml-1 w-7 shrink-0">
+                    {busy ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : canManage ? (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            aria-label={`Actions for ${invite.email}`}
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-52">
+                          <DropdownMenuItem
+                            onSelect={() =>
+                              resendMutation.mutate(invite.invite_id)
+                            }
+                            className="gap-2"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            Resend invite
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => copyInviteLink(invite.invite_url)}
+                            className="gap-2"
+                          >
+                            <LinkIcon className="h-3.5 w-3.5" />
+                            Copy invitation link
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => setCancelTarget(invite)}
+                            className="gap-2"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Cancel invite
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : null}
+                  </div>
+                </>
+              }
+            />
           );
         })}
-      </ul>
+      </List>
 
       <ConfirmDialog
         open={!!cancelTarget}

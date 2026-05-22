@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTriggers, useDeleteTrigger, type Trigger } from '@/hooks/scheduled-tasks';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -132,7 +133,7 @@ const TaskListItem = ({
     >
       <div onClick={onClick} className="flex items-center justify-between p-5">
         <div className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-card border border-border/50 shrink-0">
+            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-card border border-border/50 shrink-0">
               {trigger.type === 'cron' ? <Timer className="h-5 w-5 text-foreground" /> : <Webhook className="h-5 w-5 text-foreground" />}
             </div>
           <div className="flex-1 min-w-0">
@@ -172,9 +173,8 @@ const TaskListItem = ({
             variant="ghost"
             size="icon-sm"
             className={cn(
-              "opacity-0 group-hover:opacity-100 focus:opacity-100",
-              "text-muted-foreground hover:text-red-500 hover:bg-red-500/10",
-              isDeleting && "opacity-100 text-red-500"
+              "opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted-foreground",
+              isDeleting && "opacity-100"
             )}
             title="Delete trigger"
           >
@@ -186,28 +186,12 @@ const TaskListItem = ({
   );
 };
 
-const EmptyState = ({ onCreateClick }: { onCreateClick: () => void }) => (
-  <div className="bg-muted/20 rounded-3xl border flex flex-col items-center justify-center py-16 px-4">
-    <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
-      <Calendar className="h-6 w-6 text-muted-foreground" />
-    </div>
-    <h3 className="text-base font-semibold text-foreground mb-2">Create a trigger</h3>
-    <p className="text-sm text-muted-foreground text-center max-w-sm mb-6">
-      Automate with triggers. Schedule cron jobs, set up webhooks, run commands, or call HTTP endpoints — all from one place.
-    </p>
-    <Button onClick={onCreateClick} size="sm">
-      <Plus className="h-4 w-4 mr-2" />
-      Add Trigger
-    </Button>
-  </div>
-);
-
 const LoadingSkeleton = () => (
   <div className="space-y-4">
     {[1, 2, 3].map((i) => (
       <div key={i} className="rounded-2xl border dark:bg-card px-4 py-3">
         <div className="flex items-center gap-3">
-          <Skeleton className="h-12 w-12 rounded-xl" />
+          <Skeleton className="h-12 w-12 rounded-2xl" />
           <div className="flex-1 space-y-2">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-3 w-48" />
@@ -342,7 +326,7 @@ export function ScheduledTasksPage() {
         {/* Backdrop overlay */}
         {selectedTrigger && (
           <div
-            className="block 2xl:hidden fixed inset-0 bg-black/70 z-30"
+            className="block 2xl:hidden fixed inset-0 bg-background/80 z-30"
             onClick={handleClosePanel}
           />
         )}
@@ -391,7 +375,17 @@ export function ScheduledTasksPage() {
               {isLoading ? (
                 <LoadingSkeleton />
               ) : filteredTriggers.length === 0 ? (
-                <EmptyState onCreateClick={() => setShowCreateDialog(true)} />
+                <EmptyState
+                  icon={Calendar}
+                  title="Create a trigger"
+                  description="Automate with triggers. Schedule cron jobs, set up webhooks, run commands, or call HTTP endpoints — all from one place."
+                  action={
+                    <Button onClick={() => setShowCreateDialog(true)} size="sm">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Trigger
+                    </Button>
+                  }
+                />
               ) : (
                 <div className="space-y-4">
                   {filteredTriggers.map((trigger) => (

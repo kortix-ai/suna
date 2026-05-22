@@ -53,8 +53,8 @@ export default function CreditsPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Clock className="h-5 w-5 text-primary" />
+                  <div className="p-2 rounded-2xl bg-muted">
+                    <Clock className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>Expiring Credits</CardTitle>
@@ -76,8 +76,8 @@ export default function CreditsPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Infinity className="h-5 w-5 text-primary" />
+                  <div className="p-2 rounded-2xl bg-muted">
+                    <Infinity className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>Non-Expiring Credits</CardTitle>
@@ -116,8 +116,8 @@ export default function CreditsPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Zap className="h-5 w-5 text-primary" />
+                  <div className="p-2 rounded-2xl bg-muted">
+                    <Zap className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>AI Model Usage</CardTitle>
@@ -139,8 +139,8 @@ export default function CreditsPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <DollarSign className="h-5 w-5 text-primary" />
+                  <div className="p-2 rounded-2xl bg-muted">
+                    <DollarSign className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>Pricing Model</CardTitle>
@@ -190,8 +190,8 @@ export default function CreditsPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <RefreshCw className="h-5 w-5 text-primary" />
+                  <div className="p-2 rounded-2xl bg-muted">
+                    <RefreshCw className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>Monthly Subscription Credits</CardTitle>
@@ -206,8 +206,8 @@ export default function CreditsPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Coins className="h-5 w-5 text-primary" />
+                  <div className="p-2 rounded-2xl bg-muted">
+                    <Coins className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>Top-Up Credits</CardTitle>
@@ -222,8 +222,8 @@ export default function CreditsPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <Gift className="h-5 w-5 text-primary" />
+                  <div className="p-2 rounded-2xl bg-muted">
+                    <Gift className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>Promotional & Event Grants</CardTitle>
@@ -238,8 +238,8 @@ export default function CreditsPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10">
-                    <RefreshCw className="h-5 w-5 text-primary" />
+                  <div className="p-2 rounded-2xl bg-muted">
+                    <RefreshCw className="h-5 w-5 text-muted-foreground" />
                   </div>
                   <div>
                     <CardTitle>Refunds</CardTitle>

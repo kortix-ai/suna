@@ -163,7 +163,7 @@ export function ReferralEmailInvitation({ className }: ReferralEmailProps) {
                   removeEmail(email);
                 }}
                 disabled={status === 'sending'}
-                className="hover:bg-black/10 dark:hover:bg-white/10 rounded-full p-0.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="hover:bg-foreground/10 rounded-full p-0.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <X className="h-3 w-3" />
               </button>

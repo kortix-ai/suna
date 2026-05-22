@@ -56,7 +56,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -642,7 +642,7 @@ function DetailBody({
         <Button
           variant="ghost"
           size="sm"
-          className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          className="gap-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
           onClick={onDelete}
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -1149,7 +1149,6 @@ function slugifyName(input: string): string {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Daily standup digest"
-                  className="rounded-xl"
                   maxLength={64}
                 />
               </div>
@@ -1162,7 +1161,6 @@ function slugifyName(input: string): string {
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Generate the daily status report and save it to /workspace/reports/"
                   rows={4}
-                  className="rounded-xl"
                 />
                 <p className="text-xs text-muted-foreground">
                   Mustache placeholders supported:{' '}
@@ -1181,7 +1179,7 @@ function slugifyName(input: string): string {
                   value={agentName}
                   onChange={(e) => setAgentName(e.target.value)}
                   placeholder="default"
-                  className="rounded-xl font-mono text-[13px]"
+                  className="font-mono text-[13px]"
                 />
               </div>
 
@@ -1211,7 +1209,7 @@ function slugifyName(input: string): string {
                     setStep('source');
                   }
                 }}
-                className="cursor-pointer rounded-xl"
+                className="cursor-pointer"
               >
                 <ArrowLeft className="mr-1 h-4 w-4" /> Back
               </Button>
@@ -1249,7 +1247,7 @@ function slugifyName(input: string): string {
                 size="sm"
                 // Typed flow skips the action step — Source → Config.
                 onClick={() => setStep(forcedType ? 'config' : 'action')}
-                className="cursor-pointer rounded-xl"
+                className="cursor-pointer"
               >
                 Next <ArrowRight className="ml-1 h-4 w-4" />
               </Button>
@@ -1258,7 +1256,7 @@ function slugifyName(input: string): string {
               <Button
                 size="sm"
                 onClick={() => setStep('config')}
-                className="cursor-pointer rounded-xl"
+                className="cursor-pointer"
               >
                 Next <ArrowRight className="ml-1 h-4 w-4" />
               </Button>
@@ -1331,7 +1329,7 @@ function WebhookSourceConfig({
             onChange={(e) => onSecretChange(e.target.value)}
             placeholder="shared-secret"
             type="text"
-            className="rounded-xl font-mono text-[13px]"
+            className="font-mono text-[13px]"
           />
           <Button
             type="button"
@@ -1409,7 +1407,7 @@ function DeleteDialog({
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            className="bg-destructive text-white hover:bg-destructive/90"
+            className={buttonVariants({ variant: 'destructive' })}
             onClick={() => target && remove.mutate(target)}
           >
             Delete

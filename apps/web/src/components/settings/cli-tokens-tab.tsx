@@ -116,7 +116,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
               aria-label={`Revoke ${token.name}`}
               onClick={() => setConfirming(true)}
             >
-              <Trash2 className="size-4 text-muted-foreground hover:text-destructive" />
+              <Trash2 className="size-4 text-muted-foreground hover:text-foreground" />
             </Button>
           </div>
         )}

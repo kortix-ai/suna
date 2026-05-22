@@ -210,8 +210,8 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[540px] max-h-[90vh] flex flex-col">
-        <DialogHeader className="shrink-0 space-y-0.5">
+      <DialogContent className="sm:max-w-[540px] max-h-[90vh] flex flex-col gap-0 p-0">
+        <DialogHeader className="shrink-0 space-y-0.5 border-b border-border/60 px-6 pt-6 pb-4">
           <DialogTitle className="text-sm font-semibold flex items-center gap-2">
             <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
             Create trigger
@@ -223,7 +223,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto -mx-6 px-6 py-1">
+        <div className="flex-1 overflow-y-auto px-6 py-4">
           {/* ─── Step 1: Source Type ──────────────────────────────── */}
           {step === 'source' && (
             <div className="space-y-4">
@@ -407,7 +407,6 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                       id="task-prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)}
                       placeholder="Generate the daily status report and save it to /workspace/reports/"
                       rows={4}
-                      className="rounded-xl"
                     />
                     <p className="text-xs text-muted-foreground">The instruction sent to your agent on each run</p>
                   </div>
@@ -513,7 +512,6 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                       value={newTicketTitle}
                       onChange={(e) => setNewTicketTitle(e.target.value)}
                       placeholder="{{ summary }} — {{ source }}"
-                      className="rounded-xl"
                     />
                     <p className="text-xs text-muted-foreground">{'Supports {{ var }} substitution from webhook payloads.'}</p>
                   </div>
@@ -524,7 +522,6 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                       onChange={(e) => setNewTicketBody(e.target.value)}
                       rows={3}
                       placeholder="From {{ user }}:\n\n{{ text }}"
-                      className="rounded-xl"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -549,7 +546,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                         value={newTicketAssignees}
                         onChange={(e) => setNewTicketAssignees(e.target.value)}
                         placeholder="engineer,qa"
-                        className="rounded-xl font-mono text-[13px]"
+                        className="font-mono text-[13px]"
                       />
                       <p className="text-[11px] text-muted-foreground">
                         Comma-separated agent slugs.
@@ -566,10 +563,10 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
         </div>
 
         {/* ─── Footer ────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between gap-3 pt-4 shrink-0 border-t mt-2">
+        <div className="flex items-center justify-between gap-3 shrink-0 border-t border-border/60 bg-muted/30 px-6 py-3">
           <div className="flex items-center gap-2">
             {step !== 'source' && (
-              <Button variant="ghost" size="sm" onClick={() => setStep(step === 'config' ? 'action' : 'source')} className="cursor-pointer rounded-xl">
+              <Button variant="ghost" size="sm" onClick={() => setStep(step === 'config' ? 'action' : 'source')} className="cursor-pointer">
                 <ArrowLeft className="h-4 w-4 mr-1" /> Back
               </Button>
             )}
@@ -595,12 +592,12 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
           <div className="flex gap-3">
             <Button variant="outline" size="sm" onClick={handleClose} className="cursor-pointer ">Cancel</Button>
             {step === 'source' && (
-              <Button size="sm" onClick={() => setStep('action')} className="cursor-pointer rounded-xl">
+              <Button size="sm" onClick={() => setStep('action')} className="cursor-pointer">
                 Next <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
             )}
             {step === 'action' && (
-              <Button size="sm" onClick={() => setStep('config')} className="cursor-pointer rounded-xl">
+              <Button size="sm" onClick={() => setStep('config')} className="cursor-pointer">
                 Next <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
             )}

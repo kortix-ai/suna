@@ -104,7 +104,7 @@ export default function BillingHistory() {
     return (
       <div className="space-y-3">
         <div className="grid grid-cols-3 gap-3">
-          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
+          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 rounded-2xl" />)}
         </div>
         <div className="space-y-1">
           {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}

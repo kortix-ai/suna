@@ -106,7 +106,7 @@ function ConfigureModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm cursor-pointer"
+        className="absolute inset-0 bg-black/50 backdrop-blur-xs cursor-pointer"
         onClick={onClose}
       />
       {/* Panel */}
@@ -223,9 +223,9 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
 
       {/* Options */}
       <div className="space-y-2">
-        <div className="flex items-start gap-3 px-3 py-3 rounded-xl border border-foreground/[0.06] bg-foreground/[0.02]">
-          <div className="h-7 w-7 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
-            <Sparkles className="h-3.5 w-3.5 text-emerald-500" />
+        <div className="flex items-start gap-3 px-3 py-3 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]">
+          <div className="h-7 w-7 rounded-2xl bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
+            <Sparkles className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div className="text-left">
             <p className="text-[13px] font-medium text-foreground/80">Coding subscriptions</p>
@@ -235,8 +235,8 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
           </div>
         </div>
 
-        <div className="flex items-start gap-3 px-3 py-3 rounded-xl border border-foreground/[0.06] bg-foreground/[0.02]">
-          <div className="h-7 w-7 rounded-lg bg-foreground/[0.05] flex items-center justify-center shrink-0 mt-0.5">
+        <div className="flex items-start gap-3 px-3 py-3 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]">
+          <div className="h-7 w-7 rounded-2xl bg-foreground/[0.05] flex items-center justify-center shrink-0 mt-0.5">
             <Key className="h-3.5 w-3.5 text-foreground/40" />
           </div>
           <div className="text-left">
@@ -249,7 +249,7 @@ function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => 
 
         {isBillingEnabled() && (
           <div className="flex items-start gap-3 px-3 py-3 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]">
-            <div className="h-7 w-7 rounded-lg bg-foreground/[0.05] flex items-center justify-center shrink-0 mt-0.5">
+            <div className="h-7 w-7 rounded-2xl bg-foreground/[0.05] flex items-center justify-center shrink-0 mt-0.5">
               <CreditCard className="h-3.5 w-3.5 text-foreground/40" />
             </div>
             <div className="text-left">
@@ -379,7 +379,7 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
             )}
           >
             {hasLLM ? (
-              <Check className="h-5 w-5 text-emerald-500" />
+              <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             ) : (
               <Sparkles className="h-5 w-5 text-muted-foreground/50" />
             )}
@@ -409,7 +409,7 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
               <span className="text-[13px] font-medium text-foreground/80">
                 {PROVIDER_LABELS[p.id] || p.name || p.id}
               </span>
-              <Check className="h-3.5 w-3.5 text-emerald-500 ml-auto" />
+              <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 ml-auto" />
             </div>
           ))}
         </div>
@@ -577,7 +577,7 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
                       <div className="text-[11px] text-foreground/30 truncate">{model.modelID}</div>
                     </div>
                     {isSelected && (
-                      <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                      <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                     )}
                   </button>
                 );
@@ -731,7 +731,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
                   key={s.key}
                   className="flex items-start gap-3 p-2.5 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]"
                 >
-                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.05]">
+                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl bg-foreground/[0.05]">
                     <Icon className="h-3.5 w-3.5 text-foreground/40" />
                   </div>
                   <div className="flex-1 min-w-0 space-y-1">
@@ -752,7 +752,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
                       placeholder={s.key}
                       value={values[s.key] || ''}
                       onChange={(e) => setValues((p) => ({ ...p, [s.key]: e.target.value }))}
-                      className="h-8 text-xs font-mono shadow-none bg-foreground/[0.04] border-foreground/[0.08] rounded-lg"
+                      className="h-8 text-xs font-mono"
                       autoComplete="off"
                     />
                   </div>

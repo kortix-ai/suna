@@ -12,6 +12,7 @@ import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
@@ -172,7 +173,7 @@ export default function MemberDetailPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => setRevokeConfirmOpen(true)}
-                  className="gap-1.5 text-destructive hover:text-destructive"
+                  className="gap-1.5"
                   disabled={setSuperAdminMutation.isPending}
                 >
                   <ShieldOff className="h-3.5 w-3.5" />
@@ -195,20 +196,15 @@ export default function MemberDetailPage() {
           </div>
 
           {membersQuery.isError && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-              <p className="text-sm font-medium text-destructive">Failed to load member</p>
-              <p className="mt-1 text-xs text-destructive/80">
-                {(membersQuery.error as Error).message}
-              </p>
-            </div>
+            <InfoBanner tone="destructive" title="Failed to load member">
+              {(membersQuery.error as Error).message}
+            </InfoBanner>
           )}
 
           {!membersQuery.isLoading && !member && memberUserId && (
-            <div className="rounded-xl border border-border/70 bg-card p-6">
-              <p className="text-sm text-muted-foreground">
-                This user is not a member of this account.
-              </p>
-            </div>
+            <InfoBanner tone="neutral">
+              This user is not a member of this account.
+            </InfoBanner>
           )}
 
           {account && member && (

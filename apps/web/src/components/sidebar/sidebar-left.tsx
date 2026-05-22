@@ -52,6 +52,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import {
   Tooltip,
   TooltipContent,
@@ -855,17 +856,17 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
               type="button"
               onClick={onExpand}
               aria-label="Subscription cancelled — click to reactivate"
-              className="relative flex items-center justify-center w-full py-2 rounded-lg cursor-pointer text-red-500 hover:bg-red-500/10 transition-colors duration-150"
+              className="relative flex items-center justify-center w-full py-2 rounded-lg cursor-pointer text-destructive hover:bg-destructive/10 transition-colors duration-150"
             >
               <AlertTriangle className="h-4 w-4" />
               <span className="absolute top-1.5 right-2 flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+                <span className="absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75 animate-ping" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-destructive" />
               </span>
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={12} className="max-w-64 text-xs">
-            <div className="font-medium text-red-500">Subscription cancelled</div>
+            <div className="font-medium text-destructive">Subscription cancelled</div>
             <div className="mt-1 text-muted-foreground">{detail}</div>
           </TooltipContent>
         </Tooltip>
@@ -874,11 +875,8 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
   }
 
   return (
-    <div className="rounded-2xl border border-red-500/30 bg-red-500/5 px-3.5 py-3">
-      <p className="text-xs font-medium text-red-600 dark:text-red-400">
-        Subscription cancelled
-      </p>
-      <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+    <InfoBanner tone="destructive" title="Subscription cancelled">
+      <p className="leading-relaxed">
         This instance will be deleted {daysLeft !== null ? `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `on ${dateStr}`}. All data will be permanently removed.
       </p>
       <Button
@@ -891,7 +889,7 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
       >
         {reactivating ? <><Loader2 className="h-3 w-3 animate-spin" /> Reactivating...</> : 'Reactivate'}
       </Button>
-    </div>
+    </InfoBanner>
   );
 }
 

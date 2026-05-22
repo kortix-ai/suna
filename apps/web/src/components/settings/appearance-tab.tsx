@@ -23,11 +23,11 @@ function WallpaperCard({
     <button
       type="button"
       onClick={onSelect}
-      className="group relative cursor-pointer rounded-lg text-left"
+      className="group relative cursor-pointer rounded-2xl text-left"
     >
       <div
         className={cn(
-          'relative w-full aspect-video bg-background overflow-hidden rounded-md isolate border transition-colors duration-200',
+          'relative w-full aspect-video bg-background overflow-hidden rounded-2xl isolate border transition-colors duration-200',
           isActive ? 'border-primary' : 'border-border group-hover:border-border/80'
         )}
       >

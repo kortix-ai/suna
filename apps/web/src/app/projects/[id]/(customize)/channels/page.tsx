@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Check, Slack } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChannelsDialog } from '@/components/channels/channels-dialog';
 import { useSlackInstall } from '@/hooks/channels/use-channels-installations';
@@ -28,28 +29,24 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-2xl px-4 py-8">
           {isLoading ? (
-            <Skeleton className="h-28 w-full rounded-lg" />
+            <Skeleton className="h-28 w-full rounded-2xl" />
           ) : install ? (
             <div className="space-y-4">
-              <div className="flex items-center gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
-                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/15">
-                  <Check className="h-3.5 w-3.5 text-emerald-500" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">
-                    Connected to {install.workspaceName ?? install.workspaceId}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Bot <code className="font-mono">{install.botUserId ?? '—'}</code> · team{' '}
-                    <code className="font-mono">{install.workspaceId}</code>
-                  </p>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-                  Manage
-                </Button>
-              </div>
+              <InfoBanner
+                tone="success"
+                icon={Check}
+                title={`Connected to ${install.workspaceName ?? install.workspaceId}`}
+                action={
+                  <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+                    Manage
+                  </Button>
+                }
+              >
+                Bot <code className="font-mono">{install.botUserId ?? '—'}</code> · team{' '}
+                <code className="font-mono">{install.workspaceId}</code>
+              </InfoBanner>
 
-              <div className="rounded-lg border border-border/60 bg-card p-4">
+              <div className="rounded-2xl border border-border/60 bg-card p-4">
                 <p className="text-sm font-medium text-foreground">Enable the bot for this project</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Add a <code className="font-mono text-xs">[[channels]]</code> entry with{' '}
@@ -62,7 +59,7 @@ export function ChannelsView({ projectId }: { projectId: string | null }) {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="rounded-lg border border-border/70 bg-card p-5">
+              <div className="rounded-2xl border border-border/70 bg-card p-5">
                 <p className="text-sm font-medium text-foreground">Slack isn't connected yet</p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Connect a Slack workspace to this project. Tokens are stored encrypted in this project's

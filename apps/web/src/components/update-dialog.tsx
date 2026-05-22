@@ -283,8 +283,8 @@ export function UpdateDialog({
               transition={{ duration: 0.3 }}
               className="flex flex-col items-center max-w-md px-6"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/15">
-                <XCircle className="h-5 w-5 text-red-500" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
+                <XCircle className="h-5 w-5 text-destructive" />
               </div>
               <p className="mt-5 text-[13px] font-medium text-foreground/90 tracking-tight">
                 Update failed
@@ -293,7 +293,7 @@ export function UpdateDialog({
                 {phaseMessage || 'Something went wrong.'}
               </p>
               {errorMessage && (
-                <div className="mt-5 w-full max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/30 px-3 py-2 font-mono text-[10px] text-foreground/70">
+                <div className="mt-5 w-full max-h-32 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-muted/30 px-3 py-2 font-mono text-[10px] text-foreground/70">
                   {errorMessage}
                 </div>
               )}
@@ -337,7 +337,7 @@ export function UpdateDialog({
                     <p>
                       If you installed Kortix via the CLI, updates should be run from your terminal so the full stack updates together.
                     </p>
-                    <div className="mt-2 rounded-xl bg-muted/40 px-3 py-2 font-mono text-xs text-foreground/80">
+                    <div className="mt-2 rounded-2xl bg-muted/40 px-3 py-2 font-mono text-xs text-foreground/80">
                       kortix update
                     </div>
                   </AlertDescription>

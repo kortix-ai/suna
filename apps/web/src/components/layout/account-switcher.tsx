@@ -130,7 +130,7 @@ export function AccountSwitcher({
       <button
         type="button"
         className={cn(
-          'flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-foreground transition-colors',
+          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-foreground transition-colors',
           'hover:bg-muted/50 data-[state=open]:bg-muted/60',
           className,
         )}
@@ -188,7 +188,7 @@ export function AccountSwitcher({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Find account…"
-                className="h-7 rounded-md border-transparent bg-muted/40 pl-7 pr-2 text-[12px] placeholder:text-muted-foreground/50 focus-visible:border-border/60 focus-visible:bg-background focus-visible:ring-0"
+                className="h-7 pl-7 pr-2 text-[12px] placeholder:text-muted-foreground/50"
               />
             </div>
           </div>
@@ -224,7 +224,7 @@ export function AccountSwitcher({
                     key={account.account_id}
                     onSelect={() => switchAccount(account)}
                     className={cn(
-                      'group/acct flex h-9 cursor-pointer items-center gap-2.5 rounded-md px-2 py-0',
+                      'group/acct flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-0',
                       active && 'bg-muted/60',
                     )}
                   >
@@ -270,7 +270,7 @@ export function AccountSwitcher({
               close();
               router.push('/accounts');
             }}
-            className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 py-0 [&_svg]:!text-muted-foreground/70"
+            className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <ArrowUpRight className="size-3.5" />
             <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">
@@ -279,7 +279,7 @@ export function AccountSwitcher({
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => deferAfterClose(() => setCreateOpen(true))}
-            className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 py-0 [&_svg]:!text-muted-foreground/70"
+            className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
             <Plus className="size-3.5" />
             <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">
@@ -289,7 +289,7 @@ export function AccountSwitcher({
           {billingActive && (
             <DropdownMenuItem
               onSelect={() => deferAfterClose(() => setBillingOpen(true))}
-              className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 py-0 [&_svg]:!text-muted-foreground/70"
+              className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
             >
               <CreditCard className="size-3.5" />
               <span className="flex-1 truncate text-[12.5px] font-medium text-foreground/80">

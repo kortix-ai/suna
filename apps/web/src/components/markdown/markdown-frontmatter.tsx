@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 import { UnifiedMarkdown } from './unified-markdown';
 
 /**
@@ -77,11 +78,11 @@ function NestedTable({ data }: { data: Record<string, string> }) {
   return (
     <div className="inline-flex flex-wrap gap-x-3 gap-y-1">
       {entries.map(([k, v]) => (
-        <span key={k} className="inline-flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10.5px]">
+        <Badge key={k} size="sm" variant="secondary" className="gap-1">
           <span className="text-muted-foreground/70">{k}</span>
           <span className="text-muted-foreground/30">·</span>
           <ScalarValue value={v} />
-        </span>
+        </Badge>
       ))}
     </div>
   );

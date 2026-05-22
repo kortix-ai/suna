@@ -60,7 +60,7 @@ function BreadcrumbSegments({
       <button
         onClick={onHomeClick}
         className={cn(
-          'flex items-center gap-1 px-2 py-1 rounded-md transition-colors cursor-pointer shrink-0',
+          'flex items-center gap-1 px-2 py-1 rounded-lg transition-colors cursor-pointer shrink-0',
           'hover:bg-muted',
           visibleSegments.length === 0
             ? 'text-foreground font-medium bg-muted/50'
@@ -84,7 +84,7 @@ function BreadcrumbSegments({
             <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />
             {isLast && fileMode ? (
               /* File name — non-clickable active segment with optional icon */
-              <span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-xs text-foreground font-medium bg-muted/30 rounded-md truncate max-w-[200px]">
+              <span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-xs text-foreground font-medium bg-muted/30 rounded-lg truncate max-w-[200px]">
                 {fileIcon}
                 {segment}
               </span>
@@ -92,7 +92,7 @@ function BreadcrumbSegments({
               <button
                 onClick={() => onSegmentClick(absoluteIndex)}
                 className={cn(
-                  'px-1.5 py-1 rounded-md transition-colors cursor-pointer truncate max-w-[180px] text-xs',
+                  'px-1.5 py-1 rounded-lg transition-colors cursor-pointer truncate max-w-[180px] text-xs',
                   'hover:bg-muted',
                   isLast && !fileMode
                     ? 'text-foreground font-medium bg-muted/30'
@@ -202,10 +202,7 @@ export function FileBreadcrumbs() {
             if (e.key === 'Escape') setIsEditing(false);
           }}
           onBlur={() => { navigateToPath(editValue.trim() || '/'); setIsEditing(false); }}
-          className={cn(
-            'flex-1 min-w-0 h-7 px-2 text-sm bg-background border rounded-md',
-            'outline-none focus:ring-1 focus:ring-primary font-mono',
-          )}
+          className="flex-1 min-w-0 h-7 px-2 text-sm bg-card border rounded-2xl outline-none focus:ring-2 focus:ring-primary/50 font-mono"
           placeholder="/path/to/folder"
         />
       </div>

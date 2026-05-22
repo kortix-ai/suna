@@ -12,6 +12,7 @@ import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SectionCard } from '@/components/ui/section-card';
@@ -226,11 +227,11 @@ export default function RoleDetailPage() {
                   <code className="font-mono">{role.key}</code>
                   <span className="text-muted-foreground/40">·</span>
                   {role.is_system ? (
-                    <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                    <Badge variant="outline" size="sm" className="font-normal">
                       system
                     </Badge>
                   ) : (
-                    <Badge className="h-4 rounded-md px-1 text-[9px] font-normal">custom</Badge>
+                    <Badge size="sm" className="font-normal">custom</Badge>
                   )}
                   <span className="text-muted-foreground/40">·</span>
                   <span>Resource type: {role.resource_type}</span>
@@ -246,24 +247,20 @@ export default function RoleDetailPage() {
           </div>
 
           {!rolesQuery.isLoading && !role && roleId && (
-            <div className="rounded-xl border border-border/70 bg-card p-6">
-              <p className="text-sm text-muted-foreground">
-                This role doesn&apos;t exist or you don&apos;t have access.
-              </p>
-            </div>
+            <InfoBanner tone="neutral">
+              This role doesn&apos;t exist or you don&apos;t have access.
+            </InfoBanner>
           )}
 
           {isSystem && (
-            <section className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/20 px-5 py-4 text-sm">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              <div>
-                <p className="font-medium text-foreground">System role — read-only</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  System roles ship with the platform. To customize, create a new
-                  role with the actions you want and attach that instead.
-                </p>
-              </div>
-            </section>
+            <InfoBanner
+              tone="neutral"
+              icon={ShieldAlert}
+              title="System role — read-only"
+            >
+              System roles ship with the platform. To customize, create a new
+              role with the actions you want and attach that instead.
+            </InfoBanner>
           )}
 
           {/* Metadata */}
@@ -364,7 +361,7 @@ export default function RoleDetailPage() {
                               type="button"
                               onClick={() => editable && toggleAction(a.action)}
                               disabled={!editable}
-                              className={`flex w-full items-center gap-3 rounded-md px-3 py-1.5 text-left transition-colors ${
+                              className={`flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors ${
                                 editable ? 'cursor-pointer' : 'cursor-default'
                               } ${checked ? 'bg-primary/5' : editable ? 'hover:bg-muted/40' : ''}`}
                             >

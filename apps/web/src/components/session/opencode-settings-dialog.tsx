@@ -41,6 +41,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { List, ListRow } from '@/components/ui/list';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
   useOpenCodeConfig,
@@ -340,7 +342,7 @@ function PermissionsSection({
                 : 'muted'}
               className={cn(
                 isGlobalMode && globalAction === a && a === 'allow' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20',
-                isGlobalMode && globalAction === a && a === 'deny' && 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 hover:bg-red-500/20',
+                isGlobalMode && globalAction === a && a === 'deny' && 'bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15',
                 isGlobalMode && globalAction === a && a === 'ask' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20',
               )}
             >
@@ -366,18 +368,15 @@ function PermissionsSection({
           <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
             Per-Tool Permissions
           </label>
-          <div className="rounded-2xl border border-border/50 bg-card divide-y divide-border/30">
-            {PERMISSION_TYPES.map(({ key, label, description }) => (
-              <div
-                key={key}
-                className="flex items-center justify-between gap-3 px-3 py-2.5"
-              >
-                <div className="min-w-0">
-                  <span className="text-sm text-foreground">{label}</span>
-                  <p className="text-xs text-muted-foreground/60">{description}</p>
-                </div>
-                <div className="flex gap-1 flex-shrink-0">
-                  {ACTIONS.map((a) => (
+          <div className="rounded-2xl border border-border/50 bg-card">
+            <List>
+              {PERMISSION_TYPES.map(({ key, label, description }) => (
+                <ListRow
+                  key={key}
+                  className="px-3 py-2.5"
+                  title={label}
+                  subtitle={<p className="text-xs text-muted-foreground/60">{description}</p>}
+                  trailing={ACTIONS.map((a) => (
                     <Button
                       key={a}
                       onClick={() => setAction(key, a)}
@@ -385,16 +384,16 @@ function PermissionsSection({
                       variant="muted"
                       className={cn(
                         getAction(key) === a && a === 'allow' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20',
-                        getAction(key) === a && a === 'deny' && 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/20 hover:bg-red-500/20',
+                        getAction(key) === a && a === 'deny' && 'bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15',
                         getAction(key) === a && a === 'ask' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20',
                       )}
                     >
                       {a}
                     </Button>
                   ))}
-                </div>
-              </div>
-            ))}
+                />
+              ))}
+            </List>
           </div>
         </div>
       )}
@@ -408,21 +407,22 @@ function PermissionsSection({
           <p className="text-xs text-muted-foreground/60">
             Enable or disable individual tools.
           </p>
-          <div className="rounded-2xl border border-border/50 bg-card divide-y divide-border/30 max-h-48 overflow-y-auto">
-            {builtinToolIds.map((id) => (
-              <div
-                key={id}
-                className="flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors"
-              >
-                <span className="text-xs font-mono text-foreground/80 truncate">
-                  {id}
-                </span>
-                <Switch
-                  checked={isToolEnabled(id)}
-                  onCheckedChange={() => toggleTool(id)}
+          <div className="rounded-2xl border border-border/50 bg-card max-h-48 overflow-y-auto">
+            <List>
+              {builtinToolIds.map((id) => (
+                <ListRow
+                  key={id}
+                  className="px-3 py-2"
+                  title={<span className="text-xs font-mono text-foreground/80 truncate">{id}</span>}
+                  trailing={
+                    <Switch
+                      checked={isToolEnabled(id)}
+                      onCheckedChange={() => toggleTool(id)}
+                    />
+                  }
                 />
-              </div>
-            ))}
+              ))}
+            </List>
           </div>
         </div>
       )}
@@ -440,34 +440,34 @@ function StatusBadge({ status }: { status: McpStatus }) {
   const s = status.status;
   if (s === 'connected') {
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+      <Badge size="sm" variant="success">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
         connected
-      </span>
+      </Badge>
     );
   }
   if (s === 'disabled') {
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground">
+      <Badge size="sm" variant="secondary">
         <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
         disconnected
-      </span>
+      </Badge>
     );
   }
   if (s === 'needs_auth' || s === 'needs_client_registration') {
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400">
+      <Badge size="sm" variant="warning">
         <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
         needs auth
-      </span>
+      </Badge>
     );
   }
   // failed
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-500/10 text-red-600 dark:text-red-400">
-      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+    <Badge size="sm" variant="outline" className="bg-destructive/10 text-destructive">
+      <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
       error
-    </span>
+    </Badge>
   );
 }
 
@@ -826,7 +826,7 @@ function McpServersSection() {
                       onClick={() => removeEnvPair(i)}
                       variant="ghost"
                       size="icon-xs"
-                      className="hover:text-destructive hover:bg-destructive/10 flex-shrink-0"
+                      className="hover:text-foreground hover:bg-muted flex-shrink-0"
                     >
                       <X className="h-3.5 w-3.5" />
                     </Button>
@@ -945,7 +945,7 @@ function McpServersSection() {
                       variant="ghost"
                       size="icon-sm"
                       className={cn(
-                        isConnected ? 'hover:text-red-500 hover:bg-red-500/10' : 'hover:text-emerald-500 hover:bg-emerald-500/10',
+                        isConnected ? 'hover:text-foreground hover:bg-muted' : 'hover:text-emerald-500 hover:bg-emerald-500/10',
                       )}
                       title={isConnected ? 'Disconnect' : 'Connect'}
                     >

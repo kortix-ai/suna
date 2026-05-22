@@ -57,9 +57,9 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
       <div className="space-y-3">
         <Skeleton className="h-4 w-24 mb-2" />
         <div className="flex gap-2">
-          <Skeleton className="h-10 flex-1 rounded-lg" />
-          <Skeleton className="h-10 w-10 rounded-lg" />
-          <Skeleton className="h-10 w-16 sm:w-20 rounded-lg" />
+          <Skeleton className="h-10 flex-1 rounded-2xl" />
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <Skeleton className="h-10 w-16 sm:w-20 rounded-full" />
         </div>
       </div>
     );

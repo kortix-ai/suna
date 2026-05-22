@@ -3,7 +3,8 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Activity, ArrowRight, LayoutDashboard, Wrench } from 'lucide-react';
+import { Activity, ArrowRight, LayoutDashboard, Wrench, type LucideIcon } from 'lucide-react';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 
 import { useOpsOverview } from '@/hooks/admin/use-ops-overview';
 
@@ -85,7 +86,7 @@ function QuickLink({
   description,
 }: {
   href: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   title: string;
   description: string;
 }) {
@@ -95,9 +96,7 @@ function QuickLink({
       className="group relative flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-muted/30"
     >
       <div className="flex items-center justify-between">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <Icon className="h-4 w-4" />
-        </div>
+        <EntityAvatar icon={Icon} size="md" />
         <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 transition-all group-hover:translate-x-0.5 group-hover:opacity-100" />
       </div>
       <div className="space-y-1">

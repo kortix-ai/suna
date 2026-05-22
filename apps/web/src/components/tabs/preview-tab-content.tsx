@@ -341,7 +341,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
 
           {/* Address bar */}
           <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
-            <div className="w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-md text-[12px] tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors">
+            <div className="w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-2xl text-[12px] tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors">
               <Globe className="h-3 w-3 mr-2 shrink-0 opacity-50" />
               <input
                 ref={addressInputRef}
@@ -420,7 +420,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
 
         {/* Address bar — editable */}
         <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
-          <div className="w-full flex items-center h-7 px-3 bg-background border rounded-md text-xs font-mono">
+          <div className="w-full flex items-center h-7 px-3 bg-background border rounded-2xl text-xs font-mono">
             <Globe className="h-3 w-3 mr-2 shrink-0 opacity-50" />
             <input
               ref={addressInputRef}

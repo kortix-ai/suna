@@ -118,7 +118,7 @@ export default function AdminUtilsPage() {
       <div className="flex-none">
         <div className="max-w-4xl mx-auto px-6 py-6">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10">
+            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-primary/10">
               <Settings className="w-5 h-5 text-primary" />
             </div>
             <div className="flex-1">

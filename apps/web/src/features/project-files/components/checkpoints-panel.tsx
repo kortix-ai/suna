@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { cn } from '@/lib/utils';
 import { useCommits } from '../hooks/use-commits';
 import { useProjectContext } from '../context';
@@ -50,17 +51,6 @@ function formatFull(timestamp: number): string {
 
 function tsFromCommit(c: ProjectCommit): number {
   return Number(new Date(c.committed_at || c.authored_at).getTime()) || Date.now();
-}
-
-function initials(name: string): string {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() ?? '')
-      .join('') || '?'
-  );
 }
 
 function groupByDate(commits: ProjectCommit[]) {
@@ -109,12 +99,12 @@ function CheckpointListItem({
         isActive && 'bg-primary/[0.05] border-l-primary',
       )}
     >
-      <div
-        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary"
-        title={commit.author_name}
-      >
-        {initials(commit.author_name)}
-      </div>
+      <UserAvatar
+        email={commit.author_email}
+        name={commit.author_name}
+        size="sm"
+        className="mt-0.5"
+      />
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-medium text-foreground leading-snug line-clamp-2">
           {commit.subject || '(no message)'}
@@ -227,7 +217,7 @@ export function CheckpointsPanel({ open = false, onClose }: CheckpointsPanelProp
                 {Array.from({ length: 6 }).map((_, i) => (
                   <div key={i} className="space-y-1.5">
                     <Skeleton className="h-3 w-20" />
-                    <Skeleton className="h-14 w-full rounded-md" />
+                    <Skeleton className="h-14 w-full rounded-lg" />
                   </div>
                 ))}
               </div>

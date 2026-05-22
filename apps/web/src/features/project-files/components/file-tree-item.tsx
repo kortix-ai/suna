@@ -200,7 +200,7 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
   const content = isRenaming ? (
     <div
       className={cn(
-        'flex items-center gap-2 w-full px-3 py-1.5 text-sm rounded-md',
+        'flex items-center gap-2 w-full px-3 py-1.5 text-sm rounded-lg',
         node.ignored && 'opacity-50',
       )}
     >
@@ -220,12 +220,12 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
             else cancelRename();
           }}
           className={cn(
-            'w-full text-sm bg-transparent border rounded px-1.5 py-0.5 outline-none selection:bg-primary/15 selection:text-foreground',
-            nameConflict ? 'border-red-500/60' : 'border-primary',
+            'w-full h-7 text-sm bg-card border rounded-2xl px-3 outline-none focus:ring-2 focus:ring-primary/50 selection:bg-primary/15 selection:text-foreground',
+            nameConflict && 'border-destructive focus:ring-destructive/30',
           )}
         />
         {nameConflict && (
-          <p className="text-xs text-red-400">
+          <p className="text-xs text-destructive">
             A file or folder with that name already exists
           </p>
         )}
@@ -242,7 +242,7 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
       onDrop={handleDrop}
       onClick={onClick}
       className={cn(
-        'flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left rounded-md transition-colors cursor-pointer',
+        'flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left rounded-lg transition-colors cursor-pointer',
         'hover:bg-muted/80',
         node.ignored && 'opacity-50',
         isCut && 'opacity-40',
@@ -262,7 +262,7 @@ export function FileTreeItem({ node, onClick, onDownload, onRename, onDelete, on
       {(gitStatus || (diagnosticCounts && (diagnosticCounts.errors > 0 || diagnosticCounts.warnings > 0))) && (
         <span className="inline-flex items-center gap-1.5 shrink-0">
           {diagnosticCounts && diagnosticCounts.errors > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-red-500">
+            <span className="inline-flex items-center gap-0.5 text-destructive">
               <CircleAlert className="h-3 w-3" />
               <span className="text-xs font-semibold leading-none">{diagnosticCounts.errors}</span>
             </span>

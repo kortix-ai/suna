@@ -18,6 +18,8 @@ import {
   Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { useFileContent } from '../hooks';
 import { downloadFile, uploadFile } from '../api/opencode-files';
 import { useBinaryBlob } from '../hooks/use-binary-blob';
@@ -187,7 +189,7 @@ function isNotFoundError(errorMsg: string): boolean {
 function FileNotFoundState({ filePath }: { filePath: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-      <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center">
+      <div className="h-12 w-12 rounded-2xl bg-muted/50 flex items-center justify-center">
         <FileX className="h-6 w-6 text-muted-foreground/40" />
       </div>
       <p className="text-sm font-medium text-muted-foreground">
@@ -535,30 +537,30 @@ export function FileContentRenderer({
             <FilePathBreadcrumbs filePath={filePath} />
             {/* Edit state indicator */}
             {!readOnly && hasUnsavedChanges && (
-              <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-500 px-2 py-0.5 bg-amber-50 dark:bg-amber-900/20 rounded-md shrink-0">
+              <Badge variant="warning" size="sm" className="shrink-0">
                 <span className="relative flex h-1.5 w-1.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
                 </span>
-                <span className="font-semibold">Edited</span>
-              </div>
+                Edited
+              </Badge>
             )}
             {!readOnly && saveFlash && !hasUnsavedChanges && (
-              <div className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-500 px-2 py-0.5 bg-green-50 dark:bg-green-900/20 rounded-md shrink-0">
+              <Badge variant="success" size="sm" className="shrink-0">
                 <Check className="h-3 w-3" />
-                <span className="font-semibold">Saved</span>
-              </div>
+                Saved
+              </Badge>
             )}
             {readOnly && (
-              <span className="text-[10px] text-muted-foreground/60 px-1.5 py-0.5 bg-muted/50 rounded shrink-0 uppercase tracking-wider font-medium">
+              <Badge variant="muted" size="sm" className="shrink-0 uppercase tracking-wider">
                 View only
-              </span>
+              </Badge>
             )}
             {/* Inline diagnostic counts */}
             {(fileDiagErrorCount > 0 || fileDiagWarningCount > 0) && (
               <span className="inline-flex items-center gap-1.5 shrink-0">
                 {fileDiagErrorCount > 0 && (
-                  <span className="inline-flex items-center gap-0.5 text-red-500 text-xs font-medium">
+                  <span className="inline-flex items-center gap-0.5 text-destructive text-xs font-medium">
                     <CircleAlert className="h-3 w-3" />
                     {fileDiagErrorCount}
                   </span>
@@ -595,7 +597,7 @@ export function FileContentRenderer({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
                   onClick={handleDiscard}
                   title="Discard changes"
                 >
@@ -685,7 +687,7 @@ export function FileContentRenderer({
               <FileNotFoundState filePath={filePath} />
             ) : (
               <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-                <div className="h-12 w-12 rounded-xl bg-destructive/10 flex items-center justify-center">
+                <div className="h-12 w-12 rounded-2xl bg-destructive/10 flex items-center justify-center">
                   <FileWarning className="h-6 w-6 text-destructive/50" />
                 </div>
                 <p className="text-sm font-medium text-muted-foreground">
@@ -837,7 +839,7 @@ export function FileContentRenderer({
           !isHeicImage &&
           !['pdf', 'docx', 'pptx', 'xlsx', 'sqlite', 'video', 'audio'].includes(fileCategory) && (
             <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-              <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center">
+              <div className="h-12 w-12 rounded-2xl bg-muted/50 flex items-center justify-center">
                 <FileWarning className="h-6 w-6 text-muted-foreground/30" />
               </div>
               <p className="text-sm text-muted-foreground/50">
@@ -861,10 +863,13 @@ export function FileContentRenderer({
             <div className="relative h-full flex flex-col">
               {/* Diff indicator */}
               {fileContent.patch && fileContent.patch.hunks.length > 0 && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/5 border-b border-yellow-500/15 text-xs text-yellow-600 dark:text-yellow-400/80 shrink-0">
-                  <GitBranch className="h-3 w-3" />
+                <InfoBanner
+                  tone="warning"
+                  icon={GitBranch}
+                  className="shrink-0 items-center gap-1.5 rounded-none border-x-0 border-t-0 px-3 py-1.5"
+                >
                   Uncommitted changes
-                </div>
+                </InfoBanner>
               )}
               {isJsonTreeView && isJsonFile ? (
                 <div key={filePath} className="w-full h-full overflow-auto">
@@ -910,7 +915,7 @@ function JsonTreeView({ content }: { content: string }) {
 
   if (parsed === null) {
     return (
-      <div className="p-4 text-sm text-red-500/70 font-mono">
+      <div className="p-4 text-sm text-destructive/70 font-mono">
         Invalid JSON
       </div>
     );
@@ -976,7 +981,7 @@ function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string |
       <div>
         <div
           style={{ paddingLeft: depth * 20 }}
-          className="cursor-pointer hover:bg-muted/30 rounded-sm transition-colors inline-flex items-center gap-1"
+          className="cursor-pointer hover:bg-muted/30 rounded-lg transition-colors inline-flex items-center gap-1"
           onClick={() => setIsCollapsed((v) => !v)}
         >
           <span className="text-muted-foreground/40 text-xs w-3.5 text-center select-none">
@@ -1008,7 +1013,7 @@ function JsonNode({ value, keyName, depth }: { value: unknown; keyName: string |
       <div>
         <div
           style={{ paddingLeft: depth * 20 }}
-          className="cursor-pointer hover:bg-muted/30 rounded-sm transition-colors inline-flex items-center gap-1"
+          className="cursor-pointer hover:bg-muted/30 rounded-lg transition-colors inline-flex items-center gap-1"
           onClick={() => setIsCollapsed((v) => !v)}
         >
           <span className="text-muted-foreground/40 text-xs w-3.5 text-center select-none">

@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { getEnv } from '@/lib/env-config';
@@ -83,7 +84,7 @@ function NotConnected({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border border-border/70 bg-card px-4 py-4">
+      <div className="rounded-2xl border border-border/70 bg-card px-4 py-4">
         <p className="text-sm font-medium text-foreground">Add Kortix to your Slack workspace</p>
         <p className="mt-1 text-xs text-muted-foreground">
           One click — approve scopes in Slack and we'll wire this project to the workspace you choose.
@@ -135,20 +136,14 @@ function Connected({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5 text-sm">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/15">
-          <Check className="h-3.5 w-3.5 text-emerald-500" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-foreground">
-            Connected to {installation.workspaceName ?? installation.workspaceId}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Bot user <code className="font-mono">{installation.botUserId ?? '—'}</code> · team{' '}
-            <code className="font-mono">{installation.workspaceId}</code>
-          </p>
-        </div>
-      </div>
+      <InfoBanner
+        tone="success"
+        icon={Check}
+        title={`Connected to ${installation.workspaceName ?? installation.workspaceId}`}
+      >
+        Bot user <code className="font-mono">{installation.botUserId ?? '—'}</code> · team{' '}
+        <code className="font-mono">{installation.workspaceId}</code>
+      </InfoBanner>
 
       <div className="rounded-2xl border border-border/70 bg-card px-4 py-3 text-sm">
         <p className="font-medium text-foreground">Next: enable for this project</p>

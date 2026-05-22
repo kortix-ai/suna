@@ -150,9 +150,9 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
 
             {typesLoading ? (
               <div className="space-y-2.5">
-                <Skeleton className="h-[72px] w-full rounded-xl" />
-                <Skeleton className="h-[72px] w-full rounded-xl" />
-                <Skeleton className="h-[72px] w-full rounded-xl" />
+                <Skeleton className="h-[72px] w-full rounded-2xl" />
+                <Skeleton className="h-[72px] w-full rounded-2xl" />
+                <Skeleton className="h-[72px] w-full rounded-2xl" />
               </div>
             ) : (
               <RadioGroup value={selected ?? undefined} onValueChange={setSelected} className="gap-2.5">
