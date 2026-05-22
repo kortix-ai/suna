@@ -53,6 +53,29 @@ export function buildPreviewAuthEndpoint(previewUrl: string, serverUrl?: string)
 }
 
 /**
+ * Subdomain preview form: `p{port}-{sandbox}.{host}/...`. These can't use the
+ * host-only `/v1/p/` session cookie (it never reaches the preview subdomain),
+ * so they authenticate via a one-shot `?token` on the first request.
+ */
+export function isSubdomainPreviewUrl(candidateUrl: string): boolean {
+  try {
+    return /^p\d+-[^.]+\./.test(new URL(candidateUrl).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function appendPreviewToken(previewUrl: string, token: string): string {
+  try {
+    const u = new URL(previewUrl);
+    u.searchParams.set('token', token);
+    return u.toString();
+  } catch {
+    return previewUrl;
+  }
+}
+
+/**
  * Pre-authenticates preview proxy URLs via cookie-based auth.
  *
  * Returns `null` while authentication is in progress.
@@ -95,6 +118,15 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
         return;
       }
 
+      // Subdomain previews (p{port}-{sandbox}.host/) — the /v1/p/ session cookie
+      // never reaches them, so authenticate the first request with a one-shot
+      // ?token. The subdomain proxy validates it, marks the subdomain authed
+      // in-memory for sub-resources, and strips the token before forwarding.
+      if (isSubdomainPreviewUrl(previewUrl)) {
+        setAuthenticatedUrl(appendPreviewToken(previewUrl, token));
+        return;
+      }
+
       const authEndpoint = buildPreviewAuthEndpoint(previewUrl, serverUrl);
       if (!authEndpoint) {
         setAuthenticatedUrl(previewUrl);
@@ -131,21 +163,9 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
       }
 
       if (cancelled) return;
-      // Expose the URL with a one-shot ?token so the FIRST request authenticates
-      // deterministically — the subdomain proxy's host-only `/v1/p/` cookie never
-      // reaches `p{port}-{sandbox}.host/`, and the in-memory pre-auth above is
-      // fragile (lost on API restart / direct opens). The proxy validates the
-      // token, marks the subdomain authed for sub-resources, and strips the
-      // token before forwarding to the sandbox app.
-      let exposed = previewUrl;
-      try {
-        const u = new URL(previewUrl);
-        u.searchParams.set('token', token);
-        exposed = u.toString();
-      } catch {
-        // keep bare URL if it isn't parseable
-      }
-      setAuthenticatedUrl(exposed);
+      // Path-based previews authenticate via the cookie set above; subdomain
+      // previews returned earlier with a ?token.
+      setAuthenticatedUrl(previewUrl);
     }
 
     // Reset to null on every previewUrl change so consumers show loading
