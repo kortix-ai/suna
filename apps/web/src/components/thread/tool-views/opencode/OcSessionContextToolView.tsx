@@ -11,6 +11,7 @@ import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT, DiffStat } from '@/components/ui/status';
 
 const MODE_LABELS: Record<string, string> = {
   summary: 'Summary',
@@ -100,7 +101,7 @@ export function OcSessionContextToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               Loaded
             </Badge>
           )
@@ -236,8 +237,11 @@ function DiffFile({ header, content }: { header: string; content: string }) {
         <Badge variant="outline" className="h-4 py-0 text-[0.5625rem] shrink-0">
           {status}
         </Badge>
-        <span className="text-[10px] text-emerald-500">+{additions}</span>
-        <span className="text-[10px] text-red-500">-{deletions}</span>
+        <DiffStat
+          additions={parseInt(additions, 10) || 0}
+          deletions={parseInt(deletions, 10) || 0}
+          className="text-[10px]"
+        />
       </button>
       {open && content && (
         <div className="border-t border-border/30 bg-muted/10 p-2 overflow-x-auto">

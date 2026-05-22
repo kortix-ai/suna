@@ -18,6 +18,7 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT } from '@/components/ui/status';
 
 // ============================================================================
 // Types
@@ -125,7 +126,7 @@ export function OcMemSaveToolView({
             {/* Saved ID */}
             {parsed.id && !isError && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
-                <CheckCircle className="size-3.5 text-emerald-500" />
+                <CheckCircle className={cn('size-3.5', STATUS_TEXT.success)} />
                 <span>Stored as memory <span className="font-mono">#{parsed.id}</span></span>
               </div>
             )}
@@ -146,7 +147,7 @@ export function OcMemSaveToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               Saved
             </Badge>
           )

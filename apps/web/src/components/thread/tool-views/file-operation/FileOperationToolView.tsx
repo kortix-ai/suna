@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { STATUS_TEXT } from '@/components/ui/status';
 import { Tabs, TabsContent, TabsListCompact, TabsTriggerCompact } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FileDownloadButton } from '../shared/FileDownloadButton';
@@ -1128,7 +1129,7 @@ export function FileOperationToolView({
                           {diffStats.additions} added
                         </span>
                         <span className="text-zinc-300 dark:text-zinc-700">·</span>
-                        <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
+                        <span className={cn('flex items-center gap-1', STATUS_TEXT.destructive)}>
                           <Minus className="h-3.5 w-3.5" />
                           {diffStats.deletions} removed
                         </span>

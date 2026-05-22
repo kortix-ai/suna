@@ -24,6 +24,7 @@ import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT } from '@/components/ui/status';
 
 // ============================================================================
 // Types & Parsing
@@ -333,7 +334,7 @@ export function OcSessionGetToolView({
             </Badge>
           ) : data ? (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               Loaded
             </Badge>
           ) : null

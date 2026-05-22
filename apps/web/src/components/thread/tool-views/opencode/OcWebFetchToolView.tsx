@@ -10,6 +10,8 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { cn } from '@/lib/utils';
+import { STATUS_TEXT } from '@/components/ui/status';
 
 function getDomain(url: string): string {
   try {
@@ -232,16 +234,16 @@ export function OcWebFetchToolView({
                         </p>
                       )}
                       {!result.success && result.error && (
-                        <p className="text-xs text-red-500/70 leading-relaxed line-clamp-2 mt-1.5">
+                        <p className={cn('text-xs leading-relaxed line-clamp-2 mt-1.5', STATUS_TEXT.destructive)}>
                           {result.error.slice(0, 200)}
                         </p>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0 mt-1.5">
                       {result.success ? (
-                        <CheckCircle className="size-3.5 text-emerald-500/70" />
+                        <CheckCircle className={cn('size-3.5', STATUS_TEXT.success)} />
                       ) : (
-                        <AlertTriangle className="size-3.5 text-amber-500/70" />
+                        <AlertTriangle className={cn('size-3.5', STATUS_TEXT.warning)} />
                       )}
                       <ExternalLink className="size-3.5 text-muted-foreground/20 group-hover:text-muted-foreground/50 transition-colors" />
                     </div>
@@ -258,7 +260,7 @@ export function OcWebFetchToolView({
         >
           {!isStreaming && (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500/70" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               {scrapeData.successful}/{scrapeData.total} scraped
             </Badge>
           )}
@@ -333,7 +335,7 @@ export function OcWebFetchToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               Fetched
             </Badge>
           )

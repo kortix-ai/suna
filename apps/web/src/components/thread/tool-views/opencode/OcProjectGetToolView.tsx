@@ -20,6 +20,7 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT, StatusDot } from '@/components/ui/status';
 
 // ============================================================================
 // Types & Parsing
@@ -160,16 +161,19 @@ export function OcProjectGetToolView({
                         key={s.status}
                         className="inline-flex items-center gap-1.5 h-6 px-2 rounded-md bg-foreground/[0.04] text-[11px] text-foreground/85 tracking-tight"
                       >
-                        <span
-                          aria-hidden
-                          className={cn(
-                            'w-1.5 h-1.5 rounded-full',
-                            s.status === 'running' && 'bg-foreground animate-pulse',
-                            s.status === 'completed' && 'bg-foreground',
-                            s.status === 'failed' && 'bg-red-500/80',
-                            s.status === 'pending' && 'bg-foreground/40',
-                          )}
-                        />
+                        {s.status === 'failed' ? (
+                          <StatusDot tone="destructive" />
+                        ) : (
+                          <StatusDot
+                            tone="neutral"
+                            pulse={s.status === 'running'}
+                            className={cn(
+                              s.status === 'running' && 'bg-foreground',
+                              s.status === 'completed' && 'bg-foreground',
+                              s.status === 'pending' && 'bg-foreground/40',
+                            )}
+                          />
+                        )}
                         {s.status} <span className="text-muted-foreground/60">· {s.count}</span>
                       </span>
                     ))}
@@ -182,8 +186,8 @@ export function OcProjectGetToolView({
                 <div className="flex items-center gap-2 text-xs">
                   {data.contextExists ? (
                     <>
-                      <CheckSquare className="size-3.5 text-emerald-500" />
-                      <span className="text-emerald-600 dark:text-emerald-400">Context file ready</span>
+                      <CheckSquare className={cn('size-3.5', STATUS_TEXT.success)} />
+                      <span className={STATUS_TEXT.success}>Context file ready</span>
                       <span className="text-muted-foreground/50 font-mono truncate ml-1" title={data.contextPath}>
                         {data.contextPath}
                       </span>
@@ -230,7 +234,7 @@ export function OcProjectGetToolView({
             </Badge>
           ) : data ? (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               Loaded
             </Badge>
           ) : null

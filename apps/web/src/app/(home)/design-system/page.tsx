@@ -151,6 +151,7 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { StatusDot, DiffStat, StatusBadge } from '@/components/ui/status';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
@@ -341,6 +342,7 @@ const TOC_SECTIONS = [
     { id: 'pat-inline-meta', label: 'InlineMeta' },
     { id: 'pat-empty-state', label: 'EmptyState' },
     { id: 'pat-info-banner', label: 'InfoBanner' },
+    { id: 'pat-status', label: 'Status (Dot, Badge, Diff)' },
   ]},
   { id: 'anti-patterns', label: 'Anti-Patterns' },
   { id: 'usage', label: 'Usage' },
@@ -2491,6 +2493,55 @@ export default function BrandPage() {
                   >
                     Your repository is connected.
                   </InfoBanner>
+                </DemoContainer>
+              </div>
+
+              <div id="pat-status" className="mb-12">
+                <ComponentLabel>Status (Dot, Badge &amp; DiffStat)</ComponentLabel>
+                <ComponentDesc>
+                  The single source of truth for &ldquo;this means success /
+                  warning / error / info&rdquo; coloring. Chips use{' '}
+                  <code>Badge</code>, boxes use <code>InfoBanner</code> — for the
+                  cases a component can&apos;t cover (a live activity dot, a diff
+                  +/- counter, a lone status icon) reach for <code>StatusDot</code>
+                  , <code>DiffStat</code> or the <code>STATUS_TEXT/BG/BORDER</code>{' '}
+                  maps instead of re-inlining <code>text-emerald-500</code>.
+                </ComponentDesc>
+                <DemoContainer className="flex flex-col gap-4">
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="success" /> Idle
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="success" pulse /> Running
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="warning" /> Warning
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="destructive" /> Error
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <StatusDot tone="info" /> Info
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <DiffStat additions={42} deletions={7} />
+                    <DiffStat additions={12} />
+                    <DiffStat deletions={3} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge tone="success">3 passed</StatusBadge>
+                    <StatusBadge tone="warning">5 warnings</StatusBadge>
+                    <StatusBadge tone="destructive">2 errors</StatusBadge>
+                    <StatusBadge tone="info">Modified</StatusBadge>
+                    <StatusBadge tone="neutral">Idle</StatusBadge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Use <code>StatusBadge</code> for informational status
+                    (faint, incl. red). <code>Badge variant=&quot;destructive&quot;</code>{' '}
+                    is a SOLID red pill — reserve it for actions, not status.
+                  </p>
                 </DemoContainer>
               </div>
             </section>

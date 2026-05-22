@@ -21,6 +21,8 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { PreWithPaths } from '@/components/common/clickable-path';
+import { STATUS_TEXT, StatusDot } from '@/components/ui/status';
+import { InfoBanner } from '@/components/ui/info-banner';
 
 function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
@@ -97,10 +99,10 @@ function StatusBadge({ status }: { status: string }) {
     <span
       className={cn(
         'inline-flex items-center gap-1.5 text-[10.5px] font-medium tracking-tight',
-        isError ? 'text-red-500/90' : 'text-muted-foreground/80',
+        isError ? STATUS_TEXT.destructive : 'text-muted-foreground/80',
       )}
     >
-      {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-foreground animate-pulse" />}
+      {isRunning && <StatusDot tone="neutral" pulse className="bg-foreground" />}
       {isError && <AlertCircle className="w-2.5 h-2.5" />}
       {isCompleted && <CheckCircle className="w-2.5 h-2.5 text-foreground/70" />}
       {status}
@@ -222,24 +224,16 @@ export function OcPtySpawnToolView({
           <div className="p-3 space-y-3">
             {/* Error banner */}
             {isError && errorMessage && (
-              <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
-                <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/15">
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
-                  <span className="text-xs font-medium text-red-400">Error</span>
-                </div>
-                <div className="px-3 py-2.5">
-                  <p className="text-xs text-foreground/80 leading-relaxed break-words whitespace-pre-wrap font-mono">
-                    {errorMessage}
-                  </p>
-                </div>
-              </div>
+              <InfoBanner tone="destructive" icon={AlertCircle} title="Error">
+                <span className="break-words whitespace-pre-wrap font-mono">{errorMessage}</span>
+              </InfoBanner>
             )}
 
             {/* Command display */}
             {fullCommand && (
               <div className="rounded-2xl border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
                 <div className="px-3 py-2.5">
-                  <pre className="font-mono text-xs text-emerald-400 leading-relaxed">
+                  <pre className={cn('font-mono text-xs leading-relaxed', STATUS_TEXT.success)}>
                     <span className="text-muted-foreground">$ </span>
                     {fullCommand}
                   </pre>
@@ -359,14 +353,9 @@ export function OcPtyReadToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-3">
             {isError && (
-              <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
-                  <span className="text-xs font-medium text-red-400">
-                    {toolResult?.error || 'Failed to read terminal'}
-                  </span>
-                </div>
-              </div>
+              <InfoBanner tone="destructive" icon={AlertCircle}>
+                {toolResult?.error || 'Failed to read terminal'}
+              </InfoBanner>
             )}
 
             {parsed.content && (
@@ -460,18 +449,13 @@ export function OcPtyWriteToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-3">
             {isError && errorMessage && (
-              <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
-                  <span className="text-xs font-medium text-red-400">{errorMessage}</span>
-                </div>
-              </div>
+              <InfoBanner tone="destructive" icon={AlertCircle}>{errorMessage}</InfoBanner>
             )}
 
             {ptyInput && (
               <div className="rounded-2xl border border-border overflow-hidden bg-zinc-950 dark:bg-zinc-950">
                 <div className="px-3 py-2.5">
-                  <pre className="font-mono text-xs text-amber-400 leading-relaxed">
+                  <pre className={cn('font-mono text-xs leading-relaxed', STATUS_TEXT.warning)}>
                     <span className="text-muted-foreground">&gt; </span>
                     {ptyInput}
                   </pre>
@@ -570,12 +554,7 @@ export function OcPtyKillToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-3 space-y-3">
             {isError && errorMessage && (
-              <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.04] overflow-hidden">
-                <div className="flex items-center gap-2 px-3 py-2">
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
-                  <span className="text-xs font-medium text-red-400">{errorMessage}</span>
-                </div>
-              </div>
+              <InfoBanner tone="destructive" icon={AlertCircle}>{errorMessage}</InfoBanner>
             )}
 
             {ptyId && (
@@ -615,7 +594,7 @@ export function OcPtyKillToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <XCircle className="h-3 w-3 text-red-500 dark:text-red-400" />
+              <XCircle className={cn('h-3 w-3', STATUS_TEXT.destructive)} />
               Killed
             </Badge>
           )

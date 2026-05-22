@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { STATUS_TEXT } from '@/components/ui/status';
 /* AutoContinue — commented out
 import {
   Dialog,
@@ -631,7 +632,7 @@ function AutoContinueSelector({
                     <ul className="space-y-1">
                       {detailAlg.strengths.map((s, i) => (
                         <li key={i} className="text-sm text-muted-foreground flex gap-1.5">
-                          <span className="text-emerald-500 shrink-0 mt-0.5">+</span>
+                          <span className={cn('shrink-0 mt-0.5', STATUS_TEXT.success)}>+</span>
                           <span>{s}</span>
                         </li>
                       ))}
@@ -642,7 +643,7 @@ function AutoContinueSelector({
                     <ul className="space-y-1">
                       {detailAlg.weaknesses.map((w, i) => (
                         <li key={i} className="text-sm text-muted-foreground flex gap-1.5">
-                          <span className="text-orange-500 shrink-0 mt-0.5">-</span>
+                          <span className={cn('shrink-0 mt-0.5', STATUS_TEXT.warning)}>-</span>
                           <span>{w}</span>
                         </li>
                       ))}
@@ -707,8 +708,8 @@ function TokenProgress({ messages, models, selectedModel, onContextClick }: Toke
 
   const circumference = 2 * Math.PI * 7;
   const offset = circumference * (1 - ratio);
-  const color = ratio >= 0.9 ? 'text-amber-400'
-    : ratio > 0.8 ? 'text-orange-500'
+  const color = ratio >= 0.9 ? STATUS_TEXT.destructive
+    : ratio > 0.8 ? STATUS_TEXT.warning
     : 'text-muted-foreground';
 
   return (

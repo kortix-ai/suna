@@ -39,6 +39,7 @@ import { ShowContentRenderer, ShowCarousel, SHOW_HTML_EXT_RE } from '@/component
 import type { ShowCarouselItem } from '@/components/file-renderers/show-content-renderer';
 import { SANDBOX_PORTS } from '@/lib/platform-client';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
+import { STATUS_TEXT, STATUS_BG, STATUS_BORDER } from '@/components/ui/status';
 
 /** Ensure a sandbox file path starts with /workspace/ for the static file server. */
 function ensureWorkspacePath(filePath: string): string {
@@ -49,10 +50,10 @@ function ensureWorkspacePath(filePath: string): string {
 // ── Theme border styles — theme ONLY affects the card border color ──────────
 const THEME_BORDER: Record<string, string> = {
   default: 'border-border',
-  success: 'border-emerald-500/20',
-  warning: 'border-amber-500/20',
-  info:    'border-blue-500/20',
-  danger:  'border-red-500/20',
+  success: STATUS_BORDER.success,
+  warning: STATUS_BORDER.warning,
+  info:    STATUS_BORDER.info,
+  danger:  STATUS_BORDER.destructive,
 };
 
 function typeIcon(type: string) {
@@ -341,7 +342,7 @@ export function OcShowUserToolView({
     if (isError && type === 'error') {
       return (
         <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-          <AlertTriangle className="h-3 w-3 text-red-500" />
+          <AlertTriangle className={cn('h-3 w-3', STATUS_TEXT.destructive)} />
           Error
         </Badge>
       );
@@ -533,7 +534,7 @@ export function OcShowUserToolView({
               <span className={cn(
                 'text-[10px] px-2 py-0.5 rounded-md font-medium uppercase tracking-wider',
                 type === 'error'
-                  ? 'bg-red-500/[0.08] text-red-500/85'
+                  ? cn(STATUS_BG.destructive, STATUS_TEXT.destructive)
                   : 'bg-foreground/[0.04] text-muted-foreground/70',
               )}>
                 {type}

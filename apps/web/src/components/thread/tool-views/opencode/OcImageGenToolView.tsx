@@ -17,6 +17,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
+import { cn } from '@/lib/utils';
+import { STATUS_TEXT } from '@/components/ui/status';
 
 const ACTION_CONFIG: Record<string, { label: string; icon: typeof Wand2 }> = {
   generate: { label: 'Generate Image', icon: Wand2 },
@@ -147,7 +149,7 @@ export function OcImageGenToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               {config.label}
             </Badge>
           )

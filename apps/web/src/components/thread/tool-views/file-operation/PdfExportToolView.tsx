@@ -12,6 +12,8 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { LoadingState } from '../shared/LoadingState';
 import { useAuth } from '@/components/AuthProvider';
 import { useDownloadRestriction } from '@/hooks/billing';
+import { cn } from '@/lib/utils';
+import { STATUS_TEXT } from '@/components/ui/status';
 
 export function PdfExportToolView({
   toolCall,
@@ -119,7 +121,7 @@ export function PdfExportToolView({
             title={`Export: ${sourceFileName}`}
           />
           {isSuccess && (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+            <div className={cn('flex items-center gap-1.5 text-xs', STATUS_TEXT.success)}>
               <CheckCircle2 className="h-3.5 w-3.5" />
               <span>Ready</span>
             </div>

@@ -43,6 +43,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { List, ListRow } from '@/components/ui/list';
 import { Badge } from '@/components/ui/badge';
+import {
+  StatusDot,
+  STATUS_TEXT,
+  STATUS_BG,
+  STATUS_BORDER,
+} from '@/components/ui/status';
 import { cn } from '@/lib/utils';
 import {
   useOpenCodeConfig,
@@ -341,9 +347,9 @@ function PermissionsSection({
                 : 'muted'
                 : 'muted'}
               className={cn(
-                isGlobalMode && globalAction === a && a === 'allow' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20',
+                isGlobalMode && globalAction === a && a === 'allow' && cn('border', STATUS_BG.success, STATUS_TEXT.success, STATUS_BORDER.success),
                 isGlobalMode && globalAction === a && a === 'deny' && 'bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15',
-                isGlobalMode && globalAction === a && a === 'ask' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20',
+                isGlobalMode && globalAction === a && a === 'ask' && cn('border', STATUS_BG.warning, STATUS_TEXT.warning, STATUS_BORDER.warning),
               )}
             >
               {a}
@@ -354,7 +360,7 @@ function PermissionsSection({
             size="toolbar"
             variant="muted"
             className={cn(
-              !isGlobalMode && 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20',
+              !isGlobalMode && cn('border', STATUS_BG.info, STATUS_TEXT.info, STATUS_BORDER.info),
             )}
           >
             per-tool
@@ -383,9 +389,9 @@ function PermissionsSection({
                       size="xs"
                       variant="muted"
                       className={cn(
-                        getAction(key) === a && a === 'allow' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20',
+                        getAction(key) === a && a === 'allow' && cn('border', STATUS_BG.success, STATUS_TEXT.success, STATUS_BORDER.success),
                         getAction(key) === a && a === 'deny' && 'bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15',
-                        getAction(key) === a && a === 'ask' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20 hover:bg-amber-500/20',
+                        getAction(key) === a && a === 'ask' && cn('border', STATUS_BG.warning, STATUS_TEXT.warning, STATUS_BORDER.warning),
                       )}
                     >
                       {a}
@@ -441,7 +447,7 @@ function StatusBadge({ status }: { status: McpStatus }) {
   if (s === 'connected') {
     return (
       <Badge size="sm" variant="success">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+        <StatusDot tone="success" />
         connected
       </Badge>
     );
@@ -449,7 +455,7 @@ function StatusBadge({ status }: { status: McpStatus }) {
   if (s === 'disabled') {
     return (
       <Badge size="sm" variant="secondary">
-        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40" />
+        <StatusDot tone="neutral" />
         disconnected
       </Badge>
     );
@@ -457,7 +463,7 @@ function StatusBadge({ status }: { status: McpStatus }) {
   if (s === 'needs_auth' || s === 'needs_client_registration') {
     return (
       <Badge size="sm" variant="warning">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+        <StatusDot tone="warning" />
         needs auth
       </Badge>
     );
@@ -917,7 +923,7 @@ function McpServersSection() {
                       </span>
                     )}
                     {isFailed && 'error' in status && (
-                      <p className="text-xs text-red-500/80 truncate mt-0.5">
+                      <p className={cn('text-xs truncate mt-0.5', STATUS_TEXT.destructive)}>
                         {(status as any).error}
                       </p>
                     )}
@@ -931,7 +937,7 @@ function McpServersSection() {
                         disabled={authStartMutation.isPending}
                         variant="ghost"
                         size="icon-sm"
-                        className="text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                        className={cn(STATUS_TEXT.warning, 'hover:bg-amber-500/10')}
                         title="Authorize"
                       >
                         <Plug className="h-3.5 w-3.5" />

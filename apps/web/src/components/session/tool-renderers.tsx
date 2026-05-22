@@ -112,6 +112,13 @@ import {
 import { parseMemorySearchOutput } from '@/lib/utils/memory-search-output';
 import { parseMemoryEntryOutput } from '@/lib/utils/memory-entry-output';
 import { Badge } from '@/components/ui/badge';
+import {
+  STATUS_TEXT,
+  STATUS_BG,
+  STATUS_BORDER,
+  StatusDot,
+  DiffStat,
+} from '@/components/ui/status';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 
 import {
@@ -623,7 +630,7 @@ function getAgentCardLabel(input: Record<string, unknown>): string {
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case 'completed':
-      return <Check className="size-3 text-emerald-500 flex-shrink-0" />;
+      return <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />;
     case 'error':
       return (
         <CircleAlert className="size-3 text-muted-foreground flex-shrink-0" />
@@ -764,8 +771,19 @@ function JsonFailureOutputCard({
           </div>
         )}
         {failure.hint && (
-          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
-            <div className="text-[10px] text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-1">
+          <div
+            className={cn(
+              'rounded-2xl border px-2 py-1.5',
+              STATUS_BORDER.success,
+              STATUS_BG.success,
+            )}
+          >
+            <div
+              className={cn(
+                'text-[10px] uppercase tracking-wider mb-1',
+                STATUS_TEXT.success,
+              )}
+            >
               Hint
             </div>
             <p className="text-[11px] text-foreground/80 break-words">
@@ -1233,9 +1251,9 @@ function DiagnosticsDisplay({
               navigationEnabled && filePath
                 ? 'cursor-pointer'
                 : 'cursor-default opacity-70',
-              isError && 'text-red-500 hover:text-red-400',
-              isWarning && 'text-yellow-500 hover:text-yellow-400',
-              !isError && !isWarning && 'text-blue-400 hover:text-blue-300',
+              isError && STATUS_TEXT.destructive,
+              isWarning && STATUS_TEXT.warning,
+              !isError && !isWarning && STATUS_TEXT.info,
             )}
             onClick={() => handleClick(d)}
           >
@@ -1269,10 +1287,11 @@ function DiffChanges({
   if (additions === 0 && deletions === 0) return null;
 
   return (
-    <span className="flex items-center gap-1.5 text-[10px] ml-auto whitespace-nowrap">
-      {additions > 0 && <span className="text-emerald-500">+{additions}</span>}
-      {deletions > 0 && <span className="text-red-500">-{deletions}</span>}
-    </span>
+    <DiffStat
+      additions={additions}
+      deletions={deletions}
+      className="text-[10px] ml-auto whitespace-nowrap"
+    />
   );
 }
 
@@ -1294,10 +1313,21 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={i}
-                className="flex items-start gap-2 px-2.5 py-1.5 rounded-2xl bg-yellow-500/5 border border-yellow-500/15"
+                className={cn(
+                  'flex items-start gap-2 px-2.5 py-1.5 rounded-2xl border',
+                  STATUS_BORDER.warning,
+                  STATUS_BG.warning,
+                )}
               >
-                <AlertTriangle className="size-3 flex-shrink-0 mt-0.5 text-yellow-500" />
-                <p className="text-[11px] leading-relaxed text-yellow-700 dark:text-yellow-400 font-mono break-words">
+                <AlertTriangle
+                  className={cn('size-3 flex-shrink-0 mt-0.5', STATUS_TEXT.warning)}
+                />
+                <p
+                  className={cn(
+                    'text-[11px] leading-relaxed font-mono break-words',
+                    STATUS_TEXT.warning,
+                  )}
+                >
                   {section.text}
                 </p>
               </div>
@@ -1371,10 +1401,16 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={i}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/15"
+                className={cn(
+                  'flex items-center gap-2 px-2.5 py-1.5 rounded-2xl border',
+                  STATUS_BORDER.success,
+                  STATUS_BG.success,
+                )}
               >
-                <CheckCircle className="size-3 flex-shrink-0 text-emerald-500" />
-                <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono">
+                <CheckCircle
+                  className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)}
+                />
+                <span className={cn('text-[11px] font-mono', STATUS_TEXT.success)}>
                   {section.text}
                 </span>
               </div>
@@ -1508,7 +1544,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                           key={`${report.id}-${index}`}
                           className="flex items-start gap-1.5 text-xs leading-relaxed text-foreground/90"
                         >
-                          <span className="mt-[6px] size-1.5 rounded-full bg-emerald-500/90 flex-shrink-0" />
+                          <StatusDot tone="success" className="mt-[6px]" />
                           <span>{fact}</span>
                         </li>
                       ))}
@@ -1524,7 +1560,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     {report.concepts.map((concept) => (
                       <span
                         key={concept}
-                        className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                        className={cn('text-[10px] font-medium', STATUS_TEXT.success)}
                       >
                         {concept}
                       </span>
@@ -1625,7 +1661,7 @@ function GetMemTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                     {report.tags.map((tag) => (
                       <span
                         key={tag}
-                        className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                        className={cn('text-[10px] font-medium', STATUS_TEXT.success)}
                       >
                         {tag}
                       </span>
@@ -1969,15 +2005,11 @@ function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[] }) {
                 {s.title}
               </span>
               {s.summary && s.summary.files > 0 && (
-                <span className="flex items-center gap-1 text-[10px] flex-shrink-0">
-                  {s.summary.additions > 0 && (
-                    <span className="text-emerald-500">
-                      +{s.summary.additions}
-                    </span>
-                  )}
-                  {s.summary.deletions > 0 && (
-                    <span className="text-red-500">-{s.summary.deletions}</span>
-                  )}
+                <span className="flex items-center gap-1.5 text-[10px] flex-shrink-0">
+                  <DiffStat
+                    additions={s.summary.additions}
+                    deletions={s.summary.deletions}
+                  />
                   <span className="text-muted-foreground">
                     {s.summary.files} file{s.summary.files !== 1 ? 's' : ''}
                   </span>
@@ -2067,7 +2099,7 @@ function InlineSessionMessagesList({
             <span
               className={cn(
                 'text-[10px] font-semibold uppercase tracking-wide',
-                msg.role === 'user' ? 'text-blue-500' : 'text-emerald-500',
+                msg.role === 'user' ? STATUS_TEXT.info : STATUS_TEXT.success,
               )}
             >
               {msg.role}
@@ -2104,7 +2136,7 @@ function InlineSessionMessagesList({
                       className={cn(
                         'text-[0.5625rem] px-1 py-0.5 rounded border',
                         toolStatus === 'completed'
-                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                          ? cn(STATUS_BG.success, STATUS_BORDER.success, STATUS_TEXT.success)
                           : 'bg-muted/50 border-border/50 text-muted-foreground',
                       )}
                     >
@@ -2276,19 +2308,14 @@ function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         )}
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
           {processStatus && (
-            <span
-              className={cn(
-                'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
-                processStatus === 'running'
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-muted/60 text-muted-foreground',
-              )}
+            <Badge
+              variant={processStatus === 'running' ? 'success' : 'muted'}
+              size="sm"
+              className="gap-1"
             >
-              {processStatus === 'running' && (
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              )}
+              {processStatus === 'running' && <StatusDot tone="success" pulse />}
               {processStatus}
-            </span>
+            </Badge>
           )}
           {ptyId && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono">
@@ -2374,19 +2401,16 @@ function PtyReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             </span>
           )}
           {parsed.ptyStatus && (
-            <span
-              className={cn(
-                'inline-flex items-center gap-1 ml-auto text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0',
-                parsed.ptyStatus === 'running'
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-muted/60 text-muted-foreground',
-              )}
+            <Badge
+              variant={parsed.ptyStatus === 'running' ? 'success' : 'muted'}
+              size="sm"
+              className="gap-1 ml-auto flex-shrink-0"
             >
               {parsed.ptyStatus === 'running' && (
-                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <StatusDot tone="success" pulse />
               )}
               {parsed.ptyStatus}
-            </span>
+            </Badge>
           )}
         </div>
       }
@@ -2645,11 +2669,14 @@ interface PatchFileLite {
   movePath?: string;
 }
 
-const PATCH_TYPE_STYLE: Record<string, { label: string; cls: string }> = {
-  add: { label: 'Add', cls: 'text-emerald-600 bg-emerald-500/10 dark:text-emerald-400' },
-  update: { label: 'Edit', cls: 'text-amber-600 bg-amber-500/10 dark:text-amber-400' },
-  delete: { label: 'Delete', cls: 'text-red-600 bg-red-500/10 dark:text-red-400' },
-  move: { label: 'Move', cls: 'text-blue-600 bg-blue-500/10 dark:text-blue-400' },
+const PATCH_TYPE_STYLE: Record<
+  string,
+  { label: string; tone: 'success' | 'warning' | 'destructive' | 'info' }
+> = {
+  add: { label: 'Add', tone: 'success' },
+  update: { label: 'Edit', tone: 'warning' },
+  delete: { label: 'Delete', tone: 'destructive' },
+  move: { label: 'Move', tone: 'info' },
 };
 
 function RawPatchDiffView({ patch }: { patch: string; filename: string }) {
@@ -2750,14 +2777,13 @@ function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                   ) : (
                     <span className="w-3" />
                   )}
-                  <span
-                    className={cn(
-                      'text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded flex-shrink-0',
-                      typeMeta.cls,
-                    )}
+                  <Badge
+                    variant={typeMeta.tone}
+                    size="sm"
+                    className="font-semibold uppercase flex-shrink-0"
                   >
                     {typeMeta.label}
-                  </span>
+                  </Badge>
                   <span
                     className="text-xs font-mono text-foreground hover:text-primary truncate flex-shrink-0 cursor-pointer"
                     title={relPath}
@@ -2776,16 +2802,11 @@ function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
                       {dir}
                     </span>
                   )}
-                  <span className="ml-auto flex items-center gap-1.5 text-[10px] font-mono flex-shrink-0">
-                    {(file.additions ?? 0) > 0 && (
-                      <span className="text-emerald-500">
-                        +{file.additions}
-                      </span>
-                    )}
-                    {(file.deletions ?? 0) > 0 && (
-                      <span className="text-red-500">−{file.deletions}</span>
-                    )}
-                  </span>
+                  <DiffStat
+                    additions={file.additions}
+                    deletions={file.deletions}
+                    className="ml-auto text-[10px] flex-shrink-0"
+                  />
                 </button>
 
                 {isOpen && hasDiff && (
@@ -2865,7 +2886,7 @@ function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
               onKeyDown={(e) => e.key === 'Enter' && openPreview(filepath)}
               className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors group"
             >
-              <span className="text-emerald-500">+</span>
+              <span className={STATUS_TEXT.success}>+</span>
               <span className="truncate font-mono text-[10px] group-hover:underline underline-offset-2">
                 {toDisplayPath(filepath)}
               </span>
@@ -3008,7 +3029,7 @@ function ToolListRow({
             'text-foreground font-medium font-mono whitespace-nowrap flex-shrink-0',
             onNameClick &&
               !disabled &&
-              'cursor-pointer hover:text-blue-500 transition-colors',
+              'cursor-pointer hover:text-primary transition-colors',
           )}
           onClick={
             onNameClick && !disabled
@@ -3895,9 +3916,9 @@ function ScrapeWebpageTool({
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0 mt-1">
                     {result.success ? (
-                      <CheckCircle className="size-3 text-emerald-500/70" />
+                      <CheckCircle className={cn('size-3', STATUS_TEXT.success)} />
                     ) : (
-                      <AlertTriangle className="size-3 text-amber-500/70" />
+                      <AlertTriangle className={cn('size-3', STATUS_TEXT.warning)} />
                     )}
                     <ExternalLink className="size-3 text-muted-foreground/20 group-hover:text-muted-foreground/50 transition-colors" />
                   </div>
@@ -4376,7 +4397,7 @@ function PresentationGenTool({
           {/* Slide creation summary */}
           {action === 'create_slide' && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className="size-3 text-emerald-500 flex-shrink-0" />
+              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 Created slide {parsed.slide_number}
                 {parsed.slide_title ? `: ${parsed.slide_title}` : ''}
@@ -4392,7 +4413,7 @@ function PresentationGenTool({
           {/* Validate slide */}
           {action === 'validate_slide' && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className="size-3 text-emerald-500 flex-shrink-0" />
+              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 Slide {parsed.slide_number || slideNumber || '?'} validated
               </span>
@@ -4417,7 +4438,7 @@ function PresentationGenTool({
           {/* Export success */}
           {(action === 'export_pdf' || action === 'export_pptx') && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className="size-3 text-emerald-500 flex-shrink-0" />
+              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 Exported {parsed.presentation_name || presentationName} to{' '}
                 {action === 'export_pdf' ? 'PDF' : 'PPTX'}
@@ -4435,7 +4456,7 @@ function PresentationGenTool({
             'export_pptx',
           ].includes(action as string) && (
             <div className="flex items-center gap-2 text-xs">
-              <Check className="size-3 text-emerald-500 flex-shrink-0" />
+              <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
               <span className="text-foreground/80">
                 {parsed.message || `${actionLabel} completed`}
               </span>
@@ -4478,11 +4499,11 @@ import { SHOW_HTML_EXT_RE } from '@/components/file-renderers/show-content-rende
 import { SANDBOX_PORTS } from '@/lib/platform-client';
 
 const SHOW_BORDER_STYLES: Record<string, string> = {
-  default: 'border-border/50',
-  success: 'border-emerald-500/20',
-  warning: 'border-amber-500/20',
-  info: 'border-blue-500/20',
-  danger: 'border-red-500/20',
+  default: STATUS_BORDER.neutral,
+  success: STATUS_BORDER.success,
+  warning: STATUS_BORDER.warning,
+  info: STATUS_BORDER.info,
+  danger: STATUS_BORDER.destructive,
 };
 
 function showTypeIcon(type: string, className = 'size-4') {
@@ -4780,13 +4801,13 @@ function DCPPruneTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Scissors className="size-3.5 flex-shrink-0 text-amber-500" />}
+      icon={<Scissors className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.warning)} />}
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
             Prune
           </span>
-          <span className="text-[10px] text-amber-500 font-medium whitespace-nowrap">
+          <span className={cn('text-[10px] font-medium whitespace-nowrap', STATUS_TEXT.warning)}>
             DCP
           </span>
           {reason && (
@@ -4825,13 +4846,13 @@ function DCPDistillTool({ part }: ToolProps) {
 
   return (
     <BasicTool
-      icon={<Scissors className="size-3.5 flex-shrink-0 text-blue-500" />}
+      icon={<Scissors className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.info)} />}
       trigger={
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <span className="font-medium text-xs text-foreground whitespace-nowrap">
             Distill
           </span>
-          <span className="text-[10px] text-blue-500 font-medium whitespace-nowrap">
+          <span className={cn('text-[10px] font-medium whitespace-nowrap', STATUS_TEXT.info)}>
             DCP
           </span>
           {ids && ids.length > 0 && (
@@ -5221,11 +5242,11 @@ function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
             >
               <span className="text-[10px] font-mono w-6 text-center py-1 flex-shrink-0 select-none">
                 {entry.status === 'completed' ? (
-                  <Check className="size-2.5 text-emerald-500 inline" />
+                  <Check className={cn('size-2.5 inline', STATUS_TEXT.success)} />
                 ) : entry.status === 'pending' ? (
                   <Clock className="size-2.5 text-muted-foreground/50 inline" />
                 ) : (
-                  <CircleAlert className="size-2.5 text-red-400 inline" />
+                  <CircleAlert className={cn('size-2.5 inline', STATUS_TEXT.destructive)} />
                 )}
               </span>
               <span className="text-[10px] font-mono text-foreground/80 font-medium w-24 py-1 flex-shrink-0 truncate">
@@ -5405,19 +5426,19 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 													className={cn(
 														"w-3 h-3 rounded border flex-shrink-0 mt-[2px] flex items-center justify-center",
 														isComplete &&
-															"bg-emerald-100 dark:bg-emerald-950/40 border-emerald-400 dark:border-emerald-600",
+															cn(STATUS_BG.success, STATUS_BORDER.success),
 														isProgress &&
-															"border-blue-400 dark:border-blue-500",
+															STATUS_BORDER.info,
 														!isComplete &&
 															!isProgress &&
 															"border-border",
 													)}
 												>
 													{isComplete && (
-														<Check className="size-2 text-emerald-600 dark:text-emerald-400" />
+														<Check className={cn('size-2', STATUS_TEXT.success)} />
 													)}
 													{isProgress && (
-														<div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+														<StatusDot tone="info" />
 													)}
 												</div>
 												<span
@@ -5786,15 +5807,15 @@ function SessionListBackgroundTool({
         >
           {workers.map((w) => (
             <div key={w.id} className="flex items-center gap-2 px-3 py-1.5">
-              <span
-                className={cn(
-                  'size-1.5 rounded-full flex-shrink-0',
+              <StatusDot
+                tone={
                   w.status === 'running'
-                    ? 'bg-blue-400'
+                    ? 'info'
                     : w.status === 'complete'
-                      ? 'bg-emerald-400'
-                      : 'bg-muted-foreground/30',
-                )}
+                      ? 'success'
+                      : 'neutral'
+                }
+                className="flex-shrink-0"
               />
               <span className="text-[10px] font-mono text-foreground/70 truncate">
                 {w.id.slice(-12)}
@@ -5994,10 +6015,10 @@ function AgentSpawnTool({ part, forceOpen }: ToolProps) {
               </span>
             )}
             {isCompleted && childToolParts.length === 0 && !cleanedOutput && (
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
+              <Badge variant="success" size="sm" className="gap-1 flex-shrink-0">
                 <Check className="size-2.5" />
                 Done
-              </span>
+              </Badge>
             )}
             {isError && (
               <span className="text-[10px] text-destructive bg-destructive/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
@@ -6204,10 +6225,10 @@ function AgentMessageTool({ part }: ToolProps) {
               </span>
             )}
             {!isRunning && !isError && (
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0 flex items-center gap-1">
+              <Badge variant="success" size="sm" className="gap-1 flex-shrink-0">
                 <Check className="size-2.5" />
                 Sent
-              </span>
+              </Badge>
             )}
             {isError && (
               <span className="text-[10px] text-destructive bg-destructive/10 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
@@ -6262,7 +6283,7 @@ function AgentTaskUpdateTool({ part, forceOpen }: ToolProps) {
       const taskId = (input.id as string) || '';
       return (
         <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70">
-          <Check className="size-3 text-emerald-500 flex-shrink-0" />
+          <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
           <span className="text-foreground/80 truncate flex-1">
             Task approved{taskId ? ` · ${taskId.slice(-12)}` : ''}
           </span>
@@ -6398,9 +6419,9 @@ function AgentStatusTool({ part }: ToolProps) {
                   {isActive ? (
                     <Loader2 className="size-3 animate-spin text-muted-foreground flex-shrink-0" />
                   ) : row.status === 'completed' ? (
-                    <Check className="size-3 text-emerald-500 flex-shrink-0" />
+                    <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />
                   ) : row.status === 'input_needed' ? (
-                    <Clock className="size-3 text-amber-500 flex-shrink-0" />
+                    <Clock className={cn('size-3 flex-shrink-0', STATUS_TEXT.warning)} />
                   ) : row.status === 'cancelled' ? (
                     <X className="size-3 text-muted-foreground/40 flex-shrink-0" />
                   ) : (
@@ -7182,18 +7203,19 @@ function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
                       ? t.sourceDetail
                       : t.sourceDetail}
                   </span>
-                  <span
-                    className={cn(
-                      'text-[10px] font-medium flex-shrink-0',
+                  <Badge
+                    variant={
                       t.status === 'active'
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        ? 'success'
                         : t.status === 'paused'
-                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                          : 'bg-muted text-muted-foreground',
-                    )}
+                          ? 'warning'
+                          : 'muted'
+                    }
+                    size="sm"
+                    className="flex-shrink-0"
                   >
                     {t.status}
-                  </span>
+                  </Badge>
                 </div>
               ) : (
                 <div
@@ -7626,7 +7648,7 @@ function PermissionPromptInline({
   if (!visible) return null;
 
   return (
-    <div className="flex items-center gap-2 px-2.5 py-2 text-amber-600 dark:text-amber-400">
+    <div className={cn('flex items-center gap-2 px-2.5 py-2', STATUS_TEXT.warning)}>
       <span className="text-xs text-foreground flex-1">
         Permission: <span className="font-medium">{label}</span>
       </span>

@@ -9,6 +9,7 @@ import { LoadingState } from '../shared/LoadingState';
 import { PreWithPaths } from '@/components/common/clickable-path';
 import { formatTimestamp } from '../utils';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT, STATUS_BG, STATUS_BORDER } from '@/components/ui/status';
 import {
   CodeBlock,
   Counter,
@@ -244,7 +245,7 @@ export function OcBashToolView({
                   className={cn(
                     'flex items-start gap-2 px-3 py-2 rounded-2xl border text-[11.5px] tracking-tight',
                     m.isTimeout
-                      ? 'border-red-500/25 bg-red-500/[0.04] text-red-500/90'
+                      ? cn(STATUS_BORDER.destructive, STATUS_BG.destructive, STATUS_TEXT.destructive)
                       : 'border-border/50 bg-foreground/[0.02] text-muted-foreground/80',
                   )}
                 >

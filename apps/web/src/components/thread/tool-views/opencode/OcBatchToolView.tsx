@@ -6,6 +6,7 @@ import { ToolViewProps } from '../types';
 import { LoadingState } from '../shared/LoadingState';
 import { formatTimestamp } from '../utils';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT, STATUS_BG } from '@/components/ui/status';
 import {
   Status,
   StatusDot,
@@ -83,7 +84,7 @@ export function OcBatchToolView({
                 </span>
               )}
               {failed > 0 && (
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-red-500/90 tracking-tight">
+                <span className={cn('inline-flex items-center gap-1.5 text-[11px] tracking-tight', STATUS_TEXT.destructive)}>
                   <StatusDot tone="error" />
                   {failed}
                 </span>
@@ -105,7 +106,7 @@ export function OcBatchToolView({
                 key={i}
                 className={cn(
                   'flex items-center gap-2.5 px-4 py-2',
-                  !call.success && 'bg-red-500/[0.025]',
+                  !call.success && STATUS_BG.destructive,
                 )}
               >
                 {!toolResult ? (
@@ -113,7 +114,7 @@ export function OcBatchToolView({
                 ) : call.success ? (
                   <Check className="w-3 h-3 text-foreground/70 flex-shrink-0" />
                 ) : (
-                  <X className="w-3 h-3 text-red-500/90 flex-shrink-0" />
+                  <X className={cn('w-3 h-3 flex-shrink-0', STATUS_TEXT.destructive)} />
                 )}
                 <span className="text-[12.5px] font-mono text-foreground/90 flex-1 truncate">
                   {call.tool}

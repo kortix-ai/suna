@@ -21,6 +21,8 @@ import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { useOcFileOpen } from './useOcFileOpen';
 import { DiffView } from '@/components/diff/diff-view';
+import { cn } from '@/lib/utils';
+import { STATUS_TEXT, STATUS_BG } from '@/components/ui/status';
 
 interface PatchFile {
   relativePath: string;
@@ -40,7 +42,7 @@ function getTypeConfig(type: string) {
     case 'update':
       return { label: 'Patched', icon: PenLine, color: 'text-foreground/80', bg: 'bg-foreground/[0.06]' };
     case 'delete':
-      return { label: 'Deleted', icon: Trash2, color: 'text-red-500/90', bg: 'bg-red-500/[0.06]' };
+      return { label: 'Deleted', icon: Trash2, color: STATUS_TEXT.destructive, bg: STATUS_BG.destructive };
     case 'move':
       return { label: 'Moved', icon: ArrowRight, color: 'text-foreground/80', bg: 'bg-foreground/[0.06]' };
     default:
@@ -199,7 +201,7 @@ export function OcApplyPatchToolView({
       >
         {!isStreaming && (
           isError ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-red-500/90 tracking-tight">
+            <span className={cn('inline-flex items-center gap-1.5 text-[11px] tracking-tight', STATUS_TEXT.destructive)}>
               <AlertCircle className="w-3 h-3" />
               Failed
             </span>

@@ -34,6 +34,7 @@ import {
   hasStructuredContent,
   parseStructuredOutput,
 } from '@/lib/utils/structured-output';
+import { STATUS_TEXT, STATUS_BG, STATUS_BORDER } from '@/components/ui/status';
 
 /** Convert tool names like "apply_patch" or "oc-multi-edit" to "Apply Patch" / "Multi Edit" */
 function humanizeToolName(raw: string): string {
@@ -268,7 +269,7 @@ export function OcGenericToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               Completed
             </Badge>
           )
@@ -292,10 +293,10 @@ function StructuredOutputDisplay({ sections }: { sections: OutputSectionType[] }
             return (
               <div
                 key={i}
-                className="flex items-start gap-2.5 px-3 py-2 rounded-2xl bg-yellow-500/5 border border-yellow-500/15"
+                className={cn('flex items-start gap-2.5 px-3 py-2 rounded-2xl border', STATUS_BG.warning, STATUS_BORDER.warning)}
               >
-                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-yellow-500" />
-                <p className="text-xs leading-relaxed text-yellow-700 dark:text-yellow-400 font-mono break-words">
+                <AlertTriangle className={cn('h-3.5 w-3.5 flex-shrink-0 mt-0.5', STATUS_TEXT.warning)} />
+                <p className={cn('text-xs leading-relaxed font-mono break-words', STATUS_TEXT.warning)}>
                   {section.text}
                 </p>
               </div>
@@ -305,16 +306,16 @@ function StructuredOutputDisplay({ sections }: { sections: OutputSectionType[] }
             return (
               <div
                 key={i}
-                className="flex items-start gap-2.5 px-3 py-2 rounded-2xl bg-red-500/5 border border-red-500/15"
+                className={cn('flex items-start gap-2.5 px-3 py-2 rounded-2xl bg-destructive/5', STATUS_BORDER.destructive, 'border')}
               >
-                <Ban className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-red-400" />
+                <Ban className={cn('h-3.5 w-3.5 flex-shrink-0 mt-0.5', STATUS_TEXT.destructive)} />
                 <div className="min-w-0 flex-1">
                   {section.errorType && (
-                    <span className="text-[10px] font-semibold text-red-400 uppercase tracking-wider">
+                    <span className={cn('text-[10px] font-semibold uppercase tracking-wider', STATUS_TEXT.destructive)}>
                       {section.errorType}
                     </span>
                   )}
-                  <p className="text-xs leading-relaxed text-red-600 dark:text-red-400 font-mono break-words">
+                  <p className={cn('text-xs leading-relaxed font-mono break-words', STATUS_TEXT.destructive)}>
                     {section.summary}
                   </p>
                 </div>
@@ -368,10 +369,10 @@ function StructuredOutputDisplay({ sections }: { sections: OutputSectionType[] }
             return (
               <div
                 key={i}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-emerald-500/5 border border-emerald-500/15"
+                className={cn('flex items-center gap-2.5 px-3 py-2 rounded-2xl border', STATUS_BG.success, STATUS_BORDER.success)}
               >
-                <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
-                <span className="text-xs text-emerald-700 dark:text-emerald-400 font-mono">
+                <CheckCircle className={cn('h-3.5 w-3.5 flex-shrink-0', STATUS_TEXT.success)} />
+                <span className={cn('text-xs font-mono', STATUS_TEXT.success)}>
                   {section.text}
                 </span>
               </div>
@@ -566,11 +567,11 @@ function ErrorSection({ message }: { message: string }) {
   const displayType = errorType || 'Error';
 
   return (
-    <div className="rounded-2xl border border-red-500/20 bg-red-500/5 overflow-hidden">
+    <div className={cn('rounded-2xl bg-destructive/5 overflow-hidden', STATUS_BORDER.destructive, 'border')}>
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/10">
-        <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
-        <span className="text-xs font-medium text-red-400">{displayType}</span>
+      <div className={cn('flex items-center gap-2 px-3 py-2 border-b border-destructive/10')}>
+        <AlertTriangle className={cn('h-3.5 w-3.5 flex-shrink-0', STATUS_TEXT.destructive)} />
+        <span className={cn('text-xs font-medium', STATUS_TEXT.destructive)}>{displayType}</span>
       </div>
 
       {/* Summary */}
@@ -585,7 +586,7 @@ function ErrorSection({ message }: { message: string }) {
         <>
           <button
             onClick={() => setShowTrace((v) => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 w-full text-left border-t border-red-500/10 text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 w-full text-left border-t border-destructive/10 text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
           >
             <ChevronRight className={cn('h-3 w-3 transition-transform', showTrace ? 'rotate-90' : '')} />
             <span className="text-[10px] font-medium">Stack trace</span>
@@ -659,7 +660,7 @@ function CodeSection({ label, content, lang }: { label: string; content: string;
         ) : (
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
         )}
-        <Braces className="h-3.5 w-3.5 text-orange-500 dark:text-orange-400 flex-shrink-0" />
+        <Braces className={cn('h-3.5 w-3.5 flex-shrink-0', STATUS_TEXT.warning)} />
         <span className="text-xs text-foreground flex-1 truncate">
           {humanLabel}
         </span>

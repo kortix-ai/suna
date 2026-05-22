@@ -3,6 +3,7 @@
 import { AlertCircle, Loader2, CreditCard, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 
 // ============================================================================
@@ -51,26 +52,18 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
   const openBilling = () => openAccountSettings({ tab: 'billing', highlight: 'credits' });
 
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-2.5 px-3 py-2.5 rounded-2xl border',
-        'bg-amber-500/[0.04] dark:bg-amber-500/[0.06]',
-        'border-amber-500/30',
-        className,
-      )}
+    <InfoBanner
+      tone="warning"
+      icon={CreditCard}
+      title="You ran out of credits"
+      className={cn('flex-col gap-2.5', className)}
     >
-      <div className="flex items-start gap-2">
-        <CreditCard className="size-3.5 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-500" />
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-foreground">You ran out of credits</p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            {balance
-              ? `Your balance is ${balance}. Top up or enable auto top-up to continue.`
-              : 'Top up or enable auto top-up to continue.'}
-          </p>
-        </div>
-      </div>
-      <div className="flex items-center gap-1.5 pl-5">
+      <p>
+        {balance
+          ? `Your balance is ${balance}. Top up or enable auto top-up to continue.`
+          : 'Top up or enable auto top-up to continue.'}
+      </p>
+      <div className="flex items-center gap-1.5 mt-2">
         <Button
           size="sm"
           variant="default"
@@ -89,7 +82,7 @@ function InsufficientCreditsCard({ errorText, className }: { errorText: string; 
           Buy credits
         </Button>
       </div>
-    </div>
+    </InfoBanner>
   );
 }
 

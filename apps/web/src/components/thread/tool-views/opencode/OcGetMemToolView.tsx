@@ -20,6 +20,8 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { parseMemoryEntryOutput } from '@/lib/utils/memory-entry-output';
+import { cn } from '@/lib/utils';
+import { STATUS_TEXT } from '@/components/ui/status';
 
 export function OcGetMemToolView({
   toolCall,
@@ -273,7 +275,7 @@ export function OcGetMemToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               Completed
             </Badge>
           )

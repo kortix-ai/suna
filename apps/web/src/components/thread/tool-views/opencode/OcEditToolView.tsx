@@ -21,6 +21,7 @@ import { LoadingState } from '../shared/LoadingState';
 import { useOcFileOpen } from './useOcFileOpen';
 import { createTwoFilesPatch } from 'diff';
 import { DiffView } from '@/components/diff/diff-view';
+import { STATUS_TEXT } from '@/components/ui/status';
 
 function getFilename(path: string | undefined): string {
   if (!path) return '';
@@ -111,7 +112,7 @@ export function OcEditToolView({
             {(additions != null || deletions != null) && (
               <div className="flex items-center gap-2 text-xs">
                 {additions != null && (
-                  <span className="flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+                  <span className={cn('flex items-center gap-0.5', STATUS_TEXT.success)}>
                     <Plus className="h-3 w-3" />
                     {additions}
                   </span>
@@ -188,7 +189,7 @@ export function OcEditToolView({
             </Badge>
           ) : (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               Saved
             </Badge>
           )

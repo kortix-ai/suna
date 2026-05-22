@@ -21,6 +21,7 @@ import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { LoadingState } from '../shared/LoadingState';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { cn } from '@/lib/utils';
+import { STATUS_TEXT } from '@/components/ui/status';
 
 const MODE_ICONS: Record<string, typeof Eye> = {
   summary: Activity,
@@ -76,9 +77,9 @@ export function OcSessionReadToolView({
     return <LoadingState title={`Reading session (${modeLabel})`} subtitle={sid} />;
   }
 
-  const statusColor = parsed?.status === 'running' ? 'text-blue-500' :
-    parsed?.status === 'complete' ? 'text-emerald-500' :
-    parsed?.status === 'failed' ? 'text-red-500' : 'text-muted-foreground';
+  const statusColor = parsed?.status === 'running' ? STATUS_TEXT.info :
+    parsed?.status === 'complete' ? STATUS_TEXT.success :
+    parsed?.status === 'failed' ? STATUS_TEXT.destructive : STATUS_TEXT.neutral;
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">

@@ -62,6 +62,8 @@ import {
 } from '@/components/session/tool-meta';
 import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { STATUS_TEXT, STATUS_BG, STATUS_BORDER } from '@/components/ui/status';
 import {
   Collapsible,
   CollapsibleContent,
@@ -617,6 +619,14 @@ interface ParsedFileRef {
 const FILE_TAG_REGEX =
   /<file\s+path="([^"]*?)"\s+mime="([^"]*?)"\s+filename="([^"]*?)">\s*[\s\S]*?<\/file>/g;
 
+// Fixed third-party brand colors for channel-source cards. These are the
+// platforms' own brand hues (not themeable), so they live as named
+// constants rather than as inline hex literals.
+const CHANNEL_BRAND_COLOR = {
+  Telegram: '#29B6F6',
+  Slack: '#E91E63',
+} as const;
+
 function parseFileReferences(text: string): {
   cleanText: string;
   files: ParsedFileRef[];
@@ -1069,30 +1079,30 @@ function DCPNotificationCard({
         {/* Stats pills */}
         <div className="flex items-center gap-1.5 ml-auto">
           {notification.reason && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground/70">
+            <Badge variant="muted" size="sm">
               {DCP_REASON_LABELS[notification.reason] || notification.reason}
-            </span>
+            </Badge>
           )}
           {isPrune && notification.prunedCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 font-medium">
+            <Badge variant="warning" size="sm">
               {notification.prunedCount} pruned
-            </span>
+            </Badge>
           )}
           {!isPrune &&
             notification.messagesCount &&
             notification.messagesCount > 0 && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500 font-medium">
+              <Badge variant="info" size="sm">
                 {notification.messagesCount} msgs
-              </span>
+              </Badge>
             )}
           {notification.batchSaved > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-medium">
+            <Badge variant="success" size="sm">
               -{formatDCPTokens(notification.batchSaved)} tokens
-            </span>
+            </Badge>
           )}
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">
+          <Badge variant="muted" size="sm">
             {formatDCPTokens(notification.tokensSaved)} saved
-          </span>
+          </Badge>
           {hasDetails && (
             <ChevronDown
               className={cn(
@@ -1193,7 +1203,7 @@ function SystemNotificationCard({
   const iconColor = isError
     ? 'text-destructive/50'
     : isWarning
-      ? 'text-amber-500/50'
+      ? STATUS_TEXT.warning
       : 'text-muted-foreground/50';
 
   const trigger = (
@@ -1915,6 +1925,9 @@ function UserMessageRow({
   // Channel messages (Telegram/Slack): render as a branded card with user name
   if (channelMessageInfo) {
     const isTelegram = channelMessageInfo.platform === 'Telegram';
+    const brandColor = isTelegram
+      ? CHANNEL_BRAND_COLOR.Telegram
+      : CHANNEL_BRAND_COLOR.Slack;
     return (
       <div className="flex flex-col items-end gap-1">
         <div className="inline-flex flex-col gap-1.5 px-4 py-2.5 rounded-2xl border border-border/60 bg-muted/40 max-w-[85%]">
@@ -1922,7 +1935,7 @@ function UserMessageRow({
             <svg
               className="size-3.5 shrink-0"
               viewBox="0 0 24 24"
-              fill={isTelegram ? '#29B6F6' : '#E91E63'}
+              fill={brandColor}
             >
               {isTelegram ? (
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
@@ -1932,7 +1945,7 @@ function UserMessageRow({
             </svg>
             <span
               className="text-xs font-medium"
-              style={{ color: isTelegram ? '#29B6F6' : '#E91E63' }}
+              style={{ color: brandColor }}
             >
               {channelMessageInfo.platform}
             </span>
@@ -3272,12 +3285,12 @@ function SessionTurn({
               'flex items-center gap-2 px-3 py-2 rounded-2xl text-xs',
               'border select-none cursor-pointer transition-colors group/report',
               sessionReport.status === 'COMPLETE'
-                ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10'
+                ? cn(STATUS_BG.success, STATUS_BORDER.success, 'hover:bg-emerald-500/15')
                 : 'bg-destructive/5 border-destructive/20 hover:bg-destructive/10',
             )}
           >
             {sessionReport.status === 'COMPLETE' ? (
-              <CheckCircle className="size-3.5 text-emerald-500 flex-shrink-0" />
+              <CheckCircle className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />
             ) : (
               <AlertTriangle className="size-3.5 text-destructive flex-shrink-0" />
             )}
@@ -3286,7 +3299,7 @@ function SessionTurn({
                 className={cn(
                   'font-medium',
                   sessionReport.status === 'COMPLETE'
-                    ? 'text-emerald-700 dark:text-emerald-400'
+                    ? STATUS_TEXT.success
                     : 'text-destructive',
                 )}
               >
@@ -3473,6 +3486,10 @@ function SessionTurn({
                 'scrape',
                 'scrape_webpage',
               ]);
+              // Tools that always render as individual rows — never folded into
+              // a "Tool · Nx" pile. File writes/creations are distinct artifacts
+              // (index.html, styles.css, …) the user wants to see one-per-line.
+              const NO_GROUP_SET = new Set(['write']);
               const norm = (t: string) => {
                 const n = t.replace(/^oc-/, '').replace(/-/g, '_');
                 if (CONTEXT_SET.has(n)) return '__context__';
@@ -3500,6 +3517,7 @@ function SessionTurn({
                     shouldShowToolPart(tp) &&
                     tp.tool !== 'todowrite' &&
                     tp.tool !== 'question' &&
+                    !NO_GROUP_SET.has(norm(tp.tool)) &&
                     !hasPermission &&
                     !isToolPartHidden(tp, message.info.id, hidden);
 
@@ -6050,7 +6068,7 @@ export function SessionChat({
                         className="dark:invert-0 invert flex-shrink-0 h-[14px] w-auto"
                       />
                       {isRetrying && (
-                        <span className="text-xs text-amber-500">
+                        <span className={cn('text-xs', STATUS_TEXT.warning)}>
                           Retrying connection...
                         </span>
                       )}

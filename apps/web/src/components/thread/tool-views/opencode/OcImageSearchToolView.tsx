@@ -23,6 +23,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import { STATUS_TEXT } from '@/components/ui/status';
+import { InfoBanner } from '@/components/ui/info-banner';
 
 interface ImageResult {
   url?: string;
@@ -256,12 +259,9 @@ export function OcImageSearchToolView({
 
             {/* Error state */}
             {isError && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-2xl border border-red-500/30 bg-red-500/[0.04]">
-                <AlertCircle className="w-3.5 h-3.5 text-red-500/90 flex-shrink-0" />
-                <span className="text-[12px] text-foreground/85 tracking-tight">
-                  {typeof rawOutput === 'string' ? rawOutput : 'Image search failed'}
-                </span>
-              </div>
+              <InfoBanner tone="destructive" icon={AlertCircle}>
+                {typeof rawOutput === 'string' ? rawOutput : 'Image search failed'}
+              </InfoBanner>
             )}
 
             {/* No images state */}
@@ -399,7 +399,7 @@ export function OcImageSearchToolView({
             </Badge>
           ) : totalImages > 0 ? (
             <Badge variant="outline" className="h-6 py-0.5 bg-muted">
-              <CheckCircle className="h-3 w-3 text-emerald-500" />
+              <CheckCircle className={cn('h-3 w-3', STATUS_TEXT.success)} />
               {isBatch && batchItems.length > 1
                 ? `${batchItems.length} queries, ${totalImages} images`
                 : `${totalImages} image${totalImages !== 1 ? 's' : ''}`

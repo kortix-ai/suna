@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Copy, Check, ChevronDown, ChevronRight, Network } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
   Dialog,
@@ -242,12 +243,13 @@ function RawMessage({ message, parts, formatTime }: {
       <AccordionTrigger className="py-2 px-3 text-xs hover:no-underline hover:bg-muted/40 rounded-md">
         <div className="flex items-center justify-between gap-2 w-full pr-2">
           <div className="min-w-0 truncate font-mono">
-            <span className={cn(
-              'px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase mr-2',
-              message.role === 'user' ? 'bg-blue-500/20 text-blue-500' : 'bg-emerald-500/20 text-emerald-500',
-            )}>
+            <Badge
+              variant={message.role === 'user' ? 'info' : 'success'}
+              size="sm"
+              className="uppercase font-semibold mr-2"
+            >
               {message.role}
-            </span>
+            </Badge>
             <span className="text-muted-foreground">{message.id}</span>
           </div>
           <div className="shrink-0 text-[10px] text-muted-foreground/60">
