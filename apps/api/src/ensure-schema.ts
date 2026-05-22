@@ -27,6 +27,12 @@ export async function ensureSchema(): Promise<void> {
 
   if (process.env.KORTIX_SKIP_ENSURE_SCHEMA === '1') {
     console.log('[schema] KORTIX_SKIP_ENSURE_SCHEMA=1 — skipping');
+    // Still probe the critical IAM surface so a stale dev DB shows up
+    // as a loud warning instead of opaque 500s on first request. Names
+    // listed here are the tables the IAM engine + auth middleware
+    // touch on every request — if they're missing, nothing in IAM
+    // works. We don't FAIL; the operator opted into skipping migrations.
+    await warnIfCriticalTablesMissing();
     return;
   }
 
@@ -96,6 +102,60 @@ export async function ensureSchema(): Promise<void> {
   }
 
   console.log('[schema] All migrations complete');
+}
+
+/**
+ * When KORTIX_SKIP_ENSURE_SCHEMA=1 is set, probe a small set of
+ * IAM-critical tables and log a single grouped warning if any are
+ * missing. Operators usually set the flag to manage migrations
+ * out-of-band; this helps them spot "I forgot to apply migration N"
+ * before the first 500 hits a route.
+ */
+async function warnIfCriticalTablesMissing(): Promise<void> {
+  if (!config.DATABASE_URL) return;
+  // Tables (schema, name) the IAM engine + auth middleware require.
+  // Keep this list small and stable — extending it for every new
+  // migration would be noise.
+  const required: Array<[string, string]> = [
+    ['kortix', 'iam_roles'],
+    ['kortix', 'iam_role_permissions'],
+    ['kortix', 'iam_policies'],
+    ['kortix', 'account_groups'],
+    ['kortix', 'account_group_members'],
+    ['kortix', 'account_members'],
+    ['kortix', 'accounts'],
+    ['kortix', 'audit_events'],
+  ];
+  const db = postgres(config.DATABASE_URL, { max: 1 });
+  try {
+    const rows = (await db`
+      SELECT table_schema, table_name
+      FROM information_schema.tables
+      WHERE (table_schema, table_name) IN ${db(required)}
+    `) as Array<{ table_schema: string; table_name: string }>;
+    const present = new Set(
+      rows.map((r) => `${r.table_schema}.${r.table_name}`),
+    );
+    const missing = required
+      .map(([s, n]) => `${s}.${n}`)
+      .filter((qn) => !present.has(qn));
+    if (missing.length > 0) {
+      console.warn(
+        '[schema] ⚠ KORTIX_SKIP_ENSURE_SCHEMA=1 but critical tables are missing:',
+      );
+      for (const m of missing) console.warn(`[schema]   • ${m}`);
+      console.warn(
+        '[schema] Run `bun run --cwd packages/db drizzle-kit push` or remove the env flag to auto-apply.',
+      );
+    }
+  } catch (err) {
+    console.warn(
+      '[schema] could not verify table presence:',
+      (err as Error).message ?? err,
+    );
+  } finally {
+    await db.end();
+  }
 }
 
 /**
