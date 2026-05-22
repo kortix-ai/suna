@@ -12,6 +12,7 @@ import {
   Loader2,
   SlidersHorizontal,
   ListTree,
+  X,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -374,7 +375,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           directly below. Account switching + user identity + settings live in
           the footer Account·You menu (see UserMenu).
          ==================================================================== */}
-      <SidebarHeader className="pb-1 pt-3">
+      <SidebarHeader className="pb-1 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
         <div className="flex h-7 shrink-0 items-center justify-between px-2 group-data-[collapsible=icon]:justify-center">
           <Link
             href="/projects"
@@ -393,13 +394,18 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <button
             type="button"
             onClick={() => (isMobile ? setOpenMobile(false) : setOpen(false))}
-            aria-label="Collapse sidebar"
+            aria-label={isMobile ? 'Close menu' : 'Collapse sidebar'}
             className={cn(
-              'flex h-6 w-6 items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+              'flex items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+              isMobile ? 'h-8 w-8' : 'h-6 w-6',
               effectiveState === 'collapsed' && 'hidden',
             )}
           >
-            <ChevronLeft className="h-3.5 w-3.5" />
+            {isMobile ? (
+              <X className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-3.5 w-3.5" />
+            )}
           </button>
         </div>
         <div className="pt-2 group-data-[collapsible=icon]:hidden">
@@ -526,7 +532,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           (you don't change account mid-project); which project is the
           ProjectSwitcher at the top.
          ==================================================================== */}
-      <SidebarFooter className="pb-2 pt-1 group-data-[collapsible=icon]:px-0">
+      <SidebarFooter className="pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1 group-data-[collapsible=icon]:px-0">
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 

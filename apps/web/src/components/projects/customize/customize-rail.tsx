@@ -25,6 +25,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/utils';
 import {
   type CustomizeSection,
   DEFAULT_CUSTOMIZE_SECTION,
@@ -58,6 +59,7 @@ const FOOTER_ITEMS: readonly RailItem[] = [
 export function CustomizeRail({ projectId }: { projectId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isMobile = useIsMobile();
   const active = useMemo(
     () =>
       parseCustomizeSection(searchParams.get('section')) ?? DEFAULT_CUSTOMIZE_SECTION,
@@ -71,6 +73,33 @@ export function CustomizeRail({ projectId }: { projectId: string }) {
       scroll: false,
     });
   };
+
+  // Mobile: a 220px vertical rail would swallow the screen, so collapse the
+  // whole nav into a single horizontal scroller pinned above the content.
+  // Settings joins the same row (no separate pinned footer) so every section
+  // is one swipe away.
+  if (isMobile) {
+    const items = [...PRIMARY_ITEMS, ...FOOTER_ITEMS];
+    return (
+      <nav
+        aria-label="Customize"
+        className="w-full shrink-0 border-b border-border/60 bg-background"
+      >
+        <ul className="flex items-center gap-1 overflow-x-auto px-2 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {items.map((item) => (
+            <li key={item.section} className="shrink-0">
+              <RailButton
+                item={item}
+                active={active === item.section}
+                onClick={() => go(item.section)}
+                orientation="horizontal"
+              />
+            </li>
+          ))}
+        </ul>
+      </nav>
+    );
+  }
 
   return (
     <nav
@@ -112,25 +141,32 @@ function RailButton({
   item,
   active,
   onClick,
+  orientation = 'vertical',
 }: {
   item: RailItem;
   active: boolean;
   onClick: () => void;
+  /** 'vertical' = desktop rail row; 'horizontal' = mobile scroller pill. */
+  orientation?: 'vertical' | 'horizontal';
 }) {
   const Icon = item.icon;
+  const horizontal = orientation === 'horizontal';
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[12.5px] font-medium transition-colors',
+        'group relative flex items-center gap-2 rounded-md text-[12.5px] font-medium transition-colors',
+        horizontal
+          ? 'whitespace-nowrap px-3 py-2'
+          : 'w-full gap-2.5 px-2.5 py-1.5 text-left',
         active
           ? 'bg-muted/70 text-foreground'
           : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground',
       )}
     >
-      {active && (
+      {active && !horizontal && (
         <span
           aria-hidden
           className="absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-foreground"
@@ -154,7 +190,7 @@ function RailButton({
           )}
         />
       ) : null}
-      <span className="truncate">{item.label}</span>
+      <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
     </button>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Menu, PanelRight, SlidersHorizontal, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Menu, SlidersHorizontal, X } from 'lucide-react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 
@@ -12,13 +12,45 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useSidebar } from '@/components/ui/sidebar';
-import { useRightSidebarSafe } from '@/components/ui/sidebar-right-provider';
 import { isDesktop, desktopPlatform } from '@/lib/desktop';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 
 interface ProjectTabBarProps {
   projectId: string;
+}
+
+/**
+ * Hamburger that opens the project sidebar drawer on touch. The project
+ * shell has no global right rail (per-session panels are toggled from the
+ * session header), so this is the single mobile entry into the sidebar.
+ */
+function MobileSidebarTrigger() {
+  const sidebar = useSidebar();
+  return (
+    <button
+      type="button"
+      onClick={() => sidebar.setOpenMobile(true)}
+      className="flex items-center justify-center h-9 w-9 rounded-md text-muted-foreground/70 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+      aria-label="Open menu"
+    >
+      <Menu className="h-5 w-5" />
+    </button>
+  );
+}
+
+/**
+ * Slim mobile-only bar used when the tab selector is disabled. Without it,
+ * mobile users would have no way to reach the sidebar drawer (the desktop
+ * rail and Cmd/Ctrl+B shortcut don't apply on touch). Carries the top
+ * safe-area inset so it clears the notch under `viewportFit: 'cover'`.
+ */
+export function ProjectMobileMenuBar() {
+  return (
+    <div className="flex md:hidden items-center bg-sidebar pl-1.5 h-[calc(38px+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)]">
+      <MobileSidebarTrigger />
+    </div>
+  );
 }
 
 /**
@@ -34,7 +66,6 @@ interface ProjectTabBarProps {
  */
 export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   const sidebar = useSidebar();
-  const rightSidebar = useRightSidebarSafe();
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ sessionId?: string }>();
@@ -107,25 +138,12 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
 
   return (
     <div
-      className="flex-shrink-0 flex items-stretch bg-sidebar h-[38px] relative overflow-hidden"
+      className="flex-shrink-0 flex items-stretch bg-sidebar h-[calc(38px+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] relative overflow-hidden"
       role="tablist"
     >
-      {/* Mobile sidebar toggles */}
-      <div className="flex-shrink-0 flex items-center gap-0 pl-2 pr-1 md:hidden">
-        <button
-          onClick={() => sidebar.setOpenMobile(true)}
-          className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-          aria-label="Open menu"
-        >
-          <Menu className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => rightSidebar?.setOpenMobile(true)}
-          className="flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-          aria-label="Quick actions"
-        >
-          <PanelRight className="h-4 w-4" />
-        </button>
+      {/* Mobile: open the sidebar drawer. */}
+      <div className="flex-shrink-0 flex items-center pl-1.5 pr-1 md:hidden">
+        <MobileSidebarTrigger />
       </div>
 
       {/* Desktop back/forward */}
@@ -177,7 +195,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
             className={cn(
               'group relative flex items-center text-[12.5px] select-none cursor-pointer',
               'transition-colors duration-150 h-full',
-              'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[48px] md:min-w-[80px]',
+              'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[96px] md:min-w-[80px]',
               isCustomizeRoute
                 ? 'text-foreground'
                 : 'text-muted-foreground hover:text-foreground',
@@ -204,10 +222,11 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
               className={cn(
                 'flex-shrink-0 p-0.5 rounded-sm transition-colors duration-100 cursor-pointer',
                 'hover:bg-foreground/10',
-                'hidden md:block',
                 isCustomizeRoute
-                  ? 'md:opacity-40 md:hover:opacity-80'
-                  : 'md:opacity-0 md:group-hover:opacity-40 md:group-hover:hover:opacity-80',
+                  // active tab: tappable close on touch, hover-dimmed on desktop
+                  ? 'opacity-60 md:opacity-40 md:hover:opacity-80'
+                  // inactive tab: desktop hover only (no hover target on touch)
+                  : 'hidden md:block md:opacity-0 md:group-hover:opacity-40 md:group-hover:hover:opacity-80',
               )}
               aria-label="Close Customize"
             >
@@ -234,7 +253,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
               className={cn(
                 'group relative flex items-center text-[12.5px] select-none cursor-pointer',
                 'transition-colors duration-150 h-full',
-                'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[48px] md:min-w-[80px]',
+                'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[96px] md:min-w-[80px]',
                 isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -248,10 +267,11 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
                 className={cn(
                   'flex-shrink-0 p-0.5 rounded-sm transition-colors duration-100 cursor-pointer',
                   'hover:bg-foreground/10',
-                  'hidden md:block',
                   isActive
-                    ? 'md:opacity-40 md:hover:opacity-80'
-                    : 'md:opacity-0 md:group-hover:opacity-40 md:group-hover:hover:opacity-80',
+                    // active tab: tappable close on touch, hover-dimmed on desktop
+                    ? 'opacity-60 md:opacity-40 md:hover:opacity-80'
+                    // inactive tab: desktop hover only (no hover target on touch)
+                    : 'hidden md:block md:opacity-0 md:group-hover:opacity-40 md:group-hover:hover:opacity-80',
                 )}
                 aria-label={`Close ${label}`}
               >

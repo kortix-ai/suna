@@ -99,8 +99,8 @@ export function AgentsView({ projectId }: { projectId: string }) {
   const selected = agents.find((a) => a.path === selectedPath) ?? null;
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex w-[300px] shrink-0 flex-col border-r border-border/60 bg-background">
+    <div className="flex h-full min-h-0 flex-col md:flex-row">
+      <aside className="flex max-h-[42vh] w-full shrink-0 flex-col border-b border-border/60 bg-background md:max-h-none md:w-[300px] md:border-b-0 md:border-r">
         <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 px-4">
           <Bot className="h-4 w-4 text-muted-foreground" />
           <h1 className="flex-1 text-sm font-semibold text-foreground">Agents</h1>
