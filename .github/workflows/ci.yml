@@ -30,10 +30,14 @@ jobs:
           node-version: 24
 
       - name: Install pnpm
-        # Install pnpm directly (not via corepack/action-setup) to avoid the
-        # stale packageManager pin (pnpm@8.11.0), which conflicts with deps
-        # that require pnpm >=10. Mirrors how the repo is built locally.
-        run: npm install -g pnpm@10
+        # Disable corepack first: its `pnpm` shim honors the stale
+        # packageManager pin (pnpm@8.11.0) and shadows a direct install. We
+        # install pnpm 10 directly so it satisfies deps that require >=10,
+        # mirroring how the repo is built locally.
+        run: |
+          corepack disable || true
+          npm install -g pnpm@10
+          echo "pnpm: $(pnpm -v)  node: $(node -v)"
 
       - name: Install dependencies (kortix-api + workspace deps)
         run: pnpm install --frozen-lockfile --filter "kortix-api..."
