@@ -59,6 +59,7 @@ import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SsoCard } from '@/components/iam/sso-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
+import { ApprovalsCard } from '@/components/iam/approvals-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { usePermission } from '@/lib/use-permission';
@@ -291,6 +292,11 @@ export default function AccountSettingsPage() {
                 />
                 <PatPolicyCard
                   accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <ApprovalsCard
+                  accountId={account.account_id}
+                  currentUserId={user.id}
                   canManage={canWriteAccount}
                 />
                 <ScimCard

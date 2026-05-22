@@ -655,6 +655,89 @@ export async function updatePatPolicy(accountId: string, patch: Partial<PatPolic
   );
 }
 
+// ─── Approval workflow ────────────────────────────────────────────────────
+
+export interface ApprovalsPolicy {
+  enabled: boolean;
+  gated_actions: string[];
+}
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ApprovalRequest {
+  request_id: string;
+  action: string;
+  target_id: string | null;
+  payload: Record<string, unknown>;
+  requester_reason: string | null;
+  requested_by: string;
+  requested_at: string;
+  expires_at: string;
+  status: ApprovalStatus;
+  decided_by: string | null;
+  decided_at: string | null;
+  decision_reason: string | null;
+  execution_result: string | null;
+}
+
+export async function getApprovalsPolicy(accountId: string) {
+  return unwrap(
+    await backendApi.get<ApprovalsPolicy>(`/accounts/${accountId}/iam/approvals-policy`),
+  );
+}
+
+export async function setApprovalsPolicy(accountId: string, enabled: boolean) {
+  return unwrap(
+    await backendApi.patch<{ enabled: boolean; unchanged?: boolean }>(
+      `/accounts/${accountId}/iam/approvals-policy`,
+      { enabled },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listApprovalRequests(
+  accountId: string,
+  filter: { status?: ApprovalStatus } = {},
+) {
+  const params = new URLSearchParams();
+  if (filter.status) params.set('status', filter.status);
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<{ requests: ApprovalRequest[] }>(
+      `/accounts/${accountId}/iam/approvals${qs ? `?${qs}` : ''}`,
+    ),
+  ).requests;
+}
+
+export async function approveApprovalRequest(
+  accountId: string,
+  requestId: string,
+  reason?: string,
+) {
+  return unwrap(
+    await backendApi.post<{ approved: boolean; request_id: string }>(
+      `/accounts/${accountId}/iam/approvals/${requestId}/approve`,
+      { reason },
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function rejectApprovalRequest(
+  accountId: string,
+  requestId: string,
+  reason?: string,
+) {
+  return unwrap(
+    await backendApi.post<{ rejected: boolean; request_id: string }>(
+      `/accounts/${accountId}/iam/approvals/${requestId}/reject`,
+      { reason },
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── Audit webhooks ────────────────────────────────────────────────────────
 
 export interface AuditWebhook {

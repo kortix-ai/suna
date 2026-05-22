@@ -146,6 +146,10 @@ export const accounts = kortixSchema.table(
     /** When set, PATs not used in this many days are auto-revoked on
      *  next validate. NULL = no idle gate. Units: days. */
     patIdleRevokeDays: integer('pat_idle_revoke_days'),
+    /** When true, a curated set of sensitive IAM actions requires
+     *  approval from a second super-admin before they execute. Off by
+     *  default — accounts opt in via the Settings UI. */
+    iamApprovalsRequired: boolean('iam_approvals_required').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -2048,6 +2052,53 @@ export const accountSsoProviders = kortixSchema.table(
     uniqueIndex('idx_account_sso_providers_supabase').on(table.supabaseSsoProviderId),
     // Domain lookup for the sign-in router.
     index('idx_account_sso_providers_domain').on(table.primaryDomain),
+  ],
+);
+
+// ─── Approval requests for sensitive IAM actions ───────────────────────────
+// Two-phase pattern: the sensitive endpoint stores the requested action
+// + payload here and returns 202; a second admin POSTs /approve to
+// execute it. Requester can't approve their own request.
+//
+// v1 covers a curated set of high-blast-radius actions:
+//   - member.super_admin.grant
+//   - iam.mfa_required.disable
+//   - account.delete
+
+export const iamApprovalRequests = kortixSchema.table(
+  'iam_approval_requests',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Canonical action key (matches the action catalog). */
+    action: varchar('action', { length: 128 }).notNull(),
+    /** Optional resource id the action targets — drives the audit log
+     *  + the "approve" handler when it needs a target. */
+    targetId: uuid('target_id'),
+    /** Frozen request body captured at create time. The approver re-
+     *  executes the exact payload, so the requester can't sneakily
+     *  swap parameters between create and approve. */
+    payload: jsonb('payload').default({}).$type<Record<string, unknown>>().notNull(),
+    /** Free-text reason the requester gave. Surfaced to approvers. */
+    requesterReason: text('requester_reason'),
+    requestedBy: uuid('requested_by').notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Auto-expires after 24h by default; configurable per-request. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    status: varchar('status', { length: 16 }).default('pending').notNull(),
+    decidedBy: uuid('decided_by'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionReason: text('decision_reason'),
+    /** Filled when status='approved' and the deferred action ran
+     *  successfully. Set to the error message when execution failed. */
+    executionResult: text('execution_result'),
+  },
+  (table) => [
+    index('idx_iam_approval_requests_account').on(table.accountId),
+    index('idx_iam_approval_requests_status').on(table.accountId, table.status),
+    index('idx_iam_approval_requests_requested_by').on(table.requestedBy),
   ],
 );
 

@@ -66,7 +66,15 @@ import {
   listSsoGroupMappings,
   upsertSsoProvider,
 } from '../repositories/sso';
-import { accountSessionActivity } from '@kortix/db';
+import { accountSessionActivity, iamApprovalRequests } from '@kortix/db';
+import {
+  GATED_ACTIONS,
+  NeedsApprovalError,
+  approveRequest,
+  rejectRequest,
+  requireApproval,
+} from '../iam/approvals';
+import { desc } from 'drizzle-orm';
 
 export const iamRouter = new Hono<AppEnv>();
 
@@ -1038,6 +1046,39 @@ iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
   const body = await readBody(c);
   const isSuperAdmin = body.isSuperAdmin === true || body.is_super_admin === true;
 
+  // Two-person rule: granting super-admin is gated by the approval
+  // workflow (when the account opts in). Revokes are NOT gated — you
+  // always want a fast off-switch. The route accepts an approval id
+  // via query string or header so the requester can retry after their
+  // peer approves.
+  if (isSuperAdmin) {
+    const approvalRequestId =
+      c.req.query('approval_request_id') ?? c.req.header('x-approval-request-id') ?? undefined;
+    try {
+      await requireApproval({
+        accountId,
+        action: 'member.super_admin.grant',
+        requestedBy: callerId,
+        targetId: targetUserId,
+        payload: { is_super_admin: true },
+        approvalRequestId,
+        reason: typeof body.reason === 'string' ? body.reason : undefined,
+      });
+    } catch (err) {
+      if (err instanceof NeedsApprovalError) {
+        return c.json(
+          {
+            pending_approval: true,
+            request_id: err.requestId,
+            message: 'Approval required from another super-admin.',
+          },
+          202,
+        );
+      }
+      throw err;
+    }
+  }
+
   // Snapshot the prior flag so an audit reader can see "Alice already had
   // super-admin → no-op" vs "Alice was promoted on March 5". Cheap query
   // since the row is small and the update runs against the same key.
@@ -1543,6 +1584,39 @@ iamRouter.patch('/:accountId/iam/mfa-required', async (c) => {
   if (!before) return c.json({ error: 'account not found' }, 404);
   if (before.mfaRequired === enabled) {
     return c.json({ enabled, unchanged: true });
+  }
+
+  // Two-person rule: turning MFA OFF is dangerous (instantly relaxes
+  // the account's security posture), so it's gated by approvals when
+  // the account opts in. Enabling MFA is NOT gated — admins should
+  // always be able to ratchet up security without a second pair of
+  // eyes.
+  if (!enabled) {
+    const approvalRequestId =
+      c.req.query('approval_request_id') ?? c.req.header('x-approval-request-id') ?? undefined;
+    try {
+      await requireApproval({
+        accountId,
+        action: 'iam.mfa_required.disable',
+        requestedBy: userId,
+        targetId: accountId,
+        payload: { enabled: false },
+        approvalRequestId,
+        reason: typeof body.reason === 'string' ? body.reason : undefined,
+      });
+    } catch (err) {
+      if (err instanceof NeedsApprovalError) {
+        return c.json(
+          {
+            pending_approval: true,
+            request_id: err.requestId,
+            message: 'Approval required from another super-admin.',
+          },
+          202,
+        );
+      }
+      throw err;
+    }
   }
 
   // Lockout guard on enable: there must be either at least one
@@ -2244,4 +2318,162 @@ iamRouter.patch('/:accountId/iam/pat-policy', async (c) => {
     idle_revoke_days:
       idleRevokeDays !== undefined ? idleRevokeDays : before.idleRevokeDays,
   });
+});
+
+// ─── Approval workflow ────────────────────────────────────────────────────
+// Two-person rule for sensitive IAM actions. Per-account toggle plus
+// CRUD on the request inbox. Gated set lives in iam/approvals.ts.
+
+iamRouter.get('/:accountId/iam/approvals-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const [row] = await db
+    .select({ enabled: accounts.iamApprovalsRequired })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!row) return c.json({ error: 'account not found' }, 404);
+
+  return c.json({
+    enabled: row.enabled,
+    gated_actions: [...GATED_ACTIONS],
+  });
+});
+
+iamRouter.patch('/:accountId/iam/approvals-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  if (typeof body.enabled !== 'boolean') {
+    return c.json({ error: 'enabled must be a boolean' }, 400);
+  }
+  const enabled = body.enabled;
+
+  const [before] = await db
+    .select({ enabled: accounts.iamApprovalsRequired })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!before) return c.json({ error: 'account not found' }, 404);
+
+  if (before.enabled === enabled) return c.json({ enabled, unchanged: true });
+
+  await db
+    .update(accounts)
+    .set({ iamApprovalsRequired: enabled, updatedAt: new Date() })
+    .where(eq(accounts.accountId, accountId));
+
+  await auditIam(c, {
+    accountId,
+    action: enabled ? 'iam.approvals.enable' : 'iam.approvals.disable',
+    resourceType: 'account',
+    resourceId: accountId,
+    before: { iam_approvals_required: before.enabled },
+    after: { iam_approvals_required: enabled },
+  });
+
+  return c.json({ enabled });
+});
+
+iamRouter.get('/:accountId/iam/approvals', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const status = c.req.query('status'); // optional filter
+  const baseConditions = [eq(iamApprovalRequests.accountId, accountId)];
+  if (
+    status === 'pending' ||
+    status === 'approved' ||
+    status === 'rejected'
+  ) {
+    baseConditions.push(eq(iamApprovalRequests.status, status));
+  }
+
+  const rows = await db
+    .select()
+    .from(iamApprovalRequests)
+    .where(and(...baseConditions))
+    .orderBy(desc(iamApprovalRequests.requestedAt))
+    .limit(200);
+
+  return c.json({
+    requests: rows.map((r) => ({
+      request_id: r.requestId,
+      action: r.action,
+      target_id: r.targetId,
+      payload: r.payload,
+      requester_reason: r.requesterReason,
+      requested_by: r.requestedBy,
+      requested_at: r.requestedAt.toISOString(),
+      expires_at: r.expiresAt.toISOString(),
+      status: r.status,
+      decided_by: r.decidedBy,
+      decided_at: r.decidedAt?.toISOString() ?? null,
+      decision_reason: r.decisionReason,
+      execution_result: r.executionResult,
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/approvals/:requestId/approve', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const requestId = c.req.param('requestId');
+  // Gate the route itself on account.read (anyone able to see the inbox).
+  // The approveRequest helper enforces super-admin + non-self.
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const body = await readBody(c);
+  const reason = typeof body.reason === 'string' ? body.reason : undefined;
+
+  const result = await approveRequest({
+    accountId,
+    requestId,
+    approverUserId: userId,
+    decisionReason: reason,
+  });
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.approval.approve',
+    resourceType: 'iam_approval_request',
+    resourceId: requestId,
+    after: { action: result.request.action, target_id: result.request.targetId, reason },
+  });
+
+  return c.json({ approved: true, request_id: requestId });
+});
+
+iamRouter.post('/:accountId/iam/approvals/:requestId/reject', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const requestId = c.req.param('requestId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const body = await readBody(c);
+  const reason = typeof body.reason === 'string' ? body.reason : undefined;
+
+  const result = await rejectRequest({
+    accountId,
+    requestId,
+    approverUserId: userId,
+    decisionReason: reason,
+  });
+  if (!result.ok) return c.json({ error: result.error }, result.status);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.approval.reject',
+    resourceType: 'iam_approval_request',
+    resourceId: requestId,
+    after: { reason },
+  });
+
+  return c.json({ rejected: true, request_id: requestId });
 });

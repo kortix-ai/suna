@@ -136,6 +136,8 @@ export {
   accountSsoGroupMappings,
   // Session policy
   accountSessionActivity,
+  // Approval workflows
+  iamApprovalRequests,
 } from './schema/kortix';
 
 export type {
