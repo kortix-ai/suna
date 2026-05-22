@@ -154,20 +154,33 @@ async function verifyOwnership(sandboxId: string, userId: string): Promise<boole
   return canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId });
 }
 
+// Rewrite an upstream redirect Location so the user stays on the preview.
+// `redirectPrefix` is the URL prefix that maps to this sandbox port:
+//   - subdomain previews (p{port}-{sandbox}.host):  '' (root-relative)
+//   - path-based previews (/v1/p/{sandbox}/{port}):  '/v1/p/{sandbox}/{port}'
+// App self-redirects (relative, or absolute to the upstream's own origin) are
+// kept on the preview. Genuinely external redirects (OAuth, CDNs, …) pass
+// through unchanged so the browser can follow them — we never hard-block, since
+// blocking turned ordinary app redirects into 502s.
 function sanitizeRedirectLocation(
   previewUrl: string,
   location: string | null,
-  sandboxId: string,
-  port: number,
+  redirectPrefix: string,
 ): string | null {
   if (!location) return null;
-  if (location.startsWith('/') && !location.startsWith('//')) return location;
+  if (location.startsWith('/') && !location.startsWith('//')) {
+    return `${redirectPrefix}${location}`;
+  }
 
   try {
     const target = new URL(location, previewUrl);
     const preview = new URL(previewUrl);
-    if (target.origin !== preview.origin) return null;
-    return `/v1/p/${sandboxId}/${port}${target.pathname}${target.search}${target.hash}`;
+    if (target.origin === preview.origin) {
+      return `${redirectPrefix}${target.pathname}${target.search}${target.hash}`;
+    }
+    // External origin — let the browser follow it (proxy uses redirect:'manual',
+    // so it never follows the redirect itself).
+    return location;
   } catch {
     return null;
   }
@@ -287,6 +300,9 @@ export async function proxyToDaytona(
   incomingHeaders: Headers,
   body: ArrayBuffer | undefined,
   origin: string,
+  // URL prefix that maps to this sandbox port, used to rewrite redirects.
+  // Defaults to the path-based form; subdomain callers pass '' (root-relative).
+  redirectPrefix: string = `/v1/p/${sandboxId}/${port}`,
 ): Promise<Response> {
   // 1. Enforce the v1 session-sandbox contract before touching Daytona or
   // local Docker: only active rows in `kortix.session_sandboxes` are proxyable.
@@ -379,13 +395,13 @@ export async function proxyToDaytona(
         const safeLocation = sanitizeRedirectLocation(
           previewUrl,
           upstream.headers.get('location'),
-          sandboxId,
-          port,
+          redirectPrefix,
         );
-        if (!safeLocation) {
-          return jsonProxyError({ error: 'blocked unsafe upstream redirect' }, 502);
+        // Only rewrite when we resolved a Location; otherwise pass the redirect
+        // through untouched (never 502 a normal app redirect).
+        if (safeLocation) {
+          respHeaders.set('Location', safeLocation);
         }
-        respHeaders.set('Location', safeLocation);
         if (origin) {
           respHeaders.set('Access-Control-Allow-Origin', origin);
           respHeaders.set('Access-Control-Allow-Credentials', 'true');

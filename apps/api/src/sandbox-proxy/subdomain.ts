@@ -232,6 +232,9 @@ export async function handleSubdomainRequest(
       req.headers,
       body,
       origin,
+      // Subdomain previews serve at the host root, so redirects stay
+      // root-relative (no /v1/p/<sandbox>/<port> prefix).
+      '',
     );
   } catch (err) {
     console.error(
