@@ -8,6 +8,7 @@ import { getSupabase } from '../shared/supabase';
 import { lookupUserIdByEmail } from '../shared/users';
 import { resolveAccountId } from '../shared/resolve-account';
 import {
+  PatPolicyError,
   createAccountToken,
   listAccountTokens,
   revokeAccountToken,
@@ -25,10 +26,15 @@ function buildInviteUrl(inviteId: string): string {
 }
 import { iamRouter } from './iam';
 import { auditRouter } from './audit';
+import { accountSessionGate } from '../iam/session-gate';
 
 export const accountsRouter = new Hono<AppEnv>();
 
 accountsRouter.use('/*', supabaseAuth);
+// Enforce per-account session policies (max lifetime / idle timeout /
+// force-logout) on every authenticated, account-scoped request. No-op
+// on routes without an :accountId param.
+accountsRouter.use('/*', accountSessionGate());
 
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
@@ -168,7 +174,15 @@ accountsRouter.post('/tokens', async (c) => {
     return c.json({ error: 'expires_at must be ISO-8601' }, 400);
   }
 
-  const created = await createAccountToken({ accountId, userId, name, expiresAt });
+  let created;
+  try {
+    created = await createAccountToken({ accountId, userId, name, expiresAt });
+  } catch (err) {
+    if (err instanceof PatPolicyError) {
+      return c.json({ error: err.message, code: err.code }, 400);
+    }
+    throw err;
+  }
   return c.json(
     {
       token_id: created.tokenId,

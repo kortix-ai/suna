@@ -127,6 +127,25 @@ export const accounts = kortixSchema.table(
     // Super-admins are also exempt so flipping the switch can never
     // permanently lock the account out.
     mfaRequired: boolean('mfa_required').default(false).notNull(),
+    // Maximum lifetime of a session, measured from the JWT's `iat`
+    // claim. NULL = no max (Supabase default — refresh tokens never
+    // expire on their own). 0 < value ≤ 7*24*60 (one week ceiling).
+    sessionMaxLifetimeMinutes: integer('session_max_lifetime_minutes'),
+    // Idle timeout: a session is killed after this many minutes of no
+    // requests against this account. NULL = no idle gate. We update
+    // last_seen at most every 60s to keep DB write pressure bounded.
+    sessionIdleTimeoutMinutes: integer('session_idle_timeout_minutes'),
+    // PAT lifecycle policy (CLI Personal Access Tokens). All three
+    // independent — admins can mix any combination.
+    /** When set, PATs whose requested `expires_at` is further out than
+     *  this are refused at mint. NULL = no ceiling. Units: days. */
+    patMaxLifetimeDays: integer('pat_max_lifetime_days'),
+    /** When true, minting a PAT without an `expires_at` is refused.
+     *  Pairs with patMaxLifetimeDays — admins typically set both. */
+    patRequireExpiry: boolean('pat_require_expiry').default(false).notNull(),
+    /** When set, PATs not used in this many days are auto-revoked on
+     *  next validate. NULL = no idle gate. Units: days. */
+    patIdleRevokeDays: integer('pat_idle_revoke_days'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1984,5 +2003,119 @@ export const auditWebhooks = kortixSchema.table(
   (table) => [
     index('idx_audit_webhooks_account').on(table.accountId),
     index('idx_audit_webhooks_enabled').on(table.accountId, table.enabled),
+  ],
+);
+
+// ─── SAML SSO (per-account) ─────────────────────────────────────────────────
+// Pairs a kortix account with the Supabase auth.sso_providers row that
+// represents its SAML connection. The Supabase side handles the SAML
+// handshake; we look up the kortix account here when a JWT carrying a
+// matching sso_provider_id arrives, then JIT-provision membership and
+// sync group memberships from the configured group claim.
+
+export const accountSsoProviders = kortixSchema.table(
+  'account_sso_providers',
+  {
+    ssoProviderId: uuid('sso_provider_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** UUID of the matching auth.sso_providers row. Supabase generates it
+     *  when the admin uploads SAML metadata via Studio or the auth API. */
+    supabaseSsoProviderId: uuid('supabase_sso_provider_id').notNull(),
+    /** Human label for the IdP ("Okta", "Azure AD prod", …). Display-only. */
+    name: varchar('name', { length: 128 }).notNull(),
+    /** Primary email domain — used to route /sign-in?email=foo@acme.com
+     *  to the right SAML provider without the user picking a workspace. */
+    primaryDomain: varchar('primary_domain', { length: 253 }).notNull(),
+    /** JWT claim name (under app_metadata) carrying the user's groups.
+     *  Common values: "groups" (Okta), "memberOf" (Azure AD). String or
+     *  string[] — we accept both at read time. */
+    groupClaimName: varchar('group_claim_name', { length: 128 }).default('groups').notNull(),
+    /** When true, users who sign in via this SSO but have no matching
+     *  group mapping get a baseline 'member' row anyway. Off by default
+     *  so admins can enforce strict group-driven access. */
+    autoCreateMembers: boolean('auto_create_members').default(true).notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // One SSO provider per account (v1 limitation; multi-IdP can come
+    // later if customers need staging/prod separation).
+    uniqueIndex('idx_account_sso_providers_account').on(table.accountId),
+    // Reverse lookup: JWT carries the supabase id, we resolve to account.
+    uniqueIndex('idx_account_sso_providers_supabase').on(table.supabaseSsoProviderId),
+    // Domain lookup for the sign-in router.
+    index('idx_account_sso_providers_domain').on(table.primaryDomain),
+  ],
+);
+
+// ─── Session activity (per account × user × session) ──────────────────────
+// Tracks idle time + active sessions per account. One row per
+// (account, user, session_id) the first time we see that session hit the
+// account; updated lazily (>60s since last write) for liveness.
+// `revoked_at` set by admins via force-logout.
+
+export const accountSessionActivity = kortixSchema.table(
+  'account_session_activity',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    sessionId: uuid('session_id').notNull(),
+    /** First time we saw this (account, user, session) tuple. Used by
+     *  the UI to sort the "active sessions" list and by the engine to
+     *  enforce max-lifetime when the JWT has no iat (PAT-style). */
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Set when an admin force-logs-out this session OR when the user
+     *  hits a lifetime/idle gate (so we don't repeatedly query Supabase
+     *  for an already-killed session). */
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /** Why this session was revoked — 'admin', 'idle', 'lifetime'. */
+    revokedReason: varchar('revoked_reason', { length: 32 }),
+    revokedBy: uuid('revoked_by'),
+    /** Captured at first sight for diagnostics ("which IP/UA was this?"). */
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.userId, table.sessionId] }),
+    index('idx_account_session_activity_account').on(table.accountId),
+    index('idx_account_session_activity_user').on(table.accountId, table.userId),
+  ],
+);
+
+// Claim-value → IAM group mapping. A SAML user with claim "Engineers" in
+// their token gets added to whichever IAM group is mapped to that claim.
+// Missing on the way IN: claim removed → group dropped on next sign-in.
+export const accountSsoGroupMappings = kortixSchema.table(
+  'account_sso_group_mappings',
+  {
+    mappingId: uuid('mapping_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    ssoProviderId: uuid('sso_provider_id')
+      .notNull()
+      .references(() => accountSsoProviders.ssoProviderId, { onDelete: 'cascade' }),
+    /** Exact match against an entry in the group claim. Case-sensitive
+     *  to match how IdPs ship the values. */
+    claimValue: varchar('claim_value', { length: 256 }).notNull(),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => accountGroups.groupId, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Same claim can only map to one group within an account (avoid
+    // surprise double-membership). To map a claim to multiple groups,
+    // put those users in one IAM group and attach the policies there.
+    uniqueIndex('idx_account_sso_mappings_claim').on(table.accountId, table.claimValue),
+    index('idx_account_sso_mappings_provider').on(table.ssoProviderId),
+    index('idx_account_sso_mappings_group').on(table.groupId),
   ],
 );

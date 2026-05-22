@@ -131,6 +131,11 @@ export {
   scimTokens,
   // Audit webhooks
   auditWebhooks,
+  // SAML SSO
+  accountSsoProviders,
+  accountSsoGroupMappings,
+  // Session policy
+  accountSessionActivity,
 } from './schema/kortix';
 
 export type {

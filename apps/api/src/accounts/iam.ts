@@ -58,6 +58,15 @@ import {
   listScimTokens,
   revokeScimToken,
 } from '../repositories/scim';
+import {
+  createSsoGroupMapping,
+  deleteSsoGroupMapping,
+  deleteSsoProvider,
+  getSsoProvider,
+  listSsoGroupMappings,
+  upsertSsoProvider,
+} from '../repositories/sso';
+import { accountSessionActivity } from '@kortix/db';
 
 export const iamRouter = new Hono<AppEnv>();
 
@@ -1700,3 +1709,539 @@ iamRouter.delete('/:accountId/iam/scim/tokens/:tokenId', async (c) => {
   return c.json({ revoked: true });
 });
 
+// ─── SAML SSO config ──────────────────────────────────────────────────────
+// The Supabase auth.sso_providers row is created out-of-band (via Studio
+// or the auth admin API — admins paste the IdP metadata there). We just
+// record which kortix account owns it plus the claim mapping config. JIT
+// provisioning + group sync runs in the auth middleware on every request.
+
+function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
+  return {
+    sso_provider_id: p.ssoProviderId,
+    supabase_sso_provider_id: p.supabaseSsoProviderId,
+    name: p.name,
+    primary_domain: p.primaryDomain,
+    group_claim_name: p.groupClaimName,
+    auto_create_members: p.autoCreateMembers,
+    created_at: p.createdAt.toISOString(),
+    updated_at: p.updatedAt.toISOString(),
+  };
+}
+
+iamRouter.get('/:accountId/iam/sso/provider', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  const p = await getSsoProvider(accountId);
+  if (!p) return c.json({ provider: null });
+  return c.json({ provider: ssoProviderResponse(p) });
+});
+
+iamRouter.put('/:accountId/iam/sso/provider', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  const supabaseSsoProviderId = (body.supabase_sso_provider_id ?? body.supabaseSsoProviderId) as unknown;
+  const name = body.name as unknown;
+  const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
+  const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
+  const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
+
+  if (typeof supabaseSsoProviderId !== 'string' || !/^[0-9a-f-]{36}$/i.test(supabaseSsoProviderId)) {
+    return c.json({ error: 'supabase_sso_provider_id must be a UUID' }, 400);
+  }
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    return c.json({ error: 'name is required' }, 400);
+  }
+  if (
+    typeof primaryDomain !== 'string' ||
+    primaryDomain.trim().length === 0 ||
+    !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(primaryDomain.trim())
+  ) {
+    return c.json({ error: 'primary_domain must be a valid domain' }, 400);
+  }
+  if (groupClaimName !== undefined && (typeof groupClaimName !== 'string' || groupClaimName.length > 128)) {
+    return c.json({ error: 'group_claim_name must be a short string' }, 400);
+  }
+
+  const before = await getSsoProvider(accountId);
+  const provider = await upsertSsoProvider({
+    accountId,
+    supabaseSsoProviderId,
+    name: name.trim(),
+    primaryDomain: primaryDomain.trim(),
+    groupClaimName: typeof groupClaimName === 'string' ? groupClaimName : undefined,
+    autoCreateMembers: typeof autoCreateMembers === 'boolean' ? autoCreateMembers : undefined,
+  createdBy: userId,
+  });
+
+  await auditIam(c, {
+    accountId,
+    action: before ? 'iam.sso.provider.update' : 'iam.sso.provider.create',
+    resourceType: 'sso_provider',
+    resourceId: provider.ssoProviderId,
+    before: before
+      ? {
+          supabase_sso_provider_id: before.supabaseSsoProviderId,
+          name: before.name,
+          primary_domain: before.primaryDomain,
+          group_claim_name: before.groupClaimName,
+          auto_create_members: before.autoCreateMembers,
+        }
+      : null,
+    after: {
+      supabase_sso_provider_id: provider.supabaseSsoProviderId,
+      name: provider.name,
+      primary_domain: provider.primaryDomain,
+      group_claim_name: provider.groupClaimName,
+      auto_create_members: provider.autoCreateMembers,
+    },
+  });
+
+  return c.json({ provider: ssoProviderResponse(provider) });
+});
+
+iamRouter.delete('/:accountId/iam/sso/provider', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const before = await getSsoProvider(accountId);
+  const ok = await deleteSsoProvider(accountId);
+  if (!ok) return c.json({ error: 'no SSO provider configured' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.sso.provider.delete',
+    resourceType: 'sso_provider',
+    resourceId: before?.ssoProviderId ?? accountId,
+    before: before
+      ? {
+          supabase_sso_provider_id: before.supabaseSsoProviderId,
+          name: before.name,
+          primary_domain: before.primaryDomain,
+        }
+      : null,
+  });
+
+  return c.json({ deleted: true });
+});
+
+// ─── SAML group mappings ──────────────────────────────────────────────────
+
+iamRouter.get('/:accountId/iam/sso/mappings', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  const rows = await listSsoGroupMappings(accountId);
+  return c.json({
+    mappings: rows.map((m) => ({
+      mapping_id: m.mappingId,
+      claim_value: m.claimValue,
+      group_id: m.groupId,
+      group_name: m.groupName,
+      created_at: m.createdAt.toISOString(),
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/sso/mappings', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  const claimValue = (body.claim_value ?? body.claimValue) as unknown;
+  const groupId = (body.group_id ?? body.groupId) as unknown;
+  if (typeof claimValue !== 'string' || claimValue.trim().length === 0) {
+    return c.json({ error: 'claim_value is required' }, 400);
+  }
+  if (typeof groupId !== 'string' || !/^[0-9a-f-]{36}$/i.test(groupId)) {
+    return c.json({ error: 'group_id must be a UUID' }, 400);
+  }
+  const provider = await getSsoProvider(accountId);
+  if (!provider) {
+    return c.json({ error: 'no SSO provider configured — set one first' }, 409);
+  }
+
+  try {
+    const mapping = await createSsoGroupMapping({
+      accountId,
+      ssoProviderId: provider.ssoProviderId,
+      claimValue: claimValue.trim(),
+      groupId,
+      createdBy: userId,
+    });
+    if (!mapping) return c.json({ error: 'group not found in this account' }, 404);
+
+    await auditIam(c, {
+      accountId,
+      action: 'iam.sso.mapping.create',
+      resourceType: 'sso_mapping',
+      resourceId: mapping.mappingId,
+      after: {
+        claim_value: mapping.claimValue,
+        group_id: mapping.groupId,
+        group_name: mapping.groupName,
+      },
+    });
+
+    return c.json(
+      {
+        mapping_id: mapping.mappingId,
+        claim_value: mapping.claimValue,
+        group_id: mapping.groupId,
+        group_name: mapping.groupName,
+        created_at: mapping.createdAt.toISOString(),
+      },
+      201,
+    );
+  } catch (err: unknown) {
+    if (isUniqueViolation(err)) {
+      return c.json({ error: 'A mapping for that claim value already exists.' }, 409);
+    }
+    throw err;
+  }
+});
+
+iamRouter.delete('/:accountId/iam/sso/mappings/:mappingId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const mappingId = c.req.param('mappingId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const ok = await deleteSsoGroupMapping(accountId, mappingId);
+  if (!ok) return c.json({ error: 'mapping not found' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.sso.mapping.delete',
+    resourceType: 'sso_mapping',
+    resourceId: mappingId,
+  });
+
+  return c.json({ deleted: true });
+});
+
+// ─── Session policy ───────────────────────────────────────────────────────
+// Per-account ceilings on session age + idle gap. Null on either field
+// means "no limit". 0 < value ≤ 10080 (one week).
+
+const SESSION_LIMIT_MINUTES = 10080; // 7 days
+
+iamRouter.get('/:accountId/iam/session-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const [row] = await db
+    .select({
+      maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
+      idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+    })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!row) return c.json({ error: 'account not found' }, 404);
+
+  return c.json({
+    max_lifetime_minutes: row.maxLifetimeMinutes,
+    idle_timeout_minutes: row.idleTimeoutMinutes,
+  });
+});
+
+iamRouter.patch('/:accountId/iam/session-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  // Accept null → clear, undefined → leave untouched, number → set.
+  function parseLimit(key: string, value: unknown): number | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+      throw new HttpError(400, `${key} must be a positive integer or null`);
+    }
+    if (value > SESSION_LIMIT_MINUTES) {
+      throw new HttpError(
+        400,
+        `${key} cannot exceed ${SESSION_LIMIT_MINUTES} minutes (7 days)`,
+      );
+    }
+    return value;
+  }
+
+  let maxLifetimeMinutes: number | null | undefined;
+  let idleTimeoutMinutes: number | null | undefined;
+  try {
+    maxLifetimeMinutes = parseLimit(
+      'max_lifetime_minutes',
+      body.max_lifetime_minutes ?? body.maxLifetimeMinutes,
+    );
+    idleTimeoutMinutes = parseLimit(
+      'idle_timeout_minutes',
+      body.idle_timeout_minutes ?? body.idleTimeoutMinutes,
+    );
+  } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+
+  const [before] = await db
+    .select({
+      maxLifetimeMinutes: accounts.sessionMaxLifetimeMinutes,
+      idleTimeoutMinutes: accounts.sessionIdleTimeoutMinutes,
+    })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!before) return c.json({ error: 'account not found' }, 404);
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (maxLifetimeMinutes !== undefined) updates.sessionMaxLifetimeMinutes = maxLifetimeMinutes;
+  if (idleTimeoutMinutes !== undefined) updates.sessionIdleTimeoutMinutes = idleTimeoutMinutes;
+
+  await db
+    .update(accounts)
+    .set(updates)
+    .where(eq(accounts.accountId, accountId));
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.session_policy.update',
+    resourceType: 'account',
+    resourceId: accountId,
+    before: {
+      max_lifetime_minutes: before.maxLifetimeMinutes,
+      idle_timeout_minutes: before.idleTimeoutMinutes,
+    },
+    after: {
+      max_lifetime_minutes:
+        maxLifetimeMinutes !== undefined ? maxLifetimeMinutes : before.maxLifetimeMinutes,
+      idle_timeout_minutes:
+        idleTimeoutMinutes !== undefined ? idleTimeoutMinutes : before.idleTimeoutMinutes,
+    },
+  });
+
+  return c.json({
+    max_lifetime_minutes:
+      maxLifetimeMinutes !== undefined ? maxLifetimeMinutes : before.maxLifetimeMinutes,
+    idle_timeout_minutes:
+      idleTimeoutMinutes !== undefined ? idleTimeoutMinutes : before.idleTimeoutMinutes,
+  });
+});
+
+// ─── Active sessions + force-logout ───────────────────────────────────────
+
+iamRouter.get('/:accountId/iam/sessions', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+
+  const rows = await db
+    .select({
+      userId: accountSessionActivity.userId,
+      sessionId: accountSessionActivity.sessionId,
+      firstSeenAt: accountSessionActivity.firstSeenAt,
+      lastSeenAt: accountSessionActivity.lastSeenAt,
+      revokedAt: accountSessionActivity.revokedAt,
+      revokedReason: accountSessionActivity.revokedReason,
+      ip: accountSessionActivity.ip,
+      userAgent: accountSessionActivity.userAgent,
+    })
+    .from(accountSessionActivity)
+    .where(eq(accountSessionActivity.accountId, accountId))
+    .orderBy(sql`${accountSessionActivity.lastSeenAt} DESC`)
+    .limit(200);
+
+  return c.json({
+    sessions: rows.map((r) => ({
+      user_id: r.userId,
+      session_id: r.sessionId,
+      first_seen_at: r.firstSeenAt.toISOString(),
+      last_seen_at: r.lastSeenAt.toISOString(),
+      revoked_at: r.revokedAt?.toISOString() ?? null,
+      revoked_reason: r.revokedReason,
+      ip: r.ip,
+      user_agent: r.userAgent,
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/sessions/:sessionId/revoke', async (c) => {
+  const actorUserId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const sessionId = c.req.param('sessionId');
+  // Gate on member.remove — force-logout is roughly "kick this user off
+  // for now"; reuses the same capability admins already grant.
+  await assertAuthorized(actorUserId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE);
+
+  // Body optionally carries the target user (for safer audit). Either
+  // way we just stamp revoked_at on the matching activity row.
+  const rows = await db
+    .update(accountSessionActivity)
+    .set({
+      revokedAt: sql`COALESCE(${accountSessionActivity.revokedAt}, now())`,
+      revokedReason: sql`COALESCE(${accountSessionActivity.revokedReason}, 'admin')`,
+      revokedBy: actorUserId,
+    })
+    .where(
+      and(
+        eq(accountSessionActivity.accountId, accountId),
+        eq(accountSessionActivity.sessionId, sessionId),
+      ),
+    )
+    .returning({ userId: accountSessionActivity.userId });
+
+  if (rows.length === 0) {
+    return c.json({ error: 'session not found' }, 404);
+  }
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.session.revoke',
+    resourceType: 'session',
+    resourceId: sessionId,
+    after: { user_id: rows[0].userId, revoked_by: actorUserId },
+  });
+
+  return c.json({ revoked: true });
+});
+
+// Compact local error so the parser helper above can short-circuit.
+class HttpError extends Error {
+  constructor(public status: 400 | 404 | 409 | 422, message: string) {
+    super(message);
+  }
+}
+
+// ─── PAT lifecycle policy ─────────────────────────────────────────────────
+// Per-account ceilings on CLI Personal Access Token lifetime + idle gap,
+// plus a "require expiry on every PAT" toggle. Enforced at mint
+// (createAccountToken) and validate (validateAccountToken) paths.
+// Project-scoped tokens (sandbox-injected) are exempt at both sites.
+
+const PAT_MAX_LIFETIME_DAYS = 365 * 2; // 2 years
+const PAT_MAX_IDLE_DAYS = 365;
+
+iamRouter.get('/:accountId/iam/pat-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+
+  const [row] = await db
+    .select({
+      maxLifetimeDays: accounts.patMaxLifetimeDays,
+      requireExpiry: accounts.patRequireExpiry,
+      idleRevokeDays: accounts.patIdleRevokeDays,
+    })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!row) return c.json({ error: 'account not found' }, 404);
+
+  return c.json({
+    max_lifetime_days: row.maxLifetimeDays,
+    require_expiry: row.requireExpiry,
+    idle_revoke_days: row.idleRevokeDays,
+  });
+});
+
+iamRouter.patch('/:accountId/iam/pat-policy', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+
+  function parseDays(key: string, value: unknown, max: number): number | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+      throw new HttpError(400, `${key} must be a positive integer or null`);
+    }
+    if (value > max) {
+      throw new HttpError(400, `${key} cannot exceed ${max} days`);
+    }
+    return value;
+  }
+
+  let maxLifetimeDays: number | null | undefined;
+  let idleRevokeDays: number | null | undefined;
+  let requireExpiry: boolean | undefined;
+  try {
+    maxLifetimeDays = parseDays(
+      'max_lifetime_days',
+      body.max_lifetime_days ?? body.maxLifetimeDays,
+      PAT_MAX_LIFETIME_DAYS,
+    );
+    idleRevokeDays = parseDays(
+      'idle_revoke_days',
+      body.idle_revoke_days ?? body.idleRevokeDays,
+      PAT_MAX_IDLE_DAYS,
+    );
+    const reqRaw = body.require_expiry ?? body.requireExpiry;
+    if (reqRaw !== undefined) {
+      if (typeof reqRaw !== 'boolean') {
+        return c.json({ error: 'require_expiry must be a boolean' }, 400);
+      }
+      requireExpiry = reqRaw;
+    }
+  } catch (err) {
+    if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    throw err;
+  }
+
+  const [before] = await db
+    .select({
+      maxLifetimeDays: accounts.patMaxLifetimeDays,
+      requireExpiry: accounts.patRequireExpiry,
+      idleRevokeDays: accounts.patIdleRevokeDays,
+    })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  if (!before) return c.json({ error: 'account not found' }, 404);
+
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (maxLifetimeDays !== undefined) updates.patMaxLifetimeDays = maxLifetimeDays;
+  if (idleRevokeDays !== undefined) updates.patIdleRevokeDays = idleRevokeDays;
+  if (requireExpiry !== undefined) updates.patRequireExpiry = requireExpiry;
+
+  await db
+    .update(accounts)
+    .set(updates)
+    .where(eq(accounts.accountId, accountId));
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.pat_policy.update',
+    resourceType: 'account',
+    resourceId: accountId,
+    before: {
+      max_lifetime_days: before.maxLifetimeDays,
+      require_expiry: before.requireExpiry,
+      idle_revoke_days: before.idleRevokeDays,
+    },
+    after: {
+      max_lifetime_days:
+        maxLifetimeDays !== undefined ? maxLifetimeDays : before.maxLifetimeDays,
+      require_expiry:
+        requireExpiry !== undefined ? requireExpiry : before.requireExpiry,
+      idle_revoke_days:
+        idleRevokeDays !== undefined ? idleRevokeDays : before.idleRevokeDays,
+    },
+  });
+
+  return c.json({
+    max_lifetime_days:
+      maxLifetimeDays !== undefined ? maxLifetimeDays : before.maxLifetimeDays,
+    require_expiry:
+      requireExpiry !== undefined ? requireExpiry : before.requireExpiry,
+    idle_revoke_days:
+      idleRevokeDays !== undefined ? idleRevokeDays : before.idleRevokeDays,
+  });
+});

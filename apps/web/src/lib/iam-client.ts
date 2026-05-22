@@ -486,6 +486,175 @@ export async function setMfaRequired(accountId: string, enabled: boolean) {
   );
 }
 
+// ─── SAML SSO ─────────────────────────────────────────────────────────────
+
+export interface SsoProvider {
+  sso_provider_id: string;
+  supabase_sso_provider_id: string;
+  name: string;
+  primary_domain: string;
+  group_claim_name: string;
+  auto_create_members: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SsoGroupMapping {
+  mapping_id: string;
+  claim_value: string;
+  group_id: string;
+  group_name: string;
+  created_at: string;
+}
+
+export async function getSsoProvider(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ provider: SsoProvider | null }>(
+      `/accounts/${accountId}/iam/sso/provider`,
+    ),
+  ).provider;
+}
+
+export async function upsertSsoProvider(
+  accountId: string,
+  input: {
+    supabase_sso_provider_id: string;
+    name: string;
+    primary_domain: string;
+    group_claim_name?: string;
+    auto_create_members?: boolean;
+  },
+) {
+  return unwrap(
+    await backendApi.put<{ provider: SsoProvider }>(
+      `/accounts/${accountId}/iam/sso/provider`,
+      input,
+      { showErrors: false },
+    ),
+  ).provider;
+}
+
+export async function deleteSsoProvider(accountId: string) {
+  return unwrap(
+    await backendApi.delete<{ deleted: boolean }>(
+      `/accounts/${accountId}/iam/sso/provider`,
+    ),
+  );
+}
+
+export async function listSsoGroupMappings(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ mappings: SsoGroupMapping[] }>(
+      `/accounts/${accountId}/iam/sso/mappings`,
+    ),
+  ).mappings;
+}
+
+export async function createSsoGroupMapping(
+  accountId: string,
+  input: { claim_value: string; group_id: string },
+) {
+  return unwrap(
+    await backendApi.post<SsoGroupMapping>(
+      `/accounts/${accountId}/iam/sso/mappings`,
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function deleteSsoGroupMapping(accountId: string, mappingId: string) {
+  return unwrap(
+    await backendApi.delete<{ deleted: boolean }>(
+      `/accounts/${accountId}/iam/sso/mappings/${mappingId}`,
+    ),
+  );
+}
+
+// ─── Session controls ────────────────────────────────────────────────────
+
+export interface SessionPolicy {
+  /** Null = no max; positive integer = minutes. */
+  max_lifetime_minutes: number | null;
+  /** Null = no idle gate; positive integer = minutes. */
+  idle_timeout_minutes: number | null;
+}
+
+export interface ActiveSession {
+  user_id: string;
+  session_id: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  revoked_at: string | null;
+  revoked_reason: string | null;
+  ip: string | null;
+  user_agent: string | null;
+}
+
+export async function getSessionPolicy(accountId: string) {
+  return unwrap(
+    await backendApi.get<SessionPolicy>(`/accounts/${accountId}/iam/session-policy`),
+  );
+}
+
+export async function updateSessionPolicy(
+  accountId: string,
+  patch: Partial<SessionPolicy>,
+) {
+  return unwrap(
+    await backendApi.patch<SessionPolicy>(
+      `/accounts/${accountId}/iam/session-policy`,
+      patch,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function listAccountSessions(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ sessions: ActiveSession[] }>(
+      `/accounts/${accountId}/iam/sessions`,
+    ),
+  ).sessions;
+}
+
+export async function revokeAccountSession(accountId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.post<{ revoked: boolean }>(
+      `/accounts/${accountId}/iam/sessions/${sessionId}/revoke`,
+      {},
+      { showErrors: false },
+    ),
+  );
+}
+
+// ─── PAT lifecycle policy ─────────────────────────────────────────────────
+
+export interface PatPolicy {
+  /** Null = no cap; positive integer = days from now. */
+  max_lifetime_days: number | null;
+  /** When true, minting without expires_at is refused. */
+  require_expiry: boolean;
+  /** Null = no idle revoke; positive integer = days. */
+  idle_revoke_days: number | null;
+}
+
+export async function getPatPolicy(accountId: string) {
+  return unwrap(
+    await backendApi.get<PatPolicy>(`/accounts/${accountId}/iam/pat-policy`),
+  );
+}
+
+export async function updatePatPolicy(accountId: string, patch: Partial<PatPolicy>) {
+  return unwrap(
+    await backendApi.patch<PatPolicy>(
+      `/accounts/${accountId}/iam/pat-policy`,
+      patch,
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── Audit webhooks ────────────────────────────────────────────────────────
 
 export interface AuditWebhook {

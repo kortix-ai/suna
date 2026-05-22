@@ -8,6 +8,7 @@ import { getSupabase } from '../shared/supabase';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
+import { syncSsoMembership } from '../iam/sso-sync';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -128,6 +129,24 @@ export async function supabaseAuth(c: Context, next: Next) {
     // 'aal2' = MFA-verified. Surfaced for IAM policy conditions that
     // require MFA on sensitive actions.
     if (local.payload.aal) c.set('mfaAal', local.payload.aal);
+    // Session identity surfaced for the per-account session gate
+    // (idle/lifetime/force-logout). `iat` is the seconds-epoch the
+    // current access token was issued — Supabase keeps it constant
+    // across refreshes for the same root session.
+    if (local.payload.session_id) c.set('sessionId', local.payload.session_id);
+    if (typeof (local.payload as { iat?: number }).iat === 'number') {
+      c.set('sessionIat', (local.payload as { iat: number }).iat);
+    }
+    // SAML JIT — no-ops when the JWT isn't from a SAML provider. We
+    // don't block the request on sync failures since the user already
+    // authenticated; failures are logged for ops review.
+    syncSsoMembership({
+      userId: local.userId,
+      email: local.email,
+      jwtPayload: local.payload as unknown as Record<string, unknown>,
+    }).catch((err) => {
+      console.warn('[auth] SAML JIT sync failed', err);
+    });
     setSentryUser({ id: local.userId, email: local.email });
     setContextField('userId', local.userId);
     setContextField('userEmail', local.email);

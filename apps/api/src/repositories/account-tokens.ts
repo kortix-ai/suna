@@ -1,5 +1,5 @@
 import { eq, and, desc } from 'drizzle-orm';
-import { accountTokens } from '@kortix/db';
+import { accountTokens, accounts } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   hashSecretKey,
@@ -62,14 +62,74 @@ const lastUsedCache = new Map<string, number>();
 // ─── CRUD Operations ─────────────────────────────────────────────────────────
 
 /**
+ * Thrown when a PAT mint request violates the account's lifecycle policy.
+ * Carries `code` + plain-English message; route handlers surface it as 400.
+ */
+export class PatPolicyError extends Error {
+  constructor(
+    public code: 'expiry_required' | 'expiry_too_far',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'PatPolicyError';
+  }
+}
+
+async function loadPatPolicy(accountId: string): Promise<{
+  maxLifetimeDays: number | null;
+  requireExpiry: boolean;
+  idleRevokeDays: number | null;
+} | null> {
+  const [row] = await db
+    .select({
+      maxLifetimeDays: accounts.patMaxLifetimeDays,
+      requireExpiry: accounts.patRequireExpiry,
+      idleRevokeDays: accounts.patIdleRevokeDays,
+    })
+    .from(accounts)
+    .where(eq(accounts.accountId, accountId))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
  * Mint a new CLI Personal Access Token.
  * Returns the plaintext secret ONCE — only its hash is persisted.
+ *
+ * Enforces the account's PAT lifecycle policy:
+ *   - require_expiry → must provide expires_at
+ *   - max_lifetime_days → expires_at can't be more than N days out
+ *
+ * Project-scoped tokens (sandbox injection) are EXEMPT: they're short-
+ * lived by construction (sandbox lifetime) and we don't want admin
+ * policy to break the agent runtime.
  */
 export async function createAccountToken(
   params: CreateAccountTokenParams,
 ): Promise<CreateAccountTokenResult> {
   if (!isApiKeySecretConfigured()) {
     throw new Error('API_KEY_SECRET not configured');
+  }
+
+  if (!params.projectId) {
+    const policy = await loadPatPolicy(params.accountId);
+    if (policy) {
+      if (policy.requireExpiry && !params.expiresAt) {
+        throw new PatPolicyError(
+          'expiry_required',
+          'This account requires every PAT to have an expiry date.',
+        );
+      }
+      if (policy.maxLifetimeDays != null && params.expiresAt) {
+        const maxMs = policy.maxLifetimeDays * 24 * 60 * 60 * 1000;
+        if (params.expiresAt.getTime() - Date.now() > maxMs) {
+          throw new PatPolicyError(
+            'expiry_too_far',
+            `Expiry cannot be more than ${policy.maxLifetimeDays} days from now.`,
+          );
+        }
+      }
+    }
   }
 
   const { publicKey, secretKey } = generateAccountTokenPair();
@@ -171,6 +231,8 @@ export async function validateAccountToken(
   try {
     const secretKeyHash = hashSecretKey(secretKey);
 
+    // Join the owning account so we can apply idle-revoke without a
+    // second round-trip on the hot path.
     const [row] = await db
       .select({
         tokenId: accountTokens.tokenId,
@@ -179,8 +241,12 @@ export async function validateAccountToken(
         projectId: accountTokens.projectId,
         status: accountTokens.status,
         expiresAt: accountTokens.expiresAt,
+        lastUsedAt: accountTokens.lastUsedAt,
+        createdAt: accountTokens.createdAt,
+        patIdleRevokeDays: accounts.patIdleRevokeDays,
       })
       .from(accountTokens)
+      .innerJoin(accounts, eq(accounts.accountId, accountTokens.accountId))
       .where(
         and(
           eq(accountTokens.secretKeyHash, secretKeyHash),
@@ -195,6 +261,26 @@ export async function validateAccountToken(
 
     if (row.expiresAt && row.expiresAt < new Date()) {
       return { isValid: false, error: 'PAT expired' };
+    }
+
+    // Idle-revoke: if the account has an idle policy and the PAT hasn't
+    // been used in that window, soft-revoke it now and refuse the call.
+    // Project-scoped tokens (sandbox-injected, lifetime tied to the
+    // sandbox) are exempt — same carve-out as the mint path.
+    if (row.patIdleRevokeDays != null && !row.projectId) {
+      const reference = row.lastUsedAt ?? row.createdAt;
+      const idleMs = Date.now() - reference.getTime();
+      const maxIdleMs = row.patIdleRevokeDays * 24 * 60 * 60 * 1000;
+      if (idleMs > maxIdleMs) {
+        // Soft-revoke in the background; don't block the response on it.
+        db.update(accountTokens)
+          .set({ status: 'revoked', revokedAt: new Date() })
+          .where(eq(accountTokens.tokenId, row.tokenId))
+          .catch((err) => {
+            console.warn('PAT idle auto-revoke failed:', err);
+          });
+        return { isValid: false, error: 'PAT auto-revoked due to inactivity' };
+      }
     }
 
     updateLastUsedThrottled(row.tokenId).catch(() => {});

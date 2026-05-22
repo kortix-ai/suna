@@ -98,6 +98,7 @@ interface JwtPayload {
   sub?: string;
   email?: string;
   exp?: number;
+  iat?: number;
   iss?: string;
   aud?: string | string[];
   role?: string;
