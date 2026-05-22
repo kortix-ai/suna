@@ -131,7 +131,21 @@ export function useAuthenticatedPreviewUrl(previewUrl: string): string | null {
       }
 
       if (cancelled) return;
-      setAuthenticatedUrl(previewUrl);
+      // Expose the URL with a one-shot ?token so the FIRST request authenticates
+      // deterministically — the subdomain proxy's host-only `/v1/p/` cookie never
+      // reaches `p{port}-{sandbox}.host/`, and the in-memory pre-auth above is
+      // fragile (lost on API restart / direct opens). The proxy validates the
+      // token, marks the subdomain authed for sub-resources, and strips the
+      // token before forwarding to the sandbox app.
+      let exposed = previewUrl;
+      try {
+        const u = new URL(previewUrl);
+        u.searchParams.set('token', token);
+        exposed = u.toString();
+      } catch {
+        // keep bare URL if it isn't parseable
+      }
+      setAuthenticatedUrl(exposed);
     }
 
     // Reset to null on every previewUrl change so consumers show loading
