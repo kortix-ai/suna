@@ -40,7 +40,7 @@ jobs:
         # mirroring how the repo is built locally.
         run: |
           corepack disable || true
-          npm install -g pnpm@10
+          npm install -g pnpm@11
           echo "pnpm: $(pnpm -v)  node: $(node -v)"
 
       - name: Install dependencies (kortix-api + workspace deps)
