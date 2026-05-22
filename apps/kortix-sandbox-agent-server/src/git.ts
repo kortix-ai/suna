@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
-import { mkdir, rm, stat } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdir, rename, rm, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 import type { Config } from './config'
 import { logger } from './logger'
@@ -11,7 +11,10 @@ function execGit(args: string[], opts: { cwd?: string } = {}): Promise<ExecResul
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
       cwd: opts.cwd,
-      env: process.env,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: '0',
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''
@@ -23,19 +26,37 @@ function execGit(args: string[], opts: { cwd?: string } = {}): Promise<ExecResul
   })
 }
 
-/** Build the `-c http.https://github.com/.extraheader=...` auth args for git. */
-function authArgs(token: string | undefined): string[] {
+/** Build the `-c http.<repo-origin>/.extraheader=...` auth args for git. */
+export function buildGitAuthArgs(
+  repoUrl: string | undefined,
+  token: string | undefined,
+): string[] {
   if (!token) return []
+
+  let authOrigin = 'https://github.com'
+  if (repoUrl) {
+    try {
+      const parsed = new URL(repoUrl)
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        authOrigin = `${parsed.protocol}//${parsed.host}`
+      }
+    } catch {
+      const scpLikeHost = repoUrl.match(/^[^@]+@([^:/]+)[:/]/)?.[1]
+      if (scpLikeHost) authOrigin = `https://${scpLikeHost}`
+    }
+  }
+
   const headerValue = Buffer.from(`x-access-token:${token}`).toString('base64')
-  return ['-c', `http.https://github.com/.extraheader=AUTHORIZATION: basic ${headerValue}`]
+  return ['-c', `http.${authOrigin}/.extraheader=AUTHORIZATION: basic ${headerValue}`]
 }
 
 async function gitWithAuth(
   token: string | undefined,
+  repoUrl: string | undefined,
   args: string[],
   opts: { cwd?: string } = {},
 ): Promise<ExecResult> {
-  return execGit([...authArgs(token), ...args], opts)
+  return execGit([...buildGitAuthArgs(repoUrl, token), ...args], opts)
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -47,15 +68,25 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
+export async function isRepoMaterialized(target: string): Promise<boolean> {
+  return pathExists(`${target}/.git`)
+}
+
 async function checkoutSessionBranch(cfg: Config, target: string, branch: string): Promise<void> {
   const refSpec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`
   const delayMs = Math.max(1, Math.floor(cfg.branchFetchDelaySec * 1000))
   let lastErr: string | null = null
 
   for (let attempt = 1; attempt <= cfg.branchFetchAttempts; attempt++) {
-    const fetched = await gitWithAuth(cfg.githubToken, ['-C', target, 'fetch', 'origin', refSpec])
+    const fetched = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+      '-C',
+      target,
+      'fetch',
+      'origin',
+      refSpec,
+    ])
     if (fetched.code === 0) {
-      const checkout = await gitWithAuth(cfg.githubToken, [
+      const checkout = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
         '-C',
         target,
         'checkout',
@@ -94,7 +125,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
 
   if (await pathExists(`${target}/.git`)) {
     logger.info('[git] refreshing existing repo', { target })
-    const setUrl = await gitWithAuth(cfg.githubToken, [
+    const setUrl = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
       '-C',
       target,
       'remote',
@@ -104,7 +135,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     ])
     if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
 
-    const fetched = await gitWithAuth(cfg.githubToken, [
+    const fetched = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
       '-C',
       target,
       'fetch',
@@ -114,23 +145,35 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     ])
     if (fetched.code !== 0) throw new Error(`git fetch (refresh) failed: ${fetched.stderr}`)
   } else {
-    if (await pathExists(target)) await rm(target, { recursive: true, force: true })
+    const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
+    await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', { repoUrl: cfg.repoUrl, base, target })
-    const cloned = await gitWithAuth(cfg.githubToken, [
+    const cloned = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
       'clone',
       '--branch',
       base,
       '--single-branch',
       cfg.repoUrl,
-      target,
+      tmpTarget,
     ])
-    if (cloned.code !== 0) throw new Error(`git clone failed: ${cloned.stderr}`)
+    if (cloned.code !== 0) {
+      await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
+      throw new Error(`git clone failed: ${cloned.stderr}`)
+    }
+    await rm(target, { recursive: true, force: true })
+    await rename(tmpTarget, target)
   }
 
-  const fetchBase = await gitWithAuth(cfg.githubToken, ['-C', target, 'fetch', 'origin', base])
+  const fetchBase = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
+    '-C',
+    target,
+    'fetch',
+    'origin',
+    base,
+  ])
   if (fetchBase.code !== 0) throw new Error(`git fetch base failed: ${fetchBase.stderr}`)
 
-  const reset = await gitWithAuth(cfg.githubToken, [
+  const reset = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
     '-C',
     target,
     'reset',
@@ -172,7 +215,7 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
   }
 
   if (cfg.repoUrl) {
-    const setUrl = await gitWithAuth(cfg.githubToken, [
+    const setUrl = await gitWithAuth(cfg.githubToken, cfg.repoUrl, [
       '-C',
       target,
       'remote',
@@ -183,8 +226,9 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
     if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
   }
 
+  const authRepoUrl = cfg.repoUrl ?? before.remoteUrl ?? undefined
   const branch = cfg.branchName || before.branch || cfg.defaultBranch
-  const fetched = await gitWithAuth(cfg.githubToken, [
+  const fetched = await gitWithAuth(cfg.githubToken, authRepoUrl, [
     '-C',
     target,
     'fetch',
@@ -194,7 +238,7 @@ export async function refreshRepo(cfg: Config): Promise<{ before: RepoInfo; afte
   ])
   if (fetched.code !== 0) throw new Error(`git fetch refresh failed: ${fetched.stderr}`)
 
-  const pulled = await gitWithAuth(cfg.githubToken, [
+  const pulled = await gitWithAuth(cfg.githubToken, authRepoUrl, [
     '-C',
     target,
     'pull',

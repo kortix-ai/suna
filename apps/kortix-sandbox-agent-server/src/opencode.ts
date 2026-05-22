@@ -143,16 +143,13 @@ export function createOpencodeSupervisor(cfg: Config, opencodeConfigDir: string)
   }
 
   async function checkReady(): Promise<boolean> {
-    // Probe /global/health, NOT /app. opencode 1.14.x's /app route (the web
-    // UI HTML) returns HTTP 500 once the sqlite migration finishes, so it
-    // can't be used as a liveness signal — the daemon would sit forever in
-    // `starting` even though opencode is actually serving traffic.
-    // /global/health is the canonical liveness endpoint and returns
-    // 200 {"healthy":true,"version":"…"} as soon as the HTTP server is
-    // bound + DB migrated. Verified end-to-end against opencode-ai@1.14.28
-    // both locally and in the Daytona sandbox image.
+    // A bound HTTP server is not enough. When the project workspace is
+    // missing or OpenCode inherited a bad cwd, /global/health can still
+    // return 200 while every real OpenCode API route returns 500. Probe the
+    // same session API the app needs before reporting `opencode: ok`.
     try {
-      const res = await fetch(`http://127.0.0.1:${cfg.opencodeInternalPort}/global/health`, {
+      const directory = encodeURIComponent(cfg.projectTarget)
+      const res = await fetch(`http://127.0.0.1:${cfg.opencodeInternalPort}/session?directory=${directory}`, {
         signal: AbortSignal.timeout(2_000),
       })
       return res.status >= 200 && res.status < 400

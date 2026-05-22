@@ -102,7 +102,7 @@ export function CredentialsTab({ projectId }: { projectId: string }) {
         open={confirmDelete !== null}
         onOpenChange={(o) => { if (!o) setConfirmDelete(null); }}
         title="Delete credential?"
-        description={confirmDelete ? `"${confirmDelete.name}" will be removed from this project's vault. Audit log entries are preserved.` : ''}
+        description={confirmDelete ? `"${confirmDelete.name}" will be removed from this project. Audit log entries are preserved.` : ''}
         confirmLabel="Delete"
         isPending={delCred.isPending}
         onConfirm={async () => {

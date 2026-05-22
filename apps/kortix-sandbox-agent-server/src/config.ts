@@ -5,7 +5,7 @@ import { z } from 'zod'
  *
  * Names must stay aligned with apps/api/src/projects/index.ts: the API
  * passes KORTIX_PROJECT_AUTO_CLONE / KORTIX_REPO_URL / KORTIX_BRANCH_NAME /
- * KORTIX_DEFAULT_BRANCH / KORTIX_GITHUB_TOKEN / KORTIX_SERVICE_PORT to
+ * KORTIX_DEFAULT_BRANCH / KORTIX_GIT_AUTH_TOKEN / KORTIX_SERVICE_PORT to
  * Daytona at sandbox creation time. The daemon reads exactly those names.
  */
 
@@ -32,6 +32,7 @@ const Schema = z.object({
   KORTIX_PROJECT_AUTO_CLONE: BoolFlag.default(false),
   KORTIX_REPO_URL: z.string().optional(),
   KORTIX_BRANCH_NAME: z.string().optional(),
+  KORTIX_GIT_AUTH_TOKEN: z.string().optional(),
   KORTIX_GITHUB_TOKEN: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
 })
@@ -65,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_PROJECT_AUTO_CLONE: env.KORTIX_PROJECT_AUTO_CLONE,
     KORTIX_REPO_URL: env.KORTIX_REPO_URL,
     KORTIX_BRANCH_NAME: env.KORTIX_BRANCH_NAME,
+    KORTIX_GIT_AUTH_TOKEN: env.KORTIX_GIT_AUTH_TOKEN,
     KORTIX_GITHUB_TOKEN: env.KORTIX_GITHUB_TOKEN,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
   })
@@ -81,7 +83,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     autoClone: parsed.KORTIX_PROJECT_AUTO_CLONE,
     repoUrl: parsed.KORTIX_REPO_URL,
     branchName: parsed.KORTIX_BRANCH_NAME,
-    githubToken: parsed.KORTIX_GITHUB_TOKEN,
+    githubToken: parsed.KORTIX_GIT_AUTH_TOKEN ?? parsed.KORTIX_GITHUB_TOKEN,
     kortixToken: parsed.KORTIX_TOKEN,
   }
 }

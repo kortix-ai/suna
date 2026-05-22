@@ -58,7 +58,7 @@ function makeRow(overrides: Partial<Row> = {}): Row {
     snapshotId: overrides.snapshotId ?? `kortix-snap-1111-${id}`,
     status: overrides.status ?? 'ready',
     error: overrides.error ?? null,
-    metadata: overrides.metadata ?? {},
+    metadata: overrides.metadata ?? { runtimeFingerprint: 'runtime-current' },
     createdAt: overrides.createdAt ?? new Date(2026, 0, 1),
     updatedAt: overrides.updatedAt ?? overrides.createdAt ?? new Date(2026, 0, 1),
     ...overrides,
@@ -176,6 +176,8 @@ mock.module('../shared/daytona', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   resolveCommitSha: async (_project: any, ref: string) => `head-of-${ref}`,
   resolveTreeOid: async () => 'tree-oid',
   readRepoFile: async () => 'FROM ubuntu:24.04\n',
@@ -184,6 +186,10 @@ mock.module('../projects/git', () => ({
 
 mock.module('../projects/triggers', () => ({
   readManifest: async () => null,
+}));
+
+mock.module('../snapshots/runtime-fingerprint', () => ({
+  buildRuntimeArtifactFingerprint: async () => 'runtime-current',
 }));
 
 mock.module('../config', () => ({
@@ -228,6 +234,28 @@ describe('getLatestReadySnapshot', () => {
     setFilter((r) => r.status === 'ready');
     const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
     expect(result).toBeNull();
+  });
+
+  test('ignores ready rows from an old runtime fingerprint', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'stale-newer',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-old' },
+        createdAt: new Date(2026, 0, 5),
+      }),
+      makeRow({
+        snapshotRowId: 'current-older',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-current' },
+        createdAt: new Date(2026, 0, 1),
+      }),
+    ];
+    setFilter((r) => r.status === 'ready');
+    setSort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const result = await builder.getLatestReadySnapshot(PROJECT_ID, BRANCH);
+    expect(result?.snapshotRowId).toBe('current-older');
   });
 });
 

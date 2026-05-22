@@ -35,9 +35,41 @@ import {
 import { config } from '../../config';
 import type { GitBackedProject } from '../../projects/git';
 
+const DEFAULT_SNAPSHOT_READY_WAIT_MS = 10 * 60 * 1000;
+const DEFAULT_SNAPSHOT_READY_POLL_MS = 5 * 1000;
+
 export interface ProvisionSessionSandboxResult {
   row: typeof sessionSandboxes.$inferSelect;
   created: boolean;
+}
+
+function snapshotReadyWaitMs(): number {
+  const raw = Number(process.env.KORTIX_SESSION_SNAPSHOT_READY_WAIT_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_SNAPSHOT_READY_WAIT_MS;
+}
+
+function snapshotReadyPollMs(waitMs: number): number {
+  const raw = Number(process.env.KORTIX_SESSION_SNAPSHOT_READY_POLL_MS);
+  const configured = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_SNAPSHOT_READY_POLL_MS;
+  return Math.max(50, Math.min(configured, Math.max(waitMs, 50)));
+}
+
+async function waitForLatestReadySnapshot(
+  projectId: string,
+  branch: string,
+  providerName: ProviderName,
+): Promise<NonNullable<Awaited<ReturnType<typeof getLatestReadySnapshot>>> | null> {
+  const waitMs = snapshotReadyWaitMs();
+  const deadline = Date.now() + waitMs;
+  const pollMs = snapshotReadyPollMs(waitMs);
+
+  for (;;) {
+    const latest = await getLatestReadySnapshot(projectId, branch, providerName);
+    if (latest?.snapshotId) return latest;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, remaining)));
+  }
 }
 
 export async function provisionSessionSandbox(opts: {
@@ -140,31 +172,48 @@ export async function provisionSessionSandbox(opts: {
       //      DAYTONA_SNAPSHOT fallback — every sandbox boots from its
       //      project's own image.
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
-      const latest = await getLatestReadySnapshot(
+      let latest = await getLatestReadySnapshot(
         opts.gitProject.projectId,
         branch,
         providerName,
       );
 
-      // Kick off "is there a newer commit?" check + lazy build. Don't await.
-      void ensureBuildForLatestCommit(opts.gitProject, {
-        branch,
-        accountId,
-        provider: providerName,
-        source: 'session-start',
-      }).catch((err) => {
-        console.warn(
-          `[session-sandbox] ensureBuildForLatestCommit failed for ${sandbox.sandboxId}:`,
-          err,
-        );
-      });
-
-      if (!latest || !latest.snapshotId) {
-        throw new Error(
-          `Project sandbox is still building. ` +
-          `This is a one-time setup that runs the first time a project is created (or after every failed build is retried). ` +
-          `Please retry in ~1 minute.`,
-        );
+      if (latest?.snapshotId) {
+        // A usable snapshot already exists; kick the "is there a newer
+        // commit/runtime?" check in the background so this boot remains fast.
+        void ensureBuildForLatestCommit(opts.gitProject, {
+          branch,
+          accountId,
+          provider: providerName,
+          source: 'session-start',
+        }).catch((err) => {
+          console.warn(
+            `[session-sandbox] ensureBuildForLatestCommit failed for ${sandbox.sandboxId}:`,
+            err,
+          );
+        });
+      } else {
+        // No current-runtime snapshot exists. Start or join the build, then
+        // keep this provisioning worker alive until a ready snapshot appears.
+        // This avoids the bad UX where a restart fails immediately during the
+        // expected one-time image build and the user has to guess when to retry.
+        const build = await ensureBuildForLatestCommit(opts.gitProject, {
+          branch,
+          accountId,
+          provider: providerName,
+          source: 'session-start',
+        });
+        if (build.status === 'failed-to-start') {
+          throw new Error(`Project sandbox build failed to start: ${build.error ?? 'unknown error'}`);
+        }
+        latest = await waitForLatestReadySnapshot(opts.gitProject.projectId, branch, providerName);
+        if (!latest?.snapshotId) {
+          throw new Error(
+            `Project sandbox is still building. ` +
+            `This is a one-time setup that runs the first time a project is created (or after every failed build is retried). ` +
+            `Please retry in ~1 minute.`,
+          );
+        }
       }
       providerCreateInput.snapshot = latest.snapshotId;
       console.log(

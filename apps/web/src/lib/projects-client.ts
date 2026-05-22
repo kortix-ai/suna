@@ -207,22 +207,19 @@ export interface GitHubInstallationStatus {
   updated_at: string | null;
 }
 
-/** Who can use a project secret.
- *  - 'everyone' → anyone with access to the project
- *  - 'private'  → only the owner (creator)
- *  - 'select'   → specific project members (grant_user_ids) */
-export type ProjectSecretVisibility = 'everyone' | 'private' | 'select';
-
 export interface ProjectSecret {
   secret_id: string;
   project_id: string;
   name: string;
-  visibility: ProjectSecretVisibility;
-  owner_user_id: string | null;
-  grant_user_ids: string[];
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  system?: boolean;
+  readonly?: boolean;
+  purpose?: string | null;
+  configured?: boolean;
+  can_rotate?: boolean;
+  managed_by?: string | null;
 }
 
 function unwrap<T>(response: { data?: T; success: boolean; error?: Error }) {
@@ -416,12 +413,19 @@ export async function upsertProjectSecret(
   input: {
     name: string;
     value: string;
-    visibility?: ProjectSecretVisibility;
-    grant_user_ids?: string[];
   },
 ) {
   return unwrap(
     await backendApi.post<ProjectSecret>(`/projects/${projectId}/secrets`, input),
+  );
+}
+
+export async function upsertProjectGitCredential(
+  projectId: string,
+  input: { token: string },
+) {
+  return unwrap(
+    await backendApi.put<ProjectSecret>(`/projects/${projectId}/git-credential`, input),
   );
 }
 

@@ -27,7 +27,7 @@ interface ProjectCreateModalProps {
  * New project = a managed Kortix git repo (Freestyle) seeded with the starter.
  * No GitHub account, no repo-name uniqueness, no import dance — the project is
  * live and bootable the moment it's created. (Bringing your own / external
- * repos with auth is handled separately via the vault-backed git remote model,
+ * repos with auth is handled separately via the managed git remote model,
  * not this dialog.)
  */
 export function ProjectCreateModal({ open, onOpenChange, accountId }: ProjectCreateModalProps) {

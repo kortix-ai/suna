@@ -40,6 +40,23 @@ function isImmediateOfflineStatus(status: number): boolean {
 	return status === 502 || status === 503 || status === 504;
 }
 
+type SandboxHealthResponse = {
+	status?: string;
+	runtimeReady?: boolean;
+	version?: string;
+	opencode?: string | boolean;
+	boot_error?: string | null;
+	reason?: string | null;
+	message?: string | null;
+};
+
+function isRuntimeReady(health: SandboxHealthResponse | null): boolean {
+	if (!health) return false;
+	if (health.runtimeReady !== undefined) return health.runtimeReady === true;
+	if (health.opencode !== undefined) return health.opencode === "ok" || health.opencode === true;
+	return health.status !== "starting" && health.status !== "down" && health.status !== "error";
+}
+
 /**
  * useSandboxConnection — monitors the active server's reachability.
  *
@@ -128,7 +145,11 @@ export function useSandboxConnection() {
 					}
 					resetSandboxFail();
 					setSandboxStatus("connected");
-					setOpenCodeHealth(false, parsed?.version);
+					setOpenCodeHealth(
+						false,
+						parsed?.version,
+						parsed?.boot_error ?? parsed?.message ?? parsed?.reason ?? null,
+					);
 					if (parsed?.version) {
 						setSandboxVersion(parsed.version);
 					}
@@ -149,10 +170,11 @@ export function useSandboxConnection() {
 
 				resetSandboxFail();
 				setSandboxStatus("connected");
-				const healthData = await res.json().catch(() => null) as { status?: string; runtimeReady?: boolean; version?: string } | null;
+				const healthData = await res.json().catch(() => null) as SandboxHealthResponse | null;
 				setOpenCodeHealth(
-					healthData?.runtimeReady !== false && healthData?.status !== "starting",
+					isRuntimeReady(healthData),
 					healthData?.version,
+					healthData?.boot_error ?? healthData?.message ?? healthData?.reason ?? null,
 				);
 				if (healthData?.version) {
 					setSandboxVersion(healthData.version);

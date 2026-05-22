@@ -39,10 +39,9 @@ import { SANDBOX_VERSION } from '../config';
 import type { SandboxProviderName } from '../config';
 
 /**
- * Pinned opencode CLI version layered into every snapshot. Bump this
- * (and SANDBOX_VERSION) together when a new opencode release is the
- * target — the runtime fingerprint hash invalidates every project's
- * cache so the next session pulls the new binary.
+ * Pinned opencode CLI version layered into every snapshot. This value is
+ * included in the runtime artifact fingerprint so changing it invalidates
+ * the Daytona snapshot cache even if SANDBOX_VERSION is unchanged in dev.
  */
 const OPENCODE_VERSION = '1.14.28';
 
@@ -75,6 +74,7 @@ import {
   type SandboxPaths,
 } from './dockerfile-layer';
 import { computeSnapshotHash, formatSnapshotName } from './hash';
+import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
 
 /** Cap how long the Daytona-side snapshot build is allowed to take. */
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -104,6 +104,8 @@ export interface SnapshotResolution {
   commitSha: string;
   /** Content hash of the inputs — useful for telemetry / logging. */
   contentHash: string;
+  /** Runtime artifact fingerprint used in the content hash. */
+  runtimeFingerprint: string;
   /** Whether this call did the actual build (vs hit the cache). */
   built: boolean;
 }
@@ -153,12 +155,51 @@ export async function buildSnapshotForCommit(
 
   const existing = await findSnapshotRow(project.projectId, commitSha, provider);
   if (existing?.status === 'ready' && existing.snapshotId) {
-    return {
-      daytonaName: existing.snapshotId,
-      commitSha,
-      contentHash: extractMetadataHash(existing.metadata) ?? '',
-      built: false,
-    };
+    const prepared = await prepareBuildContext(project, commitSha);
+    if (
+      existing.snapshotId === prepared.snapshotName &&
+      extractMetadataHash(existing.metadata) === prepared.contentHash &&
+      extractMetadataRuntimeFingerprint(existing.metadata) === prepared.runtimeFingerprint
+    ) {
+      await rm(prepared.contextDir, { recursive: true, force: true }).catch(() => {});
+      return {
+        daytonaName: existing.snapshotId,
+        commitSha,
+        contentHash: prepared.contentHash,
+        runtimeFingerprint: prepared.runtimeFingerprint,
+        built: false,
+      };
+    }
+
+    try {
+      const result = await runBuild(project, commitSha, provider, prepared);
+      await updateSnapshotRow(project.projectId, commitSha, provider, options.source, result);
+      return {
+        daytonaName: result.daytonaName,
+        commitSha,
+        contentHash: result.contentHash,
+        runtimeFingerprint: result.runtimeFingerprint,
+        built: result.built,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await db
+        .update(projectRuntimeSnapshots)
+        .set({
+          status: 'ready',
+          error: message.slice(0, 2000),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(projectRuntimeSnapshots.projectId, project.projectId),
+            eq(projectRuntimeSnapshots.commitSha, commitSha),
+            eq(projectRuntimeSnapshots.provider, provider),
+          ),
+        )
+        .catch(() => {});
+      throw new SnapshotBuildError(`Snapshot rebuild failed: ${message}`, err);
+    }
   }
   if (existing?.status === 'building' || existing?.status === 'queued') {
     // Another build is in flight for this exact commit. Don't race it.
@@ -200,30 +241,12 @@ export async function buildSnapshotForCommit(
 
   try {
     const result = await runBuild(project, commitSha, provider);
-    await db
-      .update(projectRuntimeSnapshots)
-      .set({
-        status: 'ready',
-        snapshotId: result.daytonaName,
-        metadata: {
-          source: options.source,
-          contentHash: result.contentHash,
-          shortHash: result.shortHash,
-          sandboxVersion: SANDBOX_VERSION,
-        },
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(projectRuntimeSnapshots.projectId, project.projectId),
-          eq(projectRuntimeSnapshots.commitSha, commitSha),
-          eq(projectRuntimeSnapshots.provider, provider),
-        ),
-      );
+    await updateSnapshotRow(project.projectId, commitSha, provider, options.source, result);
     return {
       daytonaName: result.daytonaName,
       commitSha,
       contentHash: result.contentHash,
+      runtimeFingerprint: result.runtimeFingerprint,
       built: result.built,
     };
   } catch (err) {
@@ -257,7 +280,8 @@ export async function getLatestReadySnapshot(
   branch: string,
   provider: SandboxProviderName = 'daytona',
 ): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
-  const [row] = await db
+  const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
+  const rows = await db
     .select()
     .from(projectRuntimeSnapshots)
     .where(
@@ -269,8 +293,10 @@ export async function getLatestReadySnapshot(
       ),
     )
     .orderBy(desc(projectRuntimeSnapshots.createdAt))
-    .limit(1);
-  return row ?? null;
+    .limit(10);
+  return rows.find((row) =>
+    extractMetadataRuntimeFingerprint(row.metadata) === runtimeFingerprint
+  ) ?? null;
 }
 
 /**
@@ -339,9 +365,17 @@ export async function ensureBuildForLatestCommit(
 
   const existing = await findActiveRowForCommit(project.projectId, commitSha, provider);
   if (existing?.status === 'ready') {
-    return { status: 'already-ready', commitSha };
+    try {
+      const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
+      if (extractMetadataRuntimeFingerprint(existing.metadata) === runtimeFingerprint) {
+        return { status: 'already-ready', commitSha };
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { status: 'failed-to-start', commitSha, error: message };
+    }
   }
-  if (existing) {
+  if (existing && existing.status !== 'ready') {
     return { status: 'already-building', commitSha };
   }
 
@@ -495,6 +529,7 @@ interface BuildOutcome {
   daytonaName: string;
   contentHash: string;
   shortHash: string;
+  runtimeFingerprint: string;
   built: boolean;
 }
 
@@ -502,6 +537,7 @@ async function runBuild(
   project: GitBackedProject,
   commitSha: string,
   provider: SandboxProviderName,
+  prepared?: PreparedContext,
 ): Promise<BuildOutcome> {
   // Flip to `building` first so concurrent waiters can distinguish "in
   // progress" from "queued and stuck". Best-effort — if the update misses
@@ -518,7 +554,7 @@ async function runBuild(
     )
     .catch(() => {});
 
-  const ctx = await prepareBuildContext(project, commitSha);
+  const ctx = prepared ?? await prepareBuildContext(project, commitSha);
   try {
     // Daytona is the only provider with a build path today. New providers
     // can be added here as cases; the rest of the function stays the same.
@@ -531,14 +567,26 @@ async function runBuild(
     try {
       const existing = await daytona.snapshot.get(ctx.snapshotName);
       if (existing) {
-        return { daytonaName: ctx.snapshotName, contentHash: ctx.contentHash, shortHash: ctx.shortHash, built: false };
+        return {
+          daytonaName: ctx.snapshotName,
+          contentHash: ctx.contentHash,
+          shortHash: ctx.shortHash,
+          runtimeFingerprint: ctx.runtimeFingerprint,
+          built: false,
+        };
       }
     } catch { /* not present — proceed with build */ }
     await daytona.snapshot.create(
       { name: ctx.snapshotName, image: Image.fromDockerfile(ctx.composedPath) },
       { timeout: Math.floor(BUILD_TIMEOUT_MS / 1000) },
     );
-    return { daytonaName: ctx.snapshotName, contentHash: ctx.contentHash, shortHash: ctx.shortHash, built: true };
+    return {
+      daytonaName: ctx.snapshotName,
+      contentHash: ctx.contentHash,
+      shortHash: ctx.shortHash,
+      runtimeFingerprint: ctx.runtimeFingerprint,
+      built: true,
+    };
   } finally {
     await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -555,6 +603,7 @@ interface PreparedContext {
   snapshotName: string;
   contentHash: string;
   shortHash: string;
+  runtimeFingerprint: string;
 }
 
 async function prepareBuildContext(
@@ -573,7 +622,16 @@ async function prepareBuildContext(
     commitSha,
     sandboxPaths.context === '.' ? null : sandboxPaths.context,
   );
-  const hash = computeSnapshotHash({ dockerfile: userDockerfile, contextTreeOid });
+  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
+  await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
+  await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
+
+  const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
+  const hash = computeSnapshotHash({
+    dockerfile: userDockerfile,
+    contextTreeOid,
+    runtimeFingerprint,
+  });
   const snapshotName = formatSnapshotName(project.projectId, hash.contentHash);
 
   const contextDir = await materializeRepoContext(
@@ -581,9 +639,6 @@ async function prepareBuildContext(
     commitSha,
     sandboxPaths.context === '.' ? null : sandboxPaths.context,
   );
-  await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
-  await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
-  await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
   await copyFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent'));
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
   await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
@@ -604,7 +659,51 @@ async function prepareBuildContext(
     snapshotName,
     contentHash: hash.contentHash,
     shortHash: hash.shortHash,
+    runtimeFingerprint,
   };
+}
+
+async function currentRuntimeArtifactFingerprint(): Promise<string> {
+  return buildRuntimeArtifactFingerprint({
+    sandboxVersion: SANDBOX_VERSION,
+    opencodeVersion: OPENCODE_VERSION,
+    artifacts: [
+      { label: 'kortix-agent', path: AGENT_BIN_PATH },
+      { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
+      { label: 'kortix-agent-cli', path: AGENT_CLI_SRC_PATH },
+    ],
+  });
+}
+
+async function updateSnapshotRow(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName,
+  source: SnapshotBuildSource,
+  result: BuildOutcome,
+): Promise<void> {
+  await db
+    .update(projectRuntimeSnapshots)
+    .set({
+      status: 'ready',
+      snapshotId: result.daytonaName,
+      error: null,
+      metadata: {
+        source,
+        contentHash: result.contentHash,
+        shortHash: result.shortHash,
+        runtimeFingerprint: result.runtimeFingerprint,
+        sandboxVersion: SANDBOX_VERSION,
+      },
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(projectRuntimeSnapshots.projectId, projectId),
+        eq(projectRuntimeSnapshots.commitSha, commitSha),
+        eq(projectRuntimeSnapshots.provider, provider),
+      ),
+    );
 }
 
 
@@ -680,5 +779,11 @@ async function findSnapshotRow(
 function extractMetadataHash(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== 'object') return null;
   const value = (metadata as Record<string, unknown>).contentHash;
+  return typeof value === 'string' ? value : null;
+}
+
+function extractMetadataRuntimeFingerprint(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const value = (metadata as Record<string, unknown>).runtimeFingerprint;
   return typeof value === 'string' ? value : null;
 }

@@ -14,9 +14,9 @@
  *      Git's own content-addressed hash of every file under the context
  *      gives us perfect change detection: COPY ./scripts/setup.sh in
  *      the Dockerfile is invalidated when the file changes, for free.
- *   3. Runtime fingerprint — opaque string we control. Bumping this
- *      forces every project to rebuild (e.g. when we ship a new
- *      kortix-agent binary or pin a new opencode CLI version).
+ *   3. Runtime fingerprint — opaque string we control. The snapshot builder
+ *      normally derives this from SANDBOX_VERSION plus the runtime artifact
+ *      bytes copied into the image (kortix-agent, entrypoint, CLI files).
  *
  * The output is a hex SHA-256 (64 chars). Snapshot names take the first
  * 12 chars to stay readable while keeping collision probability
@@ -50,7 +50,8 @@ export interface SnapshotHashResult {
 
 /**
  * Default runtime fingerprint. SANDBOX_VERSION is the platform-wide
- * release marker — bumping it invalidates every project's cache.
+ * release marker. The snapshot builder overrides this with a richer
+ * artifact fingerprint; tests use this default for deterministic hashing.
  */
 export function currentRuntimeFingerprint(): string {
   return `kortix-runtime:${SANDBOX_VERSION}`;

@@ -224,6 +224,7 @@ function ActiveSessionChat({
   const runtimeReady = useSandboxConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
   );
+  const runtimeBootError = useSandboxConnectionStore((s) => s.runtimeError);
   const sessionsQuery = useOpenCodeSessions();
   const createMutation = useCreateOpenCodeSession();
   const queryClient = useQueryClient();
@@ -280,6 +281,31 @@ function ActiveSessionChat({
   }, [chatSessionId, activeTitle]);
 
   const runtimeError = sessionsQuery.error ?? createMutation.error;
+  if (!runtimeReady && runtimeBootError) {
+    return (
+      <InlineSessionError
+        title="OpenCode runtime is not ready"
+        message="The sandbox booted, but the project runtime did not become usable."
+        detail={runtimeBootError}
+        action={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => restartMutation.mutate()}
+            disabled={restartMutation.isPending}
+          >
+            {restartMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5" />
+            )}
+            Restart session
+          </Button>
+        }
+      />
+    );
+  }
+
   if (runtimeError) {
     const formatted = formatOpenCodeRuntimeError(runtimeError);
     const restartError = restartMutation.error
