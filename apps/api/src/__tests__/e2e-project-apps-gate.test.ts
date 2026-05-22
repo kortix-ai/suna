@@ -56,6 +56,8 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => {},
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],

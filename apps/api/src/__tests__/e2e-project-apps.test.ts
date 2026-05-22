@@ -7,6 +7,7 @@
  * `[[apps]]` config shape is exercised (the user explicitly asked).
  */
 import { beforeEach, describe, expect, test, mock } from 'bun:test';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -105,6 +106,10 @@ process.env.KORTIX_APPS_EXPERIMENTAL = 'true';
 
 // ─── Mock modules ───────────────────────────────────────────────────────────
 
+mockIamEngineAllowAll();
+
+mockIamMembershipSyncNoop();
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -121,6 +126,8 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => {},
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],

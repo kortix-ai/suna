@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -77,6 +78,10 @@ function sign(rawBody: string, secret: string) {
   return `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
 }
 
+mockIamEngineAllowAll();
+
+mockIamMembershipSyncNoop();
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -87,6 +92,8 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => {
     branchCreateCalls += 1;
   },

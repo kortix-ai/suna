@@ -9,6 +9,7 @@
 // memoised behind a per-request cache (see authorizer.ts). The raw lookup is
 // also fast enough to call ad-hoc: one composite SELECT.
 
+import { HTTPException } from 'hono/http-exception';
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
@@ -458,9 +459,9 @@ export async function assertAuthorized(
 ): Promise<void> {
   const result = await authorize(userId, accountId, action, target, actingTokenId);
   if (!result.allowed) {
-    const err = new Error(`forbidden: ${action} (${result.reason ?? 'denied'})`);
-    (err as Error & { status?: number }).status = 403;
-    throw err;
+    // HTTPException so Hono returns a real 403 — a plain Error falls through to
+    // the global onError and becomes a 500.
+    throw new HTTPException(403, { message: `forbidden: ${action} (${result.reason ?? 'denied'})` });
   }
 }
 

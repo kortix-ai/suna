@@ -14,7 +14,6 @@ import {
   ACCOUNT_ACTIONS,
   CHANNEL_ACTIONS,
   PROJECT_ACTIONS,
-  SANDBOX_ACTIONS,
   TRIGGER_ACTIONS,
   type ResourceType,
 } from './actions';
@@ -44,7 +43,6 @@ const SUPER_ADMINISTRATOR: SystemRoleSpec = {
   actions: [
     ...all(ACCOUNT_ACTIONS),
     ...all(PROJECT_ACTIONS),
-    ...all(SANDBOX_ACTIONS),
     ...all(TRIGGER_ACTIONS),
     ...all(CHANNEL_ACTIONS),
   ],
@@ -63,7 +61,6 @@ const ADMINISTRATOR: SystemRoleSpec = {
         a !== ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT,
     ),
     ...all(PROJECT_ACTIONS),
-    ...all(SANDBOX_ACTIONS),
     ...all(TRIGGER_ACTIONS),
     ...all(CHANNEL_ACTIONS),
   ],
@@ -83,12 +80,10 @@ const ADMINISTRATOR_READ_ONLY: SystemRoleSpec = {
     ACCOUNT_ACTIONS.POLICY_READ,
     ACCOUNT_ACTIONS.ROLE_READ,
     ACCOUNT_ACTIONS.TOKEN_READ,
-    ACCOUNT_ACTIONS.SECRET_READ,
     PROJECT_ACTIONS.PROJECT_READ,
     PROJECT_ACTIONS.PROJECT_SESSION_READ,
     PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
     PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
-    SANDBOX_ACTIONS.SANDBOX_READ,
     TRIGGER_ACTIONS.TRIGGER_READ,
     CHANNEL_ACTIONS.CHANNEL_READ,
   ],
@@ -152,9 +147,6 @@ const PROJECT_ADMIN: SystemRoleSpec = {
   resourceType: 'project',
   actions: [
     ...all(PROJECT_ACTIONS),
-    // Sandbox actions are reachable through the project's sessions, so a
-    // project admin implicitly gets full sandbox control over THIS project.
-    ...all(SANDBOX_ACTIONS),
   ],
 };
 
@@ -174,10 +166,6 @@ const PROJECT_EDITOR: SystemRoleSpec = {
     PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
     PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
     PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
-    SANDBOX_ACTIONS.SANDBOX_READ,
-    SANDBOX_ACTIONS.SANDBOX_START,
-    SANDBOX_ACTIONS.SANDBOX_STOP,
-    SANDBOX_ACTIONS.SANDBOX_EXEC,
   ],
 };
 
@@ -191,7 +179,6 @@ const PROJECT_VIEWER: SystemRoleSpec = {
     PROJECT_ACTIONS.PROJECT_SESSION_READ,
     PROJECT_ACTIONS.PROJECT_MEMBERS_READ,
     PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
-    SANDBOX_ACTIONS.SANDBOX_READ,
   ],
 };
 
@@ -208,28 +195,6 @@ const PROJECT_DEPLOYER: SystemRoleSpec = {
 };
 
 // ─── Resource-specific operator roles ──────────────────────────────────────
-
-const SANDBOX_OPERATOR: SystemRoleSpec = {
-  key: 'sandbox_operator',
-  name: 'Sandbox Operator',
-  description: 'Start, stop, exec, and snapshot a sandbox.',
-  resourceType: 'sandbox',
-  actions: [
-    SANDBOX_ACTIONS.SANDBOX_READ,
-    SANDBOX_ACTIONS.SANDBOX_START,
-    SANDBOX_ACTIONS.SANDBOX_STOP,
-    SANDBOX_ACTIONS.SANDBOX_EXEC,
-    SANDBOX_ACTIONS.SANDBOX_SNAPSHOT,
-  ],
-};
-
-const SANDBOX_VIEWER: SystemRoleSpec = {
-  key: 'sandbox_viewer',
-  name: 'Sandbox Viewer',
-  description: 'Read-only view of a sandbox.',
-  resourceType: 'sandbox',
-  actions: [SANDBOX_ACTIONS.SANDBOX_READ],
-};
 
 const TRIGGER_MANAGER: SystemRoleSpec = {
   key: 'trigger_manager',
@@ -279,8 +244,6 @@ export const SYSTEM_ROLES: readonly SystemRoleSpec[] = [
   PROJECT_EDITOR,
   PROJECT_VIEWER,
   PROJECT_DEPLOYER,
-  SANDBOX_OPERATOR,
-  SANDBOX_VIEWER,
   TRIGGER_MANAGER,
   TRIGGER_VIEWER,
   CHANNEL_ADMIN,

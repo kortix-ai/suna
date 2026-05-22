@@ -277,69 +277,6 @@ export const projectSecrets = kortixSchema.table(
   ],
 );
 
-// ─── Vault: unified, account-owned secrets / credentials / logins ───────────
-// One store for env vars, API keys, and (future) OAuth logins. Owned by an
-// account (personal OR team). Scope falls out of (project_id, owner_user_id):
-//   owner_user_id set      → PRIVATE to that member
-//   project_id set         → scoped to that project (else account-wide)
-//   no grants on a shared item → everyone in scope; ≥1 grant → that allow-list
-// Resolution at use-time is most-specific-wins (see iam/vault.ts).
-export const vaultItemKindEnum = kortixSchema.enum('vault_item_kind', [
-  'env',
-  'api_key',
-  'oauth_token',
-  'oauth_client',
-  'connection_secret',
-]);
-
-// Secrets are 100% project-scoped. Every item belongs to a project; within it
-// the visibility is set by ownerUserId + grants:
-//   ownerUserId set                 → "only me" (private to that member)
-//   ownerUserId null, no grants      → "everyone on the project"
-//   ownerUserId null, has grants     → "select members"
-// There is no account- or user-global vault. Encryption key derives from
-// project_id.
-export const vaultItems = kortixSchema.table(
-  'vault_items',
-  {
-    itemId: uuid('item_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    kind: vaultItemKindEnum('kind').default('env').notNull(),
-    name: varchar('name', { length: 128 }).notNull(),
-    valueEnc: text('value_enc').notNull(),
-    ownerUserId: uuid('owner_user_id'),
-    providerId: varchar('provider_id', { length: 64 }),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    createdBy: uuid('created_by'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_vault_items_project').on(table.projectId),
-    index('idx_vault_items_owner_user').on(table.ownerUserId),
-    // Per-scope name uniqueness via partial unique indexes (created in SQL):
-    //   unique(project_id, name)                where owner_user_id is null  (shared)
-    //   unique(project_id, owner_user_id, name) where owner_user_id is not null (private)
-  ],
-);
-
-export const vaultItemGrants = kortixSchema.table(
-  'vault_item_grants',
-  {
-    itemId: uuid('item_id')
-      .notNull()
-      .references(() => vaultItems.itemId, { onDelete: 'cascade' }),
-    userId: uuid('user_id').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.itemId, table.userId] }),
-    index('idx_vault_item_grants_user').on(table.userId),
-  ],
-);
-
 export const projectTriggers = kortixSchema.table(
   'project_triggers',
   {

@@ -18,6 +18,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -50,6 +51,18 @@ function getTestAuth() {
   return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: USER_ID };
 }
 
+mock.module('../iam/engine', () => ({
+  // Mirror the legacy role gate so denial tests still exercise authz: managers
+  // (owner/admin) pass everything; others only get reads.
+  authorize: async (_u: unknown, _a: unknown, action: string) => ({
+    allowed: accountRole === 'owner' || accountRole === 'admin' || action === 'project.read',
+  }),
+  assertAuthorized: async () => {},
+  listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
+}));
+
+mockIamMembershipSyncNoop();
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -60,6 +73,8 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
   archiveRepoSubtree: async () => undefined,
   listRepoFiles: async () => [],

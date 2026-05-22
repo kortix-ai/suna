@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectMembers, projects } from '@kortix/db';
@@ -242,6 +243,30 @@ function grantProjectRole(values: any, set?: Partial<ProjectMemberRow>) {
   return row;
 }
 
+mock.module('../iam/engine', () => {
+  // Mirror the legacy role gate against the test's mocked membership rows so
+  // viewer/non-member denial is still exercised after the IAM-engine switch.
+  const decide = (userId: string, action: string): boolean => {
+    const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
+    if (!am) return false;
+    if (am.accountRole === 'owner' || am.accountRole === 'admin') return true;
+    const pm = projectMemberRows.find((r) => r.userId === userId && r.projectId === PROJECT_ID);
+    const pr = pm?.projectRole ?? null;
+    if (action === 'project.read') return pr === 'viewer' || pr === 'editor' || pr === 'manager';
+    if (action === 'project.write') return pr === 'editor' || pr === 'manager';
+    return pr === 'manager';
+  };
+  return {
+    authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
+    assertAuthorized: async (userId: string, _a: unknown, action: string) => {
+      if (!decide(userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
+    },
+    listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
+  };
+});
+
+mockIamMembershipSyncNoop();
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -252,6 +277,8 @@ mock.module('../middleware/auth', () => ({
 }));
 
 mock.module('../projects/git', () => ({
+  grepRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
   createRemoteSessionBranch: async () => undefined,
   listRepoFiles: async (project: ProjectRow, ref: string, path?: string) => {
     listRepoFileCalls.push({ projectId: project.projectId, ref, path: path ?? null });

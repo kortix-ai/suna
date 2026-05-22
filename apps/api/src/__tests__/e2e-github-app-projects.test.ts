@@ -111,9 +111,15 @@ describe('GitHub App project repository auth', () => {
     expect(payload.iss).toBe('12345');
     expect(payload.exp - payload.iat).toBe(600);
 
-    expect(buildGitHubAppInstallUrl('account-1')).toBe(
-      'https://github.com/apps/kortix-test-app/installations/new?state=account-1',
-    );
+    // The install state is now a signed token (v1.<payload>.<sig>) carrying the
+    // account id, not a bare account id — verify structure + decoded account.
+    const installUrl = buildGitHubAppInstallUrl('account-1');
+    expect(installUrl).toBeTruthy();
+    expect(installUrl!.startsWith('https://github.com/apps/kortix-test-app/installations/new?state=')).toBe(true);
+    const state = new URL(installUrl!).searchParams.get('state')!;
+    expect(state.startsWith('v1.')).toBe(true);
+    const statePayload = JSON.parse(Buffer.from(state.split('.')[1]!, 'base64url').toString('utf8'));
+    expect(statePayload.account_id).toBe('account-1');
   });
 
   test('verifies installation metadata with the app JWT', async () => {

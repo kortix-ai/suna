@@ -477,9 +477,6 @@ ensureSchema()
       // policies so the engine needs no legacy bridges. Idempotent.
       await backfillMembershipPolicies();
       console.log('[startup] IAM membership policies backfilled');
-      // Migrate legacy project_secrets into the unified vault. Idempotent.
-      const { migrateProjectSecretsToVault } = await import('./vault');
-      await migrateProjectSecretsToVault();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (/iam_roles.*does not exist|relation .* does not exist/i.test(msg)) {
