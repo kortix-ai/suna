@@ -202,6 +202,13 @@ export async function buildSnapshotForCommit(
     }
   }
   if (existing?.status === 'building' || existing?.status === 'queued') {
+    if (!isInProgressSnapshotStale(existing)) {
+      // Another build is in flight for this exact commit. Don't race it.
+      throw new SnapshotBuildError(
+        `Snapshot build for commit ${commitSha.slice(0, 8)} is already in progress`,
+      );
+    }
+
     const recovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
     if (recovered) {
       return {
@@ -212,14 +219,7 @@ export async function buildSnapshotForCommit(
         built: false,
       };
     }
-    if (isInProgressSnapshotStale(existing)) {
-      await deleteSnapshotRow(project.projectId, commitSha, provider);
-    } else {
-      // Another build is in flight for this exact commit. Don't race it.
-      throw new SnapshotBuildError(
-        `Snapshot build for commit ${commitSha.slice(0, 8)} is already in progress`,
-      );
-    }
+    await deleteSnapshotRow(project.projectId, commitSha, provider);
   } else if (existing?.status === 'failed') {
     // Retry from scratch — failures shouldn't pin a project forever.
     await deleteSnapshotRow(project.projectId, commitSha, provider);
@@ -348,6 +348,32 @@ export async function getSnapshotForCommit(
   return row ?? null;
 }
 
+/**
+ * Return a ready, current-runtime snapshot for a concrete commit,
+ * regardless of which branch/ref originally created the row.
+ *
+ * This is the legacy snapshot-table equivalent of the runtime-artifacts
+ * spec's "find ready artifact by content hash/commit" lookup. It fixes
+ * session boot for cases where branch B points at a commit that was already
+ * built under branch A: the artifact exists, but there may be no row with
+ * branch = B.
+ */
+export async function getReadySnapshotForCommit(
+  projectId: string,
+  commitSha: string,
+  provider: SandboxProviderName = 'daytona',
+): Promise<typeof projectRuntimeSnapshots.$inferSelect | null> {
+  const row = await getSnapshotForCommit(projectId, commitSha, provider);
+  if (row?.status !== 'ready' || !row.snapshotId) return null;
+
+  const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
+  if (extractMetadataRuntimeFingerprint(row.metadata) !== runtimeFingerprint) {
+    return null;
+  }
+
+  return row;
+}
+
 function isInProgressSnapshotStale(row: typeof projectRuntimeSnapshots.$inferSelect): boolean {
   const updatedAt = row.updatedAt instanceof Date
     ? row.updatedAt.getTime()
@@ -424,13 +450,13 @@ export async function ensureBuildForLatestCommit(
     }
   }
   if (existing && existing.status !== 'ready') {
-    const recovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
-    if (recovered) return { status: 'already-ready', commitSha };
-    if (isInProgressSnapshotStale(existing)) {
-      await deleteSnapshotRow(project.projectId, commitSha, provider);
-    } else {
+    if (!isInProgressSnapshotStale(existing)) {
       return { status: 'already-building', commitSha };
     }
+
+    const recovered = await recoverInProgressSnapshotRow(project, commitSha, provider, options.source, existing);
+    if (recovered) return { status: 'already-ready', commitSha };
+    await deleteSnapshotRow(project.projectId, commitSha, provider);
   }
 
   // Detach the build — we promised the caller this is non-blocking.

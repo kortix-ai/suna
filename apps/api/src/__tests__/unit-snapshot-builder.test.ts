@@ -259,6 +259,42 @@ describe('getLatestReadySnapshot', () => {
   });
 });
 
+describe('getReadySnapshotForCommit', () => {
+  test('returns a current-runtime ready row for the commit regardless of branch', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'same-commit-other-branch',
+        commitSha: 'head-of-feature',
+        branch: 'main',
+        status: 'ready',
+        snapshotId: 'kortix-snap-1111-shared',
+        metadata: { runtimeFingerprint: 'runtime-current' },
+      }),
+    ];
+    setFilter((r) => r.projectId === PROJECT_ID && r.commitSha === 'head-of-feature' && r.provider === 'daytona');
+
+    const result = await builder.getReadySnapshotForCommit(PROJECT_ID, 'head-of-feature');
+    expect(result?.snapshotRowId).toBe('same-commit-other-branch');
+    expect(result?.snapshotId).toBe('kortix-snap-1111-shared');
+  });
+
+  test('returns null for stale-runtime ready rows', async () => {
+    rows = [
+      makeRow({
+        snapshotRowId: 'stale-commit',
+        commitSha: 'head-of-feature',
+        branch: 'main',
+        status: 'ready',
+        metadata: { runtimeFingerprint: 'runtime-old' },
+      }),
+    ];
+    setFilter((r) => r.projectId === PROJECT_ID && r.commitSha === 'head-of-feature' && r.provider === 'daytona');
+
+    const result = await builder.getReadySnapshotForCommit(PROJECT_ID, 'head-of-feature');
+    expect(result).toBeNull();
+  });
+});
+
 describe('ensureBuildForLatestCommit', () => {
   test('returns already-ready when the branch tip is already built', async () => {
     rows = [
@@ -279,7 +315,7 @@ describe('ensureBuildForLatestCommit', () => {
   });
 
   test('returns already-building when a non-failed row already exists', async () => {
-    rows = [makeRow({ commitSha: 'head-of-main', status: 'building', snapshotId: null })];
+    rows = [makeRow({ commitSha: 'head-of-main', status: 'building', snapshotId: null, updatedAt: new Date() })];
     setFilter((r) => r.commitSha === 'head-of-main' && r.status !== 'failed');
 
     const result = await builder.ensureBuildForLatestCommit(

@@ -31,6 +31,7 @@ import {
 import {
   ensureBuildForLatestCommit,
   getLatestReadySnapshot,
+  getReadySnapshotForCommit,
   getSnapshotForCommit,
 } from '../../snapshots/builder';
 import { config } from '../../config';
@@ -66,6 +67,10 @@ async function waitForLatestReadySnapshot(
   const pollMs = snapshotReadyPollMs(waitMs);
 
   for (;;) {
+    if (commitSha) {
+      const readyForCommit = await getReadySnapshotForCommit(projectId, commitSha, providerName);
+      if (readyForCommit?.snapshotId) return readyForCommit;
+    }
     const latest = await getLatestReadySnapshot(projectId, branch, providerName);
     if (latest?.snapshotId) return latest;
     if (commitSha) {
@@ -82,6 +87,12 @@ async function waitForLatestReadySnapshot(
     if (remaining <= 0) return null;
     await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, remaining)));
   }
+}
+
+function stringMetadataValue(metadata: unknown, key: string): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const value = (metadata as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : null;
 }
 
 export async function provisionSessionSandbox(opts: {
@@ -171,66 +182,54 @@ export async function provisionSessionSandbox(opts: {
     let bgExternalId: string | null = null;
     try {
       // Snapshot resolution policy:
-      //   1. Look up the latest `ready` snapshot for (project, branch,
-      //      provider). If present, boot from that. We never wait for a
-      //      build to finish.
-      //   2. Fire-and-forget: ask the builder to ensure a snapshot
-      //      exists for the *current* tip of the branch. If the tip
-      //      moved past the latest-ready commit, this kicks off a new
-      //      build in the background; the next session sees it.
-      //   3. If no `ready` snapshot exists at all (project just created,
-      //      first build hasn't finished, or every prior build failed),
-      //      fail the session with a clear message. There is NO shared
-      //      DAYTONA_SNAPSHOT fallback — every sandbox boots from its
-      //      project's own image.
+      //   1. Ask the builder for the current tip of the requested ref. If
+      //      that commit is already ready, boot it immediately. If another
+      //      ref built the same commit, this still works because we resolve
+      //      by commit/provider instead of branch/provider only.
+      //   2. If the current tip is building or was just queued, keep this
+      //      provisioning worker alive until that commit has a ready image.
+      //   3. Only use latest-ready-by-branch as a compatibility fallback
+      //      when the builder cannot return a commit SHA. We do not boot an
+      //      older branch image while a newer current-tip build is pending.
+      //
+      // There is NO shared DAYTONA_SNAPSHOT fallback — every sandbox boots
+      // from its project's own image.
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
-      let latest = await getLatestReadySnapshot(
-        opts.gitProject.projectId,
+      const build = await ensureBuildForLatestCommit(opts.gitProject, {
         branch,
-        providerName,
-      );
+        accountId,
+        provider: providerName,
+        source: 'session-start',
+      });
+      if (build.status === 'failed-to-start') {
+        throw new Error(`Project sandbox build failed to start: ${build.error ?? 'unknown error'}`);
+      }
 
-      if (latest?.snapshotId) {
-        // A usable snapshot already exists; kick the "is there a newer
-        // commit/runtime?" check in the background so this boot remains fast.
-        void ensureBuildForLatestCommit(opts.gitProject, {
-          branch,
-          accountId,
-          provider: providerName,
-          source: 'session-start',
-        }).catch((err) => {
-          console.warn(
-            `[session-sandbox] ensureBuildForLatestCommit failed for ${sandbox.sandboxId}:`,
-            err,
-          );
-        });
-      } else {
-        // No current-runtime snapshot exists. Start or join the build, then
-        // keep this provisioning worker alive until a ready snapshot appears.
-        // This avoids the bad UX where a restart fails immediately during the
-        // expected one-time image build and the user has to guess when to retry.
-        const build = await ensureBuildForLatestCommit(opts.gitProject, {
-          branch,
-          accountId,
-          provider: providerName,
-          source: 'session-start',
-        });
-        if (build.status === 'failed-to-start') {
-          throw new Error(`Project sandbox build failed to start: ${build.error ?? 'unknown error'}`);
-        }
+      let latest = build.commitSha
+        ? await getReadySnapshotForCommit(opts.gitProject.projectId, build.commitSha, providerName)
+        : null;
+
+      if (!latest?.snapshotId && build.commitSha) {
         latest = await waitForLatestReadySnapshot(
           opts.gitProject.projectId,
           branch,
           providerName,
           build.commitSha,
         );
-        if (!latest?.snapshotId) {
-          throw new Error(
-            `Project sandbox is still building. ` +
-            `This is a one-time setup that runs the first time a project is created (or after every failed build is retried). ` +
-            `Please retry in ~1 minute.`,
-          );
-        }
+      } else if (!build.commitSha) {
+        latest = await waitForLatestReadySnapshot(
+          opts.gitProject.projectId,
+          branch,
+          providerName,
+        );
+      }
+
+      if (!latest?.snapshotId) {
+        throw new Error(
+          `Project sandbox is still building. ` +
+          `This is a one-time setup that runs the first time a project is created (or after every failed build is retried). ` +
+          `Please retry in ~1 minute.`,
+        );
       }
       providerCreateInput.snapshot = latest.snapshotId;
       console.log(
@@ -281,7 +280,22 @@ export async function provisionSessionSandbox(opts: {
         baseUrl: result.baseUrl || null,
         metadata: buildSandboxInitSuccessMetadata(
           sandbox.metadata as Record<string, unknown> | null,
-          { ...result.metadata, provisioningStage: firstStage?.id, daytonaSandboxId: result.externalId },
+          {
+            ...result.metadata,
+            provisioningStage: firstStage?.id,
+            daytonaSandboxId: result.externalId,
+            runtimeArtifact: {
+              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'unknown',
+              providerArtifactRef: latest.snapshotId,
+              snapshotRowId: latest.snapshotRowId,
+              contentHash: stringMetadataValue(latest.metadata, 'contentHash'),
+              shortHash: stringMetadataValue(latest.metadata, 'shortHash'),
+              runtimeFingerprint: stringMetadataValue(latest.metadata, 'runtimeFingerprint'),
+              commitSha: latest.commitSha,
+              branch,
+              provider: providerName,
+            },
+          },
           attempts,
         ),
         config: { serviceKey: sandboxKey.secretKey },

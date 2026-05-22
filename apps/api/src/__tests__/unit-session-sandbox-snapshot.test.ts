@@ -32,6 +32,7 @@ let sandboxRow: any = null;
 let sessionStatus: { status: string; error?: string | null; metadata?: any } = { status: 'provisioning' };
 let projectSessionStatus: { status: string; error?: string | null } = { status: 'provisioning' };
 let latestReadyResult: { snapshotId: string | null; commitSha: string } | null = null;
+let readyForCommitResult: { snapshotId: string | null; commitSha: string } | null = null;
 let ensureBuildCalls: any[] = [];
 let completeBuildOnEnsure = false;
 
@@ -100,10 +101,12 @@ mock.module('../platform/providers', () => {
 
 mock.module('../snapshots/builder', () => ({
   getLatestReadySnapshot: async () => latestReadyResult,
+  getReadySnapshotForCommit: async () => readyForCommitResult,
+  getSnapshotForCommit: async () => null,
   ensureBuildForLatestCommit: async (project: any, opts: any) => {
     ensureBuildCalls.push({ projectId: project.projectId, branch: opts.branch, source: opts.source });
     if (completeBuildOnEnsure) {
-      latestReadyResult = {
+      readyForCommitResult = {
         snapshotId: 'kortix-snap-built-after-wait',
         commitSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       };
@@ -171,6 +174,7 @@ beforeEach(() => {
   sessionStatus = { status: 'provisioning' };
   projectSessionStatus = { status: 'provisioning' };
   latestReadyResult = null;
+  readyForCommitResult = null;
   ensureBuildCalls = [];
   completeBuildOnEnsure = false;
 });
@@ -189,6 +193,21 @@ describe('provisionSessionSandbox snapshot resolution', () => {
     expect(providerCreateCalls[0].snapshot).toBe('kortix-snap-aaaa-1234567890ab');
     expect(ensureBuildCalls).toHaveLength(1);
     expect(ensureBuildCalls[0].source).toBe('session-start');
+  });
+
+  test('boots from a ready commit snapshot even when the branch row is absent', async () => {
+    latestReadyResult = null;
+    readyForCommitResult = {
+      snapshotId: 'kortix-snap-feature-commit-built-on-main',
+      commitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    };
+
+    await callProvision();
+    await flush();
+
+    expect(providerCreateCalls).toHaveLength(1);
+    expect(providerCreateCalls[0].snapshot).toBe('kortix-snap-feature-commit-built-on-main');
+    expect(projectSessionStatus.status).toBe('running');
   });
 
   test('waits for a snapshot kicked by ensureBuildForLatestCommit before provider create', async () => {
