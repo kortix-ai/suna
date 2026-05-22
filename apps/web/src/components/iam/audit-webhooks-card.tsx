@@ -369,6 +369,31 @@ function CreateAuditWebhookDialog({
                 maxLength={128}
                 disabled={mutation.isPending}
               />
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    { label: 'All events', prefix: '' },
+                    { label: 'IAM only', prefix: 'iam.' },
+                    { label: 'Policies only', prefix: 'iam.policy' },
+                    { label: 'Super-admin grants', prefix: 'iam.member.super_admin' },
+                    { label: 'Approvals', prefix: 'iam.approval' },
+                  ] as const
+                ).map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setActionPrefix(preset.prefix)}
+                    className={`rounded-md border px-2 py-0.5 text-[11px] transition-colors ${
+                      actionPrefix === preset.prefix
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border/60 text-muted-foreground hover:bg-muted/40'
+                    }`}
+                    disabled={mutation.isPending}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
               <p className="text-[11px] text-muted-foreground">
                 Only deliver events whose action starts with this prefix.
                 Leave blank to deliver everything.
