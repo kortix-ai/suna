@@ -51,6 +51,43 @@ export interface ProjectSecretsResponse {
   manifest_error?: string;
 }
 
+// ── Provider OAuth ───────────────────────────────────────────────────────
+
+export interface OauthCredentialSummary {
+  provider_id: string;
+  expires_in_ms: number | null;
+  updated_at: string;
+}
+
+export interface OauthListResponse {
+  items: OauthCredentialSummary[];
+}
+
+export interface OauthFlowStartResponse {
+  flow_id: string;
+  verification_url: string;
+  user_code: string;
+  expires_at: number;
+  interval_ms: number;
+}
+
+export type OauthPollResponse =
+  | {
+      status: 'pending';
+      next_poll_ms?: number;
+    }
+  | {
+      status: 'success';
+      credential: OauthCredentialSummary;
+    }
+  | {
+      status: 'expired';
+    }
+  | {
+      status: 'failed';
+      error: string;
+    };
+
 // ── Sessions ──────────────────────────────────────────────────────────────
 
 export interface ProjectSession {

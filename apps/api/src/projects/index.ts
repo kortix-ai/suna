@@ -863,7 +863,14 @@ export async function createProjectSession(input: {
     if (capResult.error) return { error: capResult.error };
   }
 
-  const sessionId = randomUUID();
+  const requestedSessionId = normalizeString(body.session_id ?? body.sessionId);
+  if (requestedSessionId && !UUID_V4_REGEX.test(requestedSessionId)) {
+    return { error: { status: 400, body: { error: 'Invalid session id' } } };
+  }
+  const sessionId = requestedSessionId ?? randomUUID();
+  const branchAlreadyCreated =
+    body.branch_already_created === true ||
+    body.branchAlreadyCreated === true;
   const gitAuth = await resolveProjectGitAuth(project);
 
   const projectWithGitAuth = {
@@ -871,11 +878,13 @@ export async function createProjectSession(input: {
     gitAuthToken: gitAuth.auth?.token ?? null,
   };
 
-  try {
-    await createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef);
-  } catch (error) {
-    const message = (error as Error).message || 'Failed to create remote branch';
-    return { error: { status: 502, body: { error: message } } };
+  if (!branchAlreadyCreated) {
+    try {
+      await createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef);
+    } catch (error) {
+      const message = (error as Error).message || 'Failed to create remote branch';
+      return { error: { status: 502, body: { error: message } } };
+    }
   }
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);

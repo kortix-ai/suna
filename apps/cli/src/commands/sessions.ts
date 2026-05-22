@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { loadAuth } from '../api/auth.ts';
 import {
   resolveProjectContext,
@@ -6,7 +7,7 @@ import {
   takeFlagValue,
 } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
-import type { ProjectSession } from '../api/types.ts';
+import type { ProjectSession, ProjectSummary } from '../api/types.ts';
 
 const HELP = `Usage: kortix sessions <subcommand> [options]
 
@@ -115,6 +116,9 @@ async function sessionsNew(prompt: string | undefined, opts: CtxOpts): Promise<n
   const body: Record<string, unknown> = {};
   if (prompt) body.initial_prompt = prompt;
 
+  const prepared = await prepareClientCreatedBranch(ctx, body);
+  if (prepared === 'error') return 1;
+
   let created: ProjectSession;
   try {
     created = await ctx.client.post<ProjectSession>(
@@ -134,6 +138,52 @@ async function sessionsNew(prompt: string | undefined, opts: CtxOpts): Promise<n
   }
   process.stdout.write('\n');
   return 0;
+}
+
+async function prepareClientCreatedBranch(
+  ctx: { client: { get<T>(path: string): Promise<T> }; projectId: string },
+  body: Record<string, unknown>,
+): Promise<'ok' | 'error'> {
+  let project: ProjectSummary;
+  try {
+    project = await ctx.client.get<ProjectSummary>(`/projects/${ctx.projectId}`);
+  } catch {
+    // Let the create call surface the real API error.
+    return 'ok';
+  }
+
+  if (serverCanCreateBranch(project)) return 'ok';
+  if (!isInsideGitWorkTree()) return 'ok';
+
+  const origin = gitStdout(['remote', 'get-url', 'origin']);
+  if (!origin || normalizeGitUrl(origin) !== normalizeGitUrl(project.repo_url)) return 'ok';
+
+  const baseRef = currentGitBranch();
+  if (!baseRef) {
+    process.stderr.write(`${status.err('Not on a git branch; cannot create the session branch locally.')}\n`);
+    return 'error';
+  }
+
+  const sessionId = randomUUID();
+  const push = runGit([
+    'push',
+    'origin',
+    `refs/heads/${baseRef}:refs/heads/${sessionId}`,
+  ]);
+  if (!push.ok) {
+    const detail = (push.stderr || push.stdout).trim();
+    process.stderr.write(
+      `${status.err('Could not create the remote session branch with local git credentials.')}\n`,
+    );
+    if (detail) process.stderr.write(`  ${C.dim}${detail.split('\n').join('\n  ')}${C.reset}\n`);
+    process.stderr.write(`  ${C.dim}Run ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim} first, then retry.${C.reset}\n`);
+    return 'error';
+  }
+
+  body.session_id = sessionId;
+  body.branch_already_created = true;
+  body.base_ref = baseRef;
+  return 'ok';
 }
 
 async function sessionsInfo(sessionId: string | undefined, opts: CtxOpts): Promise<number> {
@@ -227,6 +277,53 @@ async function sessionsOpen(sessionId: string | undefined, opts: CtxOpts): Promi
 
 function shortId(id: string): string {
   return id.split('-')[0] ?? id;
+}
+
+function serverCanCreateBranch(project: ProjectSummary): boolean {
+  const meta = (project.metadata ?? {}) as Record<string, any>;
+  const git = meta.git as { provider?: string; auth?: { method?: string } } | undefined;
+  if (git?.provider === 'freestyle' && (git.auth?.method ?? 'managed') === 'managed') return true;
+  const github = meta.github as { auth_source?: string } | undefined;
+  return github?.auth_source === 'app_installation' || github?.auth_source === 'pat';
+}
+
+function normalizeGitUrl(url: string): string {
+  const trimmed = url.trim();
+  const ssh = trimmed.match(/^git@([^:]+):(.+)$/);
+  if (ssh) return `${ssh[1]}/${ssh[2]}`.replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase();
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'ssh:') {
+      return `${parsed.hostname}${parsed.pathname}`.replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase();
+    }
+  } catch {
+    // Local paths are valid git remotes too; compare them as normalized strings.
+  }
+  return trimmed.replace(/\/+$/, '').replace(/\.git$/i, '').toLowerCase();
+}
+
+function runGit(args: string[]): { ok: boolean; stdout: string; stderr: string; code: number | null } {
+  const result = spawnSync('git', args, { encoding: 'utf8' });
+  return {
+    ok: result.status === 0,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    code: result.status,
+  };
+}
+
+function gitStdout(args: string[]): string | null {
+  const result = runGit(args);
+  return result.ok ? result.stdout.trim() : null;
+}
+
+function isInsideGitWorkTree(): boolean {
+  return gitStdout(['rev-parse', '--is-inside-work-tree']) === 'true';
+}
+
+function currentGitBranch(): string | null {
+  const branch = gitStdout(['rev-parse', '--abbrev-ref', 'HEAD']);
+  return branch && branch !== 'HEAD' ? branch : null;
 }
 
 function statusColor(s: string): string {

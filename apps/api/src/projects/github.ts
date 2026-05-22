@@ -28,6 +28,14 @@ export interface GitHubRepo {
   description: string | null;
 }
 
+export function parseGitHubRepoUrl(repoUrl: string): { owner: string; repo: string } | null {
+  const m =
+    repoUrl.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/i) ??
+    repoUrl.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i);
+  if (!m) return null;
+  return { owner: m[1]!, repo: m[2]! };
+}
+
 export interface GitHubInstallationToken {
   token: string;
   expires_at: string;
@@ -309,6 +317,41 @@ export async function createRepo(input: CreateRepoInput): Promise<GitHubRepo> {
     method: 'POST',
     body: JSON.stringify(body),
   }, input.auth);
+}
+
+export async function getBranchCommitSha(opts: {
+  owner: string;
+  repo: string;
+  branch: string;
+  auth?: Pick<GitHubAuthContext, 'token'>;
+}): Promise<string> {
+  const ref = encodeURIComponent(`heads/${opts.branch}`);
+  const body = await ghFetch<{ object?: { sha?: string; type?: string } }>(
+    `/repos/${opts.owner}/${opts.repo}/git/ref/${ref}`,
+    undefined,
+    opts.auth,
+  );
+  const sha = body.object?.sha;
+  if (!sha || !/^[0-9a-f]{40}$/i.test(sha)) {
+    throw new Error(`GitHub branch ${opts.branch} did not resolve to a commit SHA`);
+  }
+  return sha;
+}
+
+export async function createBranchRef(opts: {
+  owner: string;
+  repo: string;
+  branch: string;
+  sha: string;
+  auth?: Pick<GitHubAuthContext, 'token'>;
+}): Promise<void> {
+  await ghFetch(`/repos/${opts.owner}/${opts.repo}/git/refs`, {
+    method: 'POST',
+    body: JSON.stringify({
+      ref: `refs/heads/${opts.branch}`,
+      sha: opts.sha,
+    }),
+  }, opts.auth);
 }
 
 /**

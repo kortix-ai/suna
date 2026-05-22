@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectMembers, projectSecrets, projectSessions, projects } from '@kortix/db';
@@ -13,6 +13,7 @@ let sandboxProvisionCalls = 0;
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
+let secretValues: Map<string, string>;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -60,6 +61,7 @@ function resetState() {
     updatedAt: new Date('2026-01-01T00:00:00Z'),
   };
   secretRows = [];
+  secretValues = new Map();
 }
 
 mock.module('../middleware/auth', () => ({
@@ -77,6 +79,8 @@ mock.module('../projects/git', () => ({
   archiveRepoSubtree: async () => undefined,
   deleteRemoteSessionBranch: async () => undefined,
   listRepoFiles: async () => [],
+  searchRepoFileNames: async () => [],
+  grepRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
   invalidateProjectMirror: () => {},
@@ -137,6 +141,105 @@ mock.module('../platform/services/session-sandbox', () => ({
 
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
+}));
+
+mock.module('../vault', () => ({
+  upsertProjectItem: async (input: {
+    projectId: string;
+    name: string;
+    value: string;
+    kind?: string;
+    ownerUserId?: string | null;
+    createdBy: string;
+  }) => {
+    const existingIndex = secretRows.findIndex((row) =>
+      row.projectId === input.projectId &&
+      row.name === input.name &&
+      (row as any).ownerUserId === (input.ownerUserId ?? null),
+    );
+    const now = new Date('2026-01-02T00:00:00Z');
+    const row = {
+      secretId: existingIndex >= 0
+        ? secretRows[existingIndex]!.secretId
+        : `00000000-0000-4000-a000-${String(401 + secretRows.length).padStart(12, '0')}`,
+      projectId: input.projectId,
+      name: input.name,
+      valueEnc: `enc:${Buffer.from(input.value).toString('base64url')}`,
+      createdBy: input.createdBy,
+      createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+      updatedAt: now,
+      ownerUserId: input.ownerUserId ?? null,
+    } as typeof projectSecrets.$inferSelect & { ownerUserId: string | null };
+    if (existingIndex >= 0) secretRows[existingIndex] = row;
+    else secretRows.push(row);
+    secretValues.set(row.secretId, input.value);
+    return {
+      itemId: row.secretId,
+      projectId: row.projectId,
+      kind: input.kind ?? 'env',
+      name: row.name,
+      ownerUserId: row.ownerUserId,
+      providerId: null,
+      createdBy: row.createdBy,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  },
+  listProjectItems: async (projectId: string) =>
+    secretRows
+      .filter((row) => row.projectId === projectId)
+      .map((row: any) => ({
+        itemId: row.secretId,
+        projectId: row.projectId,
+        kind: 'env',
+        name: row.name,
+        ownerUserId: row.ownerUserId ?? null,
+        providerId: null,
+        createdBy: row.createdBy,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        grantUserIds: [],
+      })),
+  deleteProjectItemByScope: async (projectId: string, name: string, ownerUserId: string | null) => {
+    const removed = secretRows.filter((row: any) =>
+      row.projectId === projectId &&
+      row.name === name &&
+      (row.ownerUserId ?? null) === ownerUserId,
+    );
+    for (const row of removed) secretValues.delete(row.secretId);
+    secretRows = secretRows.filter((row: any) =>
+      row.projectId !== projectId ||
+      row.name !== name ||
+      (row.ownerUserId ?? null) !== ownerUserId,
+    );
+  },
+  setItemGrants: async () => {},
+  visibilityOf: (item: { ownerUserId: string | null }, grantCount: number) =>
+    item.ownerUserId ? 'private' : grantCount > 0 ? 'select' : 'everyone',
+  resolveVaultForActor: async ({ projectId }: { projectId: string }) =>
+    Object.fromEntries(
+      secretRows
+        .filter((row) => row.projectId === projectId)
+        .map((row) => [row.name, secretValues.get(row.secretId) ?? '']),
+    ),
+  resolveProjectGlobalSecret: async (projectId: string, name: string) => {
+    const row = secretRows.find((item) => item.projectId === projectId && item.name === name);
+    return row ? secretValues.get(row.secretId) ?? null : null;
+  },
+}));
+
+mock.module('../iam/engine', () => ({
+  authorize: async () => ({ allowed: true }),
+  assertAuthorized: async () => {},
+  listAccessibleResources: async () => ({ mode: 'all', ids: [] }),
+}));
+
+mock.module('../iam/membership-sync', () => ({
+  syncMemberAccountPolicy: async () => {},
+  removeMemberPolicies: async () => {},
+  removeProjectPoliciesForMember: async () => {},
+  syncProjectMemberPolicy: async () => {},
+  removeProjectMemberPolicy: async () => {},
 }));
 
 // Pin the concurrent-session cap to 1 regardless of env mode so this test
@@ -273,6 +376,10 @@ function createApp() {
 }
 
 describe('project session API contract', () => {
+  afterAll(() => {
+    mock.restore();
+  });
+
   beforeEach(() => resetState());
 
   test('builds the session LLM router URL from common API URL shapes', () => {
@@ -523,6 +630,29 @@ describe('project session API contract', () => {
     expect(body.status).toBe('provisioning');
     expect(body.name).toBe('Contract session');
     expect(branchCreateCalls).toBe(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+  });
+
+  test('accepts a client-created session branch without recreating it server-side', async () => {
+    const app = createApp();
+    const clientSessionId = '11111111-1111-4111-a111-111111111111';
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: clientSessionId,
+        branch_already_created: true,
+        base_ref: 'main',
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.session_id).toBe(clientSessionId);
+    expect(body.branch_name).toBe(clientSessionId);
+    expect(branchCreateCalls).toBe(0);
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sandboxProvisionCalls).toBe(1);
