@@ -50,6 +50,7 @@ describe('policyMatchesTarget', () => {
   const allow = (rest: { scopeType: ResourceType; scopeId: string | null }) => ({
     ...rest,
     effect: 'allow' as const,
+    conditions: {},
   });
 
   test('account-Everything policy matches every target', () => {
@@ -83,7 +84,12 @@ describe('policyMatchesTarget', () => {
   });
 
   test('matcher ignores effect — that is the caller’s concern', () => {
-    const denyPolicy = { scopeType: 'project' as const, scopeId: 'p1', effect: 'deny' as const };
+    const denyPolicy = {
+      scopeType: 'project' as const,
+      scopeId: 'p1',
+      effect: 'deny' as const,
+      conditions: {},
+    };
     expect(policyMatchesTarget(denyPolicy, 'project', { type: 'project', id: 'p1' })).toBe(true);
   });
 });

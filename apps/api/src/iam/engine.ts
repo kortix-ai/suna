@@ -21,6 +21,7 @@ import {
   projectMembers,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { ipMatchesAny, parseCidr } from '../shared/cidr';
 import { ACCOUNT_ACTIONS, resourceTypeForAction, type ResourceType } from './actions';
 import { SYSTEM_ROLE_KEY } from './system-roles';
 
@@ -58,7 +59,35 @@ type LoadedPolicy = {
   scopeType: ResourceType;
   scopeId: string | null;
   effect: 'allow' | 'deny';
+  conditions: PolicyConditions;
 };
+
+/**
+ * Optional checks evaluated after scope+role match. The engine treats an
+ * empty object as "no conditions, always passes". Multiple conditions
+ * compose with AND semantics — every configured check must pass.
+ */
+export interface PolicyConditions {
+  /** Request IP must fall in one of these CIDRs (IPv4 or IPv6). Empty
+   *  array = no restriction; condition isn't considered "configured". */
+  ip_cidrs?: string[];
+  /** Session must be at AAL2 (MFA step-up). Tracks Supabase's
+   *  Authenticator Assurance Level. */
+  require_mfa?: boolean;
+}
+
+/**
+ * Per-request context surfaced from middleware: caller IP, MFA AAL,
+ * acting token. Optional everywhere — when a policy has no conditions
+ * the engine never reads these fields, so existing call sites that
+ * pre-date conditions keep working unchanged.
+ */
+export interface RequestContext {
+  /** Caller's source IP, taken from x-forwarded-for or x-real-ip. */
+  ip?: string;
+  /** JWT's aal claim — 'aal1' = password-only, 'aal2' = MFA-verified. */
+  mfaAal?: string;
+}
 
 type ResolvedActor = {
   isSuperAdmin: boolean;
@@ -70,6 +99,63 @@ type ResolvedActor = {
 };
 
 const SYSTEM_ROLE_PERMISSION_CACHE = new Map<string, Set<string>>();
+
+/**
+ * Decide whether a policy's conditions allow it to apply in this request
+ * context. Returns true when:
+ *   - the policy has no conditions configured, OR
+ *   - every configured condition passes.
+ *
+ * Treats unknown keys as no-ops so adding a new condition type in a future
+ * release can't accidentally tighten an old policy. Treats malformed
+ * values defensively: an invalid CIDR list is treated as "no IP matches",
+ * which means the policy refuses to apply rather than silently allowing
+ * everyone — fail-closed for the security-critical path.
+ */
+export function checkConditions(
+  conditions: PolicyConditions | null | undefined,
+  ctx: RequestContext,
+): boolean {
+  if (!conditions) return true;
+  if (typeof conditions !== 'object') return true;
+
+  if (conditions.require_mfa === true) {
+    // Only count aal2 (Supabase's MFA-verified marker). aal1 = password
+    // alone is not enough; missing aal claim is also a no-go.
+    if (ctx.mfaAal !== 'aal2') return false;
+  }
+
+  const cidrs = conditions.ip_cidrs;
+  if (Array.isArray(cidrs) && cidrs.length > 0) {
+    if (!ctx.ip) return false; // no caller IP → can't satisfy the gate
+    const parsed = parseCidrList(cidrs);
+    if (parsed.length === 0) return false; // every entry was malformed
+    if (!ipMatchesAny(ctx.ip, parsed)) return false;
+  }
+
+  return true;
+}
+
+// Small LRU-ish cache for parsed CIDR lists. Policies tend to repeat the
+// same allowlist, and parseCidr does a lot of string work. Bounded so a
+// pathological loader can't grow it unbounded.
+const CIDR_PARSE_CACHE = new Map<string, ReturnType<typeof parseCidr>[]>();
+const CIDR_PARSE_CACHE_MAX = 256;
+
+function parseCidrList(list: readonly string[]): NonNullable<ReturnType<typeof parseCidr>>[] {
+  const key = list.join('|');
+  const cached = CIDR_PARSE_CACHE.get(key);
+  if (cached) {
+    return cached.filter((c): c is NonNullable<typeof c> => c !== null);
+  }
+  const parsed = list.map((c) => parseCidr(c));
+  if (CIDR_PARSE_CACHE.size >= CIDR_PARSE_CACHE_MAX) {
+    const firstKey = CIDR_PARSE_CACHE.keys().next().value;
+    if (firstKey !== undefined) CIDR_PARSE_CACHE.delete(firstKey);
+  }
+  CIDR_PARSE_CACHE.set(key, parsed);
+  return parsed.filter((c): c is NonNullable<typeof c> => c !== null);
+}
 
 /**
  * Look up the action-set of a system role by key, memoised.
@@ -171,6 +257,7 @@ async function loadGrantingPolicies(
       scopeType: iamPolicies.scopeType,
       scopeId: iamPolicies.scopeId,
       effect: iamPolicies.effect,
+      conditions: iamPolicies.conditions,
     })
     .from(iamPolicies)
     .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
@@ -197,6 +284,7 @@ async function loadGrantingPolicies(
     scopeType: r.scopeType as ResourceType,
     scopeId: r.scopeId,
     effect: r.effect as 'allow' | 'deny',
+    conditions: (r.conditions ?? {}) as PolicyConditions,
   }));
 }
 
@@ -294,6 +382,7 @@ async function loadTokenPolicies(
       scopeType: iamPolicies.scopeType,
       scopeId: iamPolicies.scopeId,
       effect: iamPolicies.effect,
+      conditions: iamPolicies.conditions,
     })
     .from(iamPolicies)
     .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
@@ -319,6 +408,7 @@ async function loadTokenPolicies(
     scopeType: r.scopeType as ResourceType,
     scopeId: r.scopeId,
     effect: r.effect as 'allow' | 'deny',
+    conditions: (r.conditions ?? {}) as PolicyConditions,
   }));
 }
 
@@ -353,6 +443,7 @@ export async function authorize(
   action: string,
   target?: AuthorizeTarget,
   actingTokenId?: string,
+  requestCtx: RequestContext = {},
 ): Promise<AuthorizeResult> {
   const requiredScopeType = resourceTypeForAction(action);
   const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
@@ -372,6 +463,9 @@ export async function authorize(
     let matchedAllow = false;
     for (const p of tokenPolicies) {
       if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+      // Conditions filter applies before deny precedence — a deny whose
+      // conditions don't match this request is simply not applicable.
+      if (!checkConditions(p.conditions, requestCtx)) continue;
       if (p.effect === 'deny') {
         return { allowed: false, reason: 'token_explicit_deny' };
       }
@@ -410,6 +504,10 @@ export async function authorize(
   let matchedAllow = false;
   for (const p of policies) {
     if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+    // Conditions filter — a policy whose conditions don't match this
+    // request (wrong IP, missing MFA) is simply not applicable. A deny
+    // gated by conditions is silent until the gate fires.
+    if (!checkConditions(p.conditions, requestCtx)) continue;
     if (p.effect === 'deny') {
       // Explicit deny is final. Short-circuit immediately so a single deny
       // overrides any number of allows on the same action+scope.
@@ -471,8 +569,9 @@ export async function assertAuthorized(
   action: string,
   target?: AuthorizeTarget,
   actingTokenId?: string,
+  requestCtx?: RequestContext,
 ): Promise<void> {
-  const result = await authorize(userId, accountId, action, target, actingTokenId);
+  const result = await authorize(userId, accountId, action, target, actingTokenId, requestCtx);
   if (!result.allowed) {
     const err = new Error(`forbidden: ${action} (${result.reason ?? 'denied'})`);
     (err as Error & { status?: number }).status = 403;
@@ -505,6 +604,7 @@ export async function listAccessibleResources(
   action: string,
   resourceType: ResourceType,
   actingTokenId?: string,
+  requestCtx: RequestContext = {},
 ): Promise<AccessibleResources> {
   // Token-as-principal short-circuit. When a PAT with narrowing policies
   // makes a list request, only its own policies decide what's visible —
@@ -517,6 +617,7 @@ export async function listAccessibleResources(
     const allowedIds = new Set<string>();
     const deniedIds = new Set<string>();
     for (const r of rows) {
+      if (!checkConditions(r.conditions, requestCtx)) continue;
       const matchesEverything =
         r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
       if (r.effect === 'deny') {
@@ -570,6 +671,7 @@ export async function listAccessibleResources(
       scopeType: iamPolicies.scopeType,
       scopeId: iamPolicies.scopeId,
       effect: iamPolicies.effect,
+      conditions: iamPolicies.conditions,
     })
     .from(iamPolicies)
     .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
@@ -594,6 +696,7 @@ export async function listAccessibleResources(
   const deniedIds = new Set<string>();
 
   for (const r of rows) {
+    if (!checkConditions((r.conditions ?? {}) as PolicyConditions, requestCtx)) continue;
     const matchesEverything =
       r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
     if (r.effect === 'deny') {

@@ -23,7 +23,9 @@ import {
   authorize,
   resourceTypeForAction,
   type ResourceType,
+  type PolicyConditions,
 } from '../iam';
+import { assertValidCidr } from '../shared/cidr';
 import {
   addGroupMembers,
   countPoliciesUsingRole,
@@ -93,7 +95,62 @@ function snapshotPolicy(p: IamPolicy) {
     scope_id: p.scopeId,
     role_id: p.roleId,
     effect: p.effect,
+    conditions: p.conditions,
   };
+}
+
+/**
+ * Validate & normalise the optional `conditions` field from a request body.
+ * Returns the cleaned object (possibly empty) on success; returns an error
+ * string the route should bounce back to the client on failure.
+ *
+ * Strict rules:
+ *   - Top-level value must be an object (or absent → {}).
+ *   - `ip_cidrs` must be string[]; every entry must parse as IP or CIDR.
+ *   - `require_mfa` must be boolean.
+ *   - Unknown keys are silently dropped (forward-compat with v2 fields).
+ */
+function parseConditions(raw: unknown): { ok: true; value: PolicyConditions } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: {} };
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, error: 'conditions must be an object' };
+  }
+  const obj = raw as Record<string, unknown>;
+  const out: PolicyConditions = {};
+
+  if ('ip_cidrs' in obj) {
+    const raw = obj.ip_cidrs;
+    if (!Array.isArray(raw)) {
+      return { ok: false, error: 'conditions.ip_cidrs must be an array of strings' };
+    }
+    const cleaned: string[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'string') {
+        return { ok: false, error: 'conditions.ip_cidrs entries must be strings' };
+      }
+      const trimmed = entry.trim();
+      if (!trimmed) continue; // skip blanks the UI may submit
+      try {
+        cleaned.push(assertValidCidr(trimmed));
+      } catch {
+        return { ok: false, error: `conditions.ip_cidrs: invalid IP or CIDR '${entry}'` };
+      }
+    }
+    if (cleaned.length > 100) {
+      return { ok: false, error: 'conditions.ip_cidrs: maximum 100 entries' };
+    }
+    if (cleaned.length > 0) out.ip_cidrs = cleaned;
+  }
+
+  if ('require_mfa' in obj) {
+    const raw = obj.require_mfa;
+    if (typeof raw !== 'boolean') {
+      return { ok: false, error: 'conditions.require_mfa must be a boolean' };
+    }
+    if (raw) out.require_mfa = true; // omit when false to keep object compact
+  }
+
+  return { ok: true, value: out };
 }
 
 /**
@@ -416,6 +473,7 @@ iamRouter.get('/:accountId/iam/policies', async (c) => {
       scope_id: p.scopeId,
       role_id: p.roleId,
       effect: p.effect,
+      conditions: p.conditions,
       created_by: p.createdBy,
       created_at: p.createdAt.toISOString(),
     })),
@@ -459,6 +517,10 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
   }
   const effect = effectRaw as 'allow' | 'deny';
 
+  const conditionsResult = parseConditions(body.conditions);
+  if (!conditionsResult.ok) return c.json({ error: conditionsResult.error }, 400);
+  const conditions = conditionsResult.value;
+
   // Role must exist and be available to this account (system or own).
   const role = await getRoleById(accountId, roleId);
   if (!role) return c.json({ error: 'unknown role' }, 404);
@@ -496,6 +558,7 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
     scopeId,
     roleId,
     effect,
+    conditions,
     createdBy: userId,
   });
 
@@ -516,6 +579,7 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
       scope_id: policy.scopeId,
       role_id: policy.roleId,
       effect: policy.effect,
+      conditions: policy.conditions,
       created_at: policy.createdAt.toISOString(),
     },
     201,
@@ -556,6 +620,13 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
   }
   const effect = effectRaw as 'allow' | 'deny';
 
+  // Conditions on PATCH: missing key → leave existing untouched; explicit
+  // {} → clears any prior conditions. parseConditions handles the parse.
+  const conditionsProvided = body.conditions !== undefined;
+  const conditionsResult = parseConditions(body.conditions);
+  if (!conditionsResult.ok) return c.json({ error: conditionsResult.error }, 400);
+  const conditions = conditionsResult.value;
+
   const role = await getRoleById(accountId, roleId);
   if (!role) return c.json({ error: 'unknown role' }, 404);
   if (role.resourceType !== scopeType && role.resourceType !== 'account') {
@@ -577,6 +648,7 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
       scopeId,
       roleId,
       effect,
+      ...(conditionsProvided ? { conditions } : {}),
     });
     if (!updated) return c.json({ error: 'policy not found' }, 404);
 
@@ -597,6 +669,7 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
       scope_id: updated.scopeId,
       role_id: updated.roleId,
       effect: updated.effect,
+      conditions: updated.conditions,
       created_at: updated.createdAt.toISOString(),
     });
   } catch (err: unknown) {

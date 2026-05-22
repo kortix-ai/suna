@@ -13,6 +13,7 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import type { ResourceType } from '../iam/actions';
+import type { PolicyConditions } from '../iam/engine';
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -431,6 +432,9 @@ export type IamPolicy = {
   scopeId: string | null;
   roleId: string;
   effect: 'allow' | 'deny';
+  /** Optional gating conditions evaluated at request time. Empty object
+   *  means "always applies". See PolicyConditions for shape. */
+  conditions: PolicyConditions;
   createdBy: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -475,6 +479,7 @@ export async function listPolicies(
     principalType: r.principalType as IamPolicy['principalType'],
     scopeType: r.scopeType as ResourceType,
     effect: r.effect as IamPolicy['effect'],
+    conditions: (r.conditions ?? {}) as PolicyConditions,
   }));
 }
 
@@ -497,6 +502,7 @@ export async function getPolicyById(
     principalType: row.principalType as IamPolicy['principalType'],
     scopeType: row.scopeType as ResourceType,
     effect: row.effect as IamPolicy['effect'],
+    conditions: (row.conditions ?? {}) as PolicyConditions,
   };
 }
 
@@ -508,6 +514,8 @@ export async function createPolicy(args: {
   scopeId: string | null;
   roleId: string;
   effect?: 'allow' | 'deny';
+  /** Optional gating conditions. Omit / empty object = always applies. */
+  conditions?: PolicyConditions;
   createdBy: string;
 }): Promise<IamPolicy> {
   // The DB CHECK constraint already enforces that scope_type='account' has
@@ -515,6 +523,7 @@ export async function createPolicy(args: {
   // bad combo.
   const normalisedScopeId = args.scopeType === 'account' ? null : args.scopeId;
   const effect = args.effect ?? 'allow';
+  const conditions = args.conditions ?? {};
 
   const [row] = await db
     .insert(iamPolicies)
@@ -526,6 +535,7 @@ export async function createPolicy(args: {
       scopeId: normalisedScopeId,
       roleId: args.roleId,
       effect,
+      conditions: conditions as Record<string, unknown>,
       createdBy: args.createdBy,
     })
     .onConflictDoNothing()
@@ -559,6 +569,7 @@ export async function createPolicy(args: {
       principalType: existing.principalType as IamPolicy['principalType'],
       scopeType: existing.scopeType as ResourceType,
       effect: existing.effect as IamPolicy['effect'],
+      conditions: (existing.conditions ?? {}) as PolicyConditions,
     };
   }
 
@@ -567,6 +578,7 @@ export async function createPolicy(args: {
     principalType: row.principalType as IamPolicy['principalType'],
     scopeType: row.scopeType as ResourceType,
     effect: row.effect as IamPolicy['effect'],
+    conditions: (row.conditions ?? {}) as PolicyConditions,
   };
 }
 
@@ -595,19 +607,25 @@ export async function updatePolicy(
     scopeId: string | null;
     roleId: string;
     effect: 'allow' | 'deny';
+    /** When set, replaces the whole conditions object (no partial merge).
+     *  Omit to leave existing conditions untouched. */
+    conditions?: PolicyConditions;
   },
 ): Promise<IamPolicy | null> {
   const normalisedScopeId = patch.scopeType === 'account' ? null : patch.scopeId;
 
+  const updates: Record<string, unknown> = {
+    scopeType: patch.scopeType,
+    scopeId: normalisedScopeId,
+    roleId: patch.roleId,
+    effect: patch.effect,
+    updatedAt: new Date(),
+  };
+  if (patch.conditions !== undefined) updates.conditions = patch.conditions;
+
   const [row] = await db
     .update(iamPolicies)
-    .set({
-      scopeType: patch.scopeType,
-      scopeId: normalisedScopeId,
-      roleId: patch.roleId,
-      effect: patch.effect,
-      updatedAt: new Date(),
-    })
+    .set(updates)
     .where(and(eq(iamPolicies.accountId, accountId), eq(iamPolicies.policyId, policyId)))
     .returning();
 
@@ -617,5 +635,6 @@ export async function updatePolicy(
     principalType: row.principalType as IamPolicy['principalType'],
     scopeType: row.scopeType as ResourceType,
     effect: row.effect as IamPolicy['effect'],
+    conditions: (row.conditions ?? {}) as PolicyConditions,
   };
 }

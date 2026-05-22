@@ -2,11 +2,14 @@ export {
   authorize,
   assertAuthorized,
   listAccessibleResources,
+  checkConditions,
   type AccessibleResources,
   type AuthorizeTarget,
   type AuthorizeResult,
+  type PolicyConditions,
+  type RequestContext,
 } from './engine';
-export { authorizeCached } from './cache';
+export { authorizeCached, deriveRequestContext } from './cache';
 export { requirePermission } from './middleware';
 export {
   ACCOUNT_ACTIONS,

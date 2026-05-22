@@ -124,6 +124,10 @@ export async function supabaseAuth(c: Context, next: Next) {
     c.set('userId', local.userId);
     c.set('userEmail', local.email);
     c.set('authType', 'supabase');
+    // Authenticator Assurance Level — 'aal1' = password-only,
+    // 'aal2' = MFA-verified. Surfaced for IAM policy conditions that
+    // require MFA on sensitive actions.
+    if (local.payload.aal) c.set('mfaAal', local.payload.aal);
     setSentryUser({ id: local.userId, email: local.email });
     setContextField('userId', local.userId);
     setContextField('userEmail', local.email);

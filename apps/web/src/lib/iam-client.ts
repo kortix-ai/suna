@@ -44,6 +44,21 @@ export interface IamRole {
 
 export type PolicyEffect = 'allow' | 'deny';
 
+/**
+ * Optional gating conditions on a policy. The engine evaluates these at
+ * request time — a policy whose conditions don't pass is silent (acts as
+ * if it didn't exist). Keys compose with AND.
+ *
+ *   ip_cidrs:    request IP must fall in one of these CIDRs / bare IPs.
+ *   require_mfa: session must be MFA-verified (Supabase aal2).
+ *
+ * Empty object means "no conditions" (always applies).
+ */
+export interface PolicyConditions {
+  ip_cidrs?: string[];
+  require_mfa?: boolean;
+}
+
 export interface IamPolicy {
   policy_id: string;
   principal_type: PrincipalType;
@@ -52,6 +67,7 @@ export interface IamPolicy {
   scope_id: string | null;
   role_id: string;
   effect: PolicyEffect;
+  conditions: PolicyConditions;
   created_by: string | null;
   created_at: string;
 }
@@ -188,6 +204,8 @@ export async function createPolicy(
     scopeId?: string | null;
     roleId: string;
     effect?: PolicyEffect;
+    /** Optional gating conditions. Omit for an unconditional policy. */
+    conditions?: PolicyConditions;
   },
 ) {
   return unwrap(
@@ -205,6 +223,8 @@ export async function updatePolicy(
     scopeId?: string | null;
     roleId: string;
     effect: PolicyEffect;
+    /** Omit to leave existing conditions untouched. Pass `{}` to clear. */
+    conditions?: PolicyConditions;
   },
 ) {
   return unwrap(

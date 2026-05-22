@@ -1826,6 +1826,13 @@ export const iamPolicies = kortixSchema.table(
     // 'allow' grants the role's actions; 'deny' subtracts them and wins over
     // any allow on the same action+scope. Engine handles precedence.
     effect: iamPolicyEffectEnum('effect').default('allow').notNull(),
+    // Optional extra checks applied AFTER scope+role match. If any condition
+    // fails, the policy doesn't apply. Supported keys (v1):
+    //   ip_cidrs:  string[]  — request IP must fall in one of these CIDRs
+    //   require_mfa: boolean — JWT must be at AAL2 (MFA-verified session)
+    // Unrecognised keys are ignored so old engines tolerate forward-rolled
+    // policies. Empty object {} = unconditional (the default).
+    conditions: jsonb('conditions').default({}).$type<Record<string, unknown>>(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

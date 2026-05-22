@@ -7,7 +7,19 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Loader2, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  KeyRound,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  ShieldCheck,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +57,7 @@ import {
   type AccountGroup,
   type IamPolicy,
   type IamRole,
+  type PolicyConditions,
   type PolicyEffect,
   type PrincipalType,
   type ResourceType,
@@ -228,6 +241,7 @@ export function PoliciesTable({
                       ? projectsById.get(p.scope_id)?.name ?? p.scope_id
                       : p.scope_id;
               const isDeny = p.effect === 'deny';
+              const conditionBadges = summariseConditions(p.conditions);
               return (
                 <tr key={p.policy_id} className="hover:bg-muted/20">
                   <td className="px-6 py-3">
@@ -243,9 +257,23 @@ export function PoliciesTable({
                   <td className="px-3 py-3 text-muted-foreground">{appliesTo}</td>
                   <td className="px-3 py-3">
                     {role ? (
-                      <Badge variant="outline" size="sm">
-                        {role.name}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant="outline" size="sm">
+                          {role.name}
+                        </Badge>
+                        {conditionBadges.map((c) => (
+                          <Badge
+                            key={c}
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            title="Applies only when this condition is met"
+                          >
+                            <ShieldCheck className="h-3 w-3" />
+                            {c}
+                          </Badge>
+                        ))}
+                      </div>
                     ) : (
                       <span className="text-xs text-muted-foreground">unknown role</span>
                     )}
@@ -329,6 +357,47 @@ export function PoliciesTable({
   );
 }
 
+// Compact "what's gating this policy?" badges for the row. Returns empty
+// when the policy has no conditions configured.
+function summariseConditions(conditions: PolicyConditions | undefined): string[] {
+  if (!conditions) return [];
+  const out: string[] = [];
+  if (Array.isArray(conditions.ip_cidrs) && conditions.ip_cidrs.length > 0) {
+    out.push(
+      conditions.ip_cidrs.length === 1
+        ? 'IP allowlist'
+        : `IP allowlist (${conditions.ip_cidrs.length})`,
+    );
+  }
+  if (conditions.require_mfa) out.push('MFA required');
+  return out;
+}
+
+/**
+ * Pure check — does this look like a parseable IP or CIDR? Mirrors the
+ * server's assertValidCidr without pulling in the IPv6 logic; the server
+ * has the final say on persistence.
+ */
+function isPlausibleCidr(s: string): boolean {
+  const trimmed = s.trim();
+  if (!trimmed) return false;
+  // Quick IPv4 check ("a.b.c.d" or "a.b.c.d/n")
+  const v4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(trimmed);
+  if (v4) {
+    const [ip, prefix] = trimmed.split('/');
+    const parts = ip.split('.').map((n) => parseInt(n, 10));
+    if (parts.some((p) => p < 0 || p > 255)) return false;
+    if (prefix !== undefined) {
+      const p = parseInt(prefix, 10);
+      if (p < 0 || p > 32) return false;
+    }
+    return true;
+  }
+  // Loose IPv6 check — any colon-bearing string with the right charset
+  // and an optional /0..128. The server rejects malformed forms.
+  return /^[0-9a-fA-F:]+(\/\d{1,3})?$/.test(trimmed) && trimmed.includes(':');
+}
+
 // ─── Create policy dialog ──────────────────────────────────────────────────
 
 interface CreatePolicyDialogProps {
@@ -372,6 +441,15 @@ function CreatePolicyDialog({
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
   const [roleSearch, setRoleSearch] = useState('');
 
+  // ─── Conditions sub-form (collapsed by default) ────────────────────
+  // Hidden behind a disclosure because the common policy has no
+  // conditions. The dialog stays simple unless the admin opts in.
+  const [conditionsOpen, setConditionsOpen] = useState(false);
+  const [requireMfa, setRequireMfa] = useState(false);
+  const [ipCidrs, setIpCidrs] = useState<string[]>([]);
+  const [cidrDraft, setCidrDraft] = useState('');
+  const [cidrError, setCidrError] = useState<string | null>(null);
+
   // Hydrate from the policy being edited whenever the dialog opens in edit
   // mode. Clearing happens via reset() on close.
   useEffect(() => {
@@ -381,6 +459,16 @@ function CreatePolicyDialog({
       setScopeId(editing.scope_id ?? '');
       setSelectedRoleIds(new Set([editing.role_id]));
       setRoleSearch('');
+      const cond = editing.conditions ?? {};
+      const cidrs = Array.isArray(cond.ip_cidrs) ? cond.ip_cidrs : [];
+      const mfa = cond.require_mfa === true;
+      setRequireMfa(mfa);
+      setIpCidrs(cidrs);
+      setCidrDraft('');
+      setCidrError(null);
+      // Auto-expand if there's anything to show — admins shouldn't have
+      // to hunt for conditions they already configured.
+      setConditionsOpen(cidrs.length > 0 || mfa);
     }
   }, [open, editing]);
 
@@ -414,6 +502,41 @@ function CreatePolicyDialog({
     setScopeId('');
     setSelectedRoleIds(new Set());
     setRoleSearch('');
+    setConditionsOpen(false);
+    setRequireMfa(false);
+    setIpCidrs([]);
+    setCidrDraft('');
+    setCidrError(null);
+  }
+
+  /** Build the wire conditions object from the dialog state. Returns
+   *  undefined when nothing is configured so the client doesn't send a
+   *  spurious empty object on every save. */
+  function buildConditions(): PolicyConditions | undefined {
+    const out: PolicyConditions = {};
+    if (ipCidrs.length > 0) out.ip_cidrs = ipCidrs;
+    if (requireMfa) out.require_mfa = true;
+    if (!out.ip_cidrs && !out.require_mfa) return undefined;
+    return out;
+  }
+
+  function addCidr(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setCidrError(null);
+      return;
+    }
+    if (!isPlausibleCidr(trimmed)) {
+      setCidrError(`'${trimmed}' is not a valid IP or CIDR`);
+      return;
+    }
+    if (ipCidrs.includes(trimmed)) {
+      setCidrError('That CIDR is already in the list');
+      return;
+    }
+    setIpCidrs((prev) => [...prev, trimmed]);
+    setCidrDraft('');
+    setCidrError(null);
   }
 
   const createMutation = useMutation({
@@ -427,6 +550,11 @@ function CreatePolicyDialog({
             ? scopeId
             : null;
 
+      // On edit we explicitly send `conditions` (possibly empty `{}`) so
+      // clearing them clears the row. On create, omit when there are
+      // none so the server stores `{}` by default.
+      const builtConditions = buildConditions();
+
       // Edit mode: in-place mutation of the existing row. Single role only —
       // a policy IS one (scope, role, effect) triplet.
       if (editing) {
@@ -436,6 +564,7 @@ function CreatePolicyDialog({
           scopeId: normalisedScopeId,
           roleId,
           effect,
+          conditions: builtConditions ?? {},
         });
         return;
       }
@@ -449,6 +578,7 @@ function CreatePolicyDialog({
           scopeId: normalisedScopeId,
           roleId,
           effect,
+          ...(builtConditions ? { conditions: builtConditions } : {}),
         });
       }
     },
@@ -805,6 +935,123 @@ function CreatePolicyDialog({
             </label>
           )}
 
+          {/* ── Optional: Conditions (collapsed by default) ───────── */}
+          {showRoles && availableRoles.length > 0 && (
+            <div className="rounded-2xl border border-border/60">
+              <button
+                type="button"
+                onClick={() => setConditionsOpen((v) => !v)}
+                className="flex w-full items-center justify-between gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-medium text-muted-foreground hover:bg-muted/30"
+                disabled={createMutation.isPending}
+              >
+                <span className="flex items-center gap-1.5">
+                  {conditionsOpen ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
+                  Conditions
+                  {(requireMfa || ipCidrs.length > 0) && (
+                    <Badge variant="outline" size="sm" className="h-4 px-1 text-[9px] font-normal">
+                      {(requireMfa ? 1 : 0) + (ipCidrs.length > 0 ? 1 : 0)}
+                    </Badge>
+                  )}
+                </span>
+                <span className="text-[11px] font-normal">
+                  Restrict by IP or MFA
+                </span>
+              </button>
+              {conditionsOpen && (
+                <div className="space-y-4 border-t border-border/60 px-3 py-3">
+                  {/* Require MFA */}
+                  <label className="flex cursor-pointer items-start gap-2 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={requireMfa}
+                      onChange={(e) => setRequireMfa(e.target.checked)}
+                      disabled={createMutation.isPending}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
+                    />
+                    <span>
+                      <strong>Require MFA</strong>
+                      <span className="block text-[11px] text-muted-foreground">
+                        Policy only applies when the session is verified with a second
+                        factor (Supabase aal2).
+                      </span>
+                    </span>
+                  </label>
+
+                  {/* IP allowlist */}
+                  <div className="space-y-1.5">
+                    <div>
+                      <Label className="text-xs">IP allowlist</Label>
+                      <p className="text-[11px] text-muted-foreground">
+                        Caller&apos;s IP must match one of these. Accepts IPv4 / IPv6
+                        addresses or CIDRs (10.0.0.0/8, 2001:db8::/32). Empty = no
+                        restriction.
+                      </p>
+                    </div>
+                    {ipCidrs.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {ipCidrs.map((c) => (
+                          <Badge
+                            key={c}
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 pr-1 font-mono text-[11px]"
+                          >
+                            {c}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setIpCidrs((prev) => prev.filter((x) => x !== c))
+                              }
+                              className="rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              aria-label={`Remove ${c}`}
+                              disabled={createMutation.isPending}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-1.5">
+                      <Input
+                        value={cidrDraft}
+                        onChange={(e) => {
+                          setCidrDraft(e.target.value);
+                          if (cidrError) setCidrError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ',') {
+                            e.preventDefault();
+                            addCidr(cidrDraft);
+                          }
+                        }}
+                        placeholder="e.g. 10.0.0.0/8"
+                        className="h-8 font-mono text-xs"
+                        disabled={createMutation.isPending}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => addCidr(cidrDraft)}
+                        disabled={!cidrDraft.trim() || createMutation.isPending}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    {cidrError && (
+                      <p className="text-[11px] text-destructive">{cidrError}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Summary line (visible once ready) ─────────────────── */}
           {ready && (
             <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5 text-sm leading-relaxed text-foreground">
@@ -814,7 +1061,23 @@ function CreatePolicyDialog({
                 {effect === 'deny' ? 'denied' : 'allowed'}
               </strong>{' '}
               <strong>{selectedRoleNames}</strong> on{' '}
-              <strong>{appliesToLabel}</strong>.
+              <strong>{appliesToLabel}</strong>
+              {(requireMfa || ipCidrs.length > 0) && (
+                <>
+                  {' '}
+                  <span className="text-muted-foreground">when</span>{' '}
+                  <strong>
+                    {[
+                      requireMfa && 'MFA is verified',
+                      ipCidrs.length > 0 &&
+                        `IP is in ${ipCidrs.length === 1 ? ipCidrs[0] : `${ipCidrs.length} ranges`}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' and ')}
+                  </strong>
+                </>
+              )}
+              .
             </div>
           )}
         </div>
