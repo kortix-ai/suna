@@ -68,6 +68,12 @@ import {
 } from '../repositories/sso';
 import { accountSessionActivity, iamApprovalRequests } from '@kortix/db';
 import {
+  analyseRoleUsage,
+  listUsage,
+  topPrincipals,
+} from '../repositories/iam-analytics';
+import { backfillAccountMembershipPolicies } from '../iam/backfill';
+import {
   GATED_ACTIONS,
   NeedsApprovalError,
   approveRequest,
@@ -2448,6 +2454,115 @@ iamRouter.post('/:accountId/iam/approvals/:requestId/approve', async (c) => {
   });
 
   return c.json({ approved: true, request_id: requestId });
+});
+
+// ─── Permission usage analytics ───────────────────────────────────────────
+// Read-side surface backed by iam_action_usage (populated by the
+// usage-recorder hooked into every allow path of the engine).
+
+// ─── Legacy → IAM backfill ────────────────────────────────────────────────
+// On-demand mirror of account_role + project_members into explicit IAM
+// policies. Runs at boot for all accounts; this endpoint lets admins
+// re-run for their own account on demand (UI uses it before flipping
+// strict mode). Idempotent.
+
+iamRouter.post('/:accountId/iam/backfill-membership-policies', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  let result;
+  try {
+    result = await backfillAccountMembershipPolicies(accountId);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 409);
+  }
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.backfill.run',
+    resourceType: 'account',
+    resourceId: accountId,
+    after: {
+      owners_promoted: result.ownersPromoted,
+      admins_mirrored: result.adminsMirrored,
+      members_mirrored: result.membersMirrored,
+      project_members_mirrored: result.projectMembersMirrored,
+    },
+  });
+
+  return c.json({
+    owners_promoted: result.ownersPromoted,
+    admins_mirrored: result.adminsMirrored,
+    members_mirrored: result.membersMirrored,
+    project_members_mirrored: result.projectMembersMirrored,
+  });
+});
+
+iamRouter.get('/:accountId/iam/analytics/usage', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
+
+  const limitRaw = c.req.query('limit');
+  let limit = 1000;
+  if (limitRaw) {
+    const parsed = parseInt(limitRaw, 10);
+    if (Number.isInteger(parsed) && parsed > 0 && parsed <= 5000) limit = parsed;
+  }
+
+  const rows = await listUsage(accountId, limit);
+  return c.json({
+    usage: rows.map((r) => ({
+      principal_kind: r.principalKind,
+      principal_id: r.principalId,
+      action: r.action,
+      call_count: r.callCount,
+      first_used_at: r.firstUsedAt.toISOString(),
+      last_used_at: r.lastUsedAt.toISOString(),
+    })),
+  });
+});
+
+iamRouter.get('/:accountId/iam/analytics/top-principals', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
+
+  const rows = await topPrincipals(accountId, 25);
+  return c.json({
+    principals: rows.map((r) => ({
+      principal_kind: r.principalKind,
+      principal_id: r.principalId,
+      total_calls: r.totalCalls,
+      distinct_actions: r.distinctActions,
+      last_used_at: r.lastUsedAt.toISOString(),
+    })),
+  });
+});
+
+iamRouter.get('/:accountId/iam/analytics/roles/:roleId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const roleId = c.req.param('roleId');
+  // Role read is the natural permission for "see this role's usage".
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ROLE_READ);
+
+  const role = await getRoleById(accountId, roleId);
+  if (!role) return c.json({ error: 'role not found' }, 404);
+
+  const analysis = await analyseRoleUsage({ accountId, roleId });
+  return c.json({
+    role_id: roleId,
+    role_name: role.name,
+    actions_in_role: analysis.actionsInRole,
+    used_counts: analysis.usedCounts.map((u) => ({
+      action: u.action,
+      call_count: u.callCount,
+      last_used_at: u.lastUsedAt.toISOString(),
+    })),
+    unused_actions: analysis.unusedActions,
+  });
 });
 
 iamRouter.post('/:accountId/iam/approvals/:requestId/reject', async (c) => {

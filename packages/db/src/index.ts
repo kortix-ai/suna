@@ -138,6 +138,8 @@ export {
   accountSessionActivity,
   // Approval workflows
   iamApprovalRequests,
+  // Permission usage analytics
+  iamActionUsage,
 } from './schema/kortix';
 
 export type {

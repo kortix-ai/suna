@@ -27,7 +27,10 @@ export {
   type ResourceType,
 } from './actions';
 export { seedSystemRoles, SYSTEM_ROLES, SYSTEM_ROLE_KEY } from './system-roles';
-export { backfillMembershipPolicies } from './backfill';
+export {
+  backfillMembershipPolicies,
+  backfillAccountMembershipPolicies,
+} from './backfill';
 export {
   syncMemberAccountPolicy,
   removeMemberPolicies,

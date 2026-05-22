@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  backfillMembershipPolicies,
   getStrictMode,
   previewStrictMode,
   setStrictMode,
@@ -83,6 +84,23 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
       setConfirmOpen(false);
     },
     onError: (err: Error) => toast.error(err.message || 'Failed to update strict mode'),
+  });
+
+  const backfillMutation = useMutation({
+    mutationFn: () => backfillMembershipPolicies(accountId),
+    onSuccess: (res) => {
+      const total =
+        res.admins_mirrored + res.members_mirrored + res.project_members_mirrored;
+      toast.success(
+        total === 0
+          ? 'Already in sync — nothing to mirror.'
+          : `Mirrored ${total} legacy memberships into IAM policies.`,
+      );
+      queryClient.invalidateQueries({ queryKey: ['iam-strict-mode-preview', accountId] });
+      queryClient.invalidateQueries({ queryKey: ['iam-policies'] });
+    },
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to backfill membership policies'),
   });
 
   const enabled = statusQuery.data?.enabled ?? false;
@@ -198,24 +216,37 @@ export function StrictModeCard({ accountId, canManage }: StrictModeCardProps) {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="sm:justify-between">
             <Button
               variant="outline"
-              onClick={() => setConfirmOpen(false)}
-              disabled={flipMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => flipMutation.mutate(true)}
-              disabled={
-                flipMutation.isPending || previewQuery.data?.will_lock_out_account === true
-              }
+              size="sm"
+              onClick={() => backfillMutation.mutate()}
+              disabled={backfillMutation.isPending || flipMutation.isPending}
               className="gap-1.5"
+              title="Mirror legacy account_role + project_members rows into IAM policies. Safe to re-run."
             >
-              {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Enable strict mode
+              {backfillMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Backfill memberships
             </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setConfirmOpen(false)}
+                disabled={flipMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => flipMutation.mutate(true)}
+                disabled={
+                  flipMutation.isPending || previewQuery.data?.will_lock_out_account === true
+                }
+                className="gap-1.5"
+              >
+                {flipMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Enable strict mode
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

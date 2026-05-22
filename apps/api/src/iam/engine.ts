@@ -24,6 +24,7 @@ import { db } from '../shared/db';
 import { ipMatchesAny, parseCidr } from '../shared/cidr';
 import { ACCOUNT_ACTIONS, resourceTypeForAction, type ResourceType } from './actions';
 import { SYSTEM_ROLE_KEY } from './system-roles';
+import { recordAllow } from './usage-recorder';
 
 // Account-level read actions the legacy 'member' role keeps via the bridge.
 // We intentionally exclude every project.*/sandbox.*/etc. read so a plain
@@ -477,9 +478,16 @@ export async function authorize(
       }
       matchedAllow = true;
     }
-    return matchedAllow
-      ? { allowed: true, reason: 'token_policy' }
-      : { allowed: false, reason: 'token_no_matching_policy' };
+    if (matchedAllow) {
+      recordAllow({
+        accountId,
+        principalKind: 'token',
+        principalId: actingTokenId,
+        action,
+      });
+      return { allowed: true, reason: 'token_policy' };
+    }
+    return { allowed: false, reason: 'token_no_matching_policy' };
   }
 
   // ── User-as-principal path (existing flow) ─────────────────────────────
@@ -490,6 +498,7 @@ export async function authorize(
 
   // 1. Super-admin bypasses everything.
   if (actor.isSuperAdmin) {
+    recordAllow({ accountId, principalKind: 'user', principalId: userId, action });
     return { allowed: true, reason: 'super_admin' };
   }
 
@@ -536,12 +545,14 @@ export async function authorize(
   }
 
   if (matchedAllow) {
+    recordAllow({ accountId, principalKind: 'user', principalId: userId, action });
     return { allowed: true, reason: 'policy' };
   }
 
   // 3. Legacy bridges (only consulted when no explicit policy matched).
   //    Explicit denies above already short-circuited.
   if (await bridgeLegacyAccountRole(actor, action)) {
+    recordAllow({ accountId, principalKind: 'user', principalId: userId, action });
     return { allowed: true, reason: 'legacy_account_role' };
   }
 
@@ -549,6 +560,7 @@ export async function authorize(
     effectiveTarget.type === 'project' &&
     (await bridgeLegacyProjectRole(actor, accountId, userId, effectiveTarget.id, action))
   ) {
+    recordAllow({ accountId, principalKind: 'user', principalId: userId, action });
     return { allowed: true, reason: 'legacy_project_role' };
   }
 

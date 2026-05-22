@@ -54,6 +54,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
+import { AnalyticsCard } from '@/components/iam/analytics-card';
 import { StrictModeCard } from '@/components/iam/strict-mode-card';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SsoCard } from '@/components/iam/sso-card';
@@ -264,6 +265,7 @@ export default function AccountSettingsPage() {
 
               {canReadAudit && (
                 <TabsContent value="audit" className="space-y-6">
+                  <AnalyticsCard accountId={account.account_id} />
                   <AuditTab accountId={account.account_id} />
                 </TabsContent>
               )}

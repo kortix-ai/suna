@@ -440,6 +440,29 @@ export async function setStrictMode(accountId: string, enabled: boolean) {
   );
 }
 
+export interface BackfillResult {
+  owners_promoted: number;
+  admins_mirrored: number;
+  members_mirrored: number;
+  project_members_mirrored: number;
+}
+
+/**
+ * Mirror legacy account_role + project_members rows into explicit IAM
+ * policies. Idempotent — safe to re-run. Counts in the response are
+ * NEW rows inserted, so a second call against an unchanged account
+ * returns all zeros.
+ */
+export async function backfillMembershipPolicies(accountId: string) {
+  return unwrap(
+    await backendApi.post<BackfillResult>(
+      `/accounts/${accountId}/iam/backfill-membership-policies`,
+      {},
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── Account MFA enforcement ──────────────────────────────────────────────
 
 export interface MfaRequiredStatus {
@@ -734,6 +757,58 @@ export async function rejectApprovalRequest(
       `/accounts/${accountId}/iam/approvals/${requestId}/reject`,
       { reason },
       { showErrors: false },
+    ),
+  );
+}
+
+// ─── Permission usage analytics ──────────────────────────────────────────
+
+export interface PermissionUsageRow {
+  principal_kind: 'user' | 'token';
+  principal_id: string;
+  action: string;
+  call_count: number;
+  first_used_at: string;
+  last_used_at: string;
+}
+
+export interface TopPrincipalRow {
+  principal_kind: 'user' | 'token';
+  principal_id: string;
+  total_calls: number;
+  distinct_actions: number;
+  last_used_at: string;
+}
+
+export interface RoleUsageAnalysis {
+  role_id: string;
+  role_name: string;
+  actions_in_role: string[];
+  used_counts: Array<{ action: string; call_count: number; last_used_at: string }>;
+  unused_actions: string[];
+}
+
+export async function listPermissionUsage(accountId: string, limit?: number) {
+  const qs = limit ? `?limit=${limit}` : '';
+  return unwrap(
+    await backendApi.get<{ usage: PermissionUsageRow[] }>(
+      `/accounts/${accountId}/iam/analytics/usage${qs}`,
+    ),
+  ).usage;
+}
+
+export async function listTopPrincipals(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ principals: TopPrincipalRow[] }>(
+      `/accounts/${accountId}/iam/analytics/top-principals`,
+    ),
+  ).principals;
+}
+
+export async function getRoleUsageAnalytics(accountId: string, roleId: string) {
+  return unwrap(
+    await backendApi.get<RoleUsageAnalysis>(
+      `/accounts/${accountId}/iam/analytics/roles/${roleId}`,
     ),
   );
 }

@@ -2055,6 +2055,39 @@ export const accountSsoProviders = kortixSchema.table(
   ],
 );
 
+// ─── Permission usage analytics ("Access Analyzer") ────────────────────────
+// Counters of every (user, action) the IAM engine has allowed in this
+// account. Updated lazily (throttled in-memory) to keep write pressure
+// bounded. Lets admins right-size roles based on actual usage and spot
+// unused privileges. Denies are NOT tracked here — that's a separate
+// "denied attempts" feature.
+
+export const iamActionUsage = kortixSchema.table(
+  'iam_action_usage',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Either a real user_id (browser sessions, PAT minters) OR a PAT's
+     *  token_id when the call came via a token with its own policies.
+     *  Distinguished by principalKind. */
+    principalId: uuid('principal_id').notNull(),
+    /** 'user' (account_members.user_id) or 'token' (account_tokens.token_id). */
+    principalKind: varchar('principal_kind', { length: 8 }).notNull(),
+    /** Canonical action key from the action catalog. */
+    action: varchar('action', { length: 128 }).notNull(),
+    callCount: bigint('call_count', { mode: 'number' }).default(0).notNull(),
+    firstUsedAt: timestamp('first_used_at', { withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.principalKind, table.principalId, table.action] }),
+    index('idx_iam_action_usage_account').on(table.accountId),
+    index('idx_iam_action_usage_principal').on(table.accountId, table.principalKind, table.principalId),
+    index('idx_iam_action_usage_action').on(table.accountId, table.action),
+  ],
+);
+
 // ─── Approval requests for sensitive IAM actions ───────────────────────────
 // Two-phase pattern: the sensitive endpoint stores the requested action
 // + payload here and returns 202; a second admin POSTs /approve to
