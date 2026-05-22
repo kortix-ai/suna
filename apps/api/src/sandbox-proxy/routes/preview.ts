@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { eq, and, inArray, ne } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
+import { eq, and, ne } from 'drizzle-orm';
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import {
@@ -46,8 +46,10 @@ type SandboxProxyAccess =
 
 const previewLinkCache = new Map<string, PreviewLinkEntry>();
 const serviceKeyCache = new Map<string, ServiceKeyEntry>();
+const sandboxTouchCache = new Map<string, number>();
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const SANDBOX_TOUCH_INTERVAL_MS = 60 * 1000;
 const STRIP_FORWARD_HEADERS = new Set([
   'host',
   'authorization',
@@ -227,21 +229,42 @@ async function wakeSandbox(sandboxId: string): Promise<void> {
 
 async function markSandboxUsed(sandboxId: string): Promise<void> {
   if (typeof db.update !== 'function') return;
+  const nowMs = Date.now();
+  const nextTouchAt = sandboxTouchCache.get(sandboxId) ?? 0;
+  if (nowMs < nextTouchAt) return;
+  sandboxTouchCache.set(sandboxId, nowMs + SANDBOX_TOUCH_INTERVAL_MS);
+
   const now = new Date();
   try {
-    await db
-      .update(sessionSandboxes)
-      .set({ lastUsedAt: now, updatedAt: now })
-      .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')));
+    const [row] = await db
+      .select({
+        sandboxId: sessionSandboxes.sandboxId,
+        sessionId: sessionSandboxes.sessionId,
+        status: sessionSandboxes.status,
+      })
+      .from(sessionSandboxes)
+      .where(and(eq(sessionSandboxes.externalId, sandboxId), ne(sessionSandboxes.status, 'archived')))
+      .limit(1);
+    if (!row) return;
 
     await db
       .update(sessionSandboxes)
-      .set({ status: 'active', lastUsedAt: now, updatedAt: now })
-      .where(and(
-        eq(sessionSandboxes.externalId, sandboxId),
-        inArray(sessionSandboxes.status, ['error', 'stopped']),
-      ));
+      .set({ lastUsedAt: now, updatedAt: now })
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+
+    if (['error', 'stopped'].includes(row.status)) {
+      await db
+        .update(sessionSandboxes)
+        .set({ status: 'active', lastUsedAt: now, updatedAt: now })
+        .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+    }
+
+    await db
+      .update(projectSessions)
+      .set({ status: 'running', updatedAt: now })
+      .where(eq(projectSessions.sessionId, row.sessionId));
   } catch (err) {
+    sandboxTouchCache.delete(sandboxId);
     console.warn('[PREVIEW] Failed to mark sandbox used:', err);
   }
 }
