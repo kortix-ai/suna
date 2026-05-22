@@ -16,6 +16,7 @@ import {
   getProjectSessionSandbox,
   restartProjectSession,
   syncOpencodeSessionTitles,
+  updateProjectSession,
 } from '@/lib/projects-client';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
 import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
@@ -252,7 +253,7 @@ function ActiveSessionChat({
     const sessions = sessionsQuery.data ?? [];
     if (sessions.length > 0) return;
     createdRef.current = true;
-    createMutation.mutate();
+    createMutation.mutate({ directory: '/workspace' });
   }, [
     runtimeReady,
     sessionsQuery.isLoading,
@@ -263,6 +264,13 @@ function ActiveSessionChat({
 
   const chatSessionId =
     (sessionsQuery.data ?? [])[0]?.id ?? createMutation.data?.id ?? null;
+
+  useEffect(() => {
+    if (!chatSessionId) return;
+    void updateProjectSession(projectId, sessionId, {
+      opencode_session_id: chatSessionId,
+    }).catch(() => {});
+  }, [chatSessionId, projectId, sessionId]);
 
   // Mirror the viewed session's title into our cloud DB so the name shows
   // even when the sandbox isn't running. Fires on mount and whenever opencode

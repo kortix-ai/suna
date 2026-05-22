@@ -1070,6 +1070,35 @@ export async function createProjectSession(
   );
 }
 
+export async function getProjectSession(
+  projectId: string,
+  sessionId: string,
+) {
+  return unwrap(
+    await backendApi.get<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+    ),
+  );
+}
+
+export async function updateProjectSession(
+  projectId: string,
+  sessionId: string,
+  input: {
+    name?: string;
+    opencode_session_id?: string;
+    opencodeSessionId?: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  return unwrap(
+    await backendApi.patch<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+      input,
+    ),
+  );
+}
+
 export async function deleteProjectSession(
   projectId: string,
   sessionId: string,
