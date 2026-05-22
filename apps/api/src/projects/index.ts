@@ -101,7 +101,6 @@ import {
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import { getProvider } from '../platform/providers';
 import { config, type SandboxProviderName } from '../config';
-import { encodeSessionLlmToken } from '../shared/session-llm-token';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
 import { recordAuditEvent } from '../shared/audit';
 import {
@@ -586,13 +585,6 @@ function normalizeRepoUrl(value: unknown): string | null {
 
 function hasOwn(body: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(body, key);
-}
-
-export function buildProjectLlmBaseUrl(kortixUrl: string): string {
-  const base = kortixUrl.replace(/\/+$/, '');
-  if (base.endsWith('/v1/router')) return `${base}/llm`;
-  if (base.endsWith('/v1')) return `${base}/router/llm`;
-  return `${base}/v1/router/llm`;
 }
 
 function deriveKortixApiRoot(kortixUrl: string): string {
@@ -1370,13 +1362,6 @@ async function buildSessionSandboxEnvVars(input: {
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
   const runtimeSecrets = await listProjectSecrets(input.projectId);
-  const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
-  const llmToken = encodeSessionLlmToken({
-    accountId: input.accountId,
-    projectId: input.projectId,
-    sessionId: input.sessionId,
-    userId: input.userId,
-  });
   return {
     ...runtimeSecrets,
     KORTIX_PROJECT_AUTO_CLONE: '1',
@@ -1386,8 +1371,6 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_BRANCH_NAME: input.sessionId,
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
-    KORTIX_LLM_BASE_URL: llmBaseUrl,
-    KORTIX_LLM_TOKEN: llmToken,
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: deriveKortixApiBase(),

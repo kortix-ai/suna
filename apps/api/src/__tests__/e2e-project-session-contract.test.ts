@@ -533,7 +533,7 @@ mock.module('../shared/db', () => ({
   },
 }));
 
-const { projectsApp, buildProjectLlmBaseUrl } = await import('../projects/index');
+const { projectsApp } = await import('../projects/index');
 
 function createApp() {
   const app = new Hono();
@@ -572,13 +572,6 @@ describe('project session API contract', () => {
   });
 
   beforeEach(() => resetState());
-
-  test('builds the session LLM router URL from common API URL shapes', () => {
-    expect(buildProjectLlmBaseUrl('https://api.kortix.com')).toBe('https://api.kortix.com/v1/router/llm');
-    expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1')).toBe('https://api.kortix.com/v1/router/llm');
-    expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1/router')).toBe('https://api.kortix.com/v1/router/llm');
-    expect(buildProjectLlmBaseUrl('https://api.kortix.com/v1/router/')).toBe('https://api.kortix.com/v1/router/llm');
-  });
 
   test('upserts and lists project secrets without exposing secret values', async () => {
     const app = createApp();
@@ -869,8 +862,11 @@ describe('project session API contract', () => {
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
     expect(env.KORTIX_REPO_URL).toBe(projectRow.repoUrl);
     expect(env.KORTIX_BASE_REF).toBe('main');
-    expect(env.KORTIX_LLM_TOKEN).toBeTruthy();
-    expect(env.KORTIX_LLM_BASE_URL).toContain('/v1/router/llm');
+    // LLM/tool-router URLs are no longer injected — the sandbox derives any
+    // router endpoint it needs from KORTIX_API_URL.
+    expect(env.KORTIX_LLM_TOKEN).toBeUndefined();
+    expect(env.KORTIX_LLM_BASE_URL).toBeUndefined();
+    expect(env.TAVILY_API_URL).toBeUndefined();
     expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
     expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_API_URL).toBeTruthy();

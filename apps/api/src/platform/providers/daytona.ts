@@ -57,41 +57,23 @@ export class DaytonaProvider implements SandboxProvider {
 
     const daytona = getDaytona();
 
-    // Use KORTIX_TOKEN as INTERNAL_SERVICE_KEY — one key for both directions.
-    // KORTIX_TOKEN (sandbox → api) is already in opts.envVars.
-    // INTERNAL_SERVICE_KEY (api → sandbox) is the same value so the proxy can auth.
-    const serviceKey = opts.envVars?.KORTIX_TOKEN || '';
-
-    // KORTIX_URL is the public API base URL. Strip legacy route suffixes so
-    // older env files that used /v1 or /v1/router still provision correctly.
+    // KORTIX_URL is the public API base URL the sandbox calls back on. Strip
+    // any route suffix so older env files that included /v1 or /v1/router still
+    // resolve to the bare origin.
     const sandboxApiBase = config.KORTIX_URL
       .replace(/\/+$/, '')
       .replace(/\/v1\/router$/, '')
       .replace(/\/v1$/, '');
-    const routerBase = `${sandboxApiBase}/v1/router`;
 
     const daytonaSandbox = await daytona.create(
       {
         snapshot,
         envVars: {
-          KORTIX_API_URL: sandboxApiBase,
           ENV_MODE: 'cloud',
-          INTERNAL_SERVICE_KEY: serviceKey,
-          TUNNEL_API_URL: sandboxApiBase,
-          TUNNEL_TOKEN: serviceKey,
-          // Route tool SDK traffic through the Kortix router proxy for billing/key injection.
-          // If not set, sandbox tools fall back to hitting the real upstream APIs directly.
-          TAVILY_API_URL: `${routerBase}/tavily`,
-          REPLICATE_API_URL: `${routerBase}/replicate`,
-          SERPER_API_URL: `${routerBase}/serper`,
-          FIRECRAWL_API_URL: `${routerBase}/firecrawl`,
-          // Forward host LLM provider keys so opencode in the sandbox can talk
-          // to model APIs directly. Only set ones present on the host.
-          ...Object.fromEntries(
-            (['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'XAI_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GROQ_API_KEY'] as const)
-              .map((k) => [k, process.env[k]])
-              .filter(([, v]) => Boolean(v)),
-          ),
+          // Session identity, git context, KORTIX_API_URL + KORTIX_TOKEN, and
+          // the project's own secrets (incl. provider keys set via `kortix
+          // providers`, picked up by opencode at boot) — see
+          // buildSessionSandboxEnvVars() and provisionSessionSandbox().
           ...opts.envVars,
         },
         autoStopInterval: 15,

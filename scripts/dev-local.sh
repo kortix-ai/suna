@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SUPABASE_DIR="$ROOT_DIR/supabase"
 
 FRONTEND_PID=""
+TUNNEL_PID=""
+TUNNEL_LOG=""
 
 load_local_env() {
   # pnpm --filter runs each package from its own directory, where Bun/Next may
@@ -36,10 +38,77 @@ PY
   export KORTIX_LOCAL_DEV=1
   export ENV_MODE=local
   export ALLOWED_SANDBOX_PROVIDERS="daytona,local_docker"
-  export KORTIX_URL="http://localhost:8008"
+  # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Daytona)
+  # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
+  # this machine's localhost — so they need a public tunnel URL. The dashboard
+  # keeps talking to the API on localhost via NEXT_PUBLIC_BACKEND_URL, so only
+  # the sandbox -> API direction goes through the tunnel.
   export NEXT_PUBLIC_BACKEND_URL="http://localhost:8008/v1"
   export KORTIX_PUBLIC_BACKEND_URL="http://localhost:8008/v1"
   export BACKEND_URL="http://localhost:8008/v1"
+}
+
+# Front the local API with a public Cloudflare quick tunnel so cloud Daytona
+# sandboxes can reach it as $KORTIX_URL. No-op when sandboxes run locally
+# (local_docker default) or when KORTIX_DEV_TUNNEL=0.
+ensure_dev_tunnel() {
+  local api_port="${PORT:-8008}"
+  local api_origin="http://localhost:${api_port}"
+  local default_provider="${ALLOWED_SANDBOX_PROVIDERS%%,*}"
+
+  # Respect an explicit public KORTIX_URL (named tunnel, staging API, …).
+  if [[ -n "${KORTIX_URL:-}" && "$KORTIX_URL" != http://localhost:* && "$KORTIX_URL" != http://127.0.0.1:* ]]; then
+    echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL"
+    return 0
+  fi
+
+  # Local-docker sandboxes run on this machine — no public callback needed.
+  # Honor an explicit opt-out too.
+  if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || "$default_provider" != "daytona" ]]; then
+    export KORTIX_URL="$api_origin"
+    echo "[dev] Tunnel skipped — KORTIX_URL=$KORTIX_URL"
+    if [[ "$default_provider" == "daytona" ]]; then
+      echo "[dev] ⚠️  Default sandbox provider is Daytona (cloud) but the tunnel is off —"
+      echo "[dev]     sessions will fail with 'OpenCode runtime is not ready' because the"
+      echo "[dev]     sandbox cannot reach $api_origin. Unset KORTIX_DEV_TUNNEL to enable it."
+    fi
+    return 0
+  fi
+
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    echo "[dev] ERROR: cloudflared is required for cloud (Daytona) sandboxes but was not found."
+    echo "[dev]        Cloud sandboxes can't reach localhost; they need a public KORTIX_URL."
+    echo "[dev]        Install:  brew install cloudflared"
+    echo "[dev]        Or:       KORTIX_DEV_TUNNEL=0 pnpm dev   (uses local_docker sandboxes only)"
+    exit 1
+  fi
+
+  TUNNEL_LOG="$(mktemp -t kortix-tunnel.XXXXXX)"
+  echo "[dev] Starting Cloudflare quick tunnel → $api_origin ..."
+  cloudflared tunnel --no-autoupdate --url "$api_origin" >"$TUNNEL_LOG" 2>&1 &
+  TUNNEL_PID=$!
+
+  local url=""
+  local i
+  for i in $(seq 1 30); do
+    url="$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1 || true)"
+    [[ -n "$url" ]] && break
+    if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
+      echo "[dev] ERROR: cloudflared exited early:"
+      sed 's/^/[cloudflared] /' "$TUNNEL_LOG"
+      exit 1
+    fi
+    sleep 1
+  done
+
+  if [[ -z "$url" ]]; then
+    echo "[dev] ERROR: timed out waiting for the Cloudflare tunnel URL:"
+    sed 's/^/[cloudflared] /' "$TUNNEL_LOG"
+    exit 1
+  fi
+
+  export KORTIX_URL="$url"
+  echo "[dev] ✅ Cloud sandbox callback ready: KORTIX_URL=$KORTIX_URL"
 }
 
 cleanup() {
@@ -50,6 +119,11 @@ cleanup() {
     kill "$FRONTEND_PID" 2>/dev/null || true
     wait "$FRONTEND_PID" 2>/dev/null || true
   fi
+
+  if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
+    kill "$TUNNEL_PID" 2>/dev/null || true
+  fi
+  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG"
 
   exit "$exit_code"
 }
@@ -99,6 +173,8 @@ print("[dev] ERROR: Timed out waiting for Supabase Postgres on 127.0.0.1:54322",
 sys.exit(1)
 PY
 fi
+
+ensure_dev_tunnel
 
 echo "[dev] Starting frontend..."
 pnpm --filter Kortix-Computer-Frontend dev &
