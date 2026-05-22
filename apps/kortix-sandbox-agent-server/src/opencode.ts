@@ -96,9 +96,27 @@ export function createOpencodeSupervisor(cfg: Config, opencodeConfigDir: string)
   }
 
   function spawnChild(bin: string) {
+    // Keep opencode's data store OUT of the project workspace. opencode writes
+    // a git-backed snapshot object store (file history) plus caches/logs under
+    // $HOME/.local/share/opencode + $HOME/.config. If HOME points at
+    // /workspace, that store lands inside the project dir and grows one loose
+    // object per file version — so every ls/glob/list the agent runs walks
+    // thousands of .local/share/opencode/snapshot/objects/* paths, ballooning
+    // tool output (multi-MB) until the next turn stalls. A dedicated home keeps
+    // /workspace = project files only. OPENCODE_CONFIG_DIR still points at the
+    // project's .kortix/opencode so user config/agents/skills load normally.
+    const opencodeHome = '/opt/kortix/home'
+    try {
+      mkdirSync(opencodeHome, { recursive: true })
+    } catch (err) {
+      logger.warn('[opencode] could not create home dir; falling back to inherited HOME', {
+        opencodeHome,
+        err: (err as Error).message,
+      })
+    }
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      HOME: cfg.workspace,
+      HOME: opencodeHome,
       OPENCODE_CONFIG_DIR: opencodeConfigDir,
       // Clear inherited PORT/APP_PORT — opencode launches user shells; we
       // don't want to leak the service port as a generic app port.
