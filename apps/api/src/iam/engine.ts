@@ -236,6 +236,8 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
       iamStrictMode: accounts.iamStrictMode,
       mfaRequired: accounts.mfaRequired,
       permissionBoundary: accountMembers.permissionBoundary,
+      isExternal: accountMembers.isExternal,
+      externalGrantExpiresAt: accountMembers.externalGrantExpiresAt,
     })
     .from(accountMembers)
     .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
@@ -243,6 +245,16 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
     .limit(1);
 
   if (!member) return null;
+  // Cross-account sharing: external grants honour an optional expiry.
+  // Past the expiry we treat the user as "not-a-member" so the engine
+  // denies cleanly without admins having to remember to revoke.
+  if (
+    member.isExternal &&
+    member.externalGrantExpiresAt &&
+    member.externalGrantExpiresAt < new Date()
+  ) {
+    return null;
+  }
 
   const groups = await db
     .select({ groupId: accountGroupMembers.groupId })

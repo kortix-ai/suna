@@ -55,6 +55,7 @@ import { GroupsTab } from '@/components/iam/groups-tab';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AnalyticsCard } from '@/components/iam/analytics-card';
+import { DriftCard } from '@/components/iam/drift-card';
 import { StrictModeCard } from '@/components/iam/strict-mode-card';
 import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
 import { SsoCard } from '@/components/iam/sso-card';
@@ -64,6 +65,7 @@ import { ApprovalsCard } from '@/components/iam/approvals-card';
 import { ProjectGroupsCard } from '@/components/iam/project-groups-card';
 import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { BreakGlassCard } from '@/components/iam/break-glass-card';
+import { ExternalGrantsCard } from '@/components/iam/external-grants-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { usePermission } from '@/lib/use-permission';
@@ -269,6 +271,7 @@ export default function AccountSettingsPage() {
               {canReadAudit && (
                 <TabsContent value="audit" className="space-y-6">
                   <AnalyticsCard accountId={account.account_id} />
+                  <DriftCard accountId={account.account_id} />
                   <AuditTab accountId={account.account_id} />
                 </TabsContent>
               )}
@@ -315,6 +318,10 @@ export default function AccountSettingsPage() {
                 <BreakGlassCard
                   accountId={account.account_id}
                   currentUserId={user.id}
+                  canManage={canWriteAccount}
+                />
+                <ExternalGrantsCard
+                  accountId={account.account_id}
                   canManage={canWriteAccount}
                 />
                 <ScimCard

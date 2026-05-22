@@ -15,6 +15,7 @@ import {
   projectMembers,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { getSupabase } from '../shared/supabase';
 import type { AppEnv } from '../types';
 import {
   ACCOUNT_ACTIONS,
@@ -3183,6 +3184,197 @@ iamRouter.delete('/:accountId/iam/service-accounts/:saId', async (c) => {
     before: { name: before.name },
   });
   return c.json({ deleted: true });
+});
+
+// ─── Cross-account external grants ────────────────────────────────────────
+// Attach an existing Kortix user as an "external" member so the engine
+// can resolve their policies against THIS account, without consuming a
+// regular seat. Common consultant/multi-tenant pattern. Lookup happens
+// by email — the external user must already have an auth.users row
+// (i.e. they signed up to Kortix on their own); we don't invite via
+// email at this layer.
+
+iamRouter.get('/:accountId/iam/external-grants', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+
+  const rows = await db
+    .select({
+      userId: accountMembers.userId,
+      grantedBy: accountMembers.externalGrantedBy,
+      grantedAt: accountMembers.joinedAt,
+      expiresAt: accountMembers.externalGrantExpiresAt,
+      note: accountMembers.externalNote,
+    })
+    .from(accountMembers)
+    .where(
+      and(
+        eq(accountMembers.accountId, accountId),
+        eq(accountMembers.isExternal, true),
+      ),
+    );
+
+  return c.json({
+    grants: rows.map((r) => ({
+      user_id: r.userId,
+      granted_by: r.grantedBy,
+      granted_at: r.grantedAt.toISOString(),
+      expires_at: r.expiresAt?.toISOString() ?? null,
+      note: r.note,
+      active:
+        !r.expiresAt || r.expiresAt > new Date(),
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/external-grants', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  // Gating: same capability as inviting a regular member (member.invite).
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_INVITE);
+
+  const body = await readBody(c);
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+  if (!email) return c.json({ error: 'email is required' }, 400);
+  if (email.length > 320) return c.json({ error: 'email too long' }, 400);
+  const note =
+    typeof body.note === 'string' ? body.note.trim().slice(0, 500) || null : null;
+  let expiresAt: Date | null = null;
+  if (typeof body.expires_at === 'string' && body.expires_at) {
+    const d = new Date(body.expires_at);
+    if (Number.isNaN(d.getTime())) {
+      return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+    }
+    if (d.getTime() < Date.now()) {
+      return c.json({ error: 'expires_at must be in the future' }, 400);
+    }
+    expiresAt = d;
+  }
+
+  // Resolve the target user by email via Supabase admin API. We don't
+  // mint an invite here — the external user has to already exist in
+  // auth.users.
+  const supabase = getSupabase();
+  const { data: lookup, error: lookupErr } = await supabase.auth.admin.listUsers({
+    page: 1,
+    perPage: 1,
+    // @ts-expect-error supabase-js admin types lag the API
+    email,
+  });
+  if (lookupErr) {
+    return c.json({ error: lookupErr.message ?? 'failed to look up user' }, 502);
+  }
+  const targetUser = lookup?.users?.[0];
+  if (!targetUser) {
+    return c.json(
+      {
+        error:
+          'No Kortix user with that email. The external user must already have an account.',
+      },
+      404,
+    );
+  }
+
+  // Refuse silently if they're already a regular member — promoting a
+  // regular member to "external" would strip their seat and confuse
+  // billing.
+  const [existing] = await db
+    .select({
+      userId: accountMembers.userId,
+      isExternal: accountMembers.isExternal,
+    })
+    .from(accountMembers)
+    .where(
+      and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, targetUser.id)),
+    )
+    .limit(1);
+  if (existing && !existing.isExternal) {
+    return c.json(
+      { error: 'User is already a regular member of this account.' },
+      409,
+    );
+  }
+
+  if (existing && existing.isExternal) {
+    // Already an external; update the grant metadata.
+    await db
+      .update(accountMembers)
+      .set({
+        externalGrantExpiresAt: expiresAt,
+        externalNote: note,
+        externalGrantedBy: userId,
+      })
+      .where(
+        and(
+          eq(accountMembers.accountId, accountId),
+          eq(accountMembers.userId, targetUser.id),
+        ),
+      );
+  } else {
+    await db.insert(accountMembers).values({
+      accountId,
+      userId: targetUser.id,
+      accountRole: 'member',
+      isExternal: true,
+      externalGrantExpiresAt: expiresAt,
+      externalNote: note,
+      externalGrantedBy: userId,
+    });
+  }
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.external_grant.create',
+    resourceType: 'account_member',
+    resourceId: targetUser.id,
+    after: {
+      email,
+      expires_at: expiresAt?.toISOString() ?? null,
+      note,
+    },
+  });
+
+  return c.json(
+    {
+      user_id: targetUser.id,
+      email,
+      expires_at: expiresAt?.toISOString() ?? null,
+      note,
+    },
+    201,
+  );
+});
+
+iamRouter.delete('/:accountId/iam/external-grants/:userId', async (c) => {
+  const callerId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const targetUserId = c.req.param('userId');
+  await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_REMOVE);
+
+  const rows = await db
+    .delete(accountMembers)
+    .where(
+      and(
+        eq(accountMembers.accountId, accountId),
+        eq(accountMembers.userId, targetUserId),
+        eq(accountMembers.isExternal, true),
+      ),
+    )
+    .returning({ userId: accountMembers.userId });
+
+  if (rows.length === 0) {
+    return c.json({ error: 'external grant not found' }, 404);
+  }
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.external_grant.revoke',
+    resourceType: 'account_member',
+    resourceId: targetUserId,
+  });
+
+  return c.json({ revoked: true });
 });
 
 // ─── Break-glass emergency access ─────────────────────────────────────────

@@ -862,6 +862,47 @@ export async function listTopPrincipals(accountId: string) {
   ).principals;
 }
 
+// ─── Cross-account external grants ────────────────────────────────────────
+
+export interface ExternalGrant {
+  user_id: string;
+  granted_by: string | null;
+  granted_at: string;
+  expires_at: string | null;
+  note: string | null;
+  active: boolean;
+}
+
+export async function listExternalGrants(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ grants: ExternalGrant[] }>(
+      `/accounts/${accountId}/iam/external-grants`,
+    ),
+  ).grants;
+}
+
+export async function createExternalGrant(
+  accountId: string,
+  input: { email: string; expires_at?: string; note?: string },
+) {
+  return unwrap(
+    await backendApi.post<{
+      user_id: string;
+      email: string;
+      expires_at: string | null;
+      note: string | null;
+    }>(`/accounts/${accountId}/iam/external-grants`, input, { showErrors: false }),
+  );
+}
+
+export async function revokeExternalGrant(accountId: string, userId: string) {
+  return unwrap(
+    await backendApi.delete<{ revoked: boolean }>(
+      `/accounts/${accountId}/iam/external-grants/${userId}`,
+    ),
+  );
+}
+
 // ─── Break-glass emergency access ─────────────────────────────────────────
 
 export interface BreakGlassGrant {

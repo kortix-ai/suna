@@ -175,6 +175,18 @@ export const accountMembers = kortixSchema.table(
     permissionBoundary: jsonb('permission_boundary').$type<{
       allow_action_prefixes: string[];
     } | null>(),
+    // Cross-account sharing: when true this member is an EXTERNAL user
+    // (consultant, contractor) attached to the account so admins can
+    // grant them specific access without consuming a regular seat. The
+    // engine treats them like a member — same policy lookups, same
+    // groups — but the UI lists them separately and they can carry an
+    // optional auto-revoke timestamp.
+    isExternal: boolean('is_external').default(false).notNull(),
+    externalGrantExpiresAt: timestamp('external_grant_expires_at', {
+      withTimezone: true,
+    }),
+    externalGrantedBy: uuid('external_granted_by'),
+    externalNote: text('external_note'),
     // External identifier set by an upstream IdP via SCIM. Null = managed
     // locally (invited via UI or API). When set, the IdP "owns" this row —
     // deactivating the user there should mirror here.
