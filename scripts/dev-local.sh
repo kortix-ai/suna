@@ -111,6 +111,34 @@ ensure_dev_tunnel() {
   echo "[dev] ✅ Cloud sandbox callback ready: KORTIX_URL=$KORTIX_URL"
 }
 
+# Cross-compile the in-sandbox daemon (kortix-agent, Linux x64) so a fresh
+# `pnpm dev` always bakes the latest daemon into new snapshots. Lazy: only
+# rebuilds when a source file is newer than the existing binary (or it's
+# missing), so API-only restarts pay nothing. A build failure warns but does
+# not abort dev — the previous binary stays in place.
+ensure_agent_binary() {
+  local dir="$ROOT_DIR/apps/kortix-sandbox-agent-server"
+  local bin="$dir/dist/kortix-agent"
+
+  if [[ -f "$bin" ]]; then
+    local newer
+    newer="$(find "$dir/src" "$dir/scripts" "$dir/package.json" -type f -newer "$bin" -print -quit 2>/dev/null || true)"
+    if [[ -z "$newer" ]]; then
+      echo "[dev] kortix-agent up to date — skipping daemon build"
+      return 0
+    fi
+    echo "[dev] kortix-agent stale (changed: ${newer#"$dir"/}) — rebuilding…"
+  else
+    echo "[dev] kortix-agent missing — building…"
+  fi
+
+  if (cd "$dir" && bun run build); then
+    echo "[dev] ✅ kortix-agent (Linux x64) rebuilt — new snapshots will bake it"
+  else
+    echo "[dev] ⚠️  kortix-agent build failed — new snapshots may bake a stale daemon"
+  fi
+}
+
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
@@ -174,6 +202,7 @@ sys.exit(1)
 PY
 fi
 
+ensure_agent_binary
 ensure_dev_tunnel
 
 echo "[dev] Starting frontend..."
