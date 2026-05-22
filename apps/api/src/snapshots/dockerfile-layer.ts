@@ -46,9 +46,11 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     "# edit by hand — your project Dockerfile above is preserved verbatim.",
     '',
     'USER root',
+    // tmux: lets the agent run long-running processes (dev servers for preview)
+    // in a detached session that survives the agent\'s bash tool call.
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git nodejs npm unzip \\',
+    '        ca-certificates curl git nodejs npm unzip tmux \\',
     '    && rm -rf /var/lib/apt/lists/*',
     '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
