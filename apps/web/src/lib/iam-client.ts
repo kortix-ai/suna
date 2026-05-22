@@ -390,3 +390,37 @@ export async function probeEffectivePermission(
     ),
   );
 }
+
+export interface PermissionProbeInput {
+  action: string;
+  resourceType?: ResourceType;
+  resourceId?: string;
+}
+
+export interface PermissionProbeResult {
+  action: string;
+  resource_type: ResourceType;
+  resource_id: string | null;
+  allowed: boolean;
+  reason: string | null;
+}
+
+/**
+ * Batch variant — answers come back in the same order as the input. Use this
+ * when a single render needs more than ~3 probes (capabilities panel,
+ * multi-button gating on the same page). The server dedupes duplicate
+ * (action, target) pairs internally.
+ */
+export async function probeEffectivePermissions(
+  accountId: string,
+  userId: string,
+  probes: PermissionProbeInput[],
+) {
+  if (probes.length === 0) return [] as PermissionProbeResult[];
+  return unwrap(
+    await backendApi.post<{ results: PermissionProbeResult[] }>(
+      `/accounts/${accountId}/iam/members/${userId}/effective:batch`,
+      { probes },
+    ),
+  ).results;
+}

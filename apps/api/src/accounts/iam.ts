@@ -1048,3 +1048,110 @@ iamRouter.get('/:accountId/iam/members/:userId/effective', async (c) => {
     resource_type: resourceTypeForAction(action),
   });
 });
+
+// Batch variant. UIs that render N capability rows (the "what this member
+// can do" panel, multi-button gating on a single screen) should call this
+// instead of N separate /effective?action=... requests. Returns answers in
+// the same order as the input; duplicates are NOT de-duped server-side so
+// the caller can rely on indices matching.
+const BATCH_MAX = 64;
+
+iamRouter.post('/:accountId/iam/members/:userId/effective:batch', async (c) => {
+  const callerId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const targetUserId = c.req.param('userId');
+
+  if (callerId !== targetUserId) {
+    await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
+  }
+
+  const body = await readBody(c);
+  const rawProbes = body.probes ?? body.queries;
+  if (!Array.isArray(rawProbes)) {
+    return c.json({ error: 'probes must be an array' }, 400);
+  }
+  if (rawProbes.length === 0) {
+    return c.json({ results: [] });
+  }
+  if (rawProbes.length > BATCH_MAX) {
+    return c.json(
+      { error: `batch size must be ≤ ${BATCH_MAX} (got ${rawProbes.length})` },
+      400,
+    );
+  }
+
+  // Validate each probe BEFORE dispatching anything. Mixing valid and
+  // invalid in the same batch is rejected entirely so the caller doesn't
+  // get partial results that look successful at first glance.
+  type ParsedProbe = {
+    action: string;
+    target: Parameters<typeof authorize>[3];
+  };
+  const parsed: ParsedProbe[] = [];
+  for (let i = 0; i < rawProbes.length; i++) {
+    const p = rawProbes[i];
+    if (!p || typeof p !== 'object') {
+      return c.json({ error: `probes[${i}] must be an object` }, 400);
+    }
+    const action = (p as { action?: unknown }).action;
+    if (typeof action !== 'string' || !action) {
+      return c.json({ error: `probes[${i}].action is required` }, 400);
+    }
+    const scope =
+      (p as { resourceType?: unknown; resource_type?: unknown }).resourceType ??
+      (p as { resource_type?: unknown }).resource_type;
+    const id =
+      (p as { resourceId?: unknown; resource_id?: unknown }).resourceId ??
+      (p as { resource_id?: unknown }).resource_id;
+    let target: Parameters<typeof authorize>[3];
+    if (typeof scope === 'string' && isResourceType(scope) && scope !== 'account') {
+      if (typeof id !== 'string' || !id) {
+        return c.json(
+          { error: `probes[${i}].resourceId required when resourceType is set` },
+          400,
+        );
+      }
+      target = { type: scope, id } as Parameters<typeof authorize>[3];
+    } else if (scope !== undefined && scope !== 'account' && typeof scope === 'string') {
+      // Caller passed something for resourceType but it's not a valid enum.
+      return c.json(
+        { error: `probes[${i}].resourceType is not a known resource type` },
+        400,
+      );
+    } else {
+      target = { type: 'account' };
+    }
+    parsed.push({ action, target });
+  }
+
+  // Dedupe in-flight calls but preserve output positions. This makes
+  // duplicate (action,target) entries in the input free after the first.
+  const cache = new Map<string, ReturnType<typeof authorize>>();
+  const keyFor = (p: ParsedProbe) =>
+    p.target?.type === 'account'
+      ? `${p.action}|account|*`
+      : `${p.action}|${p.target?.type}|${
+          p.target && 'id' in p.target ? p.target.id : '*'
+        }`;
+
+  const results = await Promise.all(
+    parsed.map(async (p) => {
+      const key = keyFor(p);
+      let inflight = cache.get(key);
+      if (!inflight) {
+        inflight = authorize(targetUserId, accountId, p.action, p.target);
+        cache.set(key, inflight);
+      }
+      const r = await inflight;
+      return {
+        action: p.action,
+        resource_type: resourceTypeForAction(p.action),
+        resource_id: p.target && 'id' in p.target ? p.target.id : null,
+        allowed: r.allowed,
+        reason: r.reason ?? null,
+      };
+    }),
+  );
+
+  return c.json({ results });
+});

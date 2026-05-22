@@ -29,7 +29,8 @@ import {
   projectMembers,
 } from '@kortix/db';
 import { getTestDb, HAS_SAFE_TEST_DB } from './helpers';
-import { authorize, invalidateSystemRoleCache, listAccessibleResources } from '../iam';
+import { authorize, listAccessibleResources } from '../iam';
+import { invalidateSystemRoleCache } from '../iam/engine';
 import { seedSystemRoles, SYSTEM_ROLE_KEY } from '../iam/system-roles';
 import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../iam/actions';
 
