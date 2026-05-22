@@ -1937,3 +1937,39 @@ export const scimTokens = kortixSchema.table(
     uniqueIndex('idx_scim_tokens_secret_hash').on(table.secretHash),
   ],
 );
+
+// ─── Audit webhooks (SIEM streaming) ───────────────────────────────────────
+// Per-account HTTP webhooks fired on every audit event so customers can
+// ship to Splunk / Datadog / generic SIEMs. Payload is signed with
+// HMAC-SHA256 using the webhook's secret. Delivery is fire-and-forget;
+// last error is surfaced on the row so admins can see failures.
+
+export const auditWebhooks = kortixSchema.table(
+  'audit_webhooks',
+  {
+    webhookId: uuid('webhook_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    url: text('url').notNull(),
+    /** HMAC-SHA256 signing secret. Shown once at create, then hashed-equivalent
+     * (kept plain because we have to use it to sign every outgoing payload —
+     * encryption-at-rest covers the storage threat model). */
+    secret: text('secret').notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+    /** Optional action prefix filter — e.g. "iam." to only deliver IAM
+     * events, or empty to deliver everything. */
+    actionPrefix: varchar('action_prefix', { length: 128 }),
+    lastDeliveredAt: timestamp('last_delivered_at', { withTimezone: true }),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_audit_webhooks_account').on(table.accountId),
+    index('idx_audit_webhooks_enabled').on(table.accountId, table.enabled),
+  ],
+);

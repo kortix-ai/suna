@@ -420,6 +420,69 @@ export async function setStrictMode(accountId: string, enabled: boolean) {
   );
 }
 
+// ─── Audit webhooks ────────────────────────────────────────────────────────
+
+export interface AuditWebhook {
+  webhook_id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  action_prefix: string | null;
+  last_delivered_at: string | null;
+  last_error_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreatedAuditWebhook extends AuditWebhook {
+  /** Plaintext HMAC signing secret — returned ONCE on create. Use it to
+   *  verify the X-Kortix-Signature header in your receiver. */
+  secret: string;
+}
+
+export async function listAuditWebhooks(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ webhooks: AuditWebhook[] }>(
+      `/accounts/${accountId}/audit/webhooks`,
+    ),
+  ).webhooks;
+}
+
+export async function createAuditWebhook(
+  accountId: string,
+  input: { name: string; url: string; action_prefix?: string },
+) {
+  return unwrap(
+    await backendApi.post<CreatedAuditWebhook>(
+      `/accounts/${accountId}/audit/webhooks`,
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function updateAuditWebhook(
+  accountId: string,
+  webhookId: string,
+  patch: { name?: string; enabled?: boolean; action_prefix?: string | null },
+) {
+  return unwrap(
+    await backendApi.patch<AuditWebhook>(
+      `/accounts/${accountId}/audit/webhooks/${webhookId}`,
+      patch,
+    ),
+  );
+}
+
+export async function deleteAuditWebhook(accountId: string, webhookId: string) {
+  return unwrap(
+    await backendApi.delete<{ deleted: boolean }>(
+      `/accounts/${accountId}/audit/webhooks/${webhookId}`,
+    ),
+  );
+}
+
 // ─── Audit log ─────────────────────────────────────────────────────────────
 
 export interface AuditEvent {

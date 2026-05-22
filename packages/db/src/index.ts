@@ -129,6 +129,8 @@ export {
   iamPoliciesRelations,
   // SCIM
   scimTokens,
+  // Audit webhooks
+  auditWebhooks,
 } from './schema/kortix';
 
 export type {

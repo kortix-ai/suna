@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import { auditEvents } from '@kortix/db';
 import { db } from './db';
+import { dispatchAuditEvent } from './audit-webhooks';
 
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -49,18 +50,44 @@ function inferAccountId(c: Context) {
 }
 
 export async function recordAuditEvent(input: AuditEventInput) {
-  await db.insert(auditEvents).values({
-    accountId: input.accountId || null,
-    actorUserId: input.actorUserId || null,
-    action: input.action,
-    resourceType: input.resourceType,
-    resourceId: input.resourceId || null,
-    before: input.before ?? null,
-    after: input.after ?? null,
-    ip: input.ip || null,
-    userAgent: input.userAgent || null,
-    metadata: input.metadata ?? {},
-  });
+  const [row] = await db
+    .insert(auditEvents)
+    .values({
+      accountId: input.accountId || null,
+      actorUserId: input.actorUserId || null,
+      action: input.action,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId || null,
+      before: input.before ?? null,
+      after: input.after ?? null,
+      ip: input.ip || null,
+      userAgent: input.userAgent || null,
+      metadata: input.metadata ?? {},
+    })
+    .returning();
+
+  // Fan out to per-account webhooks. Fire-and-forget — never blocks the
+  // audit write. Only events that carry an accountId are dispatched
+  // (account-less events come from system jobs and have no audience).
+  if (row && row.accountId) {
+    dispatchAuditEvent({
+      schema_version: 1,
+      event: {
+        event_id: row.eventId,
+        occurred_at: row.occurredAt.toISOString(),
+        account_id: row.accountId,
+        actor_user_id: row.actorUserId,
+        action: row.action,
+        resource_type: row.resourceType,
+        resource_id: row.resourceId,
+        before: row.before,
+        after: row.after,
+        ip: row.ip,
+        user_agent: row.userAgent,
+        metadata: row.metadata ?? {},
+      },
+    });
+  }
 }
 
 export async function auditStateChangingRequest(c: Context, next: Next) {

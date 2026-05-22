@@ -8,7 +8,16 @@
 
 import { useMemo, useState } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
+import { getEnv } from '@/lib/env-config';
 
 import { Button } from '@/components/ui/button';
 import { SectionCard } from '@/components/ui/section-card';
@@ -49,7 +58,63 @@ interface AuditTabProps {
 
 export function AuditTab({ accountId }: AuditTabProps) {
   const [filterIndex, setFilterIndex] = useState(0);
+  const [exporting, setExporting] = useState(false);
   const active = QUICK_FILTERS[filterIndex];
+
+  // Streams the export with the active filter, triggers a browser download.
+  // We use raw fetch instead of backendApi because the response is a file
+  // (text/csv or application/x-ndjson), not the JSON wrapper the client
+  // helpers assume.
+  async function exportEvents(format: 'csv' | 'jsonl') {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('format', format);
+      if (active.action) params.set('action', active.action);
+      if (active.daysBack) params.set('since', daysAgoIso(active.daysBack));
+
+      const token = await getSupabaseAccessTokenWithRetry();
+      if (!token) {
+        toast.error('Not signed in');
+        return;
+      }
+      const base = getEnv().BACKEND_URL ?? '';
+      const url = `${base}/v1/accounts/${accountId}/audit/export?${params.toString()}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        toast.error(`Export failed: ${res.status} ${text.slice(0, 120)}`);
+        return;
+      }
+
+      const blob = await res.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const filename =
+        res.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ??
+        `audit-${new Date().toISOString().slice(0, 10)}.${format}`;
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+
+      const capped = res.headers.get('x-audit-capped') === 'true';
+      const rowCount = res.headers.get('x-audit-row-count') ?? '?';
+      toast.success(
+        capped
+          ? `Exported ${rowCount} events (capped — narrow your filter for older data)`
+          : `Exported ${rowCount} events`,
+      );
+    } catch (err) {
+      toast.error((err as Error).message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const query = useInfiniteQuery({
     queryKey: ['audit', accountId, active.action, active.daysBack],
@@ -91,21 +156,43 @@ export function AuditTab({ accountId }: AuditTabProps) {
       description="Every state-changing API hit, plus before/after snapshots for IAM mutations. Read-only."
       flush
     >
-      <div className="flex flex-wrap gap-1.5 border-b border-border/60 px-6 py-3">
-        {QUICK_FILTERS.map((f, i) => (
-          <button
-            key={f.label}
-            type="button"
-            onClick={() => setFilterIndex(i)}
-            className={`cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-              filterIndex === i
-                ? 'border-foreground/30 bg-foreground/[0.06] text-foreground'
-                : 'border-border/60 bg-background text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-3">
+        <div className="flex flex-wrap gap-1.5">
+          {QUICK_FILTERS.map((f, i) => (
+            <button
+              key={f.label}
+              type="button"
+              onClick={() => setFilterIndex(i)}
+              className={`cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                filterIndex === i
+                  ? 'border-foreground/30 bg-foreground/[0.06] text-foreground'
+                  : 'border-border/60 bg-background text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" disabled={exporting} className="gap-1.5">
+              {exporting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onSelect={() => exportEvents('csv')}>
+              Download CSV
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => exportEvents('jsonl')}>
+              Download JSONL
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {query.isError && (
