@@ -11,7 +11,7 @@
  * carries over: Connected | Add provider | Models.
  */
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
@@ -19,8 +19,6 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
-  Globe,
-  Key,
   Loader2,
   Plug,
   Plus,
@@ -55,14 +53,9 @@ import {
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
-  deleteProjectOauthCredential,
   deleteProjectSecret,
-  listProjectOauthCredentials,
   listProjectSecrets,
-  pollProjectOauthFlow,
-  startProjectOauthFlow,
   upsertProjectSecret,
-  type OauthProviderId,
 } from '@/lib/projects-client';
 import {
   LLM_PROVIDERS,
@@ -84,42 +77,19 @@ export interface ProjectProviderModalProps {
   defaultTab?: ActiveTab;
 }
 
-/**
- * Providers that support an opencode-style OAuth flow in addition to (or
- * instead of) an API-key path. The set must stay in sync with the API's
- * `SUPPORTED_OAUTH_PROVIDERS` constant in `apps/api/src/projects/oauth.ts`.
- */
-export const OAUTH_CAPABLE_PROVIDER_IDS: ReadonlySet<OauthProviderId> = new Set([
-  'openai',
-  'github-copilot',
-]);
-
-export function supportsOauth(providerId: string): providerId is OauthProviderId {
-  return OAUTH_CAPABLE_PROVIDER_IDS.has(providerId as OauthProviderId);
-}
-
 export function ProjectProviderModal({
   projectId,
   open,
   onOpenChange,
   defaultTab,
 }: ProjectProviderModalProps) {
-  // Gate the secrets + oauth fetches on `open`. The modal is always mounted
-  // by callers like ModelSelector (so `<Dialog>` can animate in/out cleanly),
-  // and firing these queries on mount produces a noisy toast for users who
-  // can't manage the project — the `/projects/:id/oauth` endpoint returns
-  // `404 { error: "Not found" }` for non-managers and the global api-client
-  // surfaces that as an error toast on every session load.
+  // Gate the secrets fetch on `open`. The modal is always mounted by callers
+  // like ModelSelector (so `<Dialog>` can animate in/out cleanly), and firing
+  // this query on mount produces a noisy toast for users who can't manage the
+  // project, so we only run it once the dialog is actually opened.
   const secretsQuery = useQuery({
     queryKey: ['project-secrets', projectId],
     queryFn: () => listProjectSecrets(projectId),
-    staleTime: 10_000,
-    enabled: open,
-  });
-
-  const oauthQuery = useQuery({
-    queryKey: ['project-oauth', projectId],
-    queryFn: () => listProjectOauthCredentials(projectId),
     staleTime: 10_000,
     enabled: open,
   });
@@ -130,23 +100,15 @@ export function ProjectProviderModal({
     return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
 
-  // A provider is "connected" if either an API-key route (every env var
-  // stored) or the OAuth route (a credential row exists) is fully wired.
-  // Partial API-key state stays not-connected on purpose — a half-configured
-  // provider would error at session start anyway.
-  const oauthConnectedIds = useMemo(
-    () => new Set((oauthQuery.data?.items ?? []).map((cred) => cred.provider_id)),
-    [oauthQuery.data],
-  );
-
+  // A provider is "connected" when its API-key route is fully wired (every
+  // env var stored). Partial API-key state stays not-connected on purpose — a
+  // half-configured provider would error at session start anyway.
   const connectedProviders = useMemo(
     () =>
       LLM_PROVIDERS.filter(
-        (p) =>
-          oauthConnectedIds.has(p.id as OauthProviderId) ||
-          (p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v))),
+        (p) => p.envVars.length > 0 && p.envVars.every((v) => secretNames.has(v)),
       ),
-    [secretNames, oauthConnectedIds],
+    [secretNames],
   );
 
   const hasConnections = connectedProviders.length > 0;
@@ -239,23 +201,22 @@ export function ProjectProviderModal({
         )}
 
         <div className="min-h-0 overflow-y-auto">
-          {(secretsQuery.isLoading || oauthQuery.isLoading) && (
+          {secretsQuery.isLoading && (
             <div className="flex min-h-[200px] items-center justify-center">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
           )}
 
-          {!secretsQuery.isLoading && !oauthQuery.isLoading && activeTab === 'connected' && (
+          {!secretsQuery.isLoading && activeTab === 'connected' && (
             <ConnectedTab
               projectId={projectId}
               connectedProviders={connectedProviders}
-              oauthConnectedIds={oauthConnectedIds}
               search={search}
               onAddProvider={() => switchTab('catalog')}
             />
           )}
 
-          {!secretsQuery.isLoading && !oauthQuery.isLoading && activeTab === 'catalog' && (
+          {!secretsQuery.isLoading && activeTab === 'catalog' && (
             <CatalogTab
               projectId={projectId}
               connectedIds={new Set(connectedProviders.map((p) => p.id))}
@@ -265,7 +226,7 @@ export function ProjectProviderModal({
             />
           )}
 
-          {!secretsQuery.isLoading && !oauthQuery.isLoading && activeTab === 'models' && (
+          {!secretsQuery.isLoading && activeTab === 'models' && (
             <ModelsTab
               connectedProviders={connectedProviders}
               search={search}
@@ -292,13 +253,11 @@ function pickInitialTab(
 function ConnectedTab({
   projectId,
   connectedProviders,
-  oauthConnectedIds,
   search,
   onAddProvider,
 }: {
   projectId: string;
   connectedProviders: LlmProviderEntry[];
-  oauthConnectedIds: Set<OauthProviderId>;
   search: string;
   onAddProvider: () => void;
 }) {
@@ -306,25 +265,19 @@ function ConnectedTab({
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   // Disconnect tears down every credential the provider owns: each env-var
-  // secret (one DELETE per row) and — if it's OAuth-connected — the OAuth
-  // credential row too. Fired in parallel so partial state can't survive a
-  // disconnect on a multi-key provider.
+  // secret (one DELETE per row). Fired in parallel so partial state can't
+  // survive a disconnect on a multi-key provider.
   const disconnect = useMutation({
     mutationFn: async (provider: LlmProviderEntry) => {
-      const ops: Promise<unknown>[] = provider.envVars.map((envVar) =>
-        deleteProjectSecret(projectId, envVar),
+      await Promise.all(
+        provider.envVars.map((envVar) => deleteProjectSecret(projectId, envVar)),
       );
-      if (oauthConnectedIds.has(provider.id as OauthProviderId)) {
-        ops.push(deleteProjectOauthCredential(projectId, provider.id as OauthProviderId));
-      }
-      await Promise.all(ops);
       return provider;
     },
     onSuccess: (provider) => {
       toast.success(`${provider.label} disconnected`);
       setConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project-oauth', projectId] });
     },
     onError: (err) =>
       toast.error(err instanceof Error ? err.message : 'Failed to disconnect'),
@@ -369,7 +322,7 @@ function ConnectedTab({
       {filtered.map((provider) => (
         <div
           key={provider.id}
-          className="group flex h-auto w-full items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left"
+          className="group flex h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left"
         >
           <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
           <div className="min-w-0 flex-1">
@@ -529,7 +482,7 @@ function CatalogTab({
         type="button"
         variant="ghost"
         onClick={() => setSubview({ kind: 'custom' })}
-        className="group flex h-auto w-full items-center gap-3 rounded-xl border border-dashed border-border bg-background px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
+        className="group flex h-auto w-full items-center gap-3 rounded-2xl border border-dashed border-border bg-background px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
       >
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-dashed border-border/60 text-muted-foreground/70">
           <Plus className="h-4 w-4" />
@@ -561,7 +514,7 @@ function CatalogTab({
             type="button"
             variant="ghost"
             onClick={() => setSubview({ kind: 'detail', providerId: provider.id })}
-            className="group flex h-auto w-full items-center gap-3 rounded-xl border border-border/50 bg-background px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
+            className="group flex h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-background px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
           >
             <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
             <div className="min-w-0 flex-1">
@@ -623,7 +576,7 @@ function ProviderDetail({
         Back to providers
       </Button>
 
-      <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-3">
+      <div className="flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
         <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
@@ -666,11 +619,11 @@ function ProviderDetail({
           </span>
         </div>
         {models.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/40 px-4 py-6 text-center text-xs text-muted-foreground">
+          <div className="rounded-2xl border border-dashed border-border/40 px-4 py-6 text-center text-xs text-muted-foreground">
             No models declared.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border/40 bg-background/40">
+          <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
             {models.map((model, i) => (
               <div
                 key={model.id}
@@ -713,9 +666,7 @@ function releasedAgo(iso: string): string {
   return `${Math.floor(days / 365)}y`;
 }
 
-// ─── Connect form — method picker → API key OR OAuth device-code ───────────
-
-type ConnectMethod = 'api-key' | 'oauth';
+// ─── Connect form — API key entry (stored as project secrets) ──────────────
 
 function ConnectForm({
   projectId,
@@ -728,129 +679,14 @@ function ConnectForm({
   onBack: () => void;
   onConnected: () => void;
 }) {
-  const oauthSupported = supportsOauth(provider.id);
-  // Providers without OAuth go straight to the API-key form. OAuth-capable
-  // providers show a method picker first; user choice short-circuits to one
-  // of the two forms. Picker→back returns to the picker, then back→onBack
-  // returns to the detail screen.
-  const [method, setMethod] = useState<ConnectMethod | null>(
-    oauthSupported ? null : 'api-key',
-  );
-
-  if (method === 'api-key') {
-    return (
-      <ApiKeyConnectForm
-        projectId={projectId}
-        provider={provider}
-        onBack={oauthSupported ? () => setMethod(null) : onBack}
-        onConnected={onConnected}
-      />
-    );
-  }
-
-  if (method === 'oauth') {
-    return (
-      <OauthConnectForm
-        projectId={projectId}
-        provider={provider}
-        onBack={() => setMethod(null)}
-        onConnected={onConnected}
-      />
-    );
-  }
-
   return (
-    <MethodPicker
+    <ApiKeyConnectForm
+      projectId={projectId}
       provider={provider}
       onBack={onBack}
-      onPick={setMethod}
+      onConnected={onConnected}
     />
   );
-}
-
-function MethodPicker({
-  provider,
-  onBack,
-  onPick,
-}: {
-  provider: LlmProviderEntry;
-  onBack: () => void;
-  onPick: (method: ConnectMethod) => void;
-}) {
-  const oauthLabel = oauthMethodLabel(provider.id);
-  const oauthHint = oauthMethodHint(provider.id);
-  return (
-    <div className="space-y-3 px-5 pb-5 pt-3">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground"
-        onClick={onBack}
-      >
-        <ChevronLeft className="h-3.5 w-3.5" />
-        Back to providers
-      </Button>
-
-      <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-3">
-        <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-foreground">{provider.label}</div>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-            Pick a sign-in method
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <button
-          type="button"
-          onClick={() => onPick('oauth')}
-          className="group flex w-full items-start gap-3 rounded-xl border border-border/60 bg-background px-3.5 py-3 text-left transition-colors hover:bg-muted/35"
-        >
-          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 text-muted-foreground">
-            <Globe className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-foreground">{oauthLabel}</div>
-            {oauthHint && (
-              <div className="mt-0.5 text-[11px] text-muted-foreground">{oauthHint}</div>
-            )}
-          </div>
-          <ChevronRight className="ml-auto mt-1 h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onPick('api-key')}
-          className="group flex w-full items-start gap-3 rounded-xl border border-border/60 bg-background px-3.5 py-3 text-left transition-colors hover:bg-muted/35"
-        >
-          <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/50 text-muted-foreground">
-            <Key className="h-4 w-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-foreground">API key</div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
-              Manually enter an existing API key
-            </div>
-          </div>
-          <ChevronRight className="ml-auto mt-1 h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function oauthMethodLabel(providerId: string): string {
-  if (providerId === 'openai') return 'ChatGPT Pro/Plus (headless)';
-  if (providerId === 'github-copilot') return 'Login with GitHub Copilot';
-  return 'OAuth login';
-}
-
-function oauthMethodHint(providerId: string): string | null {
-  if (providerId === 'openai') return 'Use your ChatGPT Pro or Plus subscription';
-  if (providerId === 'github-copilot') return 'Reuse an existing Copilot plan via device-code login';
-  return null;
 }
 
 function ApiKeyConnectForm({
@@ -931,7 +767,7 @@ function ApiKeyConnectForm({
         Back to providers
       </Button>
 
-      <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-3">
+      <div className="flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
         <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-foreground">
@@ -954,7 +790,7 @@ function ApiKeyConnectForm({
       <form
         onSubmit={handleSubmit}
         className={cn(
-          'space-y-3 rounded-xl border border-border/50 bg-muted/20 p-4',
+          'space-y-3 rounded-2xl border border-border/50 bg-muted/20 p-4',
         )}
       >
         {provider.envVars.map((envVar, index) => (
@@ -993,7 +829,7 @@ function ApiKeyConnectForm({
         )}
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <div className="flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
             <span>{error}</span>
           </div>
@@ -1020,285 +856,6 @@ function ApiKeyConnectForm({
         Values are encrypted at rest (AES-256-GCM, per-project key) and injected
         into every new session sandbox as env vars. Restart any running session
         for this provider to take effect there.
-      </p>
-    </div>
-  );
-}
-
-// ─── OAuth device-code connect (ChatGPT headless / GitHub Copilot) ─────────
-
-type OauthFormPhase =
-  | { kind: 'idle' }
-  | { kind: 'enterprise-prompt' }
-  | { kind: 'starting' }
-  | {
-      kind: 'awaiting';
-      flowId: string;
-      verificationUrl: string;
-      userCode: string;
-      expiresAt: number;
-    }
-  | { kind: 'success' }
-  | { kind: 'expired' }
-  | { kind: 'failed'; error: string };
-
-function OauthConnectForm({
-  projectId,
-  provider,
-  onBack,
-  onConnected,
-}: {
-  projectId: string;
-  provider: LlmProviderEntry;
-  onBack: () => void;
-  onConnected: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const providerId = provider.id as OauthProviderId;
-  const supportsEnterprise = providerId === 'github-copilot';
-
-  const [phase, setPhase] = useState<OauthFormPhase>(
-    supportsEnterprise ? { kind: 'enterprise-prompt' } : { kind: 'idle' },
-  );
-  const [enterpriseUrl, setEnterpriseUrl] = useState('');
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelledRef = useRef(false);
-
-  // Always tear down the poll timer when the form unmounts, otherwise a long
-  // device-code flow keeps firing pollProjectOauthFlow into the void after
-  // the user has navigated away.
-  useEffect(() => {
-    return () => {
-      cancelledRef.current = true;
-      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    };
-  }, []);
-
-  const startFlow = useCallback(async (input?: { enterprise_url?: string }) => {
-    setPhase({ kind: 'starting' });
-    try {
-      const start = await startProjectOauthFlow(projectId, providerId, input);
-      // Open the verification page automatically — both upstream provider
-      // pages show the field for `user_code` front-and-center, matching the
-      // screenshot the user shared.
-      if (typeof window !== 'undefined') {
-        window.open(start.verification_url, '_blank', 'noopener,noreferrer');
-      }
-      setPhase({
-        kind: 'awaiting',
-        flowId: start.flow_id,
-        verificationUrl: start.verification_url,
-        userCode: start.user_code,
-        expiresAt: start.expires_at,
-      });
-      // Kick off polling on the upstream-recommended cadence.
-      schedulePoll(start.flow_id, start.interval_ms);
-    } catch (err) {
-      setPhase({
-        kind: 'failed',
-        error: err instanceof Error ? err.message : 'Failed to start OAuth flow',
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, providerId]);
-
-  const schedulePoll = useCallback((flowId: string, delayMs: number) => {
-    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    pollTimerRef.current = setTimeout(async () => {
-      if (cancelledRef.current) return;
-      try {
-        const result = await pollProjectOauthFlow(projectId, providerId, flowId);
-        if (cancelledRef.current) return;
-        if (result.status === 'pending') {
-          schedulePoll(flowId, result.next_poll_ms);
-          return;
-        }
-        if (result.status === 'success') {
-          setPhase({ kind: 'success' });
-          queryClient.invalidateQueries({ queryKey: ['project-oauth', projectId] });
-          toast.success(`${provider.label} connected`);
-          // Short delay so users see the success state before the modal
-          // collapses back to the catalog.
-          setTimeout(() => {
-            if (!cancelledRef.current) onConnected();
-          }, 700);
-          return;
-        }
-        if (result.status === 'expired') {
-          setPhase({ kind: 'expired' });
-          return;
-        }
-        setPhase({ kind: 'failed', error: result.error });
-      } catch (err) {
-        if (cancelledRef.current) return;
-        setPhase({
-          kind: 'failed',
-          error: err instanceof Error ? err.message : 'Polling failed',
-        });
-      }
-    }, Math.max(delayMs, 1000));
-  }, [projectId, providerId, queryClient, provider.label, onConnected]);
-
-  return (
-    <div className="space-y-3 px-5 pb-5 pt-3">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground"
-        onClick={onBack}
-      >
-        <ChevronLeft className="h-3.5 w-3.5" />
-        Back
-      </Button>
-
-      <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-3">
-        <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-foreground">
-            {oauthMethodLabel(provider.id)}
-          </div>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-            {oauthMethodHint(provider.id) ?? 'Authorize via device-code login'}
-          </div>
-        </div>
-      </div>
-
-      {phase.kind === 'enterprise-prompt' && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const trimmed = enterpriseUrl.trim();
-            if (trimmed) {
-              void startFlow({ enterprise_url: trimmed });
-            } else {
-              void startFlow();
-            }
-          }}
-          className="space-y-3 rounded-xl border border-border/50 bg-muted/20 p-4"
-        >
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-              GitHub Enterprise URL (optional)
-            </label>
-            <Input
-              type="text"
-              value={enterpriseUrl}
-              onChange={(e) => setEnterpriseUrl(e.target.value)}
-              placeholder="company.ghe.com (leave empty for github.com)"
-              className="h-9 rounded-xl border-border/50 bg-background text-sm"
-              autoComplete="off"
-              autoFocus
-            />
-          </div>
-          <Button type="submit" size="sm" className="px-4">
-            Continue
-          </Button>
-        </form>
-      )}
-
-      {phase.kind === 'idle' && !supportsEnterprise && (
-        <div className="space-y-3 rounded-xl border border-border/50 bg-muted/20 p-4">
-          <p className="text-xs text-muted-foreground">
-            You&apos;ll be redirected to {provider.label} to authorize. After
-            approving, return here — we&apos;ll persist the OAuth tokens to this
-            project.
-          </p>
-          <Button type="button" size="sm" className="px-4" onClick={() => void startFlow()}>
-            Continue
-          </Button>
-        </div>
-      )}
-
-      {phase.kind === 'starting' && (
-        <div className="flex items-center gap-2 rounded-xl border border-border/50 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Initiating device-code flow…
-        </div>
-      )}
-
-      {phase.kind === 'awaiting' && (
-        <div className="space-y-3 rounded-xl border border-border/50 bg-muted/20 p-4">
-          <p className="text-xs text-muted-foreground">
-            A browser tab should have opened automatically. Complete the
-            authorization there, then return here.
-          </p>
-          <div className="rounded-lg border border-dashed border-border/70 bg-background px-3 py-3 text-center">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
-              Code
-            </div>
-            <div className="mt-1 font-mono text-lg tracking-widest">
-              {phase.userCode}
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <a
-              href={phase.verificationUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Open authorization page
-            </a>
-            <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Waiting for authorization…
-            </span>
-          </div>
-        </div>
-      )}
-
-      {phase.kind === 'success' && (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-xs text-emerald-700 dark:text-emerald-300">
-          <Plug className="h-3.5 w-3.5" />
-          Connected. Tokens persisted to this project.
-        </div>
-      )}
-
-      {phase.kind === 'expired' && (
-        <div className="space-y-2">
-          <div className="flex items-start gap-2 rounded-lg bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-            <span>Device code expired before authorization completed.</span>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setPhase(supportsEnterprise ? { kind: 'enterprise-prompt' } : { kind: 'idle' });
-            }}
-          >
-            Try again
-          </Button>
-        </div>
-      )}
-
-      {phase.kind === 'failed' && (
-        <div className="space-y-2">
-          <div className="flex items-start gap-2 rounded-lg bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-            <span>{phase.error || 'Authorization failed'}</span>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setPhase(supportsEnterprise ? { kind: 'enterprise-prompt' } : { kind: 'idle' });
-            }}
-          >
-            Try again
-          </Button>
-        </div>
-      )}
-
-      <p className="px-1 text-[11px] text-muted-foreground">
-        OAuth tokens are encrypted at rest and injected as{' '}
-        <code className="rounded bg-background px-1 py-0.5 font-mono">OPENCODE_AUTH_CONTENT</code>
-        {' '}into every new session sandbox. Refresh is handled automatically at
-        sandbox boot.
       </p>
     </div>
   );
@@ -1426,7 +983,7 @@ function CustomProviderForm({
         Back to providers
       </Button>
 
-      <div className="rounded-xl border border-border/50 bg-muted/20 px-3.5 py-3">
+      <div className="rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
         <div className="text-sm font-medium text-foreground">Custom provider</div>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           Connect any OpenAI-compatible endpoint. The API key is saved as a
@@ -1437,7 +994,7 @@ function CustomProviderForm({
 
       <form
         onSubmit={handleSubmit}
-        className="space-y-3 rounded-xl border border-border/50 bg-muted/20 p-4"
+        className="space-y-3 rounded-2xl border border-border/50 bg-muted/20 p-4"
       >
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -1524,7 +1081,7 @@ function CustomProviderForm({
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 rounded-lg bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <div className="flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
             <span>{error}</span>
           </div>
@@ -1569,7 +1126,7 @@ function CustomProviderSnippetView({
 
   return (
     <div className="space-y-3 px-5 pb-5 pt-3">
-      <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] px-3.5 py-3">
+      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] px-3.5 py-3">
         <div className="text-sm font-medium text-foreground">
           {secretName ? 'API key saved' : 'Snippet ready'}
         </div>
@@ -1602,7 +1159,7 @@ function CustomProviderSnippetView({
             {copied ? 'Copied' : 'Copy'}
           </Button>
         </div>
-        <pre className="max-h-[280px] overflow-auto rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[11px] leading-snug text-foreground">
+        <pre className="max-h-[280px] overflow-auto rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[11px] leading-snug text-foreground">
           {snippet}
         </pre>
       </div>
@@ -1727,7 +1284,7 @@ function ModelsTab({
               {models.length}
             </span>
           </div>
-          <div className="overflow-hidden rounded-xl border border-border/40 bg-background/40">
+          <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
             {models.map((model, i) => (
               <div
                 key={model.id}

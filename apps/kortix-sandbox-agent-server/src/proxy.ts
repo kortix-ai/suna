@@ -5,6 +5,7 @@ import { logger } from './logger'
 import type { Opencode } from './opencode'
 import { createHealthRouter } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
+import { createPromptRouter } from './routes/prompt'
 import { createPortProxyRouter } from './routes/port-proxy'
 import webProxyRouter from './routes/web-proxy'
 import {
@@ -32,10 +33,13 @@ export function buildOpencodeApp(cfg: Config, opencode: Opencode, bootTime: numb
   const kortixRouter = new Hono()
   const healthRouter = createHealthRouter(cfg, opencode, bootTime)
   const refreshRouter = createRefreshRouter(cfg, opencode)
+  const promptRouter = createPromptRouter(cfg)
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
   kortixRouter.route('/refresh/', refreshRouter)
+  kortixRouter.route('/prompt', promptRouter)
+  kortixRouter.route('/prompt/', promptRouter)
 
   app.route('/kortix', kortixRouter)
 

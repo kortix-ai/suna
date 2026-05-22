@@ -299,7 +299,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
                 <div className="space-y-2">
                   <Label>Timezone</Label>
                    <Select value={timezone} onValueChange={(v) => { setTimezone(v); markDirty(); }}>
-                    <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
+                    <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -314,11 +314,11 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
               <div className="space-y-3">
                 <div className="space-y-2">
                   <Label>Webhook Path</Label>
-                  <Input type="text" value={webhookPath} onChange={(e) => { setWebhookPath(e.target.value); markDirty(); }} placeholder="/hooks/my-endpoint" className="rounded-xl" />
+                  <Input type="text" value={webhookPath} onChange={(e) => { setWebhookPath(e.target.value); markDirty(); }} placeholder="/hooks/my-endpoint" />
                 </div>
 
                 {/* Full external URL + curl example */}
-                <div className="rounded-xl bg-muted/50 border p-3 space-y-2">
+                <div className="rounded-2xl bg-muted/50 border p-3 space-y-2">
                   <div className="text-xs font-medium text-muted-foreground">External URL</div>
                   <code className="text-xs font-mono text-foreground break-all block select-all">
                     {webhookBaseUrl}{trigger.webhook?.path || webhookPath || '/hooks/...'}
@@ -363,7 +363,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
                 value={sessionMode}
                 onValueChange={(v) => { setSessionMode(v as SessionMode); markDirty(); }}
               >
-                <SelectTrigger className="cursor-pointer rounded-xl hover:bg-muted/40 transition-colors">
+                <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -378,7 +378,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
             {(trigger.action_type === 'prompt' || !trigger.action_type) && (
             <div className="space-y-2">
               <Label>Agent</Label>
-              <div className="rounded-xl border bg-card px-2 py-1">
+              <div className="rounded-2xl border bg-card px-2 py-1">
                 <AgentSelector
                   agents={agents}
                   selectedAgent={agentName}
@@ -389,7 +389,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
             )}
 
             {/* Info */}
-            <div className="rounded-lg bg-muted/50 p-3 space-y-1.5 text-sm">
+            <div className="rounded-2xl bg-muted/50 p-3 space-y-1.5 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Type</span>
                 <span className="font-medium capitalize">{trigger.type} → {trigger.action_type ?? 'prompt'}</span>
@@ -516,7 +516,7 @@ function ExecutionItem({
   return (
     <div
       className={cn(
-        'rounded-lg border p-3 text-sm transition-colors',
+        'rounded-2xl border p-3 text-sm transition-colors',
         canOpenSession ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default'
       )}
       onClick={() => {

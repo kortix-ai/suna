@@ -222,7 +222,7 @@ function CommitCard({
   return (
     <div
       className={cn(
-        'rounded-lg border overflow-hidden transition-colors',
+        'rounded-2xl border overflow-hidden transition-colors',
         isSelected
           ? 'border-primary/30 bg-primary/5'
           : 'border-border/50 bg-card hover:border-border/80',

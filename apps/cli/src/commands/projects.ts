@@ -11,6 +11,7 @@ import {
   saveLink,
 } from '../project-link.ts';
 import { selectFromList } from '../tui-select.ts';
+import { takeFlagBool } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
 import type { ProjectSummary } from '../api/types.ts';
 
@@ -22,6 +23,9 @@ Subcommands:
   link [<id>]          Bind cwd to a remote project (writes .kortix/link.json)
   unlink               Remove .kortix/link.json from cwd
   open [<id>]          Open the dashboard URL for one project
+  rm [<id>]            Archive a project (defaults to the linked one).
+                       --purge also deletes its managed git repo (irreversible).
+                       -y / --yes skips the confirmation.
 
 Run \`kortix projects <subcommand> --help\` for options.
 `;
@@ -45,6 +49,9 @@ export async function runProjects(argv: string[]): Promise<number> {
       return projectsUnlink();
     case 'open':
       return projectsOpen(rest[0]);
+    case 'rm':
+    case 'remove':
+      return projectsRm(rest);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -199,9 +206,6 @@ async function projectsLink(arg?: string): Promise<number> {
   return 0;
 }
 
-// Silence unused if confirm gets reused later.
-void confirm;
-
 async function projectsUnlink(): Promise<number> {
   const existing = loadLink();
   clearLink();
@@ -224,6 +228,68 @@ async function projectsOpen(arg?: string): Promise<number> {
   const url = `${webDashboardUrl(auth.api_base)}/projects/${id}`;
   process.stdout.write(`${C.dim}Opening ${url}${C.reset}\n`);
   openInBrowser(url);
+  return 0;
+}
+
+interface RmResult {
+  ok: boolean;
+  archived: boolean;
+  repo_deleted: boolean;
+}
+
+async function projectsRm(args: string[]): Promise<number> {
+  const auth = requireAuth();
+  if (!auth) return 1;
+
+  const rest = [...args];
+  const purge = takeFlagBool(rest, ['--purge']);
+  const yes = takeFlagBool(rest, ['-y', '--yes']);
+  const id = rest.find((a) => !a.startsWith('-')) ?? resolveProjectId();
+  if (!id) {
+    process.stderr.write(
+      `${status.err('No project to remove.')} Pass an id or run inside a linked project.\n`,
+    );
+    return 1;
+  }
+
+  const client = clientFromAuth(auth);
+
+  let project: ProjectSummary;
+  try {
+    project = await client.get<ProjectSummary>(`/projects/${id}`);
+  } catch (err) {
+    return surface(err);
+  }
+
+  if (!yes) {
+    const msg = purge
+      ? `Archive ${C.bold}${project.name}${C.reset} AND permanently delete its managed git repo? ${C.red}This cannot be undone.${C.reset}`
+      : `Archive ${C.bold}${project.name}${C.reset}? (the git repo is kept; pass --purge to delete it)`;
+    const ok = await confirm(msg, false);
+    if (!ok) {
+      process.stdout.write(`${C.dim}Cancelled.${C.reset}\n`);
+      return 0;
+    }
+  }
+
+  let result: RmResult;
+  try {
+    result = await client.delete<RmResult>(`/projects/${id}${purge ? '?purge=true' : ''}`);
+  } catch (err) {
+    return surface(err);
+  }
+
+  // Drop the local binding if we just removed the linked project.
+  if (loadLink()?.project_id === id) clearLink();
+
+  process.stdout.write(`${status.ok(`Archived ${C.bold}${project.name}${C.reset}`)}\n`);
+  if (purge) {
+    process.stdout.write(
+      result.repo_deleted
+        ? `  ${C.dim}managed git repo deleted${C.reset}\n`
+        : `  ${C.dim}no managed repo to delete (bring-your-own repos are left untouched)${C.reset}\n`,
+    );
+  }
   return 0;
 }
 

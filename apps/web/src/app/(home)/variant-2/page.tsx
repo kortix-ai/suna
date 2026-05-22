@@ -191,7 +191,7 @@ export default function Variant2Home() {
                 { src: '/showcase/image/mockup-board.png', width: 874, height: 1312, label: 'Brand Identity Mockup', prompt: '"Design a logo and brand kit for Luxy"' },
               ].map(({ src, width, height, label, prompt }) => (
                 <Reveal key={src} className="flex-none w-[320px] sm:w-[380px]">
-                  <div className="rounded-xl overflow-hidden border border-border/40 bg-card/20">
+                  <div className="rounded-2xl overflow-hidden border border-border/40 bg-card/20">
                     <div className="bg-muted/10 border-b border-border/20 px-3 py-2 flex items-center gap-2">
                       <div className="flex gap-1">
                         <div className="size-1.5 rounded-full bg-muted-foreground/15" />

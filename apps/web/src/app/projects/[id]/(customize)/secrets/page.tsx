@@ -1,35 +1,56 @@
 'use client';
 
-import { use, useCallback, useMemo, useState } from 'react';
+import { FormEvent, use, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Check,
   FileWarning,
+  Globe,
   KeyRound,
   Loader2,
+  Lock,
   Pencil,
   Plug,
   Plus,
   Search,
   ShieldAlert,
   Trash2,
+  Users,
   X,
 } from 'lucide-react';
 
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
+import { VisibilityPicker } from '@/components/vault/visibility-picker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { List, ListRow } from '@/components/ui/list';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
   deleteProjectSecret,
+  listProjectAccess,
   listProjectSecrets,
   upsertProjectSecret,
   type ProjectSecret,
   type ProjectSecretsResponse,
+  type ProjectSecretVisibility,
 } from '@/lib/projects-client';
 
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/;
@@ -43,6 +64,41 @@ interface SecretRow {
   isSet: boolean;
   requirement: Requirement;
   updatedAt: string | null;
+  visibility: ProjectSecretVisibility | null;
+  grantUserIds: string[];
+}
+
+/** Per-row visibility badge. Replaces the one that lived in the deleted
+ *  account vault-tab; project secrets use 'everyone' | 'private' | 'select'. */
+function VisibilityBadge({
+  visibility,
+  grantCount,
+}: {
+  visibility: ProjectSecretVisibility;
+  grantCount: number;
+}) {
+  if (visibility === 'everyone') {
+    return (
+      <Badge variant="outline" size="sm" className="gap-1">
+        <Globe className="h-2.5 w-2.5" />
+        Everyone
+      </Badge>
+    );
+  }
+  if (visibility === 'private') {
+    return (
+      <Badge variant="outline" size="sm" className="gap-1">
+        <Lock className="h-2.5 w-2.5" />
+        Only me
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" size="sm" className="gap-1">
+      <Users className="h-2.5 w-2.5" />
+      Select {grantCount}
+    </Badge>
+  );
 }
 
 export default function ProjectSecretsPage({
@@ -149,6 +205,8 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
       isSet: Boolean(stored),
       requirement,
       updatedAt: stored?.updated_at ?? null,
+      visibility: stored?.visibility ?? null,
+      grantUserIds: stored?.grant_user_ids ?? [],
     });
     seen.add(name);
   }
@@ -162,6 +220,8 @@ function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefi
       isSet: true,
       requirement: null,
       updatedAt: item.updated_at,
+      visibility: item.visibility ?? null,
+      grantUserIds: item.grant_user_ids ?? [],
     });
   }
 
@@ -184,23 +244,31 @@ function SecretsCard({
   const missingRequired = allRows.filter((r) => r.requirement === 'required' && !r.isSet);
 
   const [search, setSearch] = useState('');
-  const [editingName, setEditingName] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
-
-  const [addingNew, setAddingNew] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newValue, setNewValue] = useState('');
   const [providerModalOpen, setProviderModalOpen] = useState(false);
 
-  const upsert = useMutation({
-    mutationFn: (input: { name: string; value: string }) =>
-      upsertProjectSecret(projectId, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+  // The add/edit dialog. `dialogRow` is the row being edited; null `name`
+  // (via the "Add" button) means "create new".
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogRow, setDialogRow] = useState<SecretRow | null>(null);
+
+  // Project members power the "select members" visibility option.
+  const membersQuery = useQuery({
+    queryKey: ['project-access', projectId],
+    queryFn: () => listProjectAccess(projectId),
+    staleTime: 30_000,
   });
+  const members = useMemo(
+    () =>
+      (membersQuery.data?.members ?? []).map((m) => ({
+        user_id: m.user_id,
+        email: m.email,
+      })),
+    [membersQuery.data],
+  );
 
   const remove = useMutation({
-    mutationFn: (name: string) => deleteProjectSecret(projectId, name),
+    mutationFn: ({ name }: { name: string }) => deleteProjectSecret(projectId, name),
     onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
 
@@ -210,54 +278,25 @@ function SecretsCard({
     return allRows.filter((r) => r.name.toLowerCase().includes(q));
   }, [allRows, search]);
 
-  const resetNew = () => {
-    setAddingNew(false);
-    setNewName('');
-    setNewValue('');
+  const openCreate = () => {
+    setDialogRow(null);
+    setDialogOpen(true);
+    setConfirmDeleteName(null);
   };
 
-  const handleAdd = useCallback(async () => {
-    const name = newName.trim().toUpperCase();
-    if (!name) return;
-    if (!SECRET_NAME_REGEX.test(name)) {
-      toast.error('Invalid name', {
-        description: 'Use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.',
-      });
-      return;
-    }
-    if (name.startsWith('KORTIX_')) {
-      toast.error('KORTIX_* names are reserved for platform variables');
-      return;
-    }
-    try {
-      await upsert.mutateAsync({ name, value: newValue });
-      toast.success(`Saved ${name}`);
-      resetNew();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save secret');
-    }
-  }, [newName, newValue, upsert]);
-
-  const handleSave = useCallback(
-    async (name: string) => {
-      try {
-        await upsert.mutateAsync({ name, value: editValue });
-        toast.success(`Saved ${name}`);
-        setEditingName(null);
-        setEditValue('');
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to save');
-      }
-    },
-    [editValue, upsert],
-  );
+  const openEdit = (row: SecretRow) => {
+    setDialogRow(row);
+    setDialogOpen(true);
+    setConfirmDeleteName(null);
+  };
 
   const handleDelete = useCallback(
-    async (name: string) => {
+    async (row: SecretRow) => {
       setConfirmDeleteName(null);
+      if (!row.isSet) return;
       try {
-        await remove.mutateAsync(name);
-        toast.success(`Removed ${name}`);
+        await remove.mutateAsync({ name: row.name });
+        toast.success(`Removed ${row.name}`);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to remove');
       }
@@ -275,17 +314,13 @@ function SecretsCard({
       />
 
       {missingRequired.length > 0 && (
-        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-600 dark:text-amber-500" />
-          <div className="space-y-0.5 text-sm">
-            <p className="font-medium text-foreground">
-              {missingRequired.length} required {missingRequired.length === 1 ? 'secret' : 'secrets'} not set
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Sessions can still start, but the agent will likely fail until these are set.
-            </p>
-          </div>
-        </div>
+        <InfoBanner
+          tone="warning"
+          icon={AlertTriangle}
+          title={`${missingRequired.length} required ${missingRequired.length === 1 ? 'secret' : 'secrets'} not set`}
+        >
+          Sessions can still start, but the agent will likely fail until these are set.
+        </InfoBanner>
       )}
 
       <ProjectProviderModal
@@ -294,267 +329,365 @@ function SecretsCard({
         onOpenChange={setProviderModalOpen}
       />
 
-      <section className="rounded-xl border border-border/70 bg-card">
-        <header className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter..."
-              className="h-8 pl-8 text-xs shadow-none"
-            />
+      <SectionCard
+        title="Secrets"
+        description="Key-value pairs injected into every new session sandbox."
+        flush
+        action={
+          <div className="flex items-center gap-2">
+            <div className="relative w-44">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Filter..."
+                className="h-8 pl-8 text-xs shadow-none"
+              />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => setProviderModalOpen(true)}
+            >
+              <Plug className="h-3.5 w-3.5" />
+              Connect provider
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={openCreate}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => setProviderModalOpen(true)}
-          >
-            <Plug className="h-3.5 w-3.5" />
-            Connect provider
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => {
-              setAddingNew(true);
-              setEditingName(null);
-              setConfirmDeleteName(null);
-            }}
-            disabled={addingNew}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add
-          </Button>
-        </header>
+        }
+      >
+        {filtered.length === 0 ? (
+          <EmptyState
+            icon={KeyRound}
+            title={search ? 'No matches' : 'No secrets yet'}
+            description={
+              search
+                ? 'No secrets match your filter.'
+                : 'Add one to inject it into every new session.'
+            }
+          />
+        ) : (
+          <List>
+            {filtered.map((row) => {
+              const isConfirmingDelete = confirmDeleteName === row.name;
 
-        {addingNew && (
-          <div className="flex items-center gap-2 border-b border-border/40 bg-muted/20 px-4 py-2.5">
+              return (
+                <ListRow
+                  key={row.name}
+                  className={cn(
+                    !row.isSet && row.requirement === 'required' && 'bg-amber-500/[0.02]',
+                  )}
+                  leading={<EntityAvatar icon={KeyRound} size="sm" />}
+                  title={
+                    <code className="truncate font-mono text-xs text-foreground">
+                      {row.name}
+                    </code>
+                  }
+                  badges={
+                    <>
+                      {row.requirement === 'required' && (
+                        <Badge variant="warning" size="sm">
+                          Required
+                        </Badge>
+                      )}
+                      {row.requirement === 'optional' && (
+                        <Badge variant="outline" size="sm">
+                          Optional
+                        </Badge>
+                      )}
+                    </>
+                  }
+                  subtitle={
+                    isConfirmingDelete ? (
+                      <span className="text-xs text-muted-foreground">Remove this secret?</span>
+                    ) : row.isSet ? (
+                      <code className="truncate font-mono text-xs text-muted-foreground">
+                        ••••••••
+                      </code>
+                    ) : (
+                      <span
+                        className={cn(
+                          'text-xs italic',
+                          row.requirement === 'required'
+                            ? 'text-amber-700 dark:text-amber-500'
+                            : 'text-muted-foreground/60',
+                        )}
+                      >
+                        Not set
+                      </span>
+                    )
+                  }
+                  trailing={
+                    <>
+                      {row.isSet && row.visibility && !isConfirmingDelete && (
+                        <VisibilityBadge
+                          visibility={row.visibility}
+                          grantCount={row.grantUserIds.length}
+                        />
+                      )}
+                      <div className="flex w-[88px] flex-shrink-0 items-center justify-end gap-0.5">
+                        {isConfirmingDelete ? (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => void handleDelete(row)}
+                              disabled={remove.isPending}
+                            >
+                              {remove.isPending ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Check className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => setConfirmDeleteName(null)}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        ) : row.isSet ? (
+                          <>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
+                              onClick={() => openEdit(row)}
+                              aria-label="Edit"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                              onClick={() => setConfirmDeleteName(row.name)}
+                              aria-label="Delete"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant={row.requirement === 'required' ? 'default' : 'outline'}
+                            className="h-7 px-2 text-xs"
+                            onClick={() => openEdit(row)}
+                          >
+                            Set
+                          </Button>
+                        )}
+                      </div>
+                    </>
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
+      </SectionCard>
+
+      <SecretDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        projectId={projectId}
+        row={dialogRow}
+        members={members}
+        onSaved={() => queryClient.invalidateQueries({ queryKey })}
+      />
+    </div>
+  );
+}
+
+// ─── Add / Set / rotate secret dialog (with visibility picker) ───────────────
+
+function SecretDialog({
+  open,
+  onOpenChange,
+  projectId,
+  row,
+  members,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projectId: string;
+  /** null = create a brand-new secret; otherwise set/rotate this row. */
+  row: SecretRow | null;
+  members: import('@/components/vault/visibility-picker').VisibilityPickerMember[];
+  onSaved: () => void;
+}) {
+  // For a manifest-declared row the name is fixed; only free-form adds let the
+  // user type it.
+  const fixedName = row?.name ?? null;
+  const [name, setName] = useState('');
+  const [value, setValue] = useState('');
+  const [visibility, setVisibility] = useState<ProjectSecretVisibility>('everyone');
+  const [grantUserIds, setGrantUserIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(row?.name ?? '');
+    setValue('');
+    setVisibility(row?.visibility ?? 'everyone');
+    setGrantUserIds(row?.grantUserIds ?? []);
+  }, [open, row]);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const finalName = (fixedName ?? name).trim().toUpperCase();
+      if (!SECRET_NAME_REGEX.test(finalName)) {
+        throw new Error('Use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
+      }
+      if (finalName.startsWith('KORTIX_')) {
+        throw new Error('KORTIX_* names are reserved for platform variables');
+      }
+      return upsertProjectSecret(projectId, {
+        name: finalName,
+        value,
+        visibility,
+        grant_user_ids: visibility === 'select' ? grantUserIds : undefined,
+      });
+    },
+    onSuccess: () => {
+      toast.success(`Saved ${(fixedName ?? name).trim().toUpperCase()}`);
+      onSaved();
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to save secret'),
+  });
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (save.isPending) return;
+    if (!fixedName && !name.trim()) return;
+    if (visibility === 'select' && grantUserIds.length === 0) {
+      toast.error('Pick at least one member, or choose another visibility.');
+      return;
+    }
+    save.mutate();
+  }
+
+  const title = !row ? 'Add secret' : row.isSet ? `Edit ${row.name}` : `Set ${row.name}`;
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (save.isPending) return;
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>
+            Injected as an environment variable into every new session sandbox.
+            Choose who on the project can use it.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
+          {/* Dummy fields absorb browser autofill so the real inputs below
+              aren't treated as a username/password login form. */}
+          <input type="text" name="username" autoComplete="username" className="hidden" tabIndex={-1} aria-hidden="true" />
+          <input type="password" name="password" autoComplete="new-password" className="hidden" tabIndex={-1} aria-hidden="true" />
+          <div className="space-y-1.5">
+            <Label htmlFor="secret-dialog-name">Name</Label>
             <Input
-              type="text"
-              value={newName}
+              id="secret-dialog-name"
+              name="vault-secret-name"
+              value={fixedName ?? name}
               onChange={(e) =>
-                setNewName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))
+                setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))
               }
               placeholder="KEY_NAME"
-              className="h-8 w-[240px] font-mono text-xs shadow-none"
-              autoFocus
+              className="font-mono"
+              autoFocus={!fixedName}
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-form-type="other"
+              disabled={!!fixedName || save.isPending}
+              required
             />
-            <Input
-              type="text"
-              value={newValue}
-              onChange={(e) => setNewValue(e.target.value)}
-              placeholder="value"
-              className="h-8 flex-1 font-mono text-xs shadow-none"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleAdd();
-                if (e.key === 'Escape') resetNew();
-              }}
-            />
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-              onClick={() => void handleAdd()}
-              disabled={!newName.trim() || upsert.isPending}
-            >
-              {upsert.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Check className="h-3.5 w-3.5" />
-              )}
-            </Button>
-            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={resetNew}>
-              <X className="h-3.5 w-3.5" />
-            </Button>
           </div>
-        )}
 
-        <div className="divide-y divide-border/40">
-          {filtered.map((row) => {
-            const isEditing = editingName === row.name;
-            const isConfirmingDelete = confirmDeleteName === row.name;
+          <div className="space-y-1.5">
+            <Label htmlFor="secret-dialog-value">
+              {row?.isSet ? (
+                <>
+                  New value{' '}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    (leave blank to keep current)
+                  </span>
+                </>
+              ) : (
+                'Value'
+              )}
+            </Label>
+            <Input
+              id="secret-dialog-value"
+              name="vault-secret-value"
+              type="password"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="••••••••"
+              className="font-mono"
+              autoComplete="new-password"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-form-type="other"
+              autoFocus={!!fixedName}
+              disabled={save.isPending}
+            />
+          </div>
 
-            return (
-              <div
-                key={row.name}
-                className={cn(
-                  'group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/30',
-                  !row.isSet && row.requirement === 'required' && 'bg-amber-500/[0.02]',
-                )}
-              >
-                <div className="flex w-[260px] flex-shrink-0 items-center gap-2">
-                  <code className="truncate font-mono text-xs text-foreground">
-                    {row.name}
-                  </code>
-                  {row.requirement === 'required' && (
-                    <Badge
-                      variant="outline"
-                      className="h-4 flex-shrink-0 rounded-md border-amber-500/40 bg-amber-500/10 px-1 text-[9px] font-medium text-amber-700 dark:text-amber-400"
-                    >
-                      Required
-                    </Badge>
-                  )}
-                  {row.requirement === 'optional' && (
-                    <Badge
-                      variant="outline"
-                      className="h-4 flex-shrink-0 rounded-md px-1 text-[9px] font-normal text-muted-foreground"
-                    >
-                      Optional
-                    </Badge>
-                  )}
-                </div>
+          <div className="space-y-1.5">
+            <Label>Who can use this?</Label>
+            <VisibilityPicker
+              visibility={visibility}
+              onVisibilityChange={setVisibility}
+              grantUserIds={grantUserIds}
+              onGrantsChange={setGrantUserIds}
+              members={members}
+            />
+          </div>
 
-                <div className="min-w-0 flex-1">
-                  {isEditing ? (
-                    <Input
-                      type="text"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      placeholder="New value"
-                      className="h-8 font-mono text-xs shadow-none"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void handleSave(row.name);
-                        if (e.key === 'Escape') {
-                          setEditingName(null);
-                          setEditValue('');
-                        }
-                      }}
-                    />
-                  ) : isConfirmingDelete ? (
-                    <span className="text-xs text-muted-foreground">Remove this secret?</span>
-                  ) : row.isSet ? (
-                    <code className="truncate font-mono text-xs text-muted-foreground">
-                      ••••••••
-                    </code>
-                  ) : (
-                    <span
-                      className={cn(
-                        'text-xs italic',
-                        row.requirement === 'required'
-                          ? 'text-amber-700 dark:text-amber-500'
-                          : 'text-muted-foreground/60',
-                      )}
-                    >
-                      Not set
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex w-[88px] flex-shrink-0 items-center justify-end gap-0.5">
-                  {isEditing ? (
-                    <>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        onClick={() => void handleSave(row.name)}
-                        disabled={upsert.isPending}
-                      >
-                        {upsert.isPending ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Check className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        onClick={() => {
-                          setEditingName(null);
-                          setEditValue('');
-                        }}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </>
-                  ) : isConfirmingDelete ? (
-                    <>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => void handleDelete(row.name)}
-                        disabled={remove.isPending}
-                      >
-                        {remove.isPending ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Check className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        onClick={() => setConfirmDeleteName(null)}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
-                    </>
-                  ) : row.isSet ? (
-                    <>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100"
-                        onClick={() => {
-                          setEditingName(row.name);
-                          setEditValue('');
-                          setConfirmDeleteName(null);
-                        }}
-                        aria-label="Edit"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
-                        onClick={() => {
-                          setConfirmDeleteName(row.name);
-                          setEditingName(null);
-                        }}
-                        aria-label="Delete"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant={row.requirement === 'required' ? 'default' : 'outline'}
-                      className="h-7 px-2 text-xs"
-                      onClick={() => {
-                        setEditingName(row.name);
-                        setEditValue('');
-                        setConfirmDeleteName(null);
-                      }}
-                    >
-                      Set
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {filtered.length === 0 && !addingNew && (
-            <div className="px-4 py-12 text-center">
-              <KeyRound className="mx-auto h-6 w-6 text-muted-foreground/40" />
-              <p className="mt-2 text-xs text-muted-foreground">
-                {search ? 'No matches.' : 'No secrets yet. Add one to inject it into every new session.'}
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={save.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={(!fixedName && !name.trim()) || save.isPending}
+              className="gap-1.5"
+            >
+              {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -573,128 +706,115 @@ function ManifestStatusBanner({
     // Manifest loaded and DECLARED envs — keep the banner subtle.
     if (envCount > 0) {
       return (
-        <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          <Check className="h-3.5 w-3.5 text-emerald-600" />
-          <span>
-            Manifest loaded from{' '}
-            <code className="rounded bg-background px-1 py-0.5 font-mono">{path}</code> ·{' '}
-            {envCount} env {envCount === 1 ? 'key' : 'keys'} declared
-          </span>
-        </div>
+        <InfoBanner tone="success" icon={Check}>
+          Manifest loaded from{' '}
+          <code className="rounded bg-background px-1 py-0.5 font-mono">{path}</code> ·{' '}
+          {envCount} env {envCount === 1 ? 'key' : 'keys'} declared
+        </InfoBanner>
       );
     }
     // Manifest loaded but no envs — tell the user where to add them.
     return (
-      <div className="flex items-start gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-        <FileWarning className="mt-0.5 h-4 w-4 flex-shrink-0" />
-        <div className="space-y-0.5">
-          <p className="font-medium text-foreground">
-            Manifest loaded but no env keys declared
-          </p>
-          <p>
-            Add a <code className="rounded bg-background px-1 py-0.5 font-mono">[env]</code> section
-            to{' '}
-            <code className="rounded bg-background px-1 py-0.5 font-mono">{path}</code> with{' '}
-            <code className="rounded bg-background px-1 py-0.5 font-mono">required</code> /{' '}
-            <code className="rounded bg-background px-1 py-0.5 font-mono">optional</code> string arrays.
-          </p>
-        </div>
-      </div>
+      <InfoBanner
+        tone="neutral"
+        icon={FileWarning}
+        title="Manifest loaded but no env keys declared"
+      >
+        Add a <code className="rounded bg-background px-1 py-0.5 font-mono">[env]</code> section
+        to{' '}
+        <code className="rounded bg-background px-1 py-0.5 font-mono">{path}</code> with{' '}
+        <code className="rounded bg-background px-1 py-0.5 font-mono">required</code> /{' '}
+        <code className="rounded bg-background px-1 py-0.5 font-mono">optional</code> string arrays.
+      </InfoBanner>
     );
   }
 
   if (status === 'missing') {
     return (
-      <div className="flex items-start gap-3 rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-        <FileWarning className="mt-0.5 h-4 w-4 flex-shrink-0" />
-        <div>
-          <p className="font-medium text-foreground">No manifest found</p>
-          <p>
-            Commit a <code className="rounded bg-background px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code> to
-            this project to declare required/optional env keys.
-          </p>
-        </div>
-      </div>
+      <InfoBanner tone="neutral" icon={FileWarning} title="No manifest found">
+        Commit a <code className="rounded bg-background px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code> to
+        this project to declare required/optional env keys.
+      </InfoBanner>
     );
   }
 
   if (status === 'error') {
     return (
-      <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3 text-xs text-amber-700 dark:text-amber-400">
-        <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-        <div className="space-y-0.5">
-          <p className="font-medium">
+      <InfoBanner
+        tone="warning"
+        icon={AlertTriangle}
+        title={
+          <>
             Couldn't read{' '}
             <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">{path ?? 'kortix.toml'}</code>
-          </p>
-          {error && <p className="opacity-80 break-all">{error}</p>}
-          <p className="opacity-80">
-            Check the repo is reachable and the server has{' '}
-            <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">KORTIX_GITHUB_TOKEN</code>{' '}
-            set if it's private.
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      >
+        {error && <p className="opacity-80 break-all">{error}</p>}
+        <p className="opacity-80">
+          Check the repo is reachable and the server has{' '}
+          <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">KORTIX_GITHUB_TOKEN</code>{' '}
+          set if it's private.
+        </p>
+      </InfoBanner>
     );
   }
 
   // Old API build that doesn't return manifest_status. Tell the user — most
   // likely they just need to restart their API dev server.
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3 text-xs text-amber-700 dark:text-amber-400">
-      <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-      <div className="space-y-0.5">
-        <p className="font-medium">Manifest status unavailable</p>
-        <p className="opacity-80">
-          The API isn't returning manifest info — restart the API server
-          (<code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">apps/api</code>) to pick up
-          required/optional keys from your <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">kortix.toml</code>.
-        </p>
-      </div>
-    </div>
+    <InfoBanner tone="warning" icon={AlertTriangle} title="Manifest status unavailable">
+      <p className="opacity-80">
+        The API isn't returning manifest info — restart the API server
+        (<code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">apps/api</code>) to pick up
+        required/optional keys from your <code className="rounded bg-amber-500/10 px-1 py-0.5 font-mono">kortix.toml</code>.
+      </p>
+    </InfoBanner>
   );
 }
 
 function SecretsSkeleton() {
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <div className="border-b border-border/60 px-4 py-3">
+    <Card className="gap-0 overflow-hidden py-0">
+      <div className="border-b border-border/60 px-6 py-4">
         <Skeleton className="h-8 w-full" />
       </div>
-      <div className="divide-y divide-border/40">
+      <div className="divide-y divide-border/60">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="flex items-center gap-3 px-4 py-3">
+          <div key={index} className="flex items-center gap-3 px-6 py-3">
             <Skeleton className="h-4 w-[200px]" />
             <Skeleton className="h-4 flex-1" />
           </div>
         ))}
       </div>
-    </section>
+    </Card>
   );
 }
 
 function ForbiddenNotice() {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-amber-200/60 bg-amber-50/50 px-4 py-3 text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/10 dark:text-amber-200">
-      <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0" />
-      <div className="space-y-0.5 text-sm">
-        <p className="font-medium">Owner or admin access required</p>
-        <p className="text-xs opacity-80">
-          Only account owners and admins can view or manage project secrets.
-        </p>
-      </div>
-    </div>
+    <InfoBanner
+      tone="warning"
+      icon={ShieldAlert}
+      title="Owner or admin access required"
+    >
+      Only account owners and admins can view or manage project secrets.
+    </InfoBanner>
   );
 }
 
 function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
-      <p className="text-sm font-medium text-destructive">Failed to load secrets</p>
-      <p className="mt-1 text-xs text-destructive/80">{message}</p>
-      <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
-        Retry
-      </Button>
-    </div>
+    <InfoBanner
+      tone="destructive"
+      title="Failed to load secrets"
+      action={
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      }
+    >
+      {message}
+    </InfoBanner>
   );
 }

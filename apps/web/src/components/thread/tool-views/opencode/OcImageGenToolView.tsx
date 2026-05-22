@@ -110,7 +110,7 @@ export function OcImageGenToolView({
 
             {/* Prompt display */}
             {prompt && (
-              <div className="rounded-lg border border-border bg-muted/50 p-3">
+              <div className="rounded-2xl border border-border bg-muted/50 p-3">
                 <p className="text-xs text-muted-foreground mb-1 font-medium">Prompt</p>
                 <p className="text-sm text-foreground">{prompt}</p>
               </div>

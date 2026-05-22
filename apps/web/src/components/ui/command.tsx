@@ -39,7 +39,7 @@ function Command({
     <CommandPrimitive
       data-slot="command"
       className={cn(
-        'bg-transparent text-popover-foreground flex h-full w-full flex-col overflow-hidden rounded-xl',
+        'bg-transparent text-popover-foreground flex h-full w-full flex-col overflow-hidden rounded-2xl',
         className,
       )}
       {...props}
@@ -172,7 +172,7 @@ function CommandPopoverContent({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'w-[300px] p-0 overflow-hidden rounded-xl',
+        'w-[300px] p-0 overflow-hidden rounded-2xl',
         // Same `bg-card` token as DropdownMenuContent — every dropdown in
         // the app sits on the same material. Hairline white inner border
         // and a 1px top-edge highlight gradient catch light like a real

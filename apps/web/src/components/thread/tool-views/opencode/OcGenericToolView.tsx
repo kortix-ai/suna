@@ -292,7 +292,7 @@ function StructuredOutputDisplay({ sections }: { sections: OutputSectionType[] }
             return (
               <div
                 key={i}
-                className="flex items-start gap-2.5 px-3 py-2 rounded-lg bg-yellow-500/5 border border-yellow-500/15"
+                className="flex items-start gap-2.5 px-3 py-2 rounded-2xl bg-yellow-500/5 border border-yellow-500/15"
               >
                 <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-yellow-500" />
                 <p className="text-xs leading-relaxed text-yellow-700 dark:text-yellow-400 font-mono break-words">
@@ -305,7 +305,7 @@ function StructuredOutputDisplay({ sections }: { sections: OutputSectionType[] }
             return (
               <div
                 key={i}
-                className="flex items-start gap-2.5 px-3 py-2 rounded-lg bg-red-500/5 border border-red-500/15"
+                className="flex items-start gap-2.5 px-3 py-2 rounded-2xl bg-red-500/5 border border-red-500/15"
               >
                 <Ban className="h-3.5 w-3.5 flex-shrink-0 mt-0.5 text-red-400" />
                 <div className="min-w-0 flex-1">
@@ -340,7 +340,7 @@ function StructuredOutputDisplay({ sections }: { sections: OutputSectionType[] }
                   </span>
                 </button>
                 {showTrace && (
-                  <div className="mt-1 rounded-lg bg-muted/20 border border-border/30 overflow-hidden">
+                  <div className="mt-1 rounded-2xl bg-muted/20 border border-border/30 overflow-hidden">
                     <pre className="p-3 font-mono text-[10px] leading-relaxed text-muted-foreground/60 whitespace-pre-wrap break-all max-h-80 overflow-auto">
                       {section.lines.map((line, li) => {
                         if (/^\s+File "/.test(line)) {
@@ -368,7 +368,7 @@ function StructuredOutputDisplay({ sections }: { sections: OutputSectionType[] }
             return (
               <div
                 key={i}
-                className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-emerald-500/5 border border-emerald-500/15"
+                className="flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-emerald-500/5 border border-emerald-500/15"
               >
                 <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
                 <span className="text-xs text-emerald-700 dark:text-emerald-400 font-mono">
@@ -437,7 +437,7 @@ function OutputSection({ output }: { output: unknown }) {
 
 function ObservationReportCard({ report }: { report: ObservationReport }) {
   return (
-    <div className="rounded-xl border border-border/70 overflow-hidden bg-gradient-to-b from-card to-muted/20">
+    <div className="rounded-2xl border border-border/70 overflow-hidden bg-gradient-to-b from-card to-muted/20">
       <div className="px-4 py-3 border-b border-border/60 bg-muted/30">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="h-6 bg-background/80">
@@ -458,7 +458,7 @@ function ObservationReportCard({ report }: { report: ObservationReport }) {
       </div>
 
       <div className="px-4 py-3 space-y-3">
-        <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+        <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
           <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
             <FileText className="h-3.5 w-3.5" />
             Narrative
@@ -466,7 +466,7 @@ function ObservationReportCard({ report }: { report: ObservationReport }) {
           <p className="text-sm leading-relaxed text-foreground/85">{report.narrative}</p>
         </div>
 
-        <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+        <div className="rounded-2xl border border-border/60 bg-background/70 p-3">
           <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground mb-2">
             <ClipboardList className="h-3.5 w-3.5" />
             Facts
@@ -496,7 +496,7 @@ function ObservationReportCard({ report }: { report: ObservationReport }) {
         )}
 
         {(report.tool || report.prompt || report.session || report.filesRead.length > 0) && (
-          <div className="rounded-lg border border-border/60 bg-background/70 p-3 space-y-2">
+          <div className="rounded-2xl border border-border/60 bg-background/70 p-3 space-y-2">
             <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
               {report.tool && <Badge variant="outline" className="h-5 px-1.5 font-normal">Tool: {report.tool}</Badge>}
               {report.prompt && <Badge variant="outline" className="h-5 px-1.5 font-normal">Prompt #{report.prompt}</Badge>}
@@ -566,7 +566,7 @@ function ErrorSection({ message }: { message: string }) {
   const displayType = errorType || 'Error';
 
   return (
-    <div className="rounded-lg border border-red-500/20 bg-red-500/5 overflow-hidden">
+    <div className="rounded-2xl border border-red-500/20 bg-red-500/5 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-red-500/10">
         <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-red-400" />
@@ -611,7 +611,7 @@ function SimpleArgsSection({
   toDisplayPath: (p: string) => string;
 }) {
   return (
-    <div className="rounded-lg border border-border overflow-hidden bg-card">
+    <div className="rounded-2xl border border-border overflow-hidden bg-card">
       <div className="divide-y divide-border">
         {entries.map(([key, val]) => {
           // Convert absolute file paths in arg values to relative display paths
@@ -649,7 +649,7 @@ function CodeSection({ label, content, lang }: { label: string; content: string;
     .trim();
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden bg-card">
+    <div className="rounded-2xl border border-border overflow-hidden bg-card">
       <div
         className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-muted transition-colors"
         onClick={() => setExpanded(!expanded)}

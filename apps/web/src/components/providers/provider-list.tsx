@@ -128,7 +128,7 @@ export function ProviderList({
           return (
             <div
               key={p.id}
-              className="rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] overflow-hidden"
+              className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] overflow-hidden"
             >
               <div className="flex items-center gap-3 px-3 py-2.5">
                 <ProviderLogo providerID={p.id} name={p.name} size="default" />

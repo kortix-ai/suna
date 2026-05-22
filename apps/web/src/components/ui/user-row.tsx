@@ -41,7 +41,7 @@ export function UserRow({
       className={cn(
         'group flex w-full items-center gap-3 text-left',
         variant === 'card' &&
-          'border-border/60 bg-muted/30 hover:bg-muted/50 rounded-xl border px-3 py-2.5 transition-colors',
+          'border-border/60 bg-muted/30 hover:bg-muted/50 rounded-2xl border px-3 py-2.5 transition-colors',
         variant === 'plain' && 'px-1 py-1.5',
         onClick && 'cursor-pointer',
         className,

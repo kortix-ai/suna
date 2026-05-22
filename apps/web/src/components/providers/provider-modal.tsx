@@ -148,7 +148,7 @@ function ConnectedTabBody({
         return (
           <div
             key={provider.id}
-            className="group flex h-auto w-full items-center gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
+            className="group flex h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
           >
             <ProviderRowContent
               providerID={provider.id}
@@ -285,7 +285,7 @@ function ModelsTabBody({
               {list.length}
             </span>
           </div>
-          <div className="overflow-hidden rounded-xl border border-border/40 bg-background/40">
+          <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
             {list.map((m, i) => {
               const key = { providerID: m.providerID, modelID: m.modelID };
               const visible = modelStore.isVisible(key);

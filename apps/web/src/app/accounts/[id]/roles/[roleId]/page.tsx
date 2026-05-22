@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   deleteRole,
@@ -267,11 +268,8 @@ export default function RoleDetailPage() {
 
           {/* Metadata */}
           {role && (
-            <section className="rounded-xl border border-border/70 bg-card">
-              <header className="border-b border-border/60 px-6 py-4">
-                <h2 className="text-base font-semibold text-foreground">Details</h2>
-              </header>
-              <div className="space-y-4 px-6 py-5">
+            <SectionCard title="Details">
+              <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="role-name">Name</Label>
                   <Input
@@ -307,25 +305,17 @@ export default function RoleDetailPage() {
                   </div>
                 )}
               </div>
-            </section>
+            </SectionCard>
           )}
 
           {/* Permissions */}
           {role && (
-            <section className="rounded-xl border border-border/70 bg-card">
-              <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
-                <div>
-                  <h2 className="text-base font-semibold text-foreground">
-                    Permissions{' '}
-                    <span className="font-normal text-muted-foreground">
-                      ({draftActions.size})
-                    </span>
-                  </h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Actions this role grants when attached to a policy.
-                  </p>
-                </div>
-                {editable && permsDirty && (
+            <SectionCard
+              title="Permissions"
+              count={draftActions.size}
+              description="Actions this role grants when attached to a policy."
+              action={
+                editable && permsDirty && (
                   <Button
                     onClick={() => savePermsMutation.mutate()}
                     disabled={savePermsMutation.isPending || draftActions.size === 0}
@@ -334,9 +324,10 @@ export default function RoleDetailPage() {
                     {savePermsMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                     Save changes
                   </Button>
-                )}
-              </header>
-
+                )
+              }
+              flush
+            >
               {(permissionsQuery.isLoading || actionsQuery.isLoading) && (
                 <div className="px-6 py-4">
                   <Skeleton className="h-6 w-full" />
@@ -400,19 +391,17 @@ export default function RoleDetailPage() {
                   )}
                 </div>
               )}
-            </section>
+            </SectionCard>
           )}
 
           {/* Danger zone */}
           {role && canDelete && !isSystem && (
-            <section className="rounded-xl border border-destructive/30 bg-destructive/5">
-              <header className="border-b border-destructive/20 px-6 py-4">
-                <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
-                <p className="mt-0.5 text-xs text-destructive/80">
-                  Roles in use by any policy cannot be deleted until the
-                  referencing policies are removed.
-                </p>
-              </header>
+            <SectionCard
+              tone="destructive"
+              title="Danger zone"
+              description="Roles in use by any policy cannot be deleted until the referencing policies are removed."
+              flush
+            >
               <div className="flex items-center justify-between gap-3 px-6 py-4">
                 <p className="text-sm text-foreground">
                   Delete this role
@@ -435,7 +424,7 @@ export default function RoleDetailPage() {
                   Delete role
                 </Button>
               </div>
-            </section>
+            </SectionCard>
           )}
 
           <ConfirmDialog

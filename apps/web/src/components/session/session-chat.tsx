@@ -398,7 +398,7 @@ function AnsweredQuestionCard({
 
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <div className="rounded-lg border border-border/40 bg-muted/20 overflow-hidden">
+      <div className="rounded-2xl border border-border/40 bg-muted/20 overflow-hidden">
         <CollapsibleTrigger asChild>
           <Button
             type="button"
@@ -1051,7 +1051,7 @@ function DCPNotificationCard({
   const hasDetails = hasItems || notification.distilled || notification.summary;
 
   return (
-    <div className="rounded-lg border border-border/60 bg-card/50 overflow-hidden">
+    <div className="rounded-2xl border border-border/60 bg-card/50 overflow-hidden">
       {/* Header */}
       <Button
         onClick={() => hasDetails && setExpanded(!expanded)}
@@ -1199,7 +1199,7 @@ function SystemNotificationCard({
   const trigger = (
     <div
       className={cn(
-        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
+        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl',
         'bg-muted/20 border border-border/40',
         'text-xs select-none max-w-full',
         hasExpandable && 'cursor-pointer hover:bg-muted/40 transition-colors',
@@ -2084,7 +2084,7 @@ function UserMessageRow({
         {/* Project references — compact neutral chips, one per referenced project */}
         {/* Reply context banner */}
         {replyContext && (
-          <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
+          <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
             <Reply className="size-3 text-primary/60 flex-shrink-0" />
             <span className="text-[11px] text-muted-foreground truncate">
               {replyContext.length > 150
@@ -3222,7 +3222,7 @@ function SessionTurn({
   if (isCompaction && !working && response) {
     return (
       <div className="group/turn">
-        <div className="rounded-lg border border-border/60 bg-card/50 overflow-hidden">
+        <div className="rounded-2xl border border-border/60 bg-card/50 overflow-hidden">
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/40">
             <Layers className="size-3.5 text-muted-foreground/70" />
             <span className="text-[11px] font-medium text-muted-foreground/70 uppercase tracking-wider">
@@ -3269,7 +3269,7 @@ function SessionTurn({
               e.key === 'Enter' && setSessionReportModalOpen(true)
             }
             className={cn(
-              'flex items-center gap-2 px-3 py-2 rounded-lg text-xs',
+              'flex items-center gap-2 px-3 py-2 rounded-2xl text-xs',
               'border select-none cursor-pointer transition-colors group/report',
               sessionReport.status === 'COMPLETE'
                 ? 'bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10'
@@ -6001,7 +6001,7 @@ export function SessionChat({
                           return (
                             <>
                               {optReply && (
-                                <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
+                                <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
                                   <Reply className="size-3 text-primary/60 flex-shrink-0" />
                                   <span className="text-[11px] text-muted-foreground truncate">
                                     {optReply.length > 150
@@ -6282,7 +6282,7 @@ export function SessionChat({
                   </div>
                 )}
                 {queuedMessages.length > 0 && (
-                  <div className="rounded-xl bg-muted/50 overflow-hidden">
+                  <div className="rounded-2xl bg-muted/50 overflow-hidden">
                     {/* Compact header row */}
                     <Button
                       type="button"

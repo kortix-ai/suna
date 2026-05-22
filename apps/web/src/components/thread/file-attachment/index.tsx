@@ -207,7 +207,7 @@ export function FileAttachmentGrid({
                                 key={`url-${index}`}
                                 className={cn(
                                     "group relative w-full col-span-full min-w-0",
-                                    "rounded-xl border bg-card overflow-hidden pt-10",
+                                    "rounded-2xl border bg-card overflow-hidden pt-10",
                                     standalone ? "min-h-[300px] h-[400px]" : "!min-h-[200px] sm:min-h-0 sm:h-[400px] max-h-[600px] sm:!min-w-[300px]"
                                 )}
                             >

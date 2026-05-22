@@ -3,7 +3,10 @@ import { getTraceHeaders } from '../lib/request-context';
 
 const GITHUB_API = 'https://api.github.com';
 
-export type GitHubAuthSource = 'app_installation' | 'pat';
+// 'managed' = a Kortix-managed Freestyle git token (not GitHub). It rides the
+// same auth context because callers only consume `.token` for git transport;
+// GitHub API calls (ghFetch) are only made for actual GitHub repos.
+export type GitHubAuthSource = 'app_installation' | 'pat' | 'managed';
 
 export interface GitHubAuthContext {
   token: string;

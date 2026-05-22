@@ -388,7 +388,7 @@ export default function AdminAccountsPage() {
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(8)].map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full rounded-lg" />
+            <Skeleton key={i} className="h-12 w-full rounded-2xl" />
           ))}
         </div>
       ) : accounts.length === 0 ? (
@@ -1138,7 +1138,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
 
   return (
     <>
-      <div className="space-y-4 rounded-xl border border-border/60 bg-card p-4">
+      <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4">
         <div className="flex flex-wrap gap-1.5">
           {REIMBURSEMENT_PRESETS.map((n) => (
             <Button
@@ -1231,7 +1231,7 @@ function UsersTab({
 }) {
   if (usersQuery.isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
         Loading users…
       </div>
@@ -1241,7 +1241,7 @@ function UsersTab({
   const users = usersQuery.data?.users ?? [];
   if (users.length === 0) {
     return (
-      <div className="rounded-xl border border-border/60 bg-card">
+      <div className="rounded-2xl border border-border/60 bg-card">
         <EmptyState
           icon={IconInbox}
           title="No users on this account"
@@ -1253,7 +1253,7 @@ function UsersTab({
   }
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60">
+    <div className="rounded-2xl border border-border/60 bg-card divide-y divide-border/60">
       {users.map((user) => {
         const banned = user.banned_until && new Date(user.banned_until) > new Date();
         const confirmed = !!user.email_confirmed_at;
@@ -1326,7 +1326,7 @@ function LedgerTab({
 }) {
   if (ledgerQuery.isLoading) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-2xl border border-border/60 bg-card px-4 py-6 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
         Loading ledger…
       </div>
@@ -1336,7 +1336,7 @@ function LedgerTab({
   const entries = ledgerQuery.data?.entries ?? [];
   if (entries.length === 0) {
     return (
-      <div className="rounded-xl border border-border/60 bg-card">
+      <div className="rounded-2xl border border-border/60 bg-card">
         <EmptyState
           icon={IconInbox}
           title="No ledger entries"
@@ -1348,7 +1348,7 @@ function LedgerTab({
   }
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60 max-h-[50vh] overflow-y-auto">
+    <div className="rounded-2xl border border-border/60 bg-card divide-y divide-border/60 max-h-[50vh] overflow-y-auto">
       {entries.map((entry) => {
         const amount = Number(entry.amount);
         const positive = amount >= 0;
@@ -1459,7 +1459,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
         </div>
       )}
 
-      <div className="rounded-xl border border-border/60 bg-card text-sm">
+      <div className="rounded-2xl border border-border/60 bg-card text-sm">
         <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-border/60">
           {summary.map(([label, value]) => (
             <div key={label} className="px-4 py-3 flex items-center justify-between gap-3">
@@ -1472,7 +1472,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
         </div>
       </div>
 
-      <div className="rounded-xl border border-border/60 bg-card divide-y divide-border/60 text-sm">
+      <div className="rounded-2xl border border-border/60 bg-card divide-y divide-border/60 text-sm">
         {idRows.map(({ label, value, href }) => (
           <div
             key={label}

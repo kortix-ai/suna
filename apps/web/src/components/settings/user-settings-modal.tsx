@@ -766,7 +766,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 <div className="space-y-3">
                                     <Label className="text-sm">{t('deleteAccount.chooseDeletionType')}</Label>
                                     <RadioGroup value={deletionType} onValueChange={(value) => setDeletionType(value as 'grace-period' | 'immediate')}>
-                                        <div className="flex items-start gap-2 sm:gap-3 rounded-md border p-3 sm:p-4">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-2xl border p-3 sm:p-4">
                                             <RadioGroupItem value="grace-period" id="grace-period" className="mt-0.5 flex-shrink-0" />
                                             <div className="space-y-1 flex-1 min-w-0">
                                                 <Label htmlFor="grace-period" className="font-medium cursor-pointer text-sm sm:text-base block">
@@ -777,7 +777,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                                 </p>
                                             </div>
                                         </div>
-                                        <div className="flex items-start gap-2 sm:gap-3 rounded-md border border-red-500/30 p-3 sm:p-4">
+                                        <div className="flex items-start gap-2 sm:gap-3 rounded-2xl border border-red-500/30 p-3 sm:p-4">
                                             <RadioGroupItem value="immediate" id="immediate" className="mt-0.5 flex-shrink-0" />
                                             <div className="space-y-1 flex-1 min-w-0">
                                                 <Label htmlFor="immediate" className="font-medium cursor-pointer text-sm sm:text-base text-red-600 block">
@@ -929,7 +929,7 @@ function KeyboardShortcutsTab() {
             {/* All shortcuts reference */}
             <div className="space-y-3">
                 <Label className="text-sm font-medium">All shortcuts</Label>
-                <div className="rounded-md border divide-y">
+                <div className="rounded-2xl border divide-y">
                     {shortcuts.map((s) => (
                         <div key={s.label} className="flex items-center justify-between px-3 py-2.5">
                             <span className="text-sm text-foreground">{s.label}</span>
@@ -986,7 +986,7 @@ function SoundsTab() {
                             key={pack.id}
                             htmlFor={`pack-${pack.id}`}
                             className={cn(
-                                'flex items-center gap-3 rounded-lg border px-4 py-3 cursor-pointer transition-colors',
+                                'flex items-center gap-3 rounded-2xl border px-4 py-3 cursor-pointer transition-colors',
                                 preferences.pack === pack.id
                                     ? 'border-foreground/20 bg-muted/50'
                                     : 'border-border hover:bg-muted/30',
@@ -1026,7 +1026,7 @@ function SoundsTab() {
                     {/* Sound Events */}
                     <div>
                         <h4 className="text-sm font-medium mb-3">Sound Events</h4>
-                        <div className="rounded-lg border divide-y">
+                        <div className="rounded-2xl border divide-y">
                             {events.map((event) => {
                                 const enabled = preferences.events[event.id] !== false;
                                 return (
@@ -1093,7 +1093,7 @@ function NotificationsTab() {
             </div>
 
             {!supported ? (
-                <div className="rounded-lg border p-4">
+                <div className="rounded-2xl border p-4">
                     <p className="text-sm text-muted-foreground">
                         Your browser does not support notifications.
                     </p>
@@ -1101,7 +1101,7 @@ function NotificationsTab() {
             ) : (
                 <div className="space-y-6">
                     {/* Master toggle */}
-                    <div className="rounded-lg border p-4">
+                    <div className="rounded-2xl border p-4">
                         <NotificationToggle
                             icon={Bell}
                             label="Enable Notifications"
@@ -1122,7 +1122,7 @@ function NotificationsTab() {
                             {/* Notification types */}
                             <div>
                                 <h4 className="text-sm font-medium mb-3">Notification Types</h4>
-                                <div className="rounded-lg border divide-y">
+                                <div className="rounded-2xl border divide-y">
                                     <NotificationToggle
                                         icon={CheckCircle2}
                                         label="Task Completions"
@@ -1157,7 +1157,7 @@ function NotificationsTab() {
                             {/* Behavior */}
                             <div>
                                 <h4 className="text-sm font-medium mb-3">Behavior</h4>
-                                <div className="rounded-lg border divide-y">
+                                <div className="rounded-2xl border divide-y">
                                     <NotificationToggle
                                         icon={EyeOff}
                                         label="Only When Tab is Hidden"
@@ -1279,7 +1279,7 @@ function InstancesSection({ accountState, onRefetch }: { accountState: any; onRe
                         const isCancelling = inst.cancel_at_period_end;
                         return (
                             <div key={inst.sandbox_id} className={cn(
-                                'flex items-center justify-between py-2.5 px-3 rounded-lg border transition-colors',
+                                'flex items-center justify-between py-2.5 px-3 rounded-2xl border transition-colors',
                                 isActive ? 'border-foreground/15 bg-foreground/[0.02]' : 'border-border',
                             )}>
                                 <div className="min-w-0">
@@ -1666,7 +1666,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                                     disabled={isPurchasing}
                                     variant="outline"
                                     className={cn(
-                                        'h-auto p-3 flex-col rounded-xl text-center',
+                                        'h-auto p-3 flex-col rounded-2xl text-center',
                                         isSelected && 'border-foreground bg-foreground/5',
                                     )}
                                 >

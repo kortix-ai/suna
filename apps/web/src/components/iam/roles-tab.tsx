@@ -12,6 +12,7 @@ import { Plus, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { listRoles, type IamRole } from '@/lib/iam-client';
 import { CreateRoleDialog } from '@/components/iam/create-role-dialog';
@@ -57,23 +58,19 @@ export function RolesTab({ accountId, canCreate }: RolesTabProps) {
   }, [filtered]);
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">Roles</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            System roles ship with the platform. Create custom roles to bundle
-            exactly the permissions your account needs.
-          </p>
-        </div>
-        {canCreate && (
+    <SectionCard
+      title="Roles"
+      description="System roles ship with the platform. Create custom roles to bundle exactly the permissions your account needs."
+      action={
+        canCreate && (
           <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
             <Plus className="h-4 w-4" />
             Create a role
           </Button>
-        )}
-      </header>
-
+        )
+      }
+      flush
+    >
       <div className="border-b border-border/60 px-6 py-3">
         <div className="relative max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -166,7 +163,7 @@ export function RolesTab({ accountId, canCreate }: RolesTabProps) {
         onOpenChange={setCreateOpen}
         accountId={accountId}
       />
-    </section>
+    </SectionCard>
   );
 }
 

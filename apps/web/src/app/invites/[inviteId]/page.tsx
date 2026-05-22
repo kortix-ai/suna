@@ -207,7 +207,7 @@ export default function InvitePage() {
         </p>
 
         {errorMessage ? (
-          <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/[0.08] px-3.5 py-2.5 text-[12px] text-red-300">
+          <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/[0.08] px-3.5 py-2.5 text-[12px] text-red-300">
             {errorMessage}
           </div>
         ) : null}

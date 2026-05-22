@@ -1,7 +1,6 @@
 export {
   authorize,
   assertAuthorized,
-  invalidateSystemRoleCache,
   listAccessibleResources,
   type AccessibleResources,
   type AuthorizeTarget,
@@ -25,3 +24,11 @@ export {
   type ResourceType,
 } from './actions';
 export { seedSystemRoles, SYSTEM_ROLES, SYSTEM_ROLE_KEY } from './system-roles';
+export { backfillMembershipPolicies } from './backfill';
+export {
+  syncMemberAccountPolicy,
+  removeMemberPolicies,
+  removeProjectPoliciesForMember,
+  syncProjectMemberPolicy,
+  removeProjectMemberPolicy,
+} from './membership-sync';

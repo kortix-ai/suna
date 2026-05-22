@@ -12,6 +12,7 @@ import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PoliciesTable } from '@/components/iam/policies-table';
 import {
@@ -312,16 +313,11 @@ function CapabilitiesCard({
   memberUserId: string;
 }) {
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">
-          What this member can do
-        </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Computed by the IAM engine — sum of explicit policies, group inheritance,
-          super-admin bypass, and legacy role bridges.
-        </p>
-      </header>
+    <SectionCard
+      title="What this member can do"
+      description="Computed by the IAM engine — sum of explicit policies, group inheritance, super-admin bypass, and legacy role bridges."
+      flush
+    >
       <div className="divide-y divide-border/60">
         {CAPABILITY_GROUPS.map((group) => (
           <div key={group.heading} className="px-6 py-4">
@@ -342,7 +338,7 @@ function CapabilitiesCard({
           </div>
         ))}
       </div>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -399,17 +395,11 @@ function MemberGroupsCard({
   const router = useRouter();
 
   return (
-    <section className="rounded-xl border border-border/70 bg-card">
-      <header className="border-b border-border/60 px-6 py-4">
-        <h2 className="text-base font-semibold text-foreground">
-          Member of {memberGroups.length}{' '}
-          {memberGroups.length === 1 ? 'group' : 'groups'}
-        </h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Any policy attached to one of these groups also applies to this member.
-        </p>
-      </header>
-
+    <SectionCard
+      title={`Member of ${memberGroups.length} ${memberGroups.length === 1 ? 'group' : 'groups'}`}
+      description="Any policy attached to one of these groups also applies to this member."
+      flush
+    >
       {isLoading && (
         <div className="px-6 py-4">
           <Skeleton className="h-6 w-48" />
@@ -443,6 +433,6 @@ function MemberGroupsCard({
           ))}
         </div>
       )}
-    </section>
+    </SectionCard>
   );
 }

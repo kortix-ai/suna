@@ -149,7 +149,7 @@ export function OcProjectGetToolView({
 
               {/* Sessions */}
               {data.sessions.length > 0 && (
-                <div className="rounded-lg border border-border/50 overflow-hidden">
+                <div className="rounded-2xl border border-border/50 overflow-hidden">
                   <div className="px-3 py-2 bg-muted/30 border-b border-border/30 flex items-center gap-2">
                     <Users className="size-3.5" />
                     <span className="text-xs font-medium">Sessions</span>

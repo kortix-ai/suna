@@ -160,7 +160,7 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
           </div>
 
           {contextLoading ? (
-            <div className="rounded-xl border border-border/40 bg-card flex items-center gap-2 justify-center py-12 text-muted-foreground/40">
+            <div className="rounded-2xl border border-border/40 bg-card flex items-center gap-2 justify-center py-12 text-muted-foreground/40">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span className="text-[13px]">Loading CONTEXT.md…</span>
             </div>
@@ -182,7 +182,7 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
               spellCheck
               className={cn(
                 'w-full min-h-[240px] resize-none overflow-hidden',
-                'bg-card border border-border/40 rounded-xl outline-none',
+                'bg-card border border-border/40 rounded-2xl outline-none',
                 'text-[13px] text-foreground/85 leading-[1.7] font-mono',
                 'placeholder:text-muted-foreground/30',
                 'focus:border-primary/30 focus:ring-1 focus:ring-primary/20',
@@ -193,7 +193,7 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
           ) : contextError || !contextContent ? (
             <button
               onClick={startEditing}
-              className="w-full rounded-xl border border-dashed border-border/60 p-10 text-center hover:border-primary/40 hover:bg-primary/[0.02] transition-colors cursor-pointer group"
+              className="w-full rounded-2xl border border-dashed border-border/60 p-10 text-center hover:border-primary/40 hover:bg-primary/[0.02] transition-colors cursor-pointer group"
             >
               <AlertCircle className="h-5 w-5 text-muted-foreground/25 mx-auto mb-3 group-hover:text-primary/50 transition-colors" />
               <p className="text-[13px] text-foreground/70 mb-1 font-medium">
@@ -208,7 +208,7 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
               </p>
             </button>
           ) : (
-            <div className="rounded-xl border border-border/40 bg-card px-5 sm:px-6 py-5">
+            <div className="rounded-2xl border border-border/40 bg-card px-5 sm:px-6 py-5">
               <article className="prose prose-sm dark:prose-invert max-w-none">
                 <UnifiedMarkdown content={contextContent} />
               </article>
@@ -219,7 +219,7 @@ export function ProjectAbout({ project }: ProjectAboutProps) {
         {/* ─── Details card (compact, reference info) ─────── */}
         <section>
           <SectionLabel label="Details" />
-          <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+          <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
             <MetaRow
               icon={<FolderGit2 className="h-3.5 w-3.5 text-muted-foreground/45" />}
               label="Path"

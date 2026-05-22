@@ -83,12 +83,12 @@ import {
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { SectionCard } from '@/components/ui/section-card';
+import { List, ListRow } from '@/components/ui/list';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { InlineMeta } from '@/components/ui/inline-meta';
+import { EmptyState as EmptyStateBox } from '@/components/ui/empty-state';
 import { ScheduleBuilder } from '@/components/scheduled-tasks/schedule-builder';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { getEnv } from '@/lib/env-config';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -348,26 +348,13 @@ function ProjectTriggersBody({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8">
-        <header className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-base font-semibold text-foreground">
-                {meta.pageTitle}
-              </h2>
-              {triggers.length > 0 && (
-                <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-medium tabular-nums">
-                  {activeCount} / {triggers.length} active
-                </Badge>
-              )}
-            </div>
-            <p className="max-w-2xl text-xs text-muted-foreground">
-              {meta.description}
-            </p>
-          </div>
-          <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
-            <Plus className="h-3.5 w-3.5" />
-            {meta.createButtonLabel}
-          </Button>
+        <header className="space-y-1">
+          <h2 className="text-base font-semibold text-foreground">
+            {meta.pageTitle}
+          </h2>
+          <p className="max-w-2xl text-xs text-muted-foreground">
+            {meta.description}
+          </p>
         </header>
 
         {triggersQuery.isLoading ? (
@@ -380,25 +367,56 @@ function ProjectTriggersBody({
             onRetry={() => triggersQuery.refetch()}
           />
         ) : triggers.length === 0 ? (
-          <EmptyState
-            meta={meta}
-            type={type}
-            onCreate={() => setCreateOpen(true)}
-          />
+          <SectionCard
+            title={meta.pageTitle}
+            action={
+              <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-3.5 w-3.5" />
+                {meta.createButtonLabel}
+              </Button>
+            }
+            flush
+          >
+            <EmptyStateBox
+              icon={type === 'cron' ? Timer : Webhook}
+              size="sm"
+              title={meta.empty.title}
+              description={meta.empty.body}
+              action={
+                <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  {meta.createButtonLabel}
+                </Button>
+              }
+            />
+          </SectionCard>
         ) : (
-          <div className="space-y-1.5">
-            {triggers.map((trigger) => (
-              <TriggerRow
-                key={trigger.slug}
-                trigger={trigger}
-                onSelect={() => setSelectedId(trigger.slug)}
-              />
-            ))}
-          </div>
+          <SectionCard
+            title={meta.pageTitle}
+            count={triggers.length}
+            description={`${activeCount} of ${triggers.length} active`}
+            action={
+              <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-3.5 w-3.5" />
+                {meta.createButtonLabel}
+              </Button>
+            }
+            flush
+          >
+            <List>
+              {triggers.map((trigger) => (
+                <TriggerRow
+                  key={trigger.slug}
+                  trigger={trigger}
+                  onSelect={() => setSelectedId(trigger.slug)}
+                />
+              ))}
+            </List>
+          </SectionCard>
         )}
 
         {parseErrors.length > 0 && (
-          <section className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
+          <section className="space-y-2 rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
             <p className="text-xs font-medium text-amber-700 dark:text-amber-400">
               {parseErrors.length} trigger file{parseErrors.length === 1 ? '' : 's'} failed to parse
             </p>
@@ -467,58 +485,24 @@ function TriggerRow({
   const lastFired = trigger.last_fired_at;
 
   return (
-    <button
-      type="button"
+    <ListRow
       onClick={onSelect}
-      className={cn(
-        'group flex w-full items-center gap-3.5 rounded-xl border border-border/70 bg-card px-3.5 py-3 text-left',
-        'transition-all duration-150 hover:border-foreground/30 hover:bg-card/80',
-        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/40',
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{name}</span>
-          <StatusDot enabled={trigger.enabled} />
-        </div>
-        <div className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
+      leading={<EntityAvatar icon={isCron ? Timer : Webhook} />}
+      title={name}
+      badges={
+        <Badge variant={trigger.enabled ? 'success' : 'secondary'} size="sm">
+          {trigger.enabled ? 'Active' : 'Paused'}
+        </Badge>
+      }
+      subtitle={
+        <InlineMeta>
           <span className="font-mono">{trigger.slug.slice(0, 8)}</span>
-          <span className="text-muted-foreground/40">·</span>
-          <span className="truncate">{subtitle}</span>
-        </div>
-      </div>
-
-      <div className="hidden flex-col items-end gap-0.5 sm:flex">
-        <span className="text-[11px] text-muted-foreground/70 tabular-nums">
-          {lastFired ? `Fired ${relativeTime(lastFired)}` : 'Never fired'}
-        </span>
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground/40">
-          {trigger.agent}
-        </span>
-      </div>
-    </button>
-  );
-}
-
-function StatusDot({ enabled }: { enabled: boolean }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className={cn(
-            'relative flex h-1.5 w-1.5 shrink-0 items-center justify-center rounded-full',
-            enabled ? 'bg-emerald-500' : 'bg-muted-foreground/40',
-          )}
-        >
-          {enabled && (
-            <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500/50" />
-          )}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="text-[10px]">
-        {enabled ? 'Active' : 'Paused'}
-      </TooltipContent>
-    </Tooltip>
+          <span>{subtitle}</span>
+          <span>{lastFired ? `Fired ${relativeTime(lastFired)}` : 'Never fired'}</span>
+          <span className="uppercase tracking-wide">{trigger.agent}</span>
+        </InlineMeta>
+      }
+    />
   );
 }
 
@@ -550,28 +534,11 @@ function TriggerDetailSheet({
       >
         <SheetHeader className="space-y-1 px-5 pt-5 pb-3">
           <div className="flex items-center gap-2.5">
-            <div
-              className={cn(
-                'flex size-7 items-center justify-center rounded-md border',
-                isCron
-                  ? 'border-amber-500/20 bg-amber-500/5 text-amber-600 dark:text-amber-400'
-                  : 'border-blue-500/20 bg-blue-500/5 text-blue-600 dark:text-blue-400',
-              )}
-            >
-              {isCron ? <Timer className="h-3.5 w-3.5" /> : <Webhook className="h-3.5 w-3.5" />}
-            </div>
+            <EntityAvatar icon={isCron ? Timer : Webhook} size="sm" />
             <SheetTitle className="flex-1 truncate text-sm font-semibold">
               {getTriggerName(trigger)}
             </SheetTitle>
-            <Badge
-              variant="outline"
-              className={cn(
-                'h-5 rounded-md px-1.5 text-[10px] font-medium',
-                trigger.enabled
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-                  : 'text-muted-foreground',
-              )}
-            >
+            <Badge variant={trigger.enabled ? 'success' : 'secondary'} size="sm">
               {trigger.enabled ? 'Active' : 'Paused'}
             </Badge>
           </div>
@@ -732,7 +699,7 @@ function CronSection({ trigger }: { trigger: ProjectTrigger }) {
   return (
     <section className="space-y-2">
       <SectionHeader title="Schedule" icon={Timer} />
-      <div className="space-y-1.5 rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
+      <div className="space-y-1.5 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3">
         <div className="text-sm font-medium text-foreground">{describeCron(expr)}</div>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <code className="rounded bg-background px-1.5 py-0.5 font-mono">{expr}</code>
@@ -754,7 +721,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
     <section className="space-y-3">
       <div className="space-y-2">
         <SectionHeader title="Endpoint" icon={Webhook} />
-        <div className="rounded-xl border border-border/70 bg-muted/20">
+        <div className="rounded-2xl border border-border/70 bg-muted/20">
           <div className="flex items-center gap-2 px-3 py-2">
             <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground">
               {url}
@@ -802,7 +769,7 @@ function WebhookSection({ trigger }: { trigger: ProjectTrigger }) {
             </Button>
           }
         />
-        <pre className="max-h-[200px] overflow-auto rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[10.5px] leading-snug text-foreground">
+        <pre className="max-h-[200px] overflow-auto rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[10.5px] leading-snug text-foreground">
           {curl}
         </pre>
         <p className="text-[10px] text-muted-foreground/70">
@@ -898,7 +865,7 @@ function PromptTemplateSection({
           autoFocus
         />
       ) : (
-        <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap rounded-xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground">
+        <pre className="max-h-[200px] overflow-auto whitespace-pre-wrap rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground">
           {trigger.prompt_template}
         </pre>
       )}
@@ -922,7 +889,7 @@ function MetaSection({ trigger }: { trigger: ProjectTrigger }) {
   return (
     <section className="space-y-2">
       <SectionHeader title="Metadata" icon={AlertCircle} />
-      <dl className="rounded-xl border border-border/40 bg-muted/10">
+      <dl className="rounded-2xl border border-border/40 bg-muted/10">
         {rows.map(([label, value], i) => (
           <div
             key={label}
@@ -1219,7 +1186,7 @@ function slugifyName(input: string): string {
               </div>
 
               {error && (
-                <div className="flex items-start gap-2 rounded-xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                <div className="flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
                   <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                   <span>{error}</span>
                 </div>
@@ -1332,7 +1299,7 @@ function SourceCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'group flex h-auto w-full items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+        'group flex h-auto w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors',
         selected
           ? 'border-primary/50 bg-primary/[0.04]'
           : 'border-border/50 bg-muted/20 hover:bg-muted/35',
@@ -1379,7 +1346,7 @@ function WebhookSourceConfig({
         </div>
       </div>
 
-      <div className="space-y-1.5 rounded-xl border bg-muted/50 p-3">
+      <div className="space-y-1.5 rounded-2xl border bg-muted/50 p-3">
         <div className="text-xs font-medium text-muted-foreground">
           External URL
         </div>
@@ -1465,38 +1432,9 @@ function TriggersSkeleton() {
   );
 }
 
-function EmptyState({
-  meta,
-  type,
-  onCreate,
-}: {
-  meta: TypeMeta;
-  type: TriggerKind;
-  onCreate: () => void;
-}) {
-  const Icon = type === 'cron' ? Timer : Webhook;
-  return (
-    <div className="rounded-2xl border border-dashed border-border/70 bg-card/30 p-10 text-center">
-      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-border/70 bg-card">
-        <Icon className="h-5 w-5 text-muted-foreground" />
-      </div>
-      <h2 className="mt-4 text-base font-semibold text-foreground">
-        {meta.empty.title}
-      </h2>
-      <p className="mx-auto mt-1.5 max-w-md text-sm text-muted-foreground">
-        {meta.empty.body}
-      </p>
-      <Button onClick={onCreate} className="mt-5 gap-1.5">
-        <Plus className="h-3.5 w-3.5" />
-        {meta.createButtonLabel}
-      </Button>
-    </div>
-  );
-}
-
 function ForbiddenNotice() {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/20 px-4 py-3 text-foreground">
+    <div className="flex items-start gap-3 rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-foreground">
       <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
       <div className="space-y-0.5 text-sm">
         <p className="font-medium">Access required</p>
@@ -1510,7 +1448,7 @@ function ForbiddenNotice() {
 
 function ErrorNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+    <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3">
       <p className="text-sm font-medium text-destructive">Failed to load triggers</p>
       <p className="mt-1 text-xs text-destructive/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>

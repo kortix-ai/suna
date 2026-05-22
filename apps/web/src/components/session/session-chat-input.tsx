@@ -565,7 +565,7 @@ function AutoContinueSelector({
 
         {open && (
           <div
-            className="absolute bottom-full left-0 mb-1.5 z-50 w-80 bg-popover border border-border rounded-xl overflow-hidden animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
+            className="absolute bottom-full left-0 mb-1.5 z-50 w-80 bg-popover border border-border rounded-2xl overflow-hidden animate-in fade-in-0 slide-in-from-bottom-2 duration-150"
           >
             <div className="p-1">
               <div className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
@@ -694,7 +694,7 @@ function AutoContinueSelector({
 
                 <div>
                   <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">How it works</h4>
-                  <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line bg-muted/50 rounded-lg p-3">
+                  <div className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line bg-muted/50 rounded-2xl p-3">
                     {detailAlg.howItWorks}
                   </div>
                 </div>
@@ -899,7 +899,7 @@ function AttachmentPreview({
         return (
           <div key={i} className="relative group">
             <div className={cn(
-              'flex flex-col rounded-lg border border-border/50 overflow-hidden',
+              'flex flex-col rounded-2xl border border-border/50 overflow-hidden',
               'w-[120px] cursor-default select-none',
               'bg-card hover:bg-muted/30 hover:border-border transition-colors duration-150',
             )}>
@@ -982,7 +982,7 @@ function SlashCommandPopover({
 
   return (
     <div
-      className="fixed z-[99999] bg-popover border border-border/60 rounded-lg overflow-hidden"
+      className="fixed z-[99999] bg-popover border border-border/60 rounded-2xl overflow-hidden"
       style={{ bottom: window.innerHeight - r.top + 4, left: r.left, width: Math.min(r.width, 480) }}
     >
       <div ref={scrollRef} className="max-h-64 overflow-y-auto py-1">
@@ -1062,7 +1062,7 @@ function MentionPopover({
 
   return (
     <div
-      className="fixed z-[99999] bg-popover border border-border/60 rounded-lg overflow-hidden"
+      className="fixed z-[99999] bg-popover border border-border/60 rounded-2xl overflow-hidden"
       style={{ bottom: window.innerHeight - r.top + 4, left: r.left, width: Math.min(r.width, 480) }}
     >
       <div ref={listRef} className="max-h-72 overflow-y-auto py-1">
@@ -1182,7 +1182,7 @@ function TodoChip({ sessionId }: { sessionId: string }) {
   });
 
   return (
-    <div className="rounded-xl bg-muted/50 overflow-hidden">
+    <div className="rounded-2xl bg-muted/50 overflow-hidden">
       {/* Header row */}
       <button
         type="button"
@@ -2105,7 +2105,7 @@ export function SessionChatInput({
           {(threadContext || sessionId || inputSlot || replyTo) && (
             <div className="flex flex-col gap-1.5 mx-3 mt-2.5 empty:hidden">
               {replyTo && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/10">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
                   <Reply className="size-3 text-primary/60 flex-shrink-0" />
                   <span className="text-xs text-muted-foreground flex-1 min-w-0 truncate">
                     {replyTo.text.length > 120 ? `${replyTo.text.slice(0, 120)}…` : replyTo.text}

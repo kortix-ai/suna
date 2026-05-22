@@ -43,6 +43,7 @@ export async function resolveAccountId(userId: string): Promise<string> {
           userId,
           accountId: legacy.accountId,
           accountRole: 'owner',
+          isSuperAdmin: true,
         }).onConflictDoNothing();
 
         console.log(`[resolve-account] Lazy-migrated basejump account ${legacy.accountId} for user ${userId}`);
@@ -70,6 +71,7 @@ export async function resolveAccountId(userId: string): Promise<string> {
       userId,
       accountId: userId,
       accountRole: 'owner',
+      isSuperAdmin: true,
     }).onConflictDoNothing();
   } catch { }
 

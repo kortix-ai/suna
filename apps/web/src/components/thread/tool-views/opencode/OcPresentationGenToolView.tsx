@@ -175,7 +175,7 @@ export function OcPresentationGenToolView({
             {/* Success: Create Slide */}
             {parsed?.success && action === 'create_slide' && (
               <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02]">
+                <div className="flex items-center gap-3 p-3 rounded-2xl border border-border/50 bg-foreground/[0.02]">
                   <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] text-foreground/80 border border-border/50 font-semibold text-lg flex-shrink-0">
                     {parsed.slide_number || '?'}
                   </div>
@@ -211,7 +211,7 @@ export function OcPresentationGenToolView({
                     href={viewerUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02] hover:bg-muted transition-colors"
+                    className="flex items-center gap-3 p-3 rounded-2xl border border-border/50 bg-foreground/[0.02] hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] border border-border/50 flex-shrink-0">
                       <Eye className="w-5 h-5 text-foreground/80" />
@@ -233,7 +233,7 @@ export function OcPresentationGenToolView({
 
             {/* Success: Export */}
             {parsed?.success && (action === 'export_pdf' || action === 'export_pptx') && (
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02]">
+              <div className="flex items-center gap-3 p-3 rounded-2xl border border-border/50 bg-foreground/[0.02]">
                 <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] border border-border/50 flex-shrink-0">
                   <Download className="w-5 h-5 text-foreground/80" />
                 </div>
@@ -252,7 +252,7 @@ export function OcPresentationGenToolView({
             {/* Success: Validate Slide */}
             {parsed?.success && action === 'validate_slide' && (
               <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02]">
+                <div className="flex items-center gap-3 p-3 rounded-2xl border border-border/50 bg-foreground/[0.02]">
                   <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-foreground/[0.06] border border-border/50 text-foreground/80 font-semibold text-lg flex-shrink-0">
                     {parsed.slide_number || slideNumber || '?'}
                   </div>
@@ -278,7 +278,7 @@ export function OcPresentationGenToolView({
 
             {/* Success: Generic (list, delete, etc.) */}
             {parsed?.success && !['create_slide', 'validate_slide', 'preview', 'serve', 'export_pdf', 'export_pptx'].includes(action) && (
-              <div className="flex items-center gap-3 p-3 rounded-lg border border-border/50 bg-foreground/[0.02]">
+              <div className="flex items-center gap-3 p-3 rounded-2xl border border-border/50 bg-foreground/[0.02]">
                 <CheckCircle className="w-4 h-4 text-foreground/70 flex-shrink-0" />
                 <p className="text-sm text-foreground">
                   {parsed.message || `${actionLabel} completed`}

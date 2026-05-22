@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, Copy, ExternalLink, Loader2, Slack, X } from 'lucide-react';
 import {
   Dialog,
@@ -13,20 +13,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { backendApi } from '@/lib/api-client';
+import { getEnv } from '@/lib/env-config';
 import {
   useSlackInstall,
+  useSlackMode,
   useConnectSlack,
   useDisconnectSlack,
   type SlackInstallation,
 } from '@/hooks/channels/use-channels-installations';
-
-interface ChannelsHealth {
-  mode: 'off' | 'single' | 'multi' | 'both';
-  single_ready: boolean;
-  multi_ready: boolean;
-  errors: string[];
-}
 
 interface ChannelsDialogProps {
   open: boolean;
@@ -35,35 +29,9 @@ interface ChannelsDialogProps {
 }
 
 export function ChannelsDialog({ open, onOpenChange, projectId }: ChannelsDialogProps) {
-  const [health, setHealth] = useState<ChannelsHealth | null>(null);
-  const [manifest, setManifest] = useState<string | null>(null);
-  const [loadingMeta, setLoadingMeta] = useState(false);
   const { data: install, isLoading: loadingInstall } = useSlackInstall(projectId);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    setLoadingMeta(true);
-    setHealth(null);
-    setManifest(null);
-    (async () => {
-      const [healthRes, manifestRes] = await Promise.all([
-        backendApi.get<ChannelsHealth>('/webhooks/chat/health', { showErrors: false }),
-        backendApi.get<unknown>('/webhooks/chat/slack/manifest', { showErrors: false }),
-      ]);
-      if (cancelled) return;
-      if (healthRes.success && healthRes.data) setHealth(healthRes.data);
-      if (manifestRes.success && manifestRes.data) {
-        setManifest(JSON.stringify(manifestRes.data, null, 2));
-      }
-      setLoadingMeta(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
-
-  const loading = loadingMeta || loadingInstall;
+  const { data: mode, isLoading: loadingMode } = useSlackMode(projectId);
+  const loading = loadingInstall || loadingMode;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -74,12 +42,12 @@ export function ChannelsDialog({ open, onOpenChange, projectId }: ChannelsDialog
             Channels
           </DialogTitle>
           <DialogDescription>
-            Connect Slack so the agent can run from a workspace channel — per project.
+            Connect Slack so the agent can post into a workspace channel — per project.
           </DialogDescription>
         </DialogHeader>
 
         {!projectId ? (
-          <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
             Open a project to manage its Slack connection. Each project has its own Slack install stored in
             that project's secrets.
           </div>
@@ -89,32 +57,68 @@ export function ChannelsDialog({ open, onOpenChange, projectId }: ChannelsDialog
           </div>
         ) : install ? (
           <Connected projectId={projectId} installation={install} />
-        ) : !health || health.mode === 'off' ? (
-          <NotConfigured errors={health?.errors ?? []} />
         ) : (
-          <SelfInstall projectId={projectId} manifest={manifest} />
+          <NotConnected
+            projectId={projectId}
+            oauthInstallUrl={mode?.oauth_available ? mode.install_url : null}
+          />
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function NotConfigured({ errors }: { errors: string[] }) {
+function NotConnected({
+  projectId,
+  oauthInstallUrl,
+}: {
+  projectId: string;
+  oauthInstallUrl: string | null;
+}) {
+  const [showByo, setShowByo] = useState(!oauthInstallUrl);
+
+  if (!oauthInstallUrl) {
+    return <SelfInstall projectId={projectId} />;
+  }
+
   return (
-    <div className="rounded-md border border-border bg-muted/30 px-4 py-3 text-sm">
-      <p className="font-medium text-foreground">Channels aren't configured on this server.</p>
-      <p className="mt-1 text-muted-foreground">
-        Restart the API with <code className="font-mono text-xs">KORTIX_CHANNELS_MODE=auto</code> (the
-        default) and try again. No other env vars are needed for self-install — each project pastes its own
-        Slack tokens through this dialog.
-      </p>
-      {errors.length > 0 ? (
-        <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
-          {errors.map((e) => (
-            <li key={e}>{e}</li>
-          ))}
-        </ul>
-      ) : null}
+    <div className="space-y-4">
+      <div className="rounded-md border border-border/70 bg-card px-4 py-4">
+        <p className="text-sm font-medium text-foreground">Add Kortix to your Slack workspace</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          One click — approve scopes in Slack and we'll wire this project to the workspace you choose.
+        </p>
+        <div className="mt-3">
+          <a href={oauthInstallUrl} target="_blank" rel="noopener noreferrer" className="inline-flex">
+            <Button size="sm" className="gap-1.5">
+              <Slack className="h-3.5 w-3.5" />
+              Add to Slack
+              <ExternalLink className="h-3 w-3" />
+            </Button>
+          </a>
+        </div>
+      </div>
+
+      {showByo ? (
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setShowByo(false)}
+            className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+          >
+            ← Hide advanced
+          </button>
+          <SelfInstall projectId={projectId} />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowByo(true)}
+          className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+        >
+          Advanced — bring your own Slack app
+        </button>
+      )}
     </div>
   );
 }
@@ -131,7 +135,7 @@ function Connected({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5 text-sm">
+      <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5 text-sm">
         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500/15">
           <Check className="h-3.5 w-3.5 text-emerald-500" />
         </span>
@@ -146,13 +150,12 @@ function Connected({
         </div>
       </div>
 
-      <div className="rounded-md border border-border/70 bg-card px-4 py-3 text-sm">
+      <div className="rounded-2xl border border-border/70 bg-card px-4 py-3 text-sm">
         <p className="font-medium text-foreground">Next: enable for this project</p>
         <p className="mt-1 text-muted-foreground">
-          Add a <code className="font-mono text-xs">[[channels]]</code> entry with{' '}
-          <code className="font-mono text-xs">platform = "slack"</code> to this project's{' '}
-          <code className="font-mono text-xs">kortix.toml</code>, invite the bot to a channel, and{' '}
-          <code className="font-mono text-xs">@kortix</code> — replies stream right here.
+          Invite the bot to a channel and <code className="font-mono text-xs">@mention</code> it. A session
+          spawns in this project's sandbox; the agent posts replies back to the thread using the in-sandbox{' '}
+          <code className="font-mono text-xs">slack</code> CLI.
         </p>
       </div>
 
@@ -190,13 +193,15 @@ function Connected({
   );
 }
 
-function SelfInstall({ projectId, manifest }: { projectId: string; manifest: string | null }) {
+function SelfInstall({ projectId }: { projectId: string }) {
   const [step, setStep] = useState<1 | 2>(1);
   const [copied, setCopied] = useState(false);
   const [botToken, setBotToken] = useState('');
   const [signingSecret, setSigningSecret] = useState('');
   const [error, setError] = useState<string | null>(null);
   const connect = useConnectSlack();
+
+  const manifest = useMemo(() => buildSlackManifest(projectId), [projectId]);
 
   const copyManifest = async () => {
     if (!manifest) return;
@@ -237,7 +242,6 @@ function SelfInstall({ projectId, manifest }: { projectId: string; manifest: str
                 variant="ghost"
                 size="sm"
                 onClick={copyManifest}
-                disabled={!manifest}
                 className="h-7 gap-1.5"
               >
                 {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -258,10 +262,10 @@ function SelfInstall({ projectId, manifest }: { projectId: string; manifest: str
           </div>
           <pre
             className={cn(
-              'max-h-64 overflow-auto rounded-md border border-border bg-muted/30 p-3 text-xs leading-relaxed',
+              'max-h-64 overflow-auto rounded-2xl border border-border bg-muted/30 p-3 text-xs leading-relaxed',
             )}
           >
-            {manifest ?? '…'}
+            {manifest}
           </pre>
         </div>
 
@@ -328,7 +332,7 @@ function SelfInstall({ projectId, manifest }: { projectId: string; manifest: str
       </div>
 
       {error ? (
-        <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+        <p className="rounded-2xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           {error}
         </p>
       ) : null}
@@ -347,4 +351,63 @@ function SelfInstall({ projectId, manifest }: { projectId: string; manifest: str
       </div>
     </div>
   );
+}
+
+function buildSlackManifest(projectId: string): string {
+  const backendUrl = (getEnv().BACKEND_URL ?? '').replace(/\/$/, '');
+  const requestUrl = backendUrl
+    ? `${backendUrl}/v1/webhooks/slack/${projectId}`
+    : `<set BACKEND_URL in env>/v1/webhooks/slack/${projectId}`;
+  const manifest = {
+    display_information: {
+      name: 'Kortix',
+      description: 'Run a Kortix project from Slack',
+      background_color: '#0a0a0a',
+    },
+    features: { bot_user: { display_name: 'kortix', always_online: true } },
+    oauth_config: {
+      scopes: {
+        bot: [
+          'app_mentions:read',
+          'channels:history',
+          'channels:read',
+          'channels:join',
+          'chat:write',
+          'chat:write.public',
+          'files:read',
+          'files:write',
+          'groups:history',
+          'groups:read',
+          'im:history',
+          'im:read',
+          'im:write',
+          'mpim:history',
+          'mpim:read',
+          'reactions:read',
+          'reactions:write',
+          'users:read',
+        ],
+      },
+    },
+    settings: {
+      event_subscriptions: {
+        request_url: requestUrl,
+        bot_events: [
+          'app_mention',
+          'message.im',
+          'message.channels',
+          'message.groups',
+          'message.mpim',
+          'reaction_added',
+          'reaction_removed',
+          'member_joined_channel',
+          'file_shared',
+        ],
+      },
+      org_deploy_enabled: false,
+      socket_mode_enabled: false,
+      token_rotation_enabled: false,
+    },
+  };
+  return JSON.stringify(manifest, null, 2);
 }

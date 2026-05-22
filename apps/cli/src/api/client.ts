@@ -11,6 +11,7 @@ export class ApiError extends Error {
 }
 
 export interface ApiClient {
+  apiBase: string;
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body?: unknown): Promise<T>;
   patch<T>(path: string, body?: unknown): Promise<T>;
@@ -78,6 +79,7 @@ async function request<T>(
 export function createApiClient(opts: ClientOptions): ApiClient {
   const apiBase = opts.apiBase ?? 'https://api.kortix.com';
   return {
+    apiBase,
     get: <T>(path: string) => request<T>('GET', path, undefined, { apiBase, token: opts.token }),
     post: <T>(path: string, body?: unknown) =>
       request<T>('POST', path, body ?? {}, { apiBase, token: opts.token }),

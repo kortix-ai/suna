@@ -102,7 +102,7 @@ export function OcQuestionToolView({
                           <div
                             key={j}
                             className={cn(
-                              'flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-colors',
+                              'flex items-center gap-2 px-2.5 py-1.5 rounded-2xl transition-colors',
                               isSelected ? 'bg-muted' : 'bg-transparent',
                             )}
                           >
@@ -130,7 +130,7 @@ export function OcQuestionToolView({
 
                   {/* Custom answer (not from options) */}
                   {hasAnswer && q.options && !q.options.some(o => answer.includes(o.label)) && (
-                    <div className="px-2.5 py-1.5 rounded-lg bg-muted">
+                    <div className="px-2.5 py-1.5 rounded-2xl bg-muted">
                       <span className="text-[10px] text-muted-foreground">Custom answer</span>
                       <p className="text-xs text-foreground">{answer.join(', ')}</p>
                     </div>
@@ -138,7 +138,7 @@ export function OcQuestionToolView({
 
                   {/* Answer display when no options */}
                   {hasAnswer && (!q.options || q.options.length === 0) && (
-                    <div className="px-2.5 py-1.5 rounded-lg bg-muted/50">
+                    <div className="px-2.5 py-1.5 rounded-2xl bg-muted/50">
                       <p className="text-xs text-foreground">{answer.join(', ')}</p>
                     </div>
                   )}

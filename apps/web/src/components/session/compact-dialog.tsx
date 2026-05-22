@@ -52,7 +52,7 @@ export function CompactDialog({ sessionId, open, onOpenChange }: CompactDialogPr
             into a compact summary.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-lg bg-muted/50 border border-border/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1.5">
+        <div className="rounded-2xl bg-muted/50 border border-border/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1.5">
           <p>What happens during compaction:</p>
           <ul className="list-disc list-inside space-y-0.5 pl-1">
             <li>Older messages are summarized into a concise recap</li>

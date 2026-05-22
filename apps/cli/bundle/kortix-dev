@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#
+# Dev shim — run the CLI straight from src/ via Bun, no rebuild step.
+# Use this while iterating; switch to the compiled `./kortix` (built via
+# `pnpm cli:bundle`) to test the binary that would actually ship.
+#
+# Symlink it onto your PATH for fastest feedback:
+#
+#   ln -sf "$(pwd)/apps/cli/bundle/kortix-dev" ~/.local/bin/kdev
+
+set -euo pipefail
+
+# Resolve symlinks so we can find src/ even when called via `kdev`
+# (typically a symlink in ~/.local/bin or /opt/homebrew/bin). macOS
+# ships an older readlink without -f, so walk the chain manually.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+
+exec bun run "$ROOT/src/index.ts" "$@"

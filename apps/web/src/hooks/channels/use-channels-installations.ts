@@ -56,12 +56,39 @@ export function useConnectSlack() {
   });
 }
 
+export interface SlackMode {
+  oauth_available: boolean;
+  install_url: string | null;
+}
+
+const modeKey = (projectId: string | null) =>
+  ['channels', 'slack-mode', projectId ?? 'none'] as const;
+
+export function useSlackMode(projectId: string | null) {
+  return useQuery({
+    queryKey: modeKey(projectId),
+    enabled: !!projectId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      if (!projectId) return { oauth_available: false, install_url: null } satisfies SlackMode;
+      const res = await backendApi.get<SlackMode>(
+        `/projects/${encodeURIComponent(projectId)}/channels/slack/mode`,
+        { showErrors: false },
+      );
+      if (!res.success || !res.data) {
+        return { oauth_available: false, install_url: null } satisfies SlackMode;
+      }
+      return res.data;
+    },
+  });
+}
+
 export function useDisconnectSlack() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (projectId: string) => {
       const res = await backendApi.delete(
-        `/projects/${encodeURIComponent(projectId)}/channels/slack`,
+        `/projects/${encodeURIComponent(projectId)}/channels/slack/installation`,
         { showErrors: false },
       );
       if (!res.success) throw new Error(res.error?.message ?? 'Failed to disconnect');

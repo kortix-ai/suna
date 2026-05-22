@@ -100,7 +100,7 @@ export function OcMemSaveToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-4 space-y-4">
             {/* Memory content */}
-            <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
               <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">
                 {text || parsed.preview}
               </p>

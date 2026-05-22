@@ -288,7 +288,7 @@ export default function TutorialsPage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.3 }}
-              className="border border-dashed border-border rounded-xl p-8 text-center"
+              className="border border-dashed border-border rounded-2xl p-8 text-center"
             >
               <div className="w-12 h-12 rounded-xl bg-accent/50 flex items-center justify-center mx-auto mb-4">
                 <Play className="w-6 h-6 text-muted-foreground" />

@@ -47,8 +47,6 @@ export type NewApiKey = typeof apiKeys.$inferInsert;
 export type NewKortixApiKey = typeof kortixApiKeys.$inferInsert;
 export type ServerEntry = typeof serverEntries.$inferSelect;
 export type NewServerEntry = typeof serverEntries.$inferInsert;
-
-// Chat / channels
 export type ChatChannelBinding = typeof chatChannelBindings.$inferSelect;
 export type NewChatChannelBinding = typeof chatChannelBindings.$inferInsert;
 export type ChatThread = typeof chatThreads.$inferSelect;

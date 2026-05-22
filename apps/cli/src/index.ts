@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { runChannels } from './commands/channels.ts';
 import { runCr } from './commands/cr.ts';
 import { runCreate } from './commands/create.ts';
 import { runEnv } from './commands/env.ts';
@@ -9,6 +10,7 @@ import { runLogout } from './commands/logout.ts';
 import { runProjects } from './commands/projects.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSessions } from './commands/sessions.ts';
+import { runShip } from './commands/ship.ts';
 import { runTriggers } from './commands/triggers.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
@@ -27,6 +29,7 @@ interface Command {
 const COMMANDS: readonly Command[] = [
   { name: 'init', blurb: 'Scaffold a Kortix project in the current directory' },
   { name: '<project-name>', blurb: 'Create a new directory and scaffold it' },
+  { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
   { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
   { name: 'logout', blurb: 'Remove the stored auth token' },
   { name: 'whoami', blurb: 'Show the currently authenticated user' },
@@ -36,6 +39,7 @@ const COMMANDS: readonly Command[] = [
   { name: 'env', args: '<subcommand>', blurb: 'Pull/push project secrets as a dotenv file' },
   { name: 'sessions', args: '<subcommand>', blurb: 'List, create, restart project sessions' },
   { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
+  { name: 'channels', args: '<subcommand>', blurb: 'Connect Slack to this project (status/connect/disconnect/manifest)' },
   { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
   { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
   { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
@@ -93,6 +97,10 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'init') {
     return runInit(argv.slice(1));
   }
+  // `deploy` is kept as a familiar alias for `ship`.
+  if (argv[0] === 'ship' || argv[0] === 'deploy') {
+    return runShip(argv.slice(1));
+  }
   if (argv[0] === 'login') {
     return runLogin(argv.slice(1));
   }
@@ -120,6 +128,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));
   }
+  if (argv[0] === 'channels') {
+    return runChannels(argv.slice(1));
+  }
   if (argv[0] === 'cr') {
     return runCr(argv.slice(1));
   }
@@ -133,7 +144,6 @@ async function main(argv: string[]): Promise<number> {
   // through to the legacy scaffold (`kortix <new-project-name>`), which
   // would otherwise create a directory called `deploy/`, etc.
   const RESERVED_FUTURE_COMMANDS = new Set([
-    'deploy',
     'apps',
     'accounts',
     'mcp',

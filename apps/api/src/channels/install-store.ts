@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { chatChannelBindings, projectSecrets } from '@kortix/db';
+import { projectSecrets } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   decryptProjectSecret,
@@ -12,6 +12,13 @@ export const SLACK_SIGNING_SECRET = 'SLACK_SIGNING_SECRET';
 export const SLACK_TEAM_ID = 'SLACK_TEAM_ID';
 export const SLACK_BOT_USER_ID = 'SLACK_BOT_USER_ID';
 export const SLACK_TEAM_NAME = 'SLACK_TEAM_NAME';
+
+export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
+export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
+
+export async function loadTelegramWebhookSecretForProject(projectId: string): Promise<string | null> {
+  return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
+}
 
 const SLACK_KEYS = [
   SLACK_BOT_TOKEN,
@@ -77,20 +84,6 @@ export async function loadSlackInstall(
     botUserId: secrets[SLACK_BOT_USER_ID] || null,
     installedAt: row?.updatedAt?.toISOString() ?? new Date().toISOString(),
   };
-}
-
-export async function findProjectForWorkspace(workspaceId: string): Promise<string | null> {
-  const [binding] = await db
-    .select({ projectId: chatChannelBindings.projectId })
-    .from(chatChannelBindings)
-    .where(
-      and(
-        eq(chatChannelBindings.platform, 'slack'),
-        eq(chatChannelBindings.workspaceId, workspaceId),
-      ),
-    )
-    .limit(1);
-  return binding?.projectId ?? null;
 }
 
 export async function loadSlackTokenForProject(projectId: string): Promise<string | null> {

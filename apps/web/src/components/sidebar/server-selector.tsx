@@ -381,7 +381,7 @@ function DialogInstanceRow({
   return (
     <div
       className={cn(
-        'relative rounded-xl transition-colors group/row cursor-pointer',
+        'relative rounded-2xl transition-colors group/row cursor-pointer',
         isActive
           ? 'bg-primary/[0.05] dark:bg-primary/[0.08] ring-1 ring-primary/15'
           : 'hover:bg-muted/50',
@@ -1067,7 +1067,7 @@ export function InstanceManagerDialog({
               </div>
 
               {servers.length > 0 && sshMeta && (
-                <div className="rounded-lg border border-border/40 bg-muted/20 px-3 py-2.5 space-y-2">
+                <div className="rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[11px] font-medium text-foreground/80">SSH Access</p>
                     <button
@@ -1116,7 +1116,7 @@ export function InstanceManagerDialog({
             )}
 
             {sandboxProgress && (
-              <div className="rounded-lg border border-border/40 bg-muted/20 px-3 py-2.5 space-y-1.5">
+              <div className="rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] text-muted-foreground">{sandboxProgress.message}</p>
                   <span className="text-[11px] tabular-nums text-muted-foreground/80">{Math.round(sandboxProgress.progress)}%</span>
@@ -1136,7 +1136,7 @@ export function InstanceManagerDialog({
                   type="button"
                   onClick={() => handleCreateSandbox('daytona')}
                   disabled={isCreatingSandbox}
-                  className="flex items-start gap-3 w-full p-3.5 rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-start gap-3 w-full p-3.5 rounded-2xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-violet-500/10 flex-shrink-0 mt-0.5">
                     {isCreatingSandbox && creatingProvider === 'daytona' ? (
@@ -1157,7 +1157,7 @@ export function InstanceManagerDialog({
                   type="button"
                   onClick={() => handleCreateSandbox('justavps')}
                   disabled={isCreatingSandbox}
-                  className="flex items-start gap-3 w-full p-3.5 rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-start gap-3 w-full p-3.5 rounded-2xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-orange-500/10 flex-shrink-0 mt-0.5">
                     {isCreatingSandbox && creatingProvider === 'justavps' ? (
@@ -1178,7 +1178,7 @@ export function InstanceManagerDialog({
                   type="button"
                   onClick={() => handleCreateSandbox('local_docker')}
                   disabled={isCreatingSandbox}
-                  className="flex items-start gap-3 w-full p-3.5 rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex items-start gap-3 w-full p-3.5 rounded-2xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-500/10 flex-shrink-0 mt-0.5">
                     {isCreatingSandbox && creatingProvider === 'local_docker' ? (
@@ -1200,7 +1200,7 @@ export function InstanceManagerDialog({
                 <button
                   type="button"
                   onClick={() => useNewInstanceModalStore.getState().openNewInstanceModal()}
-                  className="flex items-start gap-3 w-full p-3.5 rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer"
+                  className="flex items-start gap-3 w-full p-3.5 rounded-2xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer"
                 >
                   <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-primary/10 flex-shrink-0 mt-0.5">
                     <Plus className="h-4 w-4 text-primary" />
@@ -1213,7 +1213,7 @@ export function InstanceManagerDialog({
               )}
 
               {isBillingEnabled() && !canAddInstances && (
-                <div className="rounded-xl border border-border/50 bg-muted/20 px-3.5 py-3 text-xs text-muted-foreground/70">
+                <div className="rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3 text-xs text-muted-foreground/70">
                   Free plan: connect a custom instance, or upgrade to Pro to add managed cloud instances.
                 </div>
               )}
@@ -1223,7 +1223,7 @@ export function InstanceManagerDialog({
                 type="button"
                 onClick={() => { setFormUrl(''); setFormLabel(''); setMode('custom'); }}
                 disabled={isCreatingSandbox}
-                className="flex items-start gap-3 w-full p-3.5 rounded-xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-start gap-3 w-full p-3.5 rounded-2xl border border-border/50 bg-muted/30 hover:bg-muted/50 hover:border-primary/30 text-left transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-muted/60 flex-shrink-0 mt-0.5">
                   <Globe className="h-4 w-4 text-muted-foreground" />
@@ -1334,15 +1334,15 @@ export function InstanceManagerDialog({
                   <p className="text-[10px] text-muted-foreground/50">Need new keys? Regenerate below.</p>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-lg border border-border/40 bg-muted/20 px-2.5 py-2">
+                  <div className="rounded-2xl border border-border/40 bg-muted/20 px-2.5 py-2">
                     <p className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground/40 mb-0.5">Host</p>
                     <p className="text-xs font-mono text-foreground/80">{sshMeta.host}</p>
                   </div>
-                  <div className="rounded-lg border border-border/40 bg-muted/20 px-2.5 py-2">
+                  <div className="rounded-2xl border border-border/40 bg-muted/20 px-2.5 py-2">
                     <p className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground/40 mb-0.5">Port</p>
                     <p className="text-xs font-mono text-foreground/80">{sshMeta.port}</p>
                   </div>
-                  <div className="rounded-lg border border-border/40 bg-muted/20 px-2.5 py-2">
+                  <div className="rounded-2xl border border-border/40 bg-muted/20 px-2.5 py-2">
                     <p className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground/40 mb-0.5">User</p>
                     <p className="text-xs font-mono text-foreground/80">{sshMeta.username}</p>
                   </div>

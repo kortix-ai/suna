@@ -8,7 +8,7 @@ interface SpreadsheetLoaderProps {
 export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
   if (mode === 'mini') {
     return (
-      <div className="flex flex-col h-full w-full min-h-[200px] border rounded-md overflow-hidden bg-background">
+      <div className="flex flex-col h-full w-full min-h-[200px] border rounded-2xl overflow-hidden bg-background">
         <div className="h-8 border-b bg-muted/20 flex items-center px-2 gap-2">
            <Skeleton className="h-4 w-4 rounded" />
            <Skeleton className="h-4 w-4 rounded" />
@@ -22,7 +22,7 @@ export function SpreadsheetLoader({ mode = 'max' }: SpreadsheetLoaderProps) {
                  ))}
             </div>
             <div className="absolute inset-0 flex items-center justify-center">
-                 <div className="flex flex-col items-center gap-2 bg-background/80 p-4 rounded-lg backdrop-blur-sm shadow-sm">
+                 <div className="flex flex-col items-center gap-2 bg-background/80 p-4 rounded-2xl backdrop-blur-sm shadow-sm">
                     <p className="text-xs font-medium text-muted-foreground animate-pulse">Loading spreadsheet...</p>
                  </div>
             </div>

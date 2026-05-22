@@ -46,12 +46,27 @@ function repoCachePath(project: GitBackedProject) {
   return join(cacheRoot(), `${id}.git`);
 }
 
-function gitAuthEnv(token?: string | null): Record<string, string> {
+/**
+ * Host that serves the git protocol for a repo URL — used to scope the basic
+ * auth header to the right origin. Falls back to github.com for unparseable
+ * URLs (e.g. scp-style `git@host:org/repo`), which preserves the historical
+ * GitHub-only behavior.
+ */
+function hostFromRepoUrl(repoUrl?: string | null): string {
+  if (!repoUrl) return 'github.com';
+  try {
+    return new URL(repoUrl).host;
+  } catch {
+    return 'github.com';
+  }
+}
+
+function gitAuthEnv(token?: string | null, authHost = 'github.com'): Record<string, string> {
   if (!token) return {};
   const encoded = Buffer.from(`x-access-token:${token}`).toString('base64');
   return {
     GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+    GIT_CONFIG_KEY_0: `http.https://${authHost}/.extraheader`,
     GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${encoded}`,
   };
 }
@@ -62,8 +77,9 @@ async function runGit(
   auth = true,
   authToken?: string | null,
   extraEnv?: Record<string, string>,
+  authHost = 'github.com',
 ) {
-  const authEnv = auth ? gitAuthEnv(authToken) : {};
+  const authEnv = auth ? gitAuthEnv(authToken, authHost) : {};
   try {
     const result = await execFileAsync('git', args, {
       cwd,
@@ -94,11 +110,12 @@ async function runGitCapture(
   cwd?: string,
   authToken?: string | null,
   extraEnv?: Record<string, string>,
+  authHost = 'github.com',
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   try {
     const result = await execFileAsync('git', args, {
       cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken), ...(extraEnv || {}) },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken, authHost), ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: 30_000,
     });
@@ -133,7 +150,7 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
       '--bare',
       project.repoUrl,
       repoPath,
-    ], undefined, true, project.gitAuthToken);
+    ], undefined, true, project.gitAuthToken, undefined, hostFromRepoUrl(project.repoUrl));
     lastRefreshAt.set(project.projectId, Date.now());
     return repoPath;
   }
@@ -144,7 +161,7 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   await runGit(['remote', 'set-url', 'origin', project.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
-  await runGit(['fetch', '--prune', 'origin'], repoPath, true, project.gitAuthToken);
+  await runGit(['fetch', '--prune', 'origin'], repoPath, true, project.gitAuthToken, undefined, hostFromRepoUrl(project.repoUrl));
   lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }
@@ -189,6 +206,82 @@ export async function listRepoFiles(project: GitBackedProject, ref?: string, pat
       return { path: match[2] || '', type: 'file', size: null };
     })
     .filter((entry): entry is ProjectFileEntry => Boolean(entry));
+}
+
+export interface RepoGrepMatch {
+  path: string;
+  line_number: number;
+  line_text: string;
+}
+
+/**
+ * Filename search over the repo tree. Lists files via `listRepoFiles` then
+ * ranks by a case-insensitive match (basename prefix > basename substring >
+ * path substring), shortest path first.
+ */
+export async function searchRepoFileNames(
+  project: GitBackedProject,
+  query: string,
+  ref?: string,
+  limit = 50,
+): Promise<ProjectFileEntry[]> {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const files = await listRepoFiles(project, ref);
+  return files
+    .map((f) => {
+      const path = f.path.toLowerCase();
+      const base = path.split('/').pop() || path;
+      let score = -1;
+      if (base.startsWith(q)) score = 0;
+      else if (base.includes(q)) score = 1;
+      else if (path.includes(q)) score = 2;
+      return score >= 0 ? { f, score } : null;
+    })
+    .filter((x): x is { f: ProjectFileEntry; score: number } => Boolean(x))
+    .sort((a, b) => a.score - b.score || a.f.path.length - b.f.path.length)
+    .slice(0, limit)
+    .map((x) => x.f);
+}
+
+/**
+ * Content search via `git grep` over the tree at `ref`. Fixed-string,
+ * case-insensitive, skips binaries. Returns flat path/line/text matches.
+ * `git grep` exits non-zero when there are no matches, so we use the
+ * non-throwing capture variant.
+ */
+export async function grepRepoFiles(
+  project: GitBackedProject,
+  pattern: string,
+  ref?: string,
+  limit = 50,
+): Promise<RepoGrepMatch[]> {
+  const q = pattern.trim();
+  if (!q) return [];
+  const repoPath = await refreshMirror(project);
+  const treeRef = ref || project.defaultBranch;
+  const result = await runGitCapture(
+    ['grep', '-n', '-I', '-i', '-F', '-m', '10', '-e', q, treeRef],
+    repoPath,
+  );
+  if (!result.stdout.trim()) return [];
+  const matches: RepoGrepMatch[] = [];
+  const prefix = `${treeRef}:`;
+  for (const line of result.stdout.split('\n')) {
+    if (!line.trim()) continue;
+    // With a tree ref, git grep prints "<ref>:<path>:<lineno>:<text>".
+    const m = line.match(/^(.+?):(\d+):(.*)$/);
+    if (!m) continue;
+    let path = m[1];
+    if (path.startsWith(prefix)) path = path.slice(prefix.length);
+    matches.push({
+      path,
+      line_number: Number(m[2]),
+      line_text: (m[3] || '').slice(0, 400),
+    });
+    if (matches.length >= limit) break;
+  }
+  return matches;
 }
 
 export async function readRepoFile(project: GitBackedProject, filePath: string, ref?: string) {
@@ -374,10 +467,11 @@ export async function createRemoteSessionBranch(
   baseRef?: string,
 ) {
   const base = baseRef || project.defaultBranch;
+  const authHost = hostFromRepoUrl(project.repoUrl);
   const repoPath = await refreshMirror(project, true);
-  await runGit(['fetch', 'origin', `+refs/heads/${base}:refs/heads/${base}`], repoPath, true, project.gitAuthToken);
+  await runGit(['fetch', 'origin', `+refs/heads/${base}:refs/heads/${base}`], repoPath, true, project.gitAuthToken, undefined, authHost);
   await runGit(['update-ref', `refs/heads/${branchName}`, `refs/heads/${base}`], repoPath, false);
-  await runGit(['push', 'origin', `refs/heads/${branchName}:refs/heads/${branchName}`], repoPath, true, project.gitAuthToken);
+  await runGit(['push', 'origin', `refs/heads/${branchName}:refs/heads/${branchName}`], repoPath, true, project.gitAuthToken, undefined, authHost);
 }
 
 export async function deleteRemoteSessionBranch(
@@ -388,12 +482,13 @@ export async function deleteRemoteSessionBranch(
     throw new Error('Refusing to delete the project default branch');
   }
 
+  const authHost = hostFromRepoUrl(project.repoUrl);
   const repoPath = await refreshMirror(project, true);
-  const remote = await runGit(['ls-remote', '--heads', 'origin', branchName], repoPath, true, project.gitAuthToken)
+  const remote = await runGit(['ls-remote', '--heads', 'origin', branchName], repoPath, true, project.gitAuthToken, undefined, authHost)
     .catch(() => ({ stdout: '', stderr: '' }));
   if (!remote.stdout.trim()) return false;
 
-  await runGit(['push', 'origin', `:${branchName}`], repoPath, true, project.gitAuthToken);
+  await runGit(['push', 'origin', `:${branchName}`], repoPath, true, project.gitAuthToken, undefined, authHost);
   await runGit(['update-ref', '-d', `refs/heads/${branchName}`], repoPath, false)
     .catch(() => undefined);
   return true;
@@ -1336,6 +1431,8 @@ export async function mergeBranches(
       repoPath,
       true,
       project.gitAuthToken,
+      undefined,
+      hostFromRepoUrl(project.repoUrl),
     );
     return {
       merge_commit_sha: headSha,
@@ -1390,6 +1487,8 @@ export async function mergeBranches(
     repoPath,
     true,
     project.gitAuthToken,
+    undefined,
+    hostFromRepoUrl(project.repoUrl),
   );
 
   return {

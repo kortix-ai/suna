@@ -56,7 +56,7 @@ function DropdownMenuContent({
           // (py-1.5 px-2 text-sm gap-2 size-4 icons) is the look we want
           // for Billing / Settings rows. CommandItem matches it now too,
           // so the workspace dropdown rows feel identical.
-          'max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl p-1',
+          'max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-2xl p-1',
           className,
         )}
         style={{ zIndex: floatingZ(depth), ...style }}

@@ -1076,7 +1076,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
                 <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Columns ({selectedTableInfo.columns.length})
                 </h3>
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border rounded-2xl overflow-hidden">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="bg-muted/50 border-b">
@@ -1260,7 +1260,7 @@ export function SqliteRenderer({ filePath, fileName, className, readOnly = false
           onClick={() => setExpandedCell(null)}
         >
           <div
-            className="bg-background border border-border/60 rounded-lg shadow-xl w-full max-w-xl max-h-[70vh] flex flex-col overflow-hidden"
+            className="bg-background border border-border/60 rounded-2xl shadow-xl w-full max-w-xl max-h-[70vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}

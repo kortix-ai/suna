@@ -309,7 +309,7 @@ export function OcWebFetchToolView({
                 domain={domain}
               />
             ) : (
-              <div className="flex items-center gap-2.5 py-2 px-3 rounded-lg bg-muted/50 border border-border">
+              <div className="flex items-center gap-2.5 py-2 px-3 rounded-2xl bg-muted/50 border border-border">
                 <Globe className="h-3.5 w-3.5 text-cyan-500 dark:text-cyan-400 flex-shrink-0" />
                 <span className="font-mono text-xs text-muted-foreground truncate">
                   Fetching {url}...
@@ -398,7 +398,7 @@ function ContentDisplay({
   const lineCount = content.content.split('\n').length;
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden bg-card">
+    <div className="rounded-2xl border border-border overflow-hidden bg-card">
       {/* Clickable header row */}
       <div
         className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-muted transition-colors"

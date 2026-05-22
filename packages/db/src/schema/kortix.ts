@@ -277,26 +277,66 @@ export const projectSecrets = kortixSchema.table(
   ],
 );
 
-export const projectOauthCredentials = kortixSchema.table(
-  'project_oauth_credentials',
+// ─── Vault: unified, account-owned secrets / credentials / logins ───────────
+// One store for env vars, API keys, and (future) OAuth logins. Owned by an
+// account (personal OR team). Scope falls out of (project_id, owner_user_id):
+//   owner_user_id set      → PRIVATE to that member
+//   project_id set         → scoped to that project (else account-wide)
+//   no grants on a shared item → everyone in scope; ≥1 grant → that allow-list
+// Resolution at use-time is most-specific-wins (see iam/vault.ts).
+export const vaultItemKindEnum = kortixSchema.enum('vault_item_kind', [
+  'env',
+  'api_key',
+  'oauth_token',
+  'oauth_client',
+  'connection_secret',
+]);
+
+// Secrets are 100% project-scoped. Every item belongs to a project; within it
+// the visibility is set by ownerUserId + grants:
+//   ownerUserId set                 → "only me" (private to that member)
+//   ownerUserId null, no grants      → "everyone on the project"
+//   ownerUserId null, has grants     → "select members"
+// There is no account- or user-global vault. Encryption key derives from
+// project_id.
+export const vaultItems = kortixSchema.table(
+  'vault_items',
   {
-    credentialId: uuid('credential_id').defaultRandom().primaryKey(),
+    itemId: uuid('item_id').defaultRandom().primaryKey(),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    providerId: varchar('provider_id', { length: 64 }).notNull(),
-    refreshEnc: text('refresh_enc').notNull(),
-    accessEnc: text('access_enc').notNull(),
-    expires: bigint('expires', { mode: 'number' }).notNull(),
-    accountId: varchar('oauth_account_id', { length: 255 }),
-    enterpriseUrl: varchar('enterprise_url', { length: 255 }),
+    kind: vaultItemKindEnum('kind').default('env').notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    valueEnc: text('value_enc').notNull(),
+    ownerUserId: uuid('owner_user_id'),
+    providerId: varchar('provider_id', { length: 64 }),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_project_oauth_creds_project').on(table.projectId),
-    uniqueIndex('idx_project_oauth_creds_project_provider').on(table.projectId, table.providerId),
+    index('idx_vault_items_project').on(table.projectId),
+    index('idx_vault_items_owner_user').on(table.ownerUserId),
+    // Per-scope name uniqueness via partial unique indexes (created in SQL):
+    //   unique(project_id, name)                where owner_user_id is null  (shared)
+    //   unique(project_id, owner_user_id, name) where owner_user_id is not null (private)
+  ],
+);
+
+export const vaultItemGrants = kortixSchema.table(
+  'vault_item_grants',
+  {
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => vaultItems.itemId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.itemId, table.userId] }),
+    index('idx_vault_item_grants_user').on(table.userId),
   ],
 );
 
@@ -408,8 +448,10 @@ export const projectTriggerEvents = kortixSchema.table(
   ],
 );
 
-export const chatPlatformEnum = kortixSchema.enum('chat_platform', ['slack']);
-
+// Tiny lookup table — only used in OAuth (multi-tenant Kortix Slack app) mode
+// so the shared /v1/webhooks/slack endpoint can translate Slack's team_id into
+// the Kortix project that owns the workspace. BYO mode routes by URL
+// (/v1/webhooks/slack/:projectId) and skips this table entirely.
 export const chatChannelBindings = kortixSchema.table(
   'chat_channel_bindings',
   {
@@ -417,35 +459,35 @@ export const chatChannelBindings = kortixSchema.table(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    platform: chatPlatformEnum('platform').notNull(),
+    platform: varchar('platform', { length: 32 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    installedAt: timestamp('installed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('idx_chat_channel_bindings_project_platform').on(table.projectId, table.platform),
-    index('idx_chat_channel_bindings_lookup').on(table.platform, table.workspaceId),
+    uniqueIndex('idx_chat_channel_bindings_workspace').on(table.platform, table.workspaceId),
+    index('idx_chat_channel_bindings_project').on(table.projectId),
   ],
 );
 
+// Thread → session mapping. First Slack/Telegram message in a thread spawns
+// a Kortix session and writes a row here. Follow-up messages in the same
+// thread look up the existing session and deliver the prompt as a follow-up
+// to opencode — same sandbox, same conversation, no fresh boot.
 export const chatThreads = kortixSchema.table(
   'chat_threads',
   {
-    rowId: uuid('row_id').defaultRandom().primaryKey(),
-    platform: chatPlatformEnum('platform').notNull(),
-    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
-    channelId: varchar('channel_id', { length: 128 }).notNull(),
-    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    threadRowId: uuid('thread_row_id').defaultRandom().primaryKey(),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    sessionId: text('session_id').references(() => projectSessions.sessionId, {
-      onDelete: 'set null',
-    }),
-    openedBy: varchar('opened_by', { length: 256 }),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    threadId: varchar('thread_id', { length: 256 }).notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
     openedAt: timestamp('opened_at', { withTimezone: true }).defaultNow().notNull(),
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }).defaultNow().notNull(),
-    closedAt: timestamp('closed_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('idx_chat_threads_thread').on(
@@ -930,13 +972,10 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   members: many(projectMembers),
   secrets: many(projectSecrets),
-  oauthCredentials: many(projectOauthCredentials),
   triggers: many(projectTriggers),
   triggerEvents: many(projectTriggerEvents),
   sessions: many(projectSessions),
   runtimeSnapshots: many(projectRuntimeSnapshots),
-  chatChannelBindings: many(chatChannelBindings),
-  chatThreads: many(chatThreads),
 }));
 
 export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
@@ -953,13 +992,6 @@ export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
 export const projectSecretsRelations = relations(projectSecrets, ({ one }) => ({
   project: one(projects, {
     fields: [projectSecrets.projectId],
-    references: [projects.projectId],
-  }),
-}));
-
-export const projectOauthCredentialsRelations = relations(projectOauthCredentials, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectOauthCredentials.projectId],
     references: [projects.projectId],
   }),
 }));
@@ -1014,24 +1046,6 @@ export const projectRuntimeSnapshotsRelations = relations(projectRuntimeSnapshot
   project: one(projects, {
     fields: [projectRuntimeSnapshots.projectId],
     references: [projects.projectId],
-  }),
-}));
-
-export const chatChannelBindingsRelations = relations(chatChannelBindings, ({ one }) => ({
-  project: one(projects, {
-    fields: [chatChannelBindings.projectId],
-    references: [projects.projectId],
-  }),
-}));
-
-export const chatThreadsRelations = relations(chatThreads, ({ one }) => ({
-  project: one(projects, {
-    fields: [chatThreads.projectId],
-    references: [projects.projectId],
-  }),
-  session: one(projectSessions, {
-    fields: [chatThreads.sessionId],
-    references: [projectSessions.sessionId],
   }),
 }));
 

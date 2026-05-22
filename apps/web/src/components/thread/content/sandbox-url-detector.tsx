@@ -128,7 +128,7 @@ function InlineIframePreview({
   return (
     <div
       className={cn(
-        'mt-2 rounded-lg border border-border/50 overflow-hidden transition-colors duration-200',
+        'mt-2 rounded-2xl border border-border/50 overflow-hidden transition-colors duration-200',
         expanded ? 'h-[480px]' : 'h-[280px]',
       )}
     >
@@ -264,7 +264,7 @@ function SandboxPreviewCard({
 
   return (
     <div className="my-3">
-      <div className="group/card relative rounded-xl border border-border/50 bg-muted/20 overflow-hidden transition-colors duration-200 hover:border-border/80 hover:bg-muted/30">
+      <div className="group/card relative rounded-2xl border border-border/50 bg-muted/20 overflow-hidden transition-colors duration-200 hover:border-border/80 hover:bg-muted/30">
         {/* Top accent gradient — color reflects reachability */}
         <div className={cn(
           'absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent to-transparent',

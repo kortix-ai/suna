@@ -116,7 +116,11 @@ const envSchema = z.object({
   SLACK_CLIENT_ID:             optStr,
   SLACK_CLIENT_SECRET:         optStr,
   SLACK_REDIRECT_URI:          optStr,
-  SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,chat:write,commands,im:history,im:read,im:write'),
+  // Must stay in sync with the bot scopes declared in
+  // apps/api/src/channels/slack-app-manifest.json — anything narrower here
+  // means the OAuth flow grants fewer scopes than the manifest advertises
+  // and tools like `slack channels`/`slack users` fail with missing_scope.
+  SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,channels:history,channels:read,channels:join,chat:write,chat:write.public,files:read,files:write,groups:history,groups:read,im:history,im:read,im:write,mpim:history,mpim:read,reactions:read,reactions:write,users:read'),
   KORTIX_API_KEY_ENC_KEY:      optStr,
   KORTIX_DASHBOARD_URL:        optStr,
 

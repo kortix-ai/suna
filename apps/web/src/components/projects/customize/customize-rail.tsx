@@ -19,6 +19,7 @@ import {
   Settings,
   Sparkles,
   Timer,
+  Users,
   Webhook,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -44,6 +45,7 @@ const PRIMARY_ITEMS: readonly RailItem[] = [
   { section: 'agents',    label: 'Agents',    icon: Bot },
   { section: 'commands',  label: 'Commands',  glyph: '/' },
   { section: 'secrets',   label: 'Secrets',   icon: KeyRound },
+  { section: 'members',   label: 'Members',   icon: Users },
   { section: 'schedules', label: 'Schedules', icon: Timer },
   { section: 'webhooks',  label: 'Webhooks',  icon: Webhook },
   { section: 'channels',  label: 'Channels',  icon: MessageSquare },

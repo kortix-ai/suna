@@ -188,7 +188,7 @@ function ConnectButton() {
           <div className="space-y-4 pt-2">
             <button
               onClick={handleCopy}
-              className="group flex items-center gap-2 w-full bg-foreground/[0.04] hover:bg-foreground/[0.07] border border-foreground/[0.08] rounded-lg px-3 py-2.5 transition-colors cursor-pointer"
+              className="group flex items-center gap-2 w-full bg-foreground/[0.04] hover:bg-foreground/[0.07] border border-foreground/[0.08] rounded-2xl px-3 py-2.5 transition-colors cursor-pointer"
             >
               <code className="text-xs font-mono text-foreground/80 flex-1 text-left break-all">
                 {command}
@@ -238,7 +238,7 @@ function ConnectGuide() {
 
         <button
           onClick={handleCopy}
-          className="group flex items-center gap-3 bg-foreground/[0.04] hover:bg-foreground/[0.07] border border-foreground/[0.08] rounded-xl px-5 py-3.5 transition-colors w-full max-w-sm"
+          className="group flex items-center gap-3 bg-foreground/[0.04] hover:bg-foreground/[0.07] border border-foreground/[0.08] rounded-2xl px-5 py-3.5 transition-colors w-full max-w-sm"
         >
           <Terminal className="h-4 w-4 text-muted-foreground shrink-0" />
           <code className="text-sm font-mono text-foreground/80 flex-1 text-left truncate">

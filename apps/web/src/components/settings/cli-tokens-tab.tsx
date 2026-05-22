@@ -75,7 +75,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
   });
 
   return (
-    <div className="rounded-md border bg-card transition-colors">
+    <div className="rounded-2xl border bg-card transition-colors">
       <div className="flex items-center justify-between gap-4 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -204,11 +204,11 @@ export function CliTokensTab() {
 
       {tokensQuery.isLoading ? (
         <div className="space-y-2">
-          <Skeleton className="h-16 w-full rounded-md" />
-          <Skeleton className="h-16 w-full rounded-md" />
+          <Skeleton className="h-16 w-full rounded-2xl" />
+          <Skeleton className="h-16 w-full rounded-2xl" />
         </div>
       ) : tokensQuery.error ? (
-        <div className="rounded-md border border-destructive bg-destructive/5 p-4 text-sm text-destructive">
+        <div className="rounded-2xl border border-destructive bg-destructive/5 p-4 text-sm text-destructive">
           {(tokensQuery.error as Error).message}
         </div>
       ) : tokens.length === 0 && !creating ? (
@@ -231,7 +231,7 @@ export function CliTokensTab() {
         </div>
       )}
 
-      <div className="mt-8 rounded-md border bg-muted/30 p-4 text-sm">
+      <div className="mt-8 rounded-2xl border bg-muted/30 p-4 text-sm">
         <div className="font-medium">Using the CLI</div>
         <pre className="mt-2 overflow-x-auto rounded bg-background px-3 py-2 font-mono text-xs">
 {`kortix login --token <paste-from-above>
@@ -267,7 +267,7 @@ function InlineCreate({
 
   if (created) {
     return (
-      <div className="rounded-md border border-primary/30 bg-primary/5 p-4">
+      <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             <div className="text-sm font-medium">
@@ -309,7 +309,7 @@ function InlineCreate({
         if (!name.trim() || mutation.isPending) return;
         mutation.mutate();
       }}
-      className="rounded-md border bg-card p-4"
+      className="rounded-2xl border bg-card p-4"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 space-y-2">
@@ -358,7 +358,7 @@ function InlineCreate({
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="rounded-md border border-dashed py-16 text-center">
+    <div className="rounded-2xl border border-dashed py-16 text-center">
       <KeyRound className="mx-auto size-8 text-muted-foreground" />
       <div className="mt-3 text-sm font-medium">No tokens yet</div>
       <div className="mt-1 text-sm text-muted-foreground">

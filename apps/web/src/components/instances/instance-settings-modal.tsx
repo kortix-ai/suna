@@ -192,7 +192,7 @@ function ConfigDegradationPanel({
 }) {
   if (loading) {
     return (
-      <div className="rounded-xl border border-border/60 bg-muted/10 p-4 flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading config diagnostics…
       </div>
     );
@@ -200,7 +200,7 @@ function ConfigDegradationPanel({
 
   if (error) {
     return (
-      <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-2">
+      <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-2">
         <div className="text-sm font-medium">Config diagnostics unavailable</div>
         <div className="text-xs text-muted-foreground break-words">{error}</div>
       </div>
@@ -210,7 +210,7 @@ function ConfigDegradationPanel({
   if (!status || status.valid || status.problems.length === 0) return null;
 
   return (
-    <section className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-4">
+    <section className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-4">
       <div className="flex items-start gap-3">
         <AlertCircle className="mt-0.5 h-4 w-4 text-amber-400 shrink-0" />
         <div className="min-w-0 space-y-1">
@@ -224,7 +224,7 @@ function ConfigDegradationPanel({
 
       <div className="space-y-3">
         {status.problems.map((problem, index) => (
-          <div key={`${problem.source}-${index}`} className="rounded-lg border border-amber-500/20 bg-background/70 px-3 py-3 space-y-2">
+          <div key={`${problem.source}-${index}`} className="rounded-2xl border border-amber-500/20 bg-background/70 px-3 py-3 space-y-2">
             <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
               <span>{formatProblemLabel(problem)}</span>
               <span className="rounded-full border border-border/60 px-2 py-0.5 font-mono normal-case tracking-normal text-foreground/80">{problem.source}</span>
@@ -285,7 +285,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
       <button
         type="button"
         onClick={() => navigator.clipboard.writeText(value)}
-        className="w-full text-left rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs font-mono break-all hover:bg-muted/40 transition-colors"
+        className="w-full text-left rounded-2xl border border-border/60 bg-muted/20 px-3 py-2 text-xs font-mono break-all hover:bg-muted/40 transition-colors"
       >
         {value}
       </button>
@@ -326,7 +326,7 @@ function CommandCopyField({
         type="button"
         onClick={handleCopy}
         className={cn(
-          'w-full text-left rounded-lg border px-3 py-3 text-xs transition-all',
+          'w-full text-left rounded-2xl border px-3 py-3 text-xs transition-all',
           copied
             ? 'border-emerald-500/40 bg-emerald-500/10'
             : 'border-border/60 bg-muted/20 hover:bg-muted/40 hover:border-border',
@@ -365,7 +365,7 @@ function BackupRow({
   deleting: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-border/60 bg-muted/10 px-4 py-3 flex items-center gap-3">
+    <div className="rounded-2xl border border-border/60 bg-muted/10 px-4 py-3 flex items-center gap-3">
       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/50">
         <HardDrive className="h-4 w-4 text-muted-foreground" />
       </div>
@@ -1050,7 +1050,7 @@ export function InstanceSettingsModal({
               taskTargetLabel={configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null}
             />
             {showRecoveryCallout && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-3">
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5">
                     {adminHealth?.overall_status === 'offline' ? (
@@ -1080,7 +1080,7 @@ export function InstanceSettingsModal({
                     {(['host', 'workload', 'runtime'] as const).map((key) => {
                       const layer = adminHealth.layers[key];
                       return (
-                        <div key={key} className={cn('rounded-lg border px-3 py-2', layerTone(layer.status))}>
+                        <div key={key} className={cn('rounded-2xl border px-3 py-2', layerTone(layer.status))}>
                           <div className="text-[11px] uppercase tracking-wide opacity-80">{layer.label}</div>
                           <div className="mt-1 text-sm font-medium capitalize">{layer.status}</div>
                           <div className="mt-1 text-[11px] text-muted-foreground">{layer.summary}</div>
@@ -1092,7 +1092,7 @@ export function InstanceSettingsModal({
               </div>
             )}
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Name</div>
                 {isEditingName ? (
                   <div className="flex items-center gap-2">
@@ -1129,41 +1129,41 @@ export function InstanceSettingsModal({
                   <div className="font-medium">{sandbox.name || 'Untitled instance'}</div>
                 )}
               </div>
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Init status</div>
                 <div className="font-medium capitalize">{initStatus}</div>
                 {sandbox.init_attempts && sandbox.init_attempts > 1 ? <div className="text-[11px] text-muted-foreground">Attempt {sandbox.init_attempts}</div> : null}
               </div>
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Health status</div>
                 <div className="font-medium capitalize">{healthStatus}</div>
               </div>
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Provider</div>
                 <div className="font-medium capitalize">{sandbox.provider}</div>
               </div>
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Version</div>
                 <div className="font-medium font-mono">{effectiveVersion || '—'}</div>
               </div>
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Location</div>
                 <div className="font-medium">{(meta?.location as string) || '—'}</div>
               </div>
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
                 <div className="text-xs text-muted-foreground">Server type</div>
                 <div className="font-medium font-mono">{(meta?.serverType as string) || '—'}</div>
               </div>
             </div>
             {lastInitError ? (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 space-y-2">
+              <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 space-y-2">
                 <div className="text-sm font-medium text-foreground">Last initialization error</div>
                 <div className="text-xs text-muted-foreground break-words">{lastInitError}</div>
               </div>
             ) : null}
           </section>
 
-          <section className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
+          <section className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Server className="h-4 w-4 text-muted-foreground" />
               Quick actions
@@ -1200,7 +1200,7 @@ export function InstanceSettingsModal({
             <p className="text-sm text-muted-foreground">Three explicit layers: host machine, workload container, and core runtime services.</p>
           </div>
 
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-start gap-3">
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-start gap-3">
             <TriangleAlert className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
             <div>
               <div className="text-sm font-medium text-foreground">Choose the smallest repair level first</div>
@@ -1227,7 +1227,7 @@ export function InstanceSettingsModal({
               </div>
             ) : adminHealth ? (
               <div className="space-y-4">
-                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 flex items-center justify-between gap-3">
+                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-medium">Overall status</div>
                     <div className="text-xs text-muted-foreground mt-1">
@@ -1243,7 +1243,7 @@ export function InstanceSettingsModal({
                   const layer = adminHealth.layers[key];
                   const layerServices = key === 'runtime' ? runtimeServices : [];
                   return (
-                    <section key={key} className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
+                    <section key={key} className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-4">
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div>
                           <div className="flex items-center gap-2">
@@ -1274,7 +1274,7 @@ export function InstanceSettingsModal({
 
                       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 text-xs">
                         {Object.entries(layer.details).filter(([detailKey]) => detailKey !== 'services').map(([detailKey, value]) => (
-                          <div key={detailKey} className="rounded-lg border border-border/60 bg-background/60 px-3 py-2">
+                          <div key={detailKey} className="rounded-2xl border border-border/60 bg-background/60 px-3 py-2">
                             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{detailKey.replace(/_/g, ' ')}</div>
                             <div className="mt-1 break-words font-mono text-foreground/85">{typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—')}</div>
                           </div>
@@ -1286,7 +1286,7 @@ export function InstanceSettingsModal({
                           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Managed services</div>
                           <div className="space-y-2">
                             {layerServices.map((service) => (
-                              <div key={service.id} className="rounded-lg border border-border/60 bg-background/60 px-3 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div key={service.id} className="rounded-2xl border border-border/60 bg-background/60 px-3 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <div className="text-sm font-medium">{service.name}</div>
@@ -1311,12 +1311,12 @@ export function InstanceSettingsModal({
                 })}
               </div>
             ) : (
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 text-sm text-muted-foreground">
                 Health data unavailable.
               </div>
             )
           ) : (
-            <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
+            <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-3">
               <div className="text-sm font-medium">Recovery</div>
               <div className="text-xs text-muted-foreground">Detailed host/workload/runtime controls are available to admins. You can still restart the workload and manage SSH access here.</div>
               <div className="flex flex-wrap gap-2">
@@ -1342,7 +1342,7 @@ export function InstanceSettingsModal({
                   {adminSshCommand ? <CommandCopyField label="SSH command" value={adminSshCommand} hint="Copies the direct SSH command without exposing it on screen." /> : null}
                   {adminSetupCommand ? <CommandCopyField label="Setup command" value={adminSetupCommand} hint="Copies the full setup command, including any hidden key material." /> : null}
                   {(effectiveIp || effectiveRegion || effectiveServerType) && (
-                    <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-2">
+                    <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-2">
                       <div className="text-xs text-muted-foreground">Host details</div>
                       {effectiveIp ? <div className="text-sm font-mono">IP: {effectiveIp}</div> : null}
                       {effectiveRegion ? <div className="text-sm">Region: {effectiveRegion}</div> : null}
@@ -1355,7 +1355,7 @@ export function InstanceSettingsModal({
                   <Loader2 className="h-4 w-4 animate-spin" /> Resolving connection details…
                 </div>
               ) : sshQuery.error ? (
-                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
+                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-3">
                   <div className="text-sm text-muted-foreground">SSH is not configured for this instance yet.</div>
                   <Button onClick={() => setupSshMutation.mutate()} disabled={setupSshMutation.isPending}>
                     {setupSshMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <KeyRound className="h-4 w-4 mr-2" />}
@@ -1367,7 +1367,7 @@ export function InstanceSettingsModal({
                   <CommandCopyField label="SSH command" value={setupResult?.ssh_command || sshQuery.data.ssh_command} hint="Copies the SSH command without exposing the full host command inline." />
                   <CommandCopyField label="Reconnect command" value={setupResult?.reconnect_command || sshQuery.data.reconnect_command} hint="Copies the reconnect command for future sessions." />
                   <CommandCopyField label="SSH config command" value={setupResult?.ssh_config_command || sshQuery.data.ssh_config_command} hint="Copies the SSH config snippet command for your local machine." />
-                  <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-2">
+                  <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-2">
                     <div className="text-xs text-muted-foreground">Connection details</div>
                     <div className="text-sm">{sshQuery.data.username}@{sshQuery.data.host}:{sshQuery.data.port}</div>
                     <div className="text-xs text-muted-foreground font-mono">Host alias: {sshQuery.data.host_alias}</div>
@@ -1383,7 +1383,7 @@ export function InstanceSettingsModal({
               ) : null}
 
               {providerDetail?.health ? (
-                <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-4">
+                <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-4">
                   <div className="text-sm font-medium">Resource usage</div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <HealthBar label="CPU" pct={providerDetail.health.cpu} icon={Cpu} detail={matchedServerType ? formatCapacityDetail(cpuPercent, matchedServerType.cores, 'vCPU', 'total') : undefined} />
@@ -1393,7 +1393,7 @@ export function InstanceSettingsModal({
                 </div>
               ) : null}
 
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-3">
                 <div className="text-sm font-medium">Provider details</div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
@@ -1415,7 +1415,7 @@ export function InstanceSettingsModal({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-3">
+              <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-3">
                 <div className="text-sm font-medium">Deep debugging</div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   If you SSH into the host machine itself, you can inspect the running Kortix container directly. Typical flow: run <span className="font-mono text-foreground">docker ps</span>, identify the <span className="font-mono text-foreground">kortix/computer</span> container or <span className="font-mono text-foreground">justavps-workload</span> name, then exec into it for full root access inside the container.
@@ -1424,7 +1424,7 @@ export function InstanceSettingsModal({
                   <CopyField label="List running containers" value="docker ps" />
                   <CopyField label="Open running Kortix container" value="docker exec -it justavps-workload bash" />
                 </div>
-                <div className="rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-[11px] text-muted-foreground">
+                <div className="rounded-2xl border border-border/60 bg-background/60 px-3 py-2 text-[11px] text-muted-foreground">
                   Inside the container, you can inspect <span className="font-mono text-foreground">/workspace</span>, verify runtime state, and debug the live Kortix environment directly.
                 </div>
               </div>
@@ -1446,11 +1446,11 @@ export function InstanceSettingsModal({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+            <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
               <div className="text-xs text-muted-foreground">Current version</div>
               <div className="font-medium font-mono">{effectiveVersion || 'Unknown'}</div>
             </div>
-            <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
+            <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-1.5">
               <div className="text-xs text-muted-foreground">Latest version</div>
               <div className="font-medium font-mono">
                 {latestVersionQuery.isLoading ? 'Checking…' : latestVersion || 'Unavailable'}
@@ -1458,7 +1458,7 @@ export function InstanceSettingsModal({
             </div>
           </div>
 
-          <div className="rounded-xl border border-border/60 bg-muted/10 p-4 space-y-2">
+          <div className="rounded-2xl border border-border/60 bg-muted/10 p-4 space-y-2">
             <div className="text-xs text-muted-foreground">Auto-update</div>
             <div className="flex items-center gap-2 text-sm">
               <span className="font-medium">{sandbox?.auto_update_enabled === false ? 'Disabled' : 'Enabled by default'}</span>
@@ -1472,7 +1472,7 @@ export function InstanceSettingsModal({
           </div>
 
           {!canUpgrade.loading && !canUpgrade.allowed ? (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-100">
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-100">
               You don't have permission to run updates on this instance.
             </div>
           ) : null}
@@ -1521,7 +1521,7 @@ export function InstanceSettingsModal({
             <Loader2 className="h-4 w-4 animate-spin" /> Loading backups…
           </div>
         ) : backups.error ? (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
             <div className="flex items-start gap-3">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="space-y-3">
@@ -1536,7 +1536,7 @@ export function InstanceSettingsModal({
             </div>
           </div>
         ) : backups.backups.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/60 bg-muted/10 p-8 text-center text-sm text-muted-foreground">
+          <div className="rounded-2xl border border-dashed border-border/60 bg-muted/10 p-8 text-center text-sm text-muted-foreground">
             No backups yet.
           </div>
         ) : (

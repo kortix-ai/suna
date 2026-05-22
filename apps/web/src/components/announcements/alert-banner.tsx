@@ -108,7 +108,7 @@ export function AlertBanner({
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
         className="fixed bottom-4 right-4 z-[110] w-[340px]"
       >
-        <div className="relative bg-muted rounded-xl overflow-hidden border">
+        <div className="relative bg-muted rounded-2xl overflow-hidden border">
           <Button variant="ghost" size="icon-sm" onClick={handleDismiss}>
 <X className="h-3 w-3 text-foreground dark:text-white" />
           

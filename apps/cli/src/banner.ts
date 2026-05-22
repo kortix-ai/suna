@@ -116,6 +116,10 @@ export function printGetStarted({ primaryAgent, prompt }: GetStartedInput): void
   for (const line of insetCard(`prompt for ${primaryAgent}`, wrapped)) lines.push(line);
 
   lines.push(boxLine(''));
+  lines.push(
+    boxLine(`${DIM}When you're ready, take it live:${RESET}  ${CYAN}kortix ship${RESET}`),
+  );
+  lines.push(boxLine(''));
   lines.push(boxBottom());
   lines.push('');
   process.stdout.write(colorize(lines.join('\n')) + '\n');

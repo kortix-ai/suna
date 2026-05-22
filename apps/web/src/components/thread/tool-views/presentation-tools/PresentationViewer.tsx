@@ -861,7 +861,7 @@ export function PresentationViewer({
               <CodeBlockCode 
                 code={toolExecutionError} 
                 language="text"
-                className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded-md border"
+                className="text-xs bg-zinc-100 dark:bg-zinc-800 p-3 rounded-2xl border"
               />
             </div>
           </div>

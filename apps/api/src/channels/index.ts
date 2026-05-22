@@ -1,29 +1,26 @@
 export {
-  extractChannels,
-  channelSpecToTomlEntry,
-  SUPPORTED_PLATFORMS,
-  CHANNEL_EVENTS,
-  type ChannelPlatform,
-  type ChannelEvent,
-  type ChannelSpec,
-  type ChannelParseError,
-  type LoadedChannels,
-} from './manifest';
-export { loadProjectChannels } from './load';
-export { resolveChannel, type ResolvedChannel } from './bindings';
-export { renderPromptPrefix } from './render';
-export { spawnChannelSession, type SpawnResult } from './spawn';
+  saveSlackInstall,
+  deleteSlackInstall,
+  loadSlackInstall,
+  loadSlackTokenForProject,
+  loadSlackSigningSecretForProject,
+  loadSlackBotUserIdForProject,
+  loadSlackTeamNameForProject,
+  SLACK_BOT_TOKEN,
+  SLACK_SIGNING_SECRET,
+  SLACK_TEAM_ID,
+  SLACK_BOT_USER_ID,
+  SLACK_TEAM_NAME,
+  type SlackInstallSummary,
+  type SlackInstallInput,
+} from './install-store';
 export {
-  parseOpencodeSse,
-  isMessagePartDelta,
-  isSessionIdle,
-  isSessionError,
-  type OpencodeEvent,
-  type MessagePartDeltaProps,
-  type SessionIdleProps,
-  type SessionErrorProps,
-} from './opencode-stream';
-export { streamAgentResponse } from './agent-bridge';
-export { getChannelsBot, isChannelsConfigured, isMultiTenantEnabled, getChannelsModeReport } from './bot';
-export { resolveChannelsMode, type ChannelsMode, type ChannelsModeFlag, type ChannelsModeReport } from './mode';
-export { channelsApp } from './routes';
+  generateSlackManifest,
+  resolveBaseUrl,
+  type SlackManifest,
+  type GenerateManifestInput,
+} from './slack-manifest';
+export { slackWebhookApp } from './slack-webhook';
+export { telegramWebhookApp } from './telegram-webhook';
+export { slackOauthApp, buildSlackInstallUrl } from './slack-oauth';
+export { slackOauthMode } from './slack-oauth-mode';

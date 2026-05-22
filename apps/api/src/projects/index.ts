@@ -87,28 +87,6 @@ import {
   listProjectSecrets,
 } from './secrets';
 import {
-  SUPPORTED_OAUTH_PROVIDERS,
-  buildOpencodeAuthContent,
-  deleteOauthCredential,
-  isSupportedOauthProvider,
-  listOauthCredentials,
-  summarizeCredential,
-  upsertOauthCredential,
-  type OauthProviderId,
-} from './oauth';
-import {
-  pollOnceCopilot,
-  pollOnceOpenAi,
-  startCopilotDeviceFlow,
-  startOpenAiDeviceFlow,
-} from './oauth-flow';
-import {
-  bumpInterval,
-  createFlow,
-  deleteFlow,
-  getFlow,
-} from './oauth-flow-store';
-import {
   effectiveProjectRole,
   isAccountManager,
   parseProjectRole,
@@ -117,13 +95,6 @@ import {
   type ProjectAccessAction,
   type ProjectRole,
 } from './access';
-import {
-  ACCOUNT_ACTIONS,
-  assertAuthorized,
-  authorize,
-  listAccessibleResources,
-  PROJECT_ACTIONS,
-} from '../iam';
 import {
   KNOWN_SCHEMA_VERSION,
   MANIFEST_FILENAME,
@@ -145,13 +116,6 @@ import {
   type AppSourceSpec,
   type AppSpec,
 } from './apps';
-import {
-  channelSpecToTomlEntry,
-  extractChannels,
-  type ChannelSpec,
-} from '../channels/manifest';
-import { loadProjectChannels } from '../channels/load';
-import { syncProjectChannelBindings } from '../channels/sync';
 import {
   deleteSlackInstall,
   loadSlackInstall,
@@ -750,15 +714,6 @@ async function resolveProjectAccount(c: Context, body?: Record<string, unknown>)
   };
 }
 
-// Coarse legacy actions map onto representative IAM action strings.
-// `manage` is the strongest gate — only a full project admin grants
-// project.delete, which implies write and read.
-const LEGACY_ACTION_TO_IAM: Record<ProjectAccessAction, string> = {
-  read: PROJECT_ACTIONS.PROJECT_READ,
-  write: PROJECT_ACTIONS.PROJECT_WRITE,
-  manage: PROJECT_ACTIONS.PROJECT_DELETE,
-};
-
 async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   const [row] = await db
@@ -776,23 +731,9 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
   const accountRole = membership.accountRole as AccountRole;
   const projectRole = await getProjectMemberRole(projectId, userId);
   const effectiveRole = effectiveProjectRole(accountRole, projectRole);
-
-  // The IAM engine bridges existing account_role + project_members rows, so
-  // pre-IAM accounts behave identically; policies are additive on top. If
-  // the request came via a PAT with its own narrowing policies, the engine
-  // will evaluate those instead of inheriting the user's permissions.
-  const actingTokenId = (c as any).get('iamTokenId') as string | undefined;
-  const result = await authorize(
-    userId,
-    row.accountId,
-    LEGACY_ACTION_TO_IAM[action],
-    { type: 'project', id: projectId },
-    actingTokenId,
-  );
-  if (!result.allowed) {
+  if (!roleAllows(effectiveRole, action)) {
     throw new HTTPException(403, { message: 'You do not have access to this project' });
   }
-
   (c as any).set('accountId', row.accountId);
 
   return {
@@ -813,14 +754,13 @@ async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
+  gitAuthToken?: string | null;
 }): Promise<Record<string, string>> {
-  // Project secrets + OAuth credentials + project-scoped CLI token all
-  // funnel into the sandbox env. Run them in parallel — the CLI token
-  // path mints a fresh token per session boot so the in-container CLI
-  // works out of the box.
-  const [runtimeSecrets, opencodeAuthContent, cliToken] = await Promise.all([
+  // Project secrets + project-scoped CLI token funnel into the sandbox env.
+  // Run them in parallel — the CLI token path mints a fresh token per session
+  // boot so the in-container CLI works out of the box.
+  const [runtimeSecrets, cliToken] = await Promise.all([
     listProjectSecrets(input.projectId),
-    buildOpencodeAuthContent(input.projectId),
     mintSessionCliToken(input.projectId, input.userId, input.accountId, input.sessionId),
   ]);
   const llmBaseUrl = buildProjectLlmBaseUrl(config.KORTIX_URL);
@@ -850,7 +790,10 @@ async function buildSessionSandboxEnvVars(input: {
     ...(cliToken ? { KORTIX_TOKEN: cliToken, KORTIX_CLI_TOKEN: cliToken } : {}),
     KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
-    ...(opencodeAuthContent ? { OPENCODE_AUTH_CONTENT: opencodeAuthContent } : {}),
+    // GitHub auth for the in-sandbox `git clone` — kortix-agent reads
+    // KORTIX_GITHUB_TOKEN to materialize the project repo on first boot.
+    // Required for private repos; harmless for public ones.
+    ...(input.gitAuthToken ? { KORTIX_GITHUB_TOKEN: input.gitAuthToken } : {}),
   };
 }
 
@@ -984,6 +927,7 @@ export async function createProjectSession(input: {
         baseRef,
         agentName,
         initialPrompt,
+        gitAuthToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
@@ -1618,15 +1562,6 @@ export function startProjectTriggerScheduler(): void {
       });
     }
 
-    import('../channels/sweep').then(({ runChannelBindingSweep }) =>
-      runChannelBindingSweep().then((result) => {
-        if (result.inserted || result.updated || result.removed) {
-          console.log('[channels] binding sweep completed', result);
-        }
-      }),
-    ).catch((error) => {
-      console.error('[channels] binding sweep failed:', error);
-    });
   }, triggerSchedulerIntervalMs());
   globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
 }
@@ -1659,29 +1594,6 @@ projectsApp.get('/', async (c) => {
     })));
   }
 
-  // Non-manager: ask the IAM engine which project IDs they can read. The
-  // engine consults explicit policies (direct + via groups), denies, the
-  // legacy project_members bridge, and the (now-tightened) member bridge.
-  // Token requests are evaluated as the token's identity when narrowing
-  // policies exist on the PAT.
-  const actingTokenId = (c as any).get('iamTokenId') as string | undefined;
-  const accessible = await listAccessibleResources(
-    scope.userId,
-    scope.accountId,
-    PROJECT_ACTIONS.PROJECT_READ,
-    'project',
-    actingTokenId,
-  );
-
-  if (accessible.mode === 'none') return c.json([]);
-  // 'allow_only' with an empty set means no policy granted access yet.
-  if (accessible.mode === 'allow_only' && accessible.allowed.size === 0) {
-    return c.json([]);
-  }
-
-  // We still need project_members rows to compute project_role for the
-  // serializer, even though the engine already used them for the access
-  // decision. Cheap join — same accountId+userId.
   const grants = await db
     .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -1689,29 +1601,21 @@ projectsApp.get('/', async (c) => {
       eq(projectMembers.accountId, scope.accountId),
       eq(projectMembers.userId, scope.userId),
     ));
+
+  if (grants.length === 0) return c.json([]);
+
   const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
-
-  const baseWhere = and(
-    eq(projects.accountId, scope.accountId),
-    eq(projects.status, 'active'),
-  );
-  const idFilter =
-    accessible.mode === 'allow_only'
-      ? and(baseWhere, inArray(projects.projectId, Array.from(accessible.allowed)))
-      : baseWhere; // 'all_except' or 'all' — fetch every active project, filter below
-
   const rows = await db
     .select()
     .from(projects)
-    .where(idFilter)
+    .where(and(
+      eq(projects.accountId, scope.accountId),
+      eq(projects.status, 'active'),
+      inArray(projects.projectId, grants.map((g) => g.projectId)),
+    ))
     .orderBy(desc(projects.updatedAt));
 
-  const filtered =
-    accessible.mode === 'all_except'
-      ? rows.filter((r) => !accessible.denied.has(r.projectId))
-      : rows;
-
-  return c.json(filtered.map((row) => {
+  return c.json(rows.map((row) => {
     const projectRole = roleByProject.get(row.projectId) ?? null;
     return serializeProject(row, {
       projectRole,
@@ -1724,7 +1628,9 @@ projectsApp.get('/', async (c) => {
 projectsApp.post('/', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   let repoUrl: string | null;
   try {
@@ -1786,9 +1692,9 @@ projectsApp.post('/', async (c) => {
 // installation tokens are minted server-side at repo creation time.
 projectsApp.get('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  // Reading + minting an install URL is part of account admin — same gate
-  // as POST/DELETE on this endpoint.
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   const row = await getAccountGitHubInstallation(scope.accountId);
   const installUrl = row ? null : await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
@@ -1809,7 +1715,9 @@ projectsApp.post('/github/installation', async (c) => {
   }
 
   const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   const installationId = normalizeString(body.installation_id ?? body.installationId);
   if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
@@ -1877,7 +1785,9 @@ projectsApp.post('/github/installation', async (c) => {
 // DELETE /v1/projects/github/installation?account_id=...
 projectsApp.delete('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   await db
     .delete(accountGithubInstallations)
@@ -1892,7 +1802,9 @@ projectsApp.delete('/github/installation', async (c) => {
 projectsApp.post('/create-repo', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+  if (!isAccountManager(scope.accountRole)) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
 
   const name = normalizeString(body.name);
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -2335,162 +2247,6 @@ projectsApp.delete('/:projectId/secrets/:name', async (c) => {
   return c.json({ ok: true });
 });
 
-// ─── OAuth provider credentials ────────────────────────────────────────────
-//
-// Mirrors the opencode auth flow (codex.ts / github-copilot/copilot.ts) but
-// persists tokens as encrypted per-project rows instead of opencode's local
-// auth.json. At session boot, all connected providers are bundled into the
-// `OPENCODE_AUTH_CONTENT` env var which opencode reads natively.
-
-// GET /v1/projects/:projectId/oauth
-projectsApp.get('/:projectId/oauth', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-
-  const creds = await listOauthCredentials(projectId);
-  return c.json({
-    items: creds.map(summarizeCredential),
-    supported: SUPPORTED_OAUTH_PROVIDERS,
-  });
-});
-
-// POST /v1/projects/:projectId/oauth/:provider/start
-projectsApp.post('/:projectId/oauth/:provider/start', async (c) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!isSupportedOauthProvider(provider)) {
-    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
-  }
-
-  const body = await readBody(c);
-  const enterpriseUrl = normalizeString(body.enterprise_url ?? body.enterpriseUrl);
-
-  try {
-    const flowStart = provider === 'openai'
-      ? await startOpenAiDeviceFlow()
-      : await startCopilotDeviceFlow({ enterpriseUrl: enterpriseUrl ?? undefined });
-
-    const { flowId } = createFlow({
-      projectId,
-      providerId: provider,
-      handle: flowStart.handle,
-      intervalMs: flowStart.interval_ms,
-      expiresAt: flowStart.expires_at,
-    });
-
-    return c.json({
-      flow_id: flowId,
-      provider_id: provider,
-      verification_url: flowStart.verification_url,
-      user_code: flowStart.user_code,
-      interval_ms: flowStart.interval_ms,
-      expires_at: flowStart.expires_at,
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('[projects] oauth start failed', { projectId, provider, error: msg });
-    return c.json({ error: msg }, 502);
-  }
-});
-
-// POST /v1/projects/:projectId/oauth/:provider/poll
-// Body: { flow_id: string }
-// Returns one of:
-//   { status: 'pending', next_poll_ms }
-//   { status: 'success', credential: {...} }
-//   { status: 'expired' }
-//   { status: 'failed', error }
-projectsApp.post('/:projectId/oauth/:provider/poll', async (c) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!isSupportedOauthProvider(provider)) {
-    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
-  }
-
-  const body = await readBody(c);
-  const flowId = normalizeString(body.flow_id ?? body.flowId);
-  if (!flowId) return c.json({ error: 'flow_id is required' }, 400);
-
-  const flow = getFlow(flowId);
-  if (!flow) return c.json({ status: 'expired' });
-  if (flow.projectId !== projectId) return c.json({ error: 'Flow not found' }, 404);
-  if (flow.providerId !== provider) return c.json({ error: 'Provider mismatch' }, 400);
-  if (flow.expiresAt < Date.now()) {
-    deleteFlow(flowId);
-    return c.json({ status: 'expired' });
-  }
-
-  try {
-    const result = provider === 'openai'
-      ? await pollOnceOpenAi(flow.handle)
-      : await pollOnceCopilot(flow.handle);
-
-    if (result.status === 'pending') {
-      return c.json({ status: 'pending', next_poll_ms: flow.recommendedIntervalMs });
-    }
-    if (result.status === 'slow_down') {
-      bumpInterval(flowId, result.new_interval_ms);
-      return c.json({ status: 'pending', next_poll_ms: result.new_interval_ms });
-    }
-    if (result.status === 'failed') {
-      deleteFlow(flowId);
-      return c.json({ status: 'failed', error: result.error });
-    }
-
-    const credential = await upsertOauthCredential({
-      projectId,
-      providerId: provider as OauthProviderId,
-      refresh: result.refresh,
-      access: result.access,
-      expires: result.expires,
-      accountId: result.accountId,
-      enterpriseUrl: result.enterpriseUrl,
-      createdBy: loaded.userId,
-    });
-    deleteFlow(flowId);
-
-    return c.json({
-      status: 'success',
-      credential: summarizeCredential(credential),
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('[projects] oauth poll failed', { projectId, provider, error: msg });
-    return c.json({ status: 'failed', error: msg }, 502);
-  }
-});
-
-// DELETE /v1/projects/:projectId/oauth/:provider
-projectsApp.delete('/:projectId/oauth/:provider', async (c) => {
-  const projectId = c.req.param('projectId');
-  const provider = c.req.param('provider');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
-  if (!isSupportedOauthProvider(provider)) {
-    return c.json({ error: `Unsupported OAuth provider: ${provider}` }, 400);
-  }
-
-  await deleteOauthCredential(projectId, provider);
-  return c.json({ ok: true });
-});
-
 // GET /v1/projects/:projectId/triggers
 //
 // Lists triggers defined as files in `.opencode/triggers/*.md` on the
@@ -2894,151 +2650,6 @@ projectsApp.delete('/:projectId/triggers/:slug', async (c) => {
   return c.json({ ok: true });
 });
 
-// ─── Channels CRUD ───────────────────────────────────────────────────────
-// Channels are keyed by platform (one entry per platform per project). The
-// bot listens in any channel of the connected workspace, so the manifest
-// holds preferences (agent, prompt, events) — not channel ids.
-
-const SUPPORTED_CHANNEL_PLATFORMS = ['slack'] as const;
-
-function upsertChannelInManifest(manifest: ParsedManifest, spec: ChannelSpec): ParsedManifest {
-  const current = Array.isArray(manifest.raw.channels)
-    ? (manifest.raw.channels as Record<string, unknown>[])
-    : [];
-  const entry = channelSpecToTomlEntry(spec);
-  const idx = current.findIndex(
-    (e) => typeof e?.platform === 'string' && e.platform === spec.platform,
-  );
-  const next = current.slice();
-  if (idx >= 0) next[idx] = entry;
-  else next.push(entry);
-  return { ...manifest, raw: { ...manifest.raw, channels: next } };
-}
-
-function removeChannelFromManifest(manifest: ParsedManifest, platform: string): ParsedManifest {
-  const current = Array.isArray(manifest.raw.channels)
-    ? (manifest.raw.channels as Record<string, unknown>[])
-    : [];
-  const next = current.filter(
-    (e) => !(typeof e?.platform === 'string' && e.platform === platform),
-  );
-  return { ...manifest, raw: { ...manifest.raw, channels: next } };
-}
-
-function parseChannelDraft(
-  body: Record<string, unknown>,
-  opts: { existingPlatform: ChannelSpec['platform'] | null },
-): ChannelSpec | { error: string } {
-  const platformRaw = normalizeString(body.platform) ?? opts.existingPlatform ?? '';
-  if (!(SUPPORTED_CHANNEL_PLATFORMS as readonly string[]).includes(platformRaw)) {
-    return {
-      error: `Unsupported platform "${platformRaw || 'unset'}". Currently: ${SUPPORTED_CHANNEL_PLATFORMS.join(', ')}.`,
-    };
-  }
-  const platform = platformRaw as ChannelSpec['platform'];
-
-  const agent = normalizeString(body.agent ?? (body as any).agent_name);
-  const promptPrefix = normalizeString(body.prompt_prefix ?? (body as any).promptPrefix ?? body.prompt);
-  const enabled = body.enabled === undefined ? true : Boolean(body.enabled);
-
-  const validEvents = ['mention', 'dm', 'subscribed'] as const;
-  const eventsRaw = Array.isArray(body.events) ? body.events : null;
-  let events: ChannelSpec['events'];
-  if (eventsRaw === null) {
-    events = ['mention', 'dm'];
-  } else {
-    events = [];
-    for (const e of eventsRaw) {
-      if (typeof e !== 'string') continue;
-      const v = e.trim().toLowerCase();
-      if (validEvents.includes(v as never) && !events.includes(v as never)) {
-        events.push(v as never);
-      }
-    }
-    if (events.length === 0) events = ['mention', 'dm'];
-  }
-
-  return {
-    platform,
-    path: `${MANIFEST_FILENAME}#channels.${platform}`,
-    enabled,
-    agent: agent || null,
-    promptPrefix: promptPrefix || null,
-    events,
-  };
-}
-
-async function loadChannelsForResponse(project: ProjectRow) {
-  const { specs, errors } = await loadProjectChannels(project);
-  return { specs, errors };
-}
-
-// GET /v1/projects/:projectId/channels
-projectsApp.get('/:projectId/channels', async (c) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  return c.json(await loadChannelsForResponse(loaded.row));
-});
-
-// POST /v1/projects/:projectId/channels
-// Upserts the [[channels]] entry for the body's platform (one per platform).
-projectsApp.post('/:projectId/channels', async (c) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const draft = parseChannelDraft(body, { existingPlatform: null });
-  if ('error' in draft) return c.json({ error: draft.error }, 400);
-
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-
-  const next = upsertChannelInManifest(manifest, draft);
-  const result = await commitManifest(loaded.row, next, `chore: update channels (${draft.platform})`);
-  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
-
-  await syncProjectChannelBindings(loaded.row).catch((err) =>
-    console.warn('[channels] sync after POST failed', err),
-  );
-  return c.json(await loadChannelsForResponse(loaded.row), 201);
-});
-
-// DELETE /v1/projects/:projectId/channels/:platform
-projectsApp.delete('/:projectId/channels/:platform', async (c) => {
-  const projectId = c.req.param('projectId');
-  const platform = c.req.param('platform');
-  const loaded = await loadProjectForUser(c, projectId, 'manage');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(SUPPORTED_CHANNEL_PLATFORMS as readonly string[]).includes(platform)) {
-    return c.json({ error: `Unknown platform "${platform}"` }, 400);
-  }
-
-  let manifest: ParsedManifest;
-  try {
-    manifest = await loadManifestForEdit(loaded.row);
-  } catch (err) {
-    return c.json({ error: (err as Error).message || 'Failed to read manifest' }, 400);
-  }
-  if (!extractChannels(manifest).specs.some((s) => s.platform === platform)) {
-    return c.json({ error: 'Not found' }, 404);
-  }
-
-  const next = removeChannelFromManifest(manifest, platform);
-  const result = await commitManifest(loaded.row, next, `chore: remove ${platform} channel`);
-  if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 502);
-
-  await syncProjectChannelBindings(loaded.row).catch((err) =>
-    console.warn('[channels] sync after DELETE failed', err),
-  );
-  return c.json({ ok: true });
-});
-
 // ─── Slack install — per project, secrets live in project_secrets ────────
 
 interface SlackAuthTest {
@@ -3107,8 +2718,8 @@ projectsApp.post('/:projectId/channels/slack/connect', async (c) => {
   return c.json(summary);
 });
 
-// DELETE /v1/projects/:projectId/channels/slack
-projectsApp.delete('/:projectId/channels/slack', async (c) => {
+// DELETE /v1/projects/:projectId/channels/slack/installation
+projectsApp.delete('/:projectId/channels/slack/installation', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -4371,6 +3982,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         initialPrompt,
+        gitAuthToken: gitAuth.auth?.token ?? null,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,

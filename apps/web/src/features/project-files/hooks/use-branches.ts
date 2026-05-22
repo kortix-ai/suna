@@ -11,12 +11,13 @@ export const branchKeys = {
 };
 
 /**
- * Versions (branches) for the current project. Empty list while the project
- * context is missing or the API call is in flight.
+ * Versions (branches) for a project. Reads the id from {@link useProjectContext}
+ * by default; pass `projectId` to use it outside the provider (e.g. the
+ * sessions page). Empty list while the id is missing or the call is in flight.
  */
-export function useBranches(options?: { enabled?: boolean }) {
+export function useBranches(options?: { enabled?: boolean; projectId?: string }) {
   const ctx = useProjectContext();
-  const projectId = ctx?.projectId ?? '';
+  const projectId = options?.projectId ?? ctx?.projectId ?? '';
 
   return useQuery<ProjectBranchesResponse>({
     queryKey: branchKeys.list(projectId),

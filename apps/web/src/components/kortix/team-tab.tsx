@@ -127,7 +127,7 @@ export function TeamTab({ projectId }: { projectId: string }) {
             </Button>
           </div>
 
-          <div className="rounded-xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
+          <div className="rounded-2xl border border-border/40 divide-y divide-border/30 overflow-hidden bg-card">
             <UserRow handle={userHandle} />
             {agents.length === 0 ? (
               <button
@@ -148,7 +148,7 @@ export function TeamTab({ projectId }: { projectId: string }) {
         {/* ─── Notes ─── */}
         <section>
           <SectionLabel label="How it works" icon={<ShieldCheck className="h-3.5 w-3.5 text-muted-foreground/45" />} />
-          <div className="rounded-xl border border-border/40 bg-card px-4 py-3 text-[12.5px] leading-relaxed text-muted-foreground/80 space-y-2">
+          <div className="rounded-2xl border border-border/40 bg-card px-4 py-3 text-[12.5px] leading-relaxed text-muted-foreground/80 space-y-2">
             <p>
               <span className="text-foreground/90">Contributors</span> can comment, update custom fields,
               assign, and move tickets between columns. <span className="text-foreground/90">Orchestrators</span>

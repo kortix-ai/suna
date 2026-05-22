@@ -764,7 +764,7 @@ function JsonFailureOutputCard({
           </div>
         )}
         {failure.hint && (
-          <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-2 py-1.5">
             <div className="text-[10px] text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-1">
               Hint
             </div>
@@ -1294,7 +1294,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={i}
-                className="flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-yellow-500/5 border border-yellow-500/15"
+                className="flex items-start gap-2 px-2.5 py-1.5 rounded-2xl bg-yellow-500/5 border border-yellow-500/15"
               >
                 <AlertTriangle className="size-3 flex-shrink-0 mt-0.5 text-yellow-500" />
                 <p className="text-[11px] leading-relaxed text-yellow-700 dark:text-yellow-400 font-mono break-words">
@@ -1307,7 +1307,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={i}
-                className="flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-muted/40 border border-border/60"
+                className="flex items-start gap-2 px-2.5 py-1.5 rounded-2xl bg-muted/40 border border-border/60"
               >
                 <Ban className="size-3 flex-shrink-0 mt-0.5 text-muted-foreground/70" />
                 <div className="min-w-0 flex-1">
@@ -1371,7 +1371,7 @@ function StructuredOutput({ sections }: { sections: OutputSection[] }) {
             return (
               <div
                 key={i}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-emerald-500/5 border border-emerald-500/15"
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/15"
               >
                 <CheckCircle className="size-3 flex-shrink-0 text-emerald-500" />
                 <span className="text-[11px] text-emerald-700 dark:text-emerald-400 font-mono">
@@ -2054,7 +2054,7 @@ function InlineSessionMessagesList({
         <div
           key={msg.index}
           className={cn(
-            'rounded-md border overflow-hidden',
+            'rounded-2xl border overflow-hidden',
             msg.role === 'user' ? 'border-border/60' : 'border-border/40',
           )}
         >
@@ -4666,7 +4666,7 @@ function ShowTool({ part }: ToolProps) {
   // Loading state
   if (running && !type && !items) {
     return (
-      <div className="rounded-xl border border-border/50 overflow-hidden bg-card">
+      <div className="rounded-2xl border border-border/50 overflow-hidden bg-card">
         <div className="flex items-center gap-3 px-5 py-4">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
           <TextShimmer duration={1} spread={2} className="text-sm">
@@ -4690,7 +4690,7 @@ function ShowTool({ part }: ToolProps) {
 
   return (
     <div
-      className={cn('rounded-xl border overflow-hidden bg-card', borderStyle)}
+      className={cn('rounded-2xl border overflow-hidden bg-card', borderStyle)}
     >
       {/* ── Header — always neutral colors, never themed ── */}
       <div className="flex items-center gap-3 px-5 py-3 border-b border-border/15">

@@ -345,7 +345,7 @@ function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () 
     );
   }
   return (
-    <div className="flex flex-col items-center justify-center py-20 rounded-xl border border-dashed border-border/50">
+    <div className="flex flex-col items-center justify-center py-20 rounded-2xl border border-dashed border-border/50">
       <Blocks className="h-7 w-7 text-muted-foreground/30 mb-3" />
       <p className="text-sm font-medium text-foreground mb-1">Nothing here yet</p>
       <p className="text-xs text-muted-foreground text-center max-w-xs">

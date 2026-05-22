@@ -43,7 +43,6 @@ import {
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
 } from './projects';
-import { channelsApp } from './channels';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { accountsRouter } from './accounts';
 import { accountInvitesRouter } from './accounts/invites';
@@ -276,7 +275,12 @@ app.route('/v1/account', accountDeletionApp); // account deletion status/request
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
-app.route('/v1/webhooks/chat', channelsApp); // /v1/webhooks/chat/slack — Chat SDK adapter webhooks
+
+const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');
+app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
+app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
+
 if (config.KORTIX_DEPLOYMENTS_ENABLED) {
   const { deploymentsApp } = await import('./deployments');
   app.route('/v1/deployments', deploymentsApp); // /v1/deployments/*
@@ -466,9 +470,16 @@ ensureSchema()
     // KORTIX_SKIP_ENSURE_SCHEMA=1 on a fresh branch), log a one-liner
     // pointing at the fix instead of a noisy stack trace.
     try {
-      const { seedSystemRoles } = await import('./iam');
+      const { seedSystemRoles, backfillMembershipPolicies } = await import('./iam');
       await seedSystemRoles();
       console.log('[startup] IAM system roles seeded');
+      // Materialise legacy account_role + project_members into explicit IAM
+      // policies so the engine needs no legacy bridges. Idempotent.
+      await backfillMembershipPolicies();
+      console.log('[startup] IAM membership policies backfilled');
+      // Migrate legacy project_secrets into the unified vault. Idempotent.
+      const { migrateProjectSecretsToVault } = await import('./vault');
+      await migrateProjectSecretsToVault();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (/iam_roles.*does not exist|relation .* does not exist/i.test(msg)) {
