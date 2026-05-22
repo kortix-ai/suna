@@ -280,6 +280,24 @@ function ActiveSessionChat({
     ]).catch(() => {});
   }, [chatSessionId, activeTitle]);
 
+  // First-message handoff from the project index composer (/projects/[id]). It
+  // stashes the prompt under the PROJECT session id because the opencode
+  // session id doesn't exist yet at navigation time. Once the chat session is
+  // created, move it onto the `opencode_pending_prompt:<chatSessionId>` key that
+  // SessionChat's pending-prompt effect consumes (its 250ms retry loop covers
+  // the brief gap before this runs). Files ride along via usePendingFilesStore.
+  const promptMovedRef = useRef(false);
+  useEffect(() => {
+    if (!chatSessionId || promptMovedRef.current) return;
+    if (typeof window === 'undefined') return;
+    const key = `project_pending_prompt:${sessionId}`;
+    const pending = sessionStorage.getItem(key);
+    if (!pending) return;
+    promptMovedRef.current = true;
+    sessionStorage.setItem(`opencode_pending_prompt:${chatSessionId}`, pending);
+    sessionStorage.removeItem(key);
+  }, [chatSessionId, sessionId]);
+
   const runtimeError = sessionsQuery.error ?? createMutation.error;
   if (!runtimeReady && runtimeBootError) {
     return (
