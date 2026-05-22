@@ -23,17 +23,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
       - name: Install Node
-        # Node 24 + pnpm >=10 satisfy the repo's engine-strict requirements.
+        # Node 24 satisfies the repo's engine-strict requirements.
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
+
+      - name: Install pnpm
+        # Install pnpm directly (not via corepack/action-setup) to avoid the
+        # stale packageManager pin (pnpm@8.11.0), which conflicts with deps
+        # that require pnpm >=10. Mirrors how the repo is built locally.
+        run: npm install -g pnpm@10
 
       - name: Install dependencies (kortix-api + workspace deps)
         run: pnpm install --frozen-lockfile --filter "kortix-api..."
