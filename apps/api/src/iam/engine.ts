@@ -96,6 +96,10 @@ type ResolvedActor = {
   /** When true the engine refuses to fall back to legacy bridges — only
    * super-admin bypass + explicit policies decide. Account-wide setting. */
   iamStrictMode: boolean;
+  /** When true the engine denies every JWT request whose aal claim is
+   * not 'aal2'. Super-admins are exempt; PATs are exempt (they gate
+   * via per-policy require_mfa conditions). Account-wide setting. */
+  accountMfaRequired: boolean;
 };
 
 const SYSTEM_ROLE_PERMISSION_CACHE = new Map<string, Set<string>>();
@@ -194,6 +198,7 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
       isSuperAdmin: accountMembers.isSuperAdmin,
       accountRole: accountMembers.accountRole,
       iamStrictMode: accounts.iamStrictMode,
+      mfaRequired: accounts.mfaRequired,
     })
     .from(accountMembers)
     .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
@@ -218,6 +223,7 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
     accountRole: member.accountRole as ResolvedActor['accountRole'],
     groupIds: groups.map((g) => g.groupId),
     iamStrictMode: member.iamStrictMode,
+    accountMfaRequired: member.mfaRequired,
   };
 }
 
@@ -487,6 +493,19 @@ export async function authorize(
     return { allowed: true, reason: 'super_admin' };
   }
 
+  // 1b. Account-wide MFA gate. When the account requires MFA AND the
+  //     caller is on a browser/JWT session (no acting token), the AAL
+  //     must be 'aal2'. Super-admins were already let through above so
+  //     this can't permanently lock the account out. PATs are exempt —
+  //     they gate via per-policy require_mfa conditions instead.
+  if (
+    actor.accountMfaRequired &&
+    !actingTokenId &&
+    requestCtx.mfaAal !== 'aal2'
+  ) {
+    return { allowed: false, reason: 'account_mfa_required' };
+  }
+
   // Sanity: if the action expects a specific resource and we got an
   // account-level target, only an account-Everything policy can satisfy it.
   // That's fine — the SQL filter handles it. No early-out needed.
@@ -638,6 +657,17 @@ export async function listAccessibleResources(
   if (!actor) return { mode: 'none' };
 
   if (actor.isSuperAdmin) return { mode: 'all' };
+
+  // Account-wide MFA gate — denies the entire list when the account
+  // requires MFA and the caller isn't aal2 (browser/JWT only; PATs
+  // already short-circuited above).
+  if (
+    actor.accountMfaRequired &&
+    !actingTokenId &&
+    requestCtx.mfaAal !== 'aal2'
+  ) {
+    return { mode: 'none' };
+  }
 
   // Owner/admin legacy bridge always allows account-level reads/writes.
   // Preserves today's "owners see everything" without enumerating policies.

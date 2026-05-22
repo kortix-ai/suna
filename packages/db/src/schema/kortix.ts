@@ -121,6 +121,12 @@ export const accounts = kortixSchema.table(
     // policies grant access. Off by default so existing accounts keep
     // working with no changes.
     iamStrictMode: boolean('iam_strict_mode').default(false).notNull(),
+    // When true the IAM engine rejects every browser/JWT request whose
+    // session is not at AAL2 (MFA-verified). PATs are exempt — they're
+    // expected to gate via per-policy require_mfa conditions instead.
+    // Super-admins are also exempt so flipping the switch can never
+    // permanently lock the account out.
+    mfaRequired: boolean('mfa_required').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

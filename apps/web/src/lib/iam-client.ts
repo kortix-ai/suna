@@ -440,6 +440,52 @@ export async function setStrictMode(accountId: string, enabled: boolean) {
   );
 }
 
+// ─── Account MFA enforcement ──────────────────────────────────────────────
+
+export interface MfaRequiredStatus {
+  enabled: boolean;
+}
+
+export interface MfaRequiredPreview {
+  total_members: number;
+  members_with_mfa: number;
+  /** Members without a verified MFA factor. Super-admins are still listed
+   *  (so admins can nudge them) but flagged so the UI can soften the
+   *  warning — super-admins remain exempt from enforcement. */
+  losers: Array<{
+    user_id: string;
+    account_role: 'owner' | 'admin' | 'member';
+    is_super_admin: boolean;
+  }>;
+  /** True when nobody would retain access — UI uses this to refuse the
+   *  flip before round-tripping to the API. */
+  will_lock_out_account: boolean;
+}
+
+export async function getMfaRequired(accountId: string) {
+  return unwrap(
+    await backendApi.get<MfaRequiredStatus>(`/accounts/${accountId}/iam/mfa-required`),
+  );
+}
+
+export async function previewMfaRequired(accountId: string) {
+  return unwrap(
+    await backendApi.get<MfaRequiredPreview>(
+      `/accounts/${accountId}/iam/mfa-required/preview`,
+    ),
+  );
+}
+
+export async function setMfaRequired(accountId: string, enabled: boolean) {
+  return unwrap(
+    await backendApi.patch<{ enabled: boolean; unchanged?: boolean }>(
+      `/accounts/${accountId}/iam/mfa-required`,
+      { enabled },
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── Audit webhooks ────────────────────────────────────────────────────────
 
 export interface AuditWebhook {
