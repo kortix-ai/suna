@@ -19,10 +19,6 @@ jobs:
   api-typecheck:
     name: API typecheck
     runs-on: ubuntu-latest
-    env:
-      # Stop pnpm from auto-switching to the pinned packageManager (8.11.0),
-      # which is older than some deps require. Use the pnpm we install instead.
-      npm_config_manage_package_manager_versions: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,13 +30,14 @@ jobs:
           node-version: 24
 
       - name: Install pnpm
-        # Disable corepack first: its `pnpm` shim honors the stale
-        # packageManager pin (pnpm@8.11.0) and shadows a direct install. We
-        # install pnpm 10 directly so it satisfies deps that require >=10,
-        # mirroring how the repo is built locally.
+        # The repo pins packageManager: pnpm@8.11.0, but the lockfile is pnpm 11
+        # and some deps require pnpm >=10 / Node >=24. We install pnpm 11 and drop
+        # the stale pin from the checked-out copy so pnpm doesn't self-switch to
+        # 8.11.0. corepack is disabled so its shim can't shadow our pnpm.
         run: |
           corepack disable || true
           npm install -g pnpm@11
+          npm pkg delete packageManager
           echo "pnpm: $(pnpm -v)  node: $(node -v)"
 
       - name: Install dependencies (kortix-api + workspace deps)
