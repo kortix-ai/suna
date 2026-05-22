@@ -26,12 +26,13 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 8.11.0
+          version: 10
 
       - name: Install Node
+        # Node 24 + pnpm >=10 satisfy the repo's engine-strict requirements.
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies (kortix-api + workspace deps)
