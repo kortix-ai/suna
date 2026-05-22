@@ -849,68 +849,14 @@ function ApplyTemplateDialog({
   );
 }
 
-// Compact "what's gating this policy?" badges for the row. Returns empty
-// when the policy has no conditions configured.
-function summariseConditions(conditions: PolicyConditions | undefined): string[] {
-  if (!conditions) return [];
-  const out: string[] = [];
-  if (Array.isArray(conditions.ip_cidrs) && conditions.ip_cidrs.length > 0) {
-    out.push(
-      conditions.ip_cidrs.length === 1
-        ? 'IP allowlist'
-        : `IP allowlist (${conditions.ip_cidrs.length})`,
-    );
-  }
-  if (conditions.require_mfa) out.push('MFA required');
-  return out;
-}
-
-/** ISO → datetime-local string (the value attribute the input expects). */
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  // Trim off the seconds & "Z" so the input is happy.
-  const off = d.getTimezoneOffset() * 60_000;
-  return new Date(d.getTime() - off).toISOString().slice(0, 16);
-}
-
-/** Compact relative-time label for the expiry chip on row badges. */
-function formatExpiryShort(iso: string): string {
-  const ms = new Date(iso).getTime() - Date.now();
-  if (Number.isNaN(ms)) return iso;
-  if (ms < 0) return 'expired';
-  const days = Math.round(ms / (24 * 60 * 60 * 1000));
-  if (days >= 1) return `${days}d`;
-  const hours = Math.round(ms / (60 * 60 * 1000));
-  if (hours >= 1) return `${hours}h`;
-  const mins = Math.max(1, Math.round(ms / 60_000));
-  return `${mins}m`;
-}
-
-/**
- * Pure check — does this look like a parseable IP or CIDR? Mirrors the
- * server's assertValidCidr without pulling in the IPv6 logic; the server
- * has the final say on persistence.
- */
-function isPlausibleCidr(s: string): boolean {
-  const trimmed = s.trim();
-  if (!trimmed) return false;
-  // Quick IPv4 check ("a.b.c.d" or "a.b.c.d/n")
-  const v4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(trimmed);
-  if (v4) {
-    const [ip, prefix] = trimmed.split('/');
-    const parts = ip.split('.').map((n) => parseInt(n, 10));
-    if (parts.some((p) => p < 0 || p > 255)) return false;
-    if (prefix !== undefined) {
-      const p = parseInt(prefix, 10);
-      if (p < 0 || p > 32) return false;
-    }
-    return true;
-  }
-  // Loose IPv6 check — any colon-bearing string with the right charset
-  // and an optional /0..128. The server rejects malformed forms.
-  return /^[0-9a-fA-F:]+(\/\d{1,3})?$/.test(trimmed) && trimmed.includes(':');
-}
+// Pure helpers live in ./policies-table-helpers — re-exported for the
+// component below, unit-tested separately.
+import {
+  formatExpiryShort,
+  isPlausibleCidr,
+  summariseConditions,
+  toLocalInput,
+} from './policies-table-helpers';
 
 // ─── Create policy dialog ──────────────────────────────────────────────────
 
