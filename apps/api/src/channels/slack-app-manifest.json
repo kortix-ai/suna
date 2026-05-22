@@ -39,6 +39,10 @@
     }
   },
   "settings": {
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://frugal-ranunculaceous-patrica.ngrok-free.dev/v1/webhooks/slack/interactivity"
+    },
     "event_subscriptions": {
       "request_url": "https://frugal-ranunculaceous-patrica.ngrok-free.dev/v1/webhooks/slack",
       "bot_events": [

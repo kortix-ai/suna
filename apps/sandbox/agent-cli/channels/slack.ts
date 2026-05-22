@@ -9,7 +9,27 @@ import {
   validateRequired,
   getEnv,
   kortixProjectId,
+  kortixSessionId,
+  kortixPost,
 } from '../lib';
+
+// Relay a checkpoint or the final answer into this turn's live Slack stream.
+// apps/api owns the streamed message; here we just hand it the content.
+async function relayTurnStream(kind: 'step' | 'answer', text: string): Promise<boolean> {
+  const projectId = kortixProjectId();
+  const sessionId = kortixSessionId();
+  if (!projectId || !sessionId) return false;
+  try {
+    const r = await kortixPost<{ ok?: boolean }>(`/projects/${projectId}/turn-stream`, {
+      session_id: sessionId,
+      kind,
+      text,
+    });
+    return r?.ok === true;
+  } catch {
+    return false;
+  }
+}
 
 function slackApiBase(): string {
   return (getEnv('SLACK_API_URL') ?? 'https://slack.com/api').replace(/\/$/, '');
@@ -286,12 +306,32 @@ function readBlocksFlag(flags: Record<string, string>): unknown[] | undefined {
 }
 
 async function main(): Promise<void> {
-  const { command, flags } = parseArgs(process.argv);
+  const { command, args, flags } = parseArgs(process.argv);
   switch (command) {
+    case 'step': {
+      const text = (readTextFlag(flags) ?? args[0] ?? '').trim();
+      if (!text) throw new CliError('checkpoint text required, e.g. slack step "Reading the logs"');
+      const relayed = await relayTurnStream('step', text);
+      out({ ok: true, relayed });
+      break;
+    }
     case 'send': {
-      validateRequired(flags, 'channel');
-      const text = readTextFlag(flags);
+      const text = readTextFlag(flags) ?? args[0];
       const blocks = readBlocksFlag(flags);
+      // No --channel + plain text → this is the turn answer: finalize the live
+      // streamed message rather than posting a separate one.
+      if (!flags.channel && !flags.file && !blocks) {
+        if (!text) {
+          throw new CliError('message text required, e.g. slack send "Done — here is the summary"');
+        }
+        const relayed = await relayTurnStream('answer', text);
+        if (relayed) {
+          out({ ok: true, delivered: 'stream' });
+          break;
+        }
+        throw new CliError('No active Slack turn to answer. To post to a channel, pass --channel.');
+      }
+      validateRequired(flags, 'channel');
       if (!text && !flags.file && !blocks) {
         throw new CliError('--text, --text-file, --blocks, --blocks-file, and/or --file required');
       }
@@ -374,6 +414,10 @@ async function main(): Promise<void> {
 slack — Slack Web API adapter
 
 Auth: SLACK_BOT_TOKEN env (injected from project_secrets at sandbox spawn).
+
+Turn commands (use these when answering a Slack message):
+  step         "<checkpoint>"            # narrate a live plan step as you work
+  send         "<answer>"                # deliver your reply — finalizes the live update
 
 Commands:
   send         (--channel, [--text|--text-file], [--blocks|--blocks-file], [--thread], [--file])

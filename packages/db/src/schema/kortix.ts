@@ -508,23 +508,55 @@ export const projectTriggerEvents = kortixSchema.table(
   ],
 );
 
-// Tiny lookup table — only used in OAuth (multi-tenant Kortix Slack app) mode
-// so the shared /v1/webhooks/slack endpoint can translate Slack's team_id into
-// the Kortix project that owns the workspace. BYO mode routes by URL
-// (/v1/webhooks/slack/:projectId) and skips this table entirely.
+// Workspace ↔ project membership: every project that connected a given Slack
+// workspace. Drives project resolution — a channel with no binding auto-binds
+// when the workspace has exactly one project, else a picker is shown.
+export const chatInstalls = kortixSchema.table(
+  'chat_installs',
+  {
+    installId: uuid('install_id').defaultRandom().primaryKey(),
+    platform: varchar('platform', { length: 32 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_chat_installs_workspace_project').on(
+      table.platform,
+      table.workspaceId,
+      table.projectId,
+    ),
+    index('idx_chat_installs_workspace').on(table.platform, table.workspaceId),
+    index('idx_chat_installs_project').on(table.projectId),
+  ],
+);
+
+// Per-channel routing: which project owns a specific channel. Bound lazily on
+// first use. A NULL projectId means a project picker is posted in that channel
+// and awaiting a click.
 export const chatChannelBindings = kortixSchema.table(
   'chat_channel_bindings',
   {
     bindingId: uuid('binding_id').defaultRandom().primaryKey(),
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').references(() => projects.projectId, {
+      onDelete: 'cascade',
+    }),
     platform: varchar('platform', { length: 32 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 128 }).notNull(),
+    channelId: varchar('channel_id', { length: 128 }).notNull(),
+    channelName: varchar('channel_name', { length: 256 }),
+    channelType: varchar('channel_type', { length: 32 }),
+    pickerTs: varchar('picker_ts', { length: 64 }),
     installedAt: timestamp('installed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('idx_chat_channel_bindings_workspace').on(table.platform, table.workspaceId),
+    uniqueIndex('idx_chat_channel_bindings_channel').on(
+      table.platform,
+      table.workspaceId,
+      table.channelId,
+    ),
     index('idx_chat_channel_bindings_project').on(table.projectId),
   ],
 );

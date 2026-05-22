@@ -98,6 +98,7 @@ async function maybeDeliverInitialPrompt(opencodePort: number): Promise<void> {
   const session = (await sessionRes.json()) as { id?: string }
   if (!session.id) throw new Error('opencode session create returned no id')
 
+  const model = resolveOpencodeModel()
   const promptRes = await fetch(
     `${baseUrl}/session/${session.id}/prompt_async?directory=${encodeURIComponent(workspace)}`,
     {
@@ -105,6 +106,7 @@ async function maybeDeliverInitialPrompt(opencodePort: number): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         parts: [{ type: 'text', text: prompt }],
+        ...(model ? { model } : {}),
       }),
       signal: AbortSignal.timeout(15_000),
     },
@@ -119,6 +121,17 @@ async function maybeDeliverInitialPrompt(opencodePort: number): Promise<void> {
     logger.warn('[boot] failed to pin opencode session id', err)
   }
   logger.info('[boot] initial prompt delivered', { sessionId: session.id })
+}
+
+/** Per-session model override from KORTIX_OPENCODE_MODEL (provider/model form,
+ *  e.g. `anthropic/claude-sonnet-4-6`). Returned in opencode's
+ *  `{ providerID, modelID }` shape, or undefined when unset/malformed so
+ *  opencode falls back to its configured default. */
+export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
+  const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
+  const slash = raw.indexOf('/')
+  if (slash <= 0 || slash === raw.length - 1) return undefined
+  return { providerID: raw.slice(0, slash), modelID: raw.slice(slash + 1) }
 }
 
 /** Read the pinned opencode session id (set at boot when KORTIX_INITIAL_PROMPT

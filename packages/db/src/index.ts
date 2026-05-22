@@ -40,6 +40,7 @@ export {
   projectTriggerEvents,
   projectTriggerRuntime,
   chatChannelBindings,
+  chatInstalls,
   chatThreads,
   projectSessions,
   projectRuntimeSnapshots,

@@ -147,6 +147,7 @@ import {
   loadSlackInstall,
   saveSlackInstall,
 } from '../channels/install-store';
+import { relayTurnStep, relayTurnAnswer } from '../channels/slack-webhook';
 import {
   buildDeploymentRequest,
   deployAppSpec,
@@ -1410,11 +1411,15 @@ async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
+  opencodeModel?: string | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
   const runtimeSecrets = await listProjectSecrets(input.projectId);
+  // The Slack signing secret only verifies inbound webhooks (an apps/api job).
+  // The in-sandbox agent never needs it — keep it out of the sandbox env.
+  delete runtimeSecrets.SLACK_SIGNING_SECRET;
   return {
     ...runtimeSecrets,
     KORTIX_PROJECT_AUTO_CLONE: '1',
@@ -1428,6 +1433,9 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
+    // Per-session model override (e.g. Slack turns pin a specific model).
+    // The sandbox agent reads this and sets it on every opencode prompt call.
+    ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
   };
 }
 
@@ -1492,12 +1500,14 @@ export async function createProjectSession(input: {
   }
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+  const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+    ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(input.metadata ?? {}),
   };
 
@@ -1540,6 +1550,7 @@ export async function createProjectSession(input: {
         baseRef,
         agentName,
         initialPrompt,
+        opencodeModel,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
@@ -3802,6 +3813,33 @@ projectsApp.delete('/:projectId/channels/slack/installation', async (c) => {
   return c.json({ status: 'disconnected' });
 });
 
+// POST /v1/projects/:projectId/turn-stream
+// Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
+// kind=answer finalizes the turn's streamed message with the agent's reply.
+projectsApp.post('/:projectId/turn-stream', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let body: { session_id?: string; kind?: string; text?: string };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const sessionId = body.session_id?.trim();
+  const text = (body.text ?? '').trim();
+  if (!sessionId || !text) {
+    return c.json({ error: 'session_id and text are required' }, 400);
+  }
+
+  const ok =
+    body.kind === 'answer'
+      ? await relayTurnAnswer(sessionId, text)
+      : await relayTurnStep(sessionId, text);
+  return c.json({ ok });
+});
+
 // POST /v1/projects/:projectId/triggers/:slug/fire
 //
 // Manual fire for git-backed triggers. Reads the file, renders the prompt
@@ -5089,6 +5127,9 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
   const initialPrompt = typeof session.metadata?.initial_prompt === 'string'
     ? session.metadata.initial_prompt as string
     : null;
+  const opencodeModel = typeof session.metadata?.opencode_model === 'string'
+    ? session.metadata.opencode_model as string
+    : null;
 
   // Best-effort tear down: remove the old external container and revoke its
   // sandbox keys. Failures are logged but don't block restart — a stuck row
@@ -5153,6 +5194,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         initialPrompt,
+        opencodeModel,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
