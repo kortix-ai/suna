@@ -21,6 +21,15 @@ build/
 .env.docker
 *.env.docker
 
+# Secrets & keys (defense-in-depth with secret-scanning push protection + gitleaks)
+# The committed root .npmrc is config-only (no secrets); ignore token-bearing variants
+# like .npmrc.release. *.key does not match Android's debug.keystore.
+.npmrc.*
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Logs
 *.log
 npm-debug.log*
