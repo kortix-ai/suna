@@ -22,5 +22,32 @@
   "devDependencies": {
     "agent-tunnel": "workspace:@kortix/agent-tunnel@*"
   },
-  "packageManager": "pnpm@8.11.0"
+  "packageManager": "pnpm@8.11.0",
+  "pnpm": {
+    "overrides": {
+      "next@>=15.0.0 <15.5.18": "15.5.18",
+      "axios@>=1.0.0 <1.15.2": "1.15.2",
+      "protobufjs@>=7.0.0 <7.5.6": "7.5.6",
+      "@protobufjs/utf8@>=1.0.0 <1.1.1": "1.1.1",
+      "mermaid@>=11.0.0 <11.15.0": "11.15.0",
+      "@opentelemetry/sdk-node@>=0.0.0 <0.217.0": "0.217.0",
+      "@opentelemetry/exporter-prometheus@>=0.0.0 <0.217.0": "0.217.0",
+      "fast-uri@>=3.0.0 <3.1.2": "3.1.2",
+      "hono@>=4.0.0 <4.12.18": "4.12.18",
+      "next-intl@>=4.0.0 <4.9.2": "4.9.2",
+      "icu-minify@>=4.0.0 <4.9.2": "4.9.2",
+      "uuid@>=13.0.0 <13.0.1": "13.0.1",
+      "postcss@>=8.0.0 <8.5.10": "8.5.10",
+      "fast-xml-parser@>=5.0.0 <5.7.0": "5.7.0",
+      "@xmldom/xmldom@>=0.0.0 <0.8.13": "0.8.13",
+      "dompurify@>=3.0.0 <3.4.0": "3.4.0",
+      "follow-redirects@>=1.0.0 <1.16.0": "1.16.0",
+      "@hono/node-server@>=1.0.0 <1.19.13": "1.19.13",
+      "esbuild@>=0.0.0 <0.25.0": "0.25.0",
+      "html2pdf.js@>=0.0.0 <0.14.0": "0.14.0",
+      "flatted@>=3.0.0 <3.4.2": "3.4.2",
+      "socket.io-parser@>=4.0.0 <4.2.6": "4.2.6",
+      "undici@>=6.0.0 <6.24.0": "6.24.0"
+    }
+  }
 }
