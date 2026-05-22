@@ -19,6 +19,10 @@ jobs:
   api-typecheck:
     name: API typecheck
     runs-on: ubuntu-latest
+    env:
+      # Stop pnpm from auto-switching to the pinned packageManager (8.11.0),
+      # which is older than some deps require. Use the pnpm we install instead.
+      npm_config_manage_package_manager_versions: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
