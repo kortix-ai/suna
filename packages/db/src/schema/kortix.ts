@@ -165,6 +165,16 @@ export const accountMembers = kortixSchema.table(
     accountRole: accountRoleEnum('account_role').default('owner').notNull(),
     // Super-admin bypasses all IAM policy evaluation. Distinct from accountRole.
     isSuperAdmin: boolean('is_super_admin').default(false).notNull(),
+    // Permission boundary: max envelope of action prefixes this member
+    // can ever be granted, regardless of how many allow-policies cover
+    // them. AWS-style guardrail to prevent privilege escalation through
+    // delegated admin. NULL = no boundary (no clipping). Shape:
+    //   { allow_action_prefixes: ['project.', 'sandbox.read'] }
+    // Empty array = "no actions allowed" (effective deny-all). Super-
+    // admins bypass — boundaries can't lock out the people who set them.
+    permissionBoundary: jsonb('permission_boundary').$type<{
+      allow_action_prefixes: string[];
+    } | null>(),
     // External identifier set by an upstream IdP via SCIM. Null = managed
     // locally (invited via UI or API). When set, the IdP "owns" this row —
     // deactivating the user there should mirror here.
@@ -2059,6 +2069,45 @@ export const accountSsoProviders = kortixSchema.table(
   ],
 );
 
+// ─── Service accounts (non-human IAM principals) ──────────────────────────
+// First-class machine identities owned by the account itself, not by a
+// user. Distinct from PATs (which inherit a user's identity) — service
+// accounts have their own policies via principal_type='token' with
+// principal_id=service_account.id. Used for CI/CD, integrations,
+// cron-like automation. One bearer token per SA in v1; rotation =
+// disable + create a new SA.
+
+export const serviceAccounts = kortixSchema.table(
+  'service_accounts',
+  {
+    serviceAccountId: uuid('service_account_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 128 }).notNull(),
+    description: text('description'),
+    /** SHA-256 hex of the plaintext bearer (kortix_sa_*). Plaintext
+     *  is shown ONCE at creation, never persisted. */
+    secretHash: text('secret_hash').notNull(),
+    /** Display prefix so admins can recognise SAs in lists. */
+    publicPrefix: varchar('public_prefix', { length: 32 }).notNull(),
+    /** active | disabled. Disabled SAs are kept for audit trail but
+     *  refuse every request. */
+    status: varchar('status', { length: 16 }).default('active').notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    disabledBy: uuid('disabled_by'),
+  },
+  (table) => [
+    index('idx_service_accounts_account').on(table.accountId),
+    uniqueIndex('idx_service_accounts_secret_hash').on(table.secretHash),
+    uniqueIndex('idx_service_accounts_account_name').on(table.accountId, table.name),
+  ],
+);
+
 // ─── Resource groups: project groups ───────────────────────────────────────
 // Bundle multiple projects under one name so a single policy can target
 // the whole bundle ("Mobile editors: editor role on group=mobile-prod").
@@ -2134,6 +2183,41 @@ export const iamActionUsage = kortixSchema.table(
     index('idx_iam_action_usage_account').on(table.accountId),
     index('idx_iam_action_usage_principal').on(table.accountId, table.principalKind, table.principalId),
     index('idx_iam_action_usage_action').on(table.accountId, table.action),
+  ],
+);
+
+// ─── Break-glass emergency access ──────────────────────────────────────────
+// Time-bounded super-admin grant a privileged member can self-activate
+// in an emergency. The grant carries a mandatory reason, auto-expires
+// (1h default, configurable per activation), and the IAM engine treats
+// the holder as super-admin during the active window. Activation +
+// revocation + expiry all hit the audit log so SOC reviews can show
+// "who broke glass, when, why".
+//
+// Gating: only members who already hold member.super_admin.grant can
+// activate. That keeps the same admin trust boundary — break-glass
+// formalises emergency promotion without inventing a new privilege.
+
+export const iamBreakGlassGrants = kortixSchema.table(
+  'iam_break_glass_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    /** Free-text reason. Required at activation. Surfaced in audit. */
+    reason: text('reason').notNull(),
+    activatedAt: timestamp('activated_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Hard cap on the grant's lifetime. The engine refuses bypass
+     *  past this timestamp without needing a cleanup job. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: uuid('revoked_by'),
+  },
+  (table) => [
+    index('idx_iam_break_glass_account').on(table.accountId),
+    index('idx_iam_break_glass_active').on(table.accountId, table.userId, table.expiresAt),
   ],
 );
 

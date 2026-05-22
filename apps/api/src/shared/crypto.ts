@@ -25,6 +25,7 @@ export const KEY_PREFIX = 'kortix_';
 export const KEY_PREFIX_SANDBOX = 'kortix_sb_';
 export const KEY_PREFIX_TUNNEL = 'kortix_tnl_';
 export const KEY_PREFIX_PAT = 'kortix_pat_';
+export const KEY_PREFIX_SA = 'kortix_sa_';
 export const KEY_PREFIX_PUBLIC = 'pk_';
 
 const SECRET_RANDOM_LENGTH = 32;
@@ -84,6 +85,25 @@ export function generateAccountTokenPair(): { publicKey: string; secretKey: stri
 /** Check if a token is a CLI Personal Access Token. */
 export function isAccountToken(token: string): boolean {
   return token.startsWith(KEY_PREFIX_PAT);
+}
+
+/**
+ * Generate a service-account bearer.
+ * Secret: kortix_sa_<32 chars>  (shown once, only hash stored)
+ * Public prefix is the first 16 chars after the prefix — used purely as
+ * a display identifier in admin lists.
+ */
+export function generateServiceAccountSecret(): { secret: string; publicPrefix: string } {
+  const body = randomAlphanumeric(SECRET_RANDOM_LENGTH);
+  return {
+    secret: `${KEY_PREFIX_SA}${body}`,
+    publicPrefix: `${KEY_PREFIX_SA}${body.slice(0, 8)}…`,
+  };
+}
+
+/** Check if a token is a service-account bearer. */
+export function isServiceAccountToken(token: string): boolean {
+  return token.startsWith(KEY_PREFIX_SA);
 }
 
 const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';

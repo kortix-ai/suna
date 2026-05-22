@@ -809,6 +809,139 @@ export async function listTopPrincipals(accountId: string) {
   ).principals;
 }
 
+// ─── Break-glass emergency access ─────────────────────────────────────────
+
+export interface BreakGlassGrant {
+  grant_id: string;
+  user_id: string;
+  reason: string;
+  activated_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  revoked_by: string | null;
+  active: boolean;
+}
+
+export async function listBreakGlassGrants(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ grants: BreakGlassGrant[] }>(
+      `/accounts/${accountId}/iam/break-glass`,
+    ),
+  ).grants;
+}
+
+export async function activateBreakGlass(
+  accountId: string,
+  input: { reason: string; minutes?: number },
+) {
+  return unwrap(
+    await backendApi.post<{
+      grant_id: string;
+      activated_at: string;
+      expires_at: string;
+      reason: string;
+    }>(`/accounts/${accountId}/iam/break-glass/activate`, input, {
+      showErrors: false,
+    }),
+  );
+}
+
+export async function revokeBreakGlass(accountId: string, grantId: string) {
+  return unwrap(
+    await backendApi.post<{ revoked: boolean }>(
+      `/accounts/${accountId}/iam/break-glass/${grantId}/revoke`,
+      {},
+      { showErrors: false },
+    ),
+  );
+}
+
+// ─── Service accounts (non-human IAM principals) ─────────────────────────
+
+export interface ServiceAccount {
+  service_account_id: string;
+  name: string;
+  description: string | null;
+  public_prefix: string;
+  status: 'active' | 'disabled';
+  last_used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  disabled_at: string | null;
+}
+
+export interface CreatedServiceAccount extends ServiceAccount {
+  /** Plaintext bearer — shown ONCE at create. Store it now or rotate. */
+  secret: string;
+}
+
+export async function listServiceAccountsApi(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ service_accounts: ServiceAccount[] }>(
+      `/accounts/${accountId}/iam/service-accounts`,
+    ),
+  ).service_accounts;
+}
+
+export async function createServiceAccountApi(
+  accountId: string,
+  input: { name: string; description?: string; expires_at?: string },
+) {
+  return unwrap(
+    await backendApi.post<CreatedServiceAccount>(
+      `/accounts/${accountId}/iam/service-accounts`,
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function disableServiceAccountApi(accountId: string, saId: string) {
+  return unwrap(
+    await backendApi.post<{ disabled: boolean }>(
+      `/accounts/${accountId}/iam/service-accounts/${saId}/disable`,
+      {},
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function deleteServiceAccountApi(accountId: string, saId: string) {
+  return unwrap(
+    await backendApi.delete<{ deleted: boolean }>(
+      `/accounts/${accountId}/iam/service-accounts/${saId}`,
+    ),
+  );
+}
+
+// ─── Permission boundary (per-member max envelope) ───────────────────────
+
+export interface PermissionBoundary {
+  allow_action_prefixes: string[];
+}
+
+export async function getMemberBoundary(accountId: string, userId: string) {
+  return unwrap(
+    await backendApi.get<{ boundary: PermissionBoundary | null }>(
+      `/accounts/${accountId}/iam/members/${userId}/boundary`,
+    ),
+  ).boundary;
+}
+
+export async function setMemberBoundary(
+  accountId: string,
+  userId: string,
+  boundary: PermissionBoundary | null,
+) {
+  return unwrap(
+    await backendApi.put<{ boundary: PermissionBoundary | null }>(
+      `/accounts/${accountId}/iam/members/${userId}/boundary`,
+      { boundary },
+      { showErrors: false },
+    ),
+  );
+}
+
 // ─── Project groups (resource bundles for policy scoping) ────────────────
 
 export interface ProjectGroup {

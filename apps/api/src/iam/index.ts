@@ -3,10 +3,12 @@ export {
   assertAuthorized,
   listAccessibleResources,
   checkConditions,
+  actionPassesBoundary,
   type AccessibleResources,
   type AuthorizeTarget,
   type AuthorizeResult,
   type PolicyConditions,
+  type PermissionBoundary,
   type RequestContext,
 } from './engine';
 export { authorizeCached, deriveRequestContext } from './cache';

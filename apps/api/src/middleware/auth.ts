@@ -2,7 +2,8 @@ import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
-import { isKortixToken, isAccountToken } from '../shared/crypto';
+import { validateServiceAccountToken } from '../repositories/service-accounts';
+import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
@@ -91,6 +92,28 @@ export async function supabaseAuth(c: Context, next: Next) {
   const token = authHeader.slice(7);
   if (!token) {
     throw new HTTPException(401, { message: 'Missing token' });
+  }
+
+  // Service-account bearer (non-human IAM principal). Treat as a
+  // token-style principal: userId is set to the SA id (synthetic) so
+  // downstream code has a stable identifier, and iamTokenId points
+  // at the same id so the IAM engine evaluates only the SA's policies
+  // (existing token-as-principal short-circuit).
+  if (isServiceAccountToken(token)) {
+    const sa = await validateServiceAccountToken(token);
+    if (!sa.isValid || !sa.serviceAccountId || !sa.accountId) {
+      throw new HTTPException(401, { message: sa.error || 'Invalid service account' });
+    }
+    c.set('userId', sa.serviceAccountId);
+    c.set('userEmail', '');
+    c.set('authType', 'service_account');
+    c.set('accountId', sa.accountId);
+    c.set('iamTokenId', sa.serviceAccountId);
+    setSentryUser({ id: sa.serviceAccountId, accountId: sa.accountId });
+    setContextField('userId', sa.serviceAccountId);
+    setContextField('accountId', sa.accountId);
+    await next();
+    return;
   }
 
   // CLI Personal Access Token — same identity as the user who minted it.

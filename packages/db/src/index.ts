@@ -143,6 +143,10 @@ export {
   // Resource groups (project groups)
   projectGroups,
   projectGroupMembers,
+  // Service accounts
+  serviceAccounts,
+  // Break-glass emergency access
+  iamBreakGlassGrants,
 } from './schema/kortix';
 
 export type {

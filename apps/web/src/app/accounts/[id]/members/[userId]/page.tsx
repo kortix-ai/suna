@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PoliciesTable } from '@/components/iam/policies-table';
+import { PermissionBoundaryCard } from '@/components/iam/permission-boundary-card';
 import {
   listMemberGroups,
   setMemberSuperAdmin,
@@ -223,6 +224,14 @@ export default function MemberDetailPage() {
               principalType="member"
               principalId={member.user_id}
               principalLabel={memberLabel}
+              canManage={canManage}
+            />
+          )}
+
+          {account && member && (
+            <PermissionBoundaryCard
+              accountId={account.account_id}
+              userId={member.user_id}
               canManage={canManage}
             />
           )}

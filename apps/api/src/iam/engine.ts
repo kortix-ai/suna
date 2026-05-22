@@ -9,12 +9,13 @@
 // memoised behind a per-request cache (see authorizer.ts). The raw lookup is
 // also fast enough to call ad-hoc: one composite SELECT.
 
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountGroups,
   accountMembers,
   accounts,
+  iamBreakGlassGrants,
   iamPolicies,
   iamRolePermissions,
   iamRoles,
@@ -107,7 +108,35 @@ type ResolvedActor = {
    * not 'aal2'. Super-admins are exempt; PATs are exempt (they gate
    * via per-policy require_mfa conditions). Account-wide setting. */
   accountMfaRequired: boolean;
+  /** Optional max-envelope of action prefixes. When set, the engine
+   * denies any action whose prefix isn't in the list — even if explicit
+   * allow-policies cover it. Super-admins are exempt. */
+  permissionBoundary: PermissionBoundary | null;
 };
+
+/**
+ * AWS-style permission boundary. The engine treats the configured set
+ * of action prefixes as the MAX envelope: an action passes only when
+ * one of the prefixes is a prefix of the action key. Empty array is
+ * a legal config that effectively bans everything.
+ */
+export interface PermissionBoundary {
+  allow_action_prefixes: string[];
+}
+
+/**
+ * Does `action` clear the boundary? Pure — exported for unit tests.
+ * Empty boundary array → no action passes (admin opted in to deny-all).
+ * Null boundary handled by the caller (no clipping).
+ */
+export function actionPassesBoundary(action: string, boundary: PermissionBoundary): boolean {
+  for (const prefix of boundary.allow_action_prefixes) {
+    if (action === prefix) return true;
+    if (prefix.endsWith('.') && action.startsWith(prefix)) return true;
+    if (!prefix.endsWith('.') && action.startsWith(prefix + '.')) return true;
+  }
+  return false;
+}
 
 const SYSTEM_ROLE_PERMISSION_CACHE = new Map<string, Set<string>>();
 
@@ -206,6 +235,7 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
       accountRole: accountMembers.accountRole,
       iamStrictMode: accounts.iamStrictMode,
       mfaRequired: accounts.mfaRequired,
+      permissionBoundary: accountMembers.permissionBoundary,
     })
     .from(accountMembers)
     .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
@@ -225,12 +255,34 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
       ),
     );
 
+  // Break-glass grants act as temporary super-admin promotion. Check
+  // for an active, unrevoked grant — if present, force isSuperAdmin
+  // true regardless of the stored flag. Boundary still doesn't apply
+  // (super-admins are exempt anyway). Single-row LIMIT 1.
+  let breakGlassActive = false;
+  if (!member.isSuperAdmin) {
+    const [activeGrant] = await db
+      .select({ grantId: iamBreakGlassGrants.grantId })
+      .from(iamBreakGlassGrants)
+      .where(
+        and(
+          eq(iamBreakGlassGrants.accountId, accountId),
+          eq(iamBreakGlassGrants.userId, userId),
+          gt(iamBreakGlassGrants.expiresAt, new Date()),
+          isNull(iamBreakGlassGrants.revokedAt),
+        ),
+      )
+      .limit(1);
+    breakGlassActive = !!activeGrant;
+  }
+
   return {
-    isSuperAdmin: member.isSuperAdmin,
+    isSuperAdmin: member.isSuperAdmin || breakGlassActive,
     accountRole: member.accountRole as ResolvedActor['accountRole'],
     groupIds: groups.map((g) => g.groupId),
     iamStrictMode: member.iamStrictMode,
     accountMfaRequired: member.mfaRequired,
+    permissionBoundary: (member.permissionBoundary as PermissionBoundary | null) ?? null,
   };
 }
 
@@ -551,6 +603,19 @@ export async function authorize(
     return { allowed: false, reason: 'account_mfa_required' };
   }
 
+  // 1c. Permission boundary clip. When the member has a boundary
+  //     configured AND the action's prefix isn't covered, deny
+  //     immediately — even if explicit allow-policies would otherwise
+  //     match. Super-admins already returned above; PATs are subject
+  //     to the minter's boundary only when the engine is in the user
+  //     path (the token-policy short-circuit at the top doesn't
+  //     consult the minter's actor at all).
+  if (actor.permissionBoundary) {
+    if (!actionPassesBoundary(action, actor.permissionBoundary)) {
+      return { allowed: false, reason: 'permission_boundary' };
+    }
+  }
+
   // Sanity: if the action expects a specific resource and we got an
   // account-level target, only an account-Everything policy can satisfy it.
   // That's fine — the SQL filter handles it. No early-out needed.
@@ -746,6 +811,12 @@ export async function listAccessibleResources(
     !actingTokenId &&
     requestCtx.mfaAal !== 'aal2'
   ) {
+    return { mode: 'none' };
+  }
+
+  // Boundary applies to the listing action too — if the action is
+  // outside the envelope, nothing is visible.
+  if (actor.permissionBoundary && !actionPassesBoundary(action, actor.permissionBoundary)) {
     return { mode: 'none' };
   }
 
