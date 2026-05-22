@@ -374,6 +374,8 @@ function CreateAuditWebhookDialog({
                   [
                     { label: 'All events', prefix: '' },
                     { label: 'IAM only', prefix: 'iam.' },
+                    { label: 'Auth lifecycle', prefix: 'auth.' },
+                    { label: 'Failed logins', prefix: 'auth.login.fail' },
                     { label: 'Policies only', prefix: 'iam.policy' },
                     { label: 'Super-admin grants', prefix: 'iam.member.super_admin' },
                     { label: 'Approvals', prefix: 'iam.approval' },

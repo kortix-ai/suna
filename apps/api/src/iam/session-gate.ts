@@ -17,6 +17,7 @@ import { HTTPException } from 'hono/http-exception';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountSessionActivity, accounts } from '@kortix/db';
 import { db } from '../shared/db';
+import { auditSessionFirstSight } from '../shared/auth-audit';
 
 /** Skip the update query if last_seen_at was touched more recently than
  *  this. Bounds DB write pressure under chatty clients. */
@@ -94,6 +95,9 @@ async function markRevoked(
     });
 }
 
+/** Returns true when this call inserted a brand-new activity row
+ *  (first time we've seen this session against this account). The
+ *  caller emits an `auth.session.first_sight` audit event on true. */
 async function touchActivity(
   accountId: string,
   userId: string,
@@ -101,26 +105,29 @@ async function touchActivity(
   ip: string | null,
   userAgent: string | null,
   lastSeenAt: Date | null,
-): Promise<void> {
+): Promise<{ firstSight: boolean }> {
   // Skip when we wrote recently — keeps DB write pressure bounded
   // under a chatty client (e.g. polling, SSE).
   if (
     lastSeenAt &&
     Date.now() - lastSeenAt.getTime() < ACTIVITY_WRITE_INTERVAL_MS
   ) {
-    return;
+    return { firstSight: false };
   }
-  await db
-    .insert(accountSessionActivity)
-    .values({ accountId, userId, sessionId, ip, userAgent })
-    .onConflictDoUpdate({
-      target: [
-        accountSessionActivity.accountId,
-        accountSessionActivity.userId,
-        accountSessionActivity.sessionId,
-      ],
-      set: { lastSeenAt: new Date() },
-    });
+  // Distinguish first-sight (insert) from refresh (update) using
+  // `xmax = 0` — Postgres sets xmax to 0 for new rows but to the
+  // current xid for updates. Cheap, single round-trip.
+  const rows = await db.execute<{ first_sight: boolean }>(sql`
+    INSERT INTO kortix.account_session_activity
+      (account_id, user_id, session_id, ip, user_agent)
+    VALUES (${accountId}::uuid, ${userId}::uuid, ${sessionId}::uuid, ${ip}, ${userAgent})
+    ON CONFLICT (account_id, user_id, session_id)
+      DO UPDATE SET last_seen_at = now()
+    RETURNING (xmax = 0) AS first_sight
+  `);
+  const data =
+    ((rows as unknown) as { rows: Array<{ first_sight: boolean }> }).rows ?? rows;
+  return { firstSight: (data as Array<{ first_sight: boolean }>)[0]?.first_sight === true };
 }
 
 /**
@@ -240,14 +247,24 @@ export function accountSessionGate(): MiddlewareHandler {
       });
     }
 
-    // Update last_seen lazily.
+    // Update last_seen lazily. When the activity row is INSERTED (i.e.
+    // this is the first time we've seen this session against this
+    // account), emit an `auth.session.first_sight` audit event so the
+    // log captures "new device / new browser tab signed in" without
+    // needing a separate signal from the OAuth callback.
     const ip = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
       ?? c.req.header('x-real-ip')
       ?? null;
     const userAgent = c.req.header('user-agent') ?? null;
-    touchActivity(accountId, userId, sessionId, ip, userAgent, policy.lastSeenAt).catch((err) => {
-      console.warn('[session-gate] touchActivity failed', err);
-    });
+    touchActivity(accountId, userId, sessionId, ip, userAgent, policy.lastSeenAt)
+      .then((result) => {
+        if (result.firstSight) {
+          auditSessionFirstSight({ c, userId, accountId, sessionId });
+        }
+      })
+      .catch((err) => {
+        console.warn('[session-gate] touchActivity failed', err);
+      });
 
     await next();
   };
