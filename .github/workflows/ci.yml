@@ -1,0 +1,41 @@
+name: CI
+
+# Pull-request gate. Required to pass before merging into protected branches
+# (SOC 2 CC8.1 — automated checks run on every change before review/merge).
+
+on:
+  pull_request:
+    branches: [newer-kortix, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  api-typecheck:
+    name: API typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.11.0
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies (kortix-api + workspace deps)
+        run: pnpm install --frozen-lockfile --filter "kortix-api..."
+
+      - name: Typecheck
+        run: pnpm --filter kortix-api typecheck
