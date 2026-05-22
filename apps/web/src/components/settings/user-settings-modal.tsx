@@ -428,37 +428,30 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         }
     };
 
-    const uploadAvatar = async (userId: string): Promise<string | null> => {
+    // Uploads to `${userId}/<file>` so the per-user RLS policy on the public
+    // "avatars" bucket allows it. Throws on failure so the caller can abort.
+    const uploadAvatar = async (userId: string): Promise<string> => {
         if (!avatarFile) return avatarUrl;
 
         setIsUploadingAvatar(true);
         try {
-            const fileExt = avatarFile.name.split('.').pop();
-            const fileName = `${userId}-${Date.now()}.${fileExt}`;
+            const fileExt = (avatarFile.name.split('.').pop() || 'png').toLowerCase();
+            const filePath = `${userId}/${Date.now()}.${fileExt}`;
 
-            // Upload to Supabase Storage
             const { error: uploadError } = await supabase.storage
                 .from('avatars')
-                .upload(fileName, avatarFile, {
+                .upload(filePath, avatarFile, {
                     cacheControl: '3600',
                     upsert: true,
                 });
 
-            if (uploadError) {
-                console.error('Upload error:', uploadError);
-                throw uploadError;
-            }
+            if (uploadError) throw uploadError;
 
-            // Get public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('avatars')
-                .getPublicUrl(fileName);
+                .getPublicUrl(filePath);
 
             return publicUrl;
-        } catch (error) {
-            console.error('Avatar upload failed:', error);
-            toast.error(t('profilePicture.uploadFailed'));
-            return null;
         } finally {
             setIsUploadingAvatar(false);
         }
@@ -469,23 +462,18 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
         try {
             const { data: userData } = await supabase.auth.getUser();
             const userId = userData.user?.id;
-            
+
             if (!userId) throw new Error('User not found');
 
-            // Upload avatar if a new one was selected
-            let newAvatarUrl = avatarUrl;
-            if (avatarFile) {
-                const uploadedUrl = await uploadAvatar(userId);
-                if (uploadedUrl) {
-                    newAvatarUrl = uploadedUrl;
-                }
-            }
+            // Upload the new avatar first — if this throws (e.g. storage not
+            // provisioned), we abort below WITHOUT saving or reloading.
+            const newAvatarUrl = avatarFile ? await uploadAvatar(userId) : avatarUrl;
 
-            const { data, error } = await supabase.auth.updateUser({
-                data: { 
+            const { error } = await supabase.auth.updateUser({
+                data: {
                     name: userName,
                     avatar_url: newAvatarUrl,
-                }
+                },
             });
 
             if (error) throw error;
@@ -498,14 +486,14 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
             setAvatarFile(null);
             setAvatarUrl(newAvatarUrl);
 
+            // No reload: updateUser fires a Supabase `USER_UPDATED` event, and
+            // AuthProvider re-renders every avatar consumer (header, sidebar)
+            // live. The old window.location.reload() was the "hard reload".
             toast.success(t('profileUpdated'));
-
-            setTimeout(() => {
-                window.location.reload();
-            }, 500);
         } catch (error) {
             console.error('Error updating profile:', error);
-            toast.error(t('profileUpdateFailed'));
+            const message = error instanceof Error && error.message ? error.message : '';
+            toast.error(message || t('profileUpdateFailed'));
         } finally {
             setIsSaving(false);
         }

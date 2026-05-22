@@ -50,6 +50,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { RolesTab } from '@/components/iam/roles-tab';
@@ -84,10 +85,6 @@ function formatDate(input: string | null | undefined) {
   const d = new Date(input);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function getInitial(text: string) {
-  return (text.trim().charAt(0) || '?').toUpperCase();
 }
 
 function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
@@ -474,7 +471,7 @@ function MembersCard({
         <div className="divide-y divide-border/60">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="flex items-center gap-3 px-6 py-3">
-              <Skeleton className="h-9 w-9 rounded-full" />
+              <Skeleton className="size-8 rounded-full" />
               <div className="flex-1 space-y-1.5">
                 <Skeleton className="h-3.5 w-48" />
                 <Skeleton className="h-3 w-24" />
@@ -505,16 +502,18 @@ function MembersCard({
                 key={member.user_id}
                 className="flex items-center gap-3 px-6 py-3"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-sm font-semibold text-foreground">
-                  {getInitial(memberLabel(member))}
-                </div>
+                <UserAvatar
+                  email={member.email ?? member.user_id}
+                  name={member.email ?? undefined}
+                  size="md"
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium text-foreground">
                       {memberLabel(member)}
                     </span>
                     {isSelf && (
-                      <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                      <Badge variant="secondary" size="sm">
                         You
                       </Badge>
                     )}
@@ -591,7 +590,7 @@ function MembersCard({
                             <DropdownMenuItem
                               onSelect={() => setRemoveTarget(member)}
                               disabled={isLastOwner}
-                              className="gap-2 text-destructive focus:text-destructive"
+                              className="gap-2"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               Remove from team
@@ -604,7 +603,7 @@ function MembersCard({
                             <DropdownMenuItem
                               onSelect={() => setLeaveConfirmOpen(true)}
                               disabled={isLastOwner}
-                              className="gap-2 text-destructive focus:text-destructive"
+                              className="gap-2"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               Leave team
@@ -672,11 +671,9 @@ function MembersCard({
 function RoleBadge({ role }: { role: AccountRole }) {
   return (
     <Badge
-      variant="outline"
-      className={cn(
-        'h-5 rounded-md px-1.5 text-[10px] font-medium',
-        role === 'owner' && 'border-foreground/30 text-foreground',
-      )}
+      variant={role === 'owner' ? 'outline' : 'secondary'}
+      size="sm"
+      className={cn(role === 'owner' && 'border-foreground/40 text-foreground')}
     >
       {ROLE_LABEL[role]}
     </Badge>
@@ -932,13 +929,11 @@ function PendingInvitesSection({
           const busy = pendingId === invite.invite_id;
           return (
             <li key={invite.invite_id} className="flex items-center gap-3 px-6 py-2.5">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-border bg-background text-muted-foreground">
-                <Mail className="h-3.5 w-3.5" />
-              </div>
+              <UserAvatar email={invite.email} size="md" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm text-foreground">{invite.email}</span>
-                  <Badge variant="outline" className="h-4 rounded-md px-1 text-[9px] font-normal">
+                  <Badge variant="secondary" size="sm">
                     Pending
                   </Badge>
                 </div>
@@ -981,7 +976,7 @@ function PendingInvitesSection({
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
                         onSelect={() => setCancelTarget(invite)}
-                        className="gap-2 text-destructive focus:text-destructive"
+                        className="gap-2"
                       >
                         <X className="h-3.5 w-3.5" />
                         Cancel invite

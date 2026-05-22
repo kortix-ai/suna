@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PoliciesTable } from '@/components/iam/policies-table';
 import {
@@ -281,9 +282,7 @@ function GroupMembersCard({
             const label = emailByUserId.get(m.user_id) ?? m.user_id;
             return (
               <li key={m.user_id} className="flex items-center gap-3 px-6 py-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-xs font-semibold text-foreground">
-                  {(label[0] ?? '?').toUpperCase()}
-                </div>
+                <UserAvatar email={label} size="md" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">{label}</p>
                   <p className="text-xs text-muted-foreground">

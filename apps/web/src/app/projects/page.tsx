@@ -204,7 +204,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <AppHeader user={user} />
+      <AppHeader user={user} breadcrumb="Projects" />
       <main className="flex-1 px-4 py-10 sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

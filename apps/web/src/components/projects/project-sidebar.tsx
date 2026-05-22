@@ -521,10 +521,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       </SidebarContent>
 
       {/* ====================================================================
-          FOOTER — the Account·You menu: account switching + account settings
-          + identity + settings + theme + log out. Kept separate from the
-          ProjectSwitcher at the top so the two concerns (which project vs.
-          which account / who am I) don't share one widget.
+          FOOTER — the "you" menu: identity, Home, user settings, theme, log
+          out. Account switching lives in the breadcrumb <AccountSwitcher>
+          (you don't change account mid-project); which project is the
+          ProjectSwitcher at the top.
          ==================================================================== */}
       <SidebarFooter className="pb-2 pt-1 group-data-[collapsible=icon]:px-0">
         <UserMenu user={user} variant="sidebar" />

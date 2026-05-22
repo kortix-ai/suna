@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { UserAvatar } from '@/components/ui/user-avatar';
 import { PoliciesTable } from '@/components/iam/policies-table';
 import {
   listMemberGroups,
@@ -137,26 +138,34 @@ export default function MemberDetailPage() {
               )}
             </div>
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                  {memberLabel}
-                </h1>
-                {member && (
-                  <div className="mt-1 flex items-center gap-2">
-                    <Badge variant="outline" className="h-5 rounded-md px-1.5 text-[10px] font-normal">
-                      {ROLE_LABEL[member.account_role] ?? member.account_role}
-                    </Badge>
-                    {member.is_super_admin && (
-                      <Badge className="h-5 gap-1 rounded-md px-1.5 text-[10px] font-normal">
-                        <Shield className="h-2.5 w-2.5" />
-                        Super-admin
+              <div className="flex items-start gap-3">
+                <UserAvatar
+                  email={member?.email ?? memberLabel}
+                  name={member?.email ?? undefined}
+                  size="lg"
+                  className="mt-0.5"
+                />
+                <div>
+                  <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                    {memberLabel}
+                  </h1>
+                  {member && (
+                    <div className="mt-1 flex items-center gap-2">
+                      <Badge variant="outline" size="sm">
+                        {ROLE_LABEL[member.account_role] ?? member.account_role}
                       </Badge>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      Joined {new Date(member.joined_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                )}
+                      {member.is_super_admin && (
+                        <Badge variant="secondary" size="sm" className="gap-1">
+                          <Shield className="h-2.5 w-2.5" />
+                          Super-admin
+                        </Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        Joined {new Date(member.joined_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
               {canPromoteSuperAdmin && memberUserId !== user.id && member?.is_super_admin && (
                 <Button
