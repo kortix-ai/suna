@@ -159,13 +159,10 @@ export function ProjectCreateModal({
   function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!accountId) return toast.error('Select an account first');
-    const name = newName.trim();
+    // Strip disallowed characters instead of rejecting; the backend derives a
+    // safe repo slug from whatever clean name we send.
+    const name = newName.replace(/[^a-zA-Z0-9._ -]+/g, '').trim();
     if (!name) return toast.error('Project name is required');
-    if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
-      return toast.error(
-        'Use letters, numbers, spaces, hyphens, underscores, or dots only',
-      );
-    }
     createMutation.mutate({ account_id: accountId, name });
   }
 
