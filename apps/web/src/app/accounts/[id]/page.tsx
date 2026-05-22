@@ -596,6 +596,46 @@ function MembersCard({
                   </div>
                 </div>
 
+                <div className="ml-1 hidden items-center gap-1.5 sm:flex">
+                  {member.is_super_admin && (
+                    <Badge
+                      variant="outline"
+                      className="h-5 rounded-md border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-normal text-amber-700 dark:text-amber-300"
+                      title="Super-admin: bypasses every IAM check"
+                    >
+                      super
+                    </Badge>
+                  )}
+                  {member.groups && member.groups.length > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                      title={member.groups.map((g) => g.name).join(', ')}
+                    >
+                      {member.groups.length} group{member.groups.length === 1 ? '' : 's'}
+                    </Badge>
+                  )}
+                  {typeof member.active_pat_count === 'number' &&
+                    member.active_pat_count > 0 && (
+                      <Badge
+                        variant="outline"
+                        className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                        title={`${member.active_pat_count} active PAT${member.active_pat_count === 1 ? '' : 's'}`}
+                      >
+                        {member.active_pat_count} PAT{member.active_pat_count === 1 ? '' : 's'}
+                      </Badge>
+                    )}
+                  {member.has_verified_mfa && (
+                    <Badge
+                      variant="outline"
+                      className="h-5 rounded-md border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
+                      title="MFA enrolled"
+                    >
+                      2FA
+                    </Badge>
+                  )}
+                </div>
+
                 <RoleBadge role={member.account_role} />
 
                 <div className="ml-1 w-7 shrink-0">

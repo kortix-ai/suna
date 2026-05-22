@@ -599,6 +599,46 @@ accountsRouter.get('/:accountId/members', async (c) => {
     /* groups table unavailable — return members without group chips */
   }
 
+  // Active-PAT counts per member, in one aggregate so the member list
+  // can flag who's automating against the account. Best-effort —
+  // failures degrade to "0".
+  const patCountByUser = new Map<string, number>();
+  try {
+    const patRows = await db.execute<{ user_id: string; n: number }>(sql`
+      SELECT user_id::text, COUNT(*)::int AS n
+      FROM kortix.account_tokens
+      WHERE account_id = ${accountId}::uuid AND status = 'active'
+      GROUP BY user_id
+    `);
+    const patData = ((patRows as unknown) as { rows: typeof patRows }).rows ?? patRows;
+    for (const row of patData as Array<{ user_id: string; n: number }>) {
+      patCountByUser.set(row.user_id, row.n);
+    }
+  } catch {
+    /* swallow — display "0 PATs" on failure */
+  }
+
+  // Verified-MFA flag per member from Supabase Auth. Same forgiving
+  // fallback as above so the list never 500s if auth.mfa_factors is
+  // unavailable in a given environment.
+  const mfaByUser = new Map<string, boolean>();
+  try {
+    const mfaRows = await db.execute<{ user_id: string }>(sql`
+      SELECT DISTINCT user_id::text
+      FROM auth.mfa_factors
+      WHERE status = 'verified'
+        AND user_id IN (
+          SELECT user_id FROM kortix.account_members WHERE account_id = ${accountId}::uuid
+        )
+    `);
+    const mfaData = ((mfaRows as unknown) as { rows: typeof mfaRows }).rows ?? mfaRows;
+    for (const row of mfaData as Array<{ user_id: string }>) {
+      mfaByUser.set(row.user_id, true);
+    }
+  } catch {
+    /* auth.mfa_factors unavailable in this env */
+  }
+
   return c.json(
     rows.map((r) => ({
       user_id: r.userId,
@@ -607,6 +647,8 @@ accountsRouter.get('/:accountId/members', async (c) => {
       is_super_admin: r.isSuperAdmin,
       explicit_project_count: projectGrantCountByUser.get(r.userId) ?? 0,
       groups: groupsByUser.get(r.userId) ?? [],
+      active_pat_count: patCountByUser.get(r.userId) ?? 0,
+      has_verified_mfa: mfaByUser.get(r.userId) ?? false,
       joined_at: r.joinedAt.toISOString(),
     })),
   );

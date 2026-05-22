@@ -90,17 +90,19 @@ import {
 
 const RESOURCE_TYPE_META: Record<
   PolicyScopeType,
-  { label: string; pickerSupported: boolean }
+  { label: string; inputKind: 'select' | 'text' }
 > = {
-  account: { label: 'Everything', pickerSupported: true },
-  project: { label: 'Individual Projects', pickerSupported: true },
-  project_group: { label: 'Project Groups', pickerSupported: true },
-  member: { label: 'Individual Members', pickerSupported: true },
-  group: { label: 'Individual Groups', pickerSupported: true },
-  // Slug-based, ephemeral, or sub-resource — defer until they have stable UUIDs.
-  sandbox: { label: 'Individual Sandboxes', pickerSupported: false },
-  trigger: { label: 'Individual Triggers', pickerSupported: false },
-  channel: { label: 'Individual Channels', pickerSupported: false },
+  account: { label: 'Everything', inputKind: 'select' },
+  project: { label: 'Individual Projects', inputKind: 'select' },
+  project_group: { label: 'Project Groups', inputKind: 'select' },
+  member: { label: 'Individual Members', inputKind: 'select' },
+  group: { label: 'Individual Groups', inputKind: 'select' },
+  // Sub-resources without dedicated pickers — admins paste the
+  // sandbox/trigger/channel id directly. Acceptable for v1; a richer
+  // picker can land once these surfaces stabilise.
+  sandbox: { label: 'Individual Sandboxes', inputKind: 'text' },
+  trigger: { label: 'Individual Triggers', inputKind: 'text' },
+  channel: { label: 'Individual Channels', inputKind: 'text' },
 };
 
 // ─── PoliciesTable ─────────────────────────────────────────────────────────
@@ -1163,11 +1165,7 @@ function CreatePolicyDialog({
   // Whether we have enough to submit.
   const ready = (() => {
     if (!scopeType || selectedRoleIds.size === 0) return false;
-    if (scopeType !== 'account') {
-      const meta = RESOURCE_TYPE_META[scopeType];
-      if (!meta.pickerSupported) return false;
-      if (!scopeId) return false;
-    }
+    if (scopeType !== 'account' && !scopeId) return false;
     return true;
   })();
 
@@ -1283,15 +1281,10 @@ function CreatePolicyDialog({
                     (rt) => {
                       const meta = RESOURCE_TYPE_META[rt];
                       return (
-                        <SelectItem
-                          key={rt}
-                          value={rt}
-                          disabled={!meta.pickerSupported}
-                          className={!meta.pickerSupported ? 'italic opacity-50' : undefined}
-                        >
+                        <SelectItem key={rt} value={rt}>
                           {meta.label}
-                          {!meta.pickerSupported && (
-                            <span className="ml-2 text-[10px] text-muted-foreground">soon</span>
+                          {meta.inputKind === 'text' && (
+                            <span className="ml-2 text-[10px] text-muted-foreground">id paste</span>
                           )}
                         </SelectItem>
                       );
@@ -1412,6 +1405,22 @@ function CreatePolicyDialog({
                   </SelectContent>
                 </Select>
               )}
+              {scopeType !== 'account' &&
+                RESOURCE_TYPE_META[scopeType]?.inputKind === 'text' && (
+                  <>
+                    <Input
+                      value={scopeId}
+                      onChange={(e) => setScopeId(e.target.value.trim())}
+                      placeholder={`Paste the ${scopeType} id`}
+                      className="font-mono text-xs"
+                      disabled={createMutation.isPending}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      No picker yet for {scopeType}s. Find the id in the
+                      resource&apos;s URL or detail page and paste it here.
+                    </p>
+                  </>
+                )}
             </div>
           )}
 
