@@ -24,24 +24,25 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Node
-        # Node 24 satisfies the repo's engine-strict requirements.
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
 
       - name: Install pnpm
-        # The repo pins packageManager: pnpm@8.11.0, but the lockfile is pnpm 11
-        # and some deps require pnpm >=10 / Node >=24. We install pnpm 11 and drop
-        # the stale pin from the checked-out copy so pnpm doesn't self-switch to
-        # 8.11.0. corepack is disabled so its shim can't shadow our pnpm.
+        # The lockfile is pnpm 8 format (lockfileVersion 6.0), matching the
+        # packageManager pin. corepack provides exactly that version.
         run: |
-          corepack disable || true
-          npm install -g pnpm@11
-          npm pkg delete packageManager
+          corepack enable pnpm
           echo "pnpm: $(pnpm -v)  node: $(node -v)"
 
       - name: Install dependencies (kortix-api + workspace deps)
+        # engine-strict is relaxed for CI only: an out-of-scope web dep declares
+        # engines pnpm>=10/node>=24, which conflicts with the repo's pnpm 8
+        # lockfile. This relaxes the version check only — supply-chain controls
+        # (minimum-release-age, ignore-scripts) stay enforced.
         run: pnpm install --frozen-lockfile --filter "kortix-api..."
+        env:
+          npm_config_engine_strict: "false"
 
       - name: Typecheck
         run: pnpm --filter kortix-api typecheck
