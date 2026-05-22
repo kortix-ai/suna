@@ -102,8 +102,16 @@ import {
 import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useServerStore } from '@/stores/server-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { enrichPreviewMetadata } from '@/lib/utils/session-context';
+import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import {
+  enrichPreviewMetadata,
+  getActiveSessionContext,
+} from '@/lib/utils/session-context';
+import {
+  sessionPreviewTabId,
+  useSessionBrowserStore,
+} from '@/stores/session-browser-store';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { PreWithPaths } from '@/components/common/clickable-path';
 import {
   parseDiagnosticsFromToolOutput,
@@ -220,7 +228,13 @@ function ensureWorkspacePath(filePath: string): string {
   return '/workspace/' + filePath.replace(/^\/+/, '');
 }
 
-function InlineServicePreview({ url, label }: { url: string; label?: string }) {
+/**
+ * Shared state + actions for an embedded service/website preview. Powers both
+ * the standalone {@link InlineServicePreview} (with its own toolbar) and the
+ * consolidated header in {@link ShowTool} (where the actions live in the card
+ * header instead, so nothing is duplicated).
+ */
+function useServicePreview(url: string, label?: string, sessionId?: string) {
   const {
     enabled: navigationEnabled,
     openTab,
@@ -265,21 +279,157 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
   const displayLabel = label || (proxy ? `localhost:${proxy.port}` : url);
 
   const navigateToPreviewTab = useCallback(() => {
-    if (!proxy) return;
+    if (!navigationEnabled || !proxy) return;
+    const parsed = parseLocalhostUrl(url);
+    const sid = sessionId || getActiveSessionContext()?.sourceSessionId || null;
+
+    // Inside a session → open the right-side panel's internal browser, matching
+    // a localhost link click in chat (see LocalhostLinkInterceptor.openInPanel).
+    if (sid && parsed) {
+      useTabStore.getState().openTab({
+        id: sessionPreviewTabId(sid),
+        title: label || `localhost:${proxy.port}`,
+        type: 'preview',
+        href:
+          typeof window !== 'undefined'
+            ? window.location.pathname
+            : `/p/${proxy.port}`,
+        metadata: enrichPreviewMetadata({
+          url: proxy.proxyUrl,
+          port: proxy.port,
+          originalUrl: url,
+          path: parsed.path,
+        }),
+      });
+      useSessionBrowserStore.getState().setView(sid, 'browser');
+      useKortixComputerStore.getState().setIsSidePanelOpen(true);
+      return;
+    }
+
+    // Outside a session (no side panel host) → fall back to a standalone tab.
     openTab({
       id: `preview:${proxy.port}`,
-      title: `localhost:${proxy.port}`,
+      title: label || `localhost:${proxy.port}`,
       type: 'preview',
       href: `/p/${proxy.port}`,
-      metadata: {
+      metadata: enrichPreviewMetadata({
         url: proxy.proxyUrl,
         port: proxy.port,
         originalUrl: url,
-      },
+      }),
     });
-  }, [openTab, proxy, url]);
+  }, [navigationEnabled, openTab, proxy, url, label, sessionId]);
 
+  const openInBrowser = useCallback(() => {
+    openExternal(previewUrl ?? undefined);
+  }, [openExternal, previewUrl]);
+
+  const onLoad = useCallback(() => setIsLoading(false), []);
+  const onError = useCallback(() => {
+    setIsLoading(false);
+    setHasError(true);
+  }, []);
+
+  return {
+    navigationEnabled,
+    proxy,
+    previewUrl,
+    isLoading,
+    hasError,
+    refreshKey,
+    handleRefresh,
+    displayLabel,
+    navigateToPreviewTab,
+    openInBrowser,
+    viewportRef,
+    viewportScale,
+    onLoad,
+    onError,
+  };
+}
+
+type ServicePreviewState = ReturnType<typeof useServicePreview>;
+
+/** Scaled 1920×1080 iframe viewport — the chrome-less body of a service preview. */
+function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
+  const {
+    previewUrl,
+    displayLabel,
+    isLoading,
+    hasError,
+    refreshKey,
+    handleRefresh,
+    viewportRef,
+    viewportScale,
+    onLoad,
+    onError,
+  } = preview;
   const scaledHeight = viewportScale > 0 ? Math.round(1080 * viewportScale) : 0;
+
+  return (
+    <div
+      ref={viewportRef}
+      className="relative overflow-hidden bg-white"
+      style={{ height: scaledHeight > 0 ? `${scaledHeight}px` : '400px' }}
+    >
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-10">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <span className="text-xs">Loading preview...</span>
+          </div>
+        </div>
+      )}
+      {hasError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
+          <div className="text-center text-muted-foreground">
+            <p className="text-xs">Failed to load</p>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="text-xs text-primary hover:underline mt-1"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+      {viewportScale > 0 && (
+        <iframe
+          key={refreshKey}
+          src={previewUrl ?? undefined}
+          title={displayLabel}
+          className="border-0 bg-white"
+          style={{
+            width: '1920px',
+            height: '1080px',
+            transform: `scale(${viewportScale})`,
+            transformOrigin: '0 0',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+          }}
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads allow-modals"
+          onLoad={onLoad}
+          onError={onError}
+        />
+      )}
+    </div>
+  );
+}
+
+function InlineServicePreview({ url, label }: { url: string; label?: string }) {
+  const preview = useServicePreview(url, label);
+  const {
+    navigationEnabled,
+    proxy,
+    previewUrl,
+    isLoading,
+    handleRefresh,
+    displayLabel,
+    navigateToPreviewTab,
+    openInBrowser,
+  } = preview;
 
   return (
     <div className="overflow-hidden">
@@ -310,7 +460,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
             <button
               type="button"
               disabled={!navigationEnabled || !previewUrl}
-              onClick={() => openExternal(previewUrl ?? undefined)}
+              onClick={openInBrowser}
               className={cn(
                 'p-1 rounded text-muted-foreground/50 transition-colors',
                 navigationEnabled && previewUrl
@@ -342,58 +492,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
         )}
       </div>
 
-      {/* Scaled 1920×1080 viewport — iframe renders at full desktop res, CSS-scaled to fit */}
-      <div
-        ref={viewportRef}
-        className="relative overflow-hidden bg-white"
-        style={{ height: scaledHeight > 0 ? `${scaledHeight}px` : '400px' }}
-      >
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-10">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              <span className="text-xs">Loading preview...</span>
-            </div>
-          </div>
-        )}
-        {hasError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background z-10">
-            <div className="text-center text-muted-foreground">
-              <p className="text-xs">Failed to load</p>
-              <button
-                type="button"
-                onClick={handleRefresh}
-                className="text-xs text-primary hover:underline mt-1"
-              >
-                Retry
-              </button>
-            </div>
-          </div>
-        )}
-        {viewportScale > 0 && (
-          <iframe
-            key={refreshKey}
-            src={previewUrl ?? undefined}
-            title={displayLabel}
-            className="border-0 bg-white"
-            style={{
-              width: '1920px',
-              height: '1080px',
-              transform: `scale(${viewportScale})`,
-              transformOrigin: '0 0',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-            }}
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-downloads allow-modals"
-            onLoad={() => setIsLoading(false)}
-            onError={() => {
-              setIsLoading(false);
-              setHasError(true);
-            }}
-          />
-        )}
-      </div>
+      <ServicePreviewViewport preview={preview} />
     </div>
   );
 }
@@ -4621,7 +4720,19 @@ function useShowOpenInTab(props: {
   ]);
 }
 
-function ShowTool({ part }: ToolProps) {
+/** Build the static-file-server localhost URL for an HTML file path (for iframe preview). */
+function buildHtmlStaticUrl(filePath: string): string {
+  const port = parseInt(SANDBOX_PORTS.STATIC_FILE_SERVER ?? '3211', 10);
+  const normalized = ensureWorkspacePath(filePath);
+  const encoded = normalized
+    .split('/')
+    .filter(Boolean)
+    .map(encodeURIComponent)
+    .join('/');
+  return `http://localhost:${port}/open?path=/${encoded}`;
+}
+
+function ShowTool({ part, sessionId }: ToolProps) {
   const input = partInput(part);
   const running = useContext(ToolRunningContext);
   const { enabled: navigationEnabled } = useToolNavigation();
@@ -4684,6 +4795,25 @@ function ShowTool({ part }: ToolProps) {
         ? 'Open Link'
         : 'Open File';
 
+  // ── Website / service preview ──
+  // Single-item localhost URLs and HTML file paths render as an embedded iframe.
+  // Render it directly here so the actions (refresh / open in browser / preview)
+  // live in the card header — no duplicated inner browser toolbar.
+  const activeContent = isCarousel ? currentItem?.content || '' : content;
+  const resolvedPreviewUrl = isCarousel
+    ? ''
+    : activeHasLocalhostUrl
+      ? activeUrl
+      : activeIsHtmlFilePath && !activeContent && activePath
+        ? buildHtmlStaticUrl(activePath)
+        : '';
+  const isWebsitePreview = !!resolvedPreviewUrl;
+  const preview = useServicePreview(
+    resolvedPreviewUrl,
+    title || description || undefined,
+    sessionId,
+  );
+
   // Loading state
   if (running && !type && !items) {
     return (
@@ -4707,7 +4837,11 @@ function ShowTool({ part }: ToolProps) {
           ? showDomain(url) || 'Link'
           : 'Output');
 
-  const headerIcon = isCarousel ? currentItem?.type || 'image' : type;
+  const headerIcon = isCarousel
+    ? currentItem?.type || 'image'
+    : isWebsitePreview
+      ? 'url'
+      : type;
 
   return (
     <div
@@ -4733,7 +4867,61 @@ function ShowTool({ part }: ToolProps) {
             {items!.length} items
           </span>
         )}
-        {canOpenInTab && (
+        {isWebsitePreview ? (
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={preview.handleRefresh}
+                  className="p-1.5 rounded-lg text-muted-foreground/60 hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <RefreshCw
+                    className={cn(
+                      'size-3.5',
+                      preview.isLoading && 'animate-spin',
+                    )}
+                  />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Refresh</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  disabled={!navigationEnabled || !preview.previewUrl}
+                  onClick={preview.openInBrowser}
+                  className={cn(
+                    'p-1.5 rounded-lg text-muted-foreground/60 transition-colors',
+                    navigationEnabled && preview.previewUrl
+                      ? 'hover:bg-muted hover:text-foreground'
+                      : 'opacity-50 cursor-not-allowed',
+                  )}
+                >
+                  <ExternalLink className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Open in browser</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  onClick={preview.navigateToPreviewTab}
+                  variant="subtle"
+                  size="xs"
+                  disabled={!navigationEnabled || !preview.proxy}
+                  className="ml-0.5"
+                >
+                  <MonitorPlay className="size-3.5" />
+                  Preview
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Open as tab</TooltipContent>
+            </Tooltip>
+          </div>
+        ) : canOpenInTab ? (
           <button
             type="button"
             disabled={!navigationEnabled}
@@ -4752,16 +4940,18 @@ function ShowTool({ part }: ToolProps) {
             )}
             {openInTabLabel}
           </button>
-        )}
+        ) : null}
       </div>
 
-      {/* ── Content — carousel or single ── */}
+      {/* ── Content — carousel, website preview, or single ── */}
       {isCarousel ? (
         <ShowCarousel
           items={items!}
           LocalhostPreview={InlineServicePreview}
           onIndexChange={setCarouselIndex}
         />
+      ) : isWebsitePreview ? (
+        <ServicePreviewViewport preview={preview} />
       ) : (
         <>
           <ShowContentRenderer
