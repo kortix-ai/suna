@@ -8,6 +8,7 @@ export {
   type AuthorizeTarget,
   type AuthorizeResult,
   type PolicyConditions,
+  type PolicyScopeType,
   type PermissionBoundary,
   type RequestContext,
 } from './engine';

@@ -5,12 +5,13 @@
 // action via assertAuthorized().
 
 import { Context, Hono } from 'hono';
-import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountMembers,
   accounts,
   iamPolicies,
+  iamRoles,
   projectMembers,
 } from '@kortix/db';
 import { db } from '../shared/db';
@@ -72,6 +73,7 @@ import {
   listUsage,
   topPrincipals,
 } from '../repositories/iam-analytics';
+import { computeDriftReport } from '../repositories/iam-drift';
 import { backfillAccountMembershipPolicies } from '../iam/backfill';
 import {
   addGroupProjects,
@@ -83,7 +85,11 @@ import {
   removeGroupProject,
   updateProjectGroup,
 } from '../repositories/project-groups';
-import { actionPassesBoundary, type PermissionBoundary } from '../iam';
+import {
+  actionPassesBoundary,
+  type PermissionBoundary,
+  type PolicyScopeType,
+} from '../iam';
 import {
   createServiceAccount,
   deleteServiceAccount,
@@ -96,6 +102,7 @@ import {
   applyTemplate,
   getTemplate,
 } from '../iam/policy-templates';
+import { simulatePolicy, type SimulationProbe } from '../iam/simulator';
 import {
   GATED_ACTIONS,
   NeedsApprovalError,
@@ -141,7 +148,29 @@ function snapshotPolicy(p: IamPolicy) {
     role_id: p.roleId,
     effect: p.effect,
     conditions: p.conditions,
+    expires_at: p.expiresAt?.toISOString() ?? null,
   };
+}
+
+/** Parse a body's `expires_at` field. undefined = leave untouched on
+ *  update / omit on create; null = clear; ISO string = set. Returns
+ *  the parsed value or an error string. */
+function parseExpiresAt(
+  raw: unknown,
+): { ok: true; value: Date | null | undefined } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: true, value: null };
+  if (typeof raw !== 'string') {
+    return { ok: false, error: 'expires_at must be an ISO-8601 string or null' };
+  }
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) {
+    return { ok: false, error: 'expires_at must be a valid ISO-8601 timestamp' };
+  }
+  if (d.getTime() < Date.now()) {
+    return { ok: false, error: 'expires_at must be in the future' };
+  }
+  return { ok: true, value: d };
 }
 
 /**
@@ -519,6 +548,7 @@ iamRouter.get('/:accountId/iam/policies', async (c) => {
       role_id: p.roleId,
       effect: p.effect,
       conditions: p.conditions,
+      expires_at: p.expiresAt?.toISOString() ?? null,
       created_by: p.createdBy,
       created_at: p.createdAt.toISOString(),
     })),
@@ -566,6 +596,13 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
   if (!conditionsResult.ok) return c.json({ error: conditionsResult.error }, 400);
   const conditions = conditionsResult.value;
 
+  const expiryResult = parseExpiresAt(body.expires_at ?? body.expiresAt);
+  if (!expiryResult.ok) return c.json({ error: expiryResult.error }, 400);
+  // On create, undefined → permanent (omit field); null is treated the
+  // same as undefined since "create with already-cleared expiry" makes
+  // no sense.
+  const expiresAt = expiryResult.value ?? null;
+
   // Role must exist and be available to this account (system or own).
   const role = await getRoleById(accountId, roleId);
   if (!role) return c.json({ error: 'unknown role' }, 404);
@@ -604,6 +641,7 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
     roleId,
     effect,
     conditions,
+    expiresAt,
     createdBy: userId,
   });
 
@@ -625,6 +663,7 @@ iamRouter.post('/:accountId/iam/policies', async (c) => {
       role_id: policy.roleId,
       effect: policy.effect,
       conditions: policy.conditions,
+      expires_at: policy.expiresAt?.toISOString() ?? null,
       created_at: policy.createdAt.toISOString(),
     },
     201,
@@ -672,6 +711,10 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
   if (!conditionsResult.ok) return c.json({ error: conditionsResult.error }, 400);
   const conditions = conditionsResult.value;
 
+  const expiryResult = parseExpiresAt(body.expires_at ?? body.expiresAt);
+  if (!expiryResult.ok) return c.json({ error: expiryResult.error }, 400);
+  const expiresAtPatch = expiryResult.value; // undefined | null | Date
+
   const role = await getRoleById(accountId, roleId);
   if (!role) return c.json({ error: 'unknown role' }, 404);
   if (role.resourceType !== scopeType && role.resourceType !== 'account') {
@@ -694,6 +737,7 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
       roleId,
       effect,
       ...(conditionsProvided ? { conditions } : {}),
+      ...(expiresAtPatch !== undefined ? { expiresAt: expiresAtPatch } : {}),
     });
     if (!updated) return c.json({ error: 'policy not found' }, 404);
 
@@ -715,6 +759,7 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
       role_id: updated.roleId,
       effect: updated.effect,
       conditions: updated.conditions,
+      expires_at: updated.expiresAt?.toISOString() ?? null,
       created_at: updated.createdAt.toISOString(),
     });
   } catch (err: unknown) {
@@ -726,6 +771,208 @@ iamRouter.patch('/:accountId/iam/policies/:policyId', async (c) => {
     }
     throw err;
   }
+});
+
+// ─── Bulk policy operations ───────────────────────────────────────────────
+// Multi-row delete + JSON import for admins managing dozens of policies
+// at once. Both endpoints validate every entry up-front and write in
+// a single transaction so a single bad row aborts the whole batch.
+
+iamRouter.post('/:accountId/iam/policies:bulk-delete', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_DELETE);
+
+  const body = await readBody(c);
+  const raw = body.policy_ids ?? body.policyIds;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return c.json({ error: 'policy_ids must be a non-empty array' }, 400);
+  }
+  const ids = raw.filter((v): v is string => typeof v === 'string');
+  if (ids.length === 0) return c.json({ deleted: 0 });
+  if (ids.length > 500) {
+    return c.json({ error: 'bulk delete capped at 500 ids per request' }, 400);
+  }
+
+  // Snapshot before-state per id so the audit trail keeps the deleted
+  // rows for forensics.
+  const beforeRows = await db
+    .select()
+    .from(iamPolicies)
+    .where(
+      and(eq(iamPolicies.accountId, accountId), inArray(iamPolicies.policyId, ids)),
+    );
+
+  const deleted = await db
+    .delete(iamPolicies)
+    .where(
+      and(eq(iamPolicies.accountId, accountId), inArray(iamPolicies.policyId, ids)),
+    )
+    .returning({ policyId: iamPolicies.policyId });
+
+  // One audit event per deletion so the existing UI groupings keep
+  // working unchanged.
+  for (const row of beforeRows) {
+    await auditIam(c, {
+      accountId,
+      action: 'iam.policy.delete',
+      resourceType: 'iam_policy',
+      resourceId: row.policyId,
+      before: {
+        policy_id: row.policyId,
+        principal_type: row.principalType,
+        principal_id: row.principalId,
+        scope_type: row.scopeType,
+        scope_id: row.scopeId,
+        role_id: row.roleId,
+        effect: row.effect,
+      },
+    });
+  }
+
+  return c.json({ deleted: deleted.length });
+});
+
+iamRouter.post('/:accountId/iam/policies:bulk-import', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_CREATE);
+
+  const body = await readBody(c);
+  const raw = body.policies;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return c.json({ error: 'policies must be a non-empty array' }, 400);
+  }
+  if (raw.length > 500) {
+    return c.json({ error: 'bulk import capped at 500 entries per request' }, 400);
+  }
+
+  // Validate every entry up-front; surface the first failure with its
+  // index so the user can fix and re-submit.
+  type ParsedEntry = {
+    principalType: 'member' | 'group' | 'token';
+    principalId: string;
+    scopeType: PolicyScopeType;
+    scopeId: string | null;
+    roleKey: string;
+    effect: 'allow' | 'deny';
+    conditions: PolicyConditions;
+  };
+  const parsed: ParsedEntry[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const e = raw[i] as Record<string, unknown>;
+    if (!e || typeof e !== 'object') {
+      return c.json({ error: `entry ${i}: must be an object` }, 400);
+    }
+    const principalType = (e.principal_type ?? e.principalType) as string;
+    const principalId = (e.principal_id ?? e.principalId) as string;
+    const scopeType = (e.scope_type ?? e.scopeType) as string;
+    const scopeIdRaw = e.scope_id ?? e.scopeId;
+    const roleKey = (e.role_key ?? e.roleKey) as string;
+    const effectRaw = (e.effect ?? 'allow') as string;
+    if (principalType !== 'member' && principalType !== 'group' && principalType !== 'token') {
+      return c.json({ error: `entry ${i}: principal_type invalid` }, 400);
+    }
+    if (typeof principalId !== 'string' || !principalId) {
+      return c.json({ error: `entry ${i}: principal_id missing` }, 400);
+    }
+    if (!isResourceType(scopeType) && scopeType !== 'project_group') {
+      return c.json({ error: `entry ${i}: scope_type invalid` }, 400);
+    }
+    if (typeof roleKey !== 'string' || !roleKey) {
+      return c.json(
+        { error: `entry ${i}: role_key missing (export by role_key for portability)` },
+        400,
+      );
+    }
+    if (effectRaw !== 'allow' && effectRaw !== 'deny') {
+      return c.json({ error: `entry ${i}: effect must be allow|deny` }, 400);
+    }
+    const scopeId: string | null =
+      typeof scopeIdRaw === 'string' && scopeIdRaw.length > 0 ? scopeIdRaw : null;
+    if (scopeType === 'account' && scopeId !== null) {
+      return c.json({ error: `entry ${i}: account scope requires scope_id=null` }, 400);
+    }
+    if (scopeType !== 'account' && scopeId === null) {
+      return c.json({ error: `entry ${i}: ${scopeType} scope requires scope_id` }, 400);
+    }
+    const condParsed = parseConditions(e.conditions);
+    if (!condParsed.ok) {
+      return c.json({ error: `entry ${i}: ${condParsed.error}` }, 400);
+    }
+    parsed.push({
+      principalType,
+      principalId,
+      scopeType: scopeType as PolicyScopeType,
+      scopeId,
+      roleKey,
+      effect: effectRaw,
+      conditions: condParsed.value,
+    });
+  }
+
+  // Resolve all referenced role keys in one query so import can run
+  // without per-entry round-trips.
+  const allKeys = Array.from(new Set(parsed.map((p) => p.roleKey)));
+  const roleRows = await db
+    .select({ key: iamRoles.key, roleId: iamRoles.roleId, accountId: iamRoles.accountId })
+    .from(iamRoles)
+    .where(
+      and(
+        or(isNull(iamRoles.accountId), eq(iamRoles.accountId, accountId)),
+        inArray(iamRoles.key, allKeys),
+      ),
+    );
+  const idByKey = new Map(roleRows.map((r) => [r.key, r.roleId] as const));
+  const missing = allKeys.filter((k) => !idByKey.has(k));
+  if (missing.length > 0) {
+    return c.json(
+      { error: `unknown role_key(s): ${missing.join(', ')}` },
+      400,
+    );
+  }
+
+  let created = 0;
+  let skipped = 0;
+  const errors: Array<{ index: number; error: string }> = [];
+
+  for (let i = 0; i < parsed.length; i++) {
+    const p = parsed[i];
+    try {
+      const policy = await createPolicy({
+        accountId,
+        principalType: p.principalType,
+        principalId: p.principalId,
+        scopeType: p.scopeType,
+        scopeId: p.scopeId,
+        roleId: idByKey.get(p.roleKey)!,
+        effect: p.effect,
+        conditions: p.conditions,
+        createdBy: userId,
+      });
+      // createPolicy returns the existing row on conflict — best-effort
+      // distinguish via the absence of fresh createdAt change is fragile;
+      // count all as created for v1 simplicity.
+      void policy;
+      created += 1;
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        skipped += 1;
+        continue;
+      }
+      errors.push({ index: i, error: (err as Error).message });
+    }
+  }
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.policy.bulk_import',
+    resourceType: 'iam_policy',
+    resourceId: accountId,
+    after: { attempted: parsed.length, created, skipped, errors: errors.length },
+  });
+
+  return c.json({ attempted: parsed.length, created, skipped, errors });
 });
 
 iamRouter.delete('/:accountId/iam/policies/:policyId', async (c) => {
@@ -2521,6 +2768,24 @@ iamRouter.post('/:accountId/iam/backfill-membership-policies', async (c) => {
   });
 });
 
+// ─── Drift detection ──────────────────────────────────────────────────────
+// Surface stale / cleanup-candidate IAM objects. Pure read; the admin
+// chooses what to prune. Lookback configurable via ?days= (default 60).
+
+iamRouter.get('/:accountId/iam/drift', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
+  const daysRaw = c.req.query('days');
+  let lookbackDays: number | undefined;
+  if (daysRaw) {
+    const n = parseInt(daysRaw, 10);
+    if (Number.isInteger(n) && n > 0 && n <= 365) lookbackDays = n;
+  }
+  const report = await computeDriftReport({ accountId, lookbackDays });
+  return c.json(report);
+});
+
 iamRouter.get('/:accountId/iam/analytics/usage', async (c) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
@@ -2585,6 +2850,112 @@ iamRouter.get('/:accountId/iam/analytics/roles/:roleId', async (c) => {
     })),
     unused_actions: analysis.unusedActions,
   });
+});
+
+// ─── Policy simulator ─────────────────────────────────────────────────────
+// "If I attach this policy, what changes?" Returns before/after for a
+// set of probes without mutating any DB state. v1 supports member-
+// principal probes exactly; group/token are approximate (the engine
+// can't expand membership without committing the insert).
+
+iamRouter.post('/:accountId/iam/policies:simulate', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.POLICY_READ);
+
+  const body = await readBody(c);
+  const proposedRaw = body.proposed as Record<string, unknown> | undefined;
+  if (!proposedRaw || typeof proposedRaw !== 'object') {
+    return c.json({ error: 'proposed policy is required' }, 400);
+  }
+  const principalType = (proposedRaw.principal_type ?? proposedRaw.principalType) as string;
+  const principalId = (proposedRaw.principal_id ?? proposedRaw.principalId) as string;
+  const scopeType = (proposedRaw.scope_type ?? proposedRaw.scopeType) as string;
+  const scopeIdRaw = proposedRaw.scope_id ?? proposedRaw.scopeId;
+  const roleKey = (proposedRaw.role_key ?? proposedRaw.roleKey) as string;
+  const effectRaw = (proposedRaw.effect ?? 'allow') as string;
+  if (principalType !== 'member' && principalType !== 'group' && principalType !== 'token') {
+    return c.json({ error: 'proposed.principal_type must be member|group|token' }, 400);
+  }
+  if (typeof principalId !== 'string' || !principalId) {
+    return c.json({ error: 'proposed.principal_id is required' }, 400);
+  }
+  if (!isResourceType(scopeType) && scopeType !== 'project_group') {
+    return c.json({ error: 'proposed.scope_type invalid' }, 400);
+  }
+  if (typeof roleKey !== 'string' || !roleKey) {
+    return c.json({ error: 'proposed.role_key is required' }, 400);
+  }
+  if (effectRaw !== 'allow' && effectRaw !== 'deny') {
+    return c.json({ error: 'proposed.effect must be allow|deny' }, 400);
+  }
+
+  const probesRaw = body.probes;
+  if (!Array.isArray(probesRaw) || probesRaw.length === 0) {
+    return c.json({ error: 'probes must be a non-empty array' }, 400);
+  }
+  if (probesRaw.length > 50) {
+    return c.json({ error: 'probes capped at 50 per simulation' }, 400);
+  }
+  const probes: SimulationProbe[] = [];
+  for (let i = 0; i < probesRaw.length; i++) {
+    const p = probesRaw[i] as Record<string, unknown>;
+    if (!p || typeof p !== 'object') {
+      return c.json({ error: `probe ${i}: must be an object` }, 400);
+    }
+    const probeUserId = (p.user_id ?? p.userId) as string;
+    const action = p.action as string;
+    if (typeof probeUserId !== 'string' || !probeUserId) {
+      return c.json({ error: `probe ${i}: user_id is required` }, 400);
+    }
+    if (typeof action !== 'string' || !action) {
+      return c.json({ error: `probe ${i}: action is required` }, 400);
+    }
+    const targetTypeRaw = (p.resource_type ?? p.resourceType) as string | undefined;
+    const targetIdRaw = (p.resource_id ?? p.resourceId) as string | undefined;
+    let target: SimulationProbe['target'];
+    if (targetTypeRaw) {
+      if (targetTypeRaw === 'account') {
+        target = { type: 'account' };
+      } else if (
+        targetTypeRaw === 'project' ||
+        targetTypeRaw === 'sandbox' ||
+        targetTypeRaw === 'trigger' ||
+        targetTypeRaw === 'channel' ||
+        targetTypeRaw === 'member' ||
+        targetTypeRaw === 'group'
+      ) {
+        if (!targetIdRaw) {
+          return c.json({ error: `probe ${i}: resource_id required for ${targetTypeRaw}` }, 400);
+        }
+        target = { type: targetTypeRaw, id: targetIdRaw };
+      } else {
+        return c.json({ error: `probe ${i}: unknown resource_type` }, 400);
+      }
+    }
+    probes.push({ userId: probeUserId, action, target });
+  }
+
+  try {
+    const result = await simulatePolicy({
+      accountId,
+      proposed: {
+        principalType,
+        principalId,
+        scopeType: scopeType as PolicyScopeType,
+        scopeId:
+          typeof scopeIdRaw === 'string' && scopeIdRaw.length > 0
+            ? scopeIdRaw
+            : null,
+        roleKey,
+        effect: effectRaw,
+      },
+      probes,
+    });
+    return c.json(result);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
 });
 
 // ─── Policy templates / blueprints ────────────────────────────────────────

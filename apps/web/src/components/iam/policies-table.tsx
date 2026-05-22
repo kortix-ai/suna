@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronDown,
   ChevronRight,
+  Download,
   KeyRound,
   Loader2,
   MoreHorizontal,
@@ -17,7 +18,9 @@ import {
   Plus,
   Search,
   ShieldCheck,
+  Sparkles,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -55,18 +58,23 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   type AccountGroup,
+  type BulkImportEntry,
   type IamPolicy,
   type IamRole,
   type PolicyConditions,
   type PolicyEffect,
   type PolicyScopeType,
+  type PolicyTemplate,
   type PrincipalType,
   type ProjectGroup,
   type ResourceType,
+  applyPolicyTemplate,
+  bulkImportPolicies,
   createPolicy,
   deletePolicy,
   listGroups,
   listPolicies,
+  listPolicyTemplates,
   listProjectGroups,
   listRoles,
   updatePolicy,
@@ -118,6 +126,8 @@ export function PoliciesTable({
   // exclusive with createOpen — opening one closes the other.
   const [editTarget, setEditTarget] = useState<IamPolicy | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<IamPolicy | null>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const queryKey = ['iam-policies', accountId, principalType, principalId];
 
@@ -181,6 +191,38 @@ export function PoliciesTable({
 
   const policies = policiesQuery.data ?? [];
 
+  function exportPoliciesAsJson() {
+    // Use role_key (not role_id) so the JSON is portable across accounts.
+    // Role lookup table: role_id → role_key.
+    const roleKeyById = new Map<string, string>();
+    for (const r of rolesQuery.data ?? []) {
+      roleKeyById.set(r.role_id, r.key);
+    }
+    const exportEntries: BulkImportEntry[] = policies.map((p) => ({
+      principal_type: p.principal_type,
+      principal_id: p.principal_id,
+      scope_type: p.scope_type,
+      scope_id: p.scope_id,
+      role_key: roleKeyById.get(p.role_id) ?? '__unknown__',
+      effect: p.effect,
+      conditions: p.conditions,
+    }));
+    const payload = {
+      exported_at: new Date().toISOString(),
+      principal_label: principalLabel,
+      policies: exportEntries,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `iam-policies-${principalType}-${principalId}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <SectionCard
@@ -188,10 +230,44 @@ export function PoliciesTable({
         description={`Policies grant ${principalLabel} access to specific resources.`}
         action={
           canManage && (
-            <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              Grant access
-            </Button>
+            <div className="flex gap-1.5">
+              {policies.length > 0 && (
+                <Button
+                  onClick={exportPoliciesAsJson}
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  title="Download policies as JSON (portable across accounts)"
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                </Button>
+              )}
+              <Button
+                onClick={() => setImportOpen(true)}
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                title="Bulk-import policies from JSON"
+              >
+                <Upload className="h-4 w-4" />
+                Import
+              </Button>
+              <Button
+                onClick={() => setTemplatesOpen(true)}
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                title="Apply a curated set of policies in one click"
+              >
+                <Sparkles className="h-4 w-4" />
+                From template
+              </Button>
+              <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                Grant access
+              </Button>
+            </div>
           )
         }
         flush
@@ -283,6 +359,16 @@ export function PoliciesTable({
                             {c}
                           </Badge>
                         ))}
+                        {p.expires_at && (
+                          <Badge
+                            variant="outline"
+                            size="sm"
+                            className="border-amber-500/40 text-amber-700 dark:text-amber-300"
+                            title={`Auto-revokes at ${new Date(p.expires_at).toLocaleString()}`}
+                          >
+                            expires in {formatExpiryShort(p.expires_at)}
+                          </Badge>
+                        )}
                       </div>
                     ) : (
                       <span className="text-xs text-muted-foreground">unknown role</span>
@@ -364,7 +450,400 @@ export function PoliciesTable({
           if (deleteTarget) deleteMutation.mutate(deleteTarget.policy_id);
         }}
       />
+
+      <ApplyTemplateDialog
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        accountId={accountId}
+        principalType={principalType}
+        principalId={principalId}
+        projects={projectsQuery.data ?? []}
+        projectGroups={projectGroupsQuery.data ?? []}
+        onApplied={() => queryClient.invalidateQueries({ queryKey })}
+      />
+
+      <BulkImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        accountId={accountId}
+        principalType={principalType}
+        principalId={principalId}
+        onImported={() => queryClient.invalidateQueries({ queryKey })}
+      />
     </>
+  );
+}
+
+// ─── Apply template dialog ─────────────────────────────────────────────────
+
+// ─── Bulk import dialog ────────────────────────────────────────────────────
+
+function BulkImportDialog({
+  open,
+  onOpenChange,
+  accountId,
+  principalType,
+  principalId,
+  onImported,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  accountId: string;
+  principalType: PrincipalType;
+  principalId: string;
+  onImported: () => void;
+}) {
+  const [json, setJson] = useState('');
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<BulkImportEntry[] | null>(null);
+  const [retargetToCurrent, setRetargetToCurrent] = useState(true);
+
+  function parse() {
+    setParseError(null);
+    setPreview(null);
+    if (!json.trim()) return;
+    try {
+      const data = JSON.parse(json);
+      // Accept either the exported object shape ({ policies: [...] })
+      // or a bare array of entries.
+      let entries: BulkImportEntry[];
+      if (Array.isArray(data)) {
+        entries = data;
+      } else if (data && Array.isArray(data.policies)) {
+        entries = data.policies;
+      } else {
+        setParseError('Expected an array of policies or an object with a "policies" array.');
+        return;
+      }
+      if (retargetToCurrent) {
+        entries = entries.map((e) => ({
+          ...e,
+          principal_type: principalType,
+          principal_id: principalId,
+        }));
+      }
+      setPreview(entries);
+    } catch (err) {
+      setParseError((err as Error).message);
+    }
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!preview) throw new Error('parse JSON first');
+      return bulkImportPolicies(accountId, preview);
+    },
+    onSuccess: (res) => {
+      const note =
+        res.errors.length > 0
+          ? ` (${res.errors.length} error${res.errors.length === 1 ? '' : 's'})`
+          : '';
+      toast.success(
+        `Imported ${res.created} of ${res.attempted}; ${res.skipped} already existed${note}.`,
+      );
+      onImported();
+      setJson('');
+      setPreview(null);
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to import'),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Bulk import policies</DialogTitle>
+          <DialogDescription>
+            Paste JSON exported from this UI or built by hand. Entries
+            reference roles by <span className="font-mono">role_key</span> so
+            they&apos;re portable across accounts.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <textarea
+            value={json}
+            onChange={(e) => {
+              setJson(e.target.value);
+              setPreview(null);
+              setParseError(null);
+            }}
+            placeholder='[{"principal_type":"member","principal_id":"...","scope_type":"project","scope_id":"...","role_key":"project_editor"}]'
+            className="h-48 w-full resize-y rounded-md border border-border/60 bg-background p-2 font-mono text-xs"
+            disabled={mutation.isPending}
+          />
+
+          <label className="flex cursor-pointer items-start gap-2 text-xs text-foreground">
+            <input
+              type="checkbox"
+              checked={retargetToCurrent}
+              onChange={(e) => setRetargetToCurrent(e.target.checked)}
+              className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
+              disabled={mutation.isPending}
+            />
+            <span>
+              <span className="font-medium">Re-target to this {principalType}</span>
+              <span className="block text-[11px] text-muted-foreground">
+                Overrides the principal in every entry so you can import an
+                export from a different member / group.
+              </span>
+            </span>
+          </label>
+
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={parse} disabled={mutation.isPending}>
+              Parse & preview
+            </Button>
+            {preview && (
+              <span className="text-xs text-muted-foreground">
+                {preview.length} {preview.length === 1 ? 'entry' : 'entries'} parsed
+              </span>
+            )}
+          </div>
+
+          {parseError && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              {parseError}
+            </p>
+          )}
+
+          {preview && preview.length > 0 && (
+            <div className="max-h-40 overflow-y-auto rounded-md border border-border/60 px-3 py-2 text-[11px]">
+              {preview.map((e, i) => (
+                <div key={i} className="flex items-center gap-2 py-0.5 font-mono">
+                  <Badge variant="outline" size="sm" className="text-[9px]">
+                    {e.effect ?? 'allow'}
+                  </Badge>
+                  <span className="text-foreground">{e.role_key}</span>
+                  <span className="text-muted-foreground">on</span>
+                  <span className="text-foreground">
+                    {e.scope_type}
+                    {e.scope_id ? `:${e.scope_id.slice(0, 8)}…` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!preview || preview.length === 0 || mutation.isPending}
+            className="gap-1.5"
+          >
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Import {preview ? `(${preview.length})` : ''}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ApplyTemplateDialog({
+  open,
+  onOpenChange,
+  accountId,
+  principalType,
+  principalId,
+  projects,
+  projectGroups,
+  onApplied,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  accountId: string;
+  principalType: PrincipalType;
+  principalId: string;
+  projects: KortixProject[];
+  projectGroups: ProjectGroup[];
+  onApplied: () => void;
+}) {
+  const [selectedKey, setSelectedKey] = useState<string>('');
+  const [scopeId, setScopeId] = useState<string>('');
+
+  const templatesQuery = useQuery({
+    queryKey: ['policy-templates', accountId],
+    queryFn: () => listPolicyTemplates(accountId),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
+
+  // Show only templates that fit the current principal type.
+  const eligible = useMemo(() => {
+    return (templatesQuery.data ?? []).filter((t) =>
+      t.applies_to.includes(principalType),
+    );
+  }, [templatesQuery.data, principalType]);
+
+  const selected: PolicyTemplate | undefined = useMemo(
+    () => eligible.find((t) => t.key === selectedKey),
+    [eligible, selectedKey],
+  );
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!selected) throw new Error('pick a template');
+      return applyPolicyTemplate(accountId, selected.key, {
+        principal_type: principalType,
+        principal_id: principalId,
+        scope_id:
+          selected.needs_scope_id === 'account' ? null : scopeId || null,
+      });
+    },
+    onSuccess: (res) => {
+      const created = res.created.length;
+      const skipped = res.skipped.length;
+      if (created > 0) {
+        toast.success(
+          `Applied template — ${created} ${created === 1 ? 'policy' : 'policies'} created${skipped > 0 ? `, ${skipped} skipped (already existed)` : ''}.`,
+        );
+      } else if (skipped > 0) {
+        toast.info('Nothing applied — all policies already exist.');
+      } else {
+        toast.success('Template applied');
+      }
+      onApplied();
+      setSelectedKey('');
+      setScopeId('');
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to apply template'),
+  });
+
+  const needsScope =
+    selected && selected.needs_scope_id !== 'account';
+  const ready =
+    !!selected && (!needsScope || !!scopeId);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Apply a policy template</DialogTitle>
+          <DialogDescription>
+            Templates are curated bundles — pick one and we&apos;ll create the
+            matching policies in one shot. Skipped entries already existed.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {templatesQuery.isLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : eligible.length === 0 ? (
+            <p className="rounded-md border border-border/60 px-3 py-3 text-xs text-muted-foreground">
+              No templates apply to this principal type.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {eligible.map((t) => {
+                const isSelected = selectedKey === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => {
+                      setSelectedKey(t.key);
+                      setScopeId('');
+                    }}
+                    className={`flex w-full cursor-pointer flex-col gap-1 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                      isSelected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border/60 hover:bg-muted/40'
+                    }`}
+                    disabled={mutation.isPending}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-foreground">{t.name}</span>
+                      <Badge variant="outline" size="sm" className="text-[10px]">
+                        {t.entries.length}{' '}
+                        {t.entries.length === 1 ? 'policy' : 'policies'}
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{t.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {needsScope && selected && (
+            <div className="space-y-1.5">
+              <Label>
+                {selected.needs_scope_id === 'project' ? 'Project' : 'Project group'}
+              </Label>
+              <Select
+                value={scopeId || undefined}
+                onValueChange={setScopeId}
+                disabled={mutation.isPending}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      selected.needs_scope_id === 'project'
+                        ? 'Pick a project...'
+                        : 'Pick a project group...'
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {selected.needs_scope_id === 'project'
+                    ? projects.length === 0
+                      ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          No projects in this account
+                        </div>
+                      )
+                      : projects.map((p) => (
+                          <SelectItem key={p.project_id} value={p.project_id}>
+                            {p.name}
+                          </SelectItem>
+                        ))
+                    : projectGroups.length === 0
+                      ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          No project groups yet
+                        </div>
+                      )
+                      : projectGroups.map((g) => (
+                          <SelectItem key={g.group_id} value={g.group_id}>
+                            {g.name}
+                          </SelectItem>
+                        ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!ready || mutation.isPending}
+            className="gap-1.5"
+          >
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Apply template
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -382,6 +861,28 @@ function summariseConditions(conditions: PolicyConditions | undefined): string[]
   }
   if (conditions.require_mfa) out.push('MFA required');
   return out;
+}
+
+/** ISO → datetime-local string (the value attribute the input expects). */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  // Trim off the seconds & "Z" so the input is happy.
+  const off = d.getTimezoneOffset() * 60_000;
+  return new Date(d.getTime() - off).toISOString().slice(0, 16);
+}
+
+/** Compact relative-time label for the expiry chip on row badges. */
+function formatExpiryShort(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return iso;
+  if (ms < 0) return 'expired';
+  const days = Math.round(ms / (24 * 60 * 60 * 1000));
+  if (days >= 1) return `${days}d`;
+  const hours = Math.round(ms / (60 * 60 * 1000));
+  if (hours >= 1) return `${hours}h`;
+  const mins = Math.max(1, Math.round(ms / 60_000));
+  return `${mins}m`;
 }
 
 /**
@@ -463,6 +964,13 @@ function CreatePolicyDialog({
   const [cidrDraft, setCidrDraft] = useState('');
   const [cidrError, setCidrError] = useState<string | null>(null);
 
+  // ─── Expiry preset ─────────────────────────────────────────────────
+  // null = permanent; 'iso-string' = custom ISO; '1d'|'7d'|'30d'|'90d' =
+  // relative preset, resolved to an ISO when sent. Most admins want
+  // "auto-revoke in N days" so we keep the picker fast with presets.
+  const [expiryPreset, setExpiryPreset] = useState<'permanent' | '1d' | '7d' | '30d' | '90d' | 'custom'>('permanent');
+  const [expiryCustomISO, setExpiryCustomISO] = useState('');
+
   // Hydrate from the policy being edited whenever the dialog opens in edit
   // mode. Clearing happens via reset() on close.
   useEffect(() => {
@@ -482,6 +990,13 @@ function CreatePolicyDialog({
       // Auto-expand if there's anything to show — admins shouldn't have
       // to hunt for conditions they already configured.
       setConditionsOpen(cidrs.length > 0 || mfa);
+      if (editing.expires_at) {
+        setExpiryPreset('custom');
+        setExpiryCustomISO(editing.expires_at);
+      } else {
+        setExpiryPreset('permanent');
+        setExpiryCustomISO('');
+      }
     }
   }, [open, editing]);
 
@@ -520,6 +1035,24 @@ function CreatePolicyDialog({
     setIpCidrs([]);
     setCidrDraft('');
     setCidrError(null);
+    setExpiryPreset('permanent');
+    setExpiryCustomISO('');
+  }
+
+  /** Resolve the picker state into the value sent on the wire:
+   *    permanent → null (no expiry)
+   *    1d|7d|30d|90d → ISO N days from now
+   *    custom → the custom-input ISO (or null if blank) */
+  function buildExpiresAt(): string | null {
+    if (expiryPreset === 'permanent') return null;
+    if (expiryPreset === 'custom') {
+      return expiryCustomISO.trim() ? expiryCustomISO.trim() : null;
+    }
+    const days =
+      expiryPreset === '1d' ? 1 :
+      expiryPreset === '7d' ? 7 :
+      expiryPreset === '30d' ? 30 : 90;
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
   }
 
   /** Build the wire conditions object from the dialog state. Returns
@@ -567,6 +1100,7 @@ function CreatePolicyDialog({
       // clearing them clears the row. On create, omit when there are
       // none so the server stores `{}` by default.
       const builtConditions = buildConditions();
+      const builtExpiresAt = buildExpiresAt();
 
       // Edit mode: in-place mutation of the existing row. Single role only —
       // a policy IS one (scope, role, effect) triplet.
@@ -578,6 +1112,10 @@ function CreatePolicyDialog({
           roleId,
           effect,
           conditions: builtConditions ?? {},
+          // Always send expires_at on edit (including null) so the
+          // server clears any prior expiry when the admin picks
+          // "permanent".
+          expires_at: builtExpiresAt,
         });
         return;
       }
@@ -592,6 +1130,7 @@ function CreatePolicyDialog({
           roleId,
           effect,
           ...(builtConditions ? { conditions: builtConditions } : {}),
+          ...(builtExpiresAt ? { expires_at: builtExpiresAt } : {}),
         });
       }
     },
@@ -984,6 +1523,71 @@ function CreatePolicyDialog({
                 )}
               </span>
             </label>
+          )}
+
+          {/* ── Optional: Expiry preset ───────────────────────────── */}
+          {showRoles && availableRoles.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Auto-expire</Label>
+              <div className="flex flex-wrap gap-1">
+                {(
+                  [
+                    { key: 'permanent', label: 'Never' },
+                    { key: '1d', label: '1 day' },
+                    { key: '7d', label: '7 days' },
+                    { key: '30d', label: '30 days' },
+                    { key: '90d', label: '90 days' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => {
+                      setExpiryPreset(opt.key);
+                      setExpiryCustomISO('');
+                    }}
+                    className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                      expiryPreset === opt.key
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border/60 text-muted-foreground hover:bg-muted/40'
+                    }`}
+                    disabled={createMutation.isPending}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setExpiryPreset('custom')}
+                  className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                    expiryPreset === 'custom'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border/60 text-muted-foreground hover:bg-muted/40'
+                  }`}
+                  disabled={createMutation.isPending}
+                >
+                  Custom
+                </button>
+              </div>
+              {expiryPreset === 'custom' && (
+                <Input
+                  type="datetime-local"
+                  value={expiryCustomISO ? toLocalInput(expiryCustomISO) : ''}
+                  onChange={(e) =>
+                    setExpiryCustomISO(
+                      e.target.value ? new Date(e.target.value).toISOString() : '',
+                    )
+                  }
+                  className="h-8 text-xs"
+                  disabled={createMutation.isPending}
+                />
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {expiryPreset === 'permanent'
+                  ? 'Policy stays in effect until you delete it.'
+                  : `The engine ignores this policy after the chosen time.`}
+              </p>
+            </div>
           )}
 
           {/* ── Optional: Conditions (collapsed by default) ───────── */}

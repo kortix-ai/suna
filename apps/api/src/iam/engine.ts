@@ -354,6 +354,11 @@ async function loadGrantingPolicies(
     .where(
       and(
         eq(iamPolicies.accountId, accountId),
+        // Time-bounded policies: drop rows whose expiry has passed.
+        // The SQL filter avoids ever returning them to the engine, so
+        // expired rows can't slip through if the comparison is forgotten
+        // somewhere upstream.
+        or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
         or(...principalConditions),
         // Scope must be 'account' (Everything), match the required type,
         // OR be a project_group when we're authorising a project action
@@ -489,6 +494,9 @@ async function loadTokenPolicies(
         eq(iamPolicies.accountId, accountId),
         eq(iamPolicies.principalType, 'token'),
         eq(iamPolicies.principalId, tokenId),
+        // Same expiry filter as the user path — expired token policies
+        // stop applying the moment the clock crosses expires_at.
+        or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
         requiredScopeType === 'project'
           ? or(
               eq(iamPolicies.scopeType, 'account'),
@@ -511,7 +519,10 @@ async function loadTokenPolicies(
 
 /** Cheap count to decide: does this token have ANY narrowing policy attached
  * (regardless of action)? Used by the engine to choose between "evaluate
- * token policies only" vs "fall back to user". */
+ * token policies only" vs "fall back to user". Counts expired policies too —
+ * a token with all-expired policies still gets the strict token-path
+ * treatment so an admin's intentional revocation-via-expiry isn't
+ * silently bypassed back to the minter's permissions. */
 async function tokenHasAnyPolicy(accountId: string, tokenId: string): Promise<boolean> {
   const [row] = await db
     .select({ policyId: iamPolicies.policyId })
@@ -866,6 +877,11 @@ export async function listAccessibleResources(
     .where(
       and(
         eq(iamPolicies.accountId, accountId),
+        // Time-bounded policies: drop rows whose expiry has passed.
+        // The SQL filter avoids ever returning them to the engine, so
+        // expired rows can't slip through if the comparison is forgotten
+        // somewhere upstream.
+        or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
         or(...principalConditions),
         resourceType === 'project'
           ? or(

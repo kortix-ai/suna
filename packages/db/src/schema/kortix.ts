@@ -1876,6 +1876,11 @@ export const iamPolicies = kortixSchema.table(
     // Unrecognised keys are ignored so old engines tolerate forward-rolled
     // policies. Empty object {} = unconditional (the default).
     conditions: jsonb('conditions').default({}).$type<Record<string, unknown>>(),
+    /** Optional hard expiry. NULL = permanent. The engine filters
+     *  expired rows out of every SQL query so a cleanup job is
+     *  optional — expired policies stop applying the moment the clock
+     *  crosses this timestamp. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

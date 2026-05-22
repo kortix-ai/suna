@@ -13,7 +13,7 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import type { ResourceType } from '../iam/actions';
-import type { PolicyConditions } from '../iam/engine';
+import type { PolicyConditions, PolicyScopeType } from '../iam/engine';
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -428,13 +428,16 @@ export type IamPolicy = {
   accountId: string;
   principalType: 'member' | 'group' | 'token';
   principalId: string;
-  scopeType: ResourceType;
+  scopeType: PolicyScopeType;
   scopeId: string | null;
   roleId: string;
   effect: 'allow' | 'deny';
   /** Optional gating conditions evaluated at request time. Empty object
    *  means "always applies". See PolicyConditions for shape. */
   conditions: PolicyConditions;
+  /** Optional hard expiry. NULL = permanent. The engine filters expired
+   *  rows out of every SQL query. */
+  expiresAt: Date | null;
   createdBy: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -443,7 +446,7 @@ export type IamPolicy = {
 export type PolicyFilter = {
   principalType?: 'member' | 'group' | 'token';
   principalId?: string;
-  scopeType?: ResourceType;
+  scopeType?: PolicyScopeType;
   scopeId?: string | null;
 };
 
@@ -477,7 +480,7 @@ export async function listPolicies(
   return rows.map((r) => ({
     ...r,
     principalType: r.principalType as IamPolicy['principalType'],
-    scopeType: r.scopeType as ResourceType,
+    scopeType: r.scopeType as PolicyScopeType,
     effect: r.effect as IamPolicy['effect'],
     conditions: (r.conditions ?? {}) as PolicyConditions,
   }));
@@ -500,7 +503,7 @@ export async function getPolicyById(
   return {
     ...row,
     principalType: row.principalType as IamPolicy['principalType'],
-    scopeType: row.scopeType as ResourceType,
+    scopeType: row.scopeType as PolicyScopeType,
     effect: row.effect as IamPolicy['effect'],
     conditions: (row.conditions ?? {}) as PolicyConditions,
   };
@@ -510,12 +513,14 @@ export async function createPolicy(args: {
   accountId: string;
   principalType: 'member' | 'group' | 'token';
   principalId: string;
-  scopeType: ResourceType;
+  scopeType: PolicyScopeType;
   scopeId: string | null;
   roleId: string;
   effect?: 'allow' | 'deny';
   /** Optional gating conditions. Omit / empty object = always applies. */
   conditions?: PolicyConditions;
+  /** Optional hard expiry. Omit = permanent. */
+  expiresAt?: Date | null;
   createdBy: string;
 }): Promise<IamPolicy> {
   // The DB CHECK constraint already enforces that scope_type='account' has
@@ -536,6 +541,7 @@ export async function createPolicy(args: {
       roleId: args.roleId,
       effect,
       conditions: conditions as Record<string, unknown>,
+      expiresAt: args.expiresAt ?? null,
       createdBy: args.createdBy,
     })
     .onConflictDoNothing()
@@ -567,7 +573,7 @@ export async function createPolicy(args: {
     return {
       ...existing,
       principalType: existing.principalType as IamPolicy['principalType'],
-      scopeType: existing.scopeType as ResourceType,
+      scopeType: existing.scopeType as PolicyScopeType,
       effect: existing.effect as IamPolicy['effect'],
       conditions: (existing.conditions ?? {}) as PolicyConditions,
     };
@@ -576,7 +582,7 @@ export async function createPolicy(args: {
   return {
     ...row,
     principalType: row.principalType as IamPolicy['principalType'],
-    scopeType: row.scopeType as ResourceType,
+    scopeType: row.scopeType as PolicyScopeType,
     effect: row.effect as IamPolicy['effect'],
     conditions: (row.conditions ?? {}) as PolicyConditions,
   };
@@ -603,13 +609,15 @@ export async function updatePolicy(
   accountId: string,
   policyId: string,
   patch: {
-    scopeType: ResourceType;
+    scopeType: PolicyScopeType;
     scopeId: string | null;
     roleId: string;
     effect: 'allow' | 'deny';
     /** When set, replaces the whole conditions object (no partial merge).
      *  Omit to leave existing conditions untouched. */
     conditions?: PolicyConditions;
+    /** Undefined = leave untouched; null = clear expiry; Date = set/replace. */
+    expiresAt?: Date | null;
   },
 ): Promise<IamPolicy | null> {
   const normalisedScopeId = patch.scopeType === 'account' ? null : patch.scopeId;
@@ -622,6 +630,7 @@ export async function updatePolicy(
     updatedAt: new Date(),
   };
   if (patch.conditions !== undefined) updates.conditions = patch.conditions;
+  if (patch.expiresAt !== undefined) updates.expiresAt = patch.expiresAt;
 
   const [row] = await db
     .update(iamPolicies)
@@ -633,7 +642,7 @@ export async function updatePolicy(
   return {
     ...row,
     principalType: row.principalType as IamPolicy['principalType'],
-    scopeType: row.scopeType as ResourceType,
+    scopeType: row.scopeType as PolicyScopeType,
     effect: row.effect as IamPolicy['effect'],
     conditions: (row.conditions ?? {}) as PolicyConditions,
   };

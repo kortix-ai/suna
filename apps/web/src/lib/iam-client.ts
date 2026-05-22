@@ -72,6 +72,8 @@ export interface IamPolicy {
   role_id: string;
   effect: PolicyEffect;
   conditions: PolicyConditions;
+  /** Optional hard expiry. ISO-8601 string. NULL = permanent. */
+  expires_at?: string | null;
   created_by: string | null;
   created_at: string;
 }
@@ -210,6 +212,8 @@ export async function createPolicy(
     effect?: PolicyEffect;
     /** Optional gating conditions. Omit for an unconditional policy. */
     conditions?: PolicyConditions;
+    /** Optional hard expiry (ISO-8601). Omit for permanent. */
+    expires_at?: string | null;
   },
 ) {
   return unwrap(
@@ -229,6 +233,8 @@ export async function updatePolicy(
     effect: PolicyEffect;
     /** Omit to leave existing conditions untouched. Pass `{}` to clear. */
     conditions?: PolicyConditions;
+    /** Undefined = leave untouched; null = clear expiry; ISO = set. */
+    expires_at?: string | null;
   },
 ) {
   return unwrap(
@@ -244,6 +250,53 @@ export async function deletePolicy(accountId: string, policyId: string) {
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(
       `/accounts/${accountId}/iam/policies/${policyId}`,
+    ),
+  );
+}
+
+export interface BulkDeleteResult {
+  deleted: number;
+}
+
+export async function bulkDeletePolicies(accountId: string, policyIds: string[]) {
+  return unwrap(
+    await backendApi.post<BulkDeleteResult>(
+      `/accounts/${accountId}/iam/policies:bulk-delete`,
+      { policy_ids: policyIds },
+      { showErrors: false },
+    ),
+  );
+}
+
+export interface BulkImportEntry {
+  principal_type: PrincipalType;
+  principal_id: string;
+  scope_type: PolicyScopeType;
+  scope_id?: string | null;
+  /** Reference by role key (not id) so exported JSON is portable
+   *  across accounts. */
+  role_key: string;
+  effect?: PolicyEffect;
+  conditions?: PolicyConditions;
+  expires_at?: string | null;
+}
+
+export interface BulkImportResult {
+  attempted: number;
+  created: number;
+  skipped: number;
+  errors: Array<{ index: number; error: string }>;
+}
+
+export async function bulkImportPolicies(
+  accountId: string,
+  policies: BulkImportEntry[],
+) {
+  return unwrap(
+    await backendApi.post<BulkImportResult>(
+      `/accounts/${accountId}/iam/policies:bulk-import`,
+      { policies },
+      { showErrors: false },
     ),
   );
 }
@@ -910,6 +963,135 @@ export async function deleteServiceAccountApi(accountId: string, saId: string) {
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(
       `/accounts/${accountId}/iam/service-accounts/${saId}`,
+    ),
+  );
+}
+
+// ─── Drift detection ─────────────────────────────────────────────────────
+
+export interface DriftReport {
+  unused_policies: Array<{
+    policy_id: string;
+    role_key: string;
+    role_name: string;
+    principal_type: PrincipalType;
+    principal_id: string;
+    scope_type: string;
+    scope_id: string | null;
+    created_at: string;
+    last_used_at: string | null;
+  }>;
+  empty_groups: Array<{ group_id: string; name: string; created_at: string }>;
+  orphan_groups: Array<{ group_id: string; name: string }>;
+  expired_policies: Array<{
+    policy_id: string;
+    principal_type: PrincipalType;
+    principal_id: string;
+    role_id: string;
+    expires_at: string;
+  }>;
+  lookback_days: number;
+}
+
+export async function getDriftReport(accountId: string, lookbackDays?: number) {
+  const qs = lookbackDays ? `?days=${lookbackDays}` : '';
+  return unwrap(
+    await backendApi.get<DriftReport>(`/accounts/${accountId}/iam/drift${qs}`),
+  );
+}
+
+// ─── Policy simulator ────────────────────────────────────────────────────
+
+export interface PolicySimulationProbe {
+  user_id: string;
+  action: string;
+  resource_type?: ResourceType;
+  resource_id?: string;
+}
+
+export interface PolicySimulationProbeResult {
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  allowed_before: boolean;
+  reason_before: string | null;
+  allowed_after: boolean;
+  reason_after: string | null;
+  changed: boolean;
+}
+
+export interface PolicySimulationResult {
+  probes: PolicySimulationProbeResult[];
+  newly_allowed_count: number;
+  newly_denied_count: number;
+  approximate: boolean;
+}
+
+export async function simulatePolicy(
+  accountId: string,
+  input: {
+    proposed: {
+      principal_type: PrincipalType;
+      principal_id: string;
+      scope_type: PolicyScopeType;
+      scope_id?: string | null;
+      role_key: string;
+      effect?: PolicyEffect;
+    };
+    probes: PolicySimulationProbe[];
+  },
+) {
+  return unwrap(
+    await backendApi.post<PolicySimulationResult>(
+      `/accounts/${accountId}/iam/policies:simulate`,
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+// ─── Policy templates / blueprints ────────────────────────────────────────
+
+export interface PolicyTemplate {
+  key: string;
+  name: string;
+  description: string;
+  needs_scope_id: 'account' | 'project' | 'project_group';
+  applies_to: Array<'member' | 'group' | 'token'>;
+  entries: Array<{
+    role_key: string;
+    scope_type: 'account' | 'project' | 'project_group';
+    note: string | null;
+  }>;
+}
+
+export interface ApplyTemplateResult {
+  created: Array<{ role_key: string; policy_id: string }>;
+  skipped: Array<{ role_key: string; reason: string }>;
+}
+
+export async function listPolicyTemplates(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ templates: PolicyTemplate[] }>(
+      `/accounts/${accountId}/iam/policy-templates`,
+    ),
+  ).templates;
+}
+
+export async function applyPolicyTemplate(
+  accountId: string,
+  key: string,
+  input: {
+    principal_type: PrincipalType;
+    principal_id: string;
+    scope_id?: string | null;
+  },
+) {
+  return unwrap(
+    await backendApi.post<ApplyTemplateResult>(
+      `/accounts/${accountId}/iam/policy-templates/${key}/apply`,
+      input,
+      { showErrors: false },
     ),
   );
 }
