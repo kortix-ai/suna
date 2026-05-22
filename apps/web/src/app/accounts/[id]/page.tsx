@@ -61,6 +61,7 @@ import { SsoCard } from '@/components/iam/sso-card';
 import { SessionControlsCard } from '@/components/iam/session-controls-card';
 import { PatPolicyCard } from '@/components/iam/pat-policy-card';
 import { ApprovalsCard } from '@/components/iam/approvals-card';
+import { ProjectGroupsCard } from '@/components/iam/project-groups-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { usePermission } from '@/lib/use-permission';
@@ -299,6 +300,10 @@ export default function AccountSettingsPage() {
                 <ApprovalsCard
                   accountId={account.account_id}
                   currentUserId={user.id}
+                  canManage={canWriteAccount}
+                />
+                <ProjectGroupsCard
+                  accountId={account.account_id}
                   canManage={canWriteAccount}
                 />
                 <ScimCard

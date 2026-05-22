@@ -74,6 +74,16 @@ import {
 } from '../repositories/iam-analytics';
 import { backfillAccountMembershipPolicies } from '../iam/backfill';
 import {
+  addGroupProjects,
+  createProjectGroup,
+  deleteProjectGroup,
+  getProjectGroup,
+  listGroupProjects,
+  listProjectGroups,
+  removeGroupProject,
+  updateProjectGroup,
+} from '../repositories/project-groups';
+import {
   GATED_ACTIONS,
   NeedsApprovalError,
   approveRequest,
@@ -2563,6 +2573,211 @@ iamRouter.get('/:accountId/iam/analytics/roles/:roleId', async (c) => {
     })),
     unused_actions: analysis.unusedActions,
   });
+});
+
+// ─── Project groups (resource grouping) ───────────────────────────────────
+// Bundle multiple projects so a single policy targets the whole bundle.
+// scope_type='project_group' on iam_policies; the engine resolves "is
+// the target project in this group?" at match time.
+
+iamRouter.get('/:accountId/iam/project-groups', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  const rows = await listProjectGroups(accountId);
+  return c.json({
+    groups: rows.map((r) => ({
+      group_id: r.groupId,
+      name: r.name,
+      description: r.description,
+      project_count: r.projectCount,
+      created_at: r.createdAt.toISOString(),
+      updated_at: r.updatedAt.toISOString(),
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/project-groups', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return c.json({ error: 'name is required' }, 400);
+  if (name.length > 128) return c.json({ error: 'name too long' }, 400);
+  const description =
+    typeof body.description === 'string' ? body.description.trim() || null : null;
+
+  try {
+    const group = await createProjectGroup({
+      accountId,
+      name,
+      description,
+      createdBy: userId,
+    });
+    await auditIam(c, {
+      accountId,
+      action: 'iam.project_group.create',
+      resourceType: 'project_group',
+      resourceId: group.groupId,
+      after: { name: group.name, description: group.description },
+    });
+    return c.json(
+      {
+        group_id: group.groupId,
+        name: group.name,
+        description: group.description,
+        project_count: 0,
+        created_at: group.createdAt.toISOString(),
+      },
+      201,
+    );
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return c.json({ error: 'A project group with that name already exists.' }, 409);
+    }
+    throw err;
+  }
+});
+
+iamRouter.patch('/:accountId/iam/project-groups/:groupId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const groupId = c.req.param('groupId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const before = await getProjectGroup(accountId, groupId);
+  if (!before) return c.json({ error: 'group not found' }, 404);
+
+  const body = await readBody(c);
+  const patch: { name?: string; description?: string | null } = {};
+  if (typeof body.name === 'string') {
+    const trimmed = body.name.trim();
+    if (!trimmed) return c.json({ error: 'name cannot be empty' }, 400);
+    patch.name = trimmed;
+  }
+  if (body.description !== undefined) {
+    patch.description =
+      typeof body.description === 'string' ? body.description.trim() || null : null;
+  }
+
+  try {
+    const updated = await updateProjectGroup(accountId, groupId, patch);
+    if (!updated) return c.json({ error: 'group not found' }, 404);
+    await auditIam(c, {
+      accountId,
+      action: 'iam.project_group.update',
+      resourceType: 'project_group',
+      resourceId: groupId,
+      before: { name: before.name, description: before.description },
+      after: { name: updated.name, description: updated.description },
+    });
+    return c.json({
+      group_id: updated.groupId,
+      name: updated.name,
+      description: updated.description,
+      project_count: updated.projectCount,
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return c.json({ error: 'A project group with that name already exists.' }, 409);
+    }
+    throw err;
+  }
+});
+
+iamRouter.delete('/:accountId/iam/project-groups/:groupId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const groupId = c.req.param('groupId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const before = await getProjectGroup(accountId, groupId);
+  const ok = await deleteProjectGroup(accountId, groupId);
+  if (!ok) return c.json({ error: 'group not found' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.project_group.delete',
+    resourceType: 'project_group',
+    resourceId: groupId,
+    before: before ? { name: before.name } : null,
+  });
+
+  return c.json({ deleted: true });
+});
+
+iamRouter.get('/:accountId/iam/project-groups/:groupId/projects', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const groupId = c.req.param('groupId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  const rows = await listGroupProjects(accountId, groupId);
+  return c.json({
+    projects: rows.map((r) => ({
+      project_id: r.projectId,
+      project_name: r.projectName,
+      added_at: r.addedAt.toISOString(),
+    })),
+  });
+});
+
+iamRouter.post('/:accountId/iam/project-groups/:groupId/projects', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const groupId = c.req.param('groupId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const body = await readBody(c);
+  const raw = body.project_ids ?? body.projectIds;
+  if (!Array.isArray(raw)) {
+    return c.json({ error: 'project_ids must be an array' }, 400);
+  }
+  const projectIds = raw.filter((v): v is string => typeof v === 'string');
+  if (projectIds.length === 0) return c.json({ added: 0 });
+
+  const group = await getProjectGroup(accountId, groupId);
+  if (!group) return c.json({ error: 'group not found' }, 404);
+
+  const result = await addGroupProjects({
+    accountId,
+    groupId,
+    projectIds,
+    addedBy: userId,
+  });
+  await auditIam(c, {
+    accountId,
+    action: 'iam.project_group.add_projects',
+    resourceType: 'project_group',
+    resourceId: groupId,
+    after: { project_ids: projectIds, added: result.added },
+  });
+  return c.json(result);
+});
+
+iamRouter.delete('/:accountId/iam/project-groups/:groupId/projects/:projectId', async (c) => {
+  const userId = c.get('userId') as string;
+  const accountId = c.req.param('accountId');
+  const groupId = c.req.param('groupId');
+  const projectId = c.req.param('projectId');
+  await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+
+  const group = await getProjectGroup(accountId, groupId);
+  if (!group) return c.json({ error: 'group not found' }, 404);
+
+  const ok = await removeGroupProject(groupId, projectId);
+  if (!ok) return c.json({ error: 'project not in group' }, 404);
+
+  await auditIam(c, {
+    accountId,
+    action: 'iam.project_group.remove_project',
+    resourceType: 'project_group',
+    resourceId: groupId,
+    after: { project_id: projectId },
+  });
+
+  return c.json({ removed: true });
 });
 
 iamRouter.post('/:accountId/iam/approvals/:requestId/reject', async (c) => {

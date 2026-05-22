@@ -12,6 +12,10 @@ export type ResourceType =
   | 'member'
   | 'group';
 
+/** Scope a policy can target. Superset of ResourceType — adds container
+ *  scopes the engine resolves at match time (currently: project_group). */
+export type PolicyScopeType = ResourceType | 'project_group';
+
 export type PrincipalType = 'member' | 'group' | 'token';
 
 export interface AccountGroup {
@@ -63,7 +67,7 @@ export interface IamPolicy {
   policy_id: string;
   principal_type: PrincipalType;
   principal_id: string;
-  scope_type: ResourceType;
+  scope_type: PolicyScopeType;
   scope_id: string | null;
   role_id: string;
   effect: PolicyEffect;
@@ -200,7 +204,7 @@ export async function createPolicy(
   input: {
     principalType: PrincipalType;
     principalId: string;
-    scopeType: ResourceType;
+    scopeType: PolicyScopeType;
     scopeId?: string | null;
     roleId: string;
     effect?: PolicyEffect;
@@ -219,7 +223,7 @@ export async function updatePolicy(
   accountId: string,
   policyId: string,
   input: {
-    scopeType: ResourceType;
+    scopeType: PolicyScopeType;
     scopeId?: string | null;
     roleId: string;
     effect: PolicyEffect;
@@ -803,6 +807,99 @@ export async function listTopPrincipals(accountId: string) {
       `/accounts/${accountId}/iam/analytics/top-principals`,
     ),
   ).principals;
+}
+
+// ─── Project groups (resource bundles for policy scoping) ────────────────
+
+export interface ProjectGroup {
+  group_id: string;
+  name: string;
+  description: string | null;
+  project_count: number;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface ProjectGroupMembership {
+  project_id: string;
+  project_name: string;
+  added_at: string;
+}
+
+export async function listProjectGroups(accountId: string) {
+  return unwrap(
+    await backendApi.get<{ groups: ProjectGroup[] }>(
+      `/accounts/${accountId}/iam/project-groups`,
+    ),
+  ).groups;
+}
+
+export async function createProjectGroupApi(
+  accountId: string,
+  input: { name: string; description?: string },
+) {
+  return unwrap(
+    await backendApi.post<ProjectGroup>(
+      `/accounts/${accountId}/iam/project-groups`,
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function updateProjectGroupApi(
+  accountId: string,
+  groupId: string,
+  patch: { name?: string; description?: string | null },
+) {
+  return unwrap(
+    await backendApi.patch<ProjectGroup>(
+      `/accounts/${accountId}/iam/project-groups/${groupId}`,
+      patch,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function deleteProjectGroupApi(accountId: string, groupId: string) {
+  return unwrap(
+    await backendApi.delete<{ deleted: boolean }>(
+      `/accounts/${accountId}/iam/project-groups/${groupId}`,
+    ),
+  );
+}
+
+export async function listProjectGroupMembers(accountId: string, groupId: string) {
+  return unwrap(
+    await backendApi.get<{ projects: ProjectGroupMembership[] }>(
+      `/accounts/${accountId}/iam/project-groups/${groupId}/projects`,
+    ),
+  ).projects;
+}
+
+export async function addProjectsToGroup(
+  accountId: string,
+  groupId: string,
+  projectIds: string[],
+) {
+  return unwrap(
+    await backendApi.post<{ added: number }>(
+      `/accounts/${accountId}/iam/project-groups/${groupId}/projects`,
+      { project_ids: projectIds },
+    ),
+  );
+}
+
+export async function removeProjectFromGroup(
+  accountId: string,
+  groupId: string,
+  projectId: string,
+) {
+  return unwrap(
+    await backendApi.delete<{ removed: boolean }>(
+      `/accounts/${accountId}/iam/project-groups/${groupId}/projects/${projectId}`,
+    ),
+  );
 }
 
 export async function getRoleUsageAnalytics(accountId: string, roleId: string) {

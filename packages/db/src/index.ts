@@ -140,6 +140,9 @@ export {
   iamApprovalRequests,
   // Permission usage analytics
   iamActionUsage,
+  // Resource groups (project groups)
+  projectGroups,
+  projectGroupMembers,
 } from './schema/kortix';
 
 export type {

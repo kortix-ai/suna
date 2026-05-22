@@ -18,6 +18,7 @@ import {
   iamPolicies,
   iamRolePermissions,
   iamRoles,
+  projectGroupMembers,
   projectMembers,
 } from '@kortix/db';
 import { db } from '../shared/db';
@@ -56,8 +57,13 @@ export type AuthorizeResult = {
   reason?: string;
 };
 
+/** Scope types a policy can target. Superset of ResourceType — the
+ *  extras (project_group) aren't real resource categories, they're
+ *  containers the engine resolves at match time. */
+export type PolicyScopeType = ResourceType | 'project_group';
+
 type LoadedPolicy = {
-  scopeType: ResourceType;
+  scopeType: PolicyScopeType;
   scopeId: string | null;
   effect: 'allow' | 'deny';
   conditions: PolicyConditions;
@@ -236,6 +242,24 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
  * Returns the list of (scopeType, scopeId) pairs — the caller decides whether
  * the target's id matches.
  */
+/**
+ * Look up which project groups (if any) include the given project_id
+ * within the account. Empty Set when the target isn't a project or
+ * doesn't belong to any group. Cheap — single indexed SELECT.
+ */
+async function resolveProjectGroupsForTarget(
+  accountId: string,
+  target: AuthorizeTarget,
+): Promise<Set<string>> {
+  if (target.type !== 'project') return new Set();
+  const rows = await db
+    .select({ groupId: projectGroupMembers.groupId })
+    .from(projectGroupMembers)
+    .innerJoin(accounts, eq(accounts.accountId, accountId))
+    .where(eq(projectGroupMembers.projectId, target.id));
+  return new Set(rows.map((r) => r.groupId));
+}
+
 async function loadGrantingPolicies(
   accountId: string,
   actor: ResolvedActor,
@@ -279,16 +303,24 @@ async function loadGrantingPolicies(
       and(
         eq(iamPolicies.accountId, accountId),
         or(...principalConditions),
-        // Scope must be 'account' (Everything) or match the required type.
-        or(
-          eq(iamPolicies.scopeType, 'account'),
-          eq(iamPolicies.scopeType, requiredScopeType),
-        ),
+        // Scope must be 'account' (Everything), match the required type,
+        // OR be a project_group when we're authorising a project action
+        // (the engine will resolve membership at match time).
+        requiredScopeType === 'project'
+          ? or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, 'project'),
+              eq(iamPolicies.scopeType, 'project_group'),
+            )
+          : or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, requiredScopeType),
+            ),
       ),
     );
 
   return rows.map((r) => ({
-    scopeType: r.scopeType as ResourceType,
+    scopeType: r.scopeType as PolicyScopeType,
     scopeId: r.scopeId,
     effect: r.effect as 'allow' | 'deny',
     conditions: (r.conditions ?? {}) as PolicyConditions,
@@ -405,14 +437,20 @@ async function loadTokenPolicies(
         eq(iamPolicies.accountId, accountId),
         eq(iamPolicies.principalType, 'token'),
         eq(iamPolicies.principalId, tokenId),
-        or(
-          eq(iamPolicies.scopeType, 'account'),
-          eq(iamPolicies.scopeType, requiredScopeType),
-        ),
+        requiredScopeType === 'project'
+          ? or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, 'project'),
+              eq(iamPolicies.scopeType, 'project_group'),
+            )
+          : or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, requiredScopeType),
+            ),
       ),
     );
   return rows.map((r) => ({
-    scopeType: r.scopeType as ResourceType,
+    scopeType: r.scopeType as PolicyScopeType,
     scopeId: r.scopeId,
     effect: r.effect as 'allow' | 'deny',
     conditions: (r.conditions ?? {}) as PolicyConditions,
@@ -461,15 +499,13 @@ export async function authorize(
   // legacy bridges, no inheritance from the minter. This is the safety
   // contract: a narrowed token can NEVER do more than its policies allow.
   if (actingTokenId && (await tokenHasAnyPolicy(accountId, actingTokenId))) {
-    const tokenPolicies = await loadTokenPolicies(
-      accountId,
-      actingTokenId,
-      action,
-      requiredScopeType,
-    );
+    const [tokenPolicies, projectGroupIds] = await Promise.all([
+      loadTokenPolicies(accountId, actingTokenId, action, requiredScopeType),
+      resolveProjectGroupsForTarget(accountId, effectiveTarget),
+    ]);
     let matchedAllow = false;
     for (const p of tokenPolicies) {
-      if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+      if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget, projectGroupIds)) continue;
       // Conditions filter applies before deny precedence — a deny whose
       // conditions don't match this request is simply not applicable.
       if (!checkConditions(p.conditions, requestCtx)) continue;
@@ -521,17 +557,14 @@ export async function authorize(
 
   // 2. Explicit policies (direct + via groups). Partition by effect; deny
   //    wins over allow on a per-action+scope basis.
-  const policies = await loadGrantingPolicies(
-    accountId,
-    actor,
-    userId,
-    action,
-    requiredScopeType,
-  );
+  const [policies, projectGroupIds] = await Promise.all([
+    loadGrantingPolicies(accountId, actor, userId, action, requiredScopeType),
+    resolveProjectGroupsForTarget(accountId, effectiveTarget),
+  ]);
 
   let matchedAllow = false;
   for (const p of policies) {
-    if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+    if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget, projectGroupIds)) continue;
     // Conditions filter — a policy whose conditions don't match this
     // request (wrong IP, missing MFA) is simply not applicable. A deny
     // gated by conditions is silent until the gate fires.
@@ -573,6 +606,11 @@ export async function authorize(
  *   - scope_type='account' → always matches (Everything)
  *   - scope_type=requiredType AND scope_id=NULL → matches every resource of that type
  *   - scope_type=requiredType AND scope_id=target.id → exact match
+ *   - scope_type='project_group' AND target is project → matches when
+ *     scope_id is in `targetProjectGroups` (pre-resolved by the caller)
+ *
+ * `targetProjectGroups` is the set of project_group IDs that contain
+ * the target project (empty/undefined for non-project targets).
  *
  * Exported for unit tests.
  */
@@ -580,8 +618,17 @@ export function policyMatchesTarget(
   policy: LoadedPolicy,
   requiredScopeType: ResourceType,
   target: AuthorizeTarget,
+  targetProjectGroups?: ReadonlySet<string>,
 ): boolean {
   if (policy.scopeType === 'account') return true;
+  // Project-group scope only ever applies to a project target. NULL
+  // scope_id on a project_group policy doesn't make sense (we never
+  // mint those) and is treated as no-match.
+  if (policy.scopeType === 'project_group') {
+    if (target.type !== 'project') return false;
+    if (!policy.scopeId) return false;
+    return targetProjectGroups?.has(policy.scopeId) === true;
+  }
   if (policy.scopeType !== requiredScopeType) return false;
   // For account-level actions targeting the account itself, the only valid
   // policy scope is 'account' (handled above).
@@ -647,8 +694,16 @@ export async function listAccessibleResources(
     let denyEverything = false;
     const allowedIds = new Set<string>();
     const deniedIds = new Set<string>();
+    const allowGroupIds = new Set<string>();
+    const denyGroupIds = new Set<string>();
     for (const r of rows) {
       if (!checkConditions(r.conditions, requestCtx)) continue;
+      if (r.scopeType === 'project_group' && resourceType === 'project') {
+        if (!r.scopeId) continue;
+        if (r.effect === 'deny') denyGroupIds.add(r.scopeId);
+        else allowGroupIds.add(r.scopeId);
+        continue;
+      }
       const matchesEverything =
         r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
       if (r.effect === 'deny') {
@@ -657,6 +712,19 @@ export async function listAccessibleResources(
       } else {
         if (matchesEverything) allowEverything = true;
         else if (r.scopeId) allowedIds.add(r.scopeId);
+      }
+    }
+    if (allowGroupIds.size > 0 || denyGroupIds.size > 0) {
+      const memberRows = await db
+        .select({
+          groupId: projectGroupMembers.groupId,
+          projectId: projectGroupMembers.projectId,
+        })
+        .from(projectGroupMembers)
+        .where(inArray(projectGroupMembers.groupId, [...allowGroupIds, ...denyGroupIds]));
+      for (const row of memberRows) {
+        if (denyGroupIds.has(row.groupId)) deniedIds.add(row.projectId);
+        if (allowGroupIds.has(row.groupId)) allowedIds.add(row.projectId);
       }
     }
     if (denyEverything) return { mode: 'none' };
@@ -728,7 +796,16 @@ export async function listAccessibleResources(
       and(
         eq(iamPolicies.accountId, accountId),
         or(...principalConditions),
-        or(eq(iamPolicies.scopeType, 'account'), eq(iamPolicies.scopeType, resourceType)),
+        resourceType === 'project'
+          ? or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, 'project'),
+              eq(iamPolicies.scopeType, 'project_group'),
+            )
+          : or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, resourceType),
+            ),
       ),
     );
 
@@ -736,9 +813,19 @@ export async function listAccessibleResources(
   let denyEverything = false;
   const allowedIds = new Set<string>();
   const deniedIds = new Set<string>();
+  // Project-group scopes we encounter; resolved to project IDs in
+  // one batched query after the loop so the hot path doesn't fan out.
+  const allowGroupIds = new Set<string>();
+  const denyGroupIds = new Set<string>();
 
   for (const r of rows) {
     if (!checkConditions((r.conditions ?? {}) as PolicyConditions, requestCtx)) continue;
+    if (r.scopeType === 'project_group' && resourceType === 'project') {
+      if (!r.scopeId) continue;
+      if (r.effect === 'deny') denyGroupIds.add(r.scopeId);
+      else allowGroupIds.add(r.scopeId);
+      continue;
+    }
     const matchesEverything =
       r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
     if (r.effect === 'deny') {
@@ -747,6 +834,22 @@ export async function listAccessibleResources(
     } else {
       if (matchesEverything) allowEverything = true;
       else if (r.scopeId) allowedIds.add(r.scopeId);
+    }
+  }
+
+  // Expand any project_group scopes into the matching project IDs.
+  if (allowGroupIds.size > 0 || denyGroupIds.size > 0) {
+    const allGroupIds = [...allowGroupIds, ...denyGroupIds];
+    const memberRows = await db
+      .select({
+        groupId: projectGroupMembers.groupId,
+        projectId: projectGroupMembers.projectId,
+      })
+      .from(projectGroupMembers)
+      .where(inArray(projectGroupMembers.groupId, allGroupIds));
+    for (const row of memberRows) {
+      if (denyGroupIds.has(row.groupId)) deniedIds.add(row.projectId);
+      if (allowGroupIds.has(row.groupId)) allowedIds.add(row.projectId);
     }
   }
 

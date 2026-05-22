@@ -1741,6 +1741,10 @@ export const iamScopeTypeEnum = kortixSchema.enum('iam_scope_type', [
   'channel',
   'member',
   'group',
+  // Resource group: scope_id references project_groups.group_id. The
+  // engine resolves "is the target project a member of that group?"
+  // before matching.
+  'project_group',
 ]);
 
 export const iamResourceTypeEnum = kortixSchema.enum('iam_resource_type', [
@@ -2052,6 +2056,51 @@ export const accountSsoProviders = kortixSchema.table(
     uniqueIndex('idx_account_sso_providers_supabase').on(table.supabaseSsoProviderId),
     // Domain lookup for the sign-in router.
     index('idx_account_sso_providers_domain').on(table.primaryDomain),
+  ],
+);
+
+// ─── Resource groups: project groups ───────────────────────────────────────
+// Bundle multiple projects under one name so a single policy can target
+// the whole bundle ("Mobile editors: editor role on group=mobile-prod").
+// Cloudflare-style. Group membership is many-to-many; one project can
+// belong to multiple groups. The IAM engine treats project_group as a
+// scope type and resolves "is target project in this group?" at match
+// time.
+
+export const projectGroups = kortixSchema.table(
+  'project_groups',
+  {
+    groupId: uuid('group_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 128 }).notNull(),
+    description: text('description'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_groups_account').on(table.accountId),
+    uniqueIndex('idx_project_groups_account_name').on(table.accountId, table.name),
+  ],
+);
+
+export const projectGroupMembers = kortixSchema.table(
+  'project_group_members',
+  {
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => projectGroups.groupId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
+    addedBy: uuid('added_by'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.groupId, table.projectId] }),
+    index('idx_project_group_members_project').on(table.projectId),
   ],
 );
 

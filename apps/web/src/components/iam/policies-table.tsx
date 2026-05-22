@@ -59,12 +59,15 @@ import {
   type IamRole,
   type PolicyConditions,
   type PolicyEffect,
+  type PolicyScopeType,
   type PrincipalType,
+  type ProjectGroup,
   type ResourceType,
   createPolicy,
   deletePolicy,
   listGroups,
   listPolicies,
+  listProjectGroups,
   listRoles,
   updatePolicy,
 } from '@/lib/iam-client';
@@ -78,11 +81,12 @@ import {
 // ─── Resource-type metadata (UI labels + which pickers are wired) ─────────
 
 const RESOURCE_TYPE_META: Record<
-  ResourceType,
+  PolicyScopeType,
   { label: string; pickerSupported: boolean }
 > = {
   account: { label: 'Everything', pickerSupported: true },
   project: { label: 'Individual Projects', pickerSupported: true },
+  project_group: { label: 'Project Groups', pickerSupported: true },
   member: { label: 'Individual Members', pickerSupported: true },
   group: { label: 'Individual Groups', pickerSupported: true },
   // Slug-based, ephemeral, or sub-resource — defer until they have stable UUIDs.
@@ -144,6 +148,12 @@ export function PoliciesTable({
   const accountGroupsQuery = useQuery({
     queryKey: ['account-groups', accountId],
     queryFn: () => listGroups(accountId),
+    staleTime: 30_000,
+  });
+
+  const projectGroupsQuery = useQuery({
+    queryKey: ['project-groups', accountId],
+    queryFn: () => listProjectGroups(accountId),
     staleTime: 30_000,
   });
 
@@ -336,6 +346,7 @@ export function PoliciesTable({
         projects={projectsQuery.data ?? []}
         members={accountMembersQuery.data ?? []}
         groups={accountGroupsQuery.data ?? []}
+        projectGroups={projectGroupsQuery.data ?? []}
         editing={editTarget}
         onCreated={() => queryClient.invalidateQueries({ queryKey })}
       />
@@ -412,6 +423,7 @@ interface CreatePolicyDialogProps {
   projects: KortixProject[];
   members: AccountMember[];
   groups: AccountGroup[];
+  projectGroups: ProjectGroup[];
   /** Non-null = the dialog opens pre-filled to edit this policy in place
    * instead of creating new ones. Editing is single-role since a policy IS
    * a (principal, scope, role, effect) tuple — changing the role means
@@ -431,12 +443,13 @@ function CreatePolicyDialog({
   projects,
   members,
   groups,
+  projectGroups,
   editing,
   onCreated,
 }: CreatePolicyDialogProps) {
   const isEditing = !!editing;
   const [effect, setEffect] = useState<PolicyEffect>('allow');
-  const [scopeType, setScopeType] = useState<ResourceType | ''>('');
+  const [scopeType, setScopeType] = useState<PolicyScopeType | ''>('');
   const [scopeId, setScopeId] = useState<string>('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
   const [roleSearch, setRoleSearch] = useState('');
@@ -602,7 +615,10 @@ function CreatePolicyDialog({
   const availableRoles = useMemo(() => {
     if (!scopeType) return [];
     if (scopeType === 'account') return roles;
-    return roles.filter((r) => r.resource_type === scopeType);
+    // Project groups expand to projects — show project roles, not a
+    // separate "project_group" role family (which we don't ship).
+    const effectiveType = scopeType === 'project_group' ? 'project' : scopeType;
+    return roles.filter((r) => r.resource_type === effectiveType);
   }, [roles, scopeType]);
 
   // Whether we have enough to submit.
@@ -669,8 +685,14 @@ function CreatePolicyDialog({
     if (scopeType === 'group') {
       return groups.find((g) => g.group_id === scopeId)?.name ?? 'this group';
     }
+    if (scopeType === 'project_group') {
+      const g = projectGroups.find((pg) => pg.group_id === scopeId);
+      return g
+        ? `every project in ${g.name}`
+        : 'every project in this group';
+    }
     return 'this scope';
-  }, [scopeType, scopeId, projects, members, groups]);
+  }, [scopeType, scopeId, projects, members, groups, projectGroups]);
 
   return (
     <Dialog
@@ -698,7 +720,7 @@ function CreatePolicyDialog({
             <Select
               value={scopeType || undefined}
               onValueChange={(v) => {
-                setScopeType(v as ResourceType);
+                setScopeType(v as PolicyScopeType);
                 setScopeId('');
                 setSelectedRoleIds(new Set());
               }}
@@ -718,7 +740,7 @@ function CreatePolicyDialog({
                   <SelectLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                     Resource-specific
                   </SelectLabel>
-                  {(['project', 'member', 'group', 'sandbox', 'trigger', 'channel'] as ResourceType[]).map(
+                  {(['project', 'project_group', 'member', 'group', 'sandbox', 'trigger', 'channel'] as PolicyScopeType[]).map(
                     (rt) => {
                       const meta = RESOURCE_TYPE_META[rt];
                       return (
@@ -816,6 +838,35 @@ function CreatePolicyDialog({
                       groups.map((g) => (
                         <SelectItem key={g.group_id} value={g.group_id}>
                           {g.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+              {scopeType === 'project_group' && (
+                <Select
+                  value={scopeId || undefined}
+                  onValueChange={setScopeId}
+                  disabled={createMutation.isPending}
+                >
+                  <SelectTrigger ref={appliesToTriggerRef}>
+                    <SelectValue placeholder="Pick a project group..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projectGroups.length === 0 ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        No project groups yet. Create one in Settings → Project
+                        groups, then attach projects to it.
+                      </div>
+                    ) : (
+                      projectGroups.map((g) => (
+                        <SelectItem key={g.group_id} value={g.group_id}>
+                          {g.name}
+                          <span className="ml-2 text-[10px] text-muted-foreground">
+                            ({g.project_count}{' '}
+                            {g.project_count === 1 ? 'project' : 'projects'})
+                          </span>
                         </SelectItem>
                       ))
                     )}
