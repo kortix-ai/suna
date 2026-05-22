@@ -6,10 +6,14 @@ updates:
   # JS/TS dependencies (pnpm uses the npm ecosystem).
   - package-ecosystem: "npm"
     directory: "/"
+    # Active development happens on newer-kortix, not the default branch (main).
+    # PRs must target it so they land on the trunk AND get CI-gated (the
+    # typecheck/gitleaks/codeql workflows live on newer-kortix).
+    target-branch: "newer-kortix"
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 20
     labels: ["dependencies"]
     groups:
       # Batch low-risk minor/patch bumps into one PR to cut review noise.
@@ -20,6 +24,7 @@ updates:
   # Keep GitHub Actions pinned and current (supply-chain hygiene).
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "newer-kortix"
     schedule:
       interval: "weekly"
       day: "monday"
