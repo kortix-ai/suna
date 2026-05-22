@@ -28,7 +28,9 @@ import { useTabStore } from '@/stores/tab-store';
 import {
   sessionPreviewTabId,
   useSessionBrowserStore,
+  type SessionPanelView,
 } from '@/stores/session-browser-store';
+import { SessionFilesPanel } from '@/components/session/session-files-panel';
 import {
   adaptMessagesToToolCalls,
   adaptAgentStatus,
@@ -93,6 +95,7 @@ export const SessionLayout = memo(function SessionLayout({
   const panelView = useSessionBrowserStore((s) => s.viewBySession[sessionId] ?? 'actions');
   const setPanelView = useSessionBrowserStore((s) => s.setView);
   const showBrowser = panelView === 'browser';
+  const showFiles = panelView === 'files';
 
   useEffect(() => {
     if (shouldOpenPanel && !isSidePanelOpen) {
@@ -125,7 +128,8 @@ export const SessionLayout = memo(function SessionLayout({
   // tool calls"; with the browser view it also includes "browser is the
   // active view" — so the user can pop the panel open just to use the
   // internal browser even before the agent has run any tools.
-  const shouldShowPanel = isSidePanelOpen && (hasToolCalls || showBrowser);
+  const shouldShowPanel =
+    isSidePanelOpen && (hasToolCalls || showBrowser || showFiles);
 
   // Track whether we're mid-animation so we can use relaxed constraints
   // that allow intermediate sizes (e.g. 75%) during the transition.
@@ -315,6 +319,18 @@ export const SessionLayout = memo(function SessionLayout({
                 >
                   <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
                 </SidePanelFrame>
+              ) : showFiles ? (
+                <SidePanelFrame
+                  header={
+                    <PanelHeaderSwitcher
+                      view={panelView}
+                      onChangeView={(v) => setPanelView(sessionId, v)}
+                      onClose={handleSidePanelClose}
+                    />
+                  }
+                >
+                  <SessionFilesPanel />
+                </SidePanelFrame>
               ) : (
                 <KortixComputer
                   isOpen={isSidePanelOpen && hasToolCalls}
@@ -361,8 +377,8 @@ function PanelHeaderSwitcher({
   onChangeView,
   onClose,
 }: {
-  view: 'actions' | 'browser';
-  onChangeView: (next: 'actions' | 'browser') => void;
+  view: SessionPanelView;
+  onChangeView: (next: SessionPanelView) => void;
   onClose: () => void;
 }) {
   return (
@@ -378,6 +394,11 @@ function PanelHeaderSwitcher({
           active={view === 'browser'}
           onClick={() => onChangeView('browser')}
           label="Browser"
+        />
+        <PanelTabButton
+          active={view === 'files'}
+          onClick={() => onChangeView('files')}
+          label="Files"
         />
       </div>
       <Tooltip>
