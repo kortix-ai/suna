@@ -1,11 +1,13 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Clock,
+  ExternalLink,
+  Github,
   KeyRound,
   Link as LinkIcon,
   Loader2,
@@ -14,6 +16,7 @@ import {
   RefreshCw,
   Shield,
   Trash2,
+  Unplug,
   UserPlus,
   X,
 } from 'lucide-react';
@@ -25,6 +28,7 @@ import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { EmptyState } from '@/components/ui/empty-state';
 import {
   Dialog,
   DialogContent,
@@ -41,7 +45,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { InlineMeta } from '@/components/ui/inline-meta';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Label } from '@/components/ui/label';
+import { List, ListRow } from '@/components/ui/list';
 import {
   Select,
   SelectContent,
@@ -50,6 +57,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { SectionCard } from '@/components/ui/section-card';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
@@ -62,10 +71,12 @@ import {
   type AccountMember,
   type AccountRole,
   cancelAccountInvite,
+  deleteGitHubInstallation,
   getAccount,
   inviteAccountMember,
   leaveAccount,
   listAccountInvites,
+  listGitHubInstallations,
   listAccountMembers,
   removeAccountMember,
   resendAccountInvite,
@@ -84,7 +95,11 @@ function formatDate(input: string | null | undefined) {
   if (!input) return '—';
   const d = new Date(input);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 function memberLabel(member: Pick<AccountMember, 'email' | 'user_id'>) {
@@ -99,13 +114,25 @@ async function copyInviteLink(url: string) {
   } catch {
     // Older browsers / blocked clipboard — show the link in a toast so the
     // admin can copy it by hand.
-    toast.message('Copy this invite link', { description: url, duration: 15_000 });
+    toast.message('Copy this invite link', {
+      description: url,
+      duration: 15_000,
+    });
+  }
+}
+
+function rememberGitHubSetupReturn(path: string) {
+  try {
+    window.localStorage.setItem('kortix:github_setup_return', path);
+  } catch {
+    // Non-critical: the setup page falls back to the project import flow.
   }
 }
 
 export default function AccountSettingsPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const accountId = params?.id;
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
@@ -128,14 +155,6 @@ export default function AccountSettingsPage() {
     staleTime: 20_000,
   });
 
-  if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
-  }
-
-  const account = accountQuery.data;
-  const members = membersQuery.data ?? [];
-  const isTeam = account ? !account.personal_account : false;
-
   // Granular capabilities sourced from the IAM engine instead of raw
   // account_role. A member granted "Administrator" via an explicit policy
   // gets the same affordances an owner does, and vice-versa.
@@ -147,6 +166,21 @@ export default function AccountSettingsPage() {
   const canCreateGroup = usePermission(accountId, 'group.create').allowed;
   const canCreateRole = usePermission(accountId, 'role.create').allowed;
   const canReadAudit = usePermission(accountId, 'audit.read').allowed;
+
+  if (authLoading || !user) {
+    return (
+      <ConnectingScreen
+        forceConnecting
+        overrideStage="auth"
+        hideWorkspacePicker
+      />
+    );
+  }
+
+  const account = accountQuery.data;
+  const members = membersQuery.data ?? [];
+  const isTeam = account ? !account.personal_account : false;
+  const initialTab = searchParams.get('tab') === 'git' ? 'git' : 'members';
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -181,7 +215,11 @@ export default function AccountSettingsPage() {
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                {accountQuery.isLoading ? <Skeleton className="h-7 w-48" /> : account?.name}
+                {accountQuery.isLoading ? (
+                  <Skeleton className="h-7 w-48" />
+                ) : (
+                  account?.name
+                )}
               </h1>
               {account && (
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -195,7 +233,9 @@ export default function AccountSettingsPage() {
 
           {accountQuery.isError && (
             <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-              <p className="text-sm font-medium text-destructive">Failed to load account</p>
+              <p className="text-sm font-medium text-destructive">
+                Failed to load account
+              </p>
               <p className="mt-1 text-xs text-destructive/80">
                 {(accountQuery.error as Error).message}
               </p>
@@ -218,11 +258,12 @@ export default function AccountSettingsPage() {
           )}
 
           {account && (
-            <Tabs defaultValue="members" className="space-y-6">
+            <Tabs defaultValue={initialTab} className="space-y-6">
               <TabsList>
                 <TabsTrigger value="members">All members</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
                 <TabsTrigger value="roles">Roles</TabsTrigger>
+                <TabsTrigger value="git">Git</TabsTrigger>
                 {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
@@ -244,11 +285,17 @@ export default function AccountSettingsPage() {
               </TabsContent>
 
               <TabsContent value="groups" className="space-y-6">
-                <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
+                <GroupsTab
+                  accountId={account.account_id}
+                  canCreate={canCreateGroup}
+                />
               </TabsContent>
 
               <TabsContent value="roles" className="space-y-6">
-                <RolesTab accountId={account.account_id} canCreate={canCreateRole} />
+                <RolesTab
+                  accountId={account.account_id}
+                  canCreate={canCreateRole}
+                />
               </TabsContent>
 
               {canReadAudit && (
@@ -256,6 +303,13 @@ export default function AccountSettingsPage() {
                   <AuditTab accountId={account.account_id} />
                 </TabsContent>
               )}
+
+              <TabsContent value="git" className="space-y-6">
+                <GitHubConnectionCard
+                  account={account}
+                  canManage={canWriteAccount}
+                />
+              </TabsContent>
 
               <TabsContent value="settings" className="space-y-6">
                 <GeneralCard
@@ -274,6 +328,252 @@ export default function AccountSettingsPage() {
 }
 
 // ============================== GENERAL ==============================
+
+function GitHubConnectionCard({
+  account,
+  canManage,
+}: {
+  account: AccountDetail;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [disconnectTarget, setDisconnectTarget] = useState<{
+    installationId: string;
+    ownerLogin: string | null;
+  } | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const installationsQuery = useQuery({
+    queryKey: ['github-installations', account.account_id],
+    queryFn: () => listGitHubInstallations(account.account_id),
+    staleTime: 0,
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: (installationId: string) =>
+      deleteGitHubInstallation(account.account_id, installationId),
+    onSuccess: () => {
+      toast.success('GitHub disconnected');
+      setDisconnectTarget(null);
+      queryClient.invalidateQueries({
+        queryKey: ['github-installations', account.account_id],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['github-repositories', account.account_id],
+      });
+    },
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to disconnect GitHub'),
+  });
+
+  async function handleConnect() {
+    if (!canManage) return;
+    setIsConnecting(true);
+    try {
+      const result = await installationsQuery.refetch();
+      if (result.error) throw result.error;
+      const installUrl = result.data?.install_url;
+      if (!installUrl) {
+        toast.error(
+          result.data?.configured === false
+            ? 'GitHub App is not configured'
+            : 'GitHub install URL unavailable',
+        );
+        return;
+      }
+      rememberGitHubSetupReturn(`/accounts/${account.account_id}?tab=git`);
+      window.location.assign(installUrl);
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to start GitHub setup');
+    } finally {
+      setIsConnecting(false);
+    }
+  }
+
+  const installations = installationsQuery.data?.installations ?? [];
+
+  return (
+    <>
+      <SectionCard
+        title="Git connections"
+        count={installations.length}
+        description="Connect one or more GitHub users or organizations. Projects choose a connection during import."
+        action={
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5"
+            disabled={!canManage || isConnecting}
+            onClick={handleConnect}
+            title={
+              canManage
+                ? undefined
+                : 'You do not have permission to connect GitHub.'
+            }
+          >
+            {isConnecting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Github className="h-4 w-4" />
+            )}
+            {isConnecting ? 'Connecting' : 'Connect GitHub'}
+          </Button>
+        }
+        flush
+      >
+        {installationsQuery.isLoading ? (
+          <List>
+            <li className="flex items-center gap-3 px-6 py-3">
+              <Skeleton className="size-8 rounded-lg" />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+            </li>
+          </List>
+        ) : installationsQuery.isError ? (
+          <div className="px-6 py-5">
+            <InfoBanner
+              tone="warning"
+              icon={Github}
+              title="GitHub status unavailable"
+            >
+              {(installationsQuery.error as Error).message}
+            </InfoBanner>
+          </div>
+        ) : installations.length === 0 ? (
+          <EmptyState
+            icon={Github}
+            title="No GitHub connections"
+            description="Connect the Kortix GitHub App to import repositories from a personal account or organization."
+            action={
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5"
+                disabled={!canManage || isConnecting}
+                onClick={handleConnect}
+              >
+                {isConnecting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Github className="h-4 w-4" />
+                )}
+                Connect GitHub
+              </Button>
+            }
+          />
+        ) : (
+          <List>
+            {installations.map((installation) => {
+              const contentsPermission = permissionLabel(
+                installation.permissions?.contents,
+              );
+              const repoSelection =
+                installation.repository_selection === 'selected'
+                  ? 'Selected repositories'
+                  : installation.repository_selection === 'all'
+                    ? 'All repositories'
+                    : null;
+              const installationId = installation.installation_id ?? '';
+              return (
+                <ListRow
+                  key={installationId || installation.owner_login || 'github'}
+                  leading={<EntityAvatar icon={Github} />}
+                  title={installation.owner_login ?? 'GitHub App'}
+                  badges={
+                    <Badge variant="success" size="sm">
+                      Connected
+                    </Badge>
+                  }
+                  subtitle={
+                    <InlineMeta>
+                      {installation.owner_type ? (
+                        <span>{installation.owner_type}</span>
+                      ) : null}
+                      {repoSelection ? <span>{repoSelection}</span> : null}
+                      {contentsPermission ? (
+                        <span>{contentsPermission}</span>
+                      ) : null}
+                    </InlineMeta>
+                  }
+                  trailing={
+                    <>
+                      {installation.installation_url ? (
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                        >
+                          <a
+                            href={installation.installation_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            Configure
+                          </a>
+                        </Button>
+                      ) : null}
+                      {canManage && installationId ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() =>
+                            setDisconnectTarget({
+                              installationId,
+                              ownerLogin: installation.owner_login,
+                            })
+                          }
+                        >
+                          <Unplug className="h-3.5 w-3.5" />
+                          Disconnect
+                        </Button>
+                      ) : null}
+                    </>
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
+      </SectionCard>
+
+      <InfoBanner
+        tone="neutral"
+        icon={Shield}
+        title="Git credentials are platform credentials"
+      >
+        Kortix stores the GitHub App installation on the account and mints
+        short-lived clone tokens server-side for imports, snapshots, and sandbox
+        git operations. These credentials are not user-readable project secrets
+        and are never injected as runtime env vars.
+      </InfoBanner>
+
+      <ConfirmDialog
+        open={Boolean(disconnectTarget)}
+        onOpenChange={(open) => !open && setDisconnectTarget(null)}
+        title="Disconnect GitHub"
+        description={`New imports from ${disconnectTarget?.ownerLogin ?? 'this GitHub account'} will stop working until it is connected again. Existing projects keep their repository link.`}
+        confirmLabel="Disconnect"
+        onConfirm={() => {
+          if (disconnectTarget) {
+            disconnectMutation.mutate(disconnectTarget.installationId);
+          }
+        }}
+        isPending={disconnectMutation.isPending}
+      />
+    </>
+  );
+}
+
+function permissionLabel(value: unknown): string | null {
+  if (typeof value !== 'string' || !value) return null;
+  return `Contents ${value}`;
+}
 
 function GeneralCard({
   account,
@@ -297,7 +597,8 @@ function GeneralCard({
       queryClient.setQueryData(['account', account.account_id], updated);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update account'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to update account'),
   });
 
   const trimmed = name.trim();
@@ -328,7 +629,11 @@ function GeneralCard({
             disabled={!canWrite || renameMutation.isPending}
             maxLength={120}
             className="max-w-md"
-            title={canWrite ? undefined : 'You do not have permission to rename this account.'}
+            title={
+              canWrite
+                ? undefined
+                : 'You do not have permission to rename this account.'
+            }
           />
           {!canWrite && (
             <p className="text-xs text-muted-foreground">
@@ -341,8 +646,14 @@ function GeneralCard({
           <p className="text-xs text-muted-foreground">
             Created {formatDate(account.created_at)}
           </p>
-          <Button type="submit" disabled={!canSubmit || renameMutation.isPending} className="gap-1.5">
-            {renameMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          <Button
+            type="submit"
+            disabled={!canSubmit || renameMutation.isPending}
+            className="gap-1.5"
+          >
+            {renameMutation.isPending && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
             Save
           </Button>
         </div>
@@ -397,13 +708,20 @@ function MembersCard({
   }, [members]);
 
   const invalidateMembers = () => {
-    queryClient.invalidateQueries({ queryKey: ['account-members', account.account_id] });
-    queryClient.invalidateQueries({ queryKey: ['account-invites', account.account_id] });
-    queryClient.invalidateQueries({ queryKey: ['account', account.account_id] });
+    queryClient.invalidateQueries({
+      queryKey: ['account-members', account.account_id],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ['account-invites', account.account_id],
+    });
+    queryClient.invalidateQueries({
+      queryKey: ['account', account.account_id],
+    });
   };
 
   const removeMutation = useMutation({
-    mutationFn: (userId: string) => removeAccountMember(account.account_id, userId),
+    mutationFn: (userId: string) =>
+      removeAccountMember(account.account_id, userId),
     onMutate: (userId) => setPendingUserId(userId),
     onSettled: () => setPendingUserId(null),
     onSuccess: () => {
@@ -411,7 +729,8 @@ function MembersCard({
       invalidateMembers();
       setRemoveTarget(null);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to remove member'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to remove member'),
   });
 
   const roleMutation = useMutation({
@@ -423,7 +742,8 @@ function MembersCard({
       toast.success('Role updated');
       invalidateMembers();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update role'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to update role'),
   });
 
   const leaveMutation = useMutation({
@@ -444,14 +764,20 @@ function MembersCard({
         <div>
           <h2 className="text-base font-semibold text-foreground">
             Members{' '}
-            <span className="font-normal text-muted-foreground">({account.member_count})</span>
+            <span className="font-normal text-muted-foreground">
+              ({account.member_count})
+            </span>
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             People with access to this account.
           </p>
         </div>
         {canInvite && (
-          <Button onClick={() => setInviteOpen(true)} size="sm" className="gap-1.5">
+          <Button
+            onClick={() => setInviteOpen(true)}
+            size="sm"
+            className="gap-1.5"
+          >
             <UserPlus className="h-4 w-4" />
             Invite member
           </Button>
@@ -460,8 +786,15 @@ function MembersCard({
 
       {isError && (
         <div className="px-6 py-5">
-          <p className="text-sm text-destructive">{error?.message || 'Failed to load members'}</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+          <p className="text-sm text-destructive">
+            {error?.message || 'Failed to load members'}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={onRetry}
+          >
             Retry
           </Button>
         </div>
@@ -482,7 +815,10 @@ function MembersCard({
       )}
 
       {!isLoading && !isError && (
-        <PendingInvitesSection accountId={account.account_id} canManage={canInvite} />
+        <PendingInvitesSection
+          accountId={account.account_id}
+          canManage={canInvite}
+        />
       )}
 
       {!isLoading && !isError && (
@@ -520,12 +856,16 @@ function MembersCard({
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                     <span>Joined {formatDate(member.joined_at)}</span>
-                    {member.account_role === 'member' && typeof member.explicit_project_count === 'number' && (
-                      <>
-                        <span className="text-muted-foreground/40">/</span>
-                        <span>{member.explicit_project_count} project{member.explicit_project_count === 1 ? '' : 's'}</span>
-                      </>
-                    )}
+                    {member.account_role === 'member' &&
+                      typeof member.explicit_project_count === 'number' && (
+                        <>
+                          <span className="text-muted-foreground/40">/</span>
+                          <span>
+                            {member.explicit_project_count} project
+                            {member.explicit_project_count === 1 ? '' : 's'}
+                          </span>
+                        </>
+                      )}
                   </div>
                 </div>
 
@@ -564,12 +904,17 @@ function MembersCard({
                             <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                               Change role
                             </DropdownMenuLabel>
-                            {(['owner', 'admin', 'member'] as AccountRole[]).map((role) => (
+                            {(
+                              ['owner', 'admin', 'member'] as AccountRole[]
+                            ).map((role) => (
                               <DropdownMenuItem
                                 key={role}
                                 disabled={role === member.account_role}
                                 onSelect={() =>
-                                  roleMutation.mutate({ userId: member.user_id, role })
+                                  roleMutation.mutate({
+                                    userId: member.user_id,
+                                    role,
+                                  })
                                 }
                                 className="gap-2"
                               >
@@ -640,13 +985,19 @@ function MembersCard({
         title="Remove member"
         description={
           <span>
-            Remove <span className="font-medium text-foreground">{removeTarget ? memberLabel(removeTarget) : ''}</span> from{' '}
-            <span className="font-medium text-foreground">{account.name}</span>? They will lose
-            access immediately.
+            Remove{' '}
+            <span className="font-medium text-foreground">
+              {removeTarget ? memberLabel(removeTarget) : ''}
+            </span>{' '}
+            from{' '}
+            <span className="font-medium text-foreground">{account.name}</span>?
+            They will lose access immediately.
           </span>
         }
         confirmLabel="Remove"
-        onConfirm={() => removeTarget && removeMutation.mutate(removeTarget.user_id)}
+        onConfirm={() =>
+          removeTarget && removeMutation.mutate(removeTarget.user_id)
+        }
         isPending={removeMutation.isPending}
       />
 
@@ -656,7 +1007,8 @@ function MembersCard({
         title="Leave team"
         description={
           <span>
-            You&apos;ll lose access to <span className="font-medium text-foreground">{account.name}</span>{' '}
+            You&apos;ll lose access to{' '}
+            <span className="font-medium text-foreground">{account.name}</span>{' '}
             and its projects.
           </span>
         }
@@ -698,21 +1050,27 @@ function InviteMemberModal({
   const [inlineError, setInlineError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () => inviteAccountMember(accountId, { email: email.trim(), role }),
+    mutationFn: () =>
+      inviteAccountMember(accountId, { email: email.trim(), role }),
     onSuccess: (res) => {
       if (res.status === 'pending') {
         if (res.email_sent) {
-          toast.success(`Invite sent to ${res.email} — they'll see it when they sign up`);
+          toast.success(
+            `Invite sent to ${res.email} — they'll see it when they sign up`,
+          );
         } else {
           // Email delivery was skipped (e.g. Mailtrap not configured locally).
           // Surface the link so the admin can share it manually.
-          toast.warning(`Invite created — email skipped. Share the link manually.`, {
-            action: {
-              label: 'Copy link',
-              onClick: () => copyInviteLink(res.invite_url),
+          toast.warning(
+            `Invite created — email skipped. Share the link manually.`,
+            {
+              action: {
+                label: 'Copy link',
+                onClick: () => copyInviteLink(res.invite_url),
+              },
+              duration: 10_000,
             },
-            duration: 10_000,
-          });
+          );
         }
       } else {
         toast.success(`Added ${res.email}`);
@@ -761,9 +1119,12 @@ function InviteMemberModal({
     >
       <DialogContent className="sm:max-w-md p-0 overflow-hidden gap-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/60">
-          <DialogTitle className="text-lg font-semibold tracking-tight">Invite member</DialogTitle>
+          <DialogTitle className="text-lg font-semibold tracking-tight">
+            Invite member
+          </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            Invite by email. If they don&apos;t have a Kortix account yet, they&apos;ll get access when they sign up.
+            Invite by email. If they don&apos;t have a Kortix account yet,
+            they&apos;ll get access when they sign up.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
@@ -798,8 +1159,12 @@ function InviteMemberModal({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="member">Member — can use assigned projects</SelectItem>
-                <SelectItem value="admin">Admin — can invite members</SelectItem>
+                <SelectItem value="member">
+                  Member — can use assigned projects
+                </SelectItem>
+                <SelectItem value="admin">
+                  Admin — can invite members
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -819,7 +1184,11 @@ function InviteMemberModal({
             >
               Cancel
             </Button>
-            <Button type="submit" className="gap-1.5" disabled={mutation.isPending}>
+            <Button
+              type="submit"
+              className="gap-1.5"
+              disabled={mutation.isPending}
+            >
               {mutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -840,7 +1209,9 @@ function DangerZoneCard() {
   return (
     <section className="rounded-xl border border-destructive/30 bg-destructive/5">
       <header className="border-b border-destructive/20 px-6 py-4">
-        <h2 className="text-base font-semibold text-destructive">Danger zone</h2>
+        <h2 className="text-base font-semibold text-destructive">
+          Danger zone
+        </h2>
         <p className="mt-0.5 text-xs text-destructive/80">
           Irreversible actions for this team.
         </p>
@@ -852,7 +1223,12 @@ function DangerZoneCard() {
             Permanently delete this account and all associated projects.
           </p>
         </div>
-        <Button variant="outline" disabled title="Coming soon" className="shrink-0">
+        <Button
+          variant="outline"
+          disabled
+          title="Coming soon"
+          className="shrink-0"
+        >
           Coming soon
         </Button>
       </div>
@@ -871,7 +1247,9 @@ function PendingInvitesSection({
 }) {
   const queryClient = useQueryClient();
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [cancelTarget, setCancelTarget] = useState<AccountInvitation | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<AccountInvitation | null>(
+    null,
+  );
 
   const invitesQuery = useQuery({
     queryKey: ['account-invites', accountId],
@@ -902,7 +1280,8 @@ function PendingInvitesSection({
       }
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to resend invite'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to resend invite'),
   });
 
   const cancelMutation = useMutation({
@@ -913,7 +1292,8 @@ function PendingInvitesSection({
       toast.success('Invite cancelled');
       invalidate();
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to cancel invite'),
+    onError: (err: Error) =>
+      toast.error(err.message || 'Failed to cancel invite'),
   });
 
   const invites = invitesQuery.data ?? [];
@@ -928,11 +1308,16 @@ function PendingInvitesSection({
         {invites.map((invite) => {
           const busy = pendingId === invite.invite_id;
           return (
-            <li key={invite.invite_id} className="flex items-center gap-3 px-6 py-2.5">
+            <li
+              key={invite.invite_id}
+              className="flex items-center gap-3 px-6 py-2.5"
+            >
               <UserAvatar email={invite.email} size="md" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm text-foreground">{invite.email}</span>
+                  <span className="truncate text-sm text-foreground">
+                    {invite.email}
+                  </span>
                   <Badge variant="secondary" size="sm">
                     Pending
                   </Badge>
@@ -992,7 +1377,9 @@ function PendingInvitesSection({
 
       <ConfirmDialog
         open={!!cancelTarget}
-        onOpenChange={(o) => { if (!o) setCancelTarget(null); }}
+        onOpenChange={(o) => {
+          if (!o) setCancelTarget(null);
+        }}
         title="Cancel invite"
         description={
           cancelTarget

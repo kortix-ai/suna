@@ -198,6 +198,7 @@ mock.module('../shared/db', () => ({
             }
             if (table === accountGithubInstallations) {
               return [{
+                installationRowId: '00000000-0000-4000-a000-000000000041',
                 accountId: ACCOUNT_ID,
                 installationId: '42',
                 ownerLogin: 'kortix-org',

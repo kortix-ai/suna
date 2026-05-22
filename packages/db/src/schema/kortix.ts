@@ -170,8 +170,9 @@ export const accountInvitations = kortixSchema.table(
 export const accountGithubInstallations = kortixSchema.table(
   'account_github_installations',
   {
+    installationRowId: uuid('installation_row_id').defaultRandom().primaryKey(),
     accountId: uuid('account_id')
-      .primaryKey()
+      .notNull()
       .references(() => accounts.accountId, { onDelete: 'cascade' }),
     installationId: text('installation_id').notNull(),
     ownerLogin: varchar('owner_login', { length: 255 }).notNull(),
@@ -183,7 +184,8 @@ export const accountGithubInstallations = kortixSchema.table(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('idx_account_github_installations_installation').on(table.installationId),
+    index('idx_account_github_installations_account').on(table.accountId),
+    uniqueIndex('idx_account_github_installations_account_installation').on(table.accountId, table.installationId),
     index('idx_account_github_installations_owner').on(table.ownerLogin),
   ],
 );

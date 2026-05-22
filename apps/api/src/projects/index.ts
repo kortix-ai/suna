@@ -502,6 +502,7 @@ function serializeGitHubInstallation(
 ) {
   const installed = Boolean(row);
   const kortixDefaultAvailable = isGithubPatConfigured();
+  const metadata = normalizeJsonObject(row?.metadata);
   // requires_installation is now only true when neither a per-account
   // install nor a Kortix-owned default exists. The default Create flow
   // always uses the Kortix org via PAT when one is configured, so users
@@ -509,6 +510,7 @@ function serializeGitHubInstallation(
   const requiresInstallation = isGithubAppConfigured() && !installed && !kortixDefaultAvailable;
   return {
     account_id: accountId,
+    installation_row_id: row?.installationRowId ?? null,
     installed,
     configured: isGithubAppConfigured(),
     requires_installation: requiresInstallation,
@@ -520,7 +522,24 @@ function serializeGitHubInstallation(
     owner_type: row?.ownerType ?? null,
     repository_selection: row?.repositorySelection ?? null,
     permissions: row?.permissions ?? {},
+    installation_url: normalizeString(metadata.html_url),
     updated_at: row?.updatedAt.toISOString() ?? null,
+  };
+}
+
+function serializeGitHubInstallations(
+  rows: Array<typeof accountGithubInstallations.$inferSelect>,
+  accountId: string,
+  installUrl: string | null,
+) {
+  const primary = rows[0] ?? null;
+  const base = serializeGitHubInstallation(primary, accountId, installUrl);
+  return {
+    ...base,
+    installed: rows.length > 0,
+    requires_installation: isGithubAppConfigured() && rows.length === 0 && !isGithubPatConfigured(),
+    install_url: installUrl,
+    installations: rows.map((row) => serializeGitHubInstallation(row, accountId, null)),
   };
 }
 
@@ -609,13 +628,19 @@ async function getAccountMembership(userId: string, accountId: string) {
   return membership ?? null;
 }
 
-async function getAccountGitHubInstallation(accountId: string) {
-  const [row] = await db
+async function listAccountGitHubInstallations(accountId: string) {
+  return await db
     .select()
     .from(accountGithubInstallations)
-    .where(eq(accountGithubInstallations.accountId, accountId))
-    .limit(1);
-  return row ?? null;
+    .where(eq(accountGithubInstallations.accountId, accountId));
+}
+
+async function getAccountGitHubInstallation(accountId: string, installationId?: string | null) {
+  const rows = await listAccountGitHubInstallations(accountId);
+  if (installationId) {
+    return rows.find((row) => row.installationId === installationId) ?? null;
+  }
+  return rows[0] ?? null;
 }
 
 async function createGitHubInstallationInstallUrl(accountId: string, userId: string): Promise<string | null> {
@@ -637,7 +662,7 @@ async function consumeGitHubInstallationState(input: {
   userId: string;
   nonce: string;
   installationId: string;
-}): Promise<boolean> {
+}): Promise<'consumed' | 'already_consumed' | 'invalid'> {
   const now = new Date();
   const updated = await db
     .update(accountGithubInstallationStates)
@@ -654,7 +679,27 @@ async function consumeGitHubInstallationState(input: {
     ))
     .returning({ stateNonce: accountGithubInstallationStates.stateNonce });
 
-  return updated.length === 1;
+  if (updated.length === 1) return 'consumed';
+
+  const [state] = await db
+    .select({
+      installationId: accountGithubInstallationStates.installationId,
+      consumedAt: accountGithubInstallationStates.consumedAt,
+    })
+    .from(accountGithubInstallationStates)
+    .where(and(
+      eq(accountGithubInstallationStates.stateNonce, input.nonce),
+      eq(accountGithubInstallationStates.accountId, input.accountId),
+      eq(accountGithubInstallationStates.userId, input.userId),
+      gt(accountGithubInstallationStates.expiresAt, now),
+    ))
+    .limit(1);
+
+  if (state?.consumedAt && state.installationId === input.installationId) {
+    return 'already_consumed';
+  }
+
+  return 'invalid';
 }
 
 class GitHubInstallationRequiredError extends Error {
@@ -663,12 +708,12 @@ class GitHubInstallationRequiredError extends Error {
   }
 }
 
-async function resolveGitHubRepoAuth(accountId: string): Promise<{
+async function resolveGitHubRepoAuth(accountId: string, installationId?: string | null): Promise<{
   auth?: GitHubAuthContext;
   authSource: 'app_installation' | 'pat';
   installation?: typeof accountGithubInstallations.$inferSelect;
 }> {
-  const installation = await getAccountGitHubInstallation(accountId);
+  const installation = await getAccountGitHubInstallation(accountId, installationId);
   if (installation) {
     const token = await createInstallationToken(installation.installationId);
     return {
@@ -682,6 +727,9 @@ async function resolveGitHubRepoAuth(accountId: string): Promise<{
       authSource: 'app_installation',
       installation,
     };
+  }
+  if (installationId) {
+    throw new Error('Selected GitHub installation is not connected to this account');
   }
 
   // No per-account installation. Default Create flow puts the repo under the
@@ -946,11 +994,12 @@ async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
     const repo = parseGitHubRepoUrl(project.repoUrl);
     if (!repo) return { authSource: 'none' };
-    const installation = await getAccountGitHubInstallation(project.accountId);
+    const installation = remote.installationId
+      ? await getAccountGitHubInstallation(project.accountId, remote.installationId)
+      : (await listAccountGitHubInstallations(project.accountId)).find(
+          (candidate) => candidate.ownerLogin.toLowerCase() === repo.owner.toLowerCase(),
+        ) ?? null;
     if (!installation) return { authSource: 'none' };
-    if (remote.installationId && remote.installationId !== installation.installationId) {
-      return { authSource: 'none' };
-    }
     if (repo.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
       return { authSource: 'none' };
     }
@@ -1114,6 +1163,7 @@ async function resolveProjectAccount(c: Context, body?: Record<string, unknown>)
 async function resolveGitHubImport(input: {
   accountId: string;
   repoUrl: string;
+  installationId?: string | null;
   defaultBranch?: string | null;
 }): Promise<{
   repo: GitHubRepo;
@@ -1126,9 +1176,23 @@ async function resolveGitHubImport(input: {
     throw new Error('repo_url must be a GitHub repository URL');
   }
 
-  const installation = await getAccountGitHubInstallation(input.accountId);
+  const installations = input.installationId
+    ? [
+        await getAccountGitHubInstallation(input.accountId, input.installationId),
+      ].filter(Boolean) as Array<typeof accountGithubInstallations.$inferSelect>
+    : await listAccountGitHubInstallations(input.accountId);
+  const installation = input.installationId
+    ? installations[0] ?? null
+    : installations.find(
+        (candidate) => candidate.ownerLogin.toLowerCase() === parsed.owner.toLowerCase(),
+      ) ?? null;
   if (!installation) {
-    throw new GitHubInstallationRequiredError(input.accountId);
+    if (installations.length === 0) throw new GitHubInstallationRequiredError(input.accountId);
+    throw new Error(
+      input.installationId
+        ? 'Selected GitHub installation is not connected to this account'
+        : `Install or select a GitHub App installation for ${parsed.owner} to link this repo`,
+    );
   }
   if (parsed.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
     throw new Error(
@@ -2161,6 +2225,7 @@ projectsApp.post('/', async (c) => {
     imported = await resolveGitHubImport({
       accountId: scope.accountId,
       repoUrl,
+      installationId: normalizeString(body.installation_id ?? body.installationId),
       defaultBranch,
     });
   } catch (error) {
@@ -2390,11 +2455,29 @@ projectsApp.post('/:projectId/git-token', async (c) => {
 // installation tokens are minted server-side at repo creation time.
 projectsApp.get('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
-  const row = await getAccountGitHubInstallation(scope.accountId);
-  const installUrl = row ? null : await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
-  return c.json(serializeGitHubInstallation(row, scope.accountId, installUrl));
+  const rows = await listAccountGitHubInstallations(scope.accountId);
+  const canManageGit = (await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
+  const installUrl = canManageGit
+    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
+    : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
+});
+
+// GET /v1/projects/github/installations?account_id=...
+// Vercel-style account Git connections surface. A Kortix account can connect
+// multiple GitHub users/orgs and pick the exact installation during import.
+projectsApp.get('/github/installations', async (c) => {
+  const scope = await resolveProjectAccount(c);
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
+
+  const rows = await listAccountGitHubInstallations(scope.accountId);
+  const canManageGit = (await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
+  const installUrl = canManageGit
+    ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
+    : null;
+  return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
 });
 
 // POST /v1/projects/github/installation
@@ -2419,13 +2502,17 @@ projectsApp.post('/github/installation', async (c) => {
     return c.json({ error: 'installation_id must be a GitHub installation id' }, 400);
   }
 
-  const stateConsumed = await consumeGitHubInstallationState({
+  const stateStatus = await consumeGitHubInstallationState({
     accountId: scope.accountId,
     userId: scope.userId,
     nonce: statePayload.nonce,
     installationId,
   });
-  if (!stateConsumed) {
+  if (stateStatus === 'invalid') {
+    const existing = await getAccountGitHubInstallation(scope.accountId, installationId);
+    if (existing?.installationId === installationId) {
+      return c.json(serializeGitHubInstallation(existing, scope.accountId, null), 200);
+    }
     return c.json({ error: 'GitHub installation state is expired or already used' }, 400);
   }
 
@@ -2458,9 +2545,8 @@ projectsApp.post('/github/installation', async (c) => {
       updatedAt: now,
     })
     .onConflictDoUpdate({
-      target: [accountGithubInstallations.accountId],
+      target: [accountGithubInstallations.accountId, accountGithubInstallations.installationId],
       set: {
-        installationId,
         ownerLogin,
         ownerType: normalizeString(installation.account?.type) ?? installation.target_type ?? 'Organization',
         repositorySelection: installation.repository_selection ?? null,
@@ -2480,10 +2566,32 @@ projectsApp.post('/github/installation', async (c) => {
 projectsApp.delete('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const installationId = normalizeString(c.req.query('installation_id') ?? c.req.query('installationId'));
 
   await db
     .delete(accountGithubInstallations)
-    .where(eq(accountGithubInstallations.accountId, scope.accountId));
+    .where(installationId
+      ? and(
+          eq(accountGithubInstallations.accountId, scope.accountId),
+          eq(accountGithubInstallations.installationId, installationId),
+        )
+      : eq(accountGithubInstallations.accountId, scope.accountId));
+
+  return c.json({ ok: true });
+});
+
+// DELETE /v1/projects/github/installations/:installationId?account_id=...
+projectsApp.delete('/github/installations/:installationId', async (c) => {
+  const scope = await resolveProjectAccount(c);
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const installationId = c.req.param('installationId');
+
+  await db
+    .delete(accountGithubInstallations)
+    .where(and(
+      eq(accountGithubInstallations.accountId, scope.accountId),
+      eq(accountGithubInstallations.installationId, installationId),
+    ));
 
   return c.json({ ok: true });
 });
@@ -2495,10 +2603,13 @@ projectsApp.get('/github/repositories', async (c) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
-  const installation = await getAccountGitHubInstallation(scope.accountId);
+  const installationId = normalizeString(c.req.query('installation_id') ?? c.req.query('installationId'));
+  const installation = await getAccountGitHubInstallation(scope.accountId, installationId);
   if (!installation) {
     return c.json({
-      error: 'Install the Kortix GitHub App before importing repositories',
+      error: installationId
+        ? 'Selected GitHub installation is not connected to this account'
+        : 'Install the Kortix GitHub App before importing repositories',
       install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
     }, 409);
   }
@@ -2537,6 +2648,7 @@ projectsApp.post('/link-repository', async (c) => {
     imported = await resolveGitHubImport({
       accountId: scope.accountId,
       repoUrl,
+      installationId: normalizeString(body.installation_id ?? body.installationId),
       defaultBranch: normalizeString(body.default_branch ?? body.defaultBranch),
     });
   } catch (error) {
@@ -2587,7 +2699,7 @@ projectsApp.post('/create-repo', async (c) => {
 
   let githubAuth: Awaited<ReturnType<typeof resolveGitHubRepoAuth>>;
   try {
-    githubAuth = await resolveGitHubRepoAuth(scope.accountId);
+    githubAuth = await resolveGitHubRepoAuth(scope.accountId, normalizeString(body.installation_id ?? body.installationId));
   } catch (error) {
     if (error instanceof GitHubInstallationRequiredError) {
       return c.json({

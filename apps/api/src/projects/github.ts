@@ -290,12 +290,25 @@ export async function listInstallationRepositories(
   installationId: string,
 ): Promise<GitHubRepo[]> {
   const token = await createInstallationToken(installationId);
-  const body = await ghFetch<GitHubInstallationRepositories>(
-    '/installation/repositories?per_page=100',
-    { method: 'GET' },
-    { token: token.token },
-  );
-  return body.repositories ?? [];
+  const perPage = 100;
+  const repositories: GitHubRepo[] = [];
+  let page = 1;
+  let totalCount: number | null = null;
+
+  do {
+    const body = await ghFetch<GitHubInstallationRepositories>(
+      `/installation/repositories?per_page=${perPage}&page=${page}`,
+      { method: 'GET' },
+      { token: token.token },
+    );
+    totalCount = body.total_count;
+    const pageRepositories = body.repositories ?? [];
+    if (pageRepositories.length === 0) break;
+    repositories.push(...pageRepositories);
+    page += 1;
+  } while (totalCount !== null && repositories.length < totalCount);
+
+  return repositories;
 }
 
 export async function getRepo(opts: {

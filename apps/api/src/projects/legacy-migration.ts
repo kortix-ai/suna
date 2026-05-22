@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   accountInvitations,
   accountMembers,
@@ -593,14 +593,4 @@ export async function runLegacySandboxMigration(options: LegacySandboxMigrationO
   }
 
   return result;
-}
-
-export async function countLegacySandboxesNeedingMigration(database?: Database): Promise<number> {
-  const resolvedDb = await resolveDatabase(database);
-  const [row] = await resolvedDb
-    .select({ count: sql<number>`count(*)::int` })
-    .from(sandboxes)
-    .where(inArray(sandboxes.status, [...MIGRATABLE_SANDBOX_STATUSES]))
-    .limit(1);
-  return Number(row?.count ?? 0);
 }
