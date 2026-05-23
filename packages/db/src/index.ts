@@ -120,6 +120,7 @@ export {
   iamResourceTypeEnum,
   accountGroups,
   accountGroupMembers,
+  projectGroupGrants,
   iamRoles,
   iamRolePermissions,
   iamPolicies,
