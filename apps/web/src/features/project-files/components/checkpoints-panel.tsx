@@ -103,7 +103,7 @@ function CheckpointListItem({
     <button
       onClick={onSelect}
       className={cn(
-        'group flex items-start gap-3 w-full pl-3 pr-2 py-2.5 text-left',
+        'group flex items-start gap-3 w-full pl-3 pr-2 py-2.5 text-left cursor-pointer',
         'border-l-2 border-l-transparent',
         'hover:bg-muted/40 transition-colors',
         isActive && 'bg-primary/[0.05] border-l-primary',

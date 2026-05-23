@@ -344,7 +344,7 @@ export function DriveToolbar({
               disabled={openChangeRequestAction.disabled}
               title="Open a new change request"
               className={cn(
-                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium',
+                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium cursor-pointer',
                 'transition-colors text-muted-foreground hover:text-foreground hover:bg-muted/60',
               )}
             >
@@ -363,7 +363,7 @@ export function DriveToolbar({
               onClick={checkpointsToggle.onToggle}
               title="Toggle Checkpoints panel"
               className={cn(
-                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium',
+                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium cursor-pointer',
                 'transition-colors',
                 checkpointsToggle.open
                   ? 'bg-muted text-foreground'
@@ -392,7 +392,7 @@ export function DriveToolbar({
                   : 'Toggle Change Requests panel'
               }
               className={cn(
-                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium',
+                'inline-flex items-center gap-1.5 h-8 rounded-md px-2.5 text-xs font-medium cursor-pointer',
                 'transition-colors ml-1',
                 changeRequestsToggle.open
                   ? 'bg-muted text-foreground'
