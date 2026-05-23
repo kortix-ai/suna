@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { createApiKey } from '../../repositories/api-keys';
+import { createAccountToken } from '../../repositories/account-tokens';
 import {
   getProvider,
   type CreateSandboxOpts,
@@ -163,6 +164,22 @@ export async function provisionSessionSandbox(opts: {
     type: 'sandbox',
   });
 
+  // Executor token — acts AS the launching user, scoped to this project, so the
+  // Executor gateway enforces that user's connector sharing/policies. Resolved
+  // server-side; the sandbox never holds any third-party credential.
+  let executorToken: string | null = null;
+  try {
+    const tok = await createAccountToken({
+      accountId,
+      userId,
+      projectId,
+      name: `Executor Session ${sandboxId.slice(0, 8)}`,
+    });
+    executorToken = tok.secretKey;
+  } catch (err) {
+    console.warn(`[session-sandbox] failed to mint executor token for ${projectId}:`, err);
+  }
+
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -173,6 +190,7 @@ export async function provisionSessionSandbox(opts: {
     envVars: {
       ...(opts.extraEnvVars ?? {}),
       KORTIX_TOKEN: sandboxKey.secretKey,
+      ...(executorToken ? { KORTIX_EXECUTOR_TOKEN: executorToken } : {}),
     },
   };
 

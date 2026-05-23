@@ -550,6 +550,155 @@ export async function deleteProjectSecret(projectId: string, name: string) {
   );
 }
 
+// ─── Executor connectors ──────────────────────────────────────────────────
+
+export interface ConnectorAction {
+  path: string;
+  name: string;
+  description: string;
+  risk: 'read' | 'write' | 'destructive';
+  inputSchema: Record<string, unknown> | null;
+}
+
+export type ConnectorSharing =
+  | { mode: 'project' }
+  | { mode: 'private'; ownerId: string }
+  | { mode: 'members'; memberIds?: string[]; groupIds?: string[] };
+
+export interface AdminConnector {
+  slug: string;
+  name: string;
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  status: 'active' | 'disabled' | 'needs_auth' | 'error';
+  /** Credential storage model — one shared project credential vs each member's own. */
+  credentialMode: 'shared' | 'per_user';
+  actions: ConnectorAction[];
+  authSecret: string | null;
+  sharing: ConnectorSharing | null;
+  secretSet: boolean;
+}
+
+export interface ConnectorsResponse {
+  connectors: AdminConnector[];
+}
+
+export interface ConnectorSyncResult {
+  synced: number;
+  errors: Array<{ slug: string; error: string }>;
+}
+
+export async function listConnectors(projectId: string) {
+  return unwrap(
+    await backendApi.get<ConnectorsResponse>(`/executor/projects/${projectId}/connectors`),
+  );
+}
+
+export async function syncConnectors(projectId: string) {
+  return unwrap(
+    await backendApi.post<ConnectorSyncResult>(`/executor/projects/${projectId}/connectors/sync`, {}),
+  );
+}
+
+export async function setConnectorSharing(
+  projectId: string,
+  slug: string,
+  intent: ConnectorSharing,
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/sharing`,
+      intent,
+    ),
+  );
+}
+
+export async function pipedreamConnect(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.post<{ token?: string; app?: string; connectUrl?: string }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
+      {},
+    ),
+  );
+}
+
+export interface ConnectorDraftInput {
+  slug: string;
+  name?: string;
+  provider: AdminConnector['provider'];
+  app?: string;
+  account?: string;
+  url?: string;
+  transport?: 'http' | 'sse';
+  endpoint?: string;
+  baseUrl?: string;
+  spec?: string;
+  /** Credential storage mode. */
+  credential?: 'shared' | 'per_user';
+  /** Access — who can use it (applied after create). */
+  sharing?: ConnectorSharing;
+  auth?: {
+    type?: 'none' | 'bearer' | 'basic' | 'custom';
+    in?: 'header' | 'query';
+    name?: string;
+    prefix?: string;
+  };
+}
+
+export async function createConnector(projectId: string, draft: ConnectorDraftInput) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors`,
+      draft,
+    ),
+  );
+}
+
+export async function deleteConnector(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}`,
+    ),
+  );
+}
+
+export interface PipedreamApp {
+  slug: string;
+  name: string;
+  description: string | null;
+  imgSrc: string | null;
+  categories: string[];
+}
+
+export async function listPipedreamApps(projectId: string, q?: string, cursor?: string) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (cursor) params.set('cursor', cursor);
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<{ apps: PipedreamApp[]; nextCursor?: string; hasMore: boolean }>(
+      `/executor/projects/${projectId}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    ),
+  );
+}
+
+export async function setConnectorCredential(projectId: string, slug: string, value: string) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
+      { value },
+    ),
+  );
+}
+
+export async function pipedreamFinalize(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.post<{ connected: boolean; accountId?: string }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
+      {},
+    ),
+  );
+}
+
 // ─── Sandbox snapshots ────────────────────────────────────────────────────
 
 /** Build status of a project's Daytona snapshot row. */

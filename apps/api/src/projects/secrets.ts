@@ -73,6 +73,7 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
     .select({
       name: projectSecrets.name,
       valueEnc: projectSecrets.valueEnc,
+      scope: projectSecrets.scope,
     })
     .from(projectSecrets)
     .where(eq(projectSecrets.projectId, projectId));
@@ -80,6 +81,9 @@ export async function listProjectSecrets(projectId: string): Promise<Record<stri
   const env: Record<string, string> = {};
   for (const row of rows) {
     if (row.name.toUpperCase().startsWith('KORTIX_')) continue;
+    // Connector credentials / Pipedream bindings are resolved server-side by the
+    // Executor gateway — never injected into the sandbox env.
+    if (row.scope === 'connector') continue;
     env[row.name] = decryptProjectSecret(projectId, row.valueEnc);
   }
   return env;

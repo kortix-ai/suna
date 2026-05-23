@@ -14,6 +14,7 @@ export type CustomizeSection =
   | 'agents'
   | 'commands'
   | 'secrets'
+  | 'connectors'
   | 'members'
   | 'schedules'
   | 'webhooks'
@@ -28,6 +29,7 @@ export const CUSTOMIZE_SECTIONS: readonly CustomizeSection[] = [
   'agents',
   'commands',
   'secrets',
+  'connectors',
   'members',
   'schedules',
   'webhooks',

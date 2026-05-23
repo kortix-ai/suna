@@ -50,6 +50,7 @@ import {
 
   // Settings pages
   KeyRound,
+  Plug,
   Settings as SettingsIcon,
   Key,
   Bot,
@@ -387,6 +388,17 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/secrets',
     requiresProject: true,
     keywords: 'secrets env environment variables project customize',
+  },
+  {
+    id: 'proj-connectors',
+    label: 'Customize · Connectors',
+    icon: Plug,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/connectors',
+    requiresProject: true,
+    keywords: 'connectors integrations pipedream mcp openapi apps executor project customize',
   },
   {
     id: 'proj-members',

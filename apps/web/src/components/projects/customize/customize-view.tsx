@@ -23,6 +23,7 @@
 import { AgentsView } from '@/app/projects/[id]/(customize)/agents/page';
 import { ChannelsView } from '@/app/projects/[id]/(customize)/channels/page';
 import { CommandsView } from '@/app/projects/[id]/(customize)/commands/page';
+import { ConnectorsView } from '@/app/projects/[id]/(customize)/connectors/page';
 import { MembersView } from '@/app/projects/[id]/(customize)/members/page';
 import { SecretsView } from '@/app/projects/[id]/(customize)/secrets/page';
 import { SettingsView } from '@/app/projects/[id]/(customize)/settings/page';
@@ -70,6 +71,8 @@ function SectionContent({
       return <CommandsView projectId={projectId} />;
     case 'secrets':
       return <SecretsView projectId={projectId} />;
+    case 'connectors':
+      return <ConnectorsView projectId={projectId} />;
     case 'members':
       return <MembersView projectId={projectId} />;
     case 'schedules':

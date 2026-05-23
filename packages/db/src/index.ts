@@ -36,6 +36,10 @@ export {
   projectGitCredentials,
   projectMembers,
   projectSecrets,
+  projectSecretGrants,
+  secretShareScopeEnum,
+  secretGrantPrincipalEnum,
+  projectSecretScopeEnum,
   projectTriggers,
   projectTriggerEvents,
   projectTriggerRuntime,
@@ -149,6 +153,23 @@ export {
   serviceAccounts,
   // Break-glass emergency access
   iamBreakGlassGrants,
+  // Executor (connectors)
+  executorConnectorProviderEnum,
+  executorConnectorStatusEnum,
+  executorPolicyActionEnum,
+  executorRiskEnum,
+  executorExecutionStatusEnum,
+  executorCredentialModeEnum,
+  executorConnectors,
+  executorConnectorGrants,
+  executorCredentials,
+  executorConnectorActions,
+  executorConnectorPolicies,
+  executorExecutions,
+  executorConnectorsRelations,
+  executorConnectorActionsRelations,
+  executorConnectorPoliciesRelations,
+  projectSecretGrantsRelations,
 } from './schema/kortix';
 
 export type {

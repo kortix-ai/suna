@@ -1054,7 +1054,7 @@ async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   return { authSource: 'none' };
 }
 
-async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & { gitAuthToken: string | null }> {
+export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRow & { gitAuthToken: string | null }> {
   const gitAuth = await resolveProjectGitAuth(project);
   return {
     ...project,
@@ -3544,7 +3544,7 @@ function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
  * repo), synthesize a minimal valid one so the first POST /triggers can
  * scaffold it on save.
  */
-async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
+export async function loadManifestForEdit(project: ProjectRow): Promise<ParsedManifest> {
   const existing = await readManifest(await withProjectGitAuth(project));
   if (existing) return existing;
   return {
@@ -3593,7 +3593,7 @@ function removeTriggerFromManifest(
  * Commit a new revision of kortix.toml to the project's default branch.
  * All trigger CRUD funnels through this — one file, one commit per edit.
  */
-async function commitManifest(
+export async function commitManifest(
   project: ProjectRow,
   manifest: ParsedManifest,
   message: string,

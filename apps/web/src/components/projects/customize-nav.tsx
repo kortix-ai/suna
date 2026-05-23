@@ -15,6 +15,7 @@ import { usePathname } from 'next/navigation';
 import {
   Bot,
   KeyRound,
+  Plug,
   Settings,
   Slack,
   Sparkles,
@@ -41,6 +42,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { slug: 'skills',     label: 'Skills',     icon: Sparkles,       hint: 'On-demand capabilities' },
   { slug: 'commands',   label: 'Commands',   glyph: '/',           hint: 'Slash commands' },
   { slug: 'secrets',    label: 'Secrets',    icon: KeyRound,       hint: 'Per-project env values' },
+  { slug: 'connectors', label: 'Connectors', icon: Plug,           hint: 'Integrations the Executor can call' },
   { slug: 'schedules',  label: 'Schedules',  icon: Timer,          hint: 'Cron-driven triggers' },
   { slug: 'webhooks',   label: 'Webhooks',   icon: Webhook,        hint: 'Signed HTTP triggers' },
   { slug: 'channels',   label: 'Channels',   icon: Slack,          hint: 'Slack workspace install' },

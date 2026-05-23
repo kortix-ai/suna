@@ -283,6 +283,16 @@ app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billin
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+
+// Executor — unified connector layer. Gateway routes (/connectors, /call) use
+// KORTIX_EXECUTOR_TOKEN (validated inside the router); admin routes
+// (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
+{
+  const { executorApp } = await import('./executor');
+  app.use('/v1/executor/projects/*', combinedAuth);
+  app.route('/v1/executor', executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
+}
+
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
 const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');

@@ -175,6 +175,13 @@ const envSchema = z.object({
   // ── Frontend (optional) ──────────────────────────────────────────────────
   FRONTEND_URL:                optUrl('http://localhost:3000'),
 
+  // ── Pipedream Connect (optional — powers the Executor's 1-click connectors) ─
+  PIPEDREAM_CLIENT_ID:         optStr,
+  PIPEDREAM_CLIENT_SECRET:     optStr,
+  PIPEDREAM_PROJECT_ID:        optStr,
+  PIPEDREAM_ENVIRONMENT:       optStrDefault('production'),
+  PIPEDREAM_WEBHOOK_SECRET:    optStr,
+
   // ── Tunnel (optional, all have sane defaults) ────────────────────────────
   TUNNEL_SIGNING_SECRET:             optStr,
   TUNNEL_ENABLED:                    optBoolTrue,
@@ -378,6 +385,13 @@ export const config = {
 
   // ─── API Key Hashing ──────────────────────────────────────────────────────
   API_KEY_SECRET: env.API_KEY_SECRET,
+
+  // ─── Pipedream Connect (Executor 1-click connectors) ──────────────────────
+  PIPEDREAM_CLIENT_ID: env.PIPEDREAM_CLIENT_ID,
+  PIPEDREAM_CLIENT_SECRET: env.PIPEDREAM_CLIENT_SECRET,
+  PIPEDREAM_PROJECT_ID: env.PIPEDREAM_PROJECT_ID,
+  PIPEDREAM_ENVIRONMENT: env.PIPEDREAM_ENVIRONMENT,
+  PIPEDREAM_WEBHOOK_SECRET: env.PIPEDREAM_WEBHOOK_SECRET,
 
   // ─── Search Providers ──────────────────────────────────────────────────────
   TAVILY_API_URL: env.TAVILY_API_URL,

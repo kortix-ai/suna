@@ -17,6 +17,7 @@ import {
   FolderOpen,
   KeyRound,
   MessageSquare,
+  Plug,
   Settings,
   Sparkles,
   Timer,
@@ -63,6 +64,7 @@ const ITEM_GROUPS: readonly RailGroup[] = [
     label: 'Infrastructure',
     items: [
       { section: 'secrets',   label: 'Secrets',   icon: KeyRound },
+      { section: 'connectors', label: 'Connectors', icon: Plug },
       { section: 'schedules', label: 'Schedules', icon: Timer },
       { section: 'webhooks',  label: 'Webhooks',  icon: Webhook },
       { section: 'channels',  label: 'Channels',  icon: MessageSquare },
@@ -75,6 +77,8 @@ const ITEM_GROUPS: readonly RailGroup[] = [
     ],
   },
 ];
+
+const PRIMARY_ITEMS: readonly RailItem[] = ITEM_GROUPS.flatMap((group) => group.items);
 
 const FOOTER_ITEMS: readonly RailItem[] = [
   { section: 'settings', label: 'Settings', icon: Settings },
