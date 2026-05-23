@@ -413,6 +413,8 @@ mock.module('../shared/db', () => ({
               projectId: values.projectId!,
               name: values.name!,
               valueEnc: (set.valueEnc ?? values.valueEnc)!,
+              scope: values.scope ?? 'runtime',
+              shareScope: values.shareScope ?? 'project',
               createdBy: values.createdBy ?? null,
               createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
               updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,

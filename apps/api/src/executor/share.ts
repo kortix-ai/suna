@@ -50,7 +50,7 @@ export function isSecretUsableBy(
 export type SharingIntent =
   | { mode: 'project' }
   | { mode: 'private'; ownerId: string }
-  | { mode: 'members'; memberIds?: string[]; groupIds?: string[] };
+  | { mode: 'members'; memberIds?: readonly string[]; groupIds?: readonly string[] };
 
 /** Normalize a sharing intent into a persisted (scope, grants) pair. */
 export function intentToScope(intent: SharingIntent): {

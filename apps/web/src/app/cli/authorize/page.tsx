@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, KeyRound, Loader2, TerminalSquare, XCircle } from 'lucide-react';
 
@@ -237,12 +238,12 @@ function ConsentCard({
         )}
 
         <div className="mt-6 flex items-center justify-between gap-3">
-          <a
+          <Link
             href="/"
             className="text-sm text-muted-foreground underline-offset-4 hover:underline"
           >
             Cancel
-          </a>
+          </Link>
           <Button onClick={onAuthorize} disabled={busy} size="lg">
             {busy ? (
               <>

@@ -156,9 +156,11 @@ function ConnectorsCard({ projectId, connectors }: { projectId: string; connecto
     mutationFn: () => syncConnectors(projectId),
     onSuccess: (res) => {
       invalidate();
-      res.errors.length
-        ? toast.warning(`Synced ${res.synced}, ${res.errors.length} with issues`)
-        : toast.success(`Synced ${res.synced} connector(s)`);
+      if (res.errors.length) {
+        toast.warning(`Synced ${res.synced}, ${res.errors.length} with issues`);
+      } else {
+        toast.success(`Synced ${res.synced} connector(s)`);
+      }
     },
     onError: (err: Error) => toast.error(err.message || 'Sync failed'),
   });

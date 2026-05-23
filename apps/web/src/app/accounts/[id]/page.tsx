@@ -910,6 +910,8 @@ function MembersCard({
                     </Badge>
                   )
                 }
+                subtitle={
+                  <InlineMeta>
                     {member.account_role === 'member' &&
                     typeof member.explicit_project_count === 'number' ? (
                       <span>
