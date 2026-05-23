@@ -25,6 +25,7 @@ import {
 } from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
 import { usePermission, usePermissionsFor } from '@/lib/use-permission';
+import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',
@@ -88,6 +89,9 @@ export default function MemberDetailPage() {
   // Granular permissions from the IAM engine. canManage gates the policies
   // table (create/edit/delete); canPromoteSuperAdmin gates the bypass toggle.
   const canManage = usePermission(accountId, 'policy.create').allowed;
+  // V2 accounts don't have policies or permission boundaries — hide those
+  // sections entirely. Account role + groups + capabilities still apply.
+  const { enabled: isIamV2 } = useIamV2Enabled(accountId);
   const canPromoteSuperAdmin = usePermission(
     accountId,
     'member.super_admin.grant',
@@ -226,7 +230,7 @@ export default function MemberDetailPage() {
             />
           )}
 
-          {account && member && (
+          {account && member && !isIamV2 && (
             <PoliciesTable
               accountId={account.account_id}
               principalType="member"
@@ -236,7 +240,7 @@ export default function MemberDetailPage() {
             />
           )}
 
-          {account && member && (
+          {account && member && !isIamV2 && (
             <PermissionBoundaryCard
               accountId={account.account_id}
               userId={member.user_id}

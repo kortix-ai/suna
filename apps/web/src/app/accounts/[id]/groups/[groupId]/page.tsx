@@ -39,6 +39,7 @@ import {
 } from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
+import { useIamV2Enabled } from '@/lib/use-iam-version';
 
 export default function GroupDetailPage() {
   const router = useRouter();
@@ -69,6 +70,10 @@ export default function GroupDetailPage() {
     resourceId: groupId,
   }).allowed;
   const canManagePolicies = usePermission(accountId, 'policy.create').allowed;
+  // V2 accounts don't have policies — hide the Permission policies tab.
+  // The future V2 group view will show project attachments instead, but
+  // for now the existing Group Members + Settings tabs are sufficient.
+  const { enabled: isIamV2 } = useIamV2Enabled(accountId);
   const canEditGroup = usePermission(accountId, 'group.update', {
     resourceType: 'group',
     resourceId: groupId,
@@ -156,7 +161,9 @@ export default function GroupDetailPage() {
             <Tabs defaultValue="members" className="space-y-6">
               <TabsList>
                 <TabsTrigger value="members">Group members</TabsTrigger>
-                <TabsTrigger value="policies">Permission policies</TabsTrigger>
+                {!isIamV2 && (
+                  <TabsTrigger value="policies">Permission policies</TabsTrigger>
+                )}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
 
@@ -168,15 +175,17 @@ export default function GroupDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="policies">
-                <PoliciesTable
-                  accountId={account.account_id}
-                  principalType="group"
-                  principalId={group.group_id}
-                  principalLabel={`the "${group.name}" group`}
-                  canManage={canManagePolicies}
-                />
-              </TabsContent>
+              {!isIamV2 && (
+                <TabsContent value="policies">
+                  <PoliciesTable
+                    accountId={account.account_id}
+                    principalType="group"
+                    principalId={group.group_id}
+                    principalLabel={`the "${group.name}" group`}
+                    canManage={canManagePolicies}
+                  />
+                </TabsContent>
+              )}
 
               <TabsContent value="settings">
                 <GroupSettingsCard
