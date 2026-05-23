@@ -108,9 +108,17 @@ export async function resolveOpencodeConfigDir(cfg: Config): Promise<string> {
   for (const filename of ['opencode.jsonc', 'opencode.json']) {
     try {
       const stat = await fs.stat(`${candidate}/${filename}`)
-      if (stat.isFile()) return candidate
+      if (stat.isFile()) {
+        try {
+          await fs.mkdir(candidate, { recursive: true })
+        } catch {}
+        return candidate
+      }
     } catch {}
   }
+  try {
+    await fs.mkdir(cfg.defaultOpencodeConfigDir, { recursive: true })
+  } catch {}
   return cfg.defaultOpencodeConfigDir
 }
 

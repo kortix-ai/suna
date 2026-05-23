@@ -15,22 +15,8 @@
  *   executor describe stripe.charges.create   # full input schema for one tool
  *   executor call stripe charges.create '{"amount":999,"currency":"usd"}'
  */
+import { createExecutorClient, ExecutorError } from '../../../../packages/executor-sdk/src/index';
 import { parseArgs, out, handleError, CliError, requireEnv, getEnv } from '../lib';
-
-interface CatalogAction {
-  path: string;
-  name: string;
-  description: string;
-  risk: string;
-  inputSchema: unknown;
-}
-interface CatalogConnector {
-  slug: string;
-  name: string;
-  provider: string;
-  status: string;
-  actions: CatalogAction[];
-}
 
 function apiBase(): string {
   const url = getEnv('KORTIX_API_URL')?.trim();
@@ -38,36 +24,21 @@ function apiBase(): string {
   return url.replace(/\/$/, '');
 }
 
-async function gateway<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
-  const token = requireEnv('KORTIX_EXECUTOR_TOKEN');
-  const res = await fetch(`${apiBase()}${path}`, {
-    method: init?.method ?? 'GET',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
-    signal: AbortSignal.timeout(60_000),
+function client() {
+  return createExecutorClient({
+    apiUrl: apiBase(),
+    token: requireEnv('KORTIX_EXECUTOR_TOKEN'),
   });
-  const text = await res.text();
-  let body: any;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!res.ok) {
-    const msg = body && typeof body === 'object' ? body.reason || body.error || `HTTP ${res.status}` : `HTTP ${res.status}`;
-    throw new CliError(String(msg), 'EXECUTOR_ERROR', 1);
-  }
-  return body as T;
 }
 
-async function loadCatalog(): Promise<CatalogConnector[]> {
-  const r = await gateway<{ connectors: CatalogConnector[] }>('/v1/executor/connectors');
-  return r.connectors ?? [];
-}
-
-async function main(): Promise<void> {
-  const { command, args, flags } = parseArgs(process.argv);
+export async function main(argv = process.argv): Promise<void> {
+  const { command, args, flags } = parseArgs(argv);
+  const executor = client();
 
   switch (command) {
     case 'connectors':
     case 'ls': {
-      const connectors = await loadCatalog();
+      const connectors = await executor.connectors();
       out({
         connectors: connectors.map((c) => ({
           slug: c.slug,
@@ -81,31 +52,18 @@ async function main(): Promise<void> {
 
     case 'discover':
     case 'search': {
-      const q = (args.join(' ') || flags.query || '').toLowerCase();
-      const connectors = await loadCatalog();
-      const matches: Array<{ tool: string; risk: string; description: string }> = [];
-      for (const c of connectors) {
-        for (const a of c.actions) {
-          const hay = `${c.slug}.${a.path} ${a.name} ${a.description}`.toLowerCase();
-          if (!q || hay.includes(q)) {
-            matches.push({ tool: `${c.slug}.${a.path}`, risk: a.risk, description: a.description });
-          }
-        }
-      }
-      out({ matches: matches.slice(0, Number(flags.limit) || 20) });
+      const q = args.join(' ') || flags.query || '';
+      const matches = await executor.discover(q, { limit: Number(flags.limit) || 20 });
+      out({ matches: matches.map((m) => ({ tool: m.tool, risk: m.risk, description: m.description })) });
       break;
     }
 
     case 'describe': {
       const ref = args[0];
       if (!ref || !ref.includes('.')) throw new CliError('usage: executor describe <connector>.<action>', 'USAGE');
-      const slug = ref.slice(0, ref.indexOf('.'));
-      const action = ref.slice(ref.indexOf('.') + 1);
-      const connectors = await loadCatalog();
-      const c = connectors.find((x) => x.slug === slug);
-      const a = c?.actions.find((x) => x.path === action);
-      if (!a) throw new CliError(`unknown tool "${ref}" — run 'executor discover' to list tools`, 'NOT_FOUND');
-      out({ tool: `${slug}.${a.path}`, risk: a.risk, description: a.description, inputSchema: a.inputSchema });
+      const tool = await executor.describe(ref);
+      if (!tool) throw new CliError(`unknown tool "${ref}" — run 'executor discover' to list tools`, 'NOT_FOUND');
+      out({ tool: tool.tool, risk: tool.risk, description: tool.description, inputSchema: tool.inputSchema });
       break;
     }
 
@@ -118,7 +76,7 @@ async function main(): Promise<void> {
       if (raw) {
         try { parsed = JSON.parse(raw); } catch { throw new CliError('args must be valid JSON', 'BAD_ARGS'); }
       }
-      const result = await gateway('/v1/executor/call', { method: 'POST', body: { connector: slug, action, args: parsed } });
+      const result = await executor.call(slug, action, parsed);
       out(result);
       break;
     }
@@ -137,4 +95,11 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(handleError);
+if (import.meta.main) {
+  main().catch((err) => {
+    if (err instanceof ExecutorError) {
+      handleError(new CliError(err.message, 'EXECUTOR_ERROR', 1));
+    }
+    handleError(err);
+  });
+}
