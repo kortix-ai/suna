@@ -76,11 +76,8 @@ export default function MemberDetailPage() {
     onError: (err: Error) => toast.error(err.message || 'Failed to update'),
   });
 
-  if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
-  }
-
-  const account = accountQuery.data;
+  // All hooks MUST be called before any conditional return (rules of
+  // hooks). useMemo + usePermission live above the auth-loading guard.
   const members = membersQuery.data ?? [];
   const member = useMemo(
     () => members.find((m) => m.user_id === memberUserId),
@@ -93,6 +90,12 @@ export default function MemberDetailPage() {
     accountId,
     'member.super_admin.grant',
   ).allowed;
+
+  if (authLoading || !user) {
+    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+  }
+
+  const account = accountQuery.data;
 
   // Note: we don't currently surface is_super_admin in listAccountMembers, so
   // we can't show a pre-existing on/off state. Wire the column once the
