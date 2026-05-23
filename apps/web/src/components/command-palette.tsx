@@ -398,7 +398,6 @@ export function CommandPalette() {
   // Read the sidebar context directly so the palette can mount anywhere
   // (AppHeader pages have no SidebarProvider). Sidebar actions no-op there.
   const sidebarCtx = useContext(SidebarContext);
-  const toggleSidebar = sidebarCtx?.toggleSidebar ?? (() => {});
   const sidebarOpen = sidebarCtx?.open ?? false;
   const { proxyUrl: buildProxyUrl, subdomainOpts } = useSandboxProxy();
   const createSession = useCreateOpenCodeSession();
@@ -817,9 +816,9 @@ export function CommandPalette() {
     (filePath: string, lineNumber?: number) => {
       if (!projectId) return close();
       // Open the project Files view focused on the selected file (+ line).
-      const params = new URLSearchParams({ section: 'files', path: filePath });
+      const params = new URLSearchParams({ path: filePath });
       if (lineNumber) params.set('line', String(lineNumber));
-      router.push(`/projects/${projectId}/customize?${params.toString()}`);
+      router.push(`/projects/${projectId}/customize/files?${params.toString()}`);
       close();
     },
     [projectId, router, close],
@@ -926,9 +925,9 @@ export function CommandPalette() {
   }, [detectedUrl, buildProxyUrl, subdomainOpts, close]);
 
   const handleToggleSidebar = useCallback(() => {
-    toggleSidebar();
+    sidebarCtx?.toggleSidebar();
     close();
-  }, [toggleSidebar, close]);
+  }, [sidebarCtx, close]);
 
   const handleOpenSettings = useCallback((tab: SettingsTabId) => {
     close();

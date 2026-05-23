@@ -1,10 +1,11 @@
 /**
  * Customize section identifiers + helpers.
  *
- * The /projects/[id]/customize page reads its active section from the
- * `?section=` query param. This module keeps the section enum, the default,
- * and a parser in one spot so the page, the sidebar, and any deep-link
- * helpers all agree on the canonical list.
+ * The /projects/[id]/customize page reads its active section from either the
+ * path segment (`/customize/skills`) or the legacy `?section=` query param.
+ * This module keeps the section enum, the default, and a parser in one spot
+ * so the page, the sidebar, and any deep-link helpers all agree on the
+ * canonical list.
  */
 
 export type CustomizeSection =

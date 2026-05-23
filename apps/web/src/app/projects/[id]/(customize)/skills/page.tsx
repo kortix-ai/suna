@@ -14,9 +14,19 @@
  * Edit button in the detail toolbar is the future hook for inline editing.
  */
 
-import { use, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  use,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import {
+  createFileTreeIconResolver,
+  getBuiltInFileIconColor,
+  getBuiltInSpriteSheet,
+} from '@pierre/trees';
 import {
   ExternalLink,
   FileText,
@@ -48,10 +58,10 @@ import {
   type ProjectConfigSummary,
   type ProjectFileEntry,
 } from '@/lib/projects-client';
-import { FileTree, useFileTree } from '@pierre/trees/react';
-import { FILE_TREE_DEFAULT_ITEM_HEIGHT, type FileTreeSortComparator } from '@pierre/trees';
 
 type Skill = ProjectConfigSummary['skills'][number];
+const pierreIconResolver = createFileTreeIconResolver('complete');
+const pierreSpriteSheet = getBuiltInSpriteSheet('complete');
 
 /* ─── Page entry ────────────────────────────────────────────────────────── */
 
@@ -72,7 +82,10 @@ export function SkillsView({ projectId }: { projectId: string }) {
   });
 
   const defaultBranch = detailQuery.data?.project?.default_branch ?? '';
-  const skills = detailQuery.data?.config?.skills ?? [];
+  const skills = useMemo(
+    () => detailQuery.data?.config?.skills ?? [],
+    [detailQuery.data?.config?.skills],
+  );
   const isForbidden =
     detailQuery.isError &&
     /403|forbidden/i.test((detailQuery.error as Error)?.message ?? '');
@@ -241,15 +254,6 @@ function SkillListItem({
   );
 }
 
-// SKILL.md pinned to the top of its directory level; otherwise fall through
-// to Pierre's default ordering (directories first, then files alphabetically).
-const skillSort: FileTreeSortComparator = (a, b) => {
-  if (!a.isDirectory && a.basename === 'SKILL.md') return -1;
-  if (!b.isDirectory && b.basename === 'SKILL.md') return 1;
-  if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-  return a.basename.localeCompare(b.basename);
-};
-
 function InlineSkillTree({
   projectId,
   skill,
@@ -272,8 +276,6 @@ function InlineSkillTree({
     staleTime: 30_000,
   });
 
-  // Paths fed to Pierre are skill-dir relative — that way the tree renders
-  // with the skill folder as the (implicit) root, matching the previous UI.
   const relativePaths = useMemo<readonly string[]>(() => {
     const fromApi = (filesQuery.data ?? [])
       .map((f: ProjectFileEntry) => f.path)
@@ -292,87 +294,21 @@ function InlineSkillTree({
     return rels;
   }, [filesQuery.data, skillDir, skill.path]);
 
-  // Pierre's FileTree virtualizes, so the host must have an explicit height
-  // for any row to actually paint. Skill folders are usually small (1–20
-  // entries) — size to content, with a soft cap so a huge skill folder still
-  // scrolls instead of pushing the rest of the page off-screen.
-  const visibleRowEstimate = relativePaths.length + countParentDirs(relativePaths);
-  const treeHeightPx = Math.min(
-    Math.max(visibleRowEstimate, 1) * FILE_TREE_DEFAULT_ITEM_HEIGHT,
-    320,
-  );
-
-  // `relativePaths` is captured in a ref so `onSelectionChange` (created once
-  // when the model is created) can read the current list — otherwise it
-  // closes over the empty initial array and rejects every click.
-  const relativePathsRef = useRef<readonly string[]>(relativePaths);
-  relativePathsRef.current = relativePaths;
-
-  const { model } = useFileTree({
-    paths: relativePaths,
-    initialExpansion: 'open',
-    sort: skillSort,
-    onSelectionChange: (paths) => {
-      const rel = paths[0];
-      if (!rel) return;
-      if (!relativePathsRef.current.includes(rel)) return;
-      onPickFile(`${skillDir}/${rel}`);
-    },
-  });
-
-  // CRITICAL: `useFileTree` creates the FileTree model ONCE on mount and
-  // ignores options after that (verified in @pierre/trees source). When the
-  // file listing resolves async, those new paths never reach the model —
-  // `getItem(rel)` returns null and selection silently no-ops. Imperatively
-  // syncing paths via `resetPaths()` is the only way to keep the model in
-  // step with the React state.
-  useEffect(() => {
-    model.resetPaths(relativePaths);
-  }, [relativePaths, model]);
-
-  // Drive Pierre's selection from the parent's `selectedFilePath`. Runs after
-  // the resetPaths effect above so the target path is guaranteed to exist
-  // in the model before we ask it to select.
-  useEffect(() => {
-    const rel = selectedFilePath && selectedFilePath.startsWith(skillDir + '/')
-      ? selectedFilePath.slice(skillDir.length + 1)
-      : null;
-    const current = model.getSelectedPaths()[0] ?? null;
-    if (rel === current) return;
-    if (current) model.getItem(current)?.deselect();
-    if (rel && relativePaths.includes(rel)) {
-      // `selectOnlyPath` is single-call select-and-replace, more robust than
-      // deselect-then-select against intermediate render races.
-      const handle = model.getItem(rel);
-      if (handle) handle.select();
-    }
-  }, [selectedFilePath, skillDir, relativePaths, model]);
-
-  // Pierre's tree reads `--trees-*-override` CSS vars to theme its shadow
-  // root. Map them to our Tailwind tokens so the tree blends into the
-  // customize panel: transparent background, muted text for idle rows, a
-  // crisp `bg-muted` highlight on the selected row, and a beefier per-level
-  // indent so nested files actually read as nested.
-  const pierreBlendStyle: React.CSSProperties = {
-    height: treeHeightPx,
-    '--trees-bg-override': 'transparent',
-    '--trees-bg-muted-override': 'transparent',
-    '--trees-fg-override': 'hsl(var(--foreground))',
-    '--trees-fg-muted-override': 'hsl(var(--muted-foreground))',
-    '--trees-border-color-override': 'transparent',
-    '--trees-selected-bg-override': 'hsl(var(--muted))',
-    '--trees-selected-fg-override': 'hsl(var(--foreground))',
-    '--trees-selected-focused-border-color-override': 'transparent',
-    '--trees-accent-override': 'hsl(var(--primary))',
-    // Layout — bump outer padding back to ~0 (we control it via wrapper) and
-    // push per-level indent so children of a folder are visibly inset.
-    '--trees-padding-inline-override': '0px',
-    '--trees-level-gap-override': '14px',
-    '--trees-item-padding-x-override': '8px',
-  } as React.CSSProperties;
+  const treeRows = useMemo(() => buildInlineSkillRows(relativePaths), [relativePaths]);
+  const rowHeightPx = 28;
+  const verticalPaddingPx = 8;
+  const fullTreeHeightPx = Math.max(treeRows.length, 1) * rowHeightPx + verticalPaddingPx;
+  const treeHeightPx = Math.min(fullTreeHeightPx, 280);
+  const isTreeScrollable = fullTreeHeightPx > treeHeightPx;
+  const showFades = isTreeScrollable && treeRows.length > 1;
 
   return (
-    <div className="mt-0.5 pl-3">
+    <div className="mt-1 pl-3 pr-1">
+      <span
+        className="pointer-events-none absolute h-0 w-0 overflow-hidden"
+        aria-hidden="true"
+        dangerouslySetInnerHTML={{ __html: pierreSpriteSheet }}
+      />
       {filesQuery.isLoading && !filesQuery.data ? (
         <div className="space-y-1 py-1">
           {Array.from({ length: 2 }).map((_, i) => (
@@ -384,22 +320,149 @@ function InlineSkillTree({
           Couldn&apos;t load files.
         </p>
       ) : (
-        <FileTree model={model} style={pierreBlendStyle} />
+        <div className="relative">
+          <div
+            className="overflow-y-auto overflow-x-hidden overscroll-contain py-1"
+            style={{
+              height: treeHeightPx,
+              maxHeight: treeHeightPx,
+              contain: 'layout paint',
+            }}
+          >
+            <div className="py-0.5">
+              {treeRows.map((row) => {
+                const fullPath = row.kind === 'file' ? `${skillDir}/${row.path}` : null;
+                const selected = fullPath === selectedFilePath;
+                return (
+                  <button
+                    key={row.path}
+                    type="button"
+                    disabled={row.kind === 'directory'}
+                    onClick={() => {
+                      if (fullPath) onPickFile(fullPath);
+                    }}
+                    className={cn(
+                      'group flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-sm transition-colors',
+                      row.kind === 'directory'
+                        ? 'cursor-default text-muted-foreground/75'
+                        : 'text-muted-foreground hover:bg-muted/45 hover:text-foreground',
+                      selected && 'bg-muted text-foreground',
+                    )}
+                    style={{ paddingLeft: 8 + row.depth * 14 }}
+                  >
+                    <PierreTreeIcon
+                      path={row.path}
+                      kind={row.kind}
+                      className={cn(
+                        'h-4 w-4 shrink-0',
+                        row.kind === 'directory' && 'text-muted-foreground/70',
+                      )}
+                    />
+                    <span className="min-w-0 truncate">{row.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {showFades && (
+            <>
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-3 bg-gradient-to-b from-background/90 to-transparent" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-background via-background/85 to-transparent" />
+            </>
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-/** Count unique ancestor directories implied by a set of relative file paths. */
-function countParentDirs(paths: readonly string[]): number {
-  const dirs = new Set<string>();
+interface InlineSkillRow {
+  depth: number;
+  kind: 'directory' | 'file';
+  name: string;
+  path: string;
+}
+
+function buildInlineSkillRows(paths: readonly string[]): InlineSkillRow[] {
+  const dirs = new Map<string, InlineSkillRow>();
+  const files = new Map<string, InlineSkillRow>();
   for (const p of paths) {
     const parts = p.split('/');
+    const fileName = parts.at(-1);
+    if (!fileName) continue;
     for (let i = 1; i < parts.length; i++) {
-      dirs.add(parts.slice(0, i).join('/'));
+      const path = parts.slice(0, i).join('/');
+      if (!dirs.has(path)) {
+        dirs.set(path, {
+          depth: i - 1,
+          kind: 'directory',
+          name: parts[i - 1]!,
+          path,
+        });
+      }
     }
+    files.set(p, {
+      depth: parts.length - 1,
+      kind: 'file',
+      name: fileName,
+      path: p,
+    });
   }
-  return dirs.size;
+
+  const allRows = [...dirs.values(), ...files.values()];
+  allRows.sort((a, b) => {
+    if (a.kind === 'file' && a.name === 'SKILL.md') return -1;
+    if (b.kind === 'file' && b.name === 'SKILL.md') return 1;
+    const parentA = parentPath(a.path);
+    const parentB = parentPath(b.path);
+    if (parentA === parentB && a.kind !== b.kind) {
+      return a.kind === 'directory' ? -1 : 1;
+    }
+    return a.path.localeCompare(b.path);
+  });
+  return allRows;
+}
+
+function parentPath(path: string): string {
+  const idx = path.lastIndexOf('/');
+  return idx === -1 ? '' : path.slice(0, idx);
+}
+
+function PierreTreeIcon({
+  path,
+  kind,
+  className,
+}: {
+  path: string;
+  kind: InlineSkillRow['kind'];
+  className?: string;
+}) {
+  const icon =
+    kind === 'directory'
+      ? pierreIconResolver.resolveIcon('file-tree-icon-chevron')
+      : pierreIconResolver.resolveIcon('file-tree-icon-file', path);
+  const color =
+    kind === 'file' && icon.token
+      ? getBuiltInFileIconColor(icon.token)
+      : undefined;
+  const name = icon.name.replace(/^#/, '');
+  const width = icon.width ?? 16;
+  const height = icon.height ?? 16;
+
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      data-icon-name={icon.remappedFrom ?? icon.name}
+      data-icon-token={icon.token}
+      viewBox={icon.viewBox ?? `0 0 ${width} ${height}`}
+      width={width}
+      height={height}
+      style={{ color }}
+    >
+      <use href={`#${name}`} />
+    </svg>
+  );
 }
 
 /* ─── File viewer (right pane) ─────────────────────────────────────────── */

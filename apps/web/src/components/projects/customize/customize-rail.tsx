@@ -5,12 +5,13 @@
  *
  * Lists the top-level surfaces (Files, Skills, Agents, Commands, Secrets,
  * Schedules, Webhooks, Channels, Settings). Clicking a row updates the
- * `?section=` search param so the active selection is bookmarkable and
- * survives a refresh.
+ * path segment (`/customize/skills`) so the active selection is bookmarkable
+ * and survives a refresh. The legacy `?section=` form is still understood for
+ * old links.
  */
 
 import { useMemo } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   Bot,
   FolderOpen,
@@ -81,18 +82,26 @@ const FOOTER_ITEMS: readonly RailItem[] = [
 
 export function CustomizeRail({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const isMobile = useIsMobile();
   const active = useMemo(
-    () =>
-      parseCustomizeSection(searchParams.get('section')) ?? DEFAULT_CUSTOMIZE_SECTION,
-    [searchParams],
+    () => {
+      const pathSection = pathname?.match(/\/customize\/([^/?#]+)/)?.[1];
+      return (
+        parseCustomizeSection(pathSection) ??
+        parseCustomizeSection(searchParams.get('section')) ??
+        DEFAULT_CUSTOMIZE_SECTION
+      );
+    },
+    [pathname, searchParams],
   );
 
   const go = (section: CustomizeSection) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set('section', section);
-    router.replace(`/projects/${projectId}/customize?${params.toString()}`, {
+    params.delete('section');
+    const query = params.toString();
+    router.replace(`/projects/${projectId}/customize/${section}${query ? `?${query}` : ''}`, {
       scroll: false,
     });
   };

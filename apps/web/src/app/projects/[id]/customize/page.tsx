@@ -5,8 +5,9 @@
  *
  * Hosts every per-project config (Files, Skills, Agents, Commands, Secrets,
  * Schedules, Webhooks, Channels, Settings) behind a left rail. Section
- * selection is driven by the `?section=` search param so a refresh / share
- * lands on the same tab.
+ * selection defaults to Files here; section deep links live at
+ * `/projects/[id]/customize/[section]`. The legacy `?section=` search param is
+ * still accepted so older shared links land on the same tab.
  *
  * Wrapped in `ProjectShell` so the project sidebar + session tab bar stay
  * anchored — Customize is just another tab among the open project tabs.

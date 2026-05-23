@@ -5,7 +5,7 @@
  *
  * One umbrella surface that hosts every per-project config: Files, Skills,
  * Agents, Commands, Secrets, Schedules, Webhooks, Channels, Settings. Lives
- * at `/projects/[id]/customize?section=<name>` and renders inside the same
+ * at `/projects/[id]/customize/[section]` and renders inside the same
  * `ProjectShell` as sessions so the project sidebar + tab bar stay anchored
  * while a user is configuring the project.
  *
