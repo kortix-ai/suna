@@ -284,7 +284,7 @@ function LeftRail() {
           </Link>
         </Badge>
 
-        <h1 className="mt-7 max-w-[560px] text-[42px] font-medium leading-[1.08] tracking-[-0.035em] text-foreground sm:text-[52px] lg:text-[50px] xl:text-[60px]">
+        <h1 className="mt-7 max-w-[560px] text-4xl font-medium leading-[1.08] tracking-[-0.035em] text-foreground sm:text-5xl lg:text-5xl xl:text-6xl">
           Run your company on agents you own
         </h1>
         <p className="mt-5 max-w-[500px] text-sm leading-6 text-muted-foreground">

@@ -41,7 +41,7 @@ const buttonVariants = cva(
         lg: "h-11 px-6 text-sm rounded-full [&_svg:not([class*='size-'])]:size-4 has-[>svg]:px-4",
         icon: "size-9 rounded-full [&_svg:not([class*='size-'])]:size-4",
         // Compact toolbar actions
-        toolbar: "h-7 gap-1.5 px-2.5 text-[0.6875rem] rounded-full [&_svg:not([class*='size-'])]:size-3.5",
+        toolbar: "h-7 gap-1.5 px-2.5 text-xs rounded-full [&_svg:not([class*='size-'])]:size-3.5",
         // Micro buttons for inline/compact contexts
         xs: "h-6 gap-1 px-2 text-xs rounded-full [&_svg:not([class*='size-'])]:size-3",
         // Small icon button (toolbar density)

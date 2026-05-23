@@ -57,6 +57,11 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
   // user's chosen index until they navigate back to the latest.
   const [mode, setMode] = useState<'live' | 'manual'>('live');
 
+  // The timestamp is locale/timezone-formatted, so it only matches on the
+  // client — render it after mount to avoid an SSR hydration mismatch.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // Live-follow + clamp when the list grows/shrinks.
   useEffect(() => {
     if (count === 0) return;
@@ -66,6 +71,17 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
   const safeIndex = Math.min(index, Math.max(0, count - 1));
   const current = parts[safeIndex];
   const atLatest = safeIndex >= count - 1;
+
+  // Wall-clock time the focused action ran (end if finished, else start).
+  const timeLabel = useMemo(() => {
+    const t = (current?.state as any)?.time;
+    const ms = t?.end ?? t?.start;
+    if (typeof ms !== 'number') return '';
+    return new Date(ms).toLocaleTimeString(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }, [current]);
 
   const goPrev = useCallback(() => {
     setMode('manual');
@@ -129,8 +145,14 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
               {safeIndex + 1} <span className="text-muted-foreground/40">/</span>{' '}
               {count}
             </span>
+            {mounted && timeLabel && (
+              <>
+                <span className="text-muted-foreground/30">·</span>
+                <span className="text-muted-foreground/60">{timeLabel}</span>
+              </>
+            )}
             {atLatest && mode === 'live' ? (
-              <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground/50">
+              <span className="flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground/50">
                 <span className="size-1.5 rounded-full bg-primary/60" />
                 Live
               </span>
@@ -138,7 +160,7 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
               <button
                 type="button"
                 onClick={jumpToLatest}
-                className="text-[11px] text-muted-foreground/60 underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                className="text-xs text-muted-foreground/60 underline-offset-2 transition-colors hover:text-foreground hover:underline"
               >
                 Jump to latest
               </button>

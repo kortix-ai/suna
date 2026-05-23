@@ -687,7 +687,7 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   }, [text, openPreview, isAbsolute]);
 
   const baseInline =
-    "px-[0.35rem] py-[0.1rem] rounded-[5px] text-[0.875em] font-mono " +
+    "px-[0.35rem] py-[0.1rem] rounded-[5px] text-sm font-mono " +
     "bg-zinc-100 dark:bg-zinc-800/70 text-foreground/90 " +
     "ring-1 ring-inset ring-zinc-200/70 dark:ring-zinc-700/40";
 

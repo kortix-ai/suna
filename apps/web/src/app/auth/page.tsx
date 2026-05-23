@@ -57,7 +57,7 @@ function LiveClock() {
         {day} {month} {date}
       </p>
       <p
-        className="text-foreground/80 text-[80px] sm:text-[104px] font-extralight leading-none -tracking-[0.02em] tabular-nums"
+        className="text-foreground/80 text-7xl sm:text-8xl font-extralight leading-none -tracking-[0.02em] tabular-nums"
         suppressHydrationWarning
       >
         {h}:{m}

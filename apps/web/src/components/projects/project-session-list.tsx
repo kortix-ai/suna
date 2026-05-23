@@ -377,14 +377,14 @@ function ProjectSubsessionRow({
     <Link href={href} className="block">
       <div
         className={cn(
-          'flex h-7 cursor-pointer items-center gap-2 rounded-lg px-2 transition-colors duration-150',
+          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-150',
           isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
         )}
       >
         <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />
-        <span className={cn('flex-1 truncate text-xs', isActive && 'font-medium')}>
+        <span className={cn('flex-1 truncate', isActive && 'font-medium')}>
           {title}
         </span>
         {relative && (

@@ -37,7 +37,7 @@ export default function NotFound() {
           {/* Animated 404 text */}
           <div className="relative select-none">
             <motion.div
-              className="font-mono text-[72px] sm:text-[96px] font-bold leading-none tracking-tighter text-foreground/[0.06]"
+              className="font-mono text-7xl sm:text-8xl font-bold leading-none tracking-tighter text-foreground/[0.06]"
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.1, duration: 0.5 }}
@@ -46,7 +46,7 @@ export default function NotFound() {
             </motion.div>
             {/* Subtle glitch slice */}
             <motion.div
-              className="absolute left-0.5 top-0 font-mono text-[72px] sm:text-[96px] font-bold leading-none tracking-tighter text-foreground/[0.04]"
+              className="absolute left-0.5 top-0 font-mono text-7xl sm:text-8xl font-bold leading-none tracking-tighter text-foreground/[0.04]"
               animate={{ opacity: [0, 0.5, 0, 0.3, 0] }}
               transition={{
                 duration: 2.5,

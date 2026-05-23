@@ -76,7 +76,7 @@ function CommandDialog({
           // Bump items back up inside the cmd palette — items are
           // compact-by-default everywhere else, but this is the big
           // Cmd+K surface so it gets the roomier spec.
-          '[&_[data-slot=command-item]]:gap-3 [&_[data-slot=command-item]]:rounded-lg [&_[data-slot=command-item]]:px-3 [&_[data-slot=command-item]]:py-2.5 [&_[data-slot=command-item]]:text-[13.5px]',
+          '[&_[data-slot=command-item]]:gap-3 [&_[data-slot=command-item]]:rounded-lg [&_[data-slot=command-item]]:px-3 [&_[data-slot=command-item]]:py-2.5 [&_[data-slot=command-item]]:text-sm',
           "[&_[data-slot=command-item]_svg:not([class*='size-'])]:size-[17px]",
           className,
         )}

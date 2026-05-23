@@ -324,7 +324,7 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
                           router.push(childHref);
                         }}
                         className={cn(
-                          'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-xs transition-colors duration-100',
+                          'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-100',
                           childActive
                             ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',

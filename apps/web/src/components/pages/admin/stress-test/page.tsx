@@ -109,7 +109,7 @@ export default function AdminStressTestPage() {
               <Zap className="h-6 w-6 text-yellow-500" />
               Stress Test - Admin
             </h1>
-            <p className="text-md text-muted-foreground mt-2">
+            <p className="text-base text-muted-foreground mt-2">
               Run load tests with detailed timing breakdown (bypasses concurrent run limits)
             </p>
           </div>

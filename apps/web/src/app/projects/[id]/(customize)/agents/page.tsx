@@ -290,7 +290,7 @@ function AgentDetail({
               {agent.name}
             </h1>
             {agent.description && (
-              <p className="max-w-2xl text-[13.5px] leading-relaxed text-muted-foreground">
+              <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
                 {agent.description}
               </p>
             )}

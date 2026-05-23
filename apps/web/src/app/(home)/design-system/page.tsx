@@ -244,17 +244,18 @@ const LOGO_ASSETS: LogoAsset[] = [
 ];
 
 const TYPE_SCALE = [
-  { token: 'text-xs', size: '0.625rem', px: '~10px', twClass: 'text-xs', use: 'Timestamps, metadata, badges' },
   { token: 'text-xs', size: '0.75rem', px: '~12px', twClass: 'text-xs', use: 'Secondary labels, tooltips, KBD' },
   { token: 'text-sm', size: '0.875rem', px: '~14px', twClass: 'text-sm', use: 'Body text, menu items' },
   { token: 'text-base', size: '1rem', px: '~16px', twClass: 'text-base', use: 'Default UI text, inputs' },
-  { token: 'text-md', size: '1.0625rem', px: '~17px', twClass: 'text-[1.0625rem]', use: 'Card titles, emphasized body' },
   { token: 'text-lg', size: '1.125rem', px: '~18px', twClass: 'text-lg', use: 'Section headers, dialog titles' },
   { token: 'text-xl', size: '1.25rem', px: '~20px', twClass: 'text-xl', use: 'Page section titles' },
   { token: 'text-2xl', size: '1.5rem', px: '~24px', twClass: 'text-2xl', use: 'Page titles' },
   { token: 'text-3xl', size: '1.875rem', px: '~30px', twClass: 'text-3xl', use: 'Hero subheadings' },
   { token: 'text-4xl', size: '2.25rem', px: '~36px', twClass: 'text-4xl', use: 'Display / hero headings' },
   { token: 'text-5xl', size: '3rem', px: '~48px', twClass: 'text-5xl', use: 'Marketing display' },
+  { token: 'text-6xl', size: '3.75rem', px: '~60px', twClass: 'text-6xl', use: 'Large display' },
+  { token: 'text-7xl', size: '4.5rem', px: '~72px', twClass: 'text-7xl', use: 'Oversized display' },
+  { token: 'text-8xl', size: '6rem', px: '~96px', twClass: 'text-8xl', use: 'Hero numerals / clocks' },
 ] as const;
 
 const MOTION_DURATIONS = [
@@ -2568,8 +2569,13 @@ export default function BrandPage() {
 
                   <AntiPatternBlock
                     title="AP-2: No arbitrary text sizes"
-                    description="Creates 1,188+ inconsistent type sizes. No semantic meaning. No relationship to the type scale."
-                    bad={`<span className="text-xs">Label</span>\n<span className="text-xs">Meta</span>\n<span className="text-sm">Body</span>`}
+                    description="Creates inconsistent type sizes with no semantic meaning and no relationship to the readable type scale."
+                    bad={
+                      '<span className="text-' +
+                      '[11px]">Label</span>\n<span className="text-' +
+                      '[13.5px]">Meta</span>\n<span className="text-' +
+                      '[0.875em]">Body</span>'
+                    }
                     good={`<span className="text-xs">Label</span>\n<span className="text-xs">Meta</span>\n<span className="text-sm">Body</span>`}
                   />
 
@@ -2651,7 +2657,7 @@ export default function BrandPage() {
                       'Use unapproved color combinations',
                       'Use bold (700) for headings',
                       'Use colored or tinted backgrounds',
-                      'Use text-[Npx] arbitrary sizes',
+                      'Use arbitrary pixel text sizes',
                       'Use transition-colors on elements',
                       'Use raw <button> for interactions',
                       'Use hardcoded hex colors in components',
