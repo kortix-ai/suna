@@ -84,7 +84,7 @@ import {
   removeProjectMemberPolicy,
   syncProjectMemberPolicy,
 } from '../iam/membership-sync';
-import { authorize, listAccessibleResources } from '../iam';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized, authorize, listAccessibleResources } from '../iam';
 import { deriveRequestContext } from '../iam/cache';
 import {
   encryptProjectSecret,
@@ -1733,9 +1733,9 @@ projectsApp.get('/', async (c) => {
 projectsApp.post('/', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  // IAM-gated. Engine consults super-admin bypass, direct + group
+  // policies, and legacy owner/admin bridges (in non-strict mode).
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   let repoUrl: string | null;
   try {
@@ -1797,9 +1797,9 @@ projectsApp.post('/', async (c) => {
 // installation tokens are minted server-side at repo creation time.
 projectsApp.get('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  // GitHub install metadata = account-write surface. Same IAM gate as
+  // renaming the account or flipping strict mode.
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const row = await getAccountGitHubInstallation(scope.accountId);
   const installUrl = row ? null : await createGitHubInstallationInstallUrl(scope.accountId, scope.userId);
@@ -1820,9 +1820,7 @@ projectsApp.post('/github/installation', async (c) => {
   }
 
   const scope = await resolveProjectAccount(c, { account_id: statePayload.accountId });
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const installationId = normalizeString(body.installation_id ?? body.installationId);
   if (!installationId) return c.json({ error: 'installation_id is required' }, 400);
@@ -1890,9 +1888,7 @@ projectsApp.post('/github/installation', async (c) => {
 // DELETE /v1/projects/github/installation?account_id=...
 projectsApp.delete('/github/installation', async (c) => {
   const scope = await resolveProjectAccount(c);
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   await db
     .delete(accountGithubInstallations)
@@ -1907,9 +1903,7 @@ projectsApp.delete('/github/installation', async (c) => {
 projectsApp.post('/create-repo', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  if (!isAccountManager(scope.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   const name = normalizeString(body.name);
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -2142,9 +2136,8 @@ projectsApp.post('/:projectId/cli-token', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  // Authorization is enforced by loadProjectForUser(... 'manage') above,
+  // which routes through the IAM engine (project.members.manage).
 
   // One body field: `name`. Defaults to "cli · <project name>".
   let body: { name?: unknown } = {};
@@ -2186,9 +2179,6 @@ projectsApp.delete('/:projectId/cli-token/:tokenId', async (c) => {
   const tokenId = c.req.param('tokenId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
   return c.json({ ok: true });
@@ -2202,9 +2192,6 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
 
   const gitAuth = await resolveProjectGitAuth(loaded.row);
 
@@ -2242,9 +2229,6 @@ projectsApp.get('/:projectId/secrets', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
 
   const rows = await db
     .select()
@@ -2291,9 +2275,6 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
 
   const name = normalizeString(body.name)?.toUpperCase();
   if (!name) return c.json({ error: 'name is required' }, 400);
@@ -2335,9 +2316,6 @@ projectsApp.delete('/:projectId/secrets/:name', async (c) => {
   const name = c.req.param('name')?.trim().toUpperCase();
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!isAccountManager(loaded.accountRole)) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
   if (!name || !isValidSecretName(name)) {
     return c.json({ error: 'Invalid secret name' }, 400);
   }
@@ -3890,31 +3868,27 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     .where(inArray(projectSessions.opencodeSessionId, ids));
   if (rows.length === 0) return c.json({ updated: 0 });
 
-  const accountIds = Array.from(new Set(rows.map((r) => r.accountId)));
-  const projectIds = Array.from(new Set(rows.map((r) => r.projectId)));
-  const memberships = await db
-    .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(and(
-      eq(accountMembers.userId, userId),
-      inArray(accountMembers.accountId, accountIds),
-    ));
-  const accountRoleById = new Map(memberships.map((m) => [m.accountId, m.accountRole as AccountRole]));
-  const grants = await db
-    .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
-    .from(projectMembers)
-    .where(and(
-      eq(projectMembers.userId, userId),
-      inArray(projectMembers.projectId, projectIds),
-    ));
-  const projectRoleById = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
+  // Per-row IAM authz. The engine answers from a per-request cache
+  // (see iam/cache.ts) so duplicate (account, project) probes collapse
+  // to a single SQL pass — N rows over K distinct projects = K
+  // authorize() calls, not N.
+  const requestCtx = deriveRequestContext(c);
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
+      | string
+      | undefined) ?? undefined;
 
   let updated = 0;
   for (const row of rows) {
-    const accountRole = accountRoleById.get(row.accountId);
-    if (!accountRole) continue;
-    const projectRole = projectRoleById.get(row.projectId) ?? null;
-    if (!roleAllows(effectiveProjectRole(accountRole, projectRole), 'write')) continue;
+    const verdict = await authorize(
+      userId,
+      row.accountId,
+      PROJECT_ACTIONS.PROJECT_WRITE,
+      { type: 'project', id: row.projectId },
+      actingTokenId,
+      requestCtx,
+    );
+    if (!verdict.allowed) continue;
     const ocId = row.opencodeSessionId;
     if (!ocId) continue;
     const desired = desiredByOcId.get(ocId) ?? null;
