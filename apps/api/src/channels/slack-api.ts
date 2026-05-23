@@ -88,6 +88,21 @@ export async function updateMessage(
   }
 }
 
+export async function updateBlocks(
+  token: string,
+  channel: string,
+  ts: string,
+  text: string,
+  blocks: unknown[],
+): Promise<void> {
+  try {
+    const r = await slackApiCall(token, 'chat.update', { channel, ts, text, blocks });
+    if (!r.ok) console.warn('[slack-api] chat.update (blocks) failed', { error: r.error });
+  } catch (err) {
+    console.warn('[slack-api] chat.update (blocks) error', err);
+  }
+}
+
 export async function deleteMessage(token: string, channel: string, ts: string): Promise<void> {
   try {
     const r = await slackApiCall(token, 'chat.delete', { channel, ts });
@@ -96,6 +111,27 @@ export async function deleteMessage(token: string, channel: string, ts: string):
     }
   } catch (err) {
     console.warn('[slack-api] chat.delete error', err);
+  }
+}
+
+// chat.startStream requires the bot to be a member of the channel — posting
+// via chat:write.public is not enough. Join is idempotent (already-a-member
+// is `ok: true`). Returns false for private channels / DMs where join isn't
+// applicable; callers should treat that as non-fatal.
+export async function joinChannel(token: string, channel: string): Promise<boolean> {
+  try {
+    const r = await slackApiCall(token, 'conversations.join', { channel });
+    if (r.ok) return true;
+    // method_not_supported_for_channel_type → DM or private; nothing to join.
+    // already_in_channel → still a member, treat as success.
+    if (r.error === 'already_in_channel') return true;
+    if (r.error !== 'method_not_supported_for_channel_type') {
+      console.warn('[slack-api] conversations.join failed', { error: r.error, channel });
+    }
+    return false;
+  } catch (err) {
+    console.warn('[slack-api] conversations.join error', err);
+    return false;
   }
 }
 
@@ -141,6 +177,18 @@ export interface StreamTaskChunk {
   id: string;
   title: string;
   status: StreamTaskStatus;
+  // Optional inline rich text. Slack accepts these as plain strings on the
+  // streaming chunk and auto-wraps them into rich_text blocks server-side.
+  // `details` renders as the subtitle line under the task title (visible while
+  // in_progress); `output` renders as the bullet line shown after completion.
+  // Note: re-sending these for the same task_id APPENDS rather than replaces
+  // — only set them once per task_id.
+  details?: string;
+  output?: string;
+  // Citation footer rendered under the task card. Plain-string `details`
+  // and `output` accept `<url|text>` mrkdwn for inline links; `sources` is
+  // the dedicated, structured citation list.
+  sources?: Array<{ type: 'url'; url: string; text: string }>;
 }
 
 export interface StreamTextChunk {
@@ -148,10 +196,18 @@ export interface StreamTextChunk {
   text: string;
 }
 
-// A stream chunk — a plan checkpoint or a piece of answer text. The answer
-// must ride as a `markdown_text` chunk: chat.stopStream rejects a top-level
-// `markdown_text` param alongside `chunks`.
-export type StreamChunk = StreamTaskChunk | StreamTextChunk;
+// Full Block Kit closing chunk — use for rich answers (headers, sections,
+// images, context actions). Slack validates these against the standard
+// Block Kit schema. Only valid as a closing chunk on chat.stopStream.
+export interface StreamBlocksChunk {
+  type: 'blocks';
+  blocks: unknown[];
+}
+
+// A stream chunk — a plan checkpoint, a piece of answer text, or a full
+// Block Kit blocks payload. The answer must ride as `markdown_text` OR
+// `blocks` — chat.stopStream rejects top-level text alongside `chunks`.
+export type StreamChunk = StreamTaskChunk | StreamTextChunk | StreamBlocksChunk;
 
 export async function startStream(
   token: string,
@@ -211,6 +267,26 @@ export async function stopStream(
     }
   } catch (err) {
     console.warn('[slack-api] chat.stopStream error', err);
+  }
+}
+
+// Publish a Block Kit view to a user's App Home tab. View shape:
+//   { type: 'home', blocks: [...Block Kit blocks] }
+export async function publishHomeView(
+  token: string,
+  userId: string,
+  view: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    const r = await slackApiCall(token, 'views.publish', { user_id: userId, view });
+    if (!r.ok) {
+      console.warn('[slack-api] views.publish failed', { error: r.error, user_id: userId });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[slack-api] views.publish error', err);
+    return false;
   }
 }
 

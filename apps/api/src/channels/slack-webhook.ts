@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   chatChannelBindings,
   chatInstalls,
   chatThreads,
   projects,
+  projectSessions,
   sessionSandboxes,
 } from '@kortix/db';
 import { db } from '../shared/db';
@@ -19,30 +20,28 @@ import {
 import { slackOauthMode } from './slack-oauth-mode';
 import {
   addReaction,
+  joinChannel,
   appendStream,
+  deleteMessage,
   getChannelName,
   postBlocks,
   postMessage,
+  publishHomeView,
   removeReaction,
   startStream,
   stopStream,
+  updateBlocks,
   updateMessage,
   type StreamChunk,
   type StreamTaskChunk,
 } from './slack-api';
+import { config } from '../config';
 
 export const slackWebhookApp = new Hono();
 
 const FIVE_MINUTES = 5 * 60;
-
-// Slack-triggered agent turns run on this model (provider/model form). It is
-// passed through to opencode's prompt API for the session's sandbox only.
 const SLACK_AGENT_MODEL = 'anthropic/claude-sonnet-4-6';
 
-// ─── Event de-duplication ────────────────────────────────────────────────────
-// Slack re-delivers an event if it doesn't get a 200 within 3s. Without this, a
-// retry spawns a second sandbox for one message. `event_id` is stable across
-// re-deliveries, so a short-TTL seen-set collapses them.
 const EVENT_DEDUPE_TTL_MS = 5 * 60 * 1000;
 const seenEventIds = new Map<string, number>();
 
@@ -57,11 +56,6 @@ function alreadyHandled(eventId: string | undefined): boolean {
   return false;
 }
 
-// ─── Turn stream ─────────────────────────────────────────────────────────────
-// Each triggering turn opens a Slack stream (chat.startStream) — a live plan
-// block. apps/api owns the stream object: it starts it, posts the boot
-// checkpoint, finalizes on failure, and exposes relay helpers the agent calls
-// (via the agent-cli) to narrate checkpoints and deliver the final answer.
 const WORKING_EMOJI = 'hourglass_flowing_sand';
 const STREAM_TTL_MS = 15 * 60 * 1000;
 
@@ -71,16 +65,22 @@ interface TurnStream {
   token: string;
   triggerTs: string;
   steps: StreamTaskChunk[];
-  streaming: boolean; // false = chat.startStream unavailable, plain-message fallback
+  streaming: boolean;
   expiry: number;
   finalized: boolean;
+  projectId: string;
+  sessionId: string;
+  controlsTs: string | null;
+  stopped: boolean;
+  // Persisted so we can re-open a fresh stream *below* the question form
+  // when the user submits — otherwise the agent's post-question answer
+  // lands in this old stream's message slot (above the form).
+  teamId: string;
+  originatingEvent: SlackEvent;
 }
 
-// Keyed by Kortix session id — the agent-cli relays by session id.
 const activeStreams = new Map<string, TurnStream>();
 
-// Watchdog — a turn whose stream never finalized (agent crash, opencode
-// restart) gets a visible close instead of a forever-"Working…".
 setInterval(() => {
   const now = Date.now();
   for (const [sessionId, handle] of activeStreams) {
@@ -91,8 +91,6 @@ setInterval(() => {
   }
 }, 60_000).unref();
 
-// Open a stream for a turn. Returns an unbound handle — the caller binds it to
-// the session id once known.
 async function startTurnStream(
   projectId: string,
   teamId: string,
@@ -109,6 +107,7 @@ async function startTurnStream(
     status: 'in_progress',
   };
   const threadTs = event.thread_ts ?? event.ts;
+  await joinChannel(token, event.channel);
   await addReaction(token, event.channel, event.ts, WORKING_EMOJI);
 
   const base = {
@@ -117,6 +116,12 @@ async function startTurnStream(
     triggerTs: event.ts,
     expiry: Date.now() + STREAM_TTL_MS,
     finalized: false,
+    projectId,
+    sessionId: '',
+    controlsTs: null as string | null,
+    stopped: false,
+    teamId,
+    originatingEvent: event,
   };
   const streamTs = await startStream(
     token,
@@ -129,8 +134,6 @@ async function startTurnStream(
   if (streamTs) {
     return { ...base, ts: streamTs, steps: [bootStep], streaming: true };
   }
-  // chat.startStream unavailable — fall back to a plain placeholder message
-  // that the final answer edits into place.
   const placeholderTs = await postMessage(
     token,
     event.channel,
@@ -141,13 +144,218 @@ async function startTurnStream(
   return { ...base, ts: placeholderTs, steps: [], streaming: false };
 }
 
-// Complete the current checkpoint and append a new one. Returns false when
-// there is no live stream for the session (e.g. a non-Slack session).
-export async function relayTurnStep(sessionId: string, title: string): Promise<boolean> {
+function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (teamId) env.SLACK_TEAM_ID = teamId;
+  if (event.channel) env.SLACK_CHANNEL_ID = event.channel;
+  if (event.thread_ts ?? event.ts) env.SLACK_THREAD_TS = (event.thread_ts ?? event.ts)!;
+  if (event.ts) env.SLACK_TRIGGER_TS = event.ts;
+  if (event.user) env.SLACK_USER_ID = event.user;
+  return env;
+}
+
+// ─── opencode question.asked → Slack Block Kit form ─────────────────────────
+// The agent uses opencode's built-in `question` tool. The sandbox subscribes
+// to opencode's SSE stream and relays each question.asked here as a
+// QuestionInfo[]. We render a Block Kit form, block on Submit, return the
+// answers (string[][] — one array per question), and the sandbox POSTs them
+// back to opencode's /question/{requestID}/reply so the tool resumes.
+// Mirrors opencode's QuestionOption schema — { label, description }. The
+// dashboard sends the picked label back as the answer string (there is no
+// separate `value` field), so we use the label for both Slack's option
+// `value` and the visible text, and surface `description` as the helper
+// line under each option.
+export interface QuestionInfo {
+  question: string;
+  header?: string;
+  options: Array<{ label: string; description?: string }>;
+  multiple?: boolean;
+  custom?: boolean;
+}
+
+interface PendingAsk {
+  askId: string;
+  questions: QuestionInfo[];
+  resolve: (answers: string[][]) => void;
+  expiry: number;
+  channel: string;
+  messageTs: string | null;
+  token: string;
+  // Persisted for the post-submit stream rotation so the agent's continuation
+  // lands BELOW the form instead of in the old (now-parked) stream message.
+  sessionId: string;
+  projectId: string;
+  teamId: string;
+  originatingEvent: SlackEvent;
+}
+
+const ASK_TTL_MS = 15 * 60 * 1000;
+const pendingAsks = new Map<string, PendingAsk>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [askId, ask] of pendingAsks) {
+    if (ask.expiry < now) {
+      pendingAsks.delete(askId);
+      // Empty answers signal timeout to the sandbox, which sends question.reject.
+      ask.resolve(ask.questions.map(() => []));
+    }
+  }
+}, 60_000).unref();
+
+export async function postQuestionAndWait(
+  sessionId: string,
+  questions: QuestionInfo[],
+): Promise<{ ok: boolean; ask_id?: string; answers?: string[][]; error?: string }> {
   const handle = activeStreams.get(sessionId);
-  if (!handle || handle.finalized) return false;
-  // Plain-message fallback has no plan block — accept the step but no-op it so
-  // the agent doesn't treat it as a failure.
+  if (!handle) {
+    return { ok: false, error: 'No active Slack turn for this session.' };
+  }
+
+  // Capture the data needed to spin up a fresh stream BELOW the form once
+  // the user submits. We do this before finalizing because finalizeStream
+  // mutates `handle` and may delete the Stop controls.
+  const teamId = handle.teamId;
+  const originatingEvent = handle.originatingEvent;
+
+  // Park the current stream so it doesn't keep spinning while the user is
+  // filling in the form. Drop it from activeStreams so any stray relay
+  // calls fail loud instead of mutating a paused stream.
+  await finalizeStream(handle, { answer: '_Waiting on your answer below…_' });
+  activeStreams.delete(sessionId);
+
+  const askId = randomUUID();
+  const blocks = buildQuestionBlocks(askId, questions);
+  const messageTs = await postBlocks(
+    handle.token,
+    handle.channel,
+    questions[0]?.question?.slice(0, 200) ?? 'A question for you',
+    blocks,
+    handle.triggerTs,
+  );
+  if (!messageTs) {
+    return { ok: false, error: 'Failed to post the form to Slack.' };
+  }
+  const answers = await new Promise<string[][]>((resolve) => {
+    pendingAsks.set(askId, {
+      askId,
+      questions,
+      resolve,
+      expiry: Date.now() + ASK_TTL_MS,
+      channel: handle.channel,
+      messageTs,
+      token: handle.token,
+      sessionId,
+      projectId: handle.projectId,
+      teamId,
+      originatingEvent,
+    });
+  });
+  return { ok: true, ask_id: askId, answers };
+}
+
+function buildQuestionBlocks(askId: string, questions: QuestionInfo[]): Array<Record<string, unknown>> {
+  const blocks: Array<Record<string, unknown>> = [];
+  questions.forEach((q, i) => {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*${escapeMrkdwn(q.question)}*` },
+    });
+    if (q.options.length > 0) {
+      const options = q.options.map((o) => {
+        const opt: Record<string, unknown> = {
+          text: { type: 'plain_text', text: o.label.slice(0, 75), emoji: true },
+          value: o.label.slice(0, 75),
+        };
+        if (o.description) {
+          opt.description = {
+            type: 'plain_text',
+            text: o.description.slice(0, 75),
+            emoji: true,
+          };
+        }
+        return opt;
+      });
+      blocks.push({
+        type: 'input',
+        block_id: `q_${i}_choice`,
+        label: { type: 'plain_text', text: 'Choose', emoji: true },
+        element: q.multiple
+          ? { type: 'checkboxes', action_id: 'value', options }
+          : { type: 'radio_buttons', action_id: 'value', options },
+        optional: q.custom !== false,
+      });
+    }
+    if (q.custom !== false) {
+      blocks.push({
+        type: 'input',
+        block_id: `q_${i}_custom`,
+        label: { type: 'plain_text', text: q.options.length > 0 ? 'Or type your own answer' : 'Your answer', emoji: true },
+        element: { type: 'plain_text_input', action_id: 'value', multiline: false },
+        optional: q.options.length > 0,
+      });
+    }
+  });
+  blocks.push({
+    type: 'actions',
+    elements: [
+      {
+        type: 'button',
+        text: { type: 'plain_text', text: 'Submit', emoji: true },
+        style: 'primary',
+        action_id: 'ask_submit',
+        value: askId,
+      },
+    ],
+  });
+  return blocks;
+}
+
+async function attachStopControls(handle: TurnStream, sessionId: string): Promise<void> {
+  handle.sessionId = sessionId;
+  const threadTs = handle.streaming ? undefined : undefined;
+  const threadRoot = handle.triggerTs;
+  const ts = await postBlocks(
+    handle.token,
+    handle.channel,
+    'Working on it — click Stop to interrupt.',
+    [
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Stop' },
+            style: 'danger',
+            action_id: 'stop_turn',
+            value: JSON.stringify({ s: sessionId, p: handle.projectId }),
+          },
+        ],
+      },
+    ],
+    threadRoot,
+  );
+  if (ts) handle.controlsTs = ts;
+}
+
+export async function relayTurnStep(
+  sessionId: string,
+  title: string,
+  opts: {
+    detail?: string;
+    outputForPrev?: string;
+    sourcesForPrev?: Array<{ url: string; text: string }>;
+  } = {},
+): Promise<boolean> {
+  const handle = activeStreams.get(sessionId);
+  if (!handle || handle.finalized) {
+    console.warn('[slack-webhook] turn-stream step relay dropped — no active stream', {
+      sessionId,
+      title: title.slice(0, 80),
+      finalized: handle?.finalized ?? null,
+    });
+    return false;
+  }
   if (!handle.streaming) {
     handle.expiry = Date.now() + STREAM_TTL_MS;
     return true;
@@ -156,7 +364,21 @@ export async function relayTurnStep(sessionId: string, title: string): Promise<b
   const last = handle.steps[handle.steps.length - 1];
   if (last && last.status === 'in_progress') {
     last.status = 'complete';
-    chunks.push({ ...last });
+    const closing: StreamTaskChunk = {
+      type: 'task_update',
+      id: last.id,
+      title: last.title,
+      status: 'complete',
+    };
+    if (opts.outputForPrev) closing.output = opts.outputForPrev.slice(0, 500);
+    if (opts.sourcesForPrev && opts.sourcesForPrev.length > 0) {
+      closing.sources = opts.sourcesForPrev.slice(0, 8).map((s) => ({
+        type: 'url',
+        url: s.url,
+        text: s.text.slice(0, 80),
+      }));
+    }
+    chunks.push(closing);
   }
   const next: StreamTaskChunk = {
     type: 'task_update',
@@ -164,6 +386,7 @@ export async function relayTurnStep(sessionId: string, title: string): Promise<b
     title: title.slice(0, 200),
     status: 'in_progress',
   };
+  if (opts.detail) next.details = opts.detail.slice(0, 500);
   handle.steps.push(next);
   chunks.push(next);
   handle.expiry = Date.now() + STREAM_TTL_MS;
@@ -171,44 +394,57 @@ export async function relayTurnStep(sessionId: string, title: string): Promise<b
   return true;
 }
 
-// Finalize the stream with the agent's answer.
-export async function relayTurnAnswer(sessionId: string, text: string): Promise<boolean> {
+export async function relayTurnAnswer(
+  sessionId: string,
+  text: string,
+  blocks?: unknown[],
+): Promise<boolean> {
   const handle = activeStreams.get(sessionId);
   if (!handle || handle.finalized) return false;
   activeStreams.delete(sessionId);
-  await finalizeStream(handle, { answer: text });
+  await finalizeStream(handle, { answer: text, blocks });
   return true;
 }
 
 async function finalizeStream(
   handle: TurnStream,
-  opts: { answer?: string; error?: string },
+  opts: { answer?: string; error?: string; blocks?: unknown[] },
 ): Promise<void> {
   if (handle.finalized) return;
   handle.finalized = true;
   const body = (opts.answer ?? opts.error ?? '_Done._').slice(0, 11000);
   if (handle.streaming) {
-    // Closing chunks: the last checkpoint's final state + the answer as a
-    // markdown_text chunk (chat.stopStream rejects a top-level markdown_text).
     const chunks: StreamChunk[] = [];
     const last = handle.steps[handle.steps.length - 1];
     if (last && last.status === 'in_progress') {
       last.status = opts.error ? 'error' : 'complete';
-      chunks.push({ ...last });
+      // Strip details on the closing chunk — re-sending it appends server-side.
+      chunks.push({
+        type: 'task_update',
+        id: last.id,
+        title: last.title,
+        status: last.status,
+      });
     }
-    chunks.push({ type: 'markdown_text', text: body });
+    if (opts.blocks && opts.blocks.length > 0) {
+      chunks.push({ type: 'blocks', blocks: opts.blocks });
+    } else {
+      chunks.push({ type: 'markdown_text', text: body });
+    }
     await stopStream(handle.token, handle.channel, handle.ts, chunks);
   } else {
     await updateMessage(handle.token, handle.channel, handle.ts, body);
   }
   await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI);
+  if (handle.controlsTs && !handle.stopped) {
+    await deleteMessage(handle.token, handle.channel, handle.controlsTs);
+    handle.controlsTs = null;
+  }
 }
 
-// ─── Project picker ──────────────────────────────────────────────────────────
 const PICKER_TTL_MS = 60 * 60 * 1000;
 const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry: number }>();
 
-// OAuth mode — single endpoint, shared signing secret, route by team_id.
 slackWebhookApp.post('/', async (c) => {
   const mode = slackOauthMode();
   if (!mode.available || !mode.signingSecret) {
@@ -231,6 +467,18 @@ slackWebhookApp.post('/', async (c) => {
   void (async () => {
     const teamId = envelope.team_id ?? envelope.event?.team ?? '';
     if (!teamId) return;
+    if (envelope.event?.type === 'member_joined_channel') {
+      await maybePostChannelIntro(teamId, envelope.event);
+      return;
+    }
+    if (
+      envelope.event?.type === 'app_home_opened' &&
+      envelope.event.tab === 'home' &&
+      envelope.event.user
+    ) {
+      await publishHomeForUser(teamId, envelope.event.user);
+      return;
+    }
     const resolution = await resolveOauthProject(teamId, envelope.event?.channel);
     if (resolution.kind === 'project') {
       await dispatchSlackEvent(resolution.projectId, envelope);
@@ -242,8 +490,6 @@ slackWebhookApp.post('/', async (c) => {
   return c.json({ ok: true });
 });
 
-// Slack interactivity (Block Kit button clicks). Registered before /:projectId
-// so the literal path wins over the BYO param route.
 slackWebhookApp.post('/interactivity', async (c) => {
   const mode = slackOauthMode();
   if (!mode.available || !mode.signingSecret) {
@@ -271,16 +517,47 @@ slackWebhookApp.post('/interactivity', async (c) => {
   return c.json({ ok: true });
 });
 
+// Slash commands — Slack POSTs application/x-www-form-urlencoded here when
+// a user runs `/kortix …` in any channel/DM. Must respond within 3s.
+slackWebhookApp.post('/commands', async (c) => {
+  const mode = slackOauthMode();
+  if (!mode.available || !mode.signingSecret) {
+    return c.json({ response_type: 'ephemeral', text: 'OAuth mode not configured on this server.' }, 503);
+  }
+  const rawBody = await c.req.text();
+  const timestamp = c.req.header('x-slack-request-timestamp') ?? '';
+  const signature = c.req.header('x-slack-signature') ?? '';
+  if (!verifySlackSignature(rawBody, timestamp, signature, mode.signingSecret)) {
+    return c.json({ error: 'Invalid signature' }, 401);
+  }
+
+  const params = new URLSearchParams(rawBody);
+  const text = (params.get('text') ?? '').trim();
+  const teamId = params.get('team_id') ?? '';
+  const channelId = params.get('channel_id') ?? '';
+
+  const [sub, ...rest] = text.split(/\s+/);
+  const arg = rest.join(' ').trim();
+  const subLower = (sub || 'help').toLowerCase();
+
+  try {
+    const response = await handleSlashCommand(subLower, arg, { teamId, channelId });
+    return c.json(response);
+  } catch (err) {
+    console.error('[slack-webhook] slash command failed', err);
+    return c.json({
+      response_type: 'ephemeral',
+      text: 'Something went wrong handling that command. Try again in a moment.',
+    });
+  }
+});
+
 type ProjectResolution =
   | { kind: 'project'; projectId: string }
   | { kind: 'ambiguous'; projectIds: string[] }
   | { kind: 'pending' }
   | { kind: 'none' };
 
-// Resolve which Kortix project an OAuth-mode Slack event belongs to.
-//   1. A per-channel binding wins; a NULL-project binding = picker pending.
-//   2. Else, if the workspace has exactly one project, use it and bind lazily.
-//   3. Else (2+ projects, unbound channel) it is ambiguous — post a picker.
 async function resolveOauthProject(
   teamId: string,
   channelId: string | undefined,
@@ -322,8 +599,6 @@ async function resolveOauthProject(
   return { kind: 'ambiguous', projectIds: installs.map((i) => i.projectId) };
 }
 
-// Post a Block Kit project picker for an ambiguous channel and park the
-// triggering event until a button is clicked.
 async function maybePostPicker(
   teamId: string,
   projectIds: string[],
@@ -401,10 +676,694 @@ async function maybePostPicker(
   }
 }
 
-// Handle a project-picker button click.
+type SlashResponse = { response_type: 'ephemeral' | 'in_channel'; text?: string; blocks?: unknown[] };
+
+async function handleSlashCommand(
+  sub: string,
+  arg: string,
+  ctx: { teamId: string; channelId: string },
+): Promise<SlashResponse> {
+  switch (sub) {
+    case 'projects':
+    case 'list':
+      return slashProjects(ctx);
+    case 'switch':
+    case 'use':
+    case 'rebind':
+      return slashSwitch(ctx);
+    case 'unbind':
+      return slashUnbind(ctx);
+    case 'sessions':
+      return slashSessions(ctx);
+    case 'whoami':
+    case 'who':
+      return slashWhoami(ctx);
+    case 'help':
+    case '':
+      return slashHelp();
+    default:
+      return {
+        response_type: 'ephemeral',
+        text: `Unknown subcommand \`${sub}\`. Try \`/kortix help\`.`,
+      };
+  }
+  void arg;
+}
+
+function slashHelp(): SlashResponse {
+  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  return {
+    response_type: 'ephemeral',
+    blocks: [
+      {
+        type: 'header',
+        text: { type: 'plain_text', text: '⚡  Kortix slash commands', emoji: true },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: 'Drive Kortix from any Slack channel. All responses are private to you.',
+        },
+      },
+      { type: 'divider' },
+      ...[
+        { cmd: '/kortix projects', desc: 'List every Kortix project connected to this workspace.' },
+        { cmd: '/kortix switch',   desc: 'Bind this channel to a different project (opens a picker).' },
+        { cmd: '/kortix unbind',   desc: 'Clear this channel\'s project binding.' },
+        { cmd: '/kortix sessions', desc: 'Show the last 5 sessions started in this workspace.' },
+        { cmd: '/kortix whoami',   desc: 'What project is currently bound to this channel.' },
+        { cmd: '/kortix help',     desc: 'This message.' },
+      ].map((r) => ({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `\`${r.cmd}\`\n${r.desc}` },
+      })),
+      { type: 'divider' },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Open dashboard', emoji: true },
+            style: 'primary',
+            url: dashboardBase,
+            action_id: 'help_open_dashboard',
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function slashProjects(ctx: { teamId: string; channelId: string }): Promise<SlashResponse> {
+  const rows = await listWorkspaceProjects(ctx.teamId);
+  if (rows.length === 0) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '*No Kortix projects connected yet.*\nHead to your Kortix dashboard to link one to this workspace.',
+          },
+          accessory: {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Open dashboard', emoji: true },
+            style: 'primary',
+            url: (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, ''),
+            action_id: 'projects_empty_dashboard',
+          },
+        },
+      ],
+    };
+  }
+  const current = await currentChannelProjectId(ctx);
+  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  const blocks: Array<Record<string, unknown>> = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: `Connected projects · ${rows.length}`, emoji: true },
+    },
+  ];
+  if (rows.length >= 2) {
+    blocks.push({
+      type: 'carousel',
+      elements: rows.map((p) => {
+        const isBound = p.projectId === current;
+        const og = repoOgImage(p.repoUrl);
+        const card: Record<string, unknown> = {
+          type: 'card',
+          block_id: `proj_${p.projectId}`,
+          title: { type: 'mrkdwn', text: `${isBound ? '✓ ' : ''}*${escapeMrkdwn(p.name)}*` },
+          subtitle: { type: 'mrkdwn', text: `_${escapeMrkdwn(repoLabel(p.repoUrl))}_` },
+          body: {
+            type: 'mrkdwn',
+            text: isBound ? '🟢  Bound to this channel — `@`-mentions here go to this project.' : '🟢  Connected to this workspace.',
+          },
+          actions: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Open', emoji: true },
+              style: 'primary',
+              url: `${dashboardBase}/projects/${p.projectId}`,
+              action_id: `projects_open_${p.projectId}`,
+            },
+            ...(!isBound ? [{
+              type: 'button',
+              text: { type: 'plain_text', text: 'Switch to this', emoji: true },
+              action_id: `switch_project_${p.projectId}`,
+              value: JSON.stringify({ p: p.projectId, c: ctx.channelId }),
+            }] : []),
+          ],
+        };
+        if (og) {
+          card.hero_image = { type: 'image', image_url: og, alt_text: `${p.name} repo` };
+        }
+        return card;
+      }),
+    });
+  } else {
+    const p = rows[0];
+    const isBound = p.projectId === current;
+    const og = repoOgImage(p.repoUrl);
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `${isBound ? '✓ ' : '🟢 '}*${escapeMrkdwn(p.name)}*\n_<${p.repoUrl}|${escapeMrkdwn(repoLabel(p.repoUrl))}>_\n${isBound ? '🟢  Bound to this channel.' : ''}`,
+      },
+      ...(og ? { accessory: { type: 'image', image_url: og, alt_text: `${p.name} repo` } } : {}),
+    });
+    blocks.push({
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: 'Open project', emoji: true },
+          style: 'primary',
+          url: `${dashboardBase}/projects/${p.projectId}`,
+          action_id: `projects_open_${p.projectId}`,
+        },
+      ],
+    });
+  }
+  return { response_type: 'ephemeral', blocks };
+}
+
+async function slashSwitch(ctx: { teamId: string; channelId: string }): Promise<SlashResponse> {
+  const rows = await listWorkspaceProjects(ctx.teamId);
+  if (rows.length === 0) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: '*No projects to switch to.*\nLink a project to this workspace from your Kortix dashboard first.' },
+          accessory: {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Open dashboard', emoji: true },
+            style: 'primary',
+            url: (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, ''),
+            action_id: 'switch_empty_dashboard',
+          },
+        },
+      ],
+    };
+  }
+  const current = await currentChannelProjectId(ctx);
+  const blocks: Array<Record<string, unknown>> = [
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: 'Switch this channel to…', emoji: true },
+    },
+  ];
+  if (rows.length >= 2) {
+    blocks.push({
+      type: 'carousel',
+      elements: rows.map((p) => {
+        const isBound = p.projectId === current;
+        const og = repoOgImage(p.repoUrl);
+        const card: Record<string, unknown> = {
+          type: 'card',
+          block_id: `switch_${p.projectId}`,
+          title: { type: 'mrkdwn', text: `${isBound ? '✓ ' : ''}*${escapeMrkdwn(p.name)}*` },
+          subtitle: { type: 'mrkdwn', text: `_${escapeMrkdwn(repoLabel(p.repoUrl))}_` },
+          body: {
+            type: 'mrkdwn',
+            text: isBound ? 'Currently bound to this channel.' : 'Pick this to route `@`-mentions here to this project.',
+          },
+          actions: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: isBound ? '✓ Current' : 'Pick this', emoji: true },
+              style: isBound ? undefined : 'primary',
+              action_id: `switch_project_${p.projectId}`,
+              value: JSON.stringify({ p: p.projectId, c: ctx.channelId }),
+            },
+          ],
+        };
+        if (og) card.hero_image = { type: 'image', image_url: og, alt_text: `${p.name} repo` };
+        return card;
+      }),
+    });
+  } else {
+    // Single-project workspace — there's nothing to switch to, but still show
+    // the project as confirmation.
+    const p = rows[0];
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `Only one project connected: *${escapeMrkdwn(p.name)}*\n_<${p.repoUrl}|${escapeMrkdwn(repoLabel(p.repoUrl))}>_`,
+      },
+    });
+  }
+  return { response_type: 'ephemeral', blocks };
+}
+
+async function slashUnbind(ctx: { teamId: string; channelId: string }): Promise<SlashResponse> {
+  if (!ctx.channelId) {
+    return { response_type: 'ephemeral', text: 'No channel context — run this from inside a channel.' };
+  }
+  await db
+    .delete(chatChannelBindings)
+    .where(and(
+      eq(chatChannelBindings.platform, 'slack'),
+      eq(chatChannelBindings.workspaceId, ctx.teamId),
+      eq(chatChannelBindings.channelId, ctx.channelId),
+    ));
+  return {
+    response_type: 'ephemeral',
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '*Unbound.*\nThe next `@`-mention will show the project picker again.',
+        },
+      },
+    ],
+  };
+}
+
+async function slashSessions(ctx: { teamId: string; channelId: string }): Promise<SlashResponse> {
+  const rows = await db
+    .select({
+      projectId: chatThreads.projectId,
+      sessionId: chatThreads.sessionId,
+      lastMessageAt: chatThreads.lastMessageAt,
+    })
+    .from(chatThreads)
+    .where(and(eq(chatThreads.platform, 'slack'), eq(chatThreads.workspaceId, ctx.teamId)))
+    .orderBy(desc(chatThreads.lastMessageAt))
+    .limit(5);
+  if (rows.length === 0) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [
+        { type: 'section', text: { type: 'mrkdwn', text: '*No recent Kortix sessions in this workspace.*\n`@`-mention me in any channel to start one.' } },
+      ],
+    };
+  }
+  const projectIds = Array.from(new Set(rows.map((r) => r.projectId)));
+  const projectRows = await db
+    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
+    .from(projects)
+    .where(inArray(projects.projectId, projectIds));
+  const projectById = new Map(projectRows.map((p) => [p.projectId, p]));
+  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  return {
+    response_type: 'ephemeral',
+    blocks: [
+      {
+        type: 'header',
+        text: { type: 'plain_text', text: 'Recent sessions', emoji: true },
+      },
+      ...rows.flatMap((r) => {
+        const p = projectById.get(r.projectId);
+        const projectName = p?.name ?? 'project';
+        const og = p ? repoOgImage(p.repoUrl) : null;
+        const section: Record<string, unknown> = {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*${escapeMrkdwn(projectName)}*  ·  ${formatRelativeTime(r.lastMessageAt)}\n_<${dashboardBase}/projects/${r.projectId}/sessions/${r.sessionId}|Open session>_`,
+          },
+          ...(og ? { accessory: { type: 'image', image_url: og, alt_text: `${projectName} repo` } } : {}),
+        };
+        return [section];
+      }),
+    ],
+  };
+}
+
+async function slashWhoami(ctx: { teamId: string; channelId: string }): Promise<SlashResponse> {
+  const currentId = await currentChannelProjectId(ctx);
+  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  if (!currentId) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '*No project bound to this channel.*\nRun `/kortix switch` to pick one.',
+          },
+        },
+      ],
+    };
+  }
+  const [p] = await db
+    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
+    .from(projects)
+    .where(eq(projects.projectId, currentId))
+    .limit(1);
+  if (!p) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: '*This channel\'s bound project no longer exists.*\nRun `/kortix switch` to rebind.' },
+        },
+      ],
+    };
+  }
+  const og = repoOgImage(p.repoUrl);
+  const section: Record<string, unknown> = {
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `🟢  *${escapeMrkdwn(p.name)}*  ·  ✓ bound to this channel\n_<${p.repoUrl}|${escapeMrkdwn(repoLabel(p.repoUrl))}>_`,
+    },
+  };
+  if (og) section.accessory = { type: 'image', image_url: og, alt_text: `${p.name} repo` };
+  return {
+    response_type: 'ephemeral',
+    blocks: [
+      section,
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Open project', emoji: true },
+            style: 'primary',
+            url: `${dashboardBase}/projects/${p.projectId}`,
+            action_id: `whoami_open_${p.projectId}`,
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'View on GitHub', emoji: true },
+            url: p.repoUrl,
+            action_id: `whoami_repo_${p.projectId}`,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function listWorkspaceProjects(teamId: string): Promise<Array<{ projectId: string; name: string; repoUrl: string }>> {
+  const installs = await db
+    .select({ projectId: chatInstalls.projectId })
+    .from(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+  if (installs.length === 0) return [];
+  const ids = installs.map((i) => i.projectId);
+  return db
+    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
+    .from(projects)
+    .where(inArray(projects.projectId, ids));
+}
+
+async function currentChannelProjectId(ctx: { teamId: string; channelId: string }): Promise<string | null> {
+  if (!ctx.channelId) return null;
+  const [binding] = await db
+    .select({ projectId: chatChannelBindings.projectId })
+    .from(chatChannelBindings)
+    .where(and(
+      eq(chatChannelBindings.platform, 'slack'),
+      eq(chatChannelBindings.workspaceId, ctx.teamId),
+      eq(chatChannelBindings.channelId, ctx.channelId),
+    ))
+    .limit(1);
+  return binding?.projectId ?? null;
+}
+
+async function handleAskSubmit(payload: SlackInteractionPayload, askId: string): Promise<void> {
+  const pending = pendingAsks.get(askId);
+  if (!pending) {
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      text: 'This form has already been submitted or expired.',
+    });
+    return;
+  }
+  pendingAsks.delete(askId);
+
+  const values = payload.state?.values ?? {};
+  const answers: string[][] = pending.questions.map((q, i) => {
+    const out: string[] = [];
+    const choice = values[`q_${i}_choice`]?.value;
+    if (choice) {
+      if (q.multiple) {
+        for (const opt of choice.selected_options ?? []) {
+          if (opt?.value) out.push(opt.value);
+        }
+      } else if (choice.selected_option?.value) {
+        out.push(choice.selected_option.value);
+      }
+    }
+    const custom = values[`q_${i}_custom`]?.value?.value?.trim();
+    if (custom) out.push(custom);
+    return out;
+  });
+
+  // Spin up a fresh stream BELOW the form so the agent's continuation
+  // (more `slack step`s + the final `slack send`) lands in chronological
+  // order under the user's submitted answers. Without this, the old
+  // (parked) stream message above the form gets edited in-place.
+  try {
+    const newHandle = await startTurnStream(
+      pending.projectId,
+      pending.teamId,
+      pending.originatingEvent,
+      'Continuing…',
+    );
+    if (newHandle) {
+      activeStreams.set(pending.sessionId, newHandle);
+      await attachStopControls(newHandle, pending.sessionId);
+    }
+  } catch (err) {
+    console.warn('[slack-webhook] post-question stream re-open failed', err);
+  }
+
+  pending.resolve(answers);
+
+  if (pending.messageTs) {
+    const recap: Array<Record<string, unknown>> = [];
+    pending.questions.forEach((q, i) => {
+      recap.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*${escapeMrkdwn(q.question)}*` },
+      });
+      const picked = answers[i] ?? [];
+      if (picked.length > 0) {
+        recap.push({
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: `→ ${picked.map(escapeMrkdwn).join(', ')}` }],
+        });
+      }
+    });
+    recap.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: '✅  Submitted' }],
+    });
+    await updateBlocks(pending.token, pending.channel, pending.messageTs, 'Submitted.', recap);
+  }
+}
+
+// Agent-emitted button click (carousel cards, actions blocks). Routes the
+// click back into the thread as a synthesized follow-up so the agent's next
+// turn picks up from the user's choice.
+async function handleAgentClick(
+  payload: SlackInteractionPayload,
+  action: NonNullable<SlackInteractionPayload['actions']>[number],
+): Promise<void> {
+  const teamId = payload.team?.id ?? '';
+  const channelId = payload.channel?.id ?? '';
+  const userId = payload.user?.id ?? '';
+  const messageTs = payload.message?.ts ?? '';
+  const threadTs = payload.message?.thread_ts ?? messageTs;
+  if (!teamId || !channelId || !userId || !threadTs) return;
+
+  const label = (action.text?.text ?? action.action_id ?? '').trim();
+  const value = (action.value ?? '').trim();
+
+  await respondViaUrl(payload.response_url, {
+    response_type: 'ephemeral',
+    text: `On it — picked *${label || action.action_id}*.`,
+  });
+
+  const [thread] = await db
+    .select({ projectId: chatThreads.projectId })
+    .from(chatThreads)
+    .where(and(
+      eq(chatThreads.platform, 'slack'),
+      eq(chatThreads.workspaceId, teamId),
+      eq(chatThreads.threadId, threadTs),
+    ))
+    .limit(1);
+  if (!thread) return;
+
+  const lines = [`[Button click] The user clicked *${label || action.action_id}*.`];
+  if (action.action_id) lines.push(`action_id: \`${action.action_id}\``);
+  if (value) lines.push(`value: \`${value}\``);
+  lines.push('', 'Continue the turn based on this choice.');
+
+  const event: SlackEvent = {
+    type: 'message',
+    user: userId,
+    channel: channelId,
+    text: lines.join('\n'),
+    ts: messageTs,
+    thread_ts: threadTs,
+    team: teamId,
+  };
+  const envelope: SlackEnvelope = {
+    type: 'event_callback',
+    team_id: teamId,
+    event,
+  };
+  await spawnAgentTurn(thread.projectId, envelope, event);
+}
+
+async function handleSwitchProject(payload: SlackInteractionPayload, rawValue: string): Promise<void> {
+  let value: { p?: string; c?: string };
+  try {
+    value = JSON.parse(rawValue || '{}') as { p?: string; c?: string };
+  } catch {
+    return;
+  }
+  const projectId = value.p;
+  const channelId = value.c ?? payload.channel?.id;
+  const teamId = payload.team?.id ?? '';
+  if (!projectId || !channelId || !teamId) return;
+
+  const [install] = await db
+    .select({ id: chatInstalls.installId })
+    .from(chatInstalls)
+    .where(and(
+      eq(chatInstalls.platform, 'slack'),
+      eq(chatInstalls.workspaceId, teamId),
+      eq(chatInstalls.projectId, projectId),
+    ))
+    .limit(1);
+  if (!install) {
+    await respondViaUrl(payload.response_url, {
+      response_type: 'ephemeral',
+      replace_original: true,
+      text: 'That project is no longer connected to this workspace.',
+    });
+    return;
+  }
+
+  await db
+    .insert(chatChannelBindings)
+    .values({ platform: 'slack', workspaceId: teamId, channelId, projectId, pickerTs: null })
+    .onConflictDoUpdate({
+      target: [chatChannelBindings.platform, chatChannelBindings.workspaceId, chatChannelBindings.channelId],
+      set: { projectId, pickerTs: null },
+    });
+
+  const [p] = await db
+    .select({ name: projects.name })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+
+  await respondViaUrl(payload.response_url, {
+    response_type: 'ephemeral',
+    replace_original: true,
+    text: `Switched this channel to *${p?.name ?? 'project'}*.`,
+  });
+}
+
+async function respondViaUrl(url: string | undefined, body: unknown): Promise<void> {
+  if (!url) return;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    console.warn('[slack-webhook] response_url POST failed', err);
+  }
+}
+
+async function handleStopTurn(payload: SlackInteractionPayload, rawValue: string): Promise<void> {
+  let value: { s?: string; p?: string };
+  try {
+    value = JSON.parse(rawValue || '{}') as { s?: string; p?: string };
+  } catch {
+    return;
+  }
+  const sessionId = value.s;
+  const projectId = value.p;
+  if (!sessionId || !projectId) return;
+
+  const handle = activeStreams.get(sessionId);
+  if (handle) handle.stopped = true;
+  const token = handle?.token ?? (await loadSlackTokenForProject(projectId));
+  const channelId = payload.channel?.id ?? handle?.channel ?? '';
+  const controlsTs = payload.message?.ts ?? handle?.controlsTs ?? '';
+
+  const aborted = await abortSandboxTurn(sessionId);
+
+  if (token && channelId && controlsTs) {
+    await updateBlocks(
+      token,
+      channelId,
+      controlsTs,
+      aborted ? 'Stopped.' : "Couldn't stop in time.",
+      [
+        {
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: aborted ? '🛑  *Stopped by you*' : '⚠️  *Stop request failed — the turn may have already completed.*',
+            },
+          ],
+        },
+      ],
+    );
+  }
+
+  if (aborted && handle && !handle.finalized) {
+    await finalizeStream(handle, { error: '_Stopped._' });
+    activeStreams.delete(sessionId);
+  }
+}
+
 async function handleBlockAction(payload: SlackInteractionPayload): Promise<void> {
   const action = payload.actions?.[0];
-  if (!action?.action_id?.startsWith('pick_project')) return;
+  if (!action?.action_id) return;
+
+  if (action.action_id === 'stop_turn') {
+    await handleStopTurn(payload, action.value ?? '');
+    return;
+  }
+
+  if (action.action_id.startsWith('switch_project_')) {
+    await handleSwitchProject(payload, action.value ?? '');
+    return;
+  }
+
+  if (action.action_id === 'ask_submit') {
+    await handleAskSubmit(payload, action.value ?? '');
+    return;
+  }
+
+  if (action.action_id === 'value') {
+    // No-op: live input/select element clicks before Submit. Slack still POSTs
+    // here so we can preview/validate; we just don't act until ask_submit fires.
+    return;
+  }
+
+  // Anything else is an agent-emitted button (typically inside a carousel card
+  // or actions block from `slack send --blocks-file ...`). Route the click back
+  // into the thread as a synthesized follow-up so the agent can continue.
+  if (!action.action_id.startsWith('pick_project') && !action.action_id.startsWith('switch_project_')) {
+    await handleAgentClick(payload, action);
+    return;
+  }
+
+  if (!action.action_id.startsWith('pick_project')) return;
   let value: { k?: string; p?: string };
   try {
     value = JSON.parse(action.value ?? '{}') as { k?: string; p?: string };
@@ -475,7 +1434,6 @@ async function handleBlockAction(payload: SlackInteractionPayload): Promise<void
   }
 }
 
-// BYO mode — per-project URL, per-project signing secret.
 slackWebhookApp.post('/:projectId', async (c) => {
   const projectId = c.req.param('projectId');
   const rawBody = await c.req.text();
@@ -503,7 +1461,6 @@ slackWebhookApp.post('/:projectId', async (c) => {
 
 type EventClass = 'mention' | 'dm' | 'follow_up' | 'ignore';
 
-// Decide whether a Slack event should trigger an agent turn.
 async function classifyEvent(
   teamId: string,
   event: SlackEvent,
@@ -512,8 +1469,6 @@ async function classifyEvent(
   if (event.type === 'app_mention') return 'mention';
   if (event.type !== 'message') return 'ignore';
   if (event.subtype) return 'ignore';
-  // Slack delivers both `app_mention` and `message.*` for a message that
-  // mentions the bot. `app_mention` owns those; drop the message twin.
   if (botUserId && (event.text ?? '').includes(`<@${botUserId}>`)) return 'ignore';
   if (event.channel_type === 'im') return 'dm';
   if (event.thread_ts && (await threadIsOwned(teamId, event.thread_ts))) return 'follow_up';
@@ -539,6 +1494,326 @@ function stripMentions(text: string): string {
   return text.replace(/<@[A-Z0-9]+>/g, '').trim();
 }
 
+const CHANNEL_INTRO_FALLBACK = "👋 Hey! I'm Kortix — your coding teammate. `@`-mention me with a task and I'll get on it.";
+
+async function postChannelIntro(projectId: string, channelId: string): Promise<void> {
+  const token = await loadSlackTokenForProject(projectId);
+  if (!token) return;
+  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  const heroUrl = config.SLACK_HOME_HERO_URL || DEFAULT_HOME_HERO_URL;
+  const blocks: Array<Record<string, unknown>> = [
+    { type: 'image', image_url: heroUrl, alt_text: 'Kortix — your coding teammate in Slack' },
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: "👋  Hey! I'm Kortix", emoji: true },
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: [
+          "*Your coding teammate, right here in Slack.*",
+          '',
+          "`@`-mention me with a task and I'll get on it — read the repo, run the work in an isolated sandbox, and reply in this thread. Follow-ups stay in context.",
+        ].join('\n'),
+      },
+    },
+    {
+      type: 'context',
+      elements: [
+        { type: 'mrkdwn', text: '⚡  *Live plan streaming*' },
+        { type: 'mrkdwn', text: '🧵  *Thread memory*' },
+        { type: 'mrkdwn', text: '📁  *File I/O*' },
+        { type: 'mrkdwn', text: '🔒  *Isolated sandbox*' },
+      ],
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*Try a task*' },
+    },
+    { type: 'section', text: { type: 'mrkdwn', text: '🔍  `@Kortix scan this codebase and write me a one-pager`' } },
+    { type: 'section', text: { type: 'mrkdwn', text: '🔧  `@Kortix open a PR that updates the README with our setup steps`' } },
+    { type: 'section', text: { type: 'mrkdwn', text: '📊  `@Kortix what changed on main this week?`' } },
+    { type: 'divider' },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: 'Open dashboard', emoji: true },
+          style: 'primary',
+          url: dashboardBase,
+          action_id: 'intro_open_dashboard',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '/kortix help', emoji: true },
+          url: dashboardBase,
+          action_id: 'intro_help',
+        },
+      ],
+    },
+    {
+      type: 'context',
+      elements: [
+        { type: 'mrkdwn', text: `🪐  Managed by Kortix  ·  <${dashboardBase}|kortix.com>` },
+      ],
+    },
+  ];
+  await postBlocks(token, channelId, CHANNEL_INTRO_FALLBACK, blocks);
+}
+
+async function publishHomeForUser(teamId: string, userId: string): Promise<void> {
+  const installs = await db
+    .select({ projectId: chatInstalls.projectId })
+    .from(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)));
+  if (installs.length === 0) return;
+
+  const token = await loadSlackTokenForProject(installs[0].projectId);
+  if (!token) return;
+
+  const projectIds = installs.map((i) => i.projectId);
+  const projectRows = await db
+    .select({ projectId: projects.projectId, name: projects.name, repoUrl: projects.repoUrl })
+    .from(projects)
+    .where(inArray(projects.projectId, projectIds));
+
+  const recent = await db
+    .select({
+      projectId: chatThreads.projectId,
+      lastMessageAt: chatThreads.lastMessageAt,
+      threadId: chatThreads.threadId,
+    })
+    .from(chatThreads)
+    .where(and(eq(chatThreads.platform, 'slack'), eq(chatThreads.workspaceId, teamId)))
+    .orderBy(desc(chatThreads.lastMessageAt))
+    .limit(5);
+
+  const view = buildHomeView({ projects: projectRows, recent });
+  await publishHomeView(token, userId, view);
+}
+
+const HOME_EXAMPLES: Array<{ emoji: string; prompt: string }> = [
+  { emoji: '🔍', prompt: '@Kortix scan this codebase and write me a one-pager' },
+  { emoji: '🔧', prompt: '@Kortix open a PR that switches our logger to pino' },
+  { emoji: '📊', prompt: '@Kortix what changed on main this week?' },
+  { emoji: '📦', prompt: '@Kortix pull yesterday\'s sign-ups, group them by source, drop the CSV here' },
+];
+
+const PROJECT_COVERS = [
+  '1517694712202-14dd9538aa97',
+  '1555066931-4365d14bab8c',
+  '1542831371-29b0f74f9713',
+  '1532619675605-1ede6c2ed2b0',
+  '1551033406-611cf9a28f67',
+  '1573164713988-8665fc963095',
+  '1551288049-bebda4e38f71',
+];
+
+function projectCoverUrl(projectId: string): string {
+  let h = 0;
+  for (let i = 0; i < projectId.length; i++) h = (h * 31 + projectId.charCodeAt(i)) | 0;
+  const idx = Math.abs(h) % PROJECT_COVERS.length;
+  return `https://images.unsplash.com/photo-${PROJECT_COVERS[idx]}?w=1600&h=400&fit=crop&q=80&auto=format`;
+}
+
+const DEFAULT_HOME_HERO_URL =
+  'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&h=480&fit=crop&q=80&auto=format';
+
+interface HomeProjectRow { projectId: string; name: string; repoUrl: string }
+interface HomeRecentRow { projectId: string; lastMessageAt: Date; threadId: string }
+
+function repoOgImage(repoUrl: string): string | null {
+  const m = repoUrl.match(/github\.com[\/:]([\w.-]+)\/([\w.-]+?)(\.git)?$/i);
+  if (!m) return null;
+  return `https://opengraph.githubassets.com/1/${m[1]}/${m[2]}`;
+}
+
+function repoLabel(repoUrl: string): string {
+  return repoUrl
+    .replace(/^https?:\/\/(www\.)?github\.com\//, '')
+    .replace(/^git@github\.com:/, '')
+    .replace(/\.git$/, '');
+}
+
+function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRow[] }): Record<string, unknown> {
+  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  const heroUrl = config.SLACK_HOME_HERO_URL || DEFAULT_HOME_HERO_URL;
+  const blocks: Array<Record<string, unknown>> = [];
+
+  blocks.push({
+    type: 'image',
+    image_url: heroUrl,
+    alt_text: 'Kortix — your coding teammate in Slack',
+  });
+  blocks.push({
+    type: 'header',
+    text: { type: 'plain_text', text: '👋  Welcome to Kortix', emoji: true },
+  });
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: [
+        '*Your coding teammate, right here in Slack.*',
+        '',
+        "`@`-mention me in any channel with a task and I'll read the repo, run the work in an isolated sandbox, and reply in the thread. Follow-ups stay in context.",
+      ].join('\n'),
+    },
+  });
+  blocks.push({
+    type: 'context',
+    elements: [
+      { type: 'mrkdwn', text: '⚡  *Live plan streaming*' },
+      { type: 'mrkdwn', text: '🧵  *Thread memory*' },
+      { type: 'mrkdwn', text: '📁  *File I/O*' },
+      { type: 'mrkdwn', text: '🔒  *Isolated sandbox*' },
+    ],
+  });
+
+  blocks.push({ type: 'divider' });
+
+  if (input.projects.length === 0) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*No projects connected yet.*\nHead to your Kortix dashboard to link a project to this workspace.' },
+      accessory: {
+        type: 'button',
+        text: { type: 'plain_text', text: 'Open dashboard' },
+        style: 'primary',
+        url: dashboardBase,
+        action_id: 'home_open_dashboard',
+      },
+    });
+  } else {
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: `Connected projects · ${input.projects.length}`, emoji: true },
+    });
+    for (const p of input.projects) {
+      const label = repoLabel(p.repoUrl);
+      // Cover image — full-width card hero.
+      blocks.push({
+        type: 'image',
+        image_url: projectCoverUrl(p.projectId),
+        alt_text: `${p.name} cover`,
+      });
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: [
+            `*${escapeMrkdwn(p.name)}*`,
+            `<${p.repoUrl}|${escapeMrkdwn(label)}>`,
+          ].join('\n'),
+        },
+      });
+      blocks.push({
+        type: 'context',
+        elements: [
+          { type: 'mrkdwn', text: '🟢  *Connected*' },
+          { type: 'mrkdwn', text: `🪐  <${dashboardBase}/projects/${p.projectId}|Dashboard>` },
+        ],
+      });
+      blocks.push({
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Open project' },
+            style: 'primary',
+            url: `${dashboardBase}/projects/${p.projectId}`,
+            action_id: `home_open_${p.projectId}`,
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'View on GitHub' },
+            url: p.repoUrl,
+            action_id: `home_repo_${p.projectId}`,
+          },
+        ],
+      });
+    }
+  }
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'header',
+    text: { type: 'plain_text', text: 'Try a task', emoji: true },
+  });
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: '_Paste any of these into a channel I\'m in:_' },
+  });
+  for (const ex of HOME_EXAMPLES) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `${ex.emoji}  \`${ex.prompt}\`` },
+    });
+  }
+
+  if (input.recent.length > 0) {
+    const projectById = new Map(input.projects.map((p) => [p.projectId, p]));
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'header',
+      text: { type: 'plain_text', text: 'Recent activity', emoji: true },
+    });
+    for (const r of input.recent) {
+      const proj = projectById.get(r.projectId);
+      const projectName = proj?.name ?? 'project';
+      const when = formatRelativeTime(r.lastMessageAt);
+      const elements: Array<Record<string, unknown>> = [];
+      const og = proj ? repoOgImage(proj.repoUrl) : null;
+      if (og) elements.push({ type: 'image', image_url: og, alt_text: `${projectName} repo` });
+      elements.push({ type: 'mrkdwn', text: `*${escapeMrkdwn(projectName)}*  ·  ${when}` });
+      blocks.push({ type: 'context', elements });
+    }
+  }
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'context',
+    elements: [
+      { type: 'mrkdwn', text: `🪐  Managed by Kortix  ·  <${dashboardBase}|kortix.com>  ·  <${dashboardBase}/docs|Docs>  ·  <${dashboardBase}/settings|Settings>` },
+    ],
+  });
+
+  return { type: 'home', blocks };
+}
+
+function formatRelativeTime(d: Date): string {
+  const ms = Date.now() - d.getTime();
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return d.toISOString().slice(0, 10);
+}
+
+function escapeMrkdwn(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function maybePostChannelIntro(teamId: string, event: SlackEvent): Promise<void> {
+  if (!event.channel) return;
+  const [install] = await db
+    .select({ projectId: chatInstalls.projectId })
+    .from(chatInstalls)
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.workspaceId, teamId)))
+    .limit(1);
+  if (!install) return;
+  const botUserId = await loadSlackBotUserIdForProject(install.projectId);
+  if (!botUserId || event.user !== botUserId) return;
+  await postChannelIntro(install.projectId, event.channel);
+}
+
 async function dispatchSlackEvent(projectId: string, envelope: SlackEnvelope): Promise<void> {
   const event = envelope.event;
   if (!event) return;
@@ -546,14 +1821,21 @@ async function dispatchSlackEvent(projectId: string, envelope: SlackEnvelope): P
   const teamId = envelope.team_id ?? event.team ?? '';
   const botUserId = await loadSlackBotUserIdForProject(projectId);
 
-  // Echo guard — never process the bot's own messages (including its streamed
-  // message and the stream's edits).
+  if (
+    event.type === 'member_joined_channel' &&
+    botUserId &&
+    event.user === botUserId &&
+    event.channel
+  ) {
+    await postChannelIntro(projectId, event.channel);
+    return;
+  }
+
   if ((botUserId && event.user === botUserId) || event.bot_id) return;
 
   const eventClass = await classifyEvent(teamId, event, botUserId);
   if (eventClass === 'ignore') return;
 
-  // Bare "@Kortix" with no task — answer with a nudge, don't burn a sandbox.
   if (eventClass === 'mention' && !stripMentions(event.text ?? '')) {
     const token = await loadSlackTokenForProject(projectId);
     if (token && event.channel) {
@@ -604,7 +1886,6 @@ async function spawnAgentTurn(
   const teamId = envelope.team_id ?? event.team ?? '';
   const threadId = event.thread_ts ?? event.ts ?? '';
 
-  // Thread continuity: deliver to an existing live session before spawning.
   let revived = false;
   if (teamId && threadId) {
     const [existing] = await db
@@ -619,10 +1900,13 @@ async function spawnAgentTurn(
       )
       .limit(1);
     if (existing) {
+      const handle = await startTurnStream(projectId, teamId, event, 'On it');
+      if (handle) {
+        activeStreams.set(existing.sessionId, handle);
+        await attachStopControls(handle, existing.sessionId);
+      }
       const outcome = await deliverFollowUpToSandbox(existing.sessionId, envelope, event);
       if (outcome === 'delivered') {
-        const handle = await startTurnStream(projectId, teamId, event, 'On it');
-        if (handle) activeStreams.set(existing.sessionId, handle);
         await db
           .update(chatThreads)
           .set({ lastMessageAt: new Date() })
@@ -635,9 +1919,11 @@ async function spawnAgentTurn(
           );
         return;
       }
-      // Transient: alive but the relay failed retryably — don't duplicate.
+      if (handle) {
+        activeStreams.delete(existing.sessionId);
+        await finalizeStream(handle, { error: "I couldn't reach the sandbox — try again." });
+      }
       if (outcome === 'transient') return;
-      // Stale: sandbox gone — spawn fresh and tell the agent context is lost.
       revived = true;
       await db
         .delete(chatThreads)
@@ -664,8 +1950,6 @@ async function spawnAgentTurn(
     return;
   }
 
-  // Open the stream now — the user sees a live plan immediately, well before
-  // the sandbox is ready.
   const handle = await startTurnStream(projectId, teamId, event, 'Spinning up a sandbox');
 
   const result = await createProjectSession({
@@ -688,6 +1972,9 @@ async function spawnAgentTurn(
         event_type: event.type,
       },
     },
+    // Sandbox-side env the slack skill references. The agent uses these to
+    // talk back to the same thread without parsing IDs out of the prompt.
+    extraEnvVars: buildSlackTurnEnv(teamId, event),
   });
 
   if (result.error) {
@@ -700,6 +1987,7 @@ async function spawnAgentTurn(
 
   if (result.row && handle) {
     activeStreams.set(result.row.sessionId, handle);
+    await attachStopControls(handle, result.row.sessionId);
   }
 
   if (result.row && teamId && threadId) {
@@ -725,7 +2013,65 @@ async function spawnAgentTurn(
 
 type DeliveryOutcome = 'delivered' | 'transient' | 'stale';
 
-// Deliver a follow-up Slack message to the running sandbox's /kortix/prompt.
+async function resolveSandboxPreview(
+  kortixSessionId: string,
+): Promise<{ url: string; headers: Record<string, string> } | { error: 'stale' | 'transient' }> {
+  const [sandbox] = await db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      metadata: sessionSandboxes.metadata,
+      status: sessionSandboxes.status,
+    })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, kortixSessionId))
+    .limit(1);
+  if (!sandbox) return { error: 'stale' };
+  if (sandbox.status === 'stopped' || sandbox.status === 'archived' || sandbox.status === 'error') {
+    return { error: 'stale' };
+  }
+  if (sandbox.status !== 'active') return { error: 'transient' };
+  const daytonaSandboxId = (sandbox.metadata as Record<string, unknown> | null)?.['daytonaSandboxId'];
+  if (typeof daytonaSandboxId !== 'string' || !daytonaSandboxId) return { error: 'stale' };
+  try {
+    const daytona = getDaytona();
+    const sb = await daytona.get(daytonaSandboxId);
+    const link = await (sb as { getPreviewLink: (port: number) => Promise<{ url?: string; token?: string }> })
+      .getPreviewLink(8000);
+    const url = (link.url ?? `https://8000-${daytonaSandboxId}.daytonaproxy01.net`).replace(/\/$/, '');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Daytona-Skip-Preview-Warning': 'true',
+      'X-Daytona-Disable-CORS': 'true',
+    };
+    if (link.token) headers['X-Daytona-Preview-Token'] = link.token;
+    return { url, headers };
+  } catch (err) {
+    console.warn('[slack-webhook] getPreviewLink failed', err);
+    return { error: 'transient' };
+  }
+}
+
+async function abortSandboxTurn(kortixSessionId: string): Promise<boolean> {
+  const preview = await resolveSandboxPreview(kortixSessionId);
+  if ('error' in preview) return false;
+  try {
+    const res = await fetch(`${preview.url}/kortix/abort`, {
+      method: 'POST',
+      headers: preview.headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const body = (await res.text()).slice(0, 300);
+      console.warn('[slack-webhook] kortix/abort returned non-ok', { status: res.status, body });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[slack-webhook] kortix/abort fetch failed', err);
+    return false;
+  }
+}
+
 async function deliverFollowUpToSandbox(
   kortixSessionId: string,
   envelope: SlackEnvelope,
@@ -794,17 +2140,38 @@ async function deliverFollowUpToSandbox(
   }
 }
 
-// How the agent narrates its turn and delivers its answer. Shared by the cold
-// and follow-up prompts.
 const TURN_INSTRUCTIONS = [
   'How to work:',
+  '- **First, load the `slack` skill** via the `skill` tool. It is the canonical',
+  '  reference for posting in Slack — covers step/send semantics, link syntax,',
+  '  Block Kit answers, sources, tone, and gotchas. Do not skip it.',
   '- As you go, post a short progress checkpoint before each major step:',
   '    slack step "Reading the incident logs"',
   '  Keep them human and brief — a few per task, not one per command.',
-  '- When you are done, deliver your answer with:',
-  '    slack send "<your reply>"',
-  '  Write it like a teammate: concise, Slack-formatted, no preamble. This',
-  '  finalizes the live update in the thread.',
+  '- Attach inline context with mrkdwn links:',
+  '    slack step "Reading the logs" --detail "Pulling from <https://datadog.example.com|Datadog>"',
+  '  `--detail` is the subtitle under the new step. `<url|label>` becomes a real link.',
+  '- When the PREVIOUS step finished with a result, surface it:',
+  '    slack step "Drafting summary" --output "Found 3 incidents, 1 P0"',
+  '  Add `--source URL|TITLE` (repeatable) to cite the URLs you used.',
+  '- **Any time you would ask the user a question, use the built-in `question` tool — NEVER `slack send`.**',
+  '  If your reply would contain a `?` or any "please tell me / choose / which one / what',
+  '  would you like" phrasing, that is a question and it MUST go through `question`.',
+  '  `slack send` is for the FINAL ANSWER only, never for prompts.',
+  '  The `question` tool takes an `Array<QuestionInfo>` per opencode\'s schema — each',
+  '  with { question, header, options[], multiple, custom }. On Slack turns the sandbox',
+  '  automatically renders a Block Kit form (radio/checkboxes/text) in the same thread',
+  '  and resumes the tool with the user\'s answers (`string[][]` — one array per question).',
+  '  WRONG:  `slack send --blocks-file questions.json` (non-interactive — they can\'t reply!)',
+  '  RIGHT:  call the `question` tool with one or more QuestionInfo entries.',
+  '  Load the `slack` skill (`<asking-the-user>`) for the QuestionInfo schema + examples.',
+  '- Deliver the answer as a rich Block Kit message whenever the response',
+  '  benefits from structure (headers, sections, lists, links, bullets):',
+  '    slack send --text "fallback summary" --blocks-file /tmp/answer.json',
+  '  The `blocks` JSON follows the Block Kit schema (header, section with mrkdwn,',
+  '  divider, context, image, actions). Plain text via `slack send "..."` is fine',
+  '  for one-liners, but prefer blocks when there\'s real structure to convey.',
+  '- One `slack send` per turn. It finalizes the live stream and can\'t be undone.',
 ].join('\n');
 
 function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent): string {
@@ -869,6 +2236,7 @@ interface SlackEvent {
   thread_ts?: string;
   subtype?: string;
   team?: string;
+  tab?: 'home' | 'messages';
 }
 
 interface SlackInteractionPayload {
@@ -876,6 +2244,25 @@ interface SlackInteractionPayload {
   team?: { id: string };
   user?: { id: string };
   channel?: { id: string };
-  message?: { ts: string };
-  actions?: Array<{ action_id?: string; value?: string }>;
+  message?: { ts: string; thread_ts?: string };
+  actions?: Array<{
+    action_id?: string;
+    value?: string;
+    text?: { type?: string; text?: string };
+  }>;
+  response_url?: string;
+  state?: {
+    values?: Record<
+      string,
+      Record<
+        string,
+        {
+          type?: string;
+          value?: string;
+          selected_option?: { value?: string } | null;
+          selected_options?: Array<{ value?: string }>;
+        }
+      >
+    >;
+  };
 }

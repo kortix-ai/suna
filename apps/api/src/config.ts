@@ -121,6 +121,9 @@ const envSchema = z.object({
   // means the OAuth flow grants fewer scopes than the manifest advertises
   // and tools like `slack channels`/`slack users` fail with missing_scope.
   SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,channels:history,channels:read,channels:join,chat:write,chat:write.public,files:read,files:write,groups:history,groups:read,im:history,im:read,im:write,mpim:history,mpim:read,reactions:read,reactions:write,users:read'),
+  // Optional banner image rendered at the top of the App Home tab. Must be a
+  // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
+  SLACK_HOME_HERO_URL:         optStr,
   KORTIX_API_KEY_ENC_KEY:      optStr,
   KORTIX_DASHBOARD_URL:        optStr,
 
@@ -403,6 +406,7 @@ export const config = {
   SLACK_CLIENT_SECRET: env.SLACK_CLIENT_SECRET,
   SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
   SLACK_OAUTH_SCOPES: env.SLACK_OAUTH_SCOPES,
+  SLACK_HOME_HERO_URL: env.SLACK_HOME_HERO_URL,
   KORTIX_DASHBOARD_URL: env.KORTIX_DASHBOARD_URL,
 
   // ─── LLM Providers ────────────────────────────────────────────────────────
