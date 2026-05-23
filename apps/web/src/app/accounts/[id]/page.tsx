@@ -79,6 +79,7 @@ import { ExternalGrantsCard } from '@/components/iam/external-grants-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { usePermission } from '@/lib/use-permission';
+import { useIamV2Enabled } from '@/lib/use-iam-version';
 import {
   type AccountDetail,
   type AccountInvitation,
@@ -176,6 +177,10 @@ export default function AccountSettingsPage() {
   // auth-loading guard would change the hook count between renders.
   // usePermission internally short-circuits when accountId is falsy, so
   // it's safe to call before the account query resolves.
+  // V2-vs-V1 dispatch for the UI surface. When the account is on V2 we
+  // hide the Roles tab + the V1-only Audit panels (analytics, drift)
+  // because those concepts only exist in the policy-based engine.
+  const { enabled: isIamV2 } = useIamV2Enabled(accountId);
   const canWriteAccount = usePermission(accountId, 'account.write').allowed;
   const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
   const canInviteMember = usePermission(accountId, 'member.invite').allowed;
@@ -279,7 +284,7 @@ export default function AccountSettingsPage() {
               <TabsList>
                 <TabsTrigger value="members">All members</TabsTrigger>
                 <TabsTrigger value="groups">Groups</TabsTrigger>
-                <TabsTrigger value="roles">Roles</TabsTrigger>
+                {!isIamV2 && <TabsTrigger value="roles">Roles</TabsTrigger>}
                 <TabsTrigger value="git">Git</TabsTrigger>
                 {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
                 <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -308,17 +313,23 @@ export default function AccountSettingsPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="roles" className="space-y-6">
-                <RolesTab
-                  accountId={account.account_id}
-                  canCreate={canCreateRole}
-                />
-              </TabsContent>
+              {!isIamV2 && (
+                <TabsContent value="roles" className="space-y-6">
+                  <RolesTab
+                    accountId={account.account_id}
+                    canCreate={canCreateRole}
+                  />
+                </TabsContent>
+              )}
 
               {canReadAudit && (
                 <TabsContent value="audit" className="space-y-6">
-                  <AnalyticsCard accountId={account.account_id} />
-                  <DriftCard accountId={account.account_id} />
+                  {!isIamV2 && (
+                    <>
+                      <AnalyticsCard accountId={account.account_id} />
+                      <DriftCard accountId={account.account_id} />
+                    </>
+                  )}
                   <AuditTab accountId={account.account_id} />
                 </TabsContent>
               )}
@@ -910,6 +921,9 @@ function MembersCard({
                     </Badge>
                   )
                 }
+                subtitle={
+                  <InlineMeta>
+                    <span>Joined {formatDate(member.joined_at)}</span>
                     {member.account_role === 'member' &&
                     typeof member.explicit_project_count === 'number' ? (
                       <span>
