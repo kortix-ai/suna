@@ -2,11 +2,17 @@ export {
   authorize,
   assertAuthorized,
   listAccessibleResources,
+  checkConditions,
+  actionPassesBoundary,
   type AccessibleResources,
   type AuthorizeTarget,
   type AuthorizeResult,
+  type PolicyConditions,
+  type PolicyScopeType,
+  type PermissionBoundary,
+  type RequestContext,
 } from './engine';
-export { authorizeCached } from './cache';
+export { authorizeCached, deriveRequestContext } from './cache';
 export { requirePermission } from './middleware';
 export {
   ACCOUNT_ACTIONS,
@@ -23,7 +29,10 @@ export {
   type ResourceType,
 } from './actions';
 export { seedSystemRoles, SYSTEM_ROLES, SYSTEM_ROLE_KEY } from './system-roles';
-export { backfillMembershipPolicies } from './backfill';
+export {
+  backfillMembershipPolicies,
+  backfillAccountMembershipPolicies,
+} from './backfill';
 export {
   syncMemberAccountPolicy,
   removeMemberPolicies,

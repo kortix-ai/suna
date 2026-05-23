@@ -116,6 +116,40 @@ export const accounts = kortixSchema.table(
     personalAccount: boolean('personal_account').default(true).notNull(),
     setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
     setupWizardStep: integer('setup_wizard_step').default(0).notNull(),
+    // When true the IAM engine ignores the legacy account_role +
+    // project_members bridges — only super-admin bypass and explicit IAM
+    // policies grant access. Off by default so existing accounts keep
+    // working with no changes.
+    iamStrictMode: boolean('iam_strict_mode').default(false).notNull(),
+    // When true the IAM engine rejects every browser/JWT request whose
+    // session is not at AAL2 (MFA-verified). PATs are exempt — they're
+    // expected to gate via per-policy require_mfa conditions instead.
+    // Super-admins are also exempt so flipping the switch can never
+    // permanently lock the account out.
+    mfaRequired: boolean('mfa_required').default(false).notNull(),
+    // Maximum lifetime of a session, measured from the JWT's `iat`
+    // claim. NULL = no max (Supabase default — refresh tokens never
+    // expire on their own). 0 < value ≤ 7*24*60 (one week ceiling).
+    sessionMaxLifetimeMinutes: integer('session_max_lifetime_minutes'),
+    // Idle timeout: a session is killed after this many minutes of no
+    // requests against this account. NULL = no idle gate. We update
+    // last_seen at most every 60s to keep DB write pressure bounded.
+    sessionIdleTimeoutMinutes: integer('session_idle_timeout_minutes'),
+    // PAT lifecycle policy (CLI Personal Access Tokens). All three
+    // independent — admins can mix any combination.
+    /** When set, PATs whose requested `expires_at` is further out than
+     *  this are refused at mint. NULL = no ceiling. Units: days. */
+    patMaxLifetimeDays: integer('pat_max_lifetime_days'),
+    /** When true, minting a PAT without an `expires_at` is refused.
+     *  Pairs with patMaxLifetimeDays — admins typically set both. */
+    patRequireExpiry: boolean('pat_require_expiry').default(false).notNull(),
+    /** When set, PATs not used in this many days are auto-revoked on
+     *  next validate. NULL = no idle gate. Units: days. */
+    patIdleRevokeDays: integer('pat_idle_revoke_days'),
+    /** When true, a curated set of sensitive IAM actions requires
+     *  approval from a second super-admin before they execute. Off by
+     *  default — accounts opt in via the Settings UI. */
+    iamApprovalsRequired: boolean('iam_approvals_required').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -131,6 +165,32 @@ export const accountMembers = kortixSchema.table(
     accountRole: accountRoleEnum('account_role').default('owner').notNull(),
     // Super-admin bypasses all IAM policy evaluation. Distinct from accountRole.
     isSuperAdmin: boolean('is_super_admin').default(false).notNull(),
+    // Permission boundary: max envelope of action prefixes this member
+    // can ever be granted, regardless of how many allow-policies cover
+    // them. AWS-style guardrail to prevent privilege escalation through
+    // delegated admin. NULL = no boundary (no clipping). Shape:
+    //   { allow_action_prefixes: ['project.', 'sandbox.read'] }
+    // Empty array = "no actions allowed" (effective deny-all). Super-
+    // admins bypass — boundaries can't lock out the people who set them.
+    permissionBoundary: jsonb('permission_boundary').$type<{
+      allow_action_prefixes: string[];
+    } | null>(),
+    // Cross-account sharing: when true this member is an EXTERNAL user
+    // (consultant, contractor) attached to the account so admins can
+    // grant them specific access without consuming a regular seat. The
+    // engine treats them like a member — same policy lookups, same
+    // groups — but the UI lists them separately and they can carry an
+    // optional auto-revoke timestamp.
+    isExternal: boolean('is_external').default(false).notNull(),
+    externalGrantExpiresAt: timestamp('external_grant_expires_at', {
+      withTimezone: true,
+    }),
+    externalGrantedBy: uuid('external_granted_by'),
+    externalNote: text('external_note'),
+    // External identifier set by an upstream IdP via SCIM. Null = managed
+    // locally (invited via UI or API). When set, the IdP "owns" this row —
+    // deactivating the user there should mirror here.
+    scimExternalId: text('scim_external_id'),
     joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -1727,6 +1787,10 @@ export const iamScopeTypeEnum = kortixSchema.enum('iam_scope_type', [
   'channel',
   'member',
   'group',
+  // Resource group: scope_id references project_groups.group_id. The
+  // engine resolves "is the target project a member of that group?"
+  // before matching.
+  'project_group',
 ]);
 
 export const iamResourceTypeEnum = kortixSchema.enum('iam_resource_type', [
@@ -1841,6 +1905,18 @@ export const iamPolicies = kortixSchema.table(
     // 'allow' grants the role's actions; 'deny' subtracts them and wins over
     // any allow on the same action+scope. Engine handles precedence.
     effect: iamPolicyEffectEnum('effect').default('allow').notNull(),
+    // Optional extra checks applied AFTER scope+role match. If any condition
+    // fails, the policy doesn't apply. Supported keys (v1):
+    //   ip_cidrs:  string[]  — request IP must fall in one of these CIDRs
+    //   require_mfa: boolean — JWT must be at AAL2 (MFA-verified session)
+    // Unrecognised keys are ignored so old engines tolerate forward-rolled
+    // policies. Empty object {} = unconditional (the default).
+    conditions: jsonb('conditions').default({}).$type<Record<string, unknown>>(),
+    /** Optional hard expiry. NULL = permanent. The engine filters
+     *  expired rows out of every SQL query so a cleanup job is
+     *  optional — expired policies stop applying the moment the clock
+     *  crosses this timestamp. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -1919,3 +1995,385 @@ export const iamPoliciesRelations = relations(iamPolicies, ({ one }) => ({
     references: [iamRoles.roleId],
   }),
 }));
+
+// ─── SCIM 2.0 provisioning tokens ──────────────────────────────────────────
+// Long-lived bearer tokens used by external IdPs (Okta, Azure AD, etc.) to
+// drive the /scim/v2/accounts/:accountId/* endpoints. Separate from PATs
+// because the lifecycle is different: rotated by IT admins, never
+// individual users; not subject to per-user MFA; not used for human auth.
+
+export const scimTokens = kortixSchema.table(
+  'scim_tokens',
+  {
+    tokenId: uuid('token_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 128 }).notNull(),
+    // SHA-256 hex of the plaintext token (kortix_scim_*). We never store
+    // the plaintext, only the hash. Same approach as account_tokens.
+    secretHash: text('secret_hash').notNull(),
+    // Optional public prefix so admins can recognise tokens in a list
+    // ("kortix_scim_abcd…"). Display-only; not used for lookup.
+    publicPrefix: varchar('public_prefix', { length: 32 }).notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('idx_scim_tokens_account').on(table.accountId),
+    // Hash is globally unique; the validate path looks up by hash alone.
+    uniqueIndex('idx_scim_tokens_secret_hash').on(table.secretHash),
+  ],
+);
+
+// ─── Audit webhooks (SIEM streaming) ───────────────────────────────────────
+// Per-account HTTP webhooks fired on every audit event so customers can
+// ship to Splunk / Datadog / generic SIEMs. Payload is signed with
+// HMAC-SHA256 using the webhook's secret. Delivery is fire-and-forget;
+// last error is surfaced on the row so admins can see failures.
+
+export const auditWebhooks = kortixSchema.table(
+  'audit_webhooks',
+  {
+    webhookId: uuid('webhook_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    url: text('url').notNull(),
+    /** HMAC-SHA256 signing secret. Shown once at create, then hashed-equivalent
+     * (kept plain because we have to use it to sign every outgoing payload —
+     * encryption-at-rest covers the storage threat model). */
+    secret: text('secret').notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    enabled: boolean('enabled').default(true).notNull(),
+    /** Optional action prefix filter — e.g. "iam." to only deliver IAM
+     * events, or empty to deliver everything. */
+    actionPrefix: varchar('action_prefix', { length: 128 }),
+    lastDeliveredAt: timestamp('last_delivered_at', { withTimezone: true }),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_audit_webhooks_account').on(table.accountId),
+    index('idx_audit_webhooks_enabled').on(table.accountId, table.enabled),
+  ],
+);
+
+// ─── SAML SSO (per-account) ─────────────────────────────────────────────────
+// Pairs a kortix account with the Supabase auth.sso_providers row that
+// represents its SAML connection. The Supabase side handles the SAML
+// handshake; we look up the kortix account here when a JWT carrying a
+// matching sso_provider_id arrives, then JIT-provision membership and
+// sync group memberships from the configured group claim.
+
+export const accountSsoProviders = kortixSchema.table(
+  'account_sso_providers',
+  {
+    ssoProviderId: uuid('sso_provider_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** UUID of the matching auth.sso_providers row. Supabase generates it
+     *  when the admin uploads SAML metadata via Studio or the auth API. */
+    supabaseSsoProviderId: uuid('supabase_sso_provider_id').notNull(),
+    /** Human label for the IdP ("Okta", "Azure AD prod", …). Display-only. */
+    name: varchar('name', { length: 128 }).notNull(),
+    /** Primary email domain — used to route /sign-in?email=foo@acme.com
+     *  to the right SAML provider without the user picking a workspace. */
+    primaryDomain: varchar('primary_domain', { length: 253 }).notNull(),
+    /** JWT claim name (under app_metadata) carrying the user's groups.
+     *  Common values: "groups" (Okta), "memberOf" (Azure AD). String or
+     *  string[] — we accept both at read time. */
+    groupClaimName: varchar('group_claim_name', { length: 128 }).default('groups').notNull(),
+    /** When true, users who sign in via this SSO but have no matching
+     *  group mapping get a baseline 'member' row anyway. Off by default
+     *  so admins can enforce strict group-driven access. */
+    autoCreateMembers: boolean('auto_create_members').default(true).notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // One SSO provider per account (v1 limitation; multi-IdP can come
+    // later if customers need staging/prod separation).
+    uniqueIndex('idx_account_sso_providers_account').on(table.accountId),
+    // Reverse lookup: JWT carries the supabase id, we resolve to account.
+    uniqueIndex('idx_account_sso_providers_supabase').on(table.supabaseSsoProviderId),
+    // Domain lookup for the sign-in router.
+    index('idx_account_sso_providers_domain').on(table.primaryDomain),
+  ],
+);
+
+// ─── Service accounts (non-human IAM principals) ──────────────────────────
+// First-class machine identities owned by the account itself, not by a
+// user. Distinct from PATs (which inherit a user's identity) — service
+// accounts have their own policies via principal_type='token' with
+// principal_id=service_account.id. Used for CI/CD, integrations,
+// cron-like automation. One bearer token per SA in v1; rotation =
+// disable + create a new SA.
+
+export const serviceAccounts = kortixSchema.table(
+  'service_accounts',
+  {
+    serviceAccountId: uuid('service_account_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 128 }).notNull(),
+    description: text('description'),
+    /** SHA-256 hex of the plaintext bearer (kortix_sa_*). Plaintext
+     *  is shown ONCE at creation, never persisted. */
+    secretHash: text('secret_hash').notNull(),
+    /** Display prefix so admins can recognise SAs in lists. */
+    publicPrefix: varchar('public_prefix', { length: 32 }).notNull(),
+    /** active | disabled. Disabled SAs are kept for audit trail but
+     *  refuse every request. */
+    status: varchar('status', { length: 16 }).default('active').notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    disabledBy: uuid('disabled_by'),
+  },
+  (table) => [
+    index('idx_service_accounts_account').on(table.accountId),
+    uniqueIndex('idx_service_accounts_secret_hash').on(table.secretHash),
+    uniqueIndex('idx_service_accounts_account_name').on(table.accountId, table.name),
+  ],
+);
+
+// ─── Resource groups: project groups ───────────────────────────────────────
+// Bundle multiple projects under one name so a single policy can target
+// the whole bundle ("Mobile editors: editor role on group=mobile-prod").
+// Cloudflare-style. Group membership is many-to-many; one project can
+// belong to multiple groups. The IAM engine treats project_group as a
+// scope type and resolves "is target project in this group?" at match
+// time.
+
+export const projectGroups = kortixSchema.table(
+  'project_groups',
+  {
+    groupId: uuid('group_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 128 }).notNull(),
+    description: text('description'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_project_groups_account').on(table.accountId),
+    uniqueIndex('idx_project_groups_account_name').on(table.accountId, table.name),
+  ],
+);
+
+export const projectGroupMembers = kortixSchema.table(
+  'project_group_members',
+  {
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => projectGroups.groupId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    addedAt: timestamp('added_at', { withTimezone: true }).defaultNow().notNull(),
+    addedBy: uuid('added_by'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.groupId, table.projectId] }),
+    index('idx_project_group_members_project').on(table.projectId),
+  ],
+);
+
+// ─── Permission usage analytics ("Access Analyzer") ────────────────────────
+// Counters of every (user, action) the IAM engine has allowed in this
+// account. Updated lazily (throttled in-memory) to keep write pressure
+// bounded. Lets admins right-size roles based on actual usage and spot
+// unused privileges. Denies are NOT tracked here — that's a separate
+// "denied attempts" feature.
+
+export const iamActionUsage = kortixSchema.table(
+  'iam_action_usage',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Either a real user_id (browser sessions, PAT minters) OR a PAT's
+     *  token_id when the call came via a token with its own policies.
+     *  Distinguished by principalKind. */
+    principalId: uuid('principal_id').notNull(),
+    /** 'user' (account_members.user_id) or 'token' (account_tokens.token_id). */
+    principalKind: varchar('principal_kind', { length: 8 }).notNull(),
+    /** Canonical action key from the action catalog. */
+    action: varchar('action', { length: 128 }).notNull(),
+    callCount: bigint('call_count', { mode: 'number' }).default(0).notNull(),
+    firstUsedAt: timestamp('first_used_at', { withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.principalKind, table.principalId, table.action] }),
+    index('idx_iam_action_usage_account').on(table.accountId),
+    index('idx_iam_action_usage_principal').on(table.accountId, table.principalKind, table.principalId),
+    index('idx_iam_action_usage_action').on(table.accountId, table.action),
+  ],
+);
+
+// ─── Break-glass emergency access ──────────────────────────────────────────
+// Time-bounded super-admin grant a privileged member can self-activate
+// in an emergency. The grant carries a mandatory reason, auto-expires
+// (1h default, configurable per activation), and the IAM engine treats
+// the holder as super-admin during the active window. Activation +
+// revocation + expiry all hit the audit log so SOC reviews can show
+// "who broke glass, when, why".
+//
+// Gating: only members who already hold member.super_admin.grant can
+// activate. That keeps the same admin trust boundary — break-glass
+// formalises emergency promotion without inventing a new privilege.
+
+export const iamBreakGlassGrants = kortixSchema.table(
+  'iam_break_glass_grants',
+  {
+    grantId: uuid('grant_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    /** Free-text reason. Required at activation. Surfaced in audit. */
+    reason: text('reason').notNull(),
+    activatedAt: timestamp('activated_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Hard cap on the grant's lifetime. The engine refuses bypass
+     *  past this timestamp without needing a cleanup job. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: uuid('revoked_by'),
+  },
+  (table) => [
+    index('idx_iam_break_glass_account').on(table.accountId),
+    index('idx_iam_break_glass_active').on(table.accountId, table.userId, table.expiresAt),
+  ],
+);
+
+// ─── Approval requests for sensitive IAM actions ───────────────────────────
+// Two-phase pattern: the sensitive endpoint stores the requested action
+// + payload here and returns 202; a second admin POSTs /approve to
+// execute it. Requester can't approve their own request.
+//
+// v1 covers a curated set of high-blast-radius actions:
+//   - member.super_admin.grant
+//   - iam.mfa_required.disable
+//   - account.delete
+
+export const iamApprovalRequests = kortixSchema.table(
+  'iam_approval_requests',
+  {
+    requestId: uuid('request_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /** Canonical action key (matches the action catalog). */
+    action: varchar('action', { length: 128 }).notNull(),
+    /** Optional resource id the action targets — drives the audit log
+     *  + the "approve" handler when it needs a target. */
+    targetId: uuid('target_id'),
+    /** Frozen request body captured at create time. The approver re-
+     *  executes the exact payload, so the requester can't sneakily
+     *  swap parameters between create and approve. */
+    payload: jsonb('payload').default({}).$type<Record<string, unknown>>().notNull(),
+    /** Free-text reason the requester gave. Surfaced to approvers. */
+    requesterReason: text('requester_reason'),
+    requestedBy: uuid('requested_by').notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Auto-expires after 24h by default; configurable per-request. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    status: varchar('status', { length: 16 }).default('pending').notNull(),
+    decidedBy: uuid('decided_by'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionReason: text('decision_reason'),
+    /** Filled when status='approved' and the deferred action ran
+     *  successfully. Set to the error message when execution failed. */
+    executionResult: text('execution_result'),
+  },
+  (table) => [
+    index('idx_iam_approval_requests_account').on(table.accountId),
+    index('idx_iam_approval_requests_status').on(table.accountId, table.status),
+    index('idx_iam_approval_requests_requested_by').on(table.requestedBy),
+  ],
+);
+
+// ─── Session activity (per account × user × session) ──────────────────────
+// Tracks idle time + active sessions per account. One row per
+// (account, user, session_id) the first time we see that session hit the
+// account; updated lazily (>60s since last write) for liveness.
+// `revoked_at` set by admins via force-logout.
+
+export const accountSessionActivity = kortixSchema.table(
+  'account_session_activity',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
+    sessionId: uuid('session_id').notNull(),
+    /** First time we saw this (account, user, session) tuple. Used by
+     *  the UI to sort the "active sessions" list and by the engine to
+     *  enforce max-lifetime when the JWT has no iat (PAT-style). */
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+    /** Set when an admin force-logs-out this session OR when the user
+     *  hits a lifetime/idle gate (so we don't repeatedly query Supabase
+     *  for an already-killed session). */
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /** Why this session was revoked — 'admin', 'idle', 'lifetime'. */
+    revokedReason: varchar('revoked_reason', { length: 32 }),
+    revokedBy: uuid('revoked_by'),
+    /** Captured at first sight for diagnostics ("which IP/UA was this?"). */
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.userId, table.sessionId] }),
+    index('idx_account_session_activity_account').on(table.accountId),
+    index('idx_account_session_activity_user').on(table.accountId, table.userId),
+  ],
+);
+
+// Claim-value → IAM group mapping. A SAML user with claim "Engineers" in
+// their token gets added to whichever IAM group is mapped to that claim.
+// Missing on the way IN: claim removed → group dropped on next sign-in.
+export const accountSsoGroupMappings = kortixSchema.table(
+  'account_sso_group_mappings',
+  {
+    mappingId: uuid('mapping_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    ssoProviderId: uuid('sso_provider_id')
+      .notNull()
+      .references(() => accountSsoProviders.ssoProviderId, { onDelete: 'cascade' }),
+    /** Exact match against an entry in the group claim. Case-sensitive
+     *  to match how IdPs ship the values. */
+    claimValue: varchar('claim_value', { length: 256 }).notNull(),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => accountGroups.groupId, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Same claim can only map to one group within an account (avoid
+    // surprise double-membership). To map a claim to multiple groups,
+    // put those users in one IAM group and attach the policies there.
+    uniqueIndex('idx_account_sso_mappings_claim').on(table.accountId, table.claimValue),
+    index('idx_account_sso_mappings_provider').on(table.ssoProviderId),
+    index('idx_account_sso_mappings_group').on(table.groupId),
+  ],
+);

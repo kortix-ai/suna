@@ -17,13 +17,14 @@ import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { PoliciesTable } from '@/components/iam/policies-table';
+import { PermissionBoundaryCard } from '@/components/iam/permission-boundary-card';
 import {
   listMemberGroups,
   setMemberSuperAdmin,
   type MemberGroupSummary,
 } from '@/lib/iam-client';
 import { getAccount, listAccountMembers } from '@/lib/projects-client';
-import { usePermission, usePermissionFor } from '@/lib/use-permission';
+import { usePermission, usePermissionsFor } from '@/lib/use-permission';
 
 const ROLE_LABEL: Record<string, string> = {
   owner: 'Owner',
@@ -77,11 +78,8 @@ export default function MemberDetailPage() {
     onError: (err: Error) => toast.error(err.message || 'Failed to update'),
   });
 
-  if (authLoading || !user) {
-    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
-  }
-
-  const account = accountQuery.data;
+  // All hooks MUST be called before any conditional return (rules of
+  // hooks). useMemo + usePermission live above the auth-loading guard.
   const members = membersQuery.data ?? [];
   const member = useMemo(
     () => members.find((m) => m.user_id === memberUserId),
@@ -94,6 +92,12 @@ export default function MemberDetailPage() {
     accountId,
     'member.super_admin.grant',
   ).allowed;
+
+  if (authLoading || !user) {
+    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+  }
+
+  const account = accountQuery.data;
 
   // Note: we don't currently surface is_super_admin in listAccountMembers, so
   // we can't show a pre-existing on/off state. Wire the column once the
@@ -232,6 +236,14 @@ export default function MemberDetailPage() {
             />
           )}
 
+          {account && member && (
+            <PermissionBoundaryCard
+              accountId={account.account_id}
+              userId={member.user_id}
+              canManage={canManage}
+            />
+          )}
+
           <ConfirmDialog
             open={grantConfirmOpen}
             onOpenChange={setGrantConfirmOpen}
@@ -310,6 +322,11 @@ const CAPABILITY_GROUPS: Array<{
   },
 ];
 
+// Flat list of every capability we probe, in display order. The card uses
+// this to build a single batch request; the grouped layout below picks
+// each row out by index via FLAT_CAPABILITIES.
+const FLAT_CAPABILITIES = CAPABILITY_GROUPS.flatMap((g) => g.items);
+
 function CapabilitiesCard({
   accountId,
   memberUserId,
@@ -317,6 +334,20 @@ function CapabilitiesCard({
   accountId: string;
   memberUserId: string;
 }) {
+  // Stable probe list — declared at module scope so the hook's queryKey is
+  // identical across renders. One HTTP roundtrip resolves all 14.
+  const results = usePermissionsFor(
+    accountId,
+    memberUserId,
+    FLAT_CAPABILITIES.map((c) => ({ action: c.action })),
+  );
+
+  // Build a quick lookup keyed by action so the grouped render finds its
+  // result without re-walking the array per row.
+  const byAction = new Map(
+    FLAT_CAPABILITIES.map((c, i) => [c.action, results[i]] as const),
+  );
+
   return (
     <SectionCard
       title="What this member can do"
@@ -330,15 +361,18 @@ function CapabilitiesCard({
               {group.heading}
             </p>
             <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
-              {group.items.map((item) => (
-                <CapabilityRow
-                  key={item.action}
-                  accountId={accountId}
-                  memberUserId={memberUserId}
-                  label={item.label}
-                  action={item.action}
-                />
-              ))}
+              {group.items.map((item) => {
+                const probe = byAction.get(item.action);
+                return (
+                  <CapabilityRow
+                    key={item.action}
+                    label={item.label}
+                    allowed={probe?.allowed ?? false}
+                    isLoading={probe?.isLoading ?? true}
+                    reason={probe?.reason ?? null}
+                  />
+                );
+              })}
             </div>
           </div>
         ))}
@@ -348,29 +382,25 @@ function CapabilitiesCard({
 }
 
 function CapabilityRow({
-  accountId,
-  memberUserId,
   label,
-  action,
+  allowed,
+  isLoading,
+  reason,
 }: {
-  accountId: string;
-  memberUserId: string;
   label: string;
-  action: string;
+  allowed: boolean;
+  isLoading: boolean;
+  reason: string | null;
 }) {
-  // Each row fires its own probe. The hook dedupes via react-query, so if
-  // the same (user, action) is asked elsewhere in the tree it's a cache hit.
-  const probe = usePermissionFor(accountId, memberUserId, action);
-
   return (
     <div
       className="flex items-center justify-between gap-3 text-sm"
-      title={probe.reason ? `Reason: ${probe.reason}` : undefined}
+      title={reason ? `Reason: ${reason}` : undefined}
     >
       <span className="truncate text-foreground">{label}</span>
-      {probe.isLoading ? (
+      {isLoading ? (
         <span className="h-3.5 w-3.5 animate-pulse rounded-full bg-muted-foreground/20" />
-      ) : probe.allowed ? (
+      ) : allowed ? (
         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
           <Check className="h-3 w-3" />
         </span>

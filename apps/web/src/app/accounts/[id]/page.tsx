@@ -64,6 +64,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { GroupsTab } from '@/components/iam/groups-tab';
 import { RolesTab } from '@/components/iam/roles-tab';
 import { AuditTab } from '@/components/iam/audit-tab';
+import { AnalyticsCard } from '@/components/iam/analytics-card';
+import { DriftCard } from '@/components/iam/drift-card';
+import { StrictModeCard } from '@/components/iam/strict-mode-card';
+import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
+import { SsoCard } from '@/components/iam/sso-card';
+import { SessionControlsCard } from '@/components/iam/session-controls-card';
+import { PatPolicyCard } from '@/components/iam/pat-policy-card';
+import { ApprovalsCard } from '@/components/iam/approvals-card';
+import { ProjectGroupsCard } from '@/components/iam/project-groups-card';
+import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
+import { BreakGlassCard } from '@/components/iam/break-glass-card';
+import { ExternalGrantsCard } from '@/components/iam/external-grants-card';
+import { ScimCard } from '@/components/iam/scim-card';
+import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { usePermission } from '@/lib/use-permission';
 import {
   type AccountDetail,
@@ -157,7 +171,11 @@ export default function AccountSettingsPage() {
 
   // Granular capabilities sourced from the IAM engine instead of raw
   // account_role. A member granted "Administrator" via an explicit policy
-  // gets the same affordances an owner does, and vice-versa.
+  // gets the same affordances an owner does, and vice-versa. MUST be
+  // called before any conditional return — moving these below the
+  // auth-loading guard would change the hook count between renders.
+  // usePermission internally short-circuits when accountId is falsy, so
+  // it's safe to call before the account query resolves.
   const canWriteAccount = usePermission(accountId, 'account.write').allowed;
   const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
   const canInviteMember = usePermission(accountId, 'member.invite').allowed;
@@ -299,6 +317,8 @@ export default function AccountSettingsPage() {
 
               {canReadAudit && (
                 <TabsContent value="audit" className="space-y-6">
+                  <AnalyticsCard accountId={account.account_id} />
+                  <DriftCard accountId={account.account_id} />
                   <AuditTab accountId={account.account_id} />
                 </TabsContent>
               )}
@@ -315,6 +335,56 @@ export default function AccountSettingsPage() {
                   account={account}
                   queryClient={queryClient}
                   canWrite={canWriteAccount}
+                />
+                <StrictModeCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <MfaRequiredCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <SsoCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <SessionControlsCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <PatPolicyCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <ApprovalsCard
+                  accountId={account.account_id}
+                  currentUserId={user.id}
+                  canManage={canWriteAccount}
+                />
+                <ProjectGroupsCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <ServiceAccountsCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <BreakGlassCard
+                  accountId={account.account_id}
+                  currentUserId={user.id}
+                  canManage={canWriteAccount}
+                />
+                <ExternalGrantsCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <ScimCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+                <AuditWebhooksCard
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
                 />
                 {isTeam && canDeleteAccount && <DangerZoneCard />}
               </TabsContent>
@@ -840,9 +910,6 @@ function MembersCard({
                     </Badge>
                   )
                 }
-                subtitle={
-                  <InlineMeta>
-                    <span>Joined {formatDate(member.joined_at)}</span>
                     {member.account_role === 'member' &&
                     typeof member.explicit_project_count === 'number' ? (
                       <span>
@@ -854,6 +921,45 @@ function MembersCard({
                 }
                 trailing={
                   <>
+                    <div className="hidden items-center gap-1.5 sm:flex">
+                      {member.is_super_admin && (
+                        <Badge
+                          variant="outline"
+                          className="h-5 rounded-md border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-normal text-amber-700 dark:text-amber-300"
+                          title="Super-admin: bypasses every IAM check"
+                        >
+                          super
+                        </Badge>
+                      )}
+                      {member.groups && member.groups.length > 0 && (
+                        <Badge
+                          variant="outline"
+                          className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                          title={member.groups.map((g) => g.name).join(', ')}
+                        >
+                          {member.groups.length} group{member.groups.length === 1 ? '' : 's'}
+                        </Badge>
+                      )}
+                      {typeof member.active_pat_count === 'number' &&
+                        member.active_pat_count > 0 && (
+                          <Badge
+                            variant="outline"
+                            className="h-5 rounded-md px-1.5 text-[10px] font-normal"
+                            title={`${member.active_pat_count} active PAT${member.active_pat_count === 1 ? '' : 's'}`}
+                          >
+                            {member.active_pat_count} PAT{member.active_pat_count === 1 ? '' : 's'}
+                          </Badge>
+                        )}
+                      {member.has_verified_mfa && (
+                        <Badge
+                          variant="outline"
+                          className="h-5 rounded-md border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
+                          title="MFA enrolled"
+                        >
+                          2FA
+                        </Badge>
+                      )}
+                    </div>
                     <RoleBadge role={member.account_role} />
                     <div className="ml-1 w-7 shrink-0">
                       {pending ? (

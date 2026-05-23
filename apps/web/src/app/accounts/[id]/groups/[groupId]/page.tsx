@@ -63,6 +63,7 @@ export default function GroupDetailPage() {
 
   // Granular permissions, sourced from the IAM engine. Each sub-tab gates on
   // the action it actually performs — no more single "admin or not" flag.
+  // MUST be called before any conditional return (rules of hooks).
   const canManageMembers = usePermission(accountId, 'group.members.manage', {
     resourceType: 'group',
     resourceId: groupId,

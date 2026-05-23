@@ -7,7 +7,22 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Loader2, MoreHorizontal, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  KeyRound,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Upload,
+  X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -42,15 +57,24 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   type AccountGroup,
+  type BulkImportEntry,
   type IamPolicy,
   type IamRole,
+  type PolicyConditions,
   type PolicyEffect,
+  type PolicyScopeType,
+  type PolicyTemplate,
   type PrincipalType,
+  type ProjectGroup,
   type ResourceType,
+  applyPolicyTemplate,
+  bulkImportPolicies,
   createPolicy,
   deletePolicy,
   listGroups,
   listPolicies,
+  listPolicyTemplates,
+  listProjectGroups,
   listRoles,
   updatePolicy,
 } from '@/lib/iam-client';
@@ -64,17 +88,20 @@ import {
 // ─── Resource-type metadata (UI labels + which pickers are wired) ─────────
 
 const RESOURCE_TYPE_META: Record<
-  ResourceType,
-  { label: string; pickerSupported: boolean }
+  PolicyScopeType,
+  { label: string; inputKind: 'select' | 'text' }
 > = {
-  account: { label: 'Everything', pickerSupported: true },
-  project: { label: 'Individual Projects', pickerSupported: true },
-  member: { label: 'Individual Members', pickerSupported: true },
-  group: { label: 'Individual Groups', pickerSupported: true },
-  // Slug-based, ephemeral, or sub-resource — defer until they have stable UUIDs.
-  sandbox: { label: 'Individual Sandboxes', pickerSupported: false },
-  trigger: { label: 'Individual Triggers', pickerSupported: false },
-  channel: { label: 'Individual Channels', pickerSupported: false },
+  account: { label: 'Everything', inputKind: 'select' },
+  project: { label: 'Individual Projects', inputKind: 'select' },
+  project_group: { label: 'Project Groups', inputKind: 'select' },
+  member: { label: 'Individual Members', inputKind: 'select' },
+  group: { label: 'Individual Groups', inputKind: 'select' },
+  // Sub-resources without dedicated pickers — admins paste the
+  // sandbox/trigger/channel id directly. Acceptable for v1; a richer
+  // picker can land once these surfaces stabilise.
+  sandbox: { label: 'Individual Sandboxes', inputKind: 'text' },
+  trigger: { label: 'Individual Triggers', inputKind: 'text' },
+  channel: { label: 'Individual Channels', inputKind: 'text' },
 };
 
 // ─── PoliciesTable ─────────────────────────────────────────────────────────
@@ -100,6 +127,8 @@ export function PoliciesTable({
   // exclusive with createOpen — opening one closes the other.
   const [editTarget, setEditTarget] = useState<IamPolicy | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<IamPolicy | null>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const queryKey = ['iam-policies', accountId, principalType, principalId];
 
@@ -133,6 +162,12 @@ export function PoliciesTable({
     staleTime: 30_000,
   });
 
+  const projectGroupsQuery = useQuery({
+    queryKey: ['project-groups', accountId],
+    queryFn: () => listProjectGroups(accountId),
+    staleTime: 30_000,
+  });
+
   const rolesById = useMemo(() => {
     const map = new Map<string, IamRole>();
     for (const r of rolesQuery.data ?? []) map.set(r.role_id, r);
@@ -157,6 +192,38 @@ export function PoliciesTable({
 
   const policies = policiesQuery.data ?? [];
 
+  function exportPoliciesAsJson() {
+    // Use role_key (not role_id) so the JSON is portable across accounts.
+    // Role lookup table: role_id → role_key.
+    const roleKeyById = new Map<string, string>();
+    for (const r of rolesQuery.data ?? []) {
+      roleKeyById.set(r.role_id, r.key);
+    }
+    const exportEntries: BulkImportEntry[] = policies.map((p) => ({
+      principal_type: p.principal_type,
+      principal_id: p.principal_id,
+      scope_type: p.scope_type,
+      scope_id: p.scope_id,
+      role_key: roleKeyById.get(p.role_id) ?? '__unknown__',
+      effect: p.effect,
+      conditions: p.conditions,
+    }));
+    const payload = {
+      exported_at: new Date().toISOString(),
+      principal_label: principalLabel,
+      policies: exportEntries,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `iam-policies-${principalType}-${principalId}-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <SectionCard
@@ -164,10 +231,44 @@ export function PoliciesTable({
         description={`Policies grant ${principalLabel} access to specific resources.`}
         action={
           canManage && (
-            <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              Grant access
-            </Button>
+            <div className="flex gap-1.5">
+              {policies.length > 0 && (
+                <Button
+                  onClick={exportPoliciesAsJson}
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  title="Download policies as JSON (portable across accounts)"
+                >
+                  <Download className="h-4 w-4" />
+                  Export
+                </Button>
+              )}
+              <Button
+                onClick={() => setImportOpen(true)}
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                title="Bulk-import policies from JSON"
+              >
+                <Upload className="h-4 w-4" />
+                Import
+              </Button>
+              <Button
+                onClick={() => setTemplatesOpen(true)}
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                title="Apply a curated set of policies in one click"
+              >
+                <Sparkles className="h-4 w-4" />
+                From template
+              </Button>
+              <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                Grant access
+              </Button>
+            </div>
           )
         }
         flush
@@ -227,6 +328,7 @@ export function PoliciesTable({
                       ? projectsById.get(p.scope_id)?.name ?? p.scope_id
                       : p.scope_id;
               const isDeny = p.effect === 'deny';
+              const conditionBadges = summariseConditions(p.conditions);
               return (
                 <tr key={p.policy_id} className="hover:bg-muted/20">
                   <td className="px-6 py-3">
@@ -242,9 +344,33 @@ export function PoliciesTable({
                   <td className="px-3 py-3 text-muted-foreground">{appliesTo}</td>
                   <td className="px-3 py-3">
                     {role ? (
-                      <Badge variant="outline" size="sm">
-                        {role.name}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant="outline" size="sm">
+                          {role.name}
+                        </Badge>
+                        {conditionBadges.map((c) => (
+                          <Badge
+                            key={c}
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            title="Applies only when this condition is met"
+                          >
+                            <ShieldCheck className="h-3 w-3" />
+                            {c}
+                          </Badge>
+                        ))}
+                        {p.expires_at && (
+                          <Badge
+                            variant="outline"
+                            size="sm"
+                            className="border-amber-500/40 text-amber-700 dark:text-amber-300"
+                            title={`Auto-revokes at ${new Date(p.expires_at).toLocaleString()}`}
+                          >
+                            expires in {formatExpiryShort(p.expires_at)}
+                          </Badge>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-xs text-muted-foreground">unknown role</span>
                     )}
@@ -307,6 +433,7 @@ export function PoliciesTable({
         projects={projectsQuery.data ?? []}
         members={accountMembersQuery.data ?? []}
         groups={accountGroupsQuery.data ?? []}
+        projectGroups={projectGroupsQuery.data ?? []}
         editing={editTarget}
         onCreated={() => queryClient.invalidateQueries({ queryKey })}
       />
@@ -324,9 +451,411 @@ export function PoliciesTable({
           if (deleteTarget) deleteMutation.mutate(deleteTarget.policy_id);
         }}
       />
+
+      <ApplyTemplateDialog
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        accountId={accountId}
+        principalType={principalType}
+        principalId={principalId}
+        projects={projectsQuery.data ?? []}
+        projectGroups={projectGroupsQuery.data ?? []}
+        onApplied={() => queryClient.invalidateQueries({ queryKey })}
+      />
+
+      <BulkImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        accountId={accountId}
+        principalType={principalType}
+        principalId={principalId}
+        onImported={() => queryClient.invalidateQueries({ queryKey })}
+      />
     </>
   );
 }
+
+// ─── Apply template dialog ─────────────────────────────────────────────────
+
+// ─── Bulk import dialog ────────────────────────────────────────────────────
+
+function BulkImportDialog({
+  open,
+  onOpenChange,
+  accountId,
+  principalType,
+  principalId,
+  onImported,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  accountId: string;
+  principalType: PrincipalType;
+  principalId: string;
+  onImported: () => void;
+}) {
+  const [json, setJson] = useState('');
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<BulkImportEntry[] | null>(null);
+  const [retargetToCurrent, setRetargetToCurrent] = useState(true);
+
+  function parse() {
+    setParseError(null);
+    setPreview(null);
+    if (!json.trim()) return;
+    try {
+      const data = JSON.parse(json);
+      // Accept either the exported object shape ({ policies: [...] })
+      // or a bare array of entries.
+      let entries: BulkImportEntry[];
+      if (Array.isArray(data)) {
+        entries = data;
+      } else if (data && Array.isArray(data.policies)) {
+        entries = data.policies;
+      } else {
+        setParseError('Expected an array of policies or an object with a "policies" array.');
+        return;
+      }
+      if (retargetToCurrent) {
+        entries = entries.map((e) => ({
+          ...e,
+          principal_type: principalType,
+          principal_id: principalId,
+        }));
+      }
+      setPreview(entries);
+    } catch (err) {
+      setParseError((err as Error).message);
+    }
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!preview) throw new Error('parse JSON first');
+      return bulkImportPolicies(accountId, preview);
+    },
+    onSuccess: (res) => {
+      const note =
+        res.errors.length > 0
+          ? ` (${res.errors.length} error${res.errors.length === 1 ? '' : 's'})`
+          : '';
+      toast.success(
+        `Imported ${res.created} of ${res.attempted}; ${res.skipped} already existed${note}.`,
+      );
+      onImported();
+      setJson('');
+      setPreview(null);
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to import'),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
+      <DialogContent className="sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Bulk import policies</DialogTitle>
+          <DialogDescription>
+            Paste JSON exported from this UI or built by hand. Entries
+            reference roles by <span className="font-mono">role_key</span> so
+            they&apos;re portable across accounts.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <textarea
+            value={json}
+            onChange={(e) => {
+              setJson(e.target.value);
+              setPreview(null);
+              setParseError(null);
+            }}
+            placeholder='[{"principal_type":"member","principal_id":"...","scope_type":"project","scope_id":"...","role_key":"project_editor"}]'
+            className="h-48 w-full resize-y rounded-md border border-border/60 bg-background p-2 font-mono text-xs"
+            disabled={mutation.isPending}
+          />
+
+          <label className="flex cursor-pointer items-start gap-2 text-xs text-foreground">
+            <input
+              type="checkbox"
+              checked={retargetToCurrent}
+              onChange={(e) => setRetargetToCurrent(e.target.checked)}
+              className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
+              disabled={mutation.isPending}
+            />
+            <span>
+              <span className="font-medium">Re-target to this {principalType}</span>
+              <span className="block text-[11px] text-muted-foreground">
+                Overrides the principal in every entry so you can import an
+                export from a different member / group.
+              </span>
+            </span>
+          </label>
+
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={parse} disabled={mutation.isPending}>
+              Parse & preview
+            </Button>
+            {preview && (
+              <span className="text-xs text-muted-foreground">
+                {preview.length} {preview.length === 1 ? 'entry' : 'entries'} parsed
+              </span>
+            )}
+          </div>
+
+          {parseError && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              {parseError}
+            </p>
+          )}
+
+          {preview && preview.length > 0 && (
+            <div className="max-h-40 overflow-y-auto rounded-md border border-border/60 px-3 py-2 text-[11px]">
+              {preview.map((e, i) => (
+                <div key={i} className="flex items-center gap-2 py-0.5 font-mono">
+                  <Badge variant="outline" size="sm" className="text-[9px]">
+                    {e.effect ?? 'allow'}
+                  </Badge>
+                  <span className="text-foreground">{e.role_key}</span>
+                  <span className="text-muted-foreground">on</span>
+                  <span className="text-foreground">
+                    {e.scope_type}
+                    {e.scope_id ? `:${e.scope_id.slice(0, 8)}…` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!preview || preview.length === 0 || mutation.isPending}
+            className="gap-1.5"
+          >
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Import {preview ? `(${preview.length})` : ''}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ApplyTemplateDialog({
+  open,
+  onOpenChange,
+  accountId,
+  principalType,
+  principalId,
+  projects,
+  projectGroups,
+  onApplied,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  accountId: string;
+  principalType: PrincipalType;
+  principalId: string;
+  projects: KortixProject[];
+  projectGroups: ProjectGroup[];
+  onApplied: () => void;
+}) {
+  const [selectedKey, setSelectedKey] = useState<string>('');
+  const [scopeId, setScopeId] = useState<string>('');
+
+  const templatesQuery = useQuery({
+    queryKey: ['policy-templates', accountId],
+    queryFn: () => listPolicyTemplates(accountId),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
+
+  // Show only templates that fit the current principal type.
+  const eligible = useMemo(() => {
+    return (templatesQuery.data ?? []).filter((t) =>
+      t.applies_to.includes(principalType),
+    );
+  }, [templatesQuery.data, principalType]);
+
+  const selected: PolicyTemplate | undefined = useMemo(
+    () => eligible.find((t) => t.key === selectedKey),
+    [eligible, selectedKey],
+  );
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (!selected) throw new Error('pick a template');
+      return applyPolicyTemplate(accountId, selected.key, {
+        principal_type: principalType,
+        principal_id: principalId,
+        scope_id:
+          selected.needs_scope_id === 'account' ? null : scopeId || null,
+      });
+    },
+    onSuccess: (res) => {
+      const created = res.created.length;
+      const skipped = res.skipped.length;
+      if (created > 0) {
+        toast.success(
+          `Applied template — ${created} ${created === 1 ? 'policy' : 'policies'} created${skipped > 0 ? `, ${skipped} skipped (already existed)` : ''}.`,
+        );
+      } else if (skipped > 0) {
+        toast.info('Nothing applied — all policies already exist.');
+      } else {
+        toast.success('Template applied');
+      }
+      onApplied();
+      setSelectedKey('');
+      setScopeId('');
+      onOpenChange(false);
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to apply template'),
+  });
+
+  const needsScope =
+    selected && selected.needs_scope_id !== 'account';
+  const ready =
+    !!selected && (!needsScope || !!scopeId);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Apply a policy template</DialogTitle>
+          <DialogDescription>
+            Templates are curated bundles — pick one and we&apos;ll create the
+            matching policies in one shot. Skipped entries already existed.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {templatesQuery.isLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : eligible.length === 0 ? (
+            <p className="rounded-md border border-border/60 px-3 py-3 text-xs text-muted-foreground">
+              No templates apply to this principal type.
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {eligible.map((t) => {
+                const isSelected = selectedKey === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => {
+                      setSelectedKey(t.key);
+                      setScopeId('');
+                    }}
+                    className={`flex w-full cursor-pointer flex-col gap-1 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                      isSelected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border/60 hover:bg-muted/40'
+                    }`}
+                    disabled={mutation.isPending}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-foreground">{t.name}</span>
+                      <Badge variant="outline" size="sm" className="text-[10px]">
+                        {t.entries.length}{' '}
+                        {t.entries.length === 1 ? 'policy' : 'policies'}
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{t.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {needsScope && selected && (
+            <div className="space-y-1.5">
+              <Label>
+                {selected.needs_scope_id === 'project' ? 'Project' : 'Project group'}
+              </Label>
+              <Select
+                value={scopeId || undefined}
+                onValueChange={setScopeId}
+                disabled={mutation.isPending}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      selected.needs_scope_id === 'project'
+                        ? 'Pick a project...'
+                        : 'Pick a project group...'
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {selected.needs_scope_id === 'project'
+                    ? projects.length === 0
+                      ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          No projects in this account
+                        </div>
+                      )
+                      : projects.map((p) => (
+                          <SelectItem key={p.project_id} value={p.project_id}>
+                            {p.name}
+                          </SelectItem>
+                        ))
+                    : projectGroups.length === 0
+                      ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          No project groups yet
+                        </div>
+                      )
+                      : projectGroups.map((g) => (
+                          <SelectItem key={g.group_id} value={g.group_id}>
+                            {g.name}
+                          </SelectItem>
+                        ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!ready || mutation.isPending}
+            className="gap-1.5"
+          >
+            {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Apply template
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Pure helpers live in ./policies-table-helpers — re-exported for the
+// component below, unit-tested separately.
+import {
+  formatExpiryShort,
+  isPlausibleCidr,
+  summariseConditions,
+  toLocalInput,
+} from './policies-table-helpers';
 
 // ─── Create policy dialog ──────────────────────────────────────────────────
 
@@ -342,6 +871,7 @@ interface CreatePolicyDialogProps {
   projects: KortixProject[];
   members: AccountMember[];
   groups: AccountGroup[];
+  projectGroups: ProjectGroup[];
   /** Non-null = the dialog opens pre-filled to edit this policy in place
    * instead of creating new ones. Editing is single-role since a policy IS
    * a (principal, scope, role, effect) tuple — changing the role means
@@ -361,15 +891,32 @@ function CreatePolicyDialog({
   projects,
   members,
   groups,
+  projectGroups,
   editing,
   onCreated,
 }: CreatePolicyDialogProps) {
   const isEditing = !!editing;
   const [effect, setEffect] = useState<PolicyEffect>('allow');
-  const [scopeType, setScopeType] = useState<ResourceType | ''>('');
+  const [scopeType, setScopeType] = useState<PolicyScopeType | ''>('');
   const [scopeId, setScopeId] = useState<string>('');
   const [selectedRoleIds, setSelectedRoleIds] = useState<Set<string>>(new Set());
   const [roleSearch, setRoleSearch] = useState('');
+
+  // ─── Conditions sub-form (collapsed by default) ────────────────────
+  // Hidden behind a disclosure because the common policy has no
+  // conditions. The dialog stays simple unless the admin opts in.
+  const [conditionsOpen, setConditionsOpen] = useState(false);
+  const [requireMfa, setRequireMfa] = useState(false);
+  const [ipCidrs, setIpCidrs] = useState<string[]>([]);
+  const [cidrDraft, setCidrDraft] = useState('');
+  const [cidrError, setCidrError] = useState<string | null>(null);
+
+  // ─── Expiry preset ─────────────────────────────────────────────────
+  // null = permanent; 'iso-string' = custom ISO; '1d'|'7d'|'30d'|'90d' =
+  // relative preset, resolved to an ISO when sent. Most admins want
+  // "auto-revoke in N days" so we keep the picker fast with presets.
+  const [expiryPreset, setExpiryPreset] = useState<'permanent' | '1d' | '7d' | '30d' | '90d' | 'custom'>('permanent');
+  const [expiryCustomISO, setExpiryCustomISO] = useState('');
 
   // Hydrate from the policy being edited whenever the dialog opens in edit
   // mode. Clearing happens via reset() on close.
@@ -380,6 +927,23 @@ function CreatePolicyDialog({
       setScopeId(editing.scope_id ?? '');
       setSelectedRoleIds(new Set([editing.role_id]));
       setRoleSearch('');
+      const cond = editing.conditions ?? {};
+      const cidrs = Array.isArray(cond.ip_cidrs) ? cond.ip_cidrs : [];
+      const mfa = cond.require_mfa === true;
+      setRequireMfa(mfa);
+      setIpCidrs(cidrs);
+      setCidrDraft('');
+      setCidrError(null);
+      // Auto-expand if there's anything to show — admins shouldn't have
+      // to hunt for conditions they already configured.
+      setConditionsOpen(cidrs.length > 0 || mfa);
+      if (editing.expires_at) {
+        setExpiryPreset('custom');
+        setExpiryCustomISO(editing.expires_at);
+      } else {
+        setExpiryPreset('permanent');
+        setExpiryCustomISO('');
+      }
     }
   }, [open, editing]);
 
@@ -413,6 +977,59 @@ function CreatePolicyDialog({
     setScopeId('');
     setSelectedRoleIds(new Set());
     setRoleSearch('');
+    setConditionsOpen(false);
+    setRequireMfa(false);
+    setIpCidrs([]);
+    setCidrDraft('');
+    setCidrError(null);
+    setExpiryPreset('permanent');
+    setExpiryCustomISO('');
+  }
+
+  /** Resolve the picker state into the value sent on the wire:
+   *    permanent → null (no expiry)
+   *    1d|7d|30d|90d → ISO N days from now
+   *    custom → the custom-input ISO (or null if blank) */
+  function buildExpiresAt(): string | null {
+    if (expiryPreset === 'permanent') return null;
+    if (expiryPreset === 'custom') {
+      return expiryCustomISO.trim() ? expiryCustomISO.trim() : null;
+    }
+    const days =
+      expiryPreset === '1d' ? 1 :
+      expiryPreset === '7d' ? 7 :
+      expiryPreset === '30d' ? 30 : 90;
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  /** Build the wire conditions object from the dialog state. Returns
+   *  undefined when nothing is configured so the client doesn't send a
+   *  spurious empty object on every save. */
+  function buildConditions(): PolicyConditions | undefined {
+    const out: PolicyConditions = {};
+    if (ipCidrs.length > 0) out.ip_cidrs = ipCidrs;
+    if (requireMfa) out.require_mfa = true;
+    if (!out.ip_cidrs && !out.require_mfa) return undefined;
+    return out;
+  }
+
+  function addCidr(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setCidrError(null);
+      return;
+    }
+    if (!isPlausibleCidr(trimmed)) {
+      setCidrError(`'${trimmed}' is not a valid IP or CIDR`);
+      return;
+    }
+    if (ipCidrs.includes(trimmed)) {
+      setCidrError('That CIDR is already in the list');
+      return;
+    }
+    setIpCidrs((prev) => [...prev, trimmed]);
+    setCidrDraft('');
+    setCidrError(null);
   }
 
   const createMutation = useMutation({
@@ -426,6 +1043,12 @@ function CreatePolicyDialog({
             ? scopeId
             : null;
 
+      // On edit we explicitly send `conditions` (possibly empty `{}`) so
+      // clearing them clears the row. On create, omit when there are
+      // none so the server stores `{}` by default.
+      const builtConditions = buildConditions();
+      const builtExpiresAt = buildExpiresAt();
+
       // Edit mode: in-place mutation of the existing row. Single role only —
       // a policy IS one (scope, role, effect) triplet.
       if (editing) {
@@ -435,6 +1058,11 @@ function CreatePolicyDialog({
           scopeId: normalisedScopeId,
           roleId,
           effect,
+          conditions: builtConditions ?? {},
+          // Always send expires_at on edit (including null) so the
+          // server clears any prior expiry when the admin picks
+          // "permanent".
+          expires_at: builtExpiresAt,
         });
         return;
       }
@@ -448,6 +1076,8 @@ function CreatePolicyDialog({
           scopeId: normalisedScopeId,
           roleId,
           effect,
+          ...(builtConditions ? { conditions: builtConditions } : {}),
+          ...(builtExpiresAt ? { expires_at: builtExpiresAt } : {}),
         });
       }
     },
@@ -471,17 +1101,16 @@ function CreatePolicyDialog({
   const availableRoles = useMemo(() => {
     if (!scopeType) return [];
     if (scopeType === 'account') return roles;
-    return roles.filter((r) => r.resource_type === scopeType);
+    // Project groups expand to projects — show project roles, not a
+    // separate "project_group" role family (which we don't ship).
+    const effectiveType = scopeType === 'project_group' ? 'project' : scopeType;
+    return roles.filter((r) => r.resource_type === effectiveType);
   }, [roles, scopeType]);
 
   // Whether we have enough to submit.
   const ready = (() => {
     if (!scopeType || selectedRoleIds.size === 0) return false;
-    if (scopeType !== 'account') {
-      const meta = RESOURCE_TYPE_META[scopeType];
-      if (!meta.pickerSupported) return false;
-      if (!scopeId) return false;
-    }
+    if (scopeType !== 'account' && !scopeId) return false;
     return true;
   })();
 
@@ -538,8 +1167,14 @@ function CreatePolicyDialog({
     if (scopeType === 'group') {
       return groups.find((g) => g.group_id === scopeId)?.name ?? 'this group';
     }
+    if (scopeType === 'project_group') {
+      const g = projectGroups.find((pg) => pg.group_id === scopeId);
+      return g
+        ? `every project in ${g.name}`
+        : 'every project in this group';
+    }
     return 'this scope';
-  }, [scopeType, scopeId, projects, members, groups]);
+  }, [scopeType, scopeId, projects, members, groups, projectGroups]);
 
   return (
     <Dialog
@@ -569,7 +1204,7 @@ function CreatePolicyDialog({
             <Select
               value={scopeType || undefined}
               onValueChange={(v) => {
-                setScopeType(v as ResourceType);
+                setScopeType(v as PolicyScopeType);
                 setScopeId('');
                 setSelectedRoleIds(new Set());
               }}
@@ -589,19 +1224,14 @@ function CreatePolicyDialog({
                   <SelectLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                     Resource-specific
                   </SelectLabel>
-                  {(['project', 'member', 'group', 'sandbox', 'trigger', 'channel'] as ResourceType[]).map(
+                  {(['project', 'project_group', 'member', 'group', 'sandbox', 'trigger', 'channel'] as PolicyScopeType[]).map(
                     (rt) => {
                       const meta = RESOURCE_TYPE_META[rt];
                       return (
-                        <SelectItem
-                          key={rt}
-                          value={rt}
-                          disabled={!meta.pickerSupported}
-                          className={!meta.pickerSupported ? 'italic opacity-50' : undefined}
-                        >
+                        <SelectItem key={rt} value={rt}>
                           {meta.label}
-                          {!meta.pickerSupported && (
-                            <span className="ml-2 text-[10px] text-muted-foreground">soon</span>
+                          {meta.inputKind === 'text' && (
+                            <span className="ml-2 text-[10px] text-muted-foreground">id paste</span>
                           )}
                         </SelectItem>
                       );
@@ -693,6 +1323,51 @@ function CreatePolicyDialog({
                   </SelectContent>
                 </Select>
               )}
+              {scopeType === 'project_group' && (
+                <Select
+                  value={scopeId || undefined}
+                  onValueChange={setScopeId}
+                  disabled={createMutation.isPending}
+                >
+                  <SelectTrigger ref={appliesToTriggerRef}>
+                    <SelectValue placeholder="Pick a project group..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projectGroups.length === 0 ? (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        No project groups yet. Create one in Settings → Project
+                        groups, then attach projects to it.
+                      </div>
+                    ) : (
+                      projectGroups.map((g) => (
+                        <SelectItem key={g.group_id} value={g.group_id}>
+                          {g.name}
+                          <span className="ml-2 text-[10px] text-muted-foreground">
+                            ({g.project_count}{' '}
+                            {g.project_count === 1 ? 'project' : 'projects'})
+                          </span>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+              {scopeType !== 'account' &&
+                RESOURCE_TYPE_META[scopeType]?.inputKind === 'text' && (
+                  <>
+                    <Input
+                      value={scopeId}
+                      onChange={(e) => setScopeId(e.target.value.trim())}
+                      placeholder={`Paste the ${scopeType} id`}
+                      className="font-mono text-xs"
+                      disabled={createMutation.isPending}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      No picker yet for {scopeType}s. Find the id in the
+                      resource&apos;s URL or detail page and paste it here.
+                    </p>
+                  </>
+                )}
             </div>
           )}
 
@@ -806,6 +1481,188 @@ function CreatePolicyDialog({
             </label>
           )}
 
+          {/* ── Optional: Expiry preset ───────────────────────────── */}
+          {showRoles && availableRoles.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Auto-expire</Label>
+              <div className="flex flex-wrap gap-1">
+                {(
+                  [
+                    { key: 'permanent', label: 'Never' },
+                    { key: '1d', label: '1 day' },
+                    { key: '7d', label: '7 days' },
+                    { key: '30d', label: '30 days' },
+                    { key: '90d', label: '90 days' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => {
+                      setExpiryPreset(opt.key);
+                      setExpiryCustomISO('');
+                    }}
+                    className={`cursor-pointer rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                      expiryPreset === opt.key
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-border/60 text-muted-foreground hover:bg-muted/40'
+                    }`}
+                    disabled={createMutation.isPending}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setExpiryPreset('custom')}
+                  className={`cursor-pointer rounded-md border px-2 py-1 text-[11px] transition-colors ${
+                    expiryPreset === 'custom'
+                      ? 'border-primary bg-primary/10 text-foreground'
+                      : 'border-border/60 text-muted-foreground hover:bg-muted/40'
+                  }`}
+                  disabled={createMutation.isPending}
+                >
+                  Custom
+                </button>
+              </div>
+              {expiryPreset === 'custom' && (
+                <Input
+                  type="datetime-local"
+                  value={expiryCustomISO ? toLocalInput(expiryCustomISO) : ''}
+                  onChange={(e) =>
+                    setExpiryCustomISO(
+                      e.target.value ? new Date(e.target.value).toISOString() : '',
+                    )
+                  }
+                  className="h-8 text-xs"
+                  disabled={createMutation.isPending}
+                />
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                {expiryPreset === 'permanent'
+                  ? 'Policy stays in effect until you delete it.'
+                  : `The engine ignores this policy after the chosen time.`}
+              </p>
+            </div>
+          )}
+
+          {/* ── Optional: Conditions (collapsed by default) ───────── */}
+          {showRoles && availableRoles.length > 0 && (
+            <div className="rounded-2xl border border-border/60">
+              <button
+                type="button"
+                onClick={() => setConditionsOpen((v) => !v)}
+                className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-2xl px-3 py-2.5 text-left text-xs font-medium text-muted-foreground hover:bg-muted/30"
+                disabled={createMutation.isPending}
+              >
+                <span className="flex items-center gap-1.5">
+                  {conditionsOpen ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
+                  Conditions
+                  {(requireMfa || ipCidrs.length > 0) && (
+                    <Badge variant="outline" size="sm" className="h-4 px-1 text-[9px] font-normal">
+                      {(requireMfa ? 1 : 0) + (ipCidrs.length > 0 ? 1 : 0)}
+                    </Badge>
+                  )}
+                </span>
+                <span className="text-[11px] font-normal">
+                  Restrict by IP or MFA
+                </span>
+              </button>
+              {conditionsOpen && (
+                <div className="space-y-4 border-t border-border/60 px-3 py-3">
+                  {/* Require MFA */}
+                  <label className="flex cursor-pointer items-start gap-2 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={requireMfa}
+                      onChange={(e) => setRequireMfa(e.target.checked)}
+                      disabled={createMutation.isPending}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-border accent-primary"
+                    />
+                    <span>
+                      <strong>Require MFA</strong>
+                      <span className="block text-[11px] text-muted-foreground">
+                        Policy only applies when the session is verified with a second
+                        factor (Supabase aal2).
+                      </span>
+                    </span>
+                  </label>
+
+                  {/* IP allowlist */}
+                  <div className="space-y-1.5">
+                    <div>
+                      <Label className="text-xs">IP allowlist</Label>
+                      <p className="text-[11px] text-muted-foreground">
+                        Caller&apos;s IP must match one of these. Accepts IPv4 / IPv6
+                        addresses or CIDRs (10.0.0.0/8, 2001:db8::/32). Empty = no
+                        restriction.
+                      </p>
+                    </div>
+                    {ipCidrs.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {ipCidrs.map((c) => (
+                          <Badge
+                            key={c}
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 pr-1 font-mono text-[11px]"
+                          >
+                            {c}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setIpCidrs((prev) => prev.filter((x) => x !== c))
+                              }
+                              className="cursor-pointer rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                              aria-label={`Remove ${c}`}
+                              disabled={createMutation.isPending}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-1.5">
+                      <Input
+                        value={cidrDraft}
+                        onChange={(e) => {
+                          setCidrDraft(e.target.value);
+                          if (cidrError) setCidrError(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ',') {
+                            e.preventDefault();
+                            addCidr(cidrDraft);
+                          }
+                        }}
+                        placeholder="e.g. 10.0.0.0/8"
+                        className="h-8 font-mono text-xs"
+                        disabled={createMutation.isPending}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => addCidr(cidrDraft)}
+                        disabled={!cidrDraft.trim() || createMutation.isPending}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    {cidrError && (
+                      <p className="text-[11px] text-destructive">{cidrError}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Summary line (visible once ready) ─────────────────── */}
           {ready && (
             <div className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5 text-sm leading-relaxed text-foreground">
@@ -815,7 +1672,23 @@ function CreatePolicyDialog({
                 {effect === 'deny' ? 'denied' : 'allowed'}
               </strong>{' '}
               <strong>{selectedRoleNames}</strong> on{' '}
-              <strong>{appliesToLabel}</strong>.
+              <strong>{appliesToLabel}</strong>
+              {(requireMfa || ipCidrs.length > 0) && (
+                <>
+                  {' '}
+                  <span className="text-muted-foreground">when</span>{' '}
+                  <strong>
+                    {[
+                      requireMfa && 'MFA is verified',
+                      ipCidrs.length > 0 &&
+                        `IP is in ${ipCidrs.length === 1 ? ipCidrs[0] : `${ipCidrs.length} ranges`}`,
+                    ]
+                      .filter(Boolean)
+                      .join(' and ')}
+                  </strong>
+                </>
+              )}
+              .
             </div>
           )}
         </div>

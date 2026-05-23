@@ -10,19 +10,24 @@
 // also fast enough to call ad-hoc: one composite SELECT.
 
 import { HTTPException } from 'hono/http-exception';
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountGroups,
   accountMembers,
+  accounts,
+  iamBreakGlassGrants,
   iamPolicies,
   iamRolePermissions,
   iamRoles,
+  projectGroupMembers,
   projectMembers,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { ipMatchesAny, parseCidr } from '../shared/cidr';
 import { ACCOUNT_ACTIONS, resourceTypeForAction, type ResourceType } from './actions';
 import { SYSTEM_ROLE_KEY } from './system-roles';
+import { recordAllow } from './usage-recorder';
 
 // Account-level read actions the legacy 'member' role keeps via the bridge.
 // We intentionally exclude every project.*/sandbox.*/etc. read so a plain
@@ -54,19 +59,144 @@ export type AuthorizeResult = {
   reason?: string;
 };
 
+/** Scope types a policy can target. Superset of ResourceType — the
+ *  extras (project_group) aren't real resource categories, they're
+ *  containers the engine resolves at match time. */
+export type PolicyScopeType = ResourceType | 'project_group';
+
 type LoadedPolicy = {
-  scopeType: ResourceType;
+  scopeType: PolicyScopeType;
   scopeId: string | null;
   effect: 'allow' | 'deny';
+  conditions: PolicyConditions;
 };
+
+/**
+ * Optional checks evaluated after scope+role match. The engine treats an
+ * empty object as "no conditions, always passes". Multiple conditions
+ * compose with AND semantics — every configured check must pass.
+ */
+export interface PolicyConditions {
+  /** Request IP must fall in one of these CIDRs (IPv4 or IPv6). Empty
+   *  array = no restriction; condition isn't considered "configured". */
+  ip_cidrs?: string[];
+  /** Session must be at AAL2 (MFA step-up). Tracks Supabase's
+   *  Authenticator Assurance Level. */
+  require_mfa?: boolean;
+}
+
+/**
+ * Per-request context surfaced from middleware: caller IP, MFA AAL,
+ * acting token. Optional everywhere — when a policy has no conditions
+ * the engine never reads these fields, so existing call sites that
+ * pre-date conditions keep working unchanged.
+ */
+export interface RequestContext {
+  /** Caller's source IP, taken from x-forwarded-for or x-real-ip. */
+  ip?: string;
+  /** JWT's aal claim — 'aal1' = password-only, 'aal2' = MFA-verified. */
+  mfaAal?: string;
+}
 
 type ResolvedActor = {
   isSuperAdmin: boolean;
   accountRole: 'owner' | 'admin' | 'member' | null;
   groupIds: string[];
+  /** When true the engine refuses to fall back to legacy bridges — only
+   * super-admin bypass + explicit policies decide. Account-wide setting. */
+  iamStrictMode: boolean;
+  /** When true the engine denies every JWT request whose aal claim is
+   * not 'aal2'. Super-admins are exempt; PATs are exempt (they gate
+   * via per-policy require_mfa conditions). Account-wide setting. */
+  accountMfaRequired: boolean;
+  /** Optional max-envelope of action prefixes. When set, the engine
+   * denies any action whose prefix isn't in the list — even if explicit
+   * allow-policies cover it. Super-admins are exempt. */
+  permissionBoundary: PermissionBoundary | null;
 };
 
+/**
+ * AWS-style permission boundary. The engine treats the configured set
+ * of action prefixes as the MAX envelope: an action passes only when
+ * one of the prefixes is a prefix of the action key. Empty array is
+ * a legal config that effectively bans everything.
+ */
+export interface PermissionBoundary {
+  allow_action_prefixes: string[];
+}
+
+/**
+ * Does `action` clear the boundary? Pure — exported for unit tests.
+ * Empty boundary array → no action passes (admin opted in to deny-all).
+ * Null boundary handled by the caller (no clipping).
+ */
+export function actionPassesBoundary(action: string, boundary: PermissionBoundary): boolean {
+  for (const prefix of boundary.allow_action_prefixes) {
+    if (action === prefix) return true;
+    if (prefix.endsWith('.') && action.startsWith(prefix)) return true;
+    if (!prefix.endsWith('.') && action.startsWith(prefix + '.')) return true;
+  }
+  return false;
+}
+
 const SYSTEM_ROLE_PERMISSION_CACHE = new Map<string, Set<string>>();
+
+/**
+ * Decide whether a policy's conditions allow it to apply in this request
+ * context. Returns true when:
+ *   - the policy has no conditions configured, OR
+ *   - every configured condition passes.
+ *
+ * Treats unknown keys as no-ops so adding a new condition type in a future
+ * release can't accidentally tighten an old policy. Treats malformed
+ * values defensively: an invalid CIDR list is treated as "no IP matches",
+ * which means the policy refuses to apply rather than silently allowing
+ * everyone — fail-closed for the security-critical path.
+ */
+export function checkConditions(
+  conditions: PolicyConditions | null | undefined,
+  ctx: RequestContext,
+): boolean {
+  if (!conditions) return true;
+  if (typeof conditions !== 'object') return true;
+
+  if (conditions.require_mfa === true) {
+    // Only count aal2 (Supabase's MFA-verified marker). aal1 = password
+    // alone is not enough; missing aal claim is also a no-go.
+    if (ctx.mfaAal !== 'aal2') return false;
+  }
+
+  const cidrs = conditions.ip_cidrs;
+  if (Array.isArray(cidrs) && cidrs.length > 0) {
+    if (!ctx.ip) return false; // no caller IP → can't satisfy the gate
+    const parsed = parseCidrList(cidrs);
+    if (parsed.length === 0) return false; // every entry was malformed
+    if (!ipMatchesAny(ctx.ip, parsed)) return false;
+  }
+
+  return true;
+}
+
+// Small LRU-ish cache for parsed CIDR lists. Policies tend to repeat the
+// same allowlist, and parseCidr does a lot of string work. Bounded so a
+// pathological loader can't grow it unbounded.
+const CIDR_PARSE_CACHE = new Map<string, ReturnType<typeof parseCidr>[]>();
+const CIDR_PARSE_CACHE_MAX = 256;
+
+function parseCidrList(list: readonly string[]): NonNullable<ReturnType<typeof parseCidr>>[] {
+  const key = list.join('|');
+  const cached = CIDR_PARSE_CACHE.get(key);
+  if (cached) {
+    return cached.filter((c): c is NonNullable<typeof c> => c !== null);
+  }
+  const parsed = list.map((c) => parseCidr(c));
+  if (CIDR_PARSE_CACHE.size >= CIDR_PARSE_CACHE_MAX) {
+    const firstKey = CIDR_PARSE_CACHE.keys().next().value;
+    if (firstKey !== undefined) CIDR_PARSE_CACHE.delete(firstKey);
+  }
+  CIDR_PARSE_CACHE.set(key, parsed);
+  return parsed.filter((c): c is NonNullable<typeof c> => c !== null);
+}
 
 /**
  * Look up the action-set of a system role by key, memoised.
@@ -98,16 +228,34 @@ export function invalidateSystemRoleCache(): void {
  * legacy account role, and group memberships. One round-trip.
  */
 async function resolveActor(userId: string, accountId: string): Promise<ResolvedActor | null> {
+  // Single round-trip: join account → account_member so we get the strict
+  // mode flag alongside membership without a second query.
   const [member] = await db
     .select({
       isSuperAdmin: accountMembers.isSuperAdmin,
       accountRole: accountMembers.accountRole,
+      iamStrictMode: accounts.iamStrictMode,
+      mfaRequired: accounts.mfaRequired,
+      permissionBoundary: accountMembers.permissionBoundary,
+      isExternal: accountMembers.isExternal,
+      externalGrantExpiresAt: accountMembers.externalGrantExpiresAt,
     })
     .from(accountMembers)
+    .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
     .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
     .limit(1);
 
   if (!member) return null;
+  // Cross-account sharing: external grants honour an optional expiry.
+  // Past the expiry we treat the user as "not-a-member" so the engine
+  // denies cleanly without admins having to remember to revoke.
+  if (
+    member.isExternal &&
+    member.externalGrantExpiresAt &&
+    member.externalGrantExpiresAt < new Date()
+  ) {
+    return null;
+  }
 
   const groups = await db
     .select({ groupId: accountGroupMembers.groupId })
@@ -120,10 +268,34 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
       ),
     );
 
+  // Break-glass grants act as temporary super-admin promotion. Check
+  // for an active, unrevoked grant — if present, force isSuperAdmin
+  // true regardless of the stored flag. Boundary still doesn't apply
+  // (super-admins are exempt anyway). Single-row LIMIT 1.
+  let breakGlassActive = false;
+  if (!member.isSuperAdmin) {
+    const [activeGrant] = await db
+      .select({ grantId: iamBreakGlassGrants.grantId })
+      .from(iamBreakGlassGrants)
+      .where(
+        and(
+          eq(iamBreakGlassGrants.accountId, accountId),
+          eq(iamBreakGlassGrants.userId, userId),
+          gt(iamBreakGlassGrants.expiresAt, new Date()),
+          isNull(iamBreakGlassGrants.revokedAt),
+        ),
+      )
+      .limit(1);
+    breakGlassActive = !!activeGrant;
+  }
+
   return {
-    isSuperAdmin: member.isSuperAdmin,
+    isSuperAdmin: member.isSuperAdmin || breakGlassActive,
     accountRole: member.accountRole as ResolvedActor['accountRole'],
     groupIds: groups.map((g) => g.groupId),
+    iamStrictMode: member.iamStrictMode,
+    accountMfaRequired: member.mfaRequired,
+    permissionBoundary: (member.permissionBoundary as PermissionBoundary | null) ?? null,
   };
 }
 
@@ -135,6 +307,24 @@ async function resolveActor(userId: string, accountId: string): Promise<Resolved
  * Returns the list of (scopeType, scopeId) pairs — the caller decides whether
  * the target's id matches.
  */
+/**
+ * Look up which project groups (if any) include the given project_id
+ * within the account. Empty Set when the target isn't a project or
+ * doesn't belong to any group. Cheap — single indexed SELECT.
+ */
+async function resolveProjectGroupsForTarget(
+  accountId: string,
+  target: AuthorizeTarget,
+): Promise<Set<string>> {
+  if (target.type !== 'project') return new Set();
+  const rows = await db
+    .select({ groupId: projectGroupMembers.groupId })
+    .from(projectGroupMembers)
+    .innerJoin(accounts, eq(accounts.accountId, accountId))
+    .where(eq(projectGroupMembers.projectId, target.id));
+  return new Set(rows.map((r) => r.groupId));
+}
+
 async function loadGrantingPolicies(
   accountId: string,
   actor: ResolvedActor,
@@ -163,6 +353,7 @@ async function loadGrantingPolicies(
       scopeType: iamPolicies.scopeType,
       scopeId: iamPolicies.scopeId,
       effect: iamPolicies.effect,
+      conditions: iamPolicies.conditions,
     })
     .from(iamPolicies)
     .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
@@ -176,19 +367,33 @@ async function loadGrantingPolicies(
     .where(
       and(
         eq(iamPolicies.accountId, accountId),
+        // Time-bounded policies: drop rows whose expiry has passed.
+        // The SQL filter avoids ever returning them to the engine, so
+        // expired rows can't slip through if the comparison is forgotten
+        // somewhere upstream.
+        or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
         or(...principalConditions),
-        // Scope must be 'account' (Everything) or match the required type.
-        or(
-          eq(iamPolicies.scopeType, 'account'),
-          eq(iamPolicies.scopeType, requiredScopeType),
-        ),
+        // Scope must be 'account' (Everything), match the required type,
+        // OR be a project_group when we're authorising a project action
+        // (the engine will resolve membership at match time).
+        requiredScopeType === 'project'
+          ? or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, 'project'),
+              eq(iamPolicies.scopeType, 'project_group'),
+            )
+          : or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, requiredScopeType),
+            ),
       ),
     );
 
   return rows.map((r) => ({
-    scopeType: r.scopeType as ResourceType,
+    scopeType: r.scopeType as PolicyScopeType,
     scopeId: r.scopeId,
     effect: r.effect as 'allow' | 'deny',
+    conditions: (r.conditions ?? {}) as PolicyConditions,
   }));
 }
 
@@ -206,6 +411,10 @@ async function bridgeLegacyAccountRole(
   actor: ResolvedActor,
   action: string,
 ): Promise<boolean> {
+  // Strict mode: refuse to fall back to the legacy bridge. Only super-admin
+  // bypass + explicit IAM policies decide. This is the opt-in "IAM is the
+  // single source of truth" mode.
+  if (actor.iamStrictMode) return false;
   if (!actor.accountRole) return false;
 
   // Owner/admin keep the full Administrator bridge — that's what they had
@@ -229,14 +438,17 @@ async function bridgeLegacyAccountRole(
 /**
  * Legacy project_members bridge. Pre-existing project access via the
  * project_members table is materialised as a synthetic Project Admin /
- * Editor / Viewer policy scoped to that project.
+ * Editor / Viewer policy scoped to that project. In strict mode the bridge
+ * is disabled entirely.
  */
 async function bridgeLegacyProjectRole(
+  actor: ResolvedActor,
   accountId: string,
   userId: string,
   projectId: string,
   action: string,
 ): Promise<boolean> {
+  if (actor.iamStrictMode) return false;
   const [pm] = await db
     .select({ projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -279,6 +491,7 @@ async function loadTokenPolicies(
       scopeType: iamPolicies.scopeType,
       scopeId: iamPolicies.scopeId,
       effect: iamPolicies.effect,
+      conditions: iamPolicies.conditions,
     })
     .from(iamPolicies)
     .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
@@ -294,22 +507,35 @@ async function loadTokenPolicies(
         eq(iamPolicies.accountId, accountId),
         eq(iamPolicies.principalType, 'token'),
         eq(iamPolicies.principalId, tokenId),
-        or(
-          eq(iamPolicies.scopeType, 'account'),
-          eq(iamPolicies.scopeType, requiredScopeType),
-        ),
+        // Same expiry filter as the user path — expired token policies
+        // stop applying the moment the clock crosses expires_at.
+        or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
+        requiredScopeType === 'project'
+          ? or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, 'project'),
+              eq(iamPolicies.scopeType, 'project_group'),
+            )
+          : or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, requiredScopeType),
+            ),
       ),
     );
   return rows.map((r) => ({
-    scopeType: r.scopeType as ResourceType,
+    scopeType: r.scopeType as PolicyScopeType,
     scopeId: r.scopeId,
     effect: r.effect as 'allow' | 'deny',
+    conditions: (r.conditions ?? {}) as PolicyConditions,
   }));
 }
 
 /** Cheap count to decide: does this token have ANY narrowing policy attached
  * (regardless of action)? Used by the engine to choose between "evaluate
- * token policies only" vs "fall back to user". */
+ * token policies only" vs "fall back to user". Counts expired policies too —
+ * a token with all-expired policies still gets the strict token-path
+ * treatment so an admin's intentional revocation-via-expiry isn't
+ * silently bypassed back to the minter's permissions. */
 async function tokenHasAnyPolicy(accountId: string, tokenId: string): Promise<boolean> {
   const [row] = await db
     .select({ policyId: iamPolicies.policyId })
@@ -338,6 +564,7 @@ export async function authorize(
   action: string,
   target?: AuthorizeTarget,
   actingTokenId?: string,
+  requestCtx: RequestContext = {},
 ): Promise<AuthorizeResult> {
   const requiredScopeType = resourceTypeForAction(action);
   const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
@@ -348,23 +575,31 @@ export async function authorize(
   // legacy bridges, no inheritance from the minter. This is the safety
   // contract: a narrowed token can NEVER do more than its policies allow.
   if (actingTokenId && (await tokenHasAnyPolicy(accountId, actingTokenId))) {
-    const tokenPolicies = await loadTokenPolicies(
-      accountId,
-      actingTokenId,
-      action,
-      requiredScopeType,
-    );
+    const [tokenPolicies, projectGroupIds] = await Promise.all([
+      loadTokenPolicies(accountId, actingTokenId, action, requiredScopeType),
+      resolveProjectGroupsForTarget(accountId, effectiveTarget),
+    ]);
     let matchedAllow = false;
     for (const p of tokenPolicies) {
-      if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+      if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget, projectGroupIds)) continue;
+      // Conditions filter applies before deny precedence — a deny whose
+      // conditions don't match this request is simply not applicable.
+      if (!checkConditions(p.conditions, requestCtx)) continue;
       if (p.effect === 'deny') {
         return { allowed: false, reason: 'token_explicit_deny' };
       }
       matchedAllow = true;
     }
-    return matchedAllow
-      ? { allowed: true, reason: 'token_policy' }
-      : { allowed: false, reason: 'token_no_matching_policy' };
+    if (matchedAllow) {
+      recordAllow({
+        accountId,
+        principalKind: 'token',
+        principalId: actingTokenId,
+        action,
+      });
+      return { allowed: true, reason: 'token_policy' };
+    }
+    return { allowed: false, reason: 'token_no_matching_policy' };
   }
 
   // ── User-as-principal path (existing flow) ─────────────────────────────
@@ -375,7 +610,34 @@ export async function authorize(
 
   // 1. Super-admin bypasses everything.
   if (actor.isSuperAdmin) {
+    recordAllow({ accountId, principalKind: 'user', principalId: userId, action });
     return { allowed: true, reason: 'super_admin' };
+  }
+
+  // 1b. Account-wide MFA gate. When the account requires MFA AND the
+  //     caller is on a browser/JWT session (no acting token), the AAL
+  //     must be 'aal2'. Super-admins were already let through above so
+  //     this can't permanently lock the account out. PATs are exempt —
+  //     they gate via per-policy require_mfa conditions instead.
+  if (
+    actor.accountMfaRequired &&
+    !actingTokenId &&
+    requestCtx.mfaAal !== 'aal2'
+  ) {
+    return { allowed: false, reason: 'account_mfa_required' };
+  }
+
+  // 1c. Permission boundary clip. When the member has a boundary
+  //     configured AND the action's prefix isn't covered, deny
+  //     immediately — even if explicit allow-policies would otherwise
+  //     match. Super-admins already returned above; PATs are subject
+  //     to the minter's boundary only when the engine is in the user
+  //     path (the token-policy short-circuit at the top doesn't
+  //     consult the minter's actor at all).
+  if (actor.permissionBoundary) {
+    if (!actionPassesBoundary(action, actor.permissionBoundary)) {
+      return { allowed: false, reason: 'permission_boundary' };
+    }
   }
 
   // Sanity: if the action expects a specific resource and we got an
@@ -384,17 +646,18 @@ export async function authorize(
 
   // 2. Explicit policies (direct + via groups). Partition by effect; deny
   //    wins over allow on a per-action+scope basis.
-  const policies = await loadGrantingPolicies(
-    accountId,
-    actor,
-    userId,
-    action,
-    requiredScopeType,
-  );
+  const [policies, projectGroupIds] = await Promise.all([
+    loadGrantingPolicies(accountId, actor, userId, action, requiredScopeType),
+    resolveProjectGroupsForTarget(accountId, effectiveTarget),
+  ]);
 
   let matchedAllow = false;
   for (const p of policies) {
-    if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget)) continue;
+    if (!policyMatchesTarget(p, requiredScopeType, effectiveTarget, projectGroupIds)) continue;
+    // Conditions filter — a policy whose conditions don't match this
+    // request (wrong IP, missing MFA) is simply not applicable. A deny
+    // gated by conditions is silent until the gate fires.
+    if (!checkConditions(p.conditions, requestCtx)) continue;
     if (p.effect === 'deny') {
       // Explicit deny is final. Short-circuit immediately so a single deny
       // overrides any number of allows on the same action+scope.
@@ -404,19 +667,22 @@ export async function authorize(
   }
 
   if (matchedAllow) {
+    recordAllow({ accountId, principalKind: 'user', principalId: userId, action });
     return { allowed: true, reason: 'policy' };
   }
 
   // 3. Legacy bridges (only consulted when no explicit policy matched).
   //    Explicit denies above already short-circuited.
   if (await bridgeLegacyAccountRole(actor, action)) {
+    recordAllow({ accountId, principalKind: 'user', principalId: userId, action });
     return { allowed: true, reason: 'legacy_account_role' };
   }
 
   if (
     effectiveTarget.type === 'project' &&
-    (await bridgeLegacyProjectRole(accountId, userId, effectiveTarget.id, action))
+    (await bridgeLegacyProjectRole(actor, accountId, userId, effectiveTarget.id, action))
   ) {
+    recordAllow({ accountId, principalKind: 'user', principalId: userId, action });
     return { allowed: true, reason: 'legacy_project_role' };
   }
 
@@ -429,6 +695,11 @@ export async function authorize(
  *   - scope_type='account' → always matches (Everything)
  *   - scope_type=requiredType AND scope_id=NULL → matches every resource of that type
  *   - scope_type=requiredType AND scope_id=target.id → exact match
+ *   - scope_type='project_group' AND target is project → matches when
+ *     scope_id is in `targetProjectGroups` (pre-resolved by the caller)
+ *
+ * `targetProjectGroups` is the set of project_group IDs that contain
+ * the target project (empty/undefined for non-project targets).
  *
  * Exported for unit tests.
  */
@@ -436,8 +707,17 @@ export function policyMatchesTarget(
   policy: LoadedPolicy,
   requiredScopeType: ResourceType,
   target: AuthorizeTarget,
+  targetProjectGroups?: ReadonlySet<string>,
 ): boolean {
   if (policy.scopeType === 'account') return true;
+  // Project-group scope only ever applies to a project target. NULL
+  // scope_id on a project_group policy doesn't make sense (we never
+  // mint those) and is treated as no-match.
+  if (policy.scopeType === 'project_group') {
+    if (target.type !== 'project') return false;
+    if (!policy.scopeId) return false;
+    return targetProjectGroups?.has(policy.scopeId) === true;
+  }
   if (policy.scopeType !== requiredScopeType) return false;
   // For account-level actions targeting the account itself, the only valid
   // policy scope is 'account' (handled above).
@@ -456,8 +736,9 @@ export async function assertAuthorized(
   action: string,
   target?: AuthorizeTarget,
   actingTokenId?: string,
+  requestCtx?: RequestContext,
 ): Promise<void> {
-  const result = await authorize(userId, accountId, action, target, actingTokenId);
+  const result = await authorize(userId, accountId, action, target, actingTokenId, requestCtx);
   if (!result.allowed) {
     // HTTPException so Hono returns a real 403 — a plain Error falls through to
     // the global onError and becomes a 500.
@@ -490,6 +771,7 @@ export async function listAccessibleResources(
   action: string,
   resourceType: ResourceType,
   actingTokenId?: string,
+  requestCtx: RequestContext = {},
 ): Promise<AccessibleResources> {
   // Token-as-principal short-circuit. When a PAT with narrowing policies
   // makes a list request, only its own policies decide what's visible —
@@ -501,7 +783,16 @@ export async function listAccessibleResources(
     let denyEverything = false;
     const allowedIds = new Set<string>();
     const deniedIds = new Set<string>();
+    const allowGroupIds = new Set<string>();
+    const denyGroupIds = new Set<string>();
     for (const r of rows) {
+      if (!checkConditions(r.conditions, requestCtx)) continue;
+      if (r.scopeType === 'project_group' && resourceType === 'project') {
+        if (!r.scopeId) continue;
+        if (r.effect === 'deny') denyGroupIds.add(r.scopeId);
+        else allowGroupIds.add(r.scopeId);
+        continue;
+      }
       const matchesEverything =
         r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
       if (r.effect === 'deny') {
@@ -510,6 +801,19 @@ export async function listAccessibleResources(
       } else {
         if (matchesEverything) allowEverything = true;
         else if (r.scopeId) allowedIds.add(r.scopeId);
+      }
+    }
+    if (allowGroupIds.size > 0 || denyGroupIds.size > 0) {
+      const memberRows = await db
+        .select({
+          groupId: projectGroupMembers.groupId,
+          projectId: projectGroupMembers.projectId,
+        })
+        .from(projectGroupMembers)
+        .where(inArray(projectGroupMembers.groupId, [...allowGroupIds, ...denyGroupIds]));
+      for (const row of memberRows) {
+        if (denyGroupIds.has(row.groupId)) deniedIds.add(row.projectId);
+        if (allowGroupIds.has(row.groupId)) allowedIds.add(row.projectId);
       }
     }
     if (denyEverything) return { mode: 'none' };
@@ -522,6 +826,23 @@ export async function listAccessibleResources(
   if (!actor) return { mode: 'none' };
 
   if (actor.isSuperAdmin) return { mode: 'all' };
+
+  // Account-wide MFA gate — denies the entire list when the account
+  // requires MFA and the caller isn't aal2 (browser/JWT only; PATs
+  // already short-circuited above).
+  if (
+    actor.accountMfaRequired &&
+    !actingTokenId &&
+    requestCtx.mfaAal !== 'aal2'
+  ) {
+    return { mode: 'none' };
+  }
+
+  // Boundary applies to the listing action too — if the action is
+  // outside the envelope, nothing is visible.
+  if (actor.permissionBoundary && !actionPassesBoundary(action, actor.permissionBoundary)) {
+    return { mode: 'none' };
+  }
 
   // Owner/admin legacy bridge always allows account-level reads/writes.
   // Preserves today's "owners see everything" without enumerating policies.
@@ -555,6 +876,7 @@ export async function listAccessibleResources(
       scopeType: iamPolicies.scopeType,
       scopeId: iamPolicies.scopeId,
       effect: iamPolicies.effect,
+      conditions: iamPolicies.conditions,
     })
     .from(iamPolicies)
     .innerJoin(iamRoles, eq(iamRoles.roleId, iamPolicies.roleId))
@@ -568,8 +890,22 @@ export async function listAccessibleResources(
     .where(
       and(
         eq(iamPolicies.accountId, accountId),
+        // Time-bounded policies: drop rows whose expiry has passed.
+        // The SQL filter avoids ever returning them to the engine, so
+        // expired rows can't slip through if the comparison is forgotten
+        // somewhere upstream.
+        or(isNull(iamPolicies.expiresAt), gt(iamPolicies.expiresAt, sql`now()`)),
         or(...principalConditions),
-        or(eq(iamPolicies.scopeType, 'account'), eq(iamPolicies.scopeType, resourceType)),
+        resourceType === 'project'
+          ? or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, 'project'),
+              eq(iamPolicies.scopeType, 'project_group'),
+            )
+          : or(
+              eq(iamPolicies.scopeType, 'account'),
+              eq(iamPolicies.scopeType, resourceType),
+            ),
       ),
     );
 
@@ -577,8 +913,19 @@ export async function listAccessibleResources(
   let denyEverything = false;
   const allowedIds = new Set<string>();
   const deniedIds = new Set<string>();
+  // Project-group scopes we encounter; resolved to project IDs in
+  // one batched query after the loop so the hot path doesn't fan out.
+  const allowGroupIds = new Set<string>();
+  const denyGroupIds = new Set<string>();
 
   for (const r of rows) {
+    if (!checkConditions((r.conditions ?? {}) as PolicyConditions, requestCtx)) continue;
+    if (r.scopeType === 'project_group' && resourceType === 'project') {
+      if (!r.scopeId) continue;
+      if (r.effect === 'deny') denyGroupIds.add(r.scopeId);
+      else allowGroupIds.add(r.scopeId);
+      continue;
+    }
     const matchesEverything =
       r.scopeType === 'account' || (r.scopeType === resourceType && r.scopeId === null);
     if (r.effect === 'deny') {
@@ -590,10 +937,26 @@ export async function listAccessibleResources(
     }
   }
 
+  // Expand any project_group scopes into the matching project IDs.
+  if (allowGroupIds.size > 0 || denyGroupIds.size > 0) {
+    const allGroupIds = [...allowGroupIds, ...denyGroupIds];
+    const memberRows = await db
+      .select({
+        groupId: projectGroupMembers.groupId,
+        projectId: projectGroupMembers.projectId,
+      })
+      .from(projectGroupMembers)
+      .where(inArray(projectGroupMembers.groupId, allGroupIds));
+    for (const row of memberRows) {
+      if (denyGroupIds.has(row.groupId)) deniedIds.add(row.projectId);
+      if (allowGroupIds.has(row.groupId)) allowedIds.add(row.projectId);
+    }
+  }
+
   // Legacy project_members bridge: any project_role row counts as an allow
   // for actions the bridged Project Admin/Editor/Viewer role would grant.
-  // Only consulted for project listings.
-  if (resourceType === 'project') {
+  // Only consulted for project listings AND only when strict mode is off.
+  if (resourceType === 'project' && !actor.iamStrictMode) {
     const memberRows = await db
       .select({
         projectId: projectMembers.projectId,

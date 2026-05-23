@@ -40,16 +40,39 @@ interface RailItem {
   glyph?: string;
 }
 
-const PRIMARY_ITEMS: readonly RailItem[] = [
-  { section: 'files',     label: 'Files',     icon: FolderOpen },
-  { section: 'skills',    label: 'Skills',    icon: Sparkles },
-  { section: 'agents',    label: 'Agents',    icon: Bot },
-  { section: 'commands',  label: 'Commands',  glyph: '/' },
-  { section: 'secrets',   label: 'Secrets',   icon: KeyRound },
-  { section: 'members',   label: 'Members',   icon: Users },
-  { section: 'schedules', label: 'Schedules', icon: Timer },
-  { section: 'webhooks',  label: 'Webhooks',  icon: Webhook },
-  { section: 'channels',  label: 'Channels',  icon: MessageSquare },
+interface RailGroup {
+  /** Tiny uppercase header above the group. Omit for a top group with no label. */
+  label?: string;
+  items: readonly RailItem[];
+}
+
+// Three semantic groups so the rail scans faster as it grows. Keep the
+// labels short so the rail width doesn't need to budge.
+const ITEM_GROUPS: readonly RailGroup[] = [
+  {
+    label: 'Content',
+    items: [
+      { section: 'files',    label: 'Files',    icon: FolderOpen },
+      { section: 'skills',   label: 'Skills',   icon: Sparkles },
+      { section: 'agents',   label: 'Agents',   icon: Bot },
+      { section: 'commands', label: 'Commands', glyph: '/' },
+    ],
+  },
+  {
+    label: 'Infrastructure',
+    items: [
+      { section: 'secrets',   label: 'Secrets',   icon: KeyRound },
+      { section: 'schedules', label: 'Schedules', icon: Timer },
+      { section: 'webhooks',  label: 'Webhooks',  icon: Webhook },
+      { section: 'channels',  label: 'Channels',  icon: MessageSquare },
+    ],
+  },
+  {
+    label: 'People',
+    items: [
+      { section: 'members', label: 'Members', icon: Users },
+    ],
+  },
 ];
 
 const FOOTER_ITEMS: readonly RailItem[] = [
@@ -107,17 +130,26 @@ export function CustomizeRail({ projectId }: { projectId: string }) {
       className="flex h-full w-[220px] shrink-0 flex-col border-r border-border/60 bg-background"
     >
       <div className="flex-1 overflow-y-auto px-2 py-3">
-        <ul className="space-y-0.5">
-          {PRIMARY_ITEMS.map((item) => (
-            <li key={item.section}>
-              <RailButton
-                item={item}
-                active={active === item.section}
-                onClick={() => go(item.section)}
-              />
-            </li>
-          ))}
-        </ul>
+        {ITEM_GROUPS.map((group, groupIdx) => (
+          <div key={group.label ?? `group-${groupIdx}`} className={groupIdx > 0 ? 'mt-3' : undefined}>
+            {group.label && (
+              <div className="px-2.5 pb-1 text-[9.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/50">
+                {group.label}
+              </div>
+            )}
+            <ul className="space-y-0.5">
+              {group.items.map((item) => (
+                <li key={item.section}>
+                  <RailButton
+                    item={item}
+                    active={active === item.section}
+                    onClick={() => go(item.section)}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
 
       <div className="border-t border-border/40 px-2 py-2">
@@ -157,7 +189,7 @@ function RailButton({
       onClick={onClick}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex items-center gap-2 rounded-lg text-[12.5px] font-medium transition-colors',
+        'group relative flex cursor-pointer items-center gap-2 rounded-lg text-[12.5px] font-medium transition-colors',
         horizontal
           ? 'whitespace-nowrap px-3 py-2'
           : 'w-full gap-2.5 px-2.5 py-1.5 text-left',

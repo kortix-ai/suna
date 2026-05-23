@@ -2,12 +2,15 @@ import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
-import { isKortixToken, isAccountToken } from '../shared/crypto';
+import { validateServiceAccountToken } from '../repositories/service-accounts';
+import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { canAccessPreviewSandbox } from '../shared/preview-ownership';
 import { getSupabase } from '../shared/supabase';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
+import { syncSsoMembership } from '../iam/sso-sync';
+import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -33,6 +36,7 @@ export async function apiKeyAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    auditLoginFail({ c, reason: 'missing_auth_header', authType: 'apiKey' });
     throw new HTTPException(401, {
       message: 'Missing or invalid Authorization header',
     });
@@ -41,12 +45,14 @@ export async function apiKeyAuth(c: Context, next: Next) {
   const token = authHeader.slice(7);
 
   if (!token) {
+    auditLoginFail({ c, reason: 'empty_token', authType: 'apiKey' });
     throw new HTTPException(401, {
       message: 'Missing token in Authorization header',
     });
   }
 
   if (!isKortixToken(token)) {
+    auditLoginFail({ c, reason: 'bad_token_format', authType: 'apiKey' });
     throw new HTTPException(401, {
       message: 'Invalid token format — expected kortix_ prefix',
     });
@@ -56,6 +62,11 @@ export async function apiKeyAuth(c: Context, next: Next) {
 
   if (!result.isValid) {
     console.warn(`[apiKeyAuth] Token validation failed: ${result.error} | tokenPrefix="${token.slice(0, 20)}..." | path=${c.req.path} | ip=${c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'}`);
+    auditLoginFail({
+      c,
+      reason: result.error ?? 'invalid_api_key',
+      authType: 'apiKey',
+    });
     throw new HTTPException(401, {
       message: result.error || 'Invalid API key',
     });
@@ -68,6 +79,13 @@ export async function apiKeyAuth(c: Context, next: Next) {
   if (result.sandboxId) {
     c.set('sandboxId', result.sandboxId);
   }
+  auditLoginSuccess({
+    c,
+    userId: result.accountId ?? 'unknown',
+    accountId: result.accountId,
+    authType: 'apiKey',
+    metadata: { api_key_type: result.type },
+  });
   await next();
 }
 
@@ -88,18 +106,54 @@ export async function supabaseAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader?.startsWith('Bearer ')) {
+    auditLoginFail({ c, reason: 'missing_auth_header' });
     throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
   }
 
   const token = authHeader.slice(7);
   if (!token) {
+    auditLoginFail({ c, reason: 'empty_token' });
     throw new HTTPException(401, { message: 'Missing token' });
+  }
+
+  // Service-account bearer (non-human IAM principal). Treat as a
+  // token-style principal: userId is set to the SA id (synthetic) so
+  // downstream code has a stable identifier, and iamTokenId points
+  // at the same id so the IAM engine evaluates only the SA's policies
+  // (existing token-as-principal short-circuit).
+  if (isServiceAccountToken(token)) {
+    const sa = await validateServiceAccountToken(token);
+    if (!sa.isValid || !sa.serviceAccountId || !sa.accountId) {
+      auditLoginFail({
+        c,
+        reason: sa.error ?? 'invalid_service_account',
+        authType: 'service_account',
+      });
+      throw new HTTPException(401, { message: sa.error || 'Invalid service account' });
+    }
+    c.set('userId', sa.serviceAccountId);
+    c.set('userEmail', '');
+    c.set('authType', 'service_account');
+    c.set('accountId', sa.accountId);
+    c.set('iamTokenId', sa.serviceAccountId);
+    setSentryUser({ id: sa.serviceAccountId, accountId: sa.accountId });
+    setContextField('userId', sa.serviceAccountId);
+    setContextField('accountId', sa.accountId);
+    auditLoginSuccess({
+      c,
+      userId: sa.serviceAccountId,
+      accountId: sa.accountId,
+      authType: 'service_account',
+    });
+    await next();
+    return;
   }
 
   // CLI Personal Access Token — same identity as the user who minted it.
   if (isAccountToken(token)) {
     const result = await validateAccountToken(token);
     if (!result.isValid || !result.userId) {
+      auditLoginFail({ c, reason: result.error ?? 'invalid_pat', authType: 'pat' });
       throw new HTTPException(401, { message: result.error || 'Invalid PAT' });
     }
     // Project-scoped tokens: enforce the URL's :projectId matches.
@@ -118,6 +172,13 @@ export async function supabaseAuth(c: Context, next: Next) {
     setSentryUser({ id: result.userId, accountId: result.accountId });
     setContextField('userId', result.userId);
     if (result.accountId) setContextField('accountId', result.accountId);
+    auditLoginSuccess({
+      c,
+      userId: result.userId,
+      accountId: result.accountId ?? null,
+      authType: 'pat',
+      metadata: result.projectId ? { project_id: result.projectId } : undefined,
+    });
     await next();
     return;
   }
@@ -149,9 +210,40 @@ export async function supabaseAuth(c: Context, next: Next) {
     c.set('userId', local.userId);
     c.set('userEmail', local.email);
     c.set('authType', 'supabase');
+    // Authenticator Assurance Level — 'aal1' = password-only,
+    // 'aal2' = MFA-verified. Surfaced for IAM policy conditions that
+    // require MFA on sensitive actions.
+    if (local.payload.aal) c.set('mfaAal', local.payload.aal);
+    // Session identity surfaced for the per-account session gate
+    // (idle/lifetime/force-logout). `iat` is the seconds-epoch the
+    // current access token was issued — Supabase keeps it constant
+    // across refreshes for the same root session.
+    if (local.payload.session_id) c.set('sessionId', local.payload.session_id);
+    if (typeof (local.payload as { iat?: number }).iat === 'number') {
+      c.set('sessionIat', (local.payload as { iat: number }).iat);
+    }
+    // SAML JIT — no-ops when the JWT isn't from a SAML provider. We
+    // don't block the request on sync failures since the user already
+    // authenticated; failures are logged for ops review.
+    syncSsoMembership({
+      userId: local.userId,
+      email: local.email,
+      jwtPayload: local.payload as unknown as Record<string, unknown>,
+    }).catch((err) => {
+      console.warn('[auth] SAML JIT sync failed', err);
+    });
     setSentryUser({ id: local.userId, email: local.email });
     setContextField('userId', local.userId);
     setContextField('userEmail', local.email);
+    auditLoginSuccess({
+      c,
+      userId: local.userId,
+      authType: 'supabase',
+      metadata: {
+        aal: local.payload.aal ?? null,
+        verify_path: 'local',
+      },
+    });
     await next();
     return;
   }
@@ -159,6 +251,7 @@ export async function supabaseAuth(c: Context, next: Next) {
   // Local verification unavailable (JWKS not loaded yet) — fall back to network
   if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') {
     // Token is definitively invalid (bad signature, expired, malformed)
+    auditLoginFail({ c, reason: `jwt_${local.reason}`, authType: 'jwt' });
     throw new HTTPException(401, { message: 'Invalid or expired token' });
   }
 
@@ -170,6 +263,11 @@ export async function supabaseAuth(c: Context, next: Next) {
     } = await supabase.auth.getUser(token);
 
     if (error || !user) {
+      auditLoginFail({
+        c,
+        reason: error?.message ?? 'jwt_network_invalid',
+        authType: 'jwt',
+      });
       throw new HTTPException(401, { message: 'Invalid or expired token' });
     }
 
@@ -179,10 +277,17 @@ export async function supabaseAuth(c: Context, next: Next) {
     setSentryUser({ id: user.id, email: user.email || undefined });
     setContextField('userId', user.id);
     setContextField('userEmail', user.email || '');
+    auditLoginSuccess({
+      c,
+      userId: user.id,
+      authType: 'supabase',
+      metadata: { verify_path: 'network' },
+    });
     await next();
   } catch (err) {
     if (err instanceof HTTPException) throw err;
     console.error('Auth error:', err);
+    auditLoginFail({ c, reason: 'auth_internal_error', authType: 'jwt' });
     throw new HTTPException(401, { message: 'Authentication failed' });
   }
 }
@@ -249,6 +354,7 @@ export async function combinedAuth(c: Context, next: Next) {
   }
 
   if (!token) {
+    auditLoginFail({ c, reason: 'missing_token' });
     throw new HTTPException(401, { message: 'Missing authentication token' });
   }
 
@@ -259,6 +365,7 @@ export async function combinedAuth(c: Context, next: Next) {
   if (isAccountToken(token)) {
     const patResult = await validateAccountToken(token);
     if (!patResult.isValid || !patResult.userId) {
+      auditLoginFail({ c, reason: patResult.error ?? 'invalid_pat', authType: 'pat' });
       throw new HTTPException(401, { message: patResult.error || 'Invalid PAT' });
     }
     if (patResult.projectId) {
@@ -273,6 +380,12 @@ export async function combinedAuth(c: Context, next: Next) {
     setContextField('userId', patResult.userId);
     if (patResult.accountId) setContextField('accountId', patResult.accountId);
     if (isPreviewRoute) setPreviewSessionCookie(c, token);
+    auditLoginSuccess({
+      c,
+      userId: patResult.userId,
+      accountId: patResult.accountId ?? null,
+      authType: 'pat',
+    });
     await next();
     return;
   }
@@ -281,12 +394,23 @@ export async function combinedAuth(c: Context, next: Next) {
   if (isKortixToken(token)) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
+      auditLoginFail({
+        c,
+        reason: result.error ?? 'invalid_kortix_token',
+        authType: 'apiKey',
+      });
       throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
     }
     if (previewSandboxId && !(await canAccessPreviewSandbox({
       previewSandboxId,
       accountId: result.accountId,
     }))) {
+      auditLoginFail({
+        c,
+        reason: 'preview_sandbox_not_authorized',
+        authType: 'apiKey',
+        accountId: result.accountId ?? null,
+      });
       throw new HTTPException(403, { message: 'Not authorized to access this sandbox' });
     }
     // Map accountId → userId so route handlers work unchanged
@@ -300,6 +424,13 @@ export async function combinedAuth(c: Context, next: Next) {
     setSentryUser({ id: result.accountId || 'unknown', accountId: result.accountId });
     setContextField('accountId', result.accountId || 'unknown');
     if (isPreviewRoute) setPreviewSessionCookie(c, token);
+    auditLoginSuccess({
+      c,
+      userId: result.accountId ?? 'unknown',
+      accountId: result.accountId ?? null,
+      authType: 'apiKey',
+      metadata: { api_key_type: result.type },
+    });
     await next();
     return;
   }
@@ -311,6 +442,12 @@ export async function combinedAuth(c: Context, next: Next) {
       previewSandboxId,
       userId: local.userId,
     }))) {
+      auditLoginFail({
+        c,
+        reason: 'preview_sandbox_not_authorized',
+        authType: 'jwt',
+        userId: local.userId,
+      });
       throw new HTTPException(403, { message: 'Not authorized to access this sandbox' });
     }
     c.set('userId', local.userId);
@@ -320,12 +457,19 @@ export async function combinedAuth(c: Context, next: Next) {
     setContextField('userId', local.userId);
     setContextField('userEmail', local.email);
     if (isPreviewRoute) setPreviewSessionCookie(c, token);
+    auditLoginSuccess({
+      c,
+      userId: local.userId,
+      authType: 'supabase',
+      metadata: { verify_path: 'local' },
+    });
     await next();
     return;
   }
 
   // Token is definitively bad (bad sig, expired, malformed) — reject immediately
   if (local.reason !== 'no-keys' && local.reason !== 'no-key-for-kid') {
+    auditLoginFail({ c, reason: `jwt_${local.reason}`, authType: 'jwt' });
     throw new HTTPException(401, { message: 'Invalid or expired token' });
   }
 
@@ -335,6 +479,11 @@ export async function combinedAuth(c: Context, next: Next) {
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
+      auditLoginFail({
+        c,
+        reason: error?.message ?? 'jwt_network_invalid',
+        authType: 'jwt',
+      });
       throw new HTTPException(401, { message: 'Invalid or expired token' });
     }
 
@@ -342,6 +491,12 @@ export async function combinedAuth(c: Context, next: Next) {
       previewSandboxId,
       userId: user.id,
     }))) {
+      auditLoginFail({
+        c,
+        reason: 'preview_sandbox_not_authorized',
+        authType: 'jwt',
+        userId: user.id,
+      });
       throw new HTTPException(403, { message: 'Not authorized to access this sandbox' });
     }
 
@@ -352,10 +507,17 @@ export async function combinedAuth(c: Context, next: Next) {
     setContextField('userId', user.id);
     setContextField('userEmail', user.email || '');
     if (isPreviewRoute) setPreviewSessionCookie(c, token);
+    auditLoginSuccess({
+      c,
+      userId: user.id,
+      authType: 'supabase',
+      metadata: { verify_path: 'network' },
+    });
     await next();
   } catch (err) {
     if (err instanceof HTTPException) throw err;
     console.error('[AUTH] Error:', err);
+    auditLoginFail({ c, reason: 'auth_internal_error', authType: 'jwt' });
     throw new HTTPException(401, { message: 'Authentication failed' });
   }
 }

@@ -90,10 +90,12 @@ import {
   PROJECT_ACTIONS,
   authorize,
   assertAuthorized,
+  listAccessibleResources,
   syncProjectMemberPolicy,
   removeProjectMemberPolicy,
   syncMemberAccountPolicy,
 } from '../iam';
+import { deriveRequestContext } from '../iam/cache';
 import {
   ensureBuildForLatestCommit,
   listSnapshotsForProject,
@@ -1088,13 +1090,23 @@ async function grantProjectRole(input: {
         updatedAt: now,
       },
     });
-  await syncProjectMemberPolicy({
-    accountId: input.accountId,
-    projectId: input.projectId,
-    userId: input.userId,
-    projectRole: input.role,
-    createdBy: input.grantedBy,
-  });
+
+  // Fold into IAM: mirror this grant as a project-scoped policy so the
+  // engine no longer needs the project_members bridge to see the role.
+  // Strict-mode accounts already ignore the bridge; this keeps non-strict
+  // accounts in sync too. Best-effort — the legacy row is the truth of
+  // record on conflict (sync failure logged but not propagated).
+  try {
+    await syncProjectMemberPolicy({
+      accountId: input.accountId,
+      projectId: input.projectId,
+      userId: input.userId,
+      projectRole: input.role,
+      createdBy: input.grantedBy,
+    });
+  } catch (err) {
+    console.warn('[projects] failed to mirror project member into IAM policy', err);
+  }
 }
 
 async function ensureOrgMembership(
@@ -1108,7 +1120,16 @@ async function ensureOrgMembership(
     .insert(accountMembers)
     .values({ userId, accountId, accountRole: 'member' })
     .onConflictDoNothing();
-  await syncMemberAccountPolicy({ accountId, userId, accountRole: 'member', createdBy: grantedBy });
+  try {
+    await syncMemberAccountPolicy({
+      accountId,
+      userId,
+      accountRole: 'member',
+      createdBy: grantedBy,
+    });
+  } catch (err) {
+    console.warn('[projects] failed to mirror account member into IAM policy', err);
+  }
   return 'member';
 }
 
@@ -1150,6 +1171,27 @@ async function resolveProjectAccount(c: Context, body?: Record<string, unknown>)
     accountId: membership.accountId,
     accountRole: membership.accountRole as AccountRole,
   };
+}
+
+// Maps the high-level project access action onto the IAM action key
+// the engine recognises. Keep this narrow — these three labels cover
+// every gate this file uses; bespoke actions (project.trigger.fire,
+// project.deploy, project.secrets.write, etc.) should call authorize()
+// directly with the exact action.
+function iamActionForProjectAccess(action: ProjectAccessAction): string {
+  switch (action) {
+    case 'read':
+      return 'project.read';
+    case 'write':
+      return 'project.write';
+    case 'manage':
+      // 'manage' historically meant "admin-tier write" — covers triggers,
+      // secrets, snapshots, CLI tokens, etc. Map to project.write (which
+      // Project Editor has) so editors aren't accidentally locked out.
+      // Routes that need the stricter `project.members.manage` gate add
+      // an explicit assertAuthorized() on top of loadProjectForUser.
+      return 'project.write';
+  }
 }
 
 async function resolveGitHubImport(input: {
@@ -1300,12 +1342,6 @@ async function registerGitHubLinkedProject(input: {
   return row;
 }
 
-const LEGACY_ACTION_TO_IAM: Record<ProjectAccessAction, string> = {
-  read: PROJECT_ACTIONS.PROJECT_READ,
-  write: PROJECT_ACTIONS.PROJECT_WRITE,
-  manage: PROJECT_ACTIONS.PROJECT_DELETE,
-};
-
 async function loadProjectForUser(c: Context, projectId: string, action: ProjectAccessAction) {
   const userId = c.get('userId') as string;
   const [row] = await db
@@ -1322,21 +1358,38 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
 
   const accountRole = membership.accountRole as AccountRole;
   const projectRole = await getProjectMemberRole(projectId, userId);
-  const effectiveRole = effectiveProjectRole(accountRole, projectRole);
 
-  // Route project access through the IAM engine (bridges account_role +
-  // project_members; PAT-scoped policies evaluated when present).
-  const actingTokenId = (c as any).get('iamTokenId') as string | undefined;
-  const result = await authorize(
+  // Ask the IAM engine for the real verdict. The engine consults
+  // super-admin bypass, direct + group policies, project_groups, AND
+  // the legacy account_role / project_members bridges (in non-strict
+  // mode), so it's strictly a superset of the old role-only check.
+  // Passing requestCtx is required for IP-allowlist / require-MFA
+  // policy conditions to evaluate against the current request.
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
+      | string
+      | undefined) ?? undefined;
+  const requestCtx = deriveRequestContext(c);
+  const verdict = await authorize(
     userId,
     row.accountId,
-    LEGACY_ACTION_TO_IAM[action],
+    iamActionForProjectAccess(action),
     { type: 'project', id: projectId },
     actingTokenId,
+    requestCtx,
   );
-  if (!result.allowed) {
+  if (!verdict.allowed) {
     throw new HTTPException(403, { message: 'You do not have access to this project' });
   }
+
+  // effectiveRole label for the UI / downstream helpers. The engine
+  // doesn't hand back a role — it answers yes/no. Mirror the prior
+  // mapping so any code reading effectiveRole still gets sensible
+  // labels: owner/admin → manager, explicit project_members row →
+  // that role, otherwise → 'viewer' (the engine permitted read but
+  // we don't know the exact tier).
+  const effectiveRole =
+    effectiveProjectRole(accountRole, projectRole) ?? 'viewer';
   (c as any).set('accountId', row.accountId);
 
   return {
@@ -2139,20 +2192,35 @@ export function stopProjectTriggerScheduler(): void {
 // GET /v1/projects
 projectsApp.get('/', async (c) => {
   const scope = await resolveProjectAccount(c);
+  // Reach through `any` for non-typed context keys set by the auth
+  // middleware (the AppEnv only types userId/userEmail).
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
+      | string
+      | undefined) ?? undefined;
+  const requestCtx = deriveRequestContext(c);
 
-  if (isAccountManager(scope.accountRole)) {
-    const rows = await db
-      .select()
-      .from(projects)
-      .where(and(eq(projects.accountId, scope.accountId), eq(projects.status, 'active')))
-      .orderBy(desc(projects.updatedAt));
+  // Ask the IAM engine which projects the caller can READ. Returns one
+  // of: { mode: 'all' } | { mode: 'none' } | { mode: 'all_except' } |
+  // { mode: 'allow_only' }. The engine handles super-admin bypass,
+  // legacy owner/admin/member bridges, project_members rows, group
+  // policies, project_group expansion, conditions, expiry — everything.
+  const accessible = await listAccessibleResources(
+    scope.userId,
+    scope.accountId,
+    'project.read',
+    'project',
+    actingTokenId,
+    requestCtx,
+  );
 
-    return c.json(rows.map((row) => serializeProject(row, {
-      projectRole: null,
-      effectiveRole: 'manager',
-    })));
-  }
+  if (accessible.mode === 'none') return c.json([]);
 
+  // Build the project rows + per-row project_members metadata used by
+  // the UI to label effective_role. We still consult project_members
+  // because the IAM engine bridges it into authorize() but doesn't
+  // hand the per-row role back here — and the UI wants the original
+  // manager/editor/viewer label, not just "allowed".
   const grants = await db
     .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
     .from(projectMembers)
@@ -2160,33 +2228,60 @@ projectsApp.get('/', async (c) => {
       eq(projectMembers.accountId, scope.accountId),
       eq(projectMembers.userId, scope.userId),
     ));
+  const roleByProject = new Map(
+    grants.map((g) => [g.projectId, g.projectRole as ProjectRole]),
+  );
 
-  if (grants.length === 0) return c.json([]);
+  const baseWhere = and(
+    eq(projects.accountId, scope.accountId),
+    eq(projects.status, 'active'),
+  );
 
-  const roleByProject = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
-  const rows = await db
-    .select()
-    .from(projects)
-    .where(and(
-      eq(projects.accountId, scope.accountId),
-      eq(projects.status, 'active'),
-      inArray(projects.projectId, grants.map((g) => g.projectId)),
-    ))
-    .orderBy(desc(projects.updatedAt));
+  let rows: Array<typeof projects.$inferSelect>;
+  if (accessible.mode === 'all') {
+    rows = await db.select().from(projects).where(baseWhere).orderBy(desc(projects.updatedAt));
+  } else if (accessible.mode === 'allow_only') {
+    if (accessible.allowed.size === 0) return c.json([]);
+    rows = await db
+      .select()
+      .from(projects)
+      .where(and(baseWhere, inArray(projects.projectId, [...accessible.allowed])))
+      .orderBy(desc(projects.updatedAt));
+  } else {
+    // all_except — fetch everything, then filter denied ids in-memory.
+    // For account sizes well under a few thousand projects this beats a
+    // NOT IN (…) query that the planner often handles poorly.
+    const all = await db
+      .select()
+      .from(projects)
+      .where(baseWhere)
+      .orderBy(desc(projects.updatedAt));
+    rows = all.filter((r) => !accessible.denied.has(r.projectId));
+  }
 
-  return c.json(rows.map((row) => {
-    const projectRole = roleByProject.get(row.projectId) ?? null;
-    return serializeProject(row, {
-      projectRole,
-      effectiveRole: projectRole ?? 'viewer',
-    });
-  }));
+  // Heuristic for effective_role label (UI only, NOT auth):
+  //   - account-manager → 'manager' (legacy owner/admin gets full label)
+  //   - explicit project_members row → that role
+  //   - otherwise → 'viewer' (engine allowed read but we don't know the
+  //     exact role; safe minimum for UI affordances)
+  const accountManager = isAccountManager(scope.accountRole);
+  return c.json(
+    rows.map((row) => {
+      const projectRole = roleByProject.get(row.projectId) ?? null;
+      const effectiveRole = accountManager
+        ? 'manager'
+        : projectRole ?? 'viewer';
+      return serializeProject(row, { projectRole, effectiveRole });
+    }),
+  );
 });
 
 // POST /v1/projects
 projectsApp.post('/', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
+  // IAM-gated. Engine consults super-admin bypass, direct + group
+  // policies, and legacy owner/admin bridges (in non-strict mode).
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   let repoUrl: string | null;
@@ -2896,9 +2991,8 @@ projectsApp.post('/:projectId/cli-token', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  // Authorization is enforced by loadProjectForUser(... 'manage') above,
+  // which routes through the IAM engine (project.write).
 
   // One body field: `name`. Defaults to "cli · <project name>".
   let body: { name?: unknown } = {};
@@ -2940,9 +3034,7 @@ projectsApp.delete('/:projectId/cli-token/:tokenId', async (c) => {
   const tokenId = c.req.param('tokenId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  // Authorization is enforced by loadProjectForUser(... 'manage') above.
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
   return c.json({ ok: true });
@@ -3029,9 +3121,7 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  if (!(await authorize(loaded.userId, loaded.row.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed) {
-    return c.json({ error: 'Owner or admin role required' }, 403);
-  }
+  // Authorization is enforced by loadProjectForUser(... 'manage') above.
 
   const gitAuth = await resolveProjectGitAuth(loaded.row);
 
@@ -3532,6 +3622,8 @@ projectsApp.post('/:projectId/triggers', async (c) => {
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Specific IAM gate so the audit trail records the precise action.
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE, { type: 'project', id: projectId });
 
   const draft = parseTriggerDraft(body, { existingSlug: null });
   if ('error' in draft) return c.json({ error: draft.error }, 400);
@@ -3565,6 +3657,7 @@ projectsApp.patch('/:projectId/triggers/:slug', async (c) => {
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE, { type: 'project', id: projectId });
 
   let manifest: ParsedManifest;
   try {
@@ -3598,6 +3691,7 @@ projectsApp.delete('/:projectId/triggers/:slug', async (c) => {
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_TRIGGER_DELETE, { type: 'project', id: projectId });
 
   if (!/^[a-z0-9][a-z0-9_-]{0,127}$/.test(slug)) {
     return c.json({ error: 'Invalid slug' }, 400);
@@ -4469,6 +4563,10 @@ projectsApp.delete('/:projectId', async (c) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Deletion is admin-only. Project Editor explicitly excludes
+  // project.delete; loadProjectForUser('manage') would otherwise let
+  // editors through via project.write.
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_DELETE, { type: 'project', id: projectId });
 
   const [row] = await db
     .update(projects)
@@ -4605,6 +4703,10 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
   const targetUserId = c.req.param('userId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  // Member management is admin-only; loadProjectForUser('manage') now
+  // resolves to project.write (editor-tier), so we add an explicit
+  // stricter gate here.
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
 
   const body = await readBody(c);
   const role = parseProjectRole(body.role);
@@ -4623,7 +4725,12 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
         eq(projectMembers.projectId, projectId),
         eq(projectMembers.userId, targetUserId),
       ));
-    await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId);
+    // Mirror the delete into IAM — owners/admins get implicit access
+    // through the account-scope policy from syncMemberAccountPolicy, so
+    // the per-project policy is redundant noise.
+    await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId).catch(
+      (err) => console.warn('[projects] failed to drop IAM mirror', err),
+    );
 
     return c.json({
       user_id: targetUserId,
@@ -4657,6 +4764,7 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
   const targetUserId = c.req.param('userId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertAuthorized(loaded.userId, loaded.row.accountId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE, { type: 'project', id: projectId });
 
   const targetMembership = await getAccountMembership(targetUserId, loaded.row.accountId);
   if (!targetMembership) {
@@ -4674,7 +4782,10 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
       eq(projectMembers.projectId, projectId),
       eq(projectMembers.userId, targetUserId),
     ));
-  await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId);
+  // Drop the mirrored IAM policy too so both sources agree.
+  await removeProjectMemberPolicy(loaded.row.accountId, projectId, targetUserId).catch(
+    (err) => console.warn('[projects] failed to drop IAM mirror', err),
+  );
 
   return c.json({ ok: true });
 });
@@ -4839,31 +4950,27 @@ projectsApp.post('/sync-opencode-titles', async (c) => {
     .where(inArray(projectSessions.opencodeSessionId, ids));
   if (rows.length === 0) return c.json({ updated: 0 });
 
-  const accountIds = Array.from(new Set(rows.map((r) => r.accountId)));
-  const projectIds = Array.from(new Set(rows.map((r) => r.projectId)));
-  const memberships = await db
-    .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(and(
-      eq(accountMembers.userId, userId),
-      inArray(accountMembers.accountId, accountIds),
-    ));
-  const accountRoleById = new Map(memberships.map((m) => [m.accountId, m.accountRole as AccountRole]));
-  const grants = await db
-    .select({ projectId: projectMembers.projectId, projectRole: projectMembers.projectRole })
-    .from(projectMembers)
-    .where(and(
-      eq(projectMembers.userId, userId),
-      inArray(projectMembers.projectId, projectIds),
-    ));
-  const projectRoleById = new Map(grants.map((g) => [g.projectId, g.projectRole as ProjectRole]));
+  // Per-row IAM authz. The engine answers from a per-request cache
+  // (see iam/cache.ts) so duplicate (account, project) probes collapse
+  // to a single SQL pass — N rows over K distinct projects = K
+  // authorize() calls, not N.
+  const requestCtx = deriveRequestContext(c);
+  const actingTokenId =
+    ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
+      | string
+      | undefined) ?? undefined;
 
   let updated = 0;
   for (const row of rows) {
-    const accountRole = accountRoleById.get(row.accountId);
-    if (!accountRole) continue;
-    const projectRole = projectRoleById.get(row.projectId) ?? null;
-    if (!roleAllows(effectiveProjectRole(accountRole, projectRole), 'write')) continue;
+    const verdict = await authorize(
+      userId,
+      row.accountId,
+      PROJECT_ACTIONS.PROJECT_WRITE,
+      { type: 'project', id: row.projectId },
+      actingTokenId,
+      requestCtx,
+    );
+    if (!verdict.allowed) continue;
     const ocId = row.opencodeSessionId;
     if (!ocId) continue;
     const desired = desiredByOcId.get(ocId) ?? null;

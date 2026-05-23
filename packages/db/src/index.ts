@@ -128,6 +128,26 @@ export {
   iamRolesRelations,
   iamRolePermissionsRelations,
   iamPoliciesRelations,
+  // SCIM
+  scimTokens,
+  // Audit webhooks
+  auditWebhooks,
+  // SAML SSO
+  accountSsoProviders,
+  accountSsoGroupMappings,
+  // Session policy
+  accountSessionActivity,
+  // Approval workflows
+  iamApprovalRequests,
+  // Permission usage analytics
+  iamActionUsage,
+  // Resource groups (project groups)
+  projectGroups,
+  projectGroupMembers,
+  // Service accounts
+  serviceAccounts,
+  // Break-glass emergency access
+  iamBreakGlassGrants,
 } from './schema/kortix';
 
 export type {

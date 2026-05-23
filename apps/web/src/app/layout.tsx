@@ -263,7 +263,14 @@ export default async function RootLayout({
         />
       </head>
 
-      <body translate="no" className="notranslate antialiased font-sans bg-background">
+      {/* suppressHydrationWarning silences Grammarly et al. injecting
+          `data-gr-*` attributes onto <body> before React hydrates. The
+          warning is purely cosmetic but pollutes the dev overlay. */}
+      <body
+        translate="no"
+        className="notranslate antialiased font-sans bg-background"
+        suppressHydrationWarning
+      >
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

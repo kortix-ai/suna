@@ -87,7 +87,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
 
   if (error) {
     return (
-      <div className="py-2 px-2 text-[11px] text-destructive/80">
+      <div className="py-2 px-2 text-[11px] text-red-600 dark:text-red-400">
         Failed to load sessions
       </div>
     );

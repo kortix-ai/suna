@@ -51,7 +51,7 @@ function CrListItem({
   return (
     <button
       onClick={onSelect}
-      className="group flex items-start gap-3 w-full px-3 py-2.5 text-left hover:bg-muted/40 transition-colors border-l-2 border-l-transparent"
+      className="group flex items-start gap-3 w-full px-3 py-2.5 text-left cursor-pointer hover:bg-muted/40 transition-colors border-l-2 border-l-transparent"
     >
       <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted/40">
         <CrIcon status={cr.status} />

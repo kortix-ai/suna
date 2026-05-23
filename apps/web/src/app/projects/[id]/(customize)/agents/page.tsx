@@ -514,8 +514,8 @@ function ErrorNotice({
 }) {
   return (
     <div className="px-3 py-4">
-      <p className="text-[12.5px] font-medium text-destructive">Failed to load</p>
-      <p className="mt-1 text-[11px] text-destructive/80">{message}</p>
+      <p className="text-[12.5px] font-medium text-red-600 dark:text-red-400">Failed to load</p>
+      <p className="mt-1 text-[11px] text-red-600/80 dark:text-red-400/80">{message}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onRetry}>
         Retry
       </Button>

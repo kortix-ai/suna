@@ -53,6 +53,12 @@ export interface AccountMember {
   is_super_admin?: boolean;
   explicit_project_count?: number;
   groups?: AccountMemberGroup[];
+  /** Number of active CLI Personal Access Tokens this user owns in
+   *  this account. Lets the UI flag members with API automation. */
+  active_pat_count?: number;
+  /** True when the user has at least one verified MFA factor in
+   *  Supabase Auth. */
+  has_verified_mfa?: boolean;
   joined_at: string;
 }
 
