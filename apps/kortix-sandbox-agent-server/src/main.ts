@@ -1,9 +1,10 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { loadConfig, resolveOpencodeConfigDir } from './config'
+import { loadConfig, resolveOpencodeConfigDir, type Config } from './config'
 import { materializeRepo } from './git'
 import { logger } from './logger'
 import { createOpencodeSupervisor, waitForOpencodeReady } from './opencode'
+import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
 import { startProxy } from './proxy'
 import type { SandboxBootState } from './routes/health'
 import { installShutdownHandlers } from './shutdown'
@@ -63,6 +64,13 @@ async function main() {
     const ready = await waitForOpencodeReady(opencode)
     if (ready) {
       logger.info('[boot] opencode ready', { opencodePid: opencode.getPid() })
+      startOpencodeEventLoop(opencode, cfg, {
+        onQuestionAsked: (req) => {
+          void relayQuestionToApi(req, cfg).catch((err) =>
+            logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
+          )
+        },
+      })
       await maybeDeliverInitialPrompt(cfg.opencodeInternalPort).catch((err) => {
         logger.warn('[boot] initial prompt delivery failed', err)
       })
@@ -98,6 +106,7 @@ async function maybeDeliverInitialPrompt(opencodePort: number): Promise<void> {
   const session = (await sessionRes.json()) as { id?: string }
   if (!session.id) throw new Error('opencode session create returned no id')
 
+  const model = resolveOpencodeModel()
   const promptRes = await fetch(
     `${baseUrl}/session/${session.id}/prompt_async?directory=${encodeURIComponent(workspace)}`,
     {
@@ -105,6 +114,7 @@ async function maybeDeliverInitialPrompt(opencodePort: number): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         parts: [{ type: 'text', text: prompt }],
+        ...(model ? { model } : {}),
       }),
       signal: AbortSignal.timeout(15_000),
     },
@@ -119,6 +129,87 @@ async function maybeDeliverInitialPrompt(opencodePort: number): Promise<void> {
     logger.warn('[boot] failed to pin opencode session id', err)
   }
   logger.info('[boot] initial prompt delivered', { sessionId: session.id })
+}
+
+// Relay an opencode question.asked event to apps/api. apps/api blocks until
+// the user submits the Slack form, returns the captured `answers: string[][]`.
+// We then POST those answers to opencode's /question/{id}/reply so the agent
+// resumes naturally — same flow the dashboard uses, just over Slack.
+async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
+  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
+  const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
+  if (!projectId || !sessionId || !token || !apiUrl) {
+    logger.warn('[opencode-events] missing env to relay question', {
+      hasProject: !!projectId, hasSession: !!sessionId, hasToken: !!token, hasApi: !!apiUrl,
+    })
+    return
+  }
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-question`
+  logger.info('[opencode-events] relaying question.asked', {
+    requestId: req.id, questions: req.questions.length,
+  })
+  let answers: string[][] | null = null
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        session_id: sessionId,
+        request_id: req.id,
+        opencode_session_id: req.sessionID,
+        questions: req.questions,
+      }),
+      signal: AbortSignal.timeout(15 * 60_000),
+    })
+    if (!res.ok) {
+      const body = (await res.text()).slice(0, 300)
+      logger.warn('[opencode-events] turn-question relay non-ok', { status: res.status, body })
+      return
+    }
+    const data = (await res.json()) as { ok?: boolean; answers?: string[][] }
+    if (!data.ok || !Array.isArray(data.answers)) {
+      logger.warn('[opencode-events] turn-question malformed response', data)
+      return
+    }
+    answers = data.answers
+  } catch (err) {
+    logger.warn('[opencode-events] turn-question fetch failed', { err: (err as Error).message })
+    return
+  }
+
+  // Post the answers back into opencode so the question tool resumes.
+  const replyUrl = `http://127.0.0.1:${cfg.opencodeInternalPort}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
+  try {
+    const r = await fetch(replyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!r.ok) {
+      logger.warn('[opencode-events] opencode question.reply non-ok', {
+        status: r.status, body: (await r.text()).slice(0, 300),
+      })
+      return
+    }
+    logger.info('[opencode-events] question replied to opencode', { requestId: req.id })
+  } catch (err) {
+    logger.warn('[opencode-events] opencode question.reply failed', { err: (err as Error).message })
+  }
+}
+
+/** Per-session model override from KORTIX_OPENCODE_MODEL (provider/model form,
+ *  e.g. `anthropic/claude-sonnet-4-6`). Returned in opencode's
+ *  `{ providerID, modelID }` shape, or undefined when unset/malformed so
+ *  opencode falls back to its configured default. */
+export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
+  const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
+  const slash = raw.indexOf('/')
+  if (slash <= 0 || slash === raw.length - 1) return undefined
+  return { providerID: raw.slice(0, slash), modelID: raw.slice(slash + 1) }
 }
 
 /** Read the pinned opencode session id (set at boot when KORTIX_INITIAL_PROMPT

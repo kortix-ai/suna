@@ -156,7 +156,6 @@ export async function supabaseAuth(c: Context, next: Next) {
       auditLoginFail({ c, reason: result.error ?? 'invalid_pat', authType: 'pat' });
       throw new HTTPException(401, { message: result.error || 'Invalid PAT' });
     }
-    // Project-scoped tokens: enforce the URL's :projectId matches.
     if (result.projectId) {
       enforceTokenProjectScope(c, result.projectId);
     }
@@ -165,9 +164,6 @@ export async function supabaseAuth(c: Context, next: Next) {
     c.set('authType', 'pat');
     if (result.accountId) c.set('accountId', result.accountId);
     if (result.projectId) c.set('tokenProjectId', result.projectId);
-    // Token identity for the IAM engine. When the PAT has narrowing
-    // policies attached, authorize() evaluates only the token's policies
-    // instead of inheriting the minter's permissions.
     if (result.tokenId) c.set('iamTokenId', result.tokenId);
     setSentryUser({ id: result.userId, accountId: result.accountId });
     setContextField('userId', result.userId);
@@ -183,13 +179,18 @@ export async function supabaseAuth(c: Context, next: Next) {
     return;
   }
 
-  if (isKortixToken(token) && c.req.path.endsWith('/git/clone-credential')) {
+  const path = c.req.path;
+  const sandboxTokenPathAllowed =
+    path.endsWith('/git/clone-credential') ||
+    path.endsWith('/turn-stream') ||
+    path.endsWith('/turn-question');
+  if (isKortixToken(token) && sandboxTokenPathAllowed) {
     const result = await validateSecretKey(token);
     if (!result.isValid) {
       throw new HTTPException(401, { message: result.error || 'Invalid Kortix token' });
     }
     if (result.type !== 'sandbox' || !result.sandboxId) {
-      throw new HTTPException(403, { message: 'Clone credentials require a sandbox token' });
+      throw new HTTPException(403, { message: 'This route requires a sandbox token' });
     }
     c.set('userId', result.accountId || '');
     c.set('userEmail', '');

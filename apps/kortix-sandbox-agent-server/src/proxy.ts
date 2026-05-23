@@ -7,6 +7,7 @@ import { isRepoMaterialized } from './git'
 import { createHealthRouter, type SandboxBootState } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
 import { createPromptRouter } from './routes/prompt'
+import { createAbortRouter } from './routes/abort'
 import { createPortProxyRouter } from './routes/port-proxy'
 import webProxyRouter from './routes/web-proxy'
 import {
@@ -40,12 +41,15 @@ export function buildOpencodeApp(
   const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState)
   const refreshRouter = createRefreshRouter(cfg, opencode)
   const promptRouter = createPromptRouter(cfg)
+  const abortRouter = createAbortRouter(cfg)
   kortixRouter.route('/health', healthRouter)
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
   kortixRouter.route('/refresh/', refreshRouter)
   kortixRouter.route('/prompt', promptRouter)
   kortixRouter.route('/prompt/', promptRouter)
+  kortixRouter.route('/abort', abortRouter)
+  kortixRouter.route('/abort/', abortRouter)
 
   app.route('/kortix', kortixRouter)
 

@@ -147,6 +147,9 @@ import {
   loadSlackInstall,
   saveSlackInstall,
 } from '../channels/install-store';
+import { relayTurnStep, relayTurnAnswer, postQuestionAndWait, type QuestionInfo } from '../channels/slack-webhook';
+import { buildSlackInstallUrl } from '../channels/slack-oauth';
+import { slackOauthMode } from '../channels/slack-oauth-mode';
 import {
   buildDeploymentRequest,
   deployAppSpec,
@@ -1410,11 +1413,15 @@ async function buildSessionSandboxEnvVars(input: {
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
+  opencodeModel?: string | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
   // then reused by the daemon for both API calls and proxy HMAC validation.
   const runtimeSecrets = await listProjectSecrets(input.projectId);
+  // The Slack signing secret only verifies inbound webhooks (an apps/api job).
+  // The in-sandbox agent never needs it — keep it out of the sandbox env.
+  delete runtimeSecrets.SLACK_SIGNING_SECRET;
   return {
     ...runtimeSecrets,
     KORTIX_PROJECT_AUTO_CLONE: '1',
@@ -1428,6 +1435,9 @@ async function buildSessionSandboxEnvVars(input: {
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: deriveKortixApiBase(),
     ...(input.initialPrompt ? { KORTIX_INITIAL_PROMPT: input.initialPrompt } : {}),
+    // Per-session model override (e.g. Slack turns pin a specific model).
+    // The sandbox agent reads this and sets it on every opencode prompt call.
+    ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
   };
 }
 
@@ -1442,6 +1452,7 @@ export async function createProjectSession(input: {
   body: Record<string, unknown>;
   enforceAccountCap?: boolean;
   metadata?: Record<string, unknown>;
+  extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
 }): Promise<{ row?: ProjectSessionRow; error?: SessionCreateError; headers?: Record<string, string> }> {
   const { project, userId, body } = input;
@@ -1492,12 +1503,14 @@ export async function createProjectSession(input: {
   }
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
+  const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
   const sessionName = normalizeString(body.name);
   const requestMetadata = normalizeJsonObject(body.metadata);
   const metadata = {
     ...requestMetadata,
     ...(sessionName ? { name: sessionName } : {}),
     ...(initialPrompt ? { initial_prompt: initialPrompt } : {}),
+    ...(opencodeModel ? { opencode_model: opencodeModel } : {}),
     ...(input.metadata ?? {}),
   };
 
@@ -1531,16 +1544,20 @@ export async function createProjectSession(input: {
   // status endpoint and shows the ConnectingScreen during the long tail.
   void (async () => {
     try {
-      const extraEnvVars = await buildSessionSandboxEnvVars({
-        accountId,
-        projectId,
-        sessionId,
-        userId,
-        repoUrl: project.repoUrl,
-        baseRef,
-        agentName,
-        initialPrompt,
-      });
+      const extraEnvVars = {
+        ...(await buildSessionSandboxEnvVars({
+          accountId,
+          projectId,
+          sessionId,
+          userId,
+          repoUrl: project.repoUrl,
+          baseRef,
+          agentName,
+          initialPrompt,
+          opencodeModel,
+        })),
+        ...(input.extraEnvVars ?? {}),
+      };
       await provisionSessionSandbox({
         sandboxId: sessionId,
         accountId,
@@ -3744,6 +3761,26 @@ projectsApp.get('/:projectId/channels/slack/installation', async (c) => {
   return c.json(install ?? null);
 });
 
+// GET /v1/projects/:projectId/channels/slack/mode
+// Tells the dashboard whether one-click "Add to Slack" is available (server
+// has SLACK_CLIENT_ID + SECRET + SIGNING_SECRET set) and the pre-signed
+// install URL to redirect the user to.
+projectsApp.get('/:projectId/channels/slack/mode', async (c) => {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const mode = slackOauthMode();
+  if (!mode.available) {
+    return c.json({ oauth_available: false, install_url: null });
+  }
+  try {
+    const installUrl = buildSlackInstallUrl(projectId, loaded.userId);
+    return c.json({ oauth_available: true, install_url: installUrl });
+  } catch {
+    return c.json({ oauth_available: false, install_url: null });
+  }
+});
+
 // POST /v1/projects/:projectId/channels/slack/connect
 projectsApp.post('/:projectId/channels/slack/connect', async (c) => {
   const projectId = c.req.param('projectId');
@@ -3800,6 +3837,161 @@ projectsApp.delete('/:projectId/channels/slack/installation', async (c) => {
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await deleteSlackInstall(projectId);
   return c.json({ status: 'disconnected' });
+});
+
+// POST /v1/projects/:projectId/turn-stream
+// Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
+// kind=answer finalizes the turn's streamed message with the agent's reply.
+projectsApp.post('/:projectId/turn-stream', async (c) => {
+  const projectId = c.req.param('projectId');
+
+  // Two valid callers: a project-scoped PAT (dashboard or operator) and the
+  // session sandbox's own KORTIX_TOKEN (so the in-sandbox agent CLI can relay
+  // its plan steps without a second token). Each is scoped to one projectId.
+  const authType = (c as any).get('authType') as string | undefined;
+  if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    const accountId = (c as any).get('accountId') as string | undefined;
+    const sandboxId = (c as any).get('sandboxId') as string | undefined;
+    if (!accountId || !sandboxId) {
+      return c.json({ error: 'turn-stream requires a sandbox token' }, 403);
+    }
+    const [sandbox] = await db
+      .select({ sandboxId: sessionSandboxes.sandboxId })
+      .from(sessionSandboxes)
+      .where(and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        eq(sessionSandboxes.projectId, projectId),
+        eq(sessionSandboxes.accountId, accountId),
+        inArray(sessionSandboxes.status, ['provisioning', 'active']),
+      ))
+      .limit(1);
+    if (!sandbox) {
+      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+    }
+  } else {
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+  }
+
+  let body: {
+    session_id?: string;
+    kind?: string;
+    text?: string;
+    detail?: string;
+    output?: string;
+    sources?: Array<{ url?: string; text?: string }>;
+    blocks?: unknown[];
+  };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const sessionId = body.session_id?.trim();
+  const text = (body.text ?? '').trim();
+  if (!sessionId || !text) {
+    return c.json({ error: 'session_id and text are required' }, 400);
+  }
+
+  const detail = body.detail?.trim() || undefined;
+  const outputForPrev = body.output?.trim() || undefined;
+  const sourcesForPrev = Array.isArray(body.sources)
+    ? body.sources
+        .filter((s): s is { url: string; text: string } => !!s?.url && !!s?.text)
+        .map((s) => ({ url: s.url, text: s.text }))
+    : undefined;
+  const blocks = Array.isArray(body.blocks) && body.blocks.length > 0 ? body.blocks : undefined;
+
+  const ok =
+    body.kind === 'answer'
+      ? await relayTurnAnswer(sessionId, text, blocks)
+      : await relayTurnStep(sessionId, text, { detail, outputForPrev, sourcesForPrev });
+  return c.json({ ok });
+});
+
+// POST /v1/projects/:projectId/turn-question
+// Sandbox-to-apps/api relay for opencode's `question.asked` event. The
+// sandbox subscribes to opencode's SSE stream; when the agent calls the
+// built-in `question` tool, the sandbox relays the QuestionInfo[] here.
+// We post a Block Kit form, block on Submit, return `answers: string[][]`,
+// and the sandbox POSTs the same payload to opencode's
+// /question/{requestID}/reply so the tool resumes.
+projectsApp.post('/:projectId/turn-question', async (c) => {
+  const projectId = c.req.param('projectId');
+
+  const authType = (c as any).get('authType') as string | undefined;
+  if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    const accountId = (c as any).get('accountId') as string | undefined;
+    const sandboxId = (c as any).get('sandboxId') as string | undefined;
+    if (!accountId || !sandboxId) {
+      return c.json({ error: 'turn-question requires a sandbox token' }, 403);
+    }
+    const [sandbox] = await db
+      .select({ sandboxId: sessionSandboxes.sandboxId })
+      .from(sessionSandboxes)
+      .where(and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        eq(sessionSandboxes.projectId, projectId),
+        eq(sessionSandboxes.accountId, accountId),
+        inArray(sessionSandboxes.status, ['provisioning', 'active']),
+      ))
+      .limit(1);
+    if (!sandbox) {
+      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
+    }
+  } else {
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+  }
+
+  let body: {
+    session_id?: string;
+    request_id?: string;
+    questions?: unknown[];
+  };
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const sessionId = body.session_id?.trim();
+  if (!sessionId) {
+    return c.json({ error: 'session_id is required' }, 400);
+  }
+  if (!Array.isArray(body.questions) || body.questions.length === 0) {
+    return c.json({ error: 'at least one question is required' }, 400);
+  }
+
+  // Validate + coerce to QuestionInfo[]. Tolerate the v2 SDK schema variants.
+  const questions: QuestionInfo[] = [];
+  for (const q of body.questions) {
+    if (!q || typeof q !== 'object') continue;
+    const obj = q as Record<string, unknown>;
+    const question = String(obj.question ?? '').trim();
+    if (!question) continue;
+    const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
+    const options = optionsRaw
+      .map((o) => (o && typeof o === 'object' ? (o as Record<string, unknown>) : null))
+      .filter((o): o is Record<string, unknown> => !!o && typeof o.label === 'string')
+      .map((o) => ({
+        label: String(o.label),
+        description: typeof o.description === 'string' ? String(o.description) : undefined,
+      }));
+    questions.push({
+      question,
+      header: obj.header ? String(obj.header) : undefined,
+      options,
+      multiple: !!obj.multiple,
+      custom: obj.custom === false ? false : true,
+    });
+  }
+  if (questions.length === 0) {
+    return c.json({ error: 'no valid questions provided' }, 400);
+  }
+
+  const result = await postQuestionAndWait(sessionId, questions);
+  if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
+  return c.json({ ok: true, ask_id: result.ask_id, answers: result.answers });
 });
 
 // POST /v1/projects/:projectId/triggers/:slug/fire
@@ -5089,6 +5281,9 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
   const initialPrompt = typeof session.metadata?.initial_prompt === 'string'
     ? session.metadata.initial_prompt as string
     : null;
+  const opencodeModel = typeof session.metadata?.opencode_model === 'string'
+    ? session.metadata.opencode_model as string
+    : null;
 
   // Best-effort tear down: remove the old external container and revoke its
   // sandbox keys. Failures are logged but don't block restart — a stuck row
@@ -5153,6 +5348,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
         baseRef: session.baseRef ?? loaded.row.defaultBranch,
         agentName: session.agentName ?? 'default',
         initialPrompt,
+        opencodeModel,
       });
       await provisionSessionSandbox({
         sandboxId: sessionId,
