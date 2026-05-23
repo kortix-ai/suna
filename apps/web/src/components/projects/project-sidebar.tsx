@@ -217,7 +217,16 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
-    refetchInterval: 5000,
+    staleTime: 10_000,
+    refetchInterval: (query) => {
+      const sessions = query.state.data as ProjectSession[] | undefined;
+      return (sessions ?? []).some((session) =>
+        ['queued', 'branching', 'provisioning'].includes(session.status),
+      )
+        ? 5_000
+        : false;
+    },
+    refetchOnWindowFocus: false,
   });
 
   const sessions = useMemo<ProjectSession[]>(() => {

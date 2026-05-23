@@ -42,6 +42,12 @@ interface ProjectSessionListProps {
   projectId: string;
 }
 
+const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = ['queued', 'branching', 'provisioning'];
+
+function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
+  return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
+}
+
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const pathname = usePathname();
   const queryClient = useQueryClient();
@@ -50,7 +56,10 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
-    refetchInterval: 5000,
+    staleTime: 10_000,
+    refetchInterval: (query) =>
+      shouldPollProjectSessions(query.state.data as ProjectSession[] | undefined) ? 5_000 : false,
+    refetchOnWindowFocus: false,
   });
 
   const deleteMutation = useMutation({
