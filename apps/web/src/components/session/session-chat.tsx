@@ -56,7 +56,7 @@ import {
 import { SessionWelcome } from '@/components/session/session-welcome';
 import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
 
-import { ToolPartRenderer } from '@/components/session/tool-renderers';
+import { ToolPartRenderer, ToolActivateContext } from '@/components/session/tool-renderers';
 import {
   contextToolSummary,
   contextToolTrigger,
@@ -129,6 +129,7 @@ import { ChatMinimap } from '@/components/session/chat-minimap';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { toast as sonnerToast } from 'sonner';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
   useMessageQueueStore,
   selectSessionItems,
@@ -3911,6 +3912,20 @@ export function SessionChat({
   const activeTabId = useTabStore((s) => s.activeTabId);
   const isActiveSessionTab = activeTabId === sessionId;
 
+  // Clicking a tool call in the chat opens the side panel (Actions view)
+  // focused on that tool's large preview — instead of expanding inline.
+  const focusToolCall = useKortixComputerStore((s) => s.focusToolCall);
+  const setSidePanelView = useSessionBrowserStore((s) => s.setView);
+  const handleToolActivate = useCallback(
+    (callID: string) => {
+      setSidePanelView(sessionId, 'actions');
+      focusToolCall(callID);
+    },
+    [sessionId, setSidePanelView, focusToolCall],
+  );
+  const toolActivate =
+    readOnly || disableToolNavigation ? null : handleToolActivate;
+
   // ---- Context modal ----
   const [contextModalOpen, setContextModalOpen] = useState(false);
 
@@ -6117,7 +6132,10 @@ export function SessionChat({
                   </div>
                 )}
 
-                {/* Turn-based message rendering */}
+                {/* Turn-based message rendering.
+                    ToolActivateContext makes inline tool rows open the side
+                    panel (Actions) focused on that tool, instead of expanding. */}
+                <ToolActivateContext.Provider value={toolActivate}>
                 {turns.map((turn, turnIndex) => {
                   // Check if this turn is a compaction summary
                   const hasCompaction =
@@ -6176,6 +6194,7 @@ export function SessionChat({
                     </div>
                   );
                 })}
+                </ToolActivateContext.Provider>
 
                 {/* Busy indicator when no turns yet but session is busy */}
                 {commandError && (

@@ -11,7 +11,7 @@ import { useTabStore, openTabAndNavigate } from '@/stores/tab-store';
 
 // Lazy-load terminal components to avoid SSR issues with xterm.js
 const SSHTerminal = dynamic(
-  () => import('@/components/thread/kortix-computer/components/SSHTerminal').then(mod => ({ default: mod.SSHTerminal })),
+  () => import('@/components/session/ssh-terminal').then(mod => ({ default: mod.SSHTerminal })),
   { ssr: false }
 );
 

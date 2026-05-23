@@ -1,11 +1,15 @@
 'use client';
 
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { type MessageWithParts, type ToolPart, isToolPart, shouldShowToolPart } from '@/ui';
-import { ToolPartRenderer } from './tool-renderers';
+import { ToolPartRenderer, ToolSurfaceContext } from './tool-renderers';
+import {
+  useFocusedToolCallId,
+  useClearFocusedToolCall,
+} from '@/stores/kortix-computer-store';
 
 /**
  * Flatten a session's messages into the ordered list of tool calls worth
@@ -101,6 +105,47 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
     setIndex(Math.max(0, count - 1));
   }, [count]);
 
+  // Jump to the tool the user clicked in the chat (focus by callID, robust to
+  // ordering). Pins manual mode so it doesn't immediately snap back to live.
+  const focusedToolCallId = useFocusedToolCallId();
+  const clearFocusedToolCall = useClearFocusedToolCall();
+  useEffect(() => {
+    if (!focusedToolCallId) return;
+    const i = parts.findIndex((p) => p.callID === focusedToolCallId);
+    if (i >= 0) {
+      setMode(i >= count - 1 ? 'live' : 'manual');
+      setIndex(i);
+    }
+    clearFocusedToolCall();
+  }, [focusedToolCallId, parts, count, clearFocusedToolCall]);
+
+  // Keyboard ←/→ steps through actions (ignored while typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (
+        el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.isContentEditable ||
+          el.closest('.cm-editor') ||
+          el.closest('.ProseMirror'))
+      ) {
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goPrev();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goNext();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [goPrev, goNext]);
+
   if (count === 0) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-center text-sm text-muted-foreground/70">
@@ -111,18 +156,20 @@ export const SessionActionsPanel = memo(function SessionActionsPanel({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Body — the focused tool, expanded and uncapped so it fills the panel.
+      {/* Body — the focused tool rendered in its large, panel-surface view.
           The `[data-scrollable]` override lifts the inline density caps that
-          ToolPartRenderer applies for the chat column. */}
+          ToolPartRenderer applies for the chat column so content fills here. */}
       <div
         key={current?.id}
         className={cn(
-          'flex-1 overflow-auto px-4 py-3',
+          'min-h-0 flex-1 overflow-auto',
           '[&_[data-scrollable]]:max-h-none [&_[data-scrollable]]:overflow-visible',
         )}
       >
         {current && (
-          <ToolPartRenderer part={current} sessionId={sessionId} defaultOpen />
+          <ToolSurfaceContext.Provider value="panel">
+            <ToolPartRenderer part={current} sessionId={sessionId} defaultOpen />
+          </ToolSurfaceContext.Provider>
         )}
       </div>
 

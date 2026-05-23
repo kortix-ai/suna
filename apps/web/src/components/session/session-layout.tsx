@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
-import { KortixComputer } from '@/components/thread/kortix-computer';
 import { PreviewTabContent } from '@/components/tabs/preview-tab-content';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
@@ -19,11 +18,7 @@ import {
 import {
   useKortixComputerStore,
 } from '@/stores/kortix-computer-store';
-import {
-  useOpenCodeMessages,
-  useOpenCodeSession,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useSyncStore } from '@/stores/opencode-sync-store';
+import { useOpenCodeMessages } from '@/hooks/opencode/use-opencode-sessions';
 import { useTabStore } from '@/stores/tab-store';
 import {
   sessionPreviewTabId,
@@ -32,9 +27,10 @@ import {
 } from '@/stores/session-browser-store';
 import { SessionFilesPanel } from '@/components/session/session-files-panel';
 import {
-  adaptMessagesToToolCalls,
-  adaptAgentStatus,
-} from '@/lib/adapters/opencode-to-kortix-computer';
+  SessionActionsPanel,
+  collectToolParts,
+} from '@/components/session/session-actions-panel';
+import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { X } from 'lucide-react';
 
 // ============================================================================
@@ -53,18 +49,6 @@ export const SessionLayout = memo(function SessionLayout({
   const isMobile = useIsMobile();
 
   const { data: messages } = useOpenCodeMessages(sessionId);
-  const { data: session } = useOpenCodeSession(sessionId);
-
-  const sessionStatus = useSyncStore(
-    (s) => s.sessionStatus[sessionId],
-  );
-  const isBusy = sessionStatus?.type === 'busy';
-
-  const toolCalls = useMemo(
-    () => (messages ? adaptMessagesToToolCalls(messages) : []),
-    [messages],
-  );
-  const agentStatus = adaptAgentStatus(isBusy);
 
   // Use individual selectors to avoid re-rendering on unrelated store changes
   // (e.g. currentSandboxId, files store resets). Destructuring the whole store
@@ -88,7 +72,10 @@ export const SessionLayout = memo(function SessionLayout({
     }
   }, [isActiveTab, sessionId, setActiveSession]);
 
-  const hasToolCalls = toolCalls.length > 0;
+  const hasToolCalls = useMemo(
+    () => collectToolParts(messages).length > 0,
+    [messages],
+  );
 
   // Right-side panel view — actions (tool calls) or internal browser.
   // Per-session, so each session remembers which view the user prefers.
@@ -105,13 +92,6 @@ export const SessionLayout = memo(function SessionLayout({
       clearShouldOpenPanel();
     }
   }, [shouldOpenPanel, isSidePanelOpen, setIsSidePanelOpen, clearShouldOpenPanel]);
-
-  const [currentToolIndex, setCurrentToolIndex] = useState(0);
-  const [externalNavIndex, setExternalNavIndex] = useState<number | undefined>(undefined);
-
-  const handleSidePanelNavigate = useCallback((index: number) => {
-    setCurrentToolIndex(index);
-  }, []);
 
   const handleSidePanelClose = useCallback(() => {
     if (isExpanded) toggleExpanded();
@@ -218,10 +198,26 @@ export const SessionLayout = memo(function SessionLayout({
     return () => cancelAnimationFrame(raf);
   }, [isAnimating, enablePanelTransition, isExpanded]);
 
-  const renderAssistantMessage = useCallback(() => null, []);
-  const renderToolResult = useCallback(() => null, []);
+  // Side-panel header switcher (Actions / Browser / Files) — shared by the
+  // mobile drawer and the desktop split panel.
+  const panelHeader = (
+    <PanelHeaderSwitcher
+      view={panelView}
+      onChangeView={(v) => setPanelView(sessionId, v)}
+      onClose={handleSidePanelClose}
+    />
+  );
 
-  const agentName = session?.title || 'OpenCode';
+  // The active side-panel body. "Actions" renders through the canonical
+  // ToolPartRenderer (via SessionActionsPanel) — the same handlers the chat
+  // uses — so there is exactly one tool-rendering implementation.
+  const panelBody = showBrowser ? (
+    <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
+  ) : showFiles ? (
+    <SessionFilesPanel />
+  ) : (
+    <SessionActionsPanel sessionId={sessionId} messages={messages} />
+  );
 
   // Mobile
   if (isMobile) {
@@ -230,21 +226,17 @@ export const SessionLayout = memo(function SessionLayout({
         <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
           {children}
         </div>
-        <KortixComputer
-          isOpen={isSidePanelOpen && hasToolCalls}
-          onClose={handleSidePanelClose}
-          toolCalls={toolCalls}
-          messages={[]}
-          agentStatus={agentStatus}
-          currentIndex={currentToolIndex}
-          onNavigate={handleSidePanelNavigate}
-          externalNavigateToIndex={externalNavIndex}
-          renderAssistantMessage={renderAssistantMessage}
-          renderToolResult={renderToolResult}
-          isLoading={false}
-          agentName={agentName}
-          disableInitialAnimation={true}
-        />
+        <Drawer
+          open={shouldShowPanel}
+          onOpenChange={(open) => {
+            if (!open) handleSidePanelClose();
+          }}
+        >
+          <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
+            {panelHeader}
+            <div className="min-h-0 flex-1 overflow-hidden">{panelBody}</div>
+          </DrawerContent>
+        </Drawer>
       </div>
     );
   }
@@ -286,9 +278,7 @@ export const SessionLayout = memo(function SessionLayout({
             )}
           />
 
-          {/* Side panel — dual purpose:
-                • view='actions' → KortixComputer (tool calls timeline)
-                • view='browser' → internal browser (PreviewTabContent)
+          {/* Side panel — Actions (tool calls) / Browser / Files.
               The user toggles between them via the header switcher. */}
           <ResizablePanel
             ref={sidePanelRef}
@@ -305,58 +295,7 @@ export const SessionLayout = memo(function SessionLayout({
               "h-full transition-[padding] duration-300 ease-out bg-background",
               isExpanded ? "p-0" : "pt-3 pb-6 pr-3 sm:pr-4 pl-1.5"
             )}>
-              {/* The header switcher is rendered once and shared across views;
-                  the body swaps between KortixComputer and the browser iframe. */}
-              {showBrowser ? (
-                <SidePanelFrame
-                  header={
-                    <PanelHeaderSwitcher
-                      view={panelView}
-                      onChangeView={(v) => setPanelView(sessionId, v)}
-                      onClose={handleSidePanelClose}
-                    />
-                  }
-                >
-                  <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
-                </SidePanelFrame>
-              ) : showFiles ? (
-                <SidePanelFrame
-                  header={
-                    <PanelHeaderSwitcher
-                      view={panelView}
-                      onChangeView={(v) => setPanelView(sessionId, v)}
-                      onClose={handleSidePanelClose}
-                    />
-                  }
-                >
-                  <SessionFilesPanel />
-                </SidePanelFrame>
-              ) : (
-                <KortixComputer
-                  isOpen={isSidePanelOpen && hasToolCalls}
-                  onClose={handleSidePanelClose}
-                  toolCalls={toolCalls}
-                  messages={[]}
-                  agentStatus={agentStatus}
-                  currentIndex={currentToolIndex}
-                  onNavigate={handleSidePanelNavigate}
-                  externalNavigateToIndex={externalNavIndex}
-                  renderAssistantMessage={renderAssistantMessage}
-                  renderToolResult={renderToolResult}
-                  isLoading={false}
-                  agentName={agentName}
-                  disableInitialAnimation={true}
-                  sidePanelRef={sidePanelRef}
-                  hideTopBar={true}
-                  headerSlot={
-                    <PanelHeaderSwitcher
-                      view={panelView}
-                      onChangeView={(v) => setPanelView(sessionId, v)}
-                      onClose={handleSidePanelClose}
-                    />
-                  }
-                />
-              )}
+              <SidePanelFrame header={panelHeader}>{panelBody}</SidePanelFrame>
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -447,8 +386,8 @@ function PanelTabButton({
   );
 }
 
-// Lightweight frame for the browser view so it has the same outer shape
-// (header + bordered card) that KortixComputer renders for the actions view.
+// Shared frame for every side-panel view (Actions / Browser / Files):
+// a bordered card with the header switcher on top and the view body below.
 function SidePanelFrame({
   header,
   children,

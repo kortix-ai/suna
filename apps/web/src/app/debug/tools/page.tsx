@@ -1,7 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { ToolPartRenderer } from '@/components/session/tool-renderers';
+import {
+  ToolPartRenderer,
+  ToolActivateContext,
+} from '@/components/session/tool-renderers';
+import { SessionActionsPanel } from '@/components/session/session-actions-panel';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 /**
  * /debug/tools
@@ -254,6 +259,7 @@ const GROUPS: Group[] = [
 
 export default function DebugToolsPage() {
   const [open, setOpen] = useState(true);
+  const focusToolCall = useKortixComputerStore((s) => s.focusToolCall);
 
   return (
     <div className="min-h-screen w-full bg-background text-foreground">
@@ -273,33 +279,58 @@ export default function DebugToolsPage() {
         </button>
       </div>
 
-      <div className="mx-auto w-full max-w-3xl px-6 py-10">
-        {GROUPS.map((group) => (
-          <section key={group.title} className="mb-12">
-            <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {group.title}
-            </h2>
-            <div className="space-y-6">
-              {group.rows.map((row) => (
-                <div key={row.label}>
-                  <div className="mb-1 text-xs font-mono uppercase tracking-wide text-muted-foreground/50">
-                    {row.label}
-                  </div>
-                  <div className="rounded-2xl border border-border/40 bg-card/30 px-4 py-3">
-                    <ToolPartRenderer
-                      key={`${row.label}-${open}`}
-                      part={row.node as any}
-                      sessionId="debug"
-                      defaultOpen={open}
-                      disableNavigation
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        ))}
+      {/* Side-panel Actions view preview — the focused navigator that reuses
+          the same ToolPartRenderer handlers, fed the mock tool parts. */}
+      <div className="mx-auto w-full max-w-3xl px-6 pt-10">
+        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Side panel · Actions
+        </h2>
+        <div className="h-[560px] w-full overflow-hidden rounded-2xl border border-border bg-card">
+          <SessionActionsPanel
+            sessionId="debug"
+            messages={[
+              {
+                info: { id: 'm1', role: 'assistant' },
+                parts: GROUPS.flatMap((g) => g.rows.map((r) => r.node)),
+              } as any,
+            ]}
+          />
+        </div>
       </div>
+
+      {/* Inline chat rows — clicking one focuses the panel above (the same
+          chat → side-panel flow), via ToolActivateContext + focusToolCall. */}
+      <ToolActivateContext.Provider value={(callID) => focusToolCall(callID)}>
+        <div className="mx-auto w-full max-w-3xl px-6 py-10">
+          <p className="mb-6 text-xs text-muted-foreground/60">
+            Click any row below → it opens in the panel above. (Inline = chat
+            presentation.)
+          </p>
+          {GROUPS.map((group) => (
+            <section key={group.title} className="mb-12">
+              <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </h2>
+              <div className="space-y-3">
+                {group.rows.map((row) => (
+                  <div key={row.label}>
+                    <div className="mb-1 text-xs font-mono uppercase tracking-wide text-muted-foreground/50">
+                      {row.label}
+                    </div>
+                    <div className="rounded-2xl border border-border/40 bg-card/30 px-4 py-3">
+                      <ToolPartRenderer
+                        part={row.node as any}
+                        sessionId="debug"
+                        disableNavigation
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </ToolActivateContext.Provider>
     </div>
   );
 }

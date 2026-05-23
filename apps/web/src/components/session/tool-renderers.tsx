@@ -38,6 +38,7 @@ import {
   Minimize2,
   MonitorPlay,
   Music,
+  PanelRight,
   Plug,
   Presentation,
   RefreshCw,
@@ -68,7 +69,7 @@ import {
   HighlightedCode,
   UnifiedMarkdown,
 } from '@/components/markdown/unified-markdown';
-import { useOcFileOpen } from '@/components/thread/tool-views/opencode/useOcFileOpen';
+import { useOcFileOpen } from '@/components/session/use-oc-file-open';
 import {
   Collapsible,
   CollapsibleContent,
@@ -1028,6 +1029,23 @@ const StalePendingContext = createContext(false);
 /** Context to pass computed duration (ms) from ToolPartRenderer into BasicTool */
 const ToolDurationContext = createContext<number | undefined>(undefined);
 
+/** Presentation surface for tool renderers. */
+export type ToolSurface = 'inline' | 'panel';
+/**
+ * `inline` = the compact, collapsible row shown in the chat column.
+ * `panel`  = the large, always-open detail view shown in the side panel.
+ * One renderer, two presentations — driven by this context.
+ */
+export const ToolSurfaceContext = createContext<ToolSurface>('inline');
+/**
+ * Provided by the chat so that clicking an inline tool row opens the side
+ * panel focused on that tool (instead of expanding inline). Receives the
+ * tool's callID. When absent (e.g. the panel itself), rows behave normally.
+ */
+export const ToolActivateContext = createContext<((callID: string) => void) | null>(null);
+/** Per-part zero-arg activate, bound to the part's callID by ToolPartRenderer. */
+const BoundActivateContext = createContext<(() => void) | null>(null);
+
 export function BasicTool({
   icon,
   trigger,
@@ -1044,6 +1062,8 @@ export function BasicTool({
   const running = useContext(ToolRunningContext);
   const contextDuration = useContext(ToolDurationContext);
   const durationMs = durationMsProp ?? contextDuration;
+  const surface = useContext(ToolSurfaceContext);
+  const activate = useContext(BoundActivateContext);
   const [open, setOpen] = useState(defaultOpen);
 
   useEffect(() => {
@@ -1063,111 +1083,66 @@ export function BasicTool({
     ? !trigger.title && !trigger.subtitle
     : false;
 
-  // One canonical header row, shared by both the collapsible variant and
-  // the onClick "button" variant (TaskTool / SessionSpawnTool). Keeping
-  // this a single block guarantees the two surfaces stay pixel-identical.
-  const header = (
-    <div
-      data-component="tool-trigger"
-      onClick={
-        onClick
-          ? (e) => {
-              e.stopPropagation();
-              onClick();
-            }
-          : undefined
-      }
-      onKeyDown={
-        onClick
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onClick();
-              }
-            }
-          : undefined
-      }
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      className={cn(
-        'flex items-center gap-1.5 py-0.5',
-        'text-xs text-muted-foreground/70 transition-colors select-none max-w-full group',
-        '[&>span:first-child>svg]:size-3.5 [&>span:first-child>svg]:text-muted-foreground/50',
-        (children || onClick) && !locked && 'cursor-pointer',
-      )}
-    >
-      {/* Icon */}
-      <span className="flex-shrink-0">{icon}</span>
-
-      {/* Trigger content */}
-      <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-        {isTriggerTitle(trigger) ? (
-          <>
-            <span className="text-xs whitespace-nowrap flex-shrink-0">
-              {trigger.title}
-            </span>
-            {/* Subtitle + args share an overflow-hidden track so long file
-                paths, queries, or arg lists never push past the row. */}
-            {(trigger.subtitle ||
-              (trigger.args && trigger.args.length > 0)) && (
-              <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
-                {trigger.subtitle &&
-                  (running ? (
-                    <TextShimmer
-                      duration={1}
-                      spread={2}
-                      className="text-xs truncate font-mono min-w-0"
-                    >
-                      {trigger.subtitle}
-                    </TextShimmer>
-                  ) : (
-                    <span
-                      className={cn(
-                        'text-muted-foreground text-xs truncate font-mono min-w-0',
-                        onSubtitleClick &&
-                          'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
-                      )}
-                      title={trigger.subtitle}
-                      onClick={
-                        onSubtitleClick
-                          ? (e) => {
-                              e.stopPropagation();
-                              onSubtitleClick();
-                            }
-                          : undefined
+  // Shared inner content of the header row: icon, title/subtitle/args, and the
+  // right-edge cluster (duration, badge, spinner, accessory). The trailing
+  // affordance (chevron / panel-open / none) and the wrapper differ per surface.
+  const triggerContent = isTriggerTitle(trigger) ? (
+    <>
+      <span className="text-xs whitespace-nowrap flex-shrink-0">
+        {trigger.title}
+      </span>
+      {(trigger.subtitle || (trigger.args && trigger.args.length > 0)) && (
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+          {trigger.subtitle &&
+            (running ? (
+              <TextShimmer
+                duration={1}
+                spread={2}
+                className="text-xs truncate font-mono min-w-0"
+              >
+                {trigger.subtitle}
+              </TextShimmer>
+            ) : (
+              <span
+                className={cn(
+                  'text-muted-foreground text-xs truncate font-mono min-w-0',
+                  onSubtitleClick &&
+                    'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
+                )}
+                title={trigger.subtitle}
+                onClick={
+                  onSubtitleClick
+                    ? (e) => {
+                        e.stopPropagation();
+                        onSubtitleClick();
                       }
-                    >
-                      {trigger.subtitle}
-                    </span>
-                  ))}
-                {!running &&
-                  trigger.args &&
-                  trigger.args.length > 0 &&
-                  trigger.args.map((arg, i) => (
-                    <span
-                      key={i}
-                      title={arg}
-                      className="text-xs text-muted-foreground/60 font-mono truncate min-w-0"
-                    >
-                      {arg}
-                    </span>
-                  ))}
-              </div>
-            )}
-          </>
-        ) : (
-          trigger
-        )}
-        {/* Skeleton placeholders when running but trigger has no content yet */}
-        {running && triggerIsEmpty && (
-          <>
-            <span className="h-3 w-16 rounded bg-muted-foreground/10 animate-pulse flex-shrink-0" />
-            <span className="h-3 w-28 rounded bg-muted-foreground/10 animate-pulse min-w-0" />
-          </>
-        )}
-      </div>
+                    : undefined
+                }
+              >
+                {trigger.subtitle}
+              </span>
+            ))}
+          {!running &&
+            trigger.args &&
+            trigger.args.length > 0 &&
+            trigger.args.map((arg, i) => (
+              <span
+                key={i}
+                title={arg}
+                className="text-xs text-muted-foreground/60 font-mono truncate min-w-0"
+              >
+                {arg}
+              </span>
+            ))}
+        </div>
+      )}
+    </>
+  ) : (
+    trigger
+  );
 
-      {/* Right-edge cluster: duration → badge → spinner → chevron/accessory */}
+  const rightCluster = (
+    <>
       {!running && durationMs !== undefined && durationMs >= 1000 && (
         <span className="text-xs font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
           {Math.round(durationMs / 1000)}s
@@ -1186,34 +1161,157 @@ export function BasicTool({
           {rightAccessory}
         </span>
       )}
-      {!onClick && (
-        <ChevronRight
-          className={cn(
-            'size-3 transition-all flex-shrink-0',
-            'text-muted-foreground/30',
-            // Collapsible rows show a faint persistent chevron so it reads as
-            // expandable; it firms up on hover and rotates when open.
-            children && !locked
-              ? 'opacity-40 group-hover:opacity-80'
-              : 'opacity-0',
-            open && children && 'rotate-90 !opacity-100',
-          )}
-        />
-      )}
-    </div>
+    </>
   );
 
-  // onClick variant: no collapsible at all, just the clickable header.
-  if (onClick) return header;
+  const rowClass = cn(
+    'flex items-center gap-1.5 py-0.5',
+    'text-xs text-muted-foreground/70 transition-colors select-none max-w-full group',
+    '[&>span:first-child>svg]:size-3.5 [&>span:first-child>svg]:text-muted-foreground/50',
+  );
 
+  const headerInner = (
+    <>
+      <span className="flex-shrink-0">{icon}</span>
+      <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-hidden">
+        {triggerContent}
+        {running && triggerIsEmpty && (
+          <>
+            <span className="h-3 w-16 rounded bg-muted-foreground/10 animate-pulse flex-shrink-0" />
+            <span className="h-3 w-28 rounded bg-muted-foreground/10 animate-pulse min-w-0" />
+          </>
+        )}
+      </div>
+      {rightCluster}
+    </>
+  );
+
+  // ── PANEL: large, always-open detail view ────────────────────────────────
+  if (surface === 'panel') {
+    return (
+      <div className="flex flex-col">
+        <div className="sticky top-0 z-10 flex items-center gap-2.5 border-b border-border/60 bg-card px-4 py-3 [&>span:first-child>svg]:size-4 [&>span:first-child>svg]:text-muted-foreground">
+          <span className="flex size-7 flex-shrink-0 items-center justify-center rounded-lg bg-muted/70">
+            {icon}
+          </span>
+          <div className="min-w-0 flex-1">
+            {isTriggerTitle(trigger) ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">
+                    {trigger.title}
+                  </span>
+                  {badge && (
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground/60">
+                      {badge}
+                    </span>
+                  )}
+                  {running && (
+                    <Loader2 className="size-3.5 animate-spin text-muted-foreground/50" />
+                  )}
+                </div>
+                {(trigger.subtitle || (trigger.args && trigger.args.length > 0)) && (
+                  <div
+                    className={cn(
+                      'truncate font-mono text-xs text-muted-foreground/80',
+                      onSubtitleClick &&
+                        'cursor-pointer hover:text-foreground underline-offset-2 hover:underline',
+                    )}
+                    title={trigger.subtitle}
+                    onClick={onSubtitleClick}
+                  >
+                    {trigger.subtitle}
+                    {trigger.args && trigger.args.length > 0
+                      ? `${trigger.subtitle ? '  ·  ' : ''}${trigger.args.join('  ·  ')}`
+                      : ''}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-2">{trigger}</div>
+            )}
+          </div>
+          {!running && durationMs !== undefined && durationMs >= 1000 && (
+            <span className="flex-shrink-0 font-mono text-xs tabular-nums text-muted-foreground/40">
+              {Math.round(durationMs / 1000)}s
+            </span>
+          )}
+        </div>
+        {children && <div className="px-1 py-1 text-sm">{children}</div>}
+      </div>
+    );
+  }
+
+  // ── INLINE: special tools with their own onClick (Task / SessionSpawn) ────
+  if (onClick) {
+    return (
+      <div
+        data-component="tool-trigger"
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+        className={cn(rowClass, !locked && 'cursor-pointer')}
+      >
+        {headerInner}
+      </div>
+    );
+  }
+
+  // ── INLINE in chat: click opens the side panel focused on this tool ───────
+  // (Skipped when a permission/question is pending — those must answer inline.)
+  if (activate && !locked && !forceOpen) {
+    return (
+      <div
+        data-component="tool-trigger"
+        role="button"
+        tabIndex={0}
+        onClick={() => activate()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activate();
+          }
+        }}
+        className={cn(rowClass, 'cursor-pointer')}
+      >
+        {headerInner}
+        <PanelRight className="size-3 flex-shrink-0 text-muted-foreground/30 opacity-0 transition-opacity group-hover:opacity-80" />
+      </div>
+    );
+  }
+
+  // ── INLINE default: collapsible row (harness / non-session contexts) ──────
   return (
     <Collapsible open={open} onOpenChange={handleOpenChange}>
-      <CollapsibleTrigger asChild>{header}</CollapsibleTrigger>
+      <CollapsibleTrigger asChild>
+        <div
+          data-component="tool-trigger"
+          className={cn(rowClass, children && !locked && 'cursor-pointer')}
+        >
+          {headerInner}
+          <ChevronRight
+            className={cn(
+              'size-3 transition-all flex-shrink-0 text-muted-foreground/30',
+              children && !locked
+                ? 'opacity-40 group-hover:opacity-80'
+                : 'opacity-0',
+              open && children && 'rotate-90 !opacity-100',
+            )}
+          />
+        </div>
+      </CollapsibleTrigger>
 
       {children && open && (
-        <div className="mt-1 mb-1 text-xs overflow-hidden">
-          {children}
-        </div>
+        <div className="mt-1 mb-1 text-xs overflow-hidden">{children}</div>
       )}
     </Collapsible>
   );
@@ -7922,6 +8020,14 @@ export function ToolPartRenderer({
     return undefined;
   }, [part.state]);
 
+  // Bind the chat's activate handler to this part's callID so a row click can
+  // open the side panel focused on this exact tool.
+  const onActivate = useContext(ToolActivateContext);
+  const boundActivate = useMemo(
+    () => (onActivate ? () => onActivate(part.callID) : null),
+    [onActivate, part.callID],
+  );
+
   // Skip todoread
   if (part.tool === 'todoread') return null;
 
@@ -7939,19 +8045,23 @@ export function ToolPartRenderer({
     })();
 
     return (
-      <BasicTool
-        icon={<CircleAlert />}
-        trigger={{
-          title: display,
-          subtitle: 'failed',
-          args: server ? [server] : undefined,
-        }}
-        badge="error"
-      >
-        <div className="p-0">
-          <ToolError error={errorStr} toolName={part.tool} />
-        </div>
-      </BasicTool>
+      <BoundActivateContext.Provider value={boundActivate}>
+        <ToolDurationContext.Provider value={toolDurationMs}>
+          <BasicTool
+            icon={<CircleAlert />}
+            trigger={{
+              title: display,
+              subtitle: 'failed',
+              args: server ? [server] : undefined,
+            }}
+            badge="error"
+          >
+            <div className="p-0">
+              <ToolError error={errorStr} toolName={part.tool} />
+            </div>
+          </BasicTool>
+        </ToolDurationContext.Provider>
+      </BoundActivateContext.Provider>
     );
   }
 
@@ -7991,6 +8101,7 @@ export function ToolPartRenderer({
       <ToolRunningContext.Provider value={isRunning}>
         <ToolDurationContext.Provider value={toolDurationMs}>
         <StalePendingContext.Provider value={isStalePending}>
+        <BoundActivateContext.Provider value={boundActivate}>
           <div className="relative">
             {toolElement}
 
@@ -8015,6 +8126,7 @@ export function ToolPartRenderer({
               </div>
             )}
           </div>
+        </BoundActivateContext.Provider>
         </StalePendingContext.Provider>
         </ToolDurationContext.Provider>
       </ToolRunningContext.Provider>
